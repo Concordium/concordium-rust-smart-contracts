@@ -3,6 +3,10 @@ name = "concordium-std"
 version = "0.1.0"
 authors = ["Concordium <info@concordium.com>"]
 edition = "2018"
+description = "A standard library for writing smart contracts for the Concordium blockchain in Rust."
+homepage = "https://github.com/Concordium/concordium-std"
+repository = "https://github.com/Concordium/concordium-std"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
