@@ -1,0 +1,33 @@
+[package]
+name = "concordium-std"
+version = "0.1.0"
+authors = ["Concordium <info@concordium.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+# Reduce code size, at the cost of performance in allocation heavy-code.
+wee_alloc="0.4.5"
+
+[dependencies.concordium-std-derive]
+path = "../concordium-std-derive"
+version = "0.1"
+
+[dependencies.concordium-contracts-common]
+path = "../../concordium-contracts-common"
+version = "0.1"
+default-features = false
+
+[features]
+default = ["std"]
+
+std = ["concordium-contracts-common/std"]
+
+[lib]
+crate-type = ["rlib"]
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+# Don't unwind on panics, just trap.
+# panic = "abort"
