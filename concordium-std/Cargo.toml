@@ -3,6 +3,7 @@ name = "concordium-std"
 version = "0.1.0"
 authors = ["Concordium <info@concordium.com>"]
 edition = "2018"
+license = "Apache-2.0"
 description = "A standard library for writing smart contracts for the Concordium blockchain in Rust."
 homepage = "https://github.com/Concordium/concordium-std"
 repository = "https://github.com/Concordium/concordium-std"
