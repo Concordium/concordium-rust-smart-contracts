@@ -14,12 +14,12 @@ readme = "../README.md"
 wee_alloc="0.4.5"
 
 [dependencies.concordium-std-derive]
-path = "../concordium-std-derive"
-version = "0.1"
+# path = "../concordium-std-derive"
+version = "=0.1"
 
 [dependencies.concordium-contracts-common]
-path = "../../concordium-contracts-common"
-version = "0.1"
+# path = "../../concordium-contracts-common"
+version = "=0.1"
 default-features = false
 
 [features]
