@@ -49,7 +49,10 @@ fn on_oom(_layout: alloc::alloc::Layout) -> ! {
     loop {}
 }
 
-/// Abort execution immediately.
+/// Terminate execution immediately without panicking.
+/// When the `std` feature is enabled this is just [std::process::abort](https://doc.rust-lang.org/std/process/fn.abort.html).
+/// When `std` is not present and the target architecture is `wasm32` this will
+/// simply emit the [unreachable](https://doc.rust-lang.org/core/arch/wasm32/fn.unreachable.html) instruction.
 #[cfg(feature = "std")]
 pub use std::process::abort as trap;
 #[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
