@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Concordium <info@concordium.com>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -15,8 +15,7 @@ readme = "../README.md"
 wee_alloc="0.4.5"
 
 [dependencies.concordium-std-derive]
-# path = "../concordium-std-derive"
-version = "=0.1"
+version = "=0.2"
 
 [dependencies.concordium-contracts-common]
 # path = "../../concordium-contracts-common"
@@ -27,6 +26,8 @@ default-features = false
 default = ["std"]
 
 std = ["concordium-contracts-common/std"]
+wasm-test = ["concordium-std-derive/wasm-test"]
+build-schema = ["concordium-std-derive/build-schema"]
 
 [lib]
 crate-type = ["rlib"]

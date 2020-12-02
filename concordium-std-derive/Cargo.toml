@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std-derive"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Concordium <info@concordium.com>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -17,3 +17,7 @@ proc-macro2 = "1.0"
 
 [lib]
 proc-macro = true
+
+[features]
+wasm-test = []
+build-schema = []
