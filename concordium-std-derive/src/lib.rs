@@ -198,6 +198,7 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     out.into()
 }
 
+#[cfg(feature = "build-schema")]
 fn contract_function_schema_tokens(
     parameter_option: Option<String>,
     rust_name: syn::Ident,
@@ -209,7 +210,6 @@ fn contract_function_schema_tokens(
             let schema_name = format!("concordium_schema_function_{}", wasm_name);
             let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
             quote! {
-                #[cfg(all(target_arch = "wasm32", feature = "build-schema"))]
                 #[export_name = #schema_name]
                 pub extern "C" fn #schema_ident() -> *mut u8 {
                     let schema = <#parameter_ident as schema::SchemaType>::get_type();
@@ -220,6 +220,15 @@ fn contract_function_schema_tokens(
         }
         None => proc_macro2::TokenStream::new(),
     }
+}
+
+#[cfg(not(feature = "build-schema"))]
+fn contract_function_schema_tokens(
+    _parameter_option: Option<String>,
+    _rust_name: syn::Ident,
+    _wasm_name: String,
+) -> proc_macro2::TokenStream {
+    proc_macro2::TokenStream::new()
 }
 
 /// Derive the Deserial trait. See the documentation of `derive(Serial)` for
@@ -714,6 +723,7 @@ pub fn serialize_derive(input: TokenStream) -> TokenStream {
 ///      ...
 /// }
 /// ```
+#[cfg(feature = "build-schema")]
 #[proc_macro_attribute]
 pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut out = proc_macro2::TokenStream::new();
@@ -742,7 +752,6 @@ pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let generate_schema_tokens = quote! {
         #[allow(non_snake_case)]
-        #[cfg(all(target_arch = "wasm32", feature = "build-schema"))]
         #[export_name = #wasm_schema_name]
         pub extern "C" fn #rust_schema_name() -> *mut u8 {
             let schema = <#data_ident as concordium_std::schema::SchemaType>::get_type();
@@ -754,7 +763,14 @@ pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
     out.into()
 }
 
+#[cfg(not(feature = "build-schema"))]
+#[proc_macro_attribute]
+pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 /// Derive the `SchemaType` trait for a type.
+#[cfg(feature = "build-schema")]
 #[proc_macro_derive(
     SchemaType,
     attributes(size_length, map_size_length, set_size_length, string_size_length)
@@ -792,7 +808,6 @@ pub fn schema_type_derive(input: TokenStream) -> TokenStream {
 
     let out = quote! {
         #[automatically_derived]
-        #[cfg(feature = "build-schema")]
         impl concordium_std::schema::SchemaType for #data_name {
             fn get_type() -> concordium_std::schema::Type {
                 #body
@@ -802,6 +817,16 @@ pub fn schema_type_derive(input: TokenStream) -> TokenStream {
     out.into()
 }
 
+#[cfg(not(feature = "build-schema"))]
+#[proc_macro_derive(
+    SchemaType,
+    attributes(size_length, map_size_length, set_size_length, string_size_length)
+)]
+pub fn schema_type_derive(_input: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
+#[cfg(feature = "build-schema")]
 fn schema_type_field_type(field: &syn::Field) -> proc_macro2::TokenStream {
     let field_type = &field.ty;
     if let Some(l) = find_length_attribute(&field.attrs, "size_length")
@@ -820,6 +845,7 @@ fn schema_type_field_type(field: &syn::Field) -> proc_macro2::TokenStream {
     }
 }
 
+#[cfg(feature = "build-schema")]
 fn schema_type_fields(fields: &syn::Fields) -> proc_macro2::TokenStream {
     match fields {
         syn::Fields::Named(_) => {
@@ -845,6 +871,7 @@ fn schema_type_fields(fields: &syn::Fields) -> proc_macro2::TokenStream {
 
 /// Derive the appropriate export for an annotated test function, when feature
 /// "wasm-test" is enabled, otherwise behaves like #[test].
+#[cfg(feature = "wasm-test")]
 #[proc_macro_attribute]
 pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let test_fn_ast: syn::ItemFn =
@@ -855,18 +882,10 @@ pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasm_export_fn_name = format!("concordium_test {}", test_fn_name);
 
     let test_fn = quote! {
-
-        // Fallback to regular #[test]
-        #[cfg(not(feature = "wasm-test"))]
-        #[test]
-        #test_fn_ast
-
         // Setup test function
-        #[cfg(feature = "wasm-test")]
         #test_fn_ast
 
         // Export test function in wasm
-        #[cfg(feature = "wasm-test")]
         #[export_name = #wasm_export_fn_name]
         pub extern "C" fn #rust_export_fn_name() {
             #test_fn_name()
@@ -875,12 +894,35 @@ pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     test_fn.into()
 }
 
+/// Derive the appropriate export for an annotated test function, when feature
+/// "wasm-test" is enabled, otherwise behaves like #[test].
+#[cfg(not(feature = "wasm-test"))]
+#[proc_macro_attribute]
+pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let test_fn_ast: syn::ItemFn =
+        syn::parse(item).expect("#[concordium_test] can only be applied to functions.");
+
+    let test_fn = quote! {
+        #[test]
+        #test_fn_ast
+    };
+    test_fn.into()
+}
+
 /// Sets the cfg for testing targeting either Wasm and native.
+#[cfg(feature = "wasm-test")]
+#[proc_macro_attribute]
+pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/// Sets the cfg for testing targeting either Wasm and native.
+#[cfg(not(feature = "wasm-test"))]
 #[proc_macro_attribute]
 pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = proc_macro2::TokenStream::from(item);
     let out = quote! {
-        #[cfg(any(test, feature = "wasm-test"))]
+        #[cfg(test)]
         #item
     };
     out.into()

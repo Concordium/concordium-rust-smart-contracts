@@ -68,7 +68,7 @@ extern "C" {
     /// Slot time (in milliseconds) from chain meta data
     pub(crate) fn get_slot_time() -> u64;
 
-    #[cfg(all(debug_assertions, target_arch = "wasm32"))]
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     /// Reporting back an error, only exists in debug mode
     pub(crate) fn report_error(
         msg_start: *const u8,
