@@ -31,7 +31,8 @@
 //!
 //! # Panic handler
 //! When compiled without the `std` feature this crate sets the panic handler
-//! to a no-op.
+//! so that it terminates the process immediately, without any unwinding or
+//! prints.
 //!
 //! # Build for generating a module schema
 //! **WARNING** Building with this feature enabled is meant for tooling, and the
@@ -124,6 +125,9 @@ pub use alloc::{string, string::String, string::ToString, vec, vec::Vec};
 pub use core::convert;
 /// Re-export.
 #[cfg(not(feature = "std"))]
+pub use core::marker;
+/// Re-export.
+#[cfg(not(feature = "std"))]
 pub use core::mem;
 
 /// Re-export.
@@ -132,6 +136,8 @@ pub use std::collections;
 /// Re-export.
 #[cfg(feature = "std")]
 pub use std::convert;
+#[cfg(feature = "std")]
+pub use std::marker;
 /// Re-export.
 #[cfg(feature = "std")]
 pub use std::mem;

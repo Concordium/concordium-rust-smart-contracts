@@ -221,14 +221,83 @@ impl HasChainMetadata for ChainMetaExtern {
     fn slot_number(&self) -> SlotNumber { unsafe { get_slot_number() } }
 }
 
-/// # Trait implementations for the init context
-impl HasInitContext<()> for InitContextExtern {
-    type InitData = ();
+impl HasPolicy for Policy<AttributesCursor> {
+    fn created_at(&self) -> TimestampMillis { self.created_at }
+
+    fn valid_to(&self) -> TimestampMillis { self.valid_to }
+
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
+        if self.items.remaining_items == 0 {
+            return None;
+        }
+        let mut tag_value_len = [0u8; 2];
+        let num_read = unsafe {
+            // Should succeed, otherwise host violated precondition.
+            get_parameter_section(tag_value_len.as_mut_ptr(), 2, self.items.current_position)
+        };
+        self.items.current_position += num_read;
+        if tag_value_len[1] > 31 {
+            // Should not happen because all attributes fit into 31 bytes.
+            return None;
+        }
+        let num_read = unsafe {
+            get_parameter_section(
+                buf.as_mut_ptr(),
+                u32::from(tag_value_len[1]),
+                self.items.current_position,
+            )
+        };
+        self.items.current_position += num_read;
+        Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
+    }
+}
+
+impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     type MetadataType = ChainMetaExtern;
     type ParamType = Parameter;
+    type PolicyType = Policy<AttributesCursor>;
+
+    #[inline(always)]
+    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
+
+    fn policy(&self) -> Self::PolicyType {
+        // 8 bytes for created_at, 8 for valid_to, and 2 for the length
+        let mut buf: MaybeUninit<[u8; 8 + 8 + 2]> = MaybeUninit::uninit();
+        let buf = unsafe {
+            get_policy_section(buf.as_mut_ptr() as *mut u8, 0, 8 + 8 + 2);
+            buf.assume_init()
+        };
+        let (created_at, valid_to) = buf.split_at(8);
+        let (valid_to, rest) = valid_to.split_at(8);
+        let created_at =
+            unsafe { u64::from_le_bytes(*(created_at as *const [u8] as *const [u8; 8])) };
+        let valid_to = unsafe { u64::from_le_bytes(*(valid_to as *const [u8] as *const [u8; 8])) };
+        let remaining_items =
+            unsafe { u16::from_le_bytes(*(rest as *const [u8] as *const [u8; 2])) };
+        Policy {
+            created_at,
+            valid_to,
+            items: AttributesCursor {
+                current_position: 0,
+                remaining_items,
+            },
+        }
+    }
+
+    #[inline(always)]
+    fn parameter_cursor(&self) -> Self::ParamType {
+        Parameter {
+            current_position: 0,
+        }
+    }
+}
+
+/// # Trait implementations for the init context
+impl HasInitContext<()> for ExternContext<crate::types::InitContextExtern> {
+    type InitData = ();
 
     /// Create a new init context by using an external call.
-    fn open(_: Self::InitData) -> Self { InitContextExtern {} }
+    fn open(_: Self::InitData) -> Self { ExternContext::default() }
 
     #[inline(always)]
     fn init_origin(&self) -> AccountAddress {
@@ -240,26 +309,14 @@ impl HasInitContext<()> for InitContextExtern {
         };
         AccountAddress(address)
     }
-
-    #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
-            current_position: 0,
-        }
-    }
-
-    #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
 }
 
 /// # Trait implementations for the receive context
-impl HasReceiveContext<()> for ReceiveContextExtern {
-    type MetadataType = ChainMetaExtern;
-    type ParamType = Parameter;
+impl HasReceiveContext<()> for ExternContext<crate::types::ReceiveContextExtern> {
     type ReceiveData = ();
 
     /// Create a new receive context
-    fn open(_: Self::ReceiveData) -> Self { ReceiveContextExtern {} }
+    fn open(_: Self::ReceiveData) -> Self { ExternContext::default() }
 
     #[inline(always)]
     fn invoker(&self) -> AccountAddress {
@@ -325,16 +382,6 @@ impl HasReceiveContext<()> for ReceiveContextExtern {
         };
         AccountAddress(address)
     }
-
-    #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
-            current_position: 0,
-        }
-    }
-
-    #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
 }
 
 /// #Implementations of the logger.

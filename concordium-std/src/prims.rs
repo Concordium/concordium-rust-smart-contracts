@@ -30,6 +30,12 @@ extern "C" {
     // of bytes written. The location is assumed to contain enough memory to
     // write the requested length into.
     pub(crate) fn get_parameter_section(param_bytes: *mut u8, length: u32, offset: u32) -> u32;
+    // Get the size of the policy.
+    pub(crate) fn get_policy_size() -> u32;
+    // Write a section of the policy to the given location. Return the number
+    // of bytes written. The location is assumed to contain enough memory to
+    // write the requested length into.
+    pub(crate) fn get_policy_section(policy_bytes: *mut u8, length: u32, offset: u32) -> u32;
     // Add a log item.
     pub(crate) fn log_event(start: *const u8, length: u32);
     // returns how many bytes were read.
@@ -119,6 +125,18 @@ mod host_dummy_functions {
     #[no_mangle]
     pub(crate) extern "C" fn get_parameter_section(
         _param_bytes: *mut u8,
+        _length: u32,
+        _offset: u32,
+    ) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) extern "C" fn get_policy_size() -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) extern "C" fn get_policy_section(
+        _policy_bytes: *mut u8,
         _length: u32,
         _offset: u32,
     ) -> u32 {

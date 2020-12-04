@@ -870,7 +870,7 @@ fn schema_type_fields(fields: &syn::Fields) -> proc_macro2::TokenStream {
 }
 
 /// Derive the appropriate export for an annotated test function, when feature
-/// "wasm-test" is enabled, otherwise behaves like #[test].
+/// "wasm-test" is enabled, otherwise behaves like `#[test]`.
 #[cfg(feature = "wasm-test")]
 #[proc_macro_attribute]
 pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -895,7 +895,7 @@ pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 /// Derive the appropriate export for an annotated test function, when feature
-/// "wasm-test" is enabled, otherwise behaves like #[test].
+/// "wasm-test" is enabled, otherwise behaves like `#[test]`.
 #[cfg(not(feature = "wasm-test"))]
 #[proc_macro_attribute]
 pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {

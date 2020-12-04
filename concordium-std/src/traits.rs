@@ -32,31 +32,62 @@ pub trait HasChainMetadata {
     fn slot_number(&self) -> SlotNumber;
 }
 
+/// A type which has access to a policy of a credential.
+/// Since policies can be large this is deliberately written in a relatively
+/// low-level style to enable efficient traversal of all the attributes without
+/// any allocations.
+pub trait HasPolicy {
+    /// Beginning of the month in milliseconds since unix epoch when the
+    /// credential was created.
+    fn created_at(&self) -> TimestampMillis;
+    /// Beginning of the month where the credential is no longer valid, in
+    /// milliseconds since unix epoch.
+    fn valid_to(&self) -> TimestampMillis;
+    /// Get the next attribute, storing it in the provided buffer.
+    /// The return value, if `Some`, is a pair of an attribute tag, and the
+    /// length, `n` of the attribute value. In this case, the attribute
+    /// value is written in the first `n` bytes of the provided buffer. The
+    /// rest of the buffer is unchanged.
+    ///
+    /// The reason this function is added here, and we don't simply implement
+    /// an Iterator for this type is that with the supplied buffer we can
+    /// iterate through the elements more efficiently, without any allocations,
+    /// the consumer being responsible for allocating the buffer.
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
+}
+
+/// Common data accessible to both init and receive methods.
+pub trait HasCommonData {
+    type PolicyType: HasPolicy;
+    type MetadataType: HasChainMetadata;
+    type ParamType: HasParameter + Read;
+    /// Policy of the sender of the message.
+    /// For init methods this is the would-be creator of the contract,
+    /// for the receive this is the policy of the immediate sender.
+    ///
+    /// In the latter case, if the sender is an account then it is the policy of
+    /// the account, if it is a contract then it is the policy of the
+    /// creator of the contract.
+    fn policy(&self) -> Self::PolicyType;
+    /// Get the reference to chain metadata
+    fn metadata(&self) -> &Self::MetadataType;
+    /// Get the cursor to the parameter.
+    fn parameter_cursor(&self) -> Self::ParamType;
+}
+
 /// Types which can act as init contexts.
-pub trait HasInitContext<Error: Default>
-where
-    Self::ParamType: Read, {
+pub trait HasInitContext<Error: Default>: HasCommonData {
     /// Data needed to open the context.
     type InitData;
-    type ParamType: HasParameter;
-    type MetadataType: HasChainMetadata;
     /// Open the init context for reading and accessing values.
     fn open(data: Self::InitData) -> Self;
     /// Who invoked this init call.
     fn init_origin(&self) -> AccountAddress;
-    /// Get the cursor to the parameter.
-    fn parameter_cursor(&self) -> Self::ParamType;
-    /// Get the reference to chain metadata
-    fn metadata(&self) -> &Self::MetadataType;
 }
 
 /// Types which can act as receive contexts.
-pub trait HasReceiveContext<Error: Default>
-where
-    Self::ParamType: Read, {
+pub trait HasReceiveContext<Error: Default>: HasCommonData {
     type ReceiveData;
-    type ParamType: HasParameter;
-    type MetadataType: HasChainMetadata;
 
     /// Open the receive context for reading and accessing values.
     fn open(data: Self::ReceiveData) -> Self;
@@ -72,10 +103,6 @@ where
     fn sender(&self) -> Address;
     /// Account which created the contract instance.
     fn owner(&self) -> AccountAddress;
-    /// Get the cursor to the parameter.
-    fn parameter_cursor(&self) -> Self::ParamType;
-    /// Get the reference to chain metadata
-    fn metadata(&self) -> &Self::MetadataType;
 }
 
 /// A type that can serve as the contract state type.
