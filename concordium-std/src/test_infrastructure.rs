@@ -359,6 +359,8 @@ impl HasChainMetadata for ChainMetaTest {
 }
 
 impl HasPolicy for TestPolicy {
+    fn identity_provider(&self) -> IdentityProvider { self.policy.identity_provider }
+
     fn created_at(&self) -> TimestampMillis { self.policy.created_at }
 
     fn valid_to(&self) -> TimestampMillis { self.policy.valid_to }

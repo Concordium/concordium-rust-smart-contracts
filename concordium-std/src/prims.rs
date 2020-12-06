@@ -30,8 +30,6 @@ extern "C" {
     // of bytes written. The location is assumed to contain enough memory to
     // write the requested length into.
     pub(crate) fn get_parameter_section(param_bytes: *mut u8, length: u32, offset: u32) -> u32;
-    // Get the size of the policy.
-    pub(crate) fn get_policy_size() -> u32;
     // Write a section of the policy to the given location. Return the number
     // of bytes written. The location is assumed to contain enough memory to
     // write the requested length into.

@@ -37,6 +37,9 @@ pub trait HasChainMetadata {
 /// low-level style to enable efficient traversal of all the attributes without
 /// any allocations.
 pub trait HasPolicy {
+    /// Identity provider who signed the identity object the credential is
+    /// derived from.
+    fn identity_provider(&self) -> IdentityProvider;
     /// Beginning of the month in milliseconds since unix epoch when the
     /// credential was created.
     fn created_at(&self) -> TimestampMillis;
