@@ -41,9 +41,10 @@
 //! module schema, by allowing the contract to be built exporting getter
 //! functions for the `concordium_contracts_common::schema::Type` of Types for
 //! contract state and parameters.
-//! This special built is only intended to be used for generating the schema
-//! and is not meant to be deployed, since the build exports functions.
-//! It is enabled by setting the feature `build-schema`.
+//! This special build is only intended to be used for generating the schema
+//! and is not meant to be deployed, since the build exports functions that do
+//! not conform to the expected API of smart contracts.
+//! The build is enabled by setting the feature `build-schema`.
 //!
 //! **Note** This feature is used by `cargo-concordium`, when building with
 //! schema and for most cases this feature should not be set manually.
@@ -58,7 +59,7 @@
 //!
 //! With the `wasm-test` feature enabled, the
 //! [`#[concordium_test]`](attr.concordium_test.html) macro exports the test as
-//! an exported function, allowing tools such as `cargo-concordium` to call the
+//! an `extern` function, allowing tools such as `cargo-concordium` to call the
 //! test functions directly, when compiled to Wasm.
 //! Without the feature it falls back to `#[test]`.
 //!
