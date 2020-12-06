@@ -12,7 +12,7 @@
 //! To use this library without the `std` feature you have to disable it, which
 //! can be done, for example, as follows.
 //! ```
-//! [dependencies.concordium-sc-base]
+//! [dependencies.concordium-std]
 //! default-features = false
 //! ```
 //! In your project's `Cargo.toml` file.
@@ -32,6 +32,44 @@
 //! # Panic handler
 //! When compiled without the `std` feature this crate sets the panic handler
 //! to a no-op.
+//!
+//! # Build for generating a module schema
+//! **WARNING** Building with this feature enabled is meant for tooling, and the
+//! result is not intended to be deployed on chain.
+//!
+//! This library provides a way to automate the building of smart contract
+//! module schema, by allowing the contract to be built exporting getter
+//! functions for the `concordium_contracts_common::schema::Type` of Types for
+//! contract state and parameters.
+//! This special build is only intended to be used for generating the schema
+//! and is not meant to be deployed, since the build exports functions that do
+//! not conform to the expected API of smart contracts.
+//! The build is enabled by setting the feature `build-schema`.
+//!
+//! **Note** This feature is used by `cargo-concordium`, when building with
+//! schema and for most cases this feature should not be set manually.
+//!
+//! # Build for testing in Wasm
+//! **WARNING** Building with this feature enabled is meant for tooling, and the
+//! result is not intended to be deployed on chain.
+//!
+//! The macros [`#[concordium_test]`](attr.concordium_test.html) and
+//! [`#[concordium_cfg_test]`](attr.concordium_cfg_test.html) are reduced to
+//! `#[test]` and `#[cfg(test)]` unless the `wasm-test` feature is enabled.
+//!
+//! With the `wasm-test` feature enabled, the
+//! [`#[concordium_test]`](attr.concordium_test.html) macro exports the test as
+//! an `extern` function, allowing tools such as `cargo-concordium` to call the
+//! test functions directly, when compiled to Wasm.
+//! Without the feature it falls back to `#[test]`.
+//!
+//! With the 'wasm-test' feature enabled, the
+//! [`#[concordium_cfg_test]`](attr.concordium_cfg_test.html) macro allows the
+//! annotated code to be included in the build. Without the feature, it falls
+//! back to `#[cfg(test)]`.
+//!
+//! **Note** This feature is used by `cargo-concordium`, when building for
+//! testing and for most cases this feature should not be set manually.
 
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler))]
 
