@@ -245,9 +245,9 @@ pub struct ExternContext<T: sealed::ContextType> {
 pub struct ChainMetaExtern {}
 
 #[derive(Default)]
-pub(crate) struct InitContextExtern;
+pub struct InitContextExtern;
 #[derive(Default)]
-pub(crate) struct ReceiveContextExtern;
+pub struct ReceiveContextExtern;
 
 pub(crate) mod sealed {
     use super::*;

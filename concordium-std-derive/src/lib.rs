@@ -68,7 +68,7 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
                 use concordium_std::{Logger, trap};
-                let ctx = InitContextExtern::open(());
+                let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
                 let mut logger = Logger::init();
                 match #fn_name(&ctx, amount, &mut logger, &mut state) {
@@ -82,7 +82,7 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
                 use concordium_std::{Logger, trap};
-                let ctx = InitContextExtern::open(());
+                let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut logger = Logger::init();
                 match #fn_name(&ctx, amount, &mut logger) {
                     Ok(state) => {
@@ -143,7 +143,7 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[export_name = #wasm_export_fn_name]
         pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
             use concordium_std::{SeekFrom, ContractState, Logger};
-            let ctx = ReceiveContextExtern::open(());
+            let ctx = ExternContext::<ReceiveContextExtern>::open(());
             let mut state = ContractState::open(());
             let mut logger = Logger::init();
             let res: Result<Action, _> = #fn_name(&ctx, amount, &mut logger, &mut state);
@@ -160,7 +160,7 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, trap};
-                let ctx = ReceiveContextExtern::open(());
+                let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut logger = Logger::init();
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
@@ -765,9 +765,7 @@ pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[cfg(not(feature = "build-schema"))]
 #[proc_macro_attribute]
-pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
-}
+pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream { item }
 
 /// Derive the `SchemaType` trait for a type.
 #[cfg(feature = "build-schema")]
@@ -822,9 +820,7 @@ pub fn schema_type_derive(input: TokenStream) -> TokenStream {
     SchemaType,
     attributes(size_length, map_size_length, set_size_length, string_size_length)
 )]
-pub fn schema_type_derive(_input: TokenStream) -> TokenStream {
-    TokenStream::new()
-}
+pub fn schema_type_derive(_input: TokenStream) -> TokenStream { TokenStream::new() }
 
 #[cfg(feature = "build-schema")]
 fn schema_type_field_type(field: &syn::Field) -> proc_macro2::TokenStream {
@@ -912,9 +908,7 @@ pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Sets the cfg for testing targeting either Wasm and native.
 #[cfg(feature = "wasm-test")]
 #[proc_macro_attribute]
-pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
-}
+pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream { item }
 
 /// Sets the cfg for testing targeting either Wasm and native.
 #[cfg(not(feature = "wasm-test"))]
