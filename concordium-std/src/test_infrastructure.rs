@@ -103,8 +103,11 @@ impl TestPolicy {
 pub struct CommonDataTest<'a> {
     pub(crate) metadata: ChainMetaTest,
     pub(crate) parameter: Option<&'a [u8]>,
-    /// Policy of the creator.
-    pub(crate) policy: Option<TestPolicy>,
+    /// Policy of the creator. We keep the `Option` wrapper
+    /// in order that the user can be warned that they are using a policy.
+    /// Thus there is a distinction between `Option<Vec::new()>` and
+    /// `Vec::new()`.
+    pub(crate) policies: Option<Vec<TestPolicy>>,
 }
 
 /// Context used for testing. The type parameter C is used to determine whether
@@ -275,8 +278,8 @@ impl ChainMetaTest {
 
 impl<'a, C> ContextTest<'a, C> {
     /// Set the `policy` of the creator.
-    pub fn set_policy(&mut self, value: TestPolicy) -> &mut Self {
-        self.common.policy = Some(value);
+    pub fn set_policies(&mut self, value: Vec<TestPolicy>) -> &mut Self {
+        self.common.policies = Some(value);
         self
     }
 
@@ -380,6 +383,7 @@ impl HasPolicy for TestPolicy {
 impl<'a, C> HasCommonData for ContextTest<'a, C> {
     type MetadataType = ChainMetaTest;
     type ParamType = Cursor<&'a [u8]>;
+    type PolicyIteratorType = crate::vec::IntoIter<TestPolicy>;
     type PolicyType = TestPolicy;
 
     fn parameter_cursor(&self) -> Self::ParamType {
@@ -388,7 +392,9 @@ impl<'a, C> HasCommonData for ContextTest<'a, C> {
 
     fn metadata(&self) -> &Self::MetadataType { &self.common.metadata }
 
-    fn policy(&self) -> Self::PolicyType { unwrap_ctx_field(self.common.policy.clone(), "policy") }
+    fn policies(&self) -> Self::PolicyIteratorType {
+        unwrap_ctx_field(self.common.policies.clone(), "policy").into_iter()
+    }
 }
 
 impl<'a> HasInitContext<()> for InitContextTest<'a> {

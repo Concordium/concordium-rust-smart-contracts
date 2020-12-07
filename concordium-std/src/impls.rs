@@ -254,34 +254,44 @@ impl HasPolicy for Policy<AttributesCursor> {
     }
 }
 
-impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
-    type MetadataType = ChainMetaExtern;
-    type ParamType = Parameter;
-    type PolicyType = Policy<AttributesCursor>;
+pub struct PoliciesIterator {
+    /// Position in the policies binary serialization.
+    pos: u32,
+    /// Number of remaining items in the stream.
+    remaining_items: u16,
+}
 
-    #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
+impl Iterator for PoliciesIterator {
+    type Item = Policy<AttributesCursor>;
 
-    fn policy(&self) -> Self::PolicyType {
-        // 4 for identity_provider, 8 bytes for created_at, 8 for valid_to, and 2 for
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining_items == 0 {
+            return None;
+        }
+        // 2 for total size of this section, 4 for identity_provider,
+        // 8 bytes for created_at, 8 for valid_to, and 2 for
         // the length
-        let mut buf: MaybeUninit<[u8; 4 + 8 + 8 + 2]> = MaybeUninit::uninit();
+        let mut buf: MaybeUninit<[u8; 2 + 4 + 8 + 8 + 2]> = MaybeUninit::uninit();
         let buf = unsafe {
             get_policy_section(buf.as_mut_ptr() as *mut u8, 0, 4 + 8 + 8 + 2);
             buf.assume_init()
         };
         use convert::TryInto;
-        let ip_part: [u8; 4] = buf[0..4].try_into().unwrap_or_else(|_| crate::trap());
-        let created_at_part: [u8; 8] = buf[4..4 + 8].try_into().unwrap_or_else(|_| crate::trap());
+        let skip_part: [u8; 2] = buf[0..2].try_into().unwrap_or_else(|_| crate::trap());
+        let ip_part: [u8; 4] = buf[2..2 + 4].try_into().unwrap_or_else(|_| crate::trap());
+        let created_at_part: [u8; 8] =
+            buf[2 + 4..2 + 4 + 8].try_into().unwrap_or_else(|_| crate::trap());
         let valid_to_part: [u8; 8] =
-            buf[4 + 8..4 + 8 + 8].try_into().unwrap_or_else(|_| crate::trap());
+            buf[2 + 4 + 8..2 + 4 + 8 + 8].try_into().unwrap_or_else(|_| crate::trap());
         let len_part: [u8; 2] =
-            buf[4 + 8 + 8..4 + 8 + 8 + 2].try_into().unwrap_or_else(|_| crate::trap());
+            buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2].try_into().unwrap_or_else(|_| crate::trap());
         let identity_provider = IdentityProvider::from_le_bytes(ip_part);
         let created_at = u64::from_le_bytes(created_at_part);
         let valid_to = u64::from_le_bytes(valid_to_part);
         let remaining_items = u16::from_le_bytes(len_part);
-        Policy {
+        self.pos += u32::from(u16::from_le_bytes(skip_part));
+        self.remaining_items -= 1;
+        Some(Policy {
             identity_provider,
             created_at,
             valid_to,
@@ -289,6 +299,28 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
                 current_position: 0,
                 remaining_items,
             },
+        })
+    }
+}
+
+impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
+    type MetadataType = ChainMetaExtern;
+    type ParamType = Parameter;
+    type PolicyIteratorType = PoliciesIterator;
+    type PolicyType = Policy<AttributesCursor>;
+
+    #[inline(always)]
+    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
+
+    fn policies(&self) -> PoliciesIterator {
+        let mut buf: MaybeUninit<[u8; 2]> = MaybeUninit::uninit();
+        let buf = unsafe {
+            get_policy_section(buf.as_mut_ptr() as *mut u8, 0, 2);
+            buf.assume_init()
+        };
+        PoliciesIterator {
+            pos:             2, // 2 because we already read 2 bytes.
+            remaining_items: u16::from_le_bytes(buf),
         }
     }
 

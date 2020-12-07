@@ -129,6 +129,8 @@ pub use core::marker;
 /// Re-export.
 #[cfg(not(feature = "std"))]
 pub use core::mem;
+#[cfg(feature = "std")]
+pub(crate) use std::vec;
 
 /// Re-export.
 #[cfg(feature = "std")]

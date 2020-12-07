@@ -64,14 +64,15 @@ pub trait HasCommonData {
     type PolicyType: HasPolicy;
     type MetadataType: HasChainMetadata;
     type ParamType: HasParameter + Read;
-    /// Policy of the sender of the message.
+    type PolicyIteratorType: Iterator<Item = Self::PolicyType>;
+    /// Policies of the sender of the message.
     /// For init methods this is the would-be creator of the contract,
-    /// for the receive this is the policy of the immediate sender.
+    /// for the receive this is the policies of the immediate sender.
     ///
-    /// In the latter case, if the sender is an account then it is the policy of
-    /// the account, if it is a contract then it is the policy of the
+    /// In the latter case, if the sender is an account then it is the policies
+    /// of the account, if it is a contract then it is the policies of the
     /// creator of the contract.
-    fn policy(&self) -> Self::PolicyType;
+    fn policies(&self) -> Self::PolicyIteratorType;
     /// Get the reference to chain metadata
     fn metadata(&self) -> &Self::MetadataType;
     /// Get the cursor to the parameter.
