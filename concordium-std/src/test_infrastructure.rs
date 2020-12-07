@@ -11,14 +11,14 @@
 //! ```rust
 //! // Some contract
 //! #[init(contract = "noop")]
-//! fn contract_init<I: HasInitContext<()>, L: HasLogger>(
+//! fn contract_init<I: HasInitContext, L: HasLogger>(
 //!     ctx: &I,
 //!     _amount: Amount,
 //!     _logger: &mut L,
 //! ) -> InitResult<State> { ... }
 //!
 //! #[receive(contract = "noop", name = "receive")]
-//! fn contract_receive<R: HasReceiveContext<()>, L: HasLogger, A: HasActions>(
+//! fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 //!     ctx: &R,
 //!     amount: Amount,
 //!     logger: &mut L,
@@ -147,7 +147,7 @@ pub struct ContextTest<'a, C> {
 ///
 /// ```rust
 /// #[init(contract = "noop")]
-/// fn contract_init<I: HasInitContext<()>, L: HasLogger>(
+/// fn contract_init<I: HasInitContext, L: HasLogger>(
 ///     ctx: &I,
 ///     _amount: Amount,
 ///     _logger: &mut L,
@@ -209,7 +209,7 @@ pub struct InitOnlyDataTest {
 /// Creating a context for running unit tests
 /// ```rust
 /// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<R: HasReceiveContext<()>, L: HasLogger, A: HasActions>(
+/// fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 ///     ctx: &R,
 ///     amount: Amount,
 ///     logger: &mut L,
@@ -397,7 +397,7 @@ impl<'a, C> HasCommonData for ContextTest<'a, C> {
     }
 }
 
-impl<'a> HasInitContext<()> for InitContextTest<'a> {
+impl<'a> HasInitContext for InitContextTest<'a> {
     type InitData = ();
 
     fn open(_data: Self::InitData) -> Self { InitContextTest::default() }
@@ -407,7 +407,7 @@ impl<'a> HasInitContext<()> for InitContextTest<'a> {
     }
 }
 
-impl<'a> HasReceiveContext<()> for ReceiveContextTest<'a> {
+impl<'a> HasReceiveContext for ReceiveContextTest<'a> {
     type ReceiveData = ();
 
     fn open(_data: Self::ReceiveData) -> Self { ReceiveContextTest::default() }

@@ -335,7 +335,7 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 }
 
 /// # Trait implementations for the init context
-impl HasInitContext<()> for ExternContext<crate::types::InitContextExtern> {
+impl HasInitContext for ExternContext<crate::types::InitContextExtern> {
     type InitData = ();
 
     /// Create a new init context by using an external call.
@@ -354,7 +354,7 @@ impl HasInitContext<()> for ExternContext<crate::types::InitContextExtern> {
 }
 
 /// # Trait implementations for the receive context
-impl HasReceiveContext<()> for ExternContext<crate::types::ReceiveContextExtern> {
+impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
     type ReceiveData = ();
 
     /// Create a new receive context

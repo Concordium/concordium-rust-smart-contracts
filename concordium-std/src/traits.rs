@@ -80,7 +80,7 @@ pub trait HasCommonData {
 }
 
 /// Types which can act as init contexts.
-pub trait HasInitContext<Error: Default>: HasCommonData {
+pub trait HasInitContext<Error: Default = ()>: HasCommonData {
     /// Data needed to open the context.
     type InitData;
     /// Open the init context for reading and accessing values.
@@ -90,7 +90,7 @@ pub trait HasInitContext<Error: Default>: HasCommonData {
 }
 
 /// Types which can act as receive contexts.
-pub trait HasReceiveContext<Error: Default>: HasCommonData {
+pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
     type ReceiveData;
 
     /// Open the receive context for reading and accessing values.
@@ -110,7 +110,7 @@ pub trait HasReceiveContext<Error: Default>: HasCommonData {
 }
 
 /// A type that can serve as the contract state type.
-pub trait HasContractState<Error: Default>
+pub trait HasContractState<Error: Default = ()>
 where
     Self: Read,
     Self: Write<Err = Error>,
