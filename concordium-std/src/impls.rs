@@ -232,10 +232,12 @@ impl HasPolicy for Policy<AttributesCursor> {
         if self.items.remaining_items == 0 {
             return None;
         }
-        let mut tag_value_len = [0u8; 2];
-        let num_read = unsafe {
+
+        let (tag_value_len, num_read) = unsafe {
+            let mut tag_value_len = MaybeUninit::<[u8; 2]>::uninit();
             // Should succeed, otherwise host violated precondition.
-            get_parameter_section(tag_value_len.as_mut_ptr(), 2, self.items.current_position)
+            let num_read = get_policy_section(tag_value_len.as_mut_ptr() as *mut u8, 2, self.items.current_position);
+            (tag_value_len.assume_init(), num_read)
         };
         self.items.current_position += num_read;
         if tag_value_len[1] > 31 {
@@ -243,7 +245,7 @@ impl HasPolicy for Policy<AttributesCursor> {
             return None;
         }
         let num_read = unsafe {
-            get_parameter_section(
+            get_policy_section(
                 buf.as_mut_ptr(),
                 u32::from(tag_value_len[1]),
                 self.items.current_position,
@@ -273,7 +275,7 @@ impl Iterator for PoliciesIterator {
         // the length
         let mut buf: MaybeUninit<[u8; 2 + 4 + 8 + 8 + 2]> = MaybeUninit::uninit();
         let buf = unsafe {
-            get_policy_section(buf.as_mut_ptr() as *mut u8, 0, 4 + 8 + 8 + 2);
+            get_policy_section(buf.as_mut_ptr() as *mut u8, 2 + 4 + 8 + 8 + 2, self.pos);
             buf.assume_init()
         };
         use convert::TryInto;
@@ -315,7 +317,7 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     fn policies(&self) -> PoliciesIterator {
         let mut buf: MaybeUninit<[u8; 2]> = MaybeUninit::uninit();
         let buf = unsafe {
-            get_policy_section(buf.as_mut_ptr() as *mut u8, 0, 2);
+            get_policy_section(buf.as_mut_ptr() as *mut u8, 2, 0);
             buf.assume_init()
         };
         PoliciesIterator {
