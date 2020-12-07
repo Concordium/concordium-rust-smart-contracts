@@ -236,7 +236,11 @@ impl HasPolicy for Policy<AttributesCursor> {
         let (tag_value_len, num_read) = unsafe {
             let mut tag_value_len = MaybeUninit::<[u8; 2]>::uninit();
             // Should succeed, otherwise host violated precondition.
-            let num_read = get_policy_section(tag_value_len.as_mut_ptr() as *mut u8, 2, self.items.current_position);
+            let num_read = get_policy_section(
+                tag_value_len.as_mut_ptr() as *mut u8,
+                2,
+                self.items.current_position,
+            );
             (tag_value_len.assume_init(), num_read)
         };
         self.items.current_position += num_read;
@@ -303,6 +307,15 @@ impl Iterator for PoliciesIterator {
             },
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.remaining_items as usize;
+        (rem, Some(rem))
+    }
+}
+
+impl ExactSizeIterator for PoliciesIterator {
+    fn len(&self) -> usize { self.remaining_items as usize }
 }
 
 impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {

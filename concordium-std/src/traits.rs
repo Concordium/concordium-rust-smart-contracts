@@ -64,7 +64,7 @@ pub trait HasCommonData {
     type PolicyType: HasPolicy;
     type MetadataType: HasChainMetadata;
     type ParamType: HasParameter + Read;
-    type PolicyIteratorType: Iterator<Item = Self::PolicyType>;
+    type PolicyIteratorType: ExactSizeIterator<Item = Self::PolicyType>;
     /// Policies of the sender of the message.
     /// For init methods this is the would-be creator of the contract,
     /// for the receive this is the policies of the immediate sender.
