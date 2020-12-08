@@ -17,13 +17,13 @@ wee_alloc="0.4.5"
 [dependencies.concordium-std-derive]
 # path = "../concordium-std-derive"
 git = "https://github.com/Concordium/concordium-std.git"
-branch = "expose-policy"
+branch = "main"
 version = "=0.3"
 
 [dependencies.concordium-contracts-common]
 # path = "../../concordium-contracts-common"
 git = "https://github.com/Concordium/concordium-contracts-common.git"
-branch = "expose-policy"
+branch = "main"
 version = "=0.2"
 default-features = false
 
