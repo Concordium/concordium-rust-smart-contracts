@@ -77,14 +77,18 @@ pub struct ChainMetaTest {
 }
 
 /// Policy type used by init and receive contexts for testing.
+/// This type should not be used directly, but rather through
+/// its `HasPolicy` interface.
 #[derive(Debug, Clone)]
 pub struct TestPolicy {
-    position:   usize,
-    pub policy: OwnedPolicy,
+    /// Current position in the vector of policies. Used to implement
+    /// `next_item`.
+    position: usize,
+    policy: OwnedPolicy,
 }
 
 impl TestPolicy {
-    pub fn new(policy: OwnedPolicy) -> Self {
+    fn new(policy: OwnedPolicy) -> Self {
         Self {
             position: 0,
             policy,
@@ -107,7 +111,7 @@ pub struct CommonDataTest<'a> {
     /// in order that the user can be warned that they are using a policy.
     /// Thus there is a distinction between `Option<Vec::new()>` and
     /// `Vec::new()`.
-    pub(crate) policies: Option<Vec<TestPolicy>>,
+    policies: Option<Vec<TestPolicy>>,
 }
 
 /// Context used for testing. The type parameter C is used to determine whether
@@ -277,9 +281,24 @@ impl ChainMetaTest {
 }
 
 impl<'a, C> ContextTest<'a, C> {
-    /// Set the `policy` of the creator.
-    pub fn set_policies(&mut self, value: Vec<TestPolicy>) -> &mut Self {
-        self.common.policies = Some(value);
+    /// Push a new sender policy to the context.
+    /// When the first policy is pushed this will set the policy vector
+    /// to 'Some', even if it was undefined previously.
+    pub fn push_policy(&mut self, value: OwnedPolicy) -> &mut Self {
+        if let Some(policies) = self.common.policies.as_mut() {
+            policies.push(TestPolicy::new(value));
+        } else {
+            self.common.policies = Some(vec![TestPolicy::new(value)])
+        }
+        self
+    }
+
+    /// Set the policies to be defined, but an empty list.
+    /// Such a situation can not realistically happen on the chain,
+    /// but we provide functionality for it in case smart contract
+    /// writers wish to program defensively.
+    pub fn empty_policies(&mut self) -> &mut Self {
+        self.common.policies = Some(Vec::new());
         self
     }
 
