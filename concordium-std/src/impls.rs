@@ -295,14 +295,15 @@ impl Iterator for PoliciesIterator {
         let created_at = u64::from_le_bytes(created_at_part);
         let valid_to = u64::from_le_bytes(valid_to_part);
         let remaining_items = u16::from_le_bytes(len_part);
-        self.pos += u32::from(u16::from_le_bytes(skip_part));
+        let attributes_start = self.pos + 2 + 4 + 8 + 8 + 2;
+        self.pos += u32::from(u16::from_le_bytes(skip_part)) + 2;
         self.remaining_items -= 1;
         Some(Policy {
             identity_provider,
             created_at,
             valid_to,
             items: AttributesCursor {
-                current_position: 0,
+                current_position: attributes_start,
                 remaining_items,
             },
         })
