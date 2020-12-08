@@ -283,14 +283,11 @@ impl Iterator for PoliciesIterator {
             buf.assume_init()
         };
         use convert::TryInto;
-        let skip_part: [u8; 2] = buf[0..2].try_into().unwrap_or_else(|_| crate::trap());
-        let ip_part: [u8; 4] = buf[2..2 + 4].try_into().unwrap_or_else(|_| crate::trap());
-        let created_at_part: [u8; 8] =
-            buf[2 + 4..2 + 4 + 8].try_into().unwrap_or_else(|_| crate::trap());
-        let valid_to_part: [u8; 8] =
-            buf[2 + 4 + 8..2 + 4 + 8 + 8].try_into().unwrap_or_else(|_| crate::trap());
-        let len_part: [u8; 2] =
-            buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2].try_into().unwrap_or_else(|_| crate::trap());
+        let skip_part: [u8; 2] = buf[0..2].try_into().unwrap_abort();
+        let ip_part: [u8; 4] = buf[2..2 + 4].try_into().unwrap_abort();
+        let created_at_part: [u8; 8] = buf[2 + 4..2 + 4 + 8].try_into().unwrap_abort();
+        let valid_to_part: [u8; 8] = buf[2 + 4 + 8..2 + 4 + 8 + 8].try_into().unwrap_abort();
+        let len_part: [u8; 2] = buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2].try_into().unwrap_abort();
         let identity_provider = IdentityProvider::from_le_bytes(ip_part);
         let created_at = u64::from_le_bytes(created_at_part);
         let valid_to = u64::from_le_bytes(valid_to_part);
@@ -516,6 +513,7 @@ impl HasActions for Action {
 /// and prevents them from being dropped. Returns the pointer.
 /// Used to pass bytes from a Wasm module to its host.
 #[cfg(feature = "std")]
+#[doc(hidden)]
 pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let bytes_length = input.len() as u32;
     let mut bytes = to_bytes(&bytes_length);
@@ -523,4 +521,50 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let ptr = bytes.as_mut_ptr();
     ::std::mem::forget(bytes);
     ptr
+}
+
+impl<A, E> UnwrapAbort for Result<A, E> {
+    type Unwrap = A;
+
+    #[inline]
+    fn unwrap_abort(self) -> Self::Unwrap {
+        match self {
+            Ok(x) => x,
+            Err(_) => crate::trap(),
+        }
+    }
+}
+
+#[cfg(not(feature = "std"))]
+use core::fmt;
+#[cfg(feature = "std")]
+use std::fmt;
+
+impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
+    type Unwrap = A;
+
+    fn expect_report(self, msg: &str) -> Self::Unwrap {
+        match self {
+            Ok(x) => x,
+            Err(e) => crate::fail!("{}: {:?}", msg, e),
+        }
+    }
+}
+
+impl<A> UnwrapAbort for Option<A> {
+    type Unwrap = A;
+
+    #[inline(always)]
+    fn unwrap_abort(self) -> Self::Unwrap { self.unwrap_or_else(|| crate::trap()) }
+}
+
+impl<A> ExpectReport for Option<A> {
+    type Unwrap = A;
+
+    fn expect_report(self, msg: &str) -> Self::Unwrap {
+        match self {
+            Some(v) => v,
+            None => crate::fail!("{}", msg),
+        }
+    }
 }

@@ -180,3 +180,26 @@ pub trait HasActions {
     /// If the execution of the first action fails, try the second.
     fn or_else(self, el: Self) -> Self;
 }
+
+/// Add optimized unwrap behaviour that aborts the process instead of
+/// panicking.
+pub trait UnwrapAbort {
+    /// The underlying result type of the unwrap, in case of success.
+    type Unwrap;
+    /// Unwrap or call [trap](./fn.trap.html). In contrast to
+    /// the unwrap methods on [Option::unwrap](https://doc.rust-lang.org/std/option/enum.Option.html#method.unwrap)
+    /// this method will tend to produce smaller code, at the cost of the
+    /// ability to handle the panic.
+    /// This is intended to be used only in `Wasm` code, where panics cannot be
+    /// handled anyhow.
+    fn unwrap_abort(self) -> Self::Unwrap;
+}
+
+/// Analogue of the `expect` methods on types such as [Option](https://doc.rust-lang.org/std/option/enum.Option.html),
+/// but useful in a Wasm setting.
+pub trait ExpectReport {
+    type Unwrap;
+    /// Like the default `expect` on, e.g., `Result`, but calling
+    /// [fail](macro.fail.html) with the given message, instead of `panic`.
+    fn expect_report(self, msg: &str) -> Self::Unwrap;
+}
