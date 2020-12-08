@@ -109,7 +109,7 @@ pub struct CommonDataTest<'a> {
     pub(crate) parameter: Option<&'a [u8]>,
     /// Policy of the creator. We keep the `Option` wrapper
     /// in order that the user can be warned that they are using a policy.
-    /// Thus there is a distinction between `Option<Vec::new()>` and
+    /// Thus there is a distinction between `Some(Vec::new())` and
     /// `Vec::new()`.
     policies: Option<Vec<TestPolicy>>,
 }
@@ -117,7 +117,6 @@ pub struct CommonDataTest<'a> {
 /// Context used for testing. The type parameter C is used to determine whether
 /// this will be an init or receive context.
 #[derive(Default, Clone)]
-#[doc(inline)]
 pub struct ContextTest<'a, C> {
     pub common:        CommonDataTest<'a>,
     pub(crate) custom: C,
