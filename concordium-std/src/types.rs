@@ -45,7 +45,7 @@ impl Action {
 
 /// A non-descript error message, signalling rejection of a smart contract
 /// invocation.
-#[derive(Default, Eq, PartialEq)]
+#[derive(Default, Eq, PartialEq, Debug)]
 pub struct Reject {}
 
 // Macros for failing a contract function
