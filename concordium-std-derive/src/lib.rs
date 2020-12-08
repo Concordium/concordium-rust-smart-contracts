@@ -30,12 +30,9 @@ fn get_attribute_value<'a, I: IntoIterator<Item = &'a Meta>>(
     })
 }
 
-// Return whether the low-level item is present.
-fn get_low_level<'a, I: IntoIterator<Item = &'a Meta>>(iter: I) -> bool {
-    iter.into_iter().any(|attr| match attr {
-        Meta::Path(path) => path.is_ident("low_level"),
-        _ => false,
-    })
+// Return whether a attribute item is present.
+fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str) -> bool {
+    iter.into_iter().any(|attr| attr.path().is_ident(name))
 }
 
 /// Derive the appropriate export for an annotated init function.
@@ -60,18 +57,43 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let ast: syn::ItemFn = syn::parse(item).expect("Init can only be applied to functions.");
 
+    let mut setup_fn_optional_args = proc_macro2::TokenStream::new();
+    let mut fn_optional_args = vec![];
+
+    let amount_ident = format_ident!("amount");
+
+    if contains_attribute(&attrs, "payable") {
+        fn_optional_args.push(quote!(#amount_ident));
+    } else {
+        setup_fn_optional_args.extend(
+            quote!{
+                if #amount_ident.micro_gtu != 0 {
+                    return -1;
+                }
+            }
+        );
+    };
+
+    if contains_attribute(&attrs, "enable_logger") {
+        let logger_ident = format_ident!("logger");
+        setup_fn_optional_args.extend(
+            quote!(let mut #logger_ident = concordium_std::Logger::init();)
+        );
+        fn_optional_args.push(quote!(&mut #logger_ident));
+    }
+
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
 
-    let mut out = if get_low_level(attrs.iter()) {
+    let mut out = if contains_attribute(attrs.iter(), "low_level") {
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-                use concordium_std::{Logger, trap};
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
-                let mut logger = Logger::init();
-                match #fn_name(&ctx, amount, &mut logger, &mut state) {
+                match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(()) => 0,
                     Err(_) => -1,
                 }
@@ -81,14 +103,14 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-                use concordium_std::{Logger, trap};
+                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut logger = Logger::init();
-                match #fn_name(&ctx, amount, &mut logger) {
+                match #fn_name(&ctx, #(#fn_optional_args),*) {
                     Ok(state) => {
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
-                            trap() // Could not initialize contract.
+                            concordium_std::trap() // Could not initialize contract.
                         };
                         0
                     }
@@ -135,36 +157,61 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let ast: syn::ItemFn = syn::parse(item).expect("Receive can only be applied to functions.");
 
+    let mut setup_fn_optional_args = proc_macro2::TokenStream::new();
+    let mut fn_optional_args = vec![];
+
+    let amount_ident = format_ident!("amount");
+
+    if contains_attribute(&attrs, "payable") {
+        fn_optional_args.push(quote!(#amount_ident));
+    } else {
+        setup_fn_optional_args.extend(
+            quote!{
+                if #amount_ident.micro_gtu != 0 {
+                    return -1;
+                }
+            }
+        );
+    };
+
+    if contains_attribute(&attrs, "enable_logger") {
+        let logger_ident = format_ident!("logger");
+        setup_fn_optional_args.extend(
+            quote!(let mut #logger_ident = concordium_std::Logger::init();)
+        );
+        fn_optional_args.push(quote!(&mut #logger_ident));
+    }
+
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
 
-    let mut out = if get_low_level(attrs.iter()) {
+    let mut out = if contains_attribute(attrs.iter(), "low_level") {
         quote! {
-        #[export_name = #wasm_export_fn_name]
-        pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-            use concordium_std::{SeekFrom, ContractState, Logger};
-            let ctx = ExternContext::<ReceiveContextExtern>::open(());
-            let mut state = ContractState::open(());
-            let mut logger = Logger::init();
-            let res: Result<Action, _> = #fn_name(&ctx, amount, &mut logger, &mut state);
-            match res {
-                Ok(act) => {
-                    act.tag() as i32
+            #[export_name = #wasm_export_fn_name]
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
+                #setup_fn_optional_args
+                let ctx = ExternContext::<ReceiveContextExtern>::open(());
+                let mut state = ContractState::open(());
+                let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
+                match res {
+                    Ok(act) => {
+                        act.tag() as i32
+                    }
+                    Err(_) => -1,
                 }
-                Err(_) => -1,
             }
-        }
         }
     } else {
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, trap};
+                #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut logger = Logger::init();
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res: Result<Action, _> = #fn_name(&ctx, amount, &mut logger, &mut state);
+                    let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
                     match res {
                         Ok(act) => {
                             let res = state_bytes
@@ -326,18 +373,12 @@ fn find_length_attribute(attributes: &[syn::Attribute], target_attr: &str) -> Op
     }
 }
 
-fn contains_attribute(attributes: &[syn::Attribute], target_attr: &str) -> bool {
-    let target_attr = format_ident!("{}", target_attr);
-    get_concordium_field_attributes(attributes)
-        .iter()
-        .any(|meta| meta.path().is_ident(&target_attr))
-}
-
 fn impl_deserial_field(
     f: &syn::Field,
     ident: &syn::Ident,
     source: &syn::Ident,
 ) -> proc_macro2::TokenStream {
+    let concordium_attributes = get_concordium_field_attributes(&f.attrs);
     if let Some(l) = find_length_attribute(&f.attrs, "size_length") {
         let size = format_ident!("u{}", 8 * l);
         quote! {
@@ -348,7 +389,7 @@ fn impl_deserial_field(
         }
     } else if let Some(l) = find_length_attribute(&f.attrs, "map_size_length") {
         let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&f.attrs, "ensure_ordered") {
+        if contains_attribute(&concordium_attributes, "ensure_ordered") {
             quote! {
                 let #ident = {
                     let len = #size::deserial(#source)?;
@@ -365,7 +406,7 @@ fn impl_deserial_field(
         }
     } else if let Some(l) = find_length_attribute(&f.attrs, "set_size_length") {
         let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&f.attrs, "ensure_ordered") {
+        if contains_attribute(&concordium_attributes, "ensure_ordered") {
             quote! {
                 let #ident = {
                     let len = #size::deserial(#source)?;
