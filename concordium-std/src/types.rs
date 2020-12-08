@@ -10,6 +10,17 @@ pub struct Parameter {
     pub(crate) current_position: u32,
 }
 
+/// A type representing the attributes, lazily acquired from the host.
+#[derive(Default)]
+pub struct AttributesCursor {
+    /// Current position of the cursor, starting from 0.
+    /// Note that this is only for the variable attributes.
+    /// `created_at` and `valid_to` will require.
+    pub(crate) current_position: u32,
+    /// The number of remaining items in the policy.
+    pub(crate) remaining_items: u16,
+}
+
 /// A type representing the logger.
 #[derive(Default)]
 pub struct Logger {
@@ -191,7 +202,7 @@ macro_rules! claim_ne {
 /// }
 ///
 /// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<R: HasReceiveContext<()>, L: HasLogger, A: HasActions>(
+/// fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 ///     ctx: &R,
 ///     receive_amount: Amount,
 ///     logger: &mut L,
@@ -217,7 +228,7 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// }
 ///
 /// #[init(contract = "mycontract")]
-/// fn contract_init<R: HasReceiveContext<()>, L: HasLogger, A: HasActions>(
+/// fn contract_init<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 ///     ctx: &R,
 ///     receive_amount: Amount,
 ///     logger: &mut L,
@@ -225,8 +236,25 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
-pub struct InitContextExtern {}
-
-pub struct ReceiveContextExtern {}
+/// Context backed by host functions.
+#[derive(Default)]
+pub struct ExternContext<T: sealed::ContextType> {
+    marker: crate::marker::PhantomData<T>,
+}
 
 pub struct ChainMetaExtern {}
+
+#[derive(Default)]
+pub struct InitContextExtern;
+#[derive(Default)]
+pub struct ReceiveContextExtern;
+
+pub(crate) mod sealed {
+    use super::*;
+    /// Marker trait intended to indicate which context type we have.
+    /// This is deliberately a sealed trait, so that it is only implementable
+    /// by types in this crate.
+    pub trait ContextType {}
+    impl ContextType for InitContextExtern {}
+    impl ContextType for ReceiveContextExtern {}
+}

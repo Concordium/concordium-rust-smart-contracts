@@ -15,11 +15,16 @@ readme = "../README.md"
 wee_alloc="0.4.5"
 
 [dependencies.concordium-std-derive]
-version = "=0.2"
+# path = "../concordium-std-derive"
+git = "https://github.com/Concordium/concordium-std.git"
+branch = "main"
+version = "=0.3"
 
 [dependencies.concordium-contracts-common]
 # path = "../../concordium-contracts-common"
-version = "=0.1"
+git = "https://github.com/Concordium/concordium-contracts-common.git"
+branch = "main"
+version = "=0.2"
 default-features = false
 
 [features]

@@ -221,14 +221,136 @@ impl HasChainMetadata for ChainMetaExtern {
     fn slot_number(&self) -> SlotNumber { unsafe { get_slot_number() } }
 }
 
-/// # Trait implementations for the init context
-impl HasInitContext<()> for InitContextExtern {
-    type InitData = ();
+impl HasPolicy for Policy<AttributesCursor> {
+    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
+
+    fn created_at(&self) -> TimestampMillis { self.created_at }
+
+    fn valid_to(&self) -> TimestampMillis { self.valid_to }
+
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
+        if self.items.remaining_items == 0 {
+            return None;
+        }
+
+        let (tag_value_len, num_read) = unsafe {
+            let mut tag_value_len = MaybeUninit::<[u8; 2]>::uninit();
+            // Should succeed, otherwise host violated precondition.
+            let num_read = get_policy_section(
+                tag_value_len.as_mut_ptr() as *mut u8,
+                2,
+                self.items.current_position,
+            );
+            (tag_value_len.assume_init(), num_read)
+        };
+        self.items.current_position += num_read;
+        if tag_value_len[1] > 31 {
+            // Should not happen because all attributes fit into 31 bytes.
+            return None;
+        }
+        let num_read = unsafe {
+            get_policy_section(
+                buf.as_mut_ptr(),
+                u32::from(tag_value_len[1]),
+                self.items.current_position,
+            )
+        };
+        self.items.current_position += num_read;
+        Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
+    }
+}
+
+pub struct PoliciesIterator {
+    /// Position in the policies binary serialization.
+    pos: u32,
+    /// Number of remaining items in the stream.
+    remaining_items: u16,
+}
+
+impl Iterator for PoliciesIterator {
+    type Item = Policy<AttributesCursor>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining_items == 0 {
+            return None;
+        }
+        // 2 for total size of this section, 4 for identity_provider,
+        // 8 bytes for created_at, 8 for valid_to, and 2 for
+        // the length
+        let mut buf: MaybeUninit<[u8; 2 + 4 + 8 + 8 + 2]> = MaybeUninit::uninit();
+        let buf = unsafe {
+            get_policy_section(buf.as_mut_ptr() as *mut u8, 2 + 4 + 8 + 8 + 2, self.pos);
+            buf.assume_init()
+        };
+        use convert::TryInto;
+        let skip_part: [u8; 2] = buf[0..2].try_into().unwrap_abort();
+        let ip_part: [u8; 4] = buf[2..2 + 4].try_into().unwrap_abort();
+        let created_at_part: [u8; 8] = buf[2 + 4..2 + 4 + 8].try_into().unwrap_abort();
+        let valid_to_part: [u8; 8] = buf[2 + 4 + 8..2 + 4 + 8 + 8].try_into().unwrap_abort();
+        let len_part: [u8; 2] = buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2].try_into().unwrap_abort();
+        let identity_provider = IdentityProvider::from_le_bytes(ip_part);
+        let created_at = u64::from_le_bytes(created_at_part);
+        let valid_to = u64::from_le_bytes(valid_to_part);
+        let remaining_items = u16::from_le_bytes(len_part);
+        let attributes_start = self.pos + 2 + 4 + 8 + 8 + 2;
+        self.pos += u32::from(u16::from_le_bytes(skip_part)) + 2;
+        self.remaining_items -= 1;
+        Some(Policy {
+            identity_provider,
+            created_at,
+            valid_to,
+            items: AttributesCursor {
+                current_position: attributes_start,
+                remaining_items,
+            },
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.remaining_items as usize;
+        (rem, Some(rem))
+    }
+}
+
+impl ExactSizeIterator for PoliciesIterator {
+    fn len(&self) -> usize { self.remaining_items as usize }
+}
+
+impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     type MetadataType = ChainMetaExtern;
     type ParamType = Parameter;
+    type PolicyIteratorType = PoliciesIterator;
+    type PolicyType = Policy<AttributesCursor>;
+
+    #[inline(always)]
+    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
+
+    fn policies(&self) -> PoliciesIterator {
+        let mut buf: MaybeUninit<[u8; 2]> = MaybeUninit::uninit();
+        let buf = unsafe {
+            get_policy_section(buf.as_mut_ptr() as *mut u8, 2, 0);
+            buf.assume_init()
+        };
+        PoliciesIterator {
+            pos:             2, // 2 because we already read 2 bytes.
+            remaining_items: u16::from_le_bytes(buf),
+        }
+    }
+
+    #[inline(always)]
+    fn parameter_cursor(&self) -> Self::ParamType {
+        Parameter {
+            current_position: 0,
+        }
+    }
+}
+
+/// # Trait implementations for the init context
+impl HasInitContext for ExternContext<crate::types::InitContextExtern> {
+    type InitData = ();
 
     /// Create a new init context by using an external call.
-    fn open(_: Self::InitData) -> Self { InitContextExtern {} }
+    fn open(_: Self::InitData) -> Self { ExternContext::default() }
 
     #[inline(always)]
     fn init_origin(&self) -> AccountAddress {
@@ -240,26 +362,14 @@ impl HasInitContext<()> for InitContextExtern {
         };
         AccountAddress(address)
     }
-
-    #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
-            current_position: 0,
-        }
-    }
-
-    #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
 }
 
 /// # Trait implementations for the receive context
-impl HasReceiveContext<()> for ReceiveContextExtern {
-    type MetadataType = ChainMetaExtern;
-    type ParamType = Parameter;
+impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
     type ReceiveData = ();
 
     /// Create a new receive context
-    fn open(_: Self::ReceiveData) -> Self { ReceiveContextExtern {} }
+    fn open(_: Self::ReceiveData) -> Self { ExternContext::default() }
 
     #[inline(always)]
     fn invoker(&self) -> AccountAddress {
@@ -325,16 +435,6 @@ impl HasReceiveContext<()> for ReceiveContextExtern {
         };
         AccountAddress(address)
     }
-
-    #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
-            current_position: 0,
-        }
-    }
-
-    #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
 }
 
 /// #Implementations of the logger.
@@ -413,6 +513,7 @@ impl HasActions for Action {
 /// and prevents them from being dropped. Returns the pointer.
 /// Used to pass bytes from a Wasm module to its host.
 #[cfg(feature = "std")]
+#[doc(hidden)]
 pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let bytes_length = input.len() as u32;
     let mut bytes = to_bytes(&bytes_length);
@@ -420,4 +521,50 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let ptr = bytes.as_mut_ptr();
     ::std::mem::forget(bytes);
     ptr
+}
+
+impl<A, E> UnwrapAbort for Result<A, E> {
+    type Unwrap = A;
+
+    #[inline]
+    fn unwrap_abort(self) -> Self::Unwrap {
+        match self {
+            Ok(x) => x,
+            Err(_) => crate::trap(),
+        }
+    }
+}
+
+#[cfg(not(feature = "std"))]
+use core::fmt;
+#[cfg(feature = "std")]
+use std::fmt;
+
+impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
+    type Unwrap = A;
+
+    fn expect_report(self, msg: &str) -> Self::Unwrap {
+        match self {
+            Ok(x) => x,
+            Err(e) => crate::fail!("{}: {:?}", msg, e),
+        }
+    }
+}
+
+impl<A> UnwrapAbort for Option<A> {
+    type Unwrap = A;
+
+    #[inline(always)]
+    fn unwrap_abort(self) -> Self::Unwrap { self.unwrap_or_else(|| crate::trap()) }
+}
+
+impl<A> ExpectReport for Option<A> {
+    type Unwrap = A;
+
+    fn expect_report(self, msg: &str) -> Self::Unwrap {
+        match self {
+            Some(v) => v,
+            None => crate::fail!("{}", msg),
+        }
+    }
 }

@@ -11,14 +11,14 @@
 //! ```rust
 //! // Some contract
 //! #[init(contract = "noop")]
-//! fn contract_init<I: HasInitContext<()>, L: HasLogger>(
+//! fn contract_init<I: HasInitContext, L: HasLogger>(
 //!     ctx: &I,
 //!     _amount: Amount,
 //!     _logger: &mut L,
 //! ) -> InitResult<State> { ... }
 //!
 //! #[receive(contract = "noop", name = "receive")]
-//! fn contract_receive<R: HasReceiveContext<()>, L: HasLogger, A: HasActions>(
+//! fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 //!     ctx: &R,
 //!     amount: Amount,
 //!     logger: &mut L,
@@ -76,6 +76,52 @@ pub struct ChainMetaTest {
     pub(crate) slot_time:        Option<SlotTime>,
 }
 
+/// Policy type used by init and receive contexts for testing.
+/// This type should not be used directly, but rather through
+/// its `HasPolicy` interface.
+#[derive(Debug, Clone)]
+pub struct TestPolicy {
+    /// Current position in the vector of policies. Used to implement
+    /// `next_item`.
+    position: usize,
+    policy: OwnedPolicy,
+}
+
+impl TestPolicy {
+    fn new(policy: OwnedPolicy) -> Self {
+        Self {
+            position: 0,
+            policy,
+        }
+    }
+}
+
+/// Placeholder for the common data shared between the `InitContext` and
+/// `ReceiveContext`. This type is a technicality, see `InitContext` and
+/// `ReceiveContext` for the types to use.
+///
+/// # Default
+/// Defaults to having all the fields unset, and constructing
+/// [`ChainMetaTest`](struct.ChainMetaTest.html) using default.
+#[derive(Default, Clone)]
+pub struct CommonDataTest<'a> {
+    pub(crate) metadata: ChainMetaTest,
+    pub(crate) parameter: Option<&'a [u8]>,
+    /// Policy of the creator. We keep the `Option` wrapper
+    /// in order that the user can be warned that they are using a policy.
+    /// Thus there is a distinction between `Some(Vec::new())` and
+    /// `Vec::new()`.
+    policies: Option<Vec<TestPolicy>>,
+}
+
+/// Context used for testing. The type parameter C is used to determine whether
+/// this will be an init or receive context.
+#[derive(Default, Clone)]
+pub struct ContextTest<'a, C> {
+    pub common:        CommonDataTest<'a>,
+    pub(crate) custom: C,
+}
+
 /// Placeholder for the initial context. All the fields can be set optionally
 /// and the getting an unset field will result in calling
 /// [`fail!`](../macro.fail.html). Use only in tests!
@@ -97,14 +143,14 @@ pub struct ChainMetaTest {
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```
 /// let mut ctx = InitContextTest::empty();
-/// ctx.metadata.set_slot_time(1609459200);
+/// ctx.common.metadata.set_slot_time(1609459200);
 /// ```
 ///
 /// # Use case example
 ///
 /// ```rust
 /// #[init(contract = "noop")]
-/// fn contract_init<I: HasInitContext<()>, L: HasLogger>(
+/// fn contract_init<I: HasInitContext, L: HasLogger>(
 ///     ctx: &I,
 ///     _amount: Amount,
 ///     _logger: &mut L,
@@ -129,14 +175,11 @@ pub struct ChainMetaTest {
 ///     }
 /// }
 /// ```
-/// # Default
-/// Defaults to having all the fields unset, and constructing
-/// [`ChainMetaTest`](struct.ChainMetaTest.html) using default.
-#[derive(Default, Clone)]
-pub struct InitContextTest<'a> {
-    pub metadata:           ChainMetaTest,
-    pub(crate) parameter:   Option<&'a [u8]>,
-    pub(crate) init_origin: Option<AccountAddress>,
+pub type InitContextTest<'a> = ContextTest<'a, InitOnlyDataTest>;
+
+#[derive(Default)]
+pub struct InitOnlyDataTest {
+    init_origin: Option<AccountAddress>,
 }
 
 /// Placeholder for the receiving context. All the fields can be set optionally
@@ -162,14 +205,14 @@ pub struct InitContextTest<'a> {
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```
 /// let mut ctx = ReceiveContextTest::empty();
-/// ctx.metadata.set_slot_time(1609459200);
+/// ctx.common.metadata.set_slot_time(1609459200);
 /// ```
 ///
 /// # Use case example
 /// Creating a context for running unit tests
 /// ```rust
 /// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<R: HasReceiveContext<()>, L: HasLogger, A: HasActions>(
+/// fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 ///     ctx: &R,
 ///     amount: Amount,
 ///     logger: &mut L,
@@ -194,10 +237,10 @@ pub struct InitContextTest<'a> {
 ///     }
 /// }
 /// ```
-#[derive(Default, Clone)]
-pub struct ReceiveContextTest<'a> {
-    pub metadata:            ChainMetaTest,
-    pub(crate) parameter:    Option<&'a [u8]>,
+pub type ReceiveContextTest<'a> = ContextTest<'a, ReceiveOnlyDataTest>;
+
+#[derive(Default)]
+pub struct ReceiveOnlyDataTest {
     pub(crate) invoker:      Option<AccountAddress>,
     pub(crate) self_address: Option<ContractAddress>,
     pub(crate) self_balance: Option<Amount>,
@@ -236,56 +279,73 @@ impl ChainMetaTest {
     }
 }
 
+impl<'a, C> ContextTest<'a, C> {
+    /// Push a new sender policy to the context.
+    /// When the first policy is pushed this will set the policy vector
+    /// to 'Some', even if it was undefined previously.
+    pub fn push_policy(&mut self, value: OwnedPolicy) -> &mut Self {
+        if let Some(policies) = self.common.policies.as_mut() {
+            policies.push(TestPolicy::new(value));
+        } else {
+            self.common.policies = Some(vec![TestPolicy::new(value)])
+        }
+        self
+    }
+
+    /// Set the policies to be defined, but an empty list.
+    /// Such a situation can not realistically happen on the chain,
+    /// but we provide functionality for it in case smart contract
+    /// writers wish to program defensively.
+    pub fn empty_policies(&mut self) -> &mut Self {
+        self.common.policies = Some(Vec::new());
+        self
+    }
+
+    pub fn set_parameter(&mut self, value: &'a [u8]) -> &mut Self {
+        self.common.parameter = Some(value);
+        self
+    }
+}
+
 impl<'a> InitContextTest<'a> {
     /// Create an `InitContextTest` where every field is unset, and getting any
     /// of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
 
-    /// Set the parameter bytes of the `InitContextTest`
-    pub fn set_parameter(&mut self, value: &'a [u8]) -> &mut Self {
-        self.parameter = Some(value);
-        self
-    }
-
     /// Set `init_origin` in the `InitContextTest`
     pub fn set_init_origin(&mut self, value: AccountAddress) -> &mut Self {
-        self.init_origin = Some(value);
+        self.custom.init_origin = Some(value);
         self
     }
 }
 
 impl<'a> ReceiveContextTest<'a> {
-    /// Create an `InitContextTest` where every field is unset, and getting any
-    /// of the fields will result in [`fail!`](../macro.fail.html).
+    /// Create a `ReceiveContextTest` where every field is unset, and getting
+    /// any of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
 
-    pub fn set_parameter(&mut self, value: &'a [u8]) -> &mut Self {
-        self.parameter = Some(value);
-        self
-    }
-
     pub fn set_invoker(&mut self, value: AccountAddress) -> &mut Self {
-        self.invoker = Some(value);
+        self.custom.invoker = Some(value);
         self
     }
 
     pub fn set_self_address(&mut self, value: ContractAddress) -> &mut Self {
-        self.self_address = Some(value);
+        self.custom.self_address = Some(value);
         self
     }
 
     pub fn set_self_balance(&mut self, value: Amount) -> &mut Self {
-        self.self_balance = Some(value);
+        self.custom.self_balance = Some(value);
         self
     }
 
     pub fn set_sender(&mut self, value: Address) -> &mut Self {
-        self.sender = Some(value);
+        self.custom.sender = Some(value);
         self
     }
 
     pub fn set_owner(&mut self, value: AccountAddress) -> &mut Self {
-        self.owner = Some(value);
+        self.custom.owner = Some(value);
         self
     }
 }
@@ -319,46 +379,68 @@ impl HasChainMetadata for ChainMetaTest {
     }
 }
 
-impl<'a> HasInitContext<()> for InitContextTest<'a> {
-    type InitData = ();
+impl HasPolicy for TestPolicy {
+    fn identity_provider(&self) -> IdentityProvider { self.policy.identity_provider }
+
+    fn created_at(&self) -> TimestampMillis { self.policy.created_at }
+
+    fn valid_to(&self) -> TimestampMillis { self.policy.valid_to }
+
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
+        if let Some(item) = self.policy.items.get(self.position) {
+            let len = item.1.len();
+            buf[0..len].copy_from_slice(&item.1);
+            self.position += 1;
+            Some((item.0, len as u8))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, C> HasCommonData for ContextTest<'a, C> {
     type MetadataType = ChainMetaTest;
     type ParamType = Cursor<&'a [u8]>;
+    type PolicyIteratorType = crate::vec::IntoIter<TestPolicy>;
+    type PolicyType = TestPolicy;
+
+    fn parameter_cursor(&self) -> Self::ParamType {
+        Cursor::new(unwrap_ctx_field(self.common.parameter, "parameter"))
+    }
+
+    fn metadata(&self) -> &Self::MetadataType { &self.common.metadata }
+
+    fn policies(&self) -> Self::PolicyIteratorType {
+        unwrap_ctx_field(self.common.policies.clone(), "policy").into_iter()
+    }
+}
+
+impl<'a> HasInitContext for InitContextTest<'a> {
+    type InitData = ();
 
     fn open(_data: Self::InitData) -> Self { InitContextTest::default() }
 
-    fn init_origin(&self) -> AccountAddress { unwrap_ctx_field(self.init_origin, "init_origin") }
-
-    fn parameter_cursor(&self) -> Self::ParamType {
-        Cursor::new(unwrap_ctx_field(self.parameter, "parameter"))
+    fn init_origin(&self) -> AccountAddress {
+        unwrap_ctx_field(self.custom.init_origin, "init_origin")
     }
-
-    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
 }
 
-impl<'a> HasReceiveContext<()> for ReceiveContextTest<'a> {
-    type MetadataType = ChainMetaTest;
-    type ParamType = Cursor<&'a [u8]>;
+impl<'a> HasReceiveContext for ReceiveContextTest<'a> {
     type ReceiveData = ();
 
     fn open(_data: Self::ReceiveData) -> Self { ReceiveContextTest::default() }
 
-    fn parameter_cursor(&self) -> Self::ParamType {
-        Cursor::new(unwrap_ctx_field(self.parameter, "parameter"))
-    }
-
-    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
-
-    fn invoker(&self) -> AccountAddress { unwrap_ctx_field(self.invoker, "invoker") }
+    fn invoker(&self) -> AccountAddress { unwrap_ctx_field(self.custom.invoker, "invoker") }
 
     fn self_address(&self) -> ContractAddress {
-        unwrap_ctx_field(self.self_address, "self_address")
+        unwrap_ctx_field(self.custom.self_address, "self_address")
     }
 
-    fn self_balance(&self) -> Amount { unwrap_ctx_field(self.self_balance, "self_balance") }
+    fn self_balance(&self) -> Amount { unwrap_ctx_field(self.custom.self_balance, "self_balance") }
 
-    fn sender(&self) -> Address { unwrap_ctx_field(self.sender, "sender") }
+    fn sender(&self) -> Address { unwrap_ctx_field(self.custom.sender, "sender") }
 
-    fn owner(&self) -> AccountAddress { unwrap_ctx_field(self.owner, "owner") }
+    fn owner(&self) -> AccountAddress { unwrap_ctx_field(self.custom.owner, "owner") }
 }
 
 impl<'a> HasParameter for Cursor<&'a [u8]> {
