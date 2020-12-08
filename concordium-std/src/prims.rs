@@ -129,10 +129,6 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_policy_size() -> u32 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
     pub(crate) extern "C" fn get_policy_section(
         _policy_bytes: *mut u8,
         _length: u32,
