@@ -256,6 +256,7 @@ impl HasPolicy for Policy<AttributesCursor> {
             )
         };
         self.items.current_position += num_read;
+        self.items.remaining_items -= 1;
         Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
     }
 }
