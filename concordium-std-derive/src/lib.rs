@@ -43,18 +43,16 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///   name should be unique in the module, as a contract can only have one
 ///   init-function.
 ///
+/// The annotated function must be of a specific type, which depends on the
+/// enabled attributes. *Without* any of the optional attributes the function
+/// must have a signature of
+///
 /// ```ignore
 /// #[init(contract = "my_contract")]
 /// fn some_init(ctx: &impl HasInitContext) -> InitResult<MyState> {...}
 /// ```
 ///
-/// The annotated function must be of a specific type, which depends on the
-/// enabled attributes. *Without* any of the optional attributes the function
-/// must have a signature of
-/// ```ignore
-/// (ctx: &impl HasInitContext) -> InitResult<MyState>
-/// ```
-/// Where the trait `HasInitContext` and the type `InitResult` is exposed from
+/// Where the trait `HasInitContext` and the type `InitResult` are exposed from
 /// `concordium-std` and `MyState` is the user-defined type for the contract
 /// state.
 ///
@@ -106,7 +104,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ## `parameter="<Param>"`: Generate schema for parameter
 /// To make schema generation to include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
-/// the name of the type used for the parameter. The paramter type must
+/// the name of the type used for the parameter. The parameter type must
 /// implement the SchemaType trait, which for most cases can be derive
 /// automatically.
 ///
@@ -183,7 +181,7 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
                     Ok(state) => {
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
-                            concordium_std::trap() // Could not initialize contract.
+                            trap() // Could not initialize contract.
                         };
                         0
                     }
@@ -209,13 +207,87 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Derive the appropriate export for an annotated receive function.
 ///
 /// This macro requires the following items to be present
-/// - name="receive_name" where "receive_name" will be the name of the generated
-///   function. It should be unique in the module.
+/// - `contract = "<contract-name>"` where *\<contract-name\>* is the name of
+///   the smart contract.
+/// - `name = "<receive-name>"` where *\<receive-name\>* is the name of the
+///   receive function. The generated function is exported as
+///   `<contract-name>.<receive-name>`. Contract name and receive name is
+///   required to be unique in the module.
 ///
-/// The annotated function must be of a specific type.
+/// The annotated function must be of a specific type, which depends on the
+/// enabled attributes. *Without* any of the optional attributes the function
+/// must have a signature of
 ///
-/// TODO:
-/// - Document the expected type.
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive")]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// Where the `HasAction`, `HasReceiveContext` traits and the type
+/// `ReceiveResult` are exposed from `concordium-std` and `MyState` is the
+/// user-defined type for the contract state.
+///
+/// # Optional attributes
+///
+/// ## `payable`: Make function accept an amount of GTU
+/// Without setting the `payable` attribute, the code function will reject any
+/// none-zero amount of GTU, supplied with the transaction. This means we are
+/// required to explicitly mark our functions as `payable`, if they are to
+/// accept GTU.
+///
+/// Setting the `payable` attribute changes the required signature to include an
+/// extra argument of type `Amount`, allowing the function to access the amount
+/// of GTU supplied with the transaction.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", payable)]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, amount: Amount, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// ## `enable_logger`: Function can access event logging
+/// Setting the `enable_logger` attribute changes the required signature to
+/// include an extra argument `&mut impl HasLogger`, allowing the function to
+/// log events.
+///
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, logger: &mut impl HasLogger, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// ## `low_level`: Manually deal with writing state bytes
+/// Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state.
+///
+/// If `low_level` is set, instead of the user-defined state type in the
+/// signature, the state argument becomes the type `&mut ContractState` found in
+/// `concordium-std`, which gives access to manipulating the contract state
+/// bytes directly.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", low_level)]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut ContractState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// ## `parameter="<Param>"`: Generate schema for parameter
+/// To make schema generation to include the parameter for this function, add
+/// the attribute `parameter` and set it equal to a string literal containing
+/// the name of the type used for the parameter. The parameter type must
+/// implement the SchemaType trait, which for most cases can be derive
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyParam { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", parameter = "MyParam")]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
