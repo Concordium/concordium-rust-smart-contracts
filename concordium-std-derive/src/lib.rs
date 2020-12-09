@@ -59,8 +59,8 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// # Optional attributes
 ///
 /// ## `payable`: Make function accept an amount of GTU
-/// Without setting the `payable` attribute, the code function will reject any
-/// none-zero amount of GTU, supplied with the transaction. This means we are
+/// Without setting the `payable` attribute, the generated function will reject
+/// any non-zero amount of GTU supplied with the transaction. This means we are
 /// required to explicitly mark our functions as `payable`, if they are to
 /// accept GTU.
 ///
@@ -92,7 +92,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// If `low_level` is set, the signature must contain an extra argument of type
 /// `&mut ContractState` found in `concordium-std`, which gives access to
-/// manipulating the contract state bytes directly. This means there is not need
+/// manipulating the contract state bytes directly. This means there is no need
 /// to return the contract state and the return type becomes `InitResult<()>`.
 ///
 /// ### Example
@@ -105,7 +105,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// To make schema generation to include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
 /// the name of the type used for the parameter. The parameter type must
-/// implement the SchemaType trait, which for most cases can be derive
+/// implement the SchemaType trait, which for most cases can be derived
 /// automatically.
 ///
 /// ### Example
@@ -221,8 +221,8 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// # Optional attributes
 ///
 /// ## `payable`: Make function accept an amount of GTU
-/// Without setting the `payable` attribute, the code function will reject any
-/// none-zero amount of GTU, supplied with the transaction. This means we are
+/// Without setting the `payable` attribute, the function will reject any
+/// non-zero amount of GTU, supplied with the transaction. This means we are
 /// required to explicitly mark our functions as `payable`, if they are to
 /// accept GTU.
 ///
@@ -264,10 +264,10 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
-/// To make schema generation to include the parameter for this function, add
+/// To make schema generation include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
 /// the name of the type used for the parameter. The parameter type must
-/// implement the SchemaType trait, which for most cases can be derive
+/// implement the SchemaType trait, which for most cases can be derived
 /// automatically.
 ///
 /// ### Example
