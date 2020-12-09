@@ -115,7 +115,6 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// #[init(contract = "my_contract", parameter = "MyParam")]
 /// ```
-///
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
@@ -136,7 +135,8 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     // strings are displayed as the expected arguments.
     let mut required_args = vec!["ctx: &impl HasInitContext"];
 
-    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
+    let (setup_fn_optional_args, fn_optional_args) =
+        contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
 
     let mut out = if contains_attribute(attrs.iter(), "low_level") {
         required_args.push("state: &mut ContractState");
@@ -176,7 +176,10 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let arg_count = ast.sig.inputs.len();
     if arg_count != required_args.len() {
-        panic!("Incorrect number of function arguments, the expected arguments are ({}) ", required_args.join(", "))
+        panic!(
+            "Incorrect number of function arguments, the expected arguments are ({}) ",
+            required_args.join(", ")
+        )
     }
 
     // Embed schema if 'parameter' attribute is set
@@ -275,7 +278,6 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[receive(contract = "my_contract", name = "some_receive", parameter = "MyParam")]
 /// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
 /// ```
-///
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
@@ -299,7 +301,8 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     // strings are displayed as the expected arguments.
     let mut required_args = vec!["ctx: &impl HasReceiveContext"];
 
-    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
+    let (setup_fn_optional_args, fn_optional_args) =
+        contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
 
     let mut out = if contains_attribute(&attrs, "low_level") {
         required_args.push("state: &mut ContractState");
@@ -353,7 +356,10 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let arg_count = ast.sig.inputs.len();
     if arg_count != required_args.len() {
-        panic!("Incorrect number of function arguments, the expected arguments are ({}) ", required_args.join(", "))
+        panic!(
+            "Incorrect number of function arguments, the expected arguments are ({}) ",
+            required_args.join(", ")
+        )
     }
 
     // Embed schema if 'parameter' attribute is set
@@ -374,28 +380,28 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// It also mutates a vector of required arguments with the expected type
 /// signature of each.
-fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(attrs: I, amount_ident: &syn::Ident, required_args: &mut Vec<&str>) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
+fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(
+    attrs: I,
+    amount_ident: &syn::Ident,
+    required_args: &mut Vec<&str>,
+) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
     let mut setup_fn_args = proc_macro2::TokenStream::new();
     let mut fn_args = vec![];
     if contains_attribute(attrs, "payable") {
         required_args.push("amount: Amount");
         fn_args.push(quote!(#amount_ident));
     } else {
-        setup_fn_args.extend(
-            quote!{
-                if #amount_ident.micro_gtu != 0 {
-                    return -1;
-                }
+        setup_fn_args.extend(quote! {
+            if #amount_ident.micro_gtu != 0 {
+                return -1;
             }
-        );
+        });
     };
 
     if contains_attribute(attrs, "enable_logger") {
         required_args.push("logger: &mut impl HasLogger");
         let logger_ident = format_ident!("logger");
-        setup_fn_args.extend(
-            quote!(let mut #logger_ident = concordium_std::Logger::init();)
-        );
+        setup_fn_args.extend(quote!(let mut #logger_ident = concordium_std::Logger::init();));
         fn_args.push(quote!(&mut #logger_ident));
     }
     (setup_fn_args, fn_args)
