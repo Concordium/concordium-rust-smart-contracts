@@ -30,24 +30,91 @@ fn get_attribute_value<'a, I: IntoIterator<Item = &'a Meta>>(
     })
 }
 
-// Return whether the low-level item is present.
-fn get_low_level<'a, I: IntoIterator<Item = &'a Meta>>(iter: I) -> bool {
-    iter.into_iter().any(|attr| match attr {
-        Meta::Path(path) => path.is_ident("low_level"),
-        _ => false,
-    })
+// Return whether a attribute item is present.
+fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str) -> bool {
+    iter.into_iter().any(|attr| attr.path().is_ident(name))
 }
 
 /// Derive the appropriate export for an annotated init function.
 ///
 /// This macro requires the following items to be present
-/// - name="init_name" where "init_name" will be the name of the generated
-///   function. It should be unique in the module.
+/// - `contract="<name>"` where *\<name\>* is the name of the smart contract and
+///   the generated function is exported as this name prefixed with *init_*. The
+///   name should be unique in the module, as a contract can only have one
+///   init-function.
 ///
-/// The annotated function must be of a specific type.
+/// The annotated function must be of a specific type, which depends on the
+/// enabled attributes. *Without* any of the optional attributes the function
+/// must have a signature of
 ///
-/// TODO:
-/// - Document the expected type.
+/// ```ignore
+/// #[init(contract = "my_contract")]
+/// fn some_init(ctx: &impl HasInitContext) -> InitResult<MyState> {...}
+/// ```
+///
+/// Where the trait `HasInitContext` and the type `InitResult` are exposed from
+/// `concordium-std` and `MyState` is the user-defined type for the contract
+/// state.
+///
+/// # Optional attributes
+///
+/// ## `payable`: Make function accept an amount of GTU
+/// Without setting the `payable` attribute, the generated function will reject
+/// any non-zero amount of GTU supplied with the transaction. This means we are
+/// required to explicitly mark our functions as `payable`, if they are to
+/// accept GTU.
+///
+/// Setting the `payable` attribute changes the required signature to include an
+/// extra argument of type `Amount`, allowing the function to access the amount
+/// of GTU supplied with the transaction.
+///
+/// ### Example
+/// ```ignore
+/// #[init(contract = "my_contract", payable)]
+/// fn some_init(ctx: &impl HasInitContext, amount: Amount) -> InitResult<MyState> {...}
+/// ```
+///
+/// ## `enable_logger`: Function can access event logging
+/// Setting the `enable_logger` attribute changes the required signature to
+/// include an extra argument `&mut impl HasLogger`, allowing the function to
+/// log events.
+///
+///
+/// ### Example
+/// ```ignore
+/// #[init(contract = "my_contract", enable_logger)]
+/// fn some_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
+/// ```
+///
+/// ## `low_level`: Manually deal with writing state bytes
+/// Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state.
+///
+/// If `low_level` is set, the signature must contain an extra argument of type
+/// `&mut ContractState` found in `concordium-std`, which gives access to
+/// manipulating the contract state bytes directly. This means there is no need
+/// to return the contract state and the return type becomes `InitResult<()>`.
+///
+/// ### Example
+/// ```ignore
+/// #[init(contract = "my_contract", low_level)]
+/// fn some_init(ctx: &impl HasInitContext, state: &mut ContractState) -> InitResult<()> {...}
+/// ```
+///
+/// ## `parameter="<Param>"`: Generate schema for parameter
+/// To make schema generation to include the parameter for this function, add
+/// the attribute `parameter` and set it equal to a string literal containing
+/// the name of the type used for the parameter. The parameter type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyParam { ... }
+///
+/// #[init(contract = "my_contract", parameter = "MyParam")]
+/// ```
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
@@ -56,22 +123,31 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     let contract_name = get_attribute_value(attrs.iter(), "contract")
         .expect("A name for the contract must be provided, using the contract attribute.");
 
-    let wasm_export_fn_name = format!("init_{}", contract_name);
-
     let ast: syn::ItemFn = syn::parse(item).expect("Init can only be applied to functions.");
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
+    let wasm_export_fn_name = format!("init_{}", contract_name);
+    let amount_ident = format_ident!("amount");
 
-    let mut out = if get_low_level(attrs.iter()) {
+    // Accumulate a list of required arguments, if the function contains a
+    // different number of arguments, than elements in this vector, then the
+    // strings are displayed as the expected arguments.
+    let mut required_args = vec!["ctx: &impl HasInitContext"];
+
+    let (setup_fn_optional_args, fn_optional_args) =
+        contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
+
+    let mut out = if contains_attribute(attrs.iter(), "low_level") {
+        required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-                use concordium_std::{Logger, trap};
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
-                let mut logger = Logger::init();
-                match #fn_name(&ctx, amount, &mut logger, &mut state) {
+                match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(()) => 0,
                     Err(_) => -1,
                 }
@@ -81,10 +157,10 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-                use concordium_std::{Logger, trap};
+                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut logger = Logger::init();
-                match #fn_name(&ctx, amount, &mut logger) {
+                match #fn_name(&ctx, #(#fn_optional_args),*) {
                     Ok(state) => {
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
@@ -97,6 +173,14 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     };
+
+    let arg_count = ast.sig.inputs.len();
+    if arg_count != required_args.len() {
+        panic!(
+            "Incorrect number of function arguments, the expected arguments are ({}) ",
+            required_args.join(", ")
+        )
+    }
 
     // Embed schema if 'parameter' attribute is set
     let parameter_option = get_attribute_value(attrs.iter(), "parameter");
@@ -114,13 +198,86 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Derive the appropriate export for an annotated receive function.
 ///
 /// This macro requires the following items to be present
-/// - name="receive_name" where "receive_name" will be the name of the generated
-///   function. It should be unique in the module.
+/// - `contract = "<contract-name>"` where *\<contract-name\>* is the name of
+///   the smart contract.
+/// - `name = "<receive-name>"` where *\<receive-name\>* is the name of the
+///   receive function. The generated function is exported as
+///   `<contract-name>.<receive-name>`. Contract name and receive name is
+///   required to be unique in the module.
 ///
-/// The annotated function must be of a specific type.
+/// The annotated function must be of a specific type, which depends on the
+/// enabled attributes. *Without* any of the optional attributes the function
+/// must have a signature of
 ///
-/// TODO:
-/// - Document the expected type.
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive")]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// Where the `HasAction`, `HasReceiveContext` traits and the type
+/// `ReceiveResult` are exposed from `concordium-std` and `MyState` is the
+/// user-defined type for the contract state.
+///
+/// # Optional attributes
+///
+/// ## `payable`: Make function accept an amount of GTU
+/// Without setting the `payable` attribute, the function will reject any
+/// non-zero amount of GTU, supplied with the transaction. This means we are
+/// required to explicitly mark our functions as `payable`, if they are to
+/// accept GTU.
+///
+/// Setting the `payable` attribute changes the required signature to include an
+/// extra argument of type `Amount`, allowing the function to access the amount
+/// of GTU supplied with the transaction.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", payable)]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, amount: Amount, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// ## `enable_logger`: Function can access event logging
+/// Setting the `enable_logger` attribute changes the required signature to
+/// include an extra argument `&mut impl HasLogger`, allowing the function to
+/// log events.
+///
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, logger: &mut impl HasLogger, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// ## `low_level`: Manually deal with writing state bytes
+/// Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state.
+///
+/// If `low_level` is set, instead of the user-defined state type in the
+/// signature, the state argument becomes the type `&mut ContractState` found in
+/// `concordium-std`, which gives access to manipulating the contract state
+/// bytes directly.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", low_level)]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut ContractState) -> ReceiveResult<A> {...}
+/// ```
+///
+/// ## `parameter="<Param>"`: Generate schema for parameter
+/// To make schema generation include the parameter for this function, add
+/// the attribute `parameter` and set it equal to a string literal containing
+/// the name of the type used for the parameter. The parameter type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyParam { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", parameter = "MyParam")]
+/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// ```
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
@@ -131,40 +288,52 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     );
     let name = get_attribute_value(attrs.iter(), "name")
         .expect("A name for the receive function must be provided, using the name attribute");
-    let wasm_export_fn_name = format!("{}.{}", contract_name, name);
 
     let ast: syn::ItemFn = syn::parse(item).expect("Receive can only be applied to functions.");
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
+    let wasm_export_fn_name = format!("{}.{}", contract_name, name);
+    let amount_ident = format_ident!("amount");
 
-    let mut out = if get_low_level(attrs.iter()) {
-        quote! {
-        #[export_name = #wasm_export_fn_name]
-        pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-            use concordium_std::{SeekFrom, ContractState, Logger};
-            let ctx = ExternContext::<ReceiveContextExtern>::open(());
-            let mut state = ContractState::open(());
-            let mut logger = Logger::init();
-            let res: Result<Action, _> = #fn_name(&ctx, amount, &mut logger, &mut state);
-            match res {
-                Ok(act) => {
-                    act.tag() as i32
-                }
-                Err(_) => -1,
-            }
-        }
-        }
-    } else {
+    // Accumulate a list of required arguments, if the function contains a
+    // different number of arguments, than elements in this vector, then the
+    // strings are displayed as the expected arguments.
+    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+
+    let (setup_fn_optional_args, fn_optional_args) =
+        contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
+
+    let mut out = if contains_attribute(&attrs, "low_level") {
+        required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, trap};
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
+                #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut logger = Logger::init();
+                let mut state = ContractState::open(());
+                let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
+                match res {
+                    Ok(act) => {
+                        act.tag() as i32
+                    }
+                    Err(_) => -1,
+                }
+            }
+        }
+    } else {
+        required_args.push("state: &mut MyState");
+
+        quote! {
+            #[export_name = #wasm_export_fn_name]
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+                use concordium_std::{SeekFrom, ContractState, Logger, trap};
+                #setup_fn_optional_args
+                let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res: Result<Action, _> = #fn_name(&ctx, amount, &mut logger, &mut state);
+                    let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
                     match res {
                         Ok(act) => {
                             let res = state_bytes
@@ -178,13 +347,20 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
                         }
                         Err(_) => -1,
                     }
-                }
-                else {
+                } else {
                     trap() // Could not fully read state.
                 }
             }
         }
     };
+
+    let arg_count = ast.sig.inputs.len();
+    if arg_count != required_args.len() {
+        panic!(
+            "Incorrect number of function arguments, the expected arguments are ({}) ",
+            required_args.join(", ")
+        )
+    }
 
     // Embed schema if 'parameter' attribute is set
     let parameter_option = get_attribute_value(attrs.iter(), "parameter");
@@ -196,6 +372,39 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     // add the original function to the output as well.
     ast.to_tokens(&mut out);
     out.into()
+}
+
+/// Generate tokens for some of the optional arguments, based on the attributes.
+/// Returns a pair, where the first entry is tokens for setting up the arguments
+/// and the second entry is a Vec of the argument names as tokens.
+///
+/// It also mutates a vector of required arguments with the expected type
+/// signature of each.
+fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(
+    attrs: I,
+    amount_ident: &syn::Ident,
+    required_args: &mut Vec<&str>,
+) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
+    let mut setup_fn_args = proc_macro2::TokenStream::new();
+    let mut fn_args = vec![];
+    if contains_attribute(attrs, "payable") {
+        required_args.push("amount: Amount");
+        fn_args.push(quote!(#amount_ident));
+    } else {
+        setup_fn_args.extend(quote! {
+            if #amount_ident.micro_gtu != 0 {
+                return -1;
+            }
+        });
+    };
+
+    if contains_attribute(attrs, "enable_logger") {
+        required_args.push("logger: &mut impl HasLogger");
+        let logger_ident = format_ident!("logger");
+        setup_fn_args.extend(quote!(let mut #logger_ident = concordium_std::Logger::init();));
+        fn_args.push(quote!(&mut #logger_ident));
+    }
+    (setup_fn_args, fn_args)
 }
 
 #[cfg(feature = "build-schema")]
@@ -241,7 +450,7 @@ fn contract_function_schema_tokens(
 /// only ensures uniqueness.
 ///
 /// # Example
-/// ```
+/// ``` ignore
 /// #[derive(Deserial)]
 /// struct Foo {
 ///     #[concordium(set_size_length = 1, ensure_ordered)]
@@ -326,18 +535,12 @@ fn find_length_attribute(attributes: &[syn::Attribute], target_attr: &str) -> Op
     }
 }
 
-fn contains_attribute(attributes: &[syn::Attribute], target_attr: &str) -> bool {
-    let target_attr = format_ident!("{}", target_attr);
-    get_concordium_field_attributes(attributes)
-        .iter()
-        .any(|meta| meta.path().is_ident(&target_attr))
-}
-
 fn impl_deserial_field(
     f: &syn::Field,
     ident: &syn::Ident,
     source: &syn::Ident,
 ) -> proc_macro2::TokenStream {
+    let concordium_attributes = get_concordium_field_attributes(&f.attrs);
     if let Some(l) = find_length_attribute(&f.attrs, "size_length") {
         let size = format_ident!("u{}", 8 * l);
         quote! {
@@ -348,7 +551,7 @@ fn impl_deserial_field(
         }
     } else if let Some(l) = find_length_attribute(&f.attrs, "map_size_length") {
         let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&f.attrs, "ensure_ordered") {
+        if contains_attribute(&concordium_attributes, "ensure_ordered") {
             quote! {
                 let #ident = {
                     let len = #size::deserial(#source)?;
@@ -365,7 +568,7 @@ fn impl_deserial_field(
         }
     } else if let Some(l) = find_length_attribute(&f.attrs, "set_size_length") {
         let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&f.attrs, "ensure_ordered") {
+        if contains_attribute(&concordium_attributes, "ensure_ordered") {
             quote! {
                 let #ident = {
                     let len = #size::deserial(#source)?;
@@ -534,7 +737,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> TokenStream {
 /// encoded in little endian.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// #[derive(Serial)]
 /// struct Foo {
 ///     #[concordium(set_size_length = 1)]
