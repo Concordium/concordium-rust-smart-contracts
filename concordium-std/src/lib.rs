@@ -72,10 +72,10 @@
 //! **Note** This feature is used by `cargo-concordium`, when building for
 //! testing and for most cases this feature should not be set manually.
 
-#![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler))]
+#![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
-extern crate alloc;
+pub extern crate alloc;
 
 #[cfg(not(feature = "std"))]
 #[alloc_error_handler]
@@ -97,6 +97,9 @@ pub use std::process::abort as trap;
 #[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
 #[inline(always)]
 pub fn trap() -> ! { unsafe { core::arch::wasm32::unreachable() } }
+#[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
+#[inline(always)]
+pub fn trap() -> ! { core::intrinsics::abort() }
 
 #[cfg(not(feature = "std"))]
 #[panic_handler]
