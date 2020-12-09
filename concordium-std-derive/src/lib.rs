@@ -124,37 +124,14 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     let contract_name = get_attribute_value(attrs.iter(), "contract")
         .expect("A name for the contract must be provided, using the contract attribute.");
 
-    let wasm_export_fn_name = format!("init_{}", contract_name);
-
     let ast: syn::ItemFn = syn::parse(item).expect("Init can only be applied to functions.");
-
-    let mut setup_fn_optional_args = proc_macro2::TokenStream::new();
-    let mut fn_optional_args = vec![];
-
-    let amount_ident = format_ident!("amount");
-
-    if contains_attribute(&attrs, "payable") {
-        fn_optional_args.push(quote!(#amount_ident));
-    } else {
-        setup_fn_optional_args.extend(
-            quote!{
-                if #amount_ident.micro_gtu != 0 {
-                    return -1;
-                }
-            }
-        );
-    };
-
-    if contains_attribute(&attrs, "enable_logger") {
-        let logger_ident = format_ident!("logger");
-        setup_fn_optional_args.extend(
-            quote!(let mut #logger_ident = concordium_std::Logger::init();)
-        );
-        fn_optional_args.push(quote!(&mut #logger_ident));
-    }
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
+    let wasm_export_fn_name = format!("init_{}", contract_name);
+    let amount_ident = format_ident!("amount");
+
+    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, amount_ident);
 
     let mut out = if contains_attribute(attrs.iter(), "low_level") {
         quote! {
@@ -298,39 +275,17 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     );
     let name = get_attribute_value(attrs.iter(), "name")
         .expect("A name for the receive function must be provided, using the name attribute");
-    let wasm_export_fn_name = format!("{}.{}", contract_name, name);
 
     let ast: syn::ItemFn = syn::parse(item).expect("Receive can only be applied to functions.");
 
-    let mut setup_fn_optional_args = proc_macro2::TokenStream::new();
-    let mut fn_optional_args = vec![];
-
-    let amount_ident = format_ident!("amount");
-
-    if contains_attribute(&attrs, "payable") {
-        fn_optional_args.push(quote!(#amount_ident));
-    } else {
-        setup_fn_optional_args.extend(
-            quote!{
-                if #amount_ident.micro_gtu != 0 {
-                    return -1;
-                }
-            }
-        );
-    };
-
-    if contains_attribute(&attrs, "enable_logger") {
-        let logger_ident = format_ident!("logger");
-        setup_fn_optional_args.extend(
-            quote!(let mut #logger_ident = concordium_std::Logger::init();)
-        );
-        fn_optional_args.push(quote!(&mut #logger_ident));
-    }
-
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
+    let wasm_export_fn_name = format!("{}.{}", contract_name, name);
+    let amount_ident = format_ident!("amount");
 
-    let mut out = if contains_attribute(attrs.iter(), "low_level") {
+    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, amount_ident);
+
+    let mut out = if contains_attribute(&attrs, "low_level") {
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
@@ -388,6 +343,35 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     // add the original function to the output as well.
     ast.to_tokens(&mut out);
     out.into()
+}
+
+/// Generate tokens for some of the optional arguments, based on the attributes.
+/// Returns a pair, where the first entry is tokens for setting up the arguments
+/// and the second entry is a Vec of the argument names as tokens.
+fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(attrs: I, amount_ident: syn::Ident) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
+    let mut setup_fn_args = proc_macro2::TokenStream::new();
+    let mut fn_args = vec![];
+
+    if contains_attribute(attrs, "payable") {
+        fn_args.push(quote!(#amount_ident));
+    } else {
+        setup_fn_args.extend(
+            quote!{
+                if #amount_ident.micro_gtu != 0 {
+                    return -1;
+                }
+            }
+        );
+    };
+
+    if contains_attribute(attrs, "enable_logger") {
+        let logger_ident = format_ident!("logger");
+        setup_fn_args.extend(
+            quote!(let mut #logger_ident = concordium_std::Logger::init();)
+        );
+        fn_args.push(quote!(&mut #logger_ident));
+    }
+    (setup_fn_args, fn_args)
 }
 
 #[cfg(feature = "build-schema")]
