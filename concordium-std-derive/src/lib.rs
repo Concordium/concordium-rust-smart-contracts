@@ -131,9 +131,15 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasm_export_fn_name = format!("init_{}", contract_name);
     let amount_ident = format_ident!("amount");
 
-    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, amount_ident);
+    // Accumulate a list of required arguments, if the function contains a
+    // different number of arguments, than elements in this vector, then the
+    // strings are displayed as the expected arguments.
+    let mut required_args = vec!["ctx: &impl HasInitContext"];
+
+    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
 
     let mut out = if contains_attribute(attrs.iter(), "low_level") {
+        required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
@@ -167,6 +173,11 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     };
+
+    let arg_count = ast.sig.inputs.len();
+    if arg_count != required_args.len() {
+        panic!("Incorrect number of function arguments, the expected arguments are ({}) ", required_args.join(", "))
+    }
 
     // Embed schema if 'parameter' attribute is set
     let parameter_option = get_attribute_value(attrs.iter(), "parameter");
@@ -283,9 +294,15 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasm_export_fn_name = format!("{}.{}", contract_name, name);
     let amount_ident = format_ident!("amount");
 
-    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, amount_ident);
+    // Accumulate a list of required arguments, if the function contains a
+    // different number of arguments, than elements in this vector, then the
+    // strings are displayed as the expected arguments.
+    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+
+    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
 
     let mut out = if contains_attribute(&attrs, "low_level") {
+        required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
@@ -303,6 +320,8 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     } else {
+        required_args.push("state: &mut MyState");
+
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
@@ -325,13 +344,17 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
                         }
                         Err(_) => -1,
                     }
-                }
-                else {
+                } else {
                     trap() // Could not fully read state.
                 }
             }
         }
     };
+
+    let arg_count = ast.sig.inputs.len();
+    if arg_count != required_args.len() {
+        panic!("Incorrect number of function arguments, the expected arguments are ({}) ", required_args.join(", "))
+    }
 
     // Embed schema if 'parameter' attribute is set
     let parameter_option = get_attribute_value(attrs.iter(), "parameter");
@@ -348,11 +371,14 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Generate tokens for some of the optional arguments, based on the attributes.
 /// Returns a pair, where the first entry is tokens for setting up the arguments
 /// and the second entry is a Vec of the argument names as tokens.
-fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(attrs: I, amount_ident: syn::Ident) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
+///
+/// It also mutates a vector of required arguments with the expected type
+/// signature of each.
+fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(attrs: I, amount_ident: &syn::Ident, required_args: &mut Vec<&str>) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
     let mut setup_fn_args = proc_macro2::TokenStream::new();
     let mut fn_args = vec![];
-
     if contains_attribute(attrs, "payable") {
+        required_args.push("amount: Amount");
         fn_args.push(quote!(#amount_ident));
     } else {
         setup_fn_args.extend(
@@ -365,6 +391,7 @@ fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a 
     };
 
     if contains_attribute(attrs, "enable_logger") {
+        required_args.push("logger: &mut impl HasLogger");
         let logger_ident = format_ident!("logger");
         setup_fn_args.extend(
             quote!(let mut #logger_ident = concordium_std::Logger::init();)
