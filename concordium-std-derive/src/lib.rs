@@ -6,28 +6,86 @@ extern crate quote;
 
 use proc_macro::TokenStream;
 use quote::ToTokens;
-use syn::{export::Span, parse::Parser, punctuated::*, spanned::Spanned, Ident, Meta, Token};
+use syn::{export::Span, parse_macro_input, punctuated::*, spanned::Spanned, Ident, Meta, Token};
 
-// Get the name item from a list, if available and a string literal.
-// FIXME: Ensure there is only one.
+/// The following two macros can be used to report meaningful compilation errors
+/// in the context of a function that returns a TokenStream.
+/// - If applied to an Ok value they simply return the underlying value.
+/// - If applied to `Err(e)` then, if an error message is supplied the result is
+///   a token stream with the given error message, but with the span of the
+///   error message e. This ultimately means that the compilation error is
+///   correctly localized, and underlined if the compiler is run in a terminal.
+///   If not message is supplied then `e` is turned into a compiler error.
+macro_rules! ok_or_report {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(err) => return err.to_compile_error().into(),
+        }
+    };
+    ($e:expr, $msg:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(err) => {
+                let span = err.span();
+                return syn::Error::new(span, $msg).to_compile_error().into();
+            }
+        }
+    };
+}
+
+/// Analogous to `ok_or_report`, but requires an explicit span to which the
+/// error message should be attached.
+macro_rules! some_or_report {
+    ($e:expr, $span:expr, $msg:expr) => {
+        match $e {
+            Some(v) => v,
+            None => return syn::Error::new($span, $msg).to_compile_error().into(),
+        }
+    };
+}
+
+/// Get the name item from a list, if available and a string literal.
+/// If the named item does not have the expected (string) value, this will
+/// return an Err. If the item does not exist the return value is Ok(None).
+/// FIXME: Ensure there is only one.
 fn get_attribute_value<'a, I: IntoIterator<Item = &'a Meta>>(
     iter: I,
     name: &str,
-) -> Option<String> {
-    iter.into_iter().find_map(|attr| match attr {
-        Meta::NameValue(mnv) => {
-            if mnv.path.is_ident(name) {
-                if let syn::Lit::Str(lit) = &mnv.lit {
-                    Some(lit.value())
-                } else {
-                    panic!("The `{}` attribute must be a string literal.", name)
+) -> syn::Result<Option<String>> {
+    for attr in iter.into_iter() {
+        match attr {
+            Meta::NameValue(mnv) => {
+                if mnv.path.is_ident(name) {
+                    if let syn::Lit::Str(lit) = &mnv.lit {
+                        return Ok(Some(lit.value()));
+                    } else {
+                        return Err(syn::Error::new(
+                            mnv.span(),
+                            format!("The `{}` attribute must be a string literal.", name),
+                        ));
+                    }
                 }
-            } else {
-                None
+            }
+            Meta::Path(p) => {
+                if p.is_ident(name) {
+                    return Err(syn::Error::new(
+                        attr.span(),
+                        format!("The `{}` attribute must have a string literal value.", name),
+                    ));
+                }
+            }
+            Meta::List(p) => {
+                if p.path.is_ident(name) {
+                    return Err(syn::Error::new(
+                        attr.span(),
+                        format!("The `{}` attribute must have a string literal value.", name),
+                    ));
+                }
             }
         }
-        _ => None,
-    })
+    }
+    Ok(None)
 }
 
 // Return whether a attribute item is present.
@@ -117,13 +175,17 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ```
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
-    let attrs = parser.parse(attr).expect("Expect a comma-separated list of meta items.");
+    let attrs = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
 
-    let contract_name = get_attribute_value(attrs.iter(), "contract")
-        .expect("A name for the contract must be provided, using the contract attribute.");
+    let contract_name = some_or_report!(
+        ok_or_report!(get_attribute_value(attrs.iter(), "contract")),
+        attrs.span(),
+        "A name for the contract must be provided, using the contract attribute.For example, \
+         #[init(contract = \"my-contract\")]"
+    );
 
-    let ast: syn::ItemFn = syn::parse(item).expect("Init can only be applied to functions.");
+    let ast: syn::ItemFn =
+        ok_or_report!(syn::parse(item), "#[init] can only be applied to functions.");
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
@@ -183,7 +245,7 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // Embed schema if 'parameter' attribute is set
-    let parameter_option = get_attribute_value(attrs.iter(), "parameter");
+    let parameter_option = ok_or_report!(get_attribute_value(attrs.iter(), "parameter"));
     out.extend(contract_function_schema_tokens(
         parameter_option,
         rust_export_fn_name,
@@ -280,16 +342,24 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
-    let attrs = parser.parse(attr).expect("Expect a comma-separated list of meta items.");
+    let attrs = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
 
-    let contract_name = get_attribute_value(attrs.iter(), "contract").expect(
-        "The name of the associated contract must be provided, using the contract attribute.",
+    let contract_name = some_or_report!(
+        ok_or_report!(get_attribute_value(attrs.iter(), "contract")),
+        attrs.span(),
+        "The name of the associated contract must be provided, using the 'contract' \
+         attribute.\n\nFor example, #[receive(contract = \"my-contract\")]"
     );
-    let name = get_attribute_value(attrs.iter(), "name")
-        .expect("A name for the receive function must be provided, using the name attribute");
 
-    let ast: syn::ItemFn = syn::parse(item).expect("Receive can only be applied to functions.");
+    let name = some_or_report!(
+        ok_or_report!(get_attribute_value(attrs.iter(), "name")),
+        attrs.span(),
+        "A name for the receive function must be provided, using the 'name' attribute.\n\nFor \
+         example, #[receive(name = \"func-name\", ...)]"
+    );
+
+    let ast: syn::ItemFn =
+        ok_or_report!(syn::parse(item), "#[receive] can only be applied to functions.");
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
@@ -363,7 +433,7 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // Embed schema if 'parameter' attribute is set
-    let parameter_option = get_attribute_value(attrs.iter(), "parameter");
+    let parameter_option = ok_or_report!(get_attribute_value(attrs.iter(), "parameter"));
     out.extend(contract_function_schema_tokens(
         parameter_option,
         rust_export_fn_name,
@@ -459,7 +529,7 @@ fn contract_function_schema_tokens(
 /// ```
 #[proc_macro_derive(Deserial, attributes(concordium))]
 pub fn deserial_derive(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).expect("Cannot parse input.");
+    let ast = parse_macro_input!(input);
     impl_deserial(&ast)
 }
 
@@ -746,7 +816,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> TokenStream {
 /// ```
 #[proc_macro_derive(Serial, attributes(concordium))]
 pub fn serial_derive(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).expect("Cannot parse input.");
+    let ast = parse_macro_input!(input);
     impl_serial(&ast)
 }
 
@@ -908,7 +978,7 @@ fn impl_serial(ast: &syn::DeriveInput) -> TokenStream {
 /// documentation of the latter two for details and options.
 #[proc_macro_derive(Serialize, attributes(concordium))]
 pub fn serialize_derive(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).expect("Cannot parse input.");
+    let ast = parse_macro_input!(input);
     let mut tokens = impl_deserial(&ast);
     tokens.extend(impl_serial(&ast));
     tokens
@@ -944,11 +1014,14 @@ pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
         unimplemented!("Only supports structs, enums and type aliases as contract state so far")
     };
 
-    let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
-    let attrs = parser.parse(attr).expect("Expect a comma-separated list of meta items.");
+    let attrs = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
 
-    let contract_name = get_attribute_value(attrs.iter(), "contract")
-        .expect("A name of the contract must be provided, using the 'contract' attribute.");
+    let contract_name = some_or_report!(
+        ok_or_report!(get_attribute_value(attrs.iter(), "contract")),
+        attrs.span(),
+        "A name of the contract must be provided, using the 'contract' attribute.\n\nFor example \
+         #[contract_state(contract = \"my-contract\")]."
+    );
 
     let wasm_schema_name = format!("concordium_schema_state_{}", contract_name);
     let rust_schema_name = format_ident!("concordium_schema_state_{}", data_ident);
@@ -977,7 +1050,7 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream { it
     attributes(size_length, map_size_length, set_size_length, string_size_length)
 )]
 pub fn schema_type_derive(input: TokenStream) -> TokenStream {
-    let ast: syn::DeriveInput = syn::parse(input).expect("Cannot parse input.");
+    let ast: syn::DeriveInput = parse_macro_input!(input);
 
     let data_name = &ast.ident;
 
@@ -1074,7 +1147,7 @@ fn schema_type_fields(fields: &syn::Fields) -> proc_macro2::TokenStream {
 #[proc_macro_attribute]
 pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let test_fn_ast: syn::ItemFn =
-        syn::parse(item).expect("#[concordium_test] can only be applied to functions.");
+        ok_or_report!(syn::parse(item), "#[concordium_test] can only be applied to functions.");
 
     let test_fn_name = &test_fn_ast.sig.ident;
     let rust_export_fn_name = format_ident!("concordium_test_{}", test_fn_name);
@@ -1099,7 +1172,7 @@ pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn concordium_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let test_fn_ast: syn::ItemFn =
-        syn::parse(item).expect("#[concordium_test] can only be applied to functions.");
+        ok_or_report!(syn::parse(item), "#[concordium_test] can only be applied to functions.");
 
     let test_fn = quote! {
         #[test]
