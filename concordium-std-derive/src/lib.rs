@@ -38,13 +38,86 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// Derive the appropriate export for an annotated init function.
 ///
 /// This macro requires the following items to be present
-/// - name="init_name" where "init_name" will be the name of the generated
-///   function. It should be unique in the module.
+/// - `contract="<name>"` where *\<name\>* is the name of the smart contract and
+///   the generated function is exported as this name prefixed with *init_*. The
+///   name should be unique in the module, as a contract can only have one
+///   init-function.
 ///
-/// The annotated function must be of a specific type.
+/// ```ignore
+/// #[init(contract = "my_contract")]
+/// fn some_init(ctx: &impl HasInitContext) -> InitResult<MyState> {...}
+/// ```
 ///
-/// TODO:
-/// - Document the expected type.
+/// The annotated function must be of a specific type, which depends on the
+/// enabled attributes. *Without* any of the optional attributes the function
+/// must have a signature of
+/// ```ignore
+/// (ctx: &impl HasInitContext) -> InitResult<MyState>
+/// ```
+/// Where the trait `HasInitContext` and the type `InitResult` is exposed from
+/// `concordium-std` and `MyState` is the user-defined type for the contract
+/// state.
+///
+/// # Optional attributes
+///
+/// ## `payable`: Make function accept an amount of GTU
+/// Without setting the `payable` attribute, the code function will reject any
+/// none-zero amount of GTU, supplied with the transaction. This means we are
+/// required to explicitly mark our functions as `payable`, if they are to
+/// accept GTU.
+///
+/// Setting the `payable` attribute changes the required signature to include an
+/// extra argument of type `Amount`, allowing the function to access the amount
+/// of GTU supplied with the transaction.
+///
+/// ### Example
+/// ```ignore
+/// #[init(contract = "my_contract", payable)]
+/// fn some_init(ctx: &impl HasInitContext, amount: Amount) -> InitResult<MyState> {...}
+/// ```
+///
+/// ## `enable_logger`: Function can access event logging
+/// Setting the `enable_logger` attribute changes the required signature to
+/// include an extra argument `&mut impl HasLogger`, allowing the function to
+/// log events.
+///
+///
+/// ### Example
+/// ```ignore
+/// #[init(contract = "my_contract", enable_logger)]
+/// fn some_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
+/// ```
+///
+/// ## `low_level`: Manually deal with writing state bytes
+/// Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state.
+///
+/// If `low_level` is set, the signature must contain an extra argument of type
+/// `&mut ContractState` found in `concordium-std`, which gives access to
+/// manipulating the contract state bytes directly. This means there is not need
+/// to return the contract state and the return type becomes `InitResult<()>`.
+///
+/// ### Example
+/// ```ignore
+/// #[init(contract = "my_contract", low_level)]
+/// fn some_init(ctx: &impl HasInitContext, state: &mut ContractState) -> InitResult<()> {...}
+/// ```
+///
+/// ## `parameter="<Param>"`: Generate schema for parameter
+/// To make schema generation to include the parameter for this function, add
+/// the attribute `parameter` and set it equal to a string literal containing
+/// the name of the type used for the parameter. The paramter type must
+/// implement the SchemaType trait, which for most cases can be derive
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyParam { ... }
+///
+/// #[init(contract = "my_contract", parameter = "MyParam")]
+/// ```
+///
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
@@ -288,7 +361,7 @@ fn contract_function_schema_tokens(
 /// only ensures uniqueness.
 ///
 /// # Example
-/// ```
+/// ``` ignore
 /// #[derive(Deserial)]
 /// struct Foo {
 ///     #[concordium(set_size_length = 1, ensure_ordered)]
@@ -575,7 +648,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> TokenStream {
 /// encoded in little endian.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// #[derive(Serial)]
 /// struct Foo {
 ///     #[concordium(set_size_length = 1)]
