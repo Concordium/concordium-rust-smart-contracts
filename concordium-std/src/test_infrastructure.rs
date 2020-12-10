@@ -109,16 +109,15 @@ pub struct CommonDataTest<'a> {
     pub(crate) parameter: Option<&'a [u8]>,
     /// Policy of the creator. We keep the `Option` wrapper
     /// in order that the user can be warned that they are using a policy.
-    /// Thus there is a distinction between `Some(Vec::new())` and
-    /// `Vec::new()`.
-    policies: Option<Vec<TestPolicy>>,
+    /// Thus there is a distinction between `Some(Vec::new())` and `None`.
+    pub(crate) policies: Option<Vec<TestPolicy>>,
 }
 
 /// Context used for testing. The type parameter C is used to determine whether
 /// this will be an init or receive context.
 #[derive(Default, Clone)]
 pub struct ContextTest<'a, C> {
-    pub common:        CommonDataTest<'a>,
+    pub(crate) common:        CommonDataTest<'a>,
     pub(crate) custom: C,
 }
 
@@ -136,14 +135,19 @@ pub struct ContextTest<'a, C> {
 /// ctx.set_init_origin(AccountAddress([0u8; 32]));
 /// ```
 /// ## Set chain meta data
-/// Chain meta data is set using setters on the public field `metadata`
-/// (see [`ChainMetaTest`](struct.ChainMetaTest.html)).
+/// Chain meta data is set using setters on the context or by setters on a
+/// mutable reference of [`ChainMetaTest`](struct.ChainMetaTest.html).
 ///
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```
 /// let mut ctx = InitContextTest::empty();
-/// ctx.common.metadata.set_slot_time(1609459200);
+/// ctx.set_metadata_slot_time(1609459200);
+/// ```
+/// or
+/// ```
+/// let mut ctx = InitContextTest::empty();
+/// ctx.metadata_mut().set_slot_time(1609459200);
 /// ```
 ///
 /// # Use case example
@@ -198,14 +202,19 @@ pub struct InitOnlyDataTest {
 /// ctx.set_sender(Address::Account(owner));
 /// ```
 /// ## Set chain meta data
-/// Chain meta data is set using setters on the public field `metadata`
-/// (see [`ChainMetaTest`](struct.ChainMetaTest.html)).
+/// Chain meta data is set using setters on the context or by setters on a
+/// mutable reference of [`ChainMetaTest`](struct.ChainMetaTest.html).
 ///
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```
 /// let mut ctx = ReceiveContextTest::empty();
-/// ctx.common.metadata.set_slot_time(1609459200);
+/// ctx.set_metadata_slot_time(1609459200);
+/// ```
+/// or
+/// ```
+/// let mut ctx = ReceiveContextTest::empty();
+/// ctx.metadata_mut().set_slot_time(1609459200);
 /// ```
 ///
 /// # Use case example
@@ -303,6 +312,33 @@ impl<'a, C> ContextTest<'a, C> {
 
     pub fn set_parameter(&mut self, value: &'a [u8]) -> &mut Self {
         self.common.parameter = Some(value);
+        self
+    }
+
+    /// Get a mutable reference to the chain meta data placeholder
+    pub fn metadata_mut(&mut self) -> &mut ChainMetaTest { &mut self.common.metadata }
+
+    /// Set the metadata block slot time
+    pub fn set_metadata_slot_time(&mut self, value: SlotTime) -> &mut Self {
+        self.metadata_mut().set_slot_time(value);
+        self
+    }
+
+    /// Set the metadata block height
+    pub fn set_metadata_block_height(&mut self, value: BlockHeight) -> &mut Self {
+        self.metadata_mut().set_block_height(value);
+        self
+    }
+
+    /// Set the metadata finalized block height
+    pub fn set_metadata_finalized_height(&mut self, value: FinalizedHeight) -> &mut Self {
+        self.metadata_mut().set_finalized_height(value);
+        self
+    }
+
+    /// Set the metadata slot number
+    pub fn set_metadata_slot_number(&mut self, value: SlotNumber) -> &mut Self {
+        self.metadata_mut().set_slot_number(value);
         self
     }
 }
@@ -411,7 +447,7 @@ impl<'a, C> HasCommonData for ContextTest<'a, C> {
     fn metadata(&self) -> &Self::MetadataType { &self.common.metadata }
 
     fn policies(&self) -> Self::PolicyIteratorType {
-        unwrap_ctx_field(self.common.policies.clone(), "policy").into_iter()
+        unwrap_ctx_field(self.common.policies.clone(), "policies").into_iter()
     }
 }
 
