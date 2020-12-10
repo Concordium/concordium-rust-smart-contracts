@@ -238,10 +238,15 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let arg_count = ast.sig.inputs.len();
     if arg_count != required_args.len() {
-        panic!(
-            "Incorrect number of function arguments, the expected arguments are ({}) ",
-            required_args.join(", ")
+        return syn::Error::new(
+            ast.sig.inputs.span(),
+            format!(
+                "Incorrect number of function arguments, the expected arguments are ({}) ",
+                required_args.join(", ")
+            ),
         )
+        .to_compile_error()
+        .into();
     }
 
     // Embed schema if 'parameter' attribute is set
@@ -426,10 +431,15 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let arg_count = ast.sig.inputs.len();
     if arg_count != required_args.len() {
-        panic!(
-            "Incorrect number of function arguments, the expected arguments are ({}) ",
-            required_args.join(", ")
+        return syn::Error::new(
+            ast.sig.inputs.span(),
+            format!(
+                "Incorrect number of function arguments, the expected arguments are ({}) ",
+                required_args.join(", ")
+            ),
         )
+        .to_compile_error()
+        .into();
     }
 
     // Embed schema if 'parameter' attribute is set
@@ -540,7 +550,7 @@ const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
 const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 5] =
     ["size_length", "set_size_length", "map_size_length", "string_size_length", "ensure_ordered"];
 
-fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> Vec<syn::Meta> {
+fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
     attributes
         .iter()
         // Keep only concordium attributes
@@ -555,15 +565,15 @@ fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> Vec<syn::Me
             syn::NestedMeta::Meta(meta) => {
                 let path = meta.path();
                 if VALID_CONCORDIUM_FIELD_ATTRIBUTES.iter().any(|&attr| path.is_ident(attr)) {
-                    meta
+                    Ok(meta)
                 } else {
-                    panic!(
-                        "The attribute '{}' is not supported as a concordium field attribute.",
-                        path.to_token_stream()
-                    )
+                    Err(syn::Error::new(meta.span(),
+                        format!("The attribute '{}' is not supported as a concordium field attribute.",
+                        path.to_token_stream())
+                    ))
                 }
             }
-            _ => panic!("Literals are not supported in a concordium field attribute."),
+            lit => Err(syn::Error::new(lit.span(), "Literals are not supported in a concordium field attribute.")),
         })
         .collect()
 }
@@ -571,9 +581,9 @@ fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> Vec<syn::Me
 fn find_field_attribute_value(
     attributes: &[syn::Attribute],
     target_attr: &str,
-) -> Option<syn::Lit> {
+) -> syn::Result<Option<syn::Lit>> {
     let target_attr = format_ident!("{}", target_attr);
-    let attr_values: Vec<_> = get_concordium_field_attributes(attributes)
+    let attr_values: Vec<_> = get_concordium_field_attributes(attributes)?
         .into_iter()
         .filter_map(|nested_meta| match nested_meta {
             syn::Meta::NameValue(value) if value.path.is_ident(&target_attr) => Some(value.lit),
@@ -581,27 +591,54 @@ fn find_field_attribute_value(
         })
         .collect();
     if attr_values.is_empty() {
-        return None;
+        return Ok(None);
     }
     if attr_values.len() > 1 {
-        panic!("Attribute '{}' should only be specified once.", target_attr)
+        let mut init_error = syn::Error::new(
+            attr_values[1].span(),
+            format!("Attribute '{}' should only be specified once.", target_attr),
+        );
+        for other in attr_values.iter().skip(2) {
+            init_error.combine(syn::Error::new(
+                other.span(),
+                format!("Attribute '{}' should only be specified once.", target_attr),
+            ))
+        }
+        Err(init_error)
+    } else {
+        Ok(Some(attr_values[0].clone()))
     }
-    Some(attr_values[0].clone())
 }
 
-fn find_length_attribute(attributes: &[syn::Attribute], target_attr: &str) -> Option<u32> {
-    let value = find_field_attribute_value(attributes, target_attr)?;
+fn find_length_attribute(
+    attributes: &[syn::Attribute],
+    target_attr: &str,
+) -> syn::Result<Option<u32>> {
+    let value = match find_field_attribute_value(attributes, target_attr)? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
     let value = match value {
         syn::Lit::Int(int) => int,
-        _ => panic!("Unknown attribute value {:?}.", value),
+        _ => {
+            return Err(syn::Error::new(value.span(), "Length attribute value must be an integer."))
+        }
     };
     let value = match value.base10_parse() {
         Ok(v) => v,
-        _ => panic!("Unknown attribute value {}.", value),
+        _ => {
+            return Err(syn::Error::new(
+                value.span(),
+                "Length attribute value must be a base 10 integer.",
+            ))
+        }
     };
     match value {
-        1 | 2 | 4 | 8 => Some(value),
-        _ => panic!("Length info must be a power of two between 1 and 8 inclusive."),
+        1 | 2 | 4 | 8 => Ok(Some(value)),
+        _ => {
+            return Err(syn::Error::new(value.span(), "Length info must be either 1, 2, 4, or 8."))
+        }
     }
 }
 
@@ -610,8 +647,8 @@ fn impl_deserial_field(
     ident: &syn::Ident,
     source: &syn::Ident,
 ) -> proc_macro2::TokenStream {
-    let concordium_attributes = get_concordium_field_attributes(&f.attrs);
-    if let Some(l) = find_length_attribute(&f.attrs, "size_length") {
+    let concordium_attributes = ok_or_report!(get_concordium_field_attributes(&f.attrs));
+    if let Some(l) = ok_or_report!(find_length_attribute(&f.attrs, "size_length")) {
         let size = format_ident!("u{}", 8 * l);
         quote! {
             let #ident = {
@@ -619,7 +656,7 @@ fn impl_deserial_field(
                 deserial_vector_no_length(#source, len as usize)?
             };
         }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "map_size_length") {
+    } else if let Some(l) = ok_or_report!(find_length_attribute(&f.attrs, "map_size_length")) {
         let size = format_ident!("u{}", 8 * l);
         if contains_attribute(&concordium_attributes, "ensure_ordered") {
             quote! {
@@ -636,7 +673,7 @@ fn impl_deserial_field(
                 };
             }
         }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "set_size_length") {
+    } else if let Some(l) = ok_or_report!(find_length_attribute(&f.attrs, "set_size_length")) {
         let size = format_ident!("u{}", 8 * l);
         if contains_attribute(&concordium_attributes, "ensure_ordered") {
             quote! {
@@ -653,7 +690,7 @@ fn impl_deserial_field(
                 };
             }
         }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "string_size_length") {
+    } else if let Some(l) = ok_or_report!(find_length_attribute(&f.attrs, "string_size_length")) {
         let size = format_ident!("u{}", 8 * l);
         quote! {
             let #ident = {
@@ -720,7 +757,12 @@ fn impl_deserial(ast: &syn::DeriveInput) -> TokenStream {
             } else if data.variants.len() <= 256 * 256 {
                 format_ident!("u16")
             } else {
-                panic!("[derive(Deserial)]: Too many variants. Maximum 65536 are supported.")
+                return syn::Error::new(
+                    ast.span(),
+                    "[derive(Deserial)]: Too many variants. Maximum 65536 are supported.",
+                )
+                .to_compile_error()
+                .into();
             };
             for (i, variant) in data.variants.iter().enumerate() {
                 let (field_names, pattern) = match variant.fields {
@@ -825,28 +867,29 @@ fn impl_serial_field(
     ident: &proc_macro2::TokenStream,
     out: &syn::Ident,
 ) -> proc_macro2::TokenStream {
-    if let Some(l) = find_length_attribute(&field.attrs, "size_length") {
+    if let Some(l) = ok_or_report!(find_length_attribute(&field.attrs, "size_length")) {
         let id = format_ident!("u{}", 8 * l);
         quote! {
             let len: #id = #ident.len() as #id;
             len.serial(#out)?;
             serial_vector_no_length(&#ident, #out)?;
         }
-    } else if let Some(l) = find_length_attribute(&field.attrs, "map_size_length") {
+    } else if let Some(l) = ok_or_report!(find_length_attribute(&field.attrs, "map_size_length")) {
         let id = format_ident!("u{}", 8 * l);
         quote! {
             let len: #id = #ident.len() as #id;
             len.serial(#out)?;
             serial_map_no_length(&#ident, #out)?;
         }
-    } else if let Some(l) = find_length_attribute(&field.attrs, "set_size_length") {
+    } else if let Some(l) = ok_or_report!(find_length_attribute(&field.attrs, "set_size_length")) {
         let id = format_ident!("u{}", 8 * l);
         quote! {
             let len: #id = #ident.len() as #id;
             len.serial(#out)?;
             serial_set_no_length(&#ident, #out)?;
         }
-    } else if let Some(l) = find_length_attribute(&field.attrs, "string_size_length") {
+    } else if let Some(l) = ok_or_report!(find_length_attribute(&field.attrs, "string_size_length"))
+    {
         let id = format_ident!("u{}", 8 * l);
         quote! {
             let len: #id = #ident.len() as #id;
@@ -1007,11 +1050,16 @@ pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
     } else if let Ok(ast) = syn::parse::<syn::ItemEnum>(item.clone()) {
         ast.to_tokens(&mut out);
         ast.ident
-    } else if let Ok(ast) = syn::parse::<syn::ItemType>(item) {
+    } else if let Ok(ast) = syn::parse::<syn::ItemType>(item.clone()) {
         ast.to_tokens(&mut out);
         ast.ident
     } else {
-        unimplemented!("Only supports structs, enums and type aliases as contract state so far")
+        return syn::Error::new_spanned(
+            proc_macro2::TokenStream::from(item),
+            "#[contract_state] only supports structs, enums and type aliases.",
+        )
+        .to_compile_error()
+        .into();
     };
 
     let attrs = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
@@ -1098,13 +1146,27 @@ pub fn schema_type_derive(input: TokenStream) -> TokenStream {
 )]
 pub fn schema_type_derive(_input: TokenStream) -> TokenStream { TokenStream::new() }
 
+fn or_else_joined<A>(
+    a: syn::Result<Option<A>>,
+    b: impl FnOnce() -> syn::Result<Option<A>>,
+) -> syn::Result<Option<A>> {
+    match a {
+        Ok(None) => b(),
+        _ => a,
+    }
+}
+
 #[cfg(feature = "build-schema")]
 fn schema_type_field_type(field: &syn::Field) -> proc_macro2::TokenStream {
     let field_type = &field.ty;
-    if let Some(l) = find_length_attribute(&field.attrs, "size_length")
-        .or_else(|| find_length_attribute(&field.attrs, "map_size_length"))
-        .or_else(|| find_length_attribute(&field.attrs, "set_size_length"))
-        .or_else(|| find_length_attribute(&field.attrs, "string_size_length"))
+    if let Some(l) =
+        ok_or_report!(or_else_joined(find_length_attribute(&field.attrs, "size_length"), || {
+            or_else_joined(find_length_attribute(&field.attrs, "map_size_length"), || {
+                or_else_joined(find_length_attribute(&field.attrs, "set_size_length"), || {
+                    find_length_attribute(&field.attrs, "string_size_length")
+                })
+            })
+        }))
     {
         let size = format_ident!("U{}", 8 * l);
         quote! {
