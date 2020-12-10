@@ -1146,6 +1146,7 @@ pub fn schema_type_derive(input: TokenStream) -> TokenStream {
 )]
 pub fn schema_type_derive(_input: TokenStream) -> TokenStream { TokenStream::new() }
 
+#[cfg(feature = "build-schema")]
 fn or_else_joined<A>(
     a: syn::Result<Option<A>>,
     b: impl FnOnce() -> syn::Result<Option<A>>,
