@@ -209,7 +209,7 @@ impl HasParameter for Parameter {
 /// # Trait implementations for the chain metadata.
 impl HasChainMetadata for ChainMetaExtern {
     #[inline(always)]
-    fn slot_time(&self) -> SlotTime { unsafe { get_slot_time() } }
+    fn slot_time(&self) -> SlotTime { Timestamp::from_timestamp_millis(unsafe { get_slot_time() }) }
 
     #[inline(always)]
     fn block_height(&self) -> BlockHeight { unsafe { get_block_height() } }

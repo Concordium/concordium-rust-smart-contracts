@@ -117,7 +117,7 @@ pub struct CommonDataTest<'a> {
 /// this will be an init or receive context.
 #[derive(Default, Clone)]
 pub struct ContextTest<'a, C> {
-    pub(crate) common:        CommonDataTest<'a>,
+    pub(crate) common: CommonDataTest<'a>,
     pub(crate) custom: C,
 }
 
