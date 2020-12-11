@@ -224,9 +224,9 @@ impl HasChainMetadata for ChainMetaExtern {
 impl HasPolicy for Policy<AttributesCursor> {
     fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
 
-    fn created_at(&self) -> TimestampMillis { self.created_at }
+    fn created_at(&self) -> Timestamp { self.created_at }
 
-    fn valid_to(&self) -> TimestampMillis { self.valid_to }
+    fn valid_to(&self) -> Timestamp { self.valid_to }
 
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
         if self.items.remaining_items == 0 {
@@ -290,8 +290,8 @@ impl Iterator for PoliciesIterator {
         let valid_to_part: [u8; 8] = buf[2 + 4 + 8..2 + 4 + 8 + 8].try_into().unwrap_abort();
         let len_part: [u8; 2] = buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2].try_into().unwrap_abort();
         let identity_provider = IdentityProvider::from_le_bytes(ip_part);
-        let created_at = u64::from_le_bytes(created_at_part);
-        let valid_to = u64::from_le_bytes(valid_to_part);
+        let created_at = Timestamp::from_timestamp_millis(u64::from_le_bytes(created_at_part));
+        let valid_to = Timestamp::from_timestamp_millis(u64::from_le_bytes(valid_to_part));
         let remaining_items = u16::from_le_bytes(len_part);
         let attributes_start = self.pos + 2 + 4 + 8 + 8 + 2;
         self.pos += u32::from(u16::from_le_bytes(skip_part)) + 2;
