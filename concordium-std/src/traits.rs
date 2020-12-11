@@ -42,10 +42,10 @@ pub trait HasPolicy {
     fn identity_provider(&self) -> IdentityProvider;
     /// Beginning of the month in milliseconds since unix epoch when the
     /// credential was created.
-    fn created_at(&self) -> TimestampMillis;
+    fn created_at(&self) -> Timestamp;
     /// Beginning of the month where the credential is no longer valid, in
     /// milliseconds since unix epoch.
-    fn valid_to(&self) -> TimestampMillis;
+    fn valid_to(&self) -> Timestamp;
     /// Get the next attribute, storing it in the provided buffer.
     /// The return value, if `Some`, is a pair of an attribute tag, and the
     /// length, `n` of the attribute value. In this case, the attribute
