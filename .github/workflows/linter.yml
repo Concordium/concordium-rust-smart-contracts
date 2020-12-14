@@ -1,0 +1,175 @@
+on:
+  # Trigger the workflow on push or pull request,
+  # but only for the main branch
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+name: Clippy & fmt
+
+jobs:
+  rustfmt:
+    name: Format
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crates:
+          - concordium-std/Cargo.toml
+          - concordium-std-derive/Cargo.toml
+          - examples/two-step-transfer/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install nightly toolchain with rustfmt available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2019-11-13
+          override: true
+          components: rustfmt
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --manifest-path=${{ matrix.crates }} --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+          - x86_64-unknown-linux-gnu
+
+        lib-crates:
+          - concordium-std/Cargo.toml
+          - concordium-std-derive/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install toolchain with clippy available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.45.2
+          target: ${{ matrix.target }}
+          override: true
+          components: clippy
+
+      - name: Run cargo clippy with default features
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} -- -D warnings
+
+      - name: Run cargo clippy with build-schema
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=build-schema -- -D warnings
+
+  clippy-wasm32-only:
+    name: Clippy Wasm32
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+
+        lib-crates:
+          - concordium-std/Cargo.toml
+          - concordium-std-derive/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install toolchain with clippy available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.45.2
+          target: ${{ matrix.target }}
+          override: true
+          components: clippy
+
+      - name: Run cargo clippy with wasm-test, but only for wasm32 target
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=wasm-test -- -D warnings
+
+      - name: Run cargo clippy with wasm-test and build-schema, but only for wasm32 target
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=wasm-test,build-schema -- -D warnings
+
+  check-no-std:
+    name: Build on nightly,
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+
+        crates:
+          - concordium-std/Cargo.toml
+          - examples/two-step-transfer/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install nightly toolchain with check available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo check with no-std
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features
+
+  clippy-schema:
+    name: Clippy on examples
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+
+        crates:
+          - examples/two-step-transfer/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install toolchain with clippy available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.45.2
+          target: ${{ matrix.target }}
+          override: true
+          components: clippy
+
+      - name: Run cargo clippy with schema and tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/wasm-test -- -D warnings
