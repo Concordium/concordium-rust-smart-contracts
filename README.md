@@ -26,3 +26,11 @@ The list of contracts is as follows
 - [two-step-transfer](./examples/two-step-transfer) A contract that acts like an
  account (can send, store and accept GTU), but requires n > 1 ordained accounts
  to agree to the sending of GTU before it is accepted.
+
+## Submodules
+
+The repository has
+[concordium-contracts-common](https://github.com/Concordium/concordium-contracts-common)
+as a submodule, and testing and builds are set-up to use the submodule version.
+When changes are made in `concordium-contracts-common` they should be propagated
+to this repository.
