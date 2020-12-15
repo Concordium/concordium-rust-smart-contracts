@@ -19,9 +19,7 @@ path = "../concordium-std-derive"
 version = "=0.3"
 
 [dependencies.concordium-contracts-common]
-# path = "../../concordium-contracts-common"
-# git = "https://github.com/Concordium/concordium-contracts-common.git"
-# branch = "main"
+path = "../concordium-contracts-common"
 version = "=0.2"
 default-features = false
 
