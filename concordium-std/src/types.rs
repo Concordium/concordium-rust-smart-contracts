@@ -257,15 +257,19 @@ pub type InitResult<S> = Result<S, Reject>;
 
 /// Context backed by host functions.
 #[derive(Default)]
+#[doc(hidden)]
 pub struct ExternContext<T: sealed::ContextType> {
     marker: crate::marker::PhantomData<T>,
 }
 
+#[doc(hidden)]
 pub struct ChainMetaExtern {}
 
 #[derive(Default)]
+#[doc(hidden)]
 pub struct InitContextExtern;
 #[derive(Default)]
+#[doc(hidden)]
 pub struct ReceiveContextExtern;
 
 pub(crate) mod sealed {
