@@ -1017,8 +1017,9 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     Ok(tokens)
 }
 
-/// Marks a type as the contract state. So far only used for generating the
-/// schema of the contract state.
+/// Marks a type as the contract state. Currently only used for generating the
+/// schema of the contract state. If the feature `build-schema` is not enabled
+/// this has no effect.
 ///
 ///
 /// # Example
@@ -1029,7 +1030,6 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 ///      ...
 /// }
 /// ```
-#[cfg(feature = "build-schema")]
 #[proc_macro_attribute]
 pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(contract_state_worker(attr, item))
@@ -1082,11 +1082,13 @@ fn contract_state_worker(attr: TokenStream, item: TokenStream) -> syn::Result<To
 }
 
 #[cfg(not(feature = "build-schema"))]
-#[proc_macro_attribute]
-pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream { item }
+fn contract_state_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    Ok(item)
+}
 
 /// Derive the `SchemaType` trait for a type.
-#[cfg(feature = "build-schema")]
+/// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
+/// not produce any code.
 #[proc_macro_derive(
     SchemaType,
     attributes(size_length, map_size_length, set_size_length, string_size_length)
@@ -1139,11 +1141,9 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 #[cfg(not(feature = "build-schema"))]
-#[proc_macro_derive(
-    SchemaType,
-    attributes(size_length, map_size_length, set_size_length, string_size_length)
-)]
-pub fn schema_type_derive(_input: TokenStream) -> TokenStream { TokenStream::new() }
+fn schema_type_derive_worker(_input: TokenStream) -> syn::Result<TokenStream> {
+    Ok(TokenStream::new())
+}
 
 #[cfg(feature = "build-schema")]
 fn or_else_joined<A>(
@@ -1203,6 +1203,8 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
 }
 
 #[proc_macro_attribute]
+/// Derive the appropriate export for an annotated test function, when feature
+/// "wasm-test" is enabled, otherwise behaves like `#[test]`.
 pub fn concordium_test(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(concordium_test_worker(attr, item))
 }
