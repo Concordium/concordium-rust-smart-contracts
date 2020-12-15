@@ -25,14 +25,20 @@
 //! Importing this library has a side-effect of setting  the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
 //! which is a memory allocator aimed at small code footprint.
 //! This allocator is designed to be used in contexts where there are a few
-//! large allocations up-front, and the memory later used during the lifetime of
-//! the program. Frequent small allocations will have bad performance, and
-//! should be avoided.
+//! large allocations up-front, and the memory is afterwards used by the program
+//! without many further allocations. Frequent small allocations will have bad
+//! performance, and should be avoided.
+//!
+//! In the future it will be possible to opt-out of the global allocator via a
+//! feature.
 //!
 //! # Panic handler
 //! When compiled without the `std` feature this crate sets the panic handler
 //! so that it terminates the process immediately, without any unwinding or
 //! prints.
+//! Concretely, when compiled to the `wasm32` target panic boils down to the
+//! `unreachable` instruction, which triggers a runtime failure, aborting
+//! execution of the program.
 //!
 //! # Build for generating a module schema
 //! **WARNING** Building with this feature enabled is meant for tooling, and the
@@ -71,7 +77,37 @@
 //!
 //! **Note** This feature is used by `cargo-concordium`, when building for
 //! testing and for most cases this feature should not be set manually.
-
+//!
+//! # Traits
+//! Most of the functionality for interacting with the host is abstracted away
+//! by the traits
+//! - [HasParameter](./trait.HasParameter.html) for accessing the contract
+//!   parameter
+//! - [HasCommonData](./trait.HasCommonData.html) for accessing the data that is
+//!   common to both init and receive methodss
+//! - [HasInitContext](./trait.HasInitContext.html) for all the context data
+//!   available to the init functions (note that this includes all the common
+//!   data)
+//! - [HasReceiveContext](./trait.HasReceiveContext.html) for accessing all the
+//!   context data available to the receive functions (note that this includes
+//!   all the common data)
+//! - [HasLogger](./trait.HasLogger.html) for logging data during smart contract
+//!   execution
+//! - [HasPolicy](./trait.HasPolicy.html) for accessing the policy of the
+//!   sender, either of the init or receive method
+//! - [HasContractState](./trait.HasContractState.html) for operations possible
+//!   on the contract state.
+//!
+//! These are provided by traits to make testing easier. There are two main
+//! implementations provided for these traits. One provided by so-called
+//! __host__ functions, which is the implementation that is used by Concordium
+//! nodes when contracts are executed on the chain, or when tested via
+//! `cargo-concordium`.
+//!
+//! The second implementation is on types in the
+//! [test_infrastructure](./test_infrastructure/index.html) module, and is
+//! intended to be used for unit-testing together with the `concordium_test`
+//! infrastructure.
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
 
 #[cfg(not(feature = "std"))]

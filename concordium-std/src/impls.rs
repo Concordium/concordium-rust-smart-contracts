@@ -261,6 +261,9 @@ impl HasPolicy for Policy<AttributesCursor> {
     }
 }
 
+/// An iterator over policies using host functions to supply the data.
+/// The main interface to using this type is via the methods of the [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
+/// and [ExactSizeIterator](https://doc.rust-lang.org/std/iter/trait.ExactSizeIterator.html) traits.
 pub struct PoliciesIterator {
     /// Position in the policies binary serialization.
     pos: u32,
@@ -314,6 +317,7 @@ impl Iterator for PoliciesIterator {
 }
 
 impl ExactSizeIterator for PoliciesIterator {
+    #[inline(always)]
     fn len(&self) -> usize { self.remaining_items as usize }
 }
 

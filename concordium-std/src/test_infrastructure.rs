@@ -13,11 +13,9 @@
 //! #[init(contract = "noop")]
 //! fn contract_init<I: HasInitContext, L: HasLogger>(
 //!     ctx: &I,
-//!     _amount: Amount,
-//!     _logger: &mut L,
 //! ) -> InitResult<State> { ... }
 //!
-//! #[receive(contract = "noop", name = "receive")]
+//! #[receive(contract = "noop", name = "receive", payable, enable_logger)]
 //! fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
 //!     ctx: &R,
 //!     amount: Amount,
@@ -34,8 +32,7 @@
 //!         let mut ctx = InitContextTest::empty();
 //!         ctx.set_init_origin(AccountAddress([0u8; 32]));
 //!         ...
-//!         let mut logger = LogRecorder::init();
-//!         let result = contract_init(&ctx, 0, &mut logger);
+//!         let result = contract_init(&ctx);
 //!         claim!(...)
 //!         ...
 //!     }
@@ -104,6 +101,7 @@ impl TestPolicy {
 /// Defaults to having all the fields unset, and constructing
 /// [`ChainMetaTest`](struct.ChainMetaTest.html) using default.
 #[derive(Default, Clone)]
+#[doc(hidden)]
 pub struct CommonDataTest<'a> {
     pub(crate) metadata: ChainMetaTest,
     pub(crate) parameter: Option<&'a [u8]>,
@@ -182,6 +180,7 @@ pub struct ContextTest<'a, C> {
 pub type InitContextTest<'a> = ContextTest<'a, InitOnlyDataTest>;
 
 #[derive(Default)]
+#[doc(hidden)]
 pub struct InitOnlyDataTest {
     init_origin: Option<AccountAddress>,
 }
@@ -249,6 +248,7 @@ pub struct InitOnlyDataTest {
 pub type ReceiveContextTest<'a> = ContextTest<'a, ReceiveOnlyDataTest>;
 
 #[derive(Default)]
+#[doc(hidden)]
 pub struct ReceiveOnlyDataTest {
     pub(crate) invoker:      Option<AccountAddress>,
     pub(crate) self_address: Option<ContractAddress>,
@@ -499,7 +499,7 @@ impl HasLogger for LogRecorder {
     fn log_bytes(&mut self, event: &[u8]) { self.logs.push(event.to_vec()) }
 }
 
-/// An actions tree, used to provide a more simple presentation for testing.
+/// An actions tree, used to provide a simpler presentation for testing.
 #[derive(Eq, PartialEq, Debug)]
 pub enum ActionsTree {
     Accept,
