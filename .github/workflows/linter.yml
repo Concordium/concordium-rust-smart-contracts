@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Install nightly toolchain with rustfmt available
         uses: actions-rs/toolchain@v1
@@ -52,9 +54,15 @@ jobs:
           - concordium-std/Cargo.toml
           - concordium-std-derive/Cargo.toml
 
+        features:
+          -
+          - build-schema
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -65,17 +73,11 @@ jobs:
           override: true
           components: clippy
 
-      - name: Run cargo clippy with default features
+      - name: Run cargo clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} -- -D warnings
-
-      - name: Run cargo clippy with build-schema
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=build-schema -- -D warnings
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
   clippy-wasm32-only:
     name: Clippy Wasm32
@@ -89,9 +91,15 @@ jobs:
           - concordium-std/Cargo.toml
           - concordium-std-derive/Cargo.toml
 
+        features:
+          - wasm-test
+          - wasm-test,build-schema
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -102,17 +110,11 @@ jobs:
           override: true
           components: clippy
 
-      - name: Run cargo clippy with wasm-test, but only for wasm32 target
+      - name: Run cargo clippy, but only for wasm32 target
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=wasm-test -- -D warnings
-
-      - name: Run cargo clippy with wasm-test and build-schema, but only for wasm32 target
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=wasm-test,build-schema -- -D warnings
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
   check-no-std:
     name: Build on nightly,
@@ -129,6 +131,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Install nightly toolchain with check available
         uses: actions-rs/toolchain@v1
@@ -158,6 +162,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
