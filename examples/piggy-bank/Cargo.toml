@@ -1,0 +1,26 @@
+[package]
+name = "piggy-bank"
+version = "0.1.0"
+authors = ["Concordium AG <info@concordium.com>"]
+edition = "2018"
+license = "Apache-2.0"
+description = "Two-step transfer smart contract."
+homepage = "https://github.com/concordium/concordium-rust-smart-contracts"
+repository = "https://github.com/concordium/concordium-rust-smart-contracts"
+readme = "../README.md"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["std", "part2"]
+std = ["concordium-std/std"]
+part1 = []
+part2 = []
+
+[dependencies.concordium-std]
+path = "../../concordium-std"
+default-features = false
+
+[profile.release]
+opt-level = 3
