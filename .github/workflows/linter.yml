@@ -20,6 +20,8 @@ jobs:
           - concordium-std/Cargo.toml
           - concordium-std-derive/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/piggy-bank/part1/Cargo.toml
+          - examples/piggy-bank/part2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -158,6 +160,8 @@ jobs:
 
         crates:
           - examples/two-step-transfer/Cargo.toml
+          - examples/piggy-bank/part1/Cargo.toml
+          - examples/piggy-bank/part2/Cargo.toml
 
     steps:
       - name: Checkout sources
