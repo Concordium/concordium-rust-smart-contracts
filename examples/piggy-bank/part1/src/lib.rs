@@ -11,7 +11,6 @@
 //! - The `ensure` macro.
 //! - The `payable` attribute.
 //! - Creating a simple transfer action.
-//!
 
 // Pulling in everything from the smart contract standard library.
 use concordium_std::*;

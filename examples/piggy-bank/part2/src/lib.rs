@@ -13,7 +13,6 @@
 //! - Creating a simple transfer action.
 //! - Unit testing
 //! - Custom errors
-//!
 
 // Pulling in everything from the smart contract standard library.
 use concordium_std::*;
