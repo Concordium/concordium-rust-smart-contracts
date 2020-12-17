@@ -1,5 +1,5 @@
 [package]
-name = "piggy-bank"
+name = "piggy-bank-part1"
 version = "0.1.0"
 authors = ["Concordium AG <info@concordium.com>"]
 edition = "2018"
@@ -13,13 +13,12 @@ readme = "../README.md"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["std", "part2"]
+default = ["std"]
 std = ["concordium-std/std"]
-part1 = []
-part2 = []
 
 [dependencies.concordium-std]
-path = "../../concordium-std"
+version = "0.3.0"
+path = "../../../concordium-std"
 default-features = false
 
 [profile.release]
