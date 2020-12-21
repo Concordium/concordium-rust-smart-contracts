@@ -556,6 +556,17 @@ impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     }
 }
 
+impl<A, E: fmt::Debug> ExpectErrReport for Result<A, E> {
+    type Unwrap = E;
+
+    fn expect_err_report(self, msg: &str) -> Self::Unwrap {
+        match self {
+            Ok(_) => crate::fail!("{}", msg),
+            Err(e) => e,
+        }
+    }
+}
+
 impl<A> UnwrapAbort for Option<A> {
     type Unwrap = A;
 
@@ -570,6 +581,15 @@ impl<A> ExpectReport for Option<A> {
         match self {
             Some(v) => v,
             None => crate::fail!("{}", msg),
+        }
+    }
+}
+
+impl<A> ExpectNoneReport for Option<A> {
+    fn expect_none_report(self, msg: &str) {
+        match self {
+            Some(_) => crate::fail!("{}", msg),
+            None => (),
         }
     }
 }

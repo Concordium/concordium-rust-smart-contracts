@@ -203,3 +203,20 @@ pub trait ExpectReport {
     /// [fail](macro.fail.html) with the given message, instead of `panic`.
     fn expect_report(self, msg: &str) -> Self::Unwrap;
 }
+
+/// Analogue of the `expect_err` methods on [Result](https://doc.rust-lang.org/std/result/enum.Result.html),
+/// but useful in a Wasm setting.
+pub trait ExpectErrReport {
+    type Unwrap;
+    /// Like the default `expect_err` on, e.g., `Result`, but calling
+    /// [fail](macro.fail.html) with the given message, instead of `panic`.
+    fn expect_err_report(self, msg: &str) -> Self::Unwrap;
+}
+
+/// Analogue of the `expect_none` methods on [Option](https://doc.rust-lang.org/std/option/enum.Option.html),
+/// but useful in a Wasm setting.
+pub trait ExpectNoneReport {
+    /// Like the default `expect_none_report` on, e.g., `Option`, but calling
+    /// [fail](macro.fail.html) with the given message, instead of `panic`.
+    fn expect_none_report(self, msg: &str);
+}
