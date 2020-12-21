@@ -17,7 +17,7 @@ default = ["std"]
 std = ["concordium-std/std"]
 
 [dependencies.concordium-std]
-version = "0.3.0"
+version = "0.3.1"
 path = "../../../concordium-std"
 default-features = false
 

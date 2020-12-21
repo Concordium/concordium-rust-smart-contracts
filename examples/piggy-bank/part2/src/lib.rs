@@ -175,10 +175,7 @@ mod tests {
         // Trigger the smash
         let actions_result: Result<ActionsTree, _> = piggy_smash(&ctx, &mut state);
 
-        let err = match actions_result {
-            Ok(_) => fail!("Contract is expected to fail."),
-            Err(err) => err,
-        };
+        let err = actions_result.expect_err_report("Contract is expected to fail.");
         claim_eq!(err, SmashError::NotOwner, "Expected to fail with error NotOwner")
     }
 
@@ -198,10 +195,7 @@ mod tests {
         // Trigger the smash
         let actions_result: Result<ActionsTree, _> = piggy_smash(&ctx, &mut state);
 
-        let err = match actions_result {
-            Ok(_) => fail!("Contract is expected to fail."),
-            Err(err) => err,
-        };
+        let err = actions_result.expect_err_report("Contract is expected to fail.");
         claim_eq!(err, SmashError::AlreadySmashed, "Expected  to fail with error AlreadySmashed")
     }
 }
