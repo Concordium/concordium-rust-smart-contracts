@@ -116,7 +116,7 @@ jobs:
           command: clippy
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
-  check-no-std:
+  check-std-no-std:
     name: Build on nightly,
     runs-on: ubuntu-latest
     strategy:
@@ -126,7 +126,6 @@ jobs:
 
         crates:
           - concordium-std/Cargo.toml
-          - examples/two-step-transfer/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -147,6 +146,42 @@ jobs:
         with:
           command: build
           args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features
+
+  check-no-std-examples:
+    name: Build on nightly,
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+
+        crates:
+          - examples/two-step-transfer/Cargo.toml
+
+        features:
+          -
+          - concordium-std/build-schema
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install nightly toolchain with check available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo check with no-std
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }}
+
 
   clippy-schema:
     name: Clippy on examples

@@ -1118,12 +1118,12 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
                     let variant_name = &variant.ident.to_string();
                     let fields_tokens = schema_type_fields(&variant.fields)?;
                     Ok(quote! {
-                        (String::from(#variant_name), #fields_tokens)
+                        (concordium_std::String::from(#variant_name), #fields_tokens)
                     })
                 })
                 .collect::<syn::Result<_>>()?;
             quote! {
-                concordium_std::schema::Type::Enum(vec! [ #(#variant_tokens),* ])
+                concordium_std::schema::Type::Enum(concordium_std::Vec::from([ #(#variant_tokens),* ]))
             }
         }
         _ => syn::Error::new(ast.span(), "Union is not supported").to_compile_error(),
@@ -1187,16 +1187,18 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
                     let field_name = field.ident.clone().unwrap().to_string(); // safe since named fields
                     let field_schema_type = schema_type_field_type(&field)?;
                     Ok(quote! {
-                        (String::from(#field_name), #field_schema_type)
+                        (concordium_std::String::from(#field_name), #field_schema_type)
                     })
                 })
                 .collect::<syn::Result<_>>()?;
-            Ok(quote! { concordium_std::schema::Fields::Named(vec![ #(#fields_tokens),* ]) })
+            Ok(
+                quote! { concordium_std::schema::Fields::Named(concordium_std::Vec::from([ #(#fields_tokens),* ])) },
+            )
         }
         syn::Fields::Unnamed(_) => {
             let fields_tokens: Vec<_> =
                 fields.iter().map(schema_type_field_type).collect::<syn::Result<_>>()?;
-            Ok(quote! { concordium_std::schema::Fields::Unnamed(vec![ #(#fields_tokens),* ]) })
+            Ok(quote! { concordium_std::schema::Fields::Unnamed([ #(#fields_tokens),* ].to_vec()) })
         }
         syn::Fields::Unit => Ok(quote! { concordium_std::schema::Fields::None }),
     }

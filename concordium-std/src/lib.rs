@@ -170,6 +170,8 @@ pub use core::marker;
 pub use core::mem;
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
+#[cfg(feature = "std")]
+pub use std::vec::Vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
@@ -182,6 +184,8 @@ pub use std::marker;
 /// Re-export.
 #[cfg(feature = "std")]
 pub use std::mem;
+#[cfg(feature = "std")]
+pub use std::string::String;
 
 mod impls;
 mod prims;

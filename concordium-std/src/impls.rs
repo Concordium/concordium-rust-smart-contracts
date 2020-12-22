@@ -517,14 +517,16 @@ impl HasActions for Action {
 /// Allocates a Vec of bytes prepended with its length as a `u32` into memory,
 /// and prevents them from being dropped. Returns the pointer.
 /// Used to pass bytes from a Wasm module to its host.
-#[cfg(feature = "std")]
 #[doc(hidden)]
 pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let bytes_length = input.len() as u32;
     let mut bytes = to_bytes(&bytes_length);
     bytes.extend_from_slice(input);
     let ptr = bytes.as_mut_ptr();
+    #[cfg(feature = "std")]
     ::std::mem::forget(bytes);
+    #[cfg(not(feature = "std"))]
+    core::mem::forget(bytes);
     ptr
 }
 
