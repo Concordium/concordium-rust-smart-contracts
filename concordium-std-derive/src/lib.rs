@@ -5,11 +5,9 @@ extern crate syn;
 extern crate quote;
 
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::ToTokens;
-use syn::{
-    export::Span, parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, Ident, Meta,
-    Token,
-};
+use syn::{parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, Ident, Meta, Token};
 
 /// A helper to report meaningful compilation errors
 /// - If applied to an Ok value they simply return the underlying value.
