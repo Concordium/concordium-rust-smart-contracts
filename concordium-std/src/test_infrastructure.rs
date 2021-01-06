@@ -67,10 +67,7 @@ use std::boxed::Box;
 /// Defaults to having all of the fields unset
 #[derive(Default, Clone)]
 pub struct ChainMetaTest {
-    pub(crate) slot_number:      Option<SlotNumber>,
-    pub(crate) block_height:     Option<BlockHeight>,
-    pub(crate) finalized_height: Option<FinalizedHeight>,
-    pub(crate) slot_time:        Option<SlotTime>,
+    pub(crate) slot_time: Option<SlotTime>,
 }
 
 /// Policy type used by init and receive contexts for testing.
@@ -268,24 +265,6 @@ impl ChainMetaTest {
         self.slot_time = Some(value);
         self
     }
-
-    /// Set the block height
-    pub fn set_block_height(&mut self, value: BlockHeight) -> &mut Self {
-        self.block_height = Some(value);
-        self
-    }
-
-    /// Set the finalized block height
-    pub fn set_finalized_height(&mut self, value: FinalizedHeight) -> &mut Self {
-        self.finalized_height = Some(value);
-        self
-    }
-
-    /// Set the slot number
-    pub fn set_slot_number(&mut self, value: SlotNumber) -> &mut Self {
-        self.slot_number = Some(value);
-        self
-    }
 }
 
 impl<'a, C> ContextTest<'a, C> {
@@ -321,24 +300,6 @@ impl<'a, C> ContextTest<'a, C> {
     /// Set the metadata block slot time
     pub fn set_metadata_slot_time(&mut self, value: SlotTime) -> &mut Self {
         self.metadata_mut().set_slot_time(value);
-        self
-    }
-
-    /// Set the metadata block height
-    pub fn set_metadata_block_height(&mut self, value: BlockHeight) -> &mut Self {
-        self.metadata_mut().set_block_height(value);
-        self
-    }
-
-    /// Set the metadata finalized block height
-    pub fn set_metadata_finalized_height(&mut self, value: FinalizedHeight) -> &mut Self {
-        self.metadata_mut().set_finalized_height(value);
-        self
-    }
-
-    /// Set the metadata slot number
-    pub fn set_metadata_slot_number(&mut self, value: SlotNumber) -> &mut Self {
-        self.metadata_mut().set_slot_number(value);
         self
     }
 }
@@ -401,18 +362,6 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> A {
 // Getters for testing-context
 impl HasChainMetadata for ChainMetaTest {
     fn slot_time(&self) -> SlotTime { unwrap_ctx_field(self.slot_time, "metadata.slot_time") }
-
-    fn block_height(&self) -> BlockHeight {
-        unwrap_ctx_field(self.block_height, "metadata.block_height")
-    }
-
-    fn finalized_height(&self) -> FinalizedHeight {
-        unwrap_ctx_field(self.finalized_height, "metadata.finalized_height")
-    }
-
-    fn slot_number(&self) -> SlotNumber {
-        unwrap_ctx_field(self.slot_number, "metadata.slot_number")
-    }
 }
 
 impl HasPolicy for TestPolicy {
