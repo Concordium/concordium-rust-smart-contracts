@@ -63,12 +63,6 @@ extern "C" {
     pub(crate) fn get_receive_owner(start: *mut u8);
 
     // Getters for the chain meta data
-    /// Slot number from chain meta data
-    pub(crate) fn get_slot_number() -> u64;
-    /// Block height from chain meta data
-    pub(crate) fn get_block_height() -> u64;
-    /// Finalized height from chain meta data
-    pub(crate) fn get_finalized_height() -> u64;
     /// Slot time (in milliseconds) from chain meta data
     pub(crate) fn get_slot_time() -> u64;
 
@@ -178,18 +172,6 @@ mod host_dummy_functions {
     }
     #[no_mangle]
     pub(crate) extern "C" fn get_receive_owner(_start: *mut u8) {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn get_slot_number() -> u64 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn get_block_height() -> u64 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn get_finalized_height() -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]

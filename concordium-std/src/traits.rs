@@ -23,13 +23,6 @@ pub trait HasParameter: Read {
 pub trait HasChainMetadata {
     /// Get time in milliseconds at the beginning of this block.
     fn slot_time(&self) -> SlotTime;
-    /// Get block height of the current block.
-    fn block_height(&self) -> BlockHeight;
-    /// Get the height of the last finalized block, i.e., block to which the
-    /// current block has a finalized pointer to.
-    fn finalized_height(&self) -> FinalizedHeight;
-    /// Get the slot number of the current block.
-    fn slot_number(&self) -> SlotNumber;
 }
 
 /// A type which has access to a policy of a credential.

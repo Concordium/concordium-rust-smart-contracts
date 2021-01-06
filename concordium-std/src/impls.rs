@@ -210,15 +210,6 @@ impl HasParameter for Parameter {
 impl HasChainMetadata for ChainMetaExtern {
     #[inline(always)]
     fn slot_time(&self) -> SlotTime { Timestamp::from_timestamp_millis(unsafe { get_slot_time() }) }
-
-    #[inline(always)]
-    fn block_height(&self) -> BlockHeight { unsafe { get_block_height() } }
-
-    #[inline(always)]
-    fn finalized_height(&self) -> FinalizedHeight { unsafe { get_finalized_height() } }
-
-    #[inline(always)]
-    fn slot_number(&self) -> SlotNumber { unsafe { get_slot_number() } }
 }
 
 impl HasPolicy for Policy<AttributesCursor> {
