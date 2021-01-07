@@ -1,7 +1,7 @@
 //! Piggy bank smart contract.
 //!
-//! Allows anyone to insert money, but only the owner can "smash" it and
-//! retrieve the money. Prevents more money to be inserted after being smashed.
+//! Allows anyone to insert GTU, but only the owner can "smash" it and
+//! retrieve the GTU. Prevents more GTU to be inserted after being smashed.
 //!
 //! This smart contract module is developed as part of a upcoming tutorial on
 //! developing smart contracts.
@@ -22,7 +22,7 @@ use concordium_std::*;
 enum PiggyBankState {
     /// Alive and well, allows for GTU to be inserted.
     Intact,
-    /// The piggy bank have been emptied, preventing further GTU to be inserted.
+    /// The piggy bank has been emptied, preventing further GTU to be inserted.
     Smashed,
 }
 
@@ -40,7 +40,7 @@ fn piggy_insert<A: HasActions>(
     _amount: Amount,
     state: &mut PiggyBankState,
 ) -> ReceiveResult<A> {
-    // Ensure the piggy bank have not been smashed already.
+    // Ensure the piggy bank has not been smashed already.
     ensure!(*state == PiggyBankState::Intact);
     // Just accept since the GTU balance is managed by the chain.
     Ok(A::accept())
@@ -52,7 +52,7 @@ enum SmashError {
     AlreadySmashed,
 }
 
-/// Smash a piggy bank retrieving the money, only allowed by the owner.
+/// Smash a piggy bank retrieving the GTU, only allowed by the owner.
 #[receive(contract = "PiggyBank", name = "smash")]
 fn piggy_smash<A: HasActions>(
     ctx: &impl HasReceiveContext,
@@ -66,7 +66,7 @@ fn piggy_smash<A: HasActions>(
 
     // Ensure only the owner can smash the piggy bank.
     ensure!(sender.matches_account(&owner), SmashError::NotOwner);
-    // Ensure the piggy bank have not been smashed already.
+    // Ensure the piggy bank has not been smashed already.
     ensure!(*state == PiggyBankState::Intact, SmashError::AlreadySmashed);
     // Set the state to be smashed.
     *state = PiggyBankState::Smashed;
