@@ -1,5 +1,13 @@
 # Changelog
 
+## unreleased changes
+
+- Add PhantomData Serial/Deserial implementation.
+
+## concordium-std 0.4.0 (2021-01-08)
+
+- Remove some chain details from ChainMetadata. Only the slot time remains.
+
 ## concordium-std 0.3.1 (2020-12-21)
 
 ### Added
