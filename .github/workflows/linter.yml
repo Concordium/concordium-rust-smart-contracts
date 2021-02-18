@@ -46,6 +46,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    needs: rustfmt
     strategy:
       matrix:
         target:
@@ -84,6 +85,7 @@ jobs:
   clippy-wasm32-only:
     name: Clippy Wasm32
     runs-on: ubuntu-latest
+    needs: rustfmt
     strategy:
       matrix:
         target:
@@ -121,6 +123,7 @@ jobs:
   check-std-no-std:
     name: Build on nightly,
     runs-on: ubuntu-latest
+    needs: rustfmt
     strategy:
       matrix:
         target:
@@ -152,6 +155,7 @@ jobs:
   check-no-std-examples:
     name: Build on nightly,
     runs-on: ubuntu-latest
+    needs: rustfmt
     strategy:
       matrix:
         target:
@@ -188,6 +192,7 @@ jobs:
   clippy-schema:
     name: Clippy on examples
     runs-on: ubuntu-latest
+    needs: rustfmt
     strategy:
       matrix:
         target:
@@ -218,3 +223,39 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/wasm-test -- -D warnings
+
+  test:
+    name: Test the library
+    runs-on: ubuntu-latest
+    needs: [rustfmt, clippy]
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+
+        lib-crates:
+          - concordium-std/Cargo.toml
+
+        features:
+          -
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.45.2
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          # only run the library tests, no doc tests
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} --lib

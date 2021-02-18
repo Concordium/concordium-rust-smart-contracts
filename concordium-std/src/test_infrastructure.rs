@@ -548,8 +548,8 @@ pub type ContractStateTestBorrowed<'a> = ContractStateTest<&'a mut Vec<u8>>;
 pub type ContractStateTestOwned = ContractStateTest<Vec<u8>>;
 
 #[derive(Debug, PartialEq, Eq)]
-// An error that is raised when operating with `Seek`, `Write`, or `Read` trait
-// methods of the `ContractStateTest` type.
+/// An error that is raised when operating with `Seek`, `Write`, or `Read` trait
+/// methods of the `ContractStateTest` type.
 pub enum ContractStateError {
     /// The computation of the new offset would result in an overflow.
     Overflow,
