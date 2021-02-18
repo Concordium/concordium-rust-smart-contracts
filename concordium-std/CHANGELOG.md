@@ -3,6 +3,7 @@
 ## unreleased changes
 
 - Add PhantomData Serial/Deserial implementation.
+- Add ContractStateTest wrapper with a HasContractState implemenation to enable testing with a low-level interface.
 
 ## concordium-std 0.4.0 (2021-01-08)
 
