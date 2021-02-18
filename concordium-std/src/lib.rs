@@ -187,6 +187,9 @@ pub use std::mem;
 #[cfg(feature = "std")]
 pub use std::string::String;
 
+/// Chain constants that impose limits on various aspects of smart contract
+/// execution.
+pub mod constants;
 mod impls;
 mod prims;
 mod traits;
