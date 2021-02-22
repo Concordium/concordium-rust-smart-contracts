@@ -576,7 +576,7 @@ impl<T: convert::AsMut<[u8]>> Write for ContractStateTest<T> {
         // should not behave like that either.
         let data = &mut self.cursor.data.as_mut()[self.cursor.offset..];
         let to_write = cmp::min(data.len(), buf.len());
-        data.copy_from_slice(&buf[..to_write]);
+        data[..to_write].copy_from_slice(&buf[..to_write]);
         self.cursor.offset += to_write;
         Ok(to_write)
     }
@@ -749,6 +749,20 @@ mod test {
             state.write(&[1; 1000]),
             Ok(0),
             "Writing at the end after truncation should do nothing."
+        );
+    }
+
+    #[test]
+    fn test_contract_state_write() {
+        let data = vec![0u8; 10];
+        let mut state = ContractStateTest::open(data);
+        assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
+        assert_eq!(state.write(&2u64.to_le_bytes()), Ok(2), "Incorrect number of bytes written.");
+        assert_eq!(state.cursor.offset, 10, "Pos should be at the end.");
+        assert_eq!(
+            state.cursor.data,
+            vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0],
+            "Correct data was written."
         );
     }
 }
