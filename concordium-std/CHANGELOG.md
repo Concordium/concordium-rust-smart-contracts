@@ -1,7 +1,10 @@
 # Changelog
 
-## unreleased changes
+## Unreleased changes
 
+## concordium-std 0.4.1 (2021-02-22)
+
+- Fix endianness mismatch when getting the sender contract address.
 - Add PhantomData Serial/Deserial implementation.
 - Add ContractStateTest wrapper with a HasContractState implemenation to enable testing with a low-level interface.
 
