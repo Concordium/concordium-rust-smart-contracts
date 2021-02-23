@@ -412,19 +412,10 @@ impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
                         Err(_) => crate::trap(),
                     }
                 }
-                1u8 => {
-                    match from_bytes::<ContractAddress>(core::slice::from_raw_parts(ptr.add(1), 16))
-                    {
-                        Ok(v) => {
-                            let reversed = ContractAddress {
-                                index:    v.index.swap_bytes(),
-                                subindex: v.subindex.swap_bytes(),
-                            };
-                            Address::Contract(reversed)
-                        }
-                        Err(_) => crate::trap(),
-                    }
-                }
+                1u8 => match from_bytes(core::slice::from_raw_parts(ptr.add(1), 16)) {
+                    Ok(v) => Address::Contract(v),
+                    Err(_) => crate::trap(),
+                },
                 _ => crate::trap(), // unreachable!("Host violated precondition."),
             }
         }
