@@ -49,7 +49,7 @@
 //!     }
 //! }
 //! ```
-use crate::*;
+use crate::{constants::MAX_CONTRACT_STATE_SIZE, *};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -565,15 +565,15 @@ impl<T: convert::AsRef<[u8]>> Read for ContractStateTest<T> {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
 }
 
-impl<T: convert::AsMut<[u8]>> Write for ContractStateTest<T> {
+impl<T: convert::AsMut<Vec<u8>>> Write for ContractStateTest<T> {
     type Err = ContractStateError;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
-        // Write should only write as much as there is space currently, and not
-        // automatically extend the data.
-        // In Vec<u8> based implementations the latter behaviour would be reasonable,
-        // however that is not how the chain implementation behaves, and thus this one
-        // should not behave like that either.
+        // The chain automatically resizes the state up until MAX_CONTRACT_STATE_SIZE.
+        let end = cmp::min(MAX_CONTRACT_STATE_SIZE as usize, self.cursor.offset + buf.len());
+        if self.cursor.data.as_mut().len() < end {
+            self.cursor.data.as_mut().resize(end as usize, 0u8);
+        }
         let data = &mut self.cursor.data.as_mut()[self.cursor.offset..];
         let to_write = cmp::min(data.len(), buf.len());
         data[..to_write].copy_from_slice(&buf[..to_write]);
@@ -724,32 +724,43 @@ mod test {
             Ok(80),
             "Seeking from end leads to incorrect position."
         );
-        assert_eq!(state.write(&[0; 21]), Ok(20), "Writing writes an incorrect amount of data.");
-        assert_eq!(state.cursor.offset, 100, "After writing the cursor is at the end.");
-        assert_eq!(state.write(&[0; 21]), Ok(0), "Writing again writes some data.");
+        assert_eq!(state.write(&[0; 21]), Ok(21), "Writing writes an incorrect amount of data.");
+        assert_eq!(state.cursor.offset, 101, "After writing the cursor is at the end.");
+        assert_eq!(state.write(&[0; 21]), Ok(21), "Writing again writes incorrect amount of data.");
         let mut buf = [0; 30];
         assert_eq!(state.read(&mut buf), Ok(0), "Reading from the end should read 0 bytes.");
-        assert_eq!(state.seek(SeekFrom::End(-20)), Ok(80));
+        assert_eq!(state.seek(SeekFrom::End(-20)), Ok(102));
         assert_eq!(state.read(&mut buf), Ok(20), "Reading from offset 80 should read 20 bytes.");
         assert_eq!(&buf[0..20], &state.cursor.data[80..100], "Incorrect data was read.");
         assert_eq!(
-            state.cursor.offset, 100,
+            state.cursor.offset, 122,
             "After reading the offset is in the correct position."
         );
-        assert!(state.reserve(200), "Could not increase state to 200.");
+        assert!(state.reserve(222), "Could not increase state to 222.");
         assert!(
             !state.reserve(constants::MAX_CONTRACT_STATE_SIZE + 1),
             "State should not be resizable beyond max limit."
         );
         assert_eq!(state.write(&[2; 100]), Ok(100), "Should have written 100 bytes.");
-        assert_eq!(state.cursor.offset, 200, "After writing the offset should be 200.");
+        assert_eq!(state.cursor.offset, 222, "After writing the offset should be 200.");
         state.truncate(50);
         assert_eq!(state.cursor.offset, 50, "After truncation the state should be 50.");
+        assert!(state.reserve(constants::MAX_CONTRACT_STATE_SIZE), "Could not increase state MAX.");
+        assert_eq!(
+            state.seek(SeekFrom::End(0)),
+            Ok(u64::from(constants::MAX_CONTRACT_STATE_SIZE)),
+            "State should be full now."
+        );
         assert_eq!(
             state.write(&[1; 1000]),
             Ok(0),
             "Writing at the end after truncation should do nothing."
         );
+        assert_eq!(
+            state.cursor.data.len(),
+            constants::MAX_CONTRACT_STATE_SIZE as usize,
+            "State size should not increase beyond max."
+        )
     }
 
     #[test]
@@ -757,11 +768,15 @@ mod test {
         let data = vec![0u8; 10];
         let mut state = ContractStateTest::open(data);
         assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
-        assert_eq!(state.write(&2u64.to_le_bytes()), Ok(2), "Incorrect number of bytes written.");
-        assert_eq!(state.cursor.offset, 10, "Pos should be at the end.");
+        assert_eq!(
+            state.write(&2u64.to_le_bytes()),
+            Ok(8),
+            "State should be resized automatically."
+        );
+        assert_eq!(state.cursor.offset, 16, "Pos should be at the end.");
         assert_eq!(
             state.cursor.data,
-            vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0],
+            vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
             "Correct data was written."
         );
     }
