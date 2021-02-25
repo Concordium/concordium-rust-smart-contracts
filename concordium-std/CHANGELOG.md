@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Make Write implementation for ContractStateTest resize the state automatically
+  to be consistent with the Write implementation for ContractState.
+
 ## concordium-std 0.4.1 (2021-02-22)
 
 - Fix endianness mismatch when getting the sender contract address.
