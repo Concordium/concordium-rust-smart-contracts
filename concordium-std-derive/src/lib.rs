@@ -75,11 +75,6 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
     iter.into_iter().any(|attr| attr.path().is_ident(name))
 }
 
-/// We reserve a number of error codes for custom errors, such as ParseError,
-/// that are provided by concordium-std. The error codes for user-defined error
-/// types will have this number as an offset.
-const RESERVED_ERROR_CODES: u32 = 100;
-
 /// Derive the appropriate export for an annotated init function.
 ///
 /// This macro requires the following items to be present
@@ -183,10 +178,8 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("init_{}", contract_name);
     let amount_ident = format_ident!("amount");
-    let exceeded_error_code_limit = format!(
-        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
-        i32::MAX - RESERVED_ERROR_CODES as i32
-    );
+    let exceeded_error_code_limit =
+        format!("Error code should not exceed {} (i32::MAX).", i32::MAX);
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -210,8 +203,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                     Ok(()) => 0,
                     Err(reject) => {
                         let code = Reject::from(reject).error_code;
-                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
-                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                        -i32::try_from(code).expect(#exceeded_error_code_limit)
                     }
                 }
             }
@@ -234,8 +226,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code;
-                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
-                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                        -i32::try_from(code).expect(#exceeded_error_code_limit)
                     }
                 }
             }
@@ -380,10 +371,8 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("{}.{}", contract_name, name);
     let amount_ident = format_ident!("amount");
-    let exceeded_error_code_limit = format!(
-        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
-        i32::MAX - RESERVED_ERROR_CODES as i32
-    );
+    let exceeded_error_code_limit =
+        format!("Error code should not exceed {} (i32::MAX).", i32::MAX);
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -410,8 +399,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code;
-                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
-                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                        -i32::try_from(code).expect(#exceeded_error_code_limit)
                     }
                 }
             }
@@ -442,8 +430,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         }
                         Err(reject) => {
                             let code = Reject::from(reject).error_code;
-                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
-                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                        -i32::try_from(code).expect(#exceeded_error_code_limit)
                         }
                     }
                 } else {
@@ -1235,6 +1222,11 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
     }
 }
 
+/// We reserve a number of error codes for custom errors, such as ParseError,
+/// that are provided by concordium-std. The error codes for user-defined error
+/// types will have this number as an offset.
+const RESERVED_ERROR_CODES: u32 = 100;
+
 /// Derive the conversion of enums that represent error types into the Reject
 /// struct which can be used as the error type of init and receive functions.
 /// Creating custom enums for error types can provide meaningful error messages
@@ -1266,11 +1258,15 @@ pub fn reject_derive(input: TokenStream) -> TokenStream {
 
 fn impl_reject_derive(ast: &syn::DeriveInput) -> TokenStream {
     let enum_name = &ast.ident;
+    let exceeded_error_code_limit = format!(
+        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
+        i32::MAX - RESERVED_ERROR_CODES as i32
+    );
 
     let gen = quote! {
         impl From<#enum_name> for Reject {
             fn from(e: #enum_name) -> Self {
-                Reject { error_code: e as u32 }
+                Reject { error_code: (e as u32).checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
             }
         }
     };
