@@ -209,7 +209,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         let code = Reject::from(reject).error_code;
                         let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
                         -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
-                    } // TODO (MRA) check that error code is in bound
+                    }
                 }
             }
         }
