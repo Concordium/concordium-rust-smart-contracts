@@ -70,16 +70,16 @@ struct InitParameter {
 }
 
 /// For errors in which the `bid` function can result
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Reject)]
 enum BidError {
     ContractSender, // raised if a contract, as opposed to account, tries to bid
-    BidTooLow { bid: Amount, highest_bid: Amount }, // raised if bid is lower than highest amount
+    BidTooLow/* { bid: Amount, highest_bid: Amount }*/, // raised if bid is lower than highest amount
     BidsOverWaitingForAuctionFinalization, // raised if bid is placed after auction expiry time
     AuctionFinalized, // raised if bid is placed after auction has been finalized
 }
 
 /// For errors in which the `finalize` function can result
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Reject)]
 enum FinalizeError {
     BidMapError, // raised if there is a mistake in the bid map that keeps track of all accounts' bids
     AuctionStillActive, // raised if there is an attempt to finalize the auction before its expiry
@@ -113,7 +113,7 @@ fn auction_bid<A: HasActions>(
 
     *bid_to_update += amount;
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(*bid_to_update > state.highest_bid, BidError::BidTooLow { bid: amount, highest_bid: state.highest_bid });
+    ensure!(*bid_to_update > state.highest_bid, BidError::BidTooLow /*{ bid: amount, highest_bid: state.highest_bid }*/);
     state.highest_bid = *bid_to_update;
 
     Ok(A::accept())
@@ -351,7 +351,7 @@ mod tests {
         // 2nd bid: account2 bids amount1
         // should fail because amount is equal to highest bid
         let res2: Result<ActionsTree, _> = auction_bid(&ctx2, amount, &mut state);
-        expect_error(res2, BidError::BidTooLow { bid: amount, highest_bid: amount },
+        expect_error(res2, BidError::BidTooLow /*{ bid: amount, highest_bid: amount }*/,
                      "Bidding 2 should fail because bid amount must be higher than highest bid");
     }
 
@@ -365,7 +365,7 @@ mod tests {
         let mut state = auction_init(&ctx).expect("Init results in error");
 
         let res: Result<ActionsTree, _> = auction_bid(&ctx1, Amount::zero(), &mut state);
-        expect_error(res, BidError::BidTooLow { bid: Amount::zero(), highest_bid: Amount::zero()},
+        expect_error(res, BidError::BidTooLow /*{ bid: Amount::zero(), highest_bid: Amount::zero()}*/,
                      "Bidding zero should fail");
     }
 }

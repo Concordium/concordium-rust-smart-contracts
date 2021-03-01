@@ -6,6 +6,8 @@
   to be consistent with the Write implementation for ContractState.
 - Use little-endian encoding for sender contract addresses in receive contexts. This
   reverts the change in concordium-std 0.4.1.
+- Allow init and receive methods to return custom error codes that will be displayed to the user
+  if a smart-contract invocation fails.
 
 ## concordium-std 0.4.1 (2021-02-22)
 
