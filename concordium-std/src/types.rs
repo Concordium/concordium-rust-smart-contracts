@@ -44,12 +44,14 @@ impl Action {
 }
 
 /// An error message, signalling rejection of a smart contract invocation.
-/// The client will see the error code as a reject reason; if a schema is provided,
-/// the error message corresponding to the error code will be displayed.
-/// The valid range for an error code is from 1 to i32::MAX. We are using a u32 here
-/// to highlight that the error code should be nonnegative.
+/// The client will see the error code as a reject reason; if a schema is
+/// provided, the error message corresponding to the error code will be
+/// displayed. The valid range for an error code is from 1 to i32::MAX. We are
+/// using a u32 here to highlight that the error code should be nonnegative.
 #[derive(Default, Eq, PartialEq, Debug)]
-pub struct Reject { pub error_code: u32 }
+pub struct Reject {
+    pub error_code: u32,
+}
 
 // Macros for failing a contract function
 

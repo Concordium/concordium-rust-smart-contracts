@@ -5,12 +5,20 @@ use mem::MaybeUninit;
 
 impl convert::From<()> for Reject {
     #[inline(always)]
-    fn from(_: ()) -> Self { Reject { error_code: 1 } }
+    fn from(_: ()) -> Self {
+        Reject {
+            error_code: 1,
+        }
+    }
 }
 
 impl convert::From<ParseError> for Reject {
     #[inline(always)]
-    fn from(_: ParseError) -> Self { Reject { error_code: 2 } }
+    fn from(_: ParseError) -> Self {
+        Reject {
+            error_code: 2,
+        }
+    }
 }
 
 /// # Contract state trait implementations.
