@@ -75,9 +75,9 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
     iter.into_iter().any(|attr| attr.path().is_ident(name))
 }
 
-/// We reserve a number of error codes for custom errors, such as ParseError, that are
-/// provided by concordium-std. The error codes for user-defined error types will
-/// have this number as an offset.
+/// We reserve a number of error codes for custom errors, such as ParseError,
+/// that are provided by concordium-std. The error codes for user-defined error
+/// types will have this number as an offset.
 const RESERVED_ERROR_CODES: u32 = 100;
 
 /// Derive the appropriate export for an annotated init function.
@@ -183,7 +183,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("init_{}", contract_name);
     let amount_ident = format_ident!("amount");
-    let exceeded_error_code_limit = format!("Error code should not exceed {} (i32::MAX minus reserved error-code offset).", i32::MAX - RESERVED_ERROR_CODES as i32);
+    let exceeded_error_code_limit = format!(
+        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
+        i32::MAX - RESERVED_ERROR_CODES as i32
+    );
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -377,7 +380,10 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("{}.{}", contract_name, name);
     let amount_ident = format_ident!("amount");
-    let exceeded_error_code_limit = format!("Error code should not exceed {} (i32::MAX minus reserved error-code offset).", i32::MAX - RESERVED_ERROR_CODES as i32);
+    let exceeded_error_code_limit = format!(
+        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
+        i32::MAX - RESERVED_ERROR_CODES as i32
+    );
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -1229,13 +1235,15 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
     }
 }
 
-/// Derive the conversion of enums that represent error types into the Reject struct
-/// which can be used as the error type of init and receive functions. Creating custom
-/// enums for error types can provide meaningful error messages to the user of the smart contract.
+/// Derive the conversion of enums that represent error types into the Reject
+/// struct which can be used as the error type of init and receive functions.
+/// Creating custom enums for error types can provide meaningful error messages
+/// to the user of the smart contract.
 ///
 /// Please note:
 ///   - At the moment, we can only derive fieldless enums.
-///   - The error-type enum needs to derive (or implement) the Copy and Clone traits.
+///   - The error-type enum needs to derive (or implement) the Copy and Clone
+///     traits.
 ///
 /// ### Example
 /// ```ignore
@@ -1246,11 +1254,10 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
 ///     // TimeExpired(time: Timestamp), /* currently not supported */
 ///     ...
 /// }
-///
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
-/// fn receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> Result<A, MyError> {...}
-/// ```
+/// fn receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState)
+/// -> Result<A, MyError> {...} ```
 #[proc_macro_derive(Reject)]
 pub fn reject_derive(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
