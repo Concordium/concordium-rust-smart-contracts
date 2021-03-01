@@ -87,8 +87,8 @@ enum BidError {
 /// For errors in which the `finalize` function can result
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Reject)]
 enum FinalizeError {
-    BidMapError, /* raised if there is a mistake in the bid map that keeps track of all
-                  * accounts' bids */
+    BidMapError,        /* raised if there is a mistake in the bid map that keeps track of all
+                         * accounts' bids */
     AuctionStillActive, // raised if there is an attempt to finalize the auction before its expiry
     AuctionFinalized,   // raised if there is an attempt to finalize an already finalized auction
 }
@@ -186,9 +186,9 @@ mod tests {
     fn dummy_active_state(highest: Amount, bids: BTreeMap<AccountAddress, Amount>) -> State {
         State {
             auction_state: AuctionState::NotSoldYet,
-            highest_bid:   highest,
-            item:          ITEM.as_bytes().to_vec(),
-            expiry:        Timestamp::from_timestamp_millis(AUCTION_END),
+            highest_bid: highest,
+            item: ITEM.as_bytes().to_vec(),
+            expiry: Timestamp::from_timestamp_millis(AUCTION_END),
             bids,
         }
     }
