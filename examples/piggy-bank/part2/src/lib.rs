@@ -46,7 +46,7 @@ fn piggy_insert<A: HasActions>(
     Ok(A::accept())
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Reject)]
 enum SmashError {
     NotOwner,
     AlreadySmashed,

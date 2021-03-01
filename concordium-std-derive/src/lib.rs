@@ -75,6 +75,11 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
     iter.into_iter().any(|attr| attr.path().is_ident(name))
 }
 
+/// We reserve a number of error codes for custom errors, such as ParseError, that are
+/// provided by concordium-std. The error codes for user-defined error types will
+/// have this number as an offset.
+const RESERVED_ERROR_CODES: u32 = 100;
+
 /// Derive the appropriate export for an annotated init function.
 ///
 /// This macro requires the following items to be present
@@ -178,6 +183,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("init_{}", contract_name);
     let amount_ident = format_ident!("amount");
+    let exceeded_error_code_limit = format!("Error code should not exceed {} (i32::MAX minus reserved error-code offset).", i32::MAX - RESERVED_ERROR_CODES as i32);
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -193,12 +199,17 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                use std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(()) => 0,
-                    Err(_) => -1,
+                    Err(reject) => {
+                        let code = Reject::from(reject).error_code;
+                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
+                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                    } // TODO (MRA) check that error code is in bound
                 }
             }
         }
@@ -207,6 +218,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                use std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 match #fn_name(&ctx, #(#fn_optional_args),*) {
@@ -217,7 +229,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         };
                         0
                     }
-                    Err(_) => -1
+                    Err(reject) => {
+                        let code = Reject::from(reject).error_code;
+                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
+                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                    }
                 }
             }
         }
@@ -361,6 +377,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("{}.{}", contract_name, name);
     let amount_ident = format_ident!("amount");
+    let exceeded_error_code_limit = format!("Error code should not exceed {} (i32::MAX minus reserved error-code offset).", i32::MAX - RESERVED_ERROR_CODES as i32);
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -376,6 +393,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
+                use std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state = ContractState::open(());
@@ -384,7 +402,11 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                     Ok(act) => {
                         act.tag() as i32
                     }
-                    Err(_) => -1,
+                    Err(reject) => {
+                        let code = Reject::from(reject).error_code;
+                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
+                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                    }
                 }
             }
         }
@@ -395,6 +417,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, trap};
+                use std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state_bytes = ContractState::open(());
@@ -411,7 +434,11 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                                 act.tag() as i32
                             }
                         }
-                        Err(_) => -1,
+                        Err(reject) => {
+                            let code = Reject::from(reject).error_code;
+                        let with_reserved_offset = code.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit);
+                        -i32::try_from(with_reserved_offset).expect(#exceeded_error_code_limit)
+                        }
                     }
                 } else {
                     trap() // Could not fully read state.
@@ -1200,6 +1227,47 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
         }
         syn::Fields::Unit => Ok(quote! { concordium_std::schema::Fields::None }),
     }
+}
+
+/// Derive the conversion of enums that represent error types into the Reject struct
+/// which can be used as the error type of init and receive functions. Creating custom
+/// enums for error types can provide meaningful error messages to the user of the smart contract.
+///
+/// Please note:
+///   - At the moment, we can only derive fieldless enums.
+///   - The error-type enum needs to derive (or implement) the Copy and Clone traits.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(Clone, Copy, Reject)]
+/// enum MyError {
+///     IllegalState,
+///     WrongSender,
+///     // TimeExpired(time: Timestamp), /* currently not supported */
+///     ...
+/// }
+///
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive")]
+/// fn receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> Result<A, MyError> {...}
+/// ```
+#[proc_macro_derive(Reject)]
+pub fn reject_derive(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    impl_reject_derive(&ast)
+}
+
+fn impl_reject_derive(ast: &syn::DeriveInput) -> TokenStream {
+    let enum_name = &ast.ident;
+
+    let gen = quote! {
+        impl From<#enum_name> for Reject {
+            fn from(e: #enum_name) -> Self {
+                Reject { error_code: e as u32 }
+            }
+        }
+    };
+    gen.into()
 }
 
 #[proc_macro_attribute]

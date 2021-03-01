@@ -95,7 +95,7 @@ pub struct State {
 
 // Contract implementation
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Reject)]
 enum InitError {
     /// Failed parsing the parameter
     ParseParams,
@@ -144,7 +144,7 @@ fn contract_receive_deposit<A: HasActions>(
     Ok(A::accept())
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Reject)]
 enum ReceiveError {
     /// Failed parsing the parameter.
     ParseParams,
