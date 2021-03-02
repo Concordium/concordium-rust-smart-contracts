@@ -1232,10 +1232,8 @@ const RESERVED_ERROR_CODES: u32 = 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Please note:
-///   - At the moment, we can only derive fieldless enums.
-///   - The error-type enum needs to derive (or implement) the Copy and Clone
-///     traits.
+/// Note that the error-type enum needs to derive (or implement) the Copy and Clone
+/// traits.
 ///
 /// ### Example
 /// ```ignore
@@ -1243,7 +1241,7 @@ const RESERVED_ERROR_CODES: u32 = 100;
 /// enum MyError {
 ///     IllegalState,
 ///     WrongSender,
-///     // TimeExpired(time: Timestamp), /* currently not supported */
+///     TimeExpired(time: Timestamp),
 ///     ...
 /// }
 /// ```ignore
@@ -1252,12 +1250,16 @@ const RESERVED_ERROR_CODES: u32 = 100;
 /// -> Result<A, MyError> {...} ```
 #[proc_macro_derive(Reject)]
 pub fn reject_derive(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).unwrap();
-    impl_reject_derive(&ast)
+    let ast: syn::DeriveInput = syn::parse(input).unwrap(); // TODO (MRA) unsafe?
+    let ts = match ast.data {
+        syn::Data::Enum(data) =>
+            Ok(impl_reject_derive(ast.ident, data)),
+        _ => Err(syn::Error::new(ast.span(), "Reject can only be derived for enums."))
+    };
+    unwrap_or_report(ts)
 }
 
-fn impl_reject_derive(ast: &syn::DeriveInput) -> TokenStream {
-    let enum_name = &ast.ident;
+fn impl_reject_derive(enum_name: Ident, data: syn::DataEnum) -> TokenStream {
     let exceeded_error_code_limit = format!(
         "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
         i32::MAX - RESERVED_ERROR_CODES as i32
@@ -1266,7 +1268,8 @@ fn impl_reject_derive(ast: &syn::DeriveInput) -> TokenStream {
     let gen = quote! {
         impl From<#enum_name> for Reject {
             fn from(e: #enum_name) -> Self {
-                Reject { error_code: (e as u32).checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
+                let c = e as u32; // TODO (MRA) deal with enum fields
+                Reject { error_code: c.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
             }
         }
     };
