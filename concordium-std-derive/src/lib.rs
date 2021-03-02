@@ -430,7 +430,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         }
                         Err(reject) => {
                             let code = Reject::from(reject).error_code;
-                        -i32::try_from(code).expect(#exceeded_error_code_limit)
+                            -i32::try_from(code).expect(#exceeded_error_code_limit)
                         }
                     }
                 } else {
