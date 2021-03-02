@@ -22,6 +22,7 @@ jobs:
           - examples/two-step-transfer/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
+          - examples/auction/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -202,6 +203,7 @@ jobs:
           - examples/two-step-transfer/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
+          - examples/auction/Cargo.toml
 
     steps:
       - name: Checkout sources
