@@ -397,4 +397,19 @@ mod tests {
             "Bidding zero should fail",
         );
     }
+
+    #[test]
+    fn test_error_codes() {
+        let errors = [
+            BidError::ContractSender,
+            BidError::BidTooLow,
+            BidError::BidsOverWaitingForAuctionFinalization,
+            BidError::AuctionFinalized,
+        ]
+        .iter()
+        .enumerate();
+        for (i, error) in errors {
+            assert_eq!(i + 1, Reject::from(*error).error_code as usize);
+        }
+    }
 }
