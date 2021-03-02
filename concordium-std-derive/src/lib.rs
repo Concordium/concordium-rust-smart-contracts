@@ -1222,18 +1222,13 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
     }
 }
 
-/// We reserve a number of error codes for custom errors, such as ParseError,
-/// that are provided by concordium-std. The error codes for user-defined error
-/// types will have this number as an offset.
-const RESERVED_ERROR_CODES: u32 = 100;
-
 /// Derive the conversion of enums that represent error types into the Reject
 /// struct which can be used as the error type of init and receive functions.
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Note that the error-type enum needs to derive (or implement) the Copy and Clone
-/// traits.
+/// Note that the error-type enum needs to derive (or implement) the Copy and
+/// Clone traits.
 ///
 /// ### Example
 /// ```ignore
@@ -1252,24 +1247,34 @@ const RESERVED_ERROR_CODES: u32 = 100;
 pub fn reject_derive(input: TokenStream) -> TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).unwrap(); // TODO (MRA) unsafe?
     let ts = match ast.data {
-        syn::Data::Enum(data) =>
-            Ok(impl_reject_derive(ast.ident, data)),
-        _ => Err(syn::Error::new(ast.span(), "Reject can only be derived for enums."))
+        syn::Data::Enum(data) => Ok(impl_reject_derive(ast.ident, data)),
+        _ => Err(syn::Error::new(ast.span(), "Reject can only be derived for enums.")),
     };
     unwrap_or_report(ts)
 }
 
 fn impl_reject_derive(enum_name: Ident, data: syn::DataEnum) -> TokenStream {
-    let exceeded_error_code_limit = format!(
-        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
-        i32::MAX - RESERVED_ERROR_CODES as i32
-    );
+    let variants = data.variants;
+    let mut error_code_counter = 0u32;
+    let variant_code_gens = variants.iter().map(|variant| {
+        let variant_name = &variant.ident;
+        let fields = variant.fields.iter().map(|field| {
+           let ty = field.ty;
+
+        });
+        error_code_counter = error_code_counter + 1;
+        quote! {
+            #enum_name::#variant_name =>  #error_code_counter
+        }
+    });
 
     let gen = quote! {
         impl From<#enum_name> for Reject {
             fn from(e: #enum_name) -> Self {
-                let c = e as u32; // TODO (MRA) deal with enum fields
-                Reject { error_code: c.checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
+                let code = match e {
+                    #(#variant_code_gens),*
+                };
+                Reject { error_code: code }
             }
         }
     };
