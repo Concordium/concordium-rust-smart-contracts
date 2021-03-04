@@ -98,6 +98,7 @@ pub struct State {
 #[derive(Debug, PartialEq, Eq, Reject)]
 enum InitError {
     /// Failed parsing the parameter
+    #[from(ParseError)]
     ParseParams,
     /// Not enough account holders: At least two are needed for this contract
     /// to be valid.
@@ -109,10 +110,6 @@ enum InitError {
     /// The number of account holders required to accept a transfer must be two
     /// or more else you would be better off with a normal account!
     ThresholdBelowTwo,
-}
-
-impl From<ParseError> for InitError {
-    fn from(_: ParseError) -> Self { InitError::ParseParams }
 }
 
 #[init(contract = "two-step-transfer", parameter = "InitParams", payable)]
@@ -147,6 +144,7 @@ fn contract_receive_deposit<A: HasActions>(
 #[derive(Debug, PartialEq, Eq, Reject)]
 enum ReceiveError {
     /// Failed parsing the parameter.
+    #[from(ParseError)]
     ParseParams,
     /// Only account holders can interact with this contract.
     NotAccountHolder,
@@ -166,10 +164,6 @@ enum ReceiveError {
     RequestAlreadySupported,
     /// End time is not expressible, i.e., would overflow.
     Overflow,
-}
-
-impl From<ParseError> for ReceiveError {
-    fn from(_: ParseError) -> Self { ReceiveError::ParseParams }
 }
 
 #[receive(contract = "two-step-transfer", name = "receive", parameter = "Message", payable)]
