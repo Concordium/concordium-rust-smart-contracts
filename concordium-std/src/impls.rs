@@ -470,8 +470,8 @@ impl HasActions for Action {
     }
 
     #[inline(always)]
-    fn send(ca: &ContractAddress, receive_name: &str, amount: Amount, parameter: &[u8]) -> Self {
-        let receive_bytes = receive_name.as_bytes();
+    fn send(ca: &ContractAddress, receive_name: &ReceiveName, amount: Amount, parameter: &[u8]) -> Self {
+        let receive_bytes = receive_name.name().as_bytes();
         let res = unsafe {
             send(
                 ca.index,

@@ -164,7 +164,7 @@ pub trait HasActions {
     fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self;
 
     /// Send a message to a contract.
-    fn send(ca: &ContractAddress, receive_name: &str, amount: Amount, parameter: &[u8]) -> Self;
+    fn send(ca: &ContractAddress, receive_name: &ReceiveName, amount: Amount, parameter: &[u8]) -> Self;
 
     /// If the execution of the first action succeeds, run the second action
     /// as well.

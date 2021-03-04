@@ -485,10 +485,10 @@ impl HasActions for ActionsTree {
         }
     }
 
-    fn send(ca: &ContractAddress, receive_name: &str, amount: Amount, parameter: &[u8]) -> Self {
+    fn send(ca: &ContractAddress, receive_name: &ReceiveName, amount: Amount, parameter: &[u8]) -> Self {
         ActionsTree::Send {
             to: *ca,
-            receive_name: receive_name.to_string(),
+            receive_name: receive_name.name().to_string(),
             amount,
             parameter: parameter.to_vec(),
         }
