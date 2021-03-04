@@ -1227,7 +1227,7 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
 /// We reserve a number of error codes for custom errors, such as ParseError,
 /// that are provided by concordium-std. The error codes for user-defined error
 /// types will have this number as an offset.
-pub const RESERVED_ERROR_CODES: u32 = 100;
+const RESERVED_ERROR_CODES: u32 = 100;
 
 /// Derive the conversion of enums that represent error types into the Reject
 /// struct which can be used as the error type of init and receive functions.
