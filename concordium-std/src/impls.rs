@@ -470,8 +470,13 @@ impl HasActions for Action {
     }
 
     #[inline(always)]
-    fn send(ca: &ContractAddress, receive_name: &ReceiveName, amount: Amount, parameter: &[u8]) -> Self {
-        let receive_bytes = receive_name.name().as_bytes();
+    fn send(
+        ca: &ContractAddress,
+        receive_name: &ReceiveName,
+        amount: Amount,
+        parameter: &[u8],
+    ) -> Self {
+        let receive_bytes = receive_name.get_chain_name().as_bytes();
         let res = unsafe {
             send(
                 ca.index,
@@ -519,6 +524,18 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     #[cfg(not(feature = "std"))]
     core::mem::forget(bytes);
     ptr
+}
+
+/// Wrapper for HasActions::Send, which automatically serializes the parameter.
+#[inline(always)]
+pub fn simple_send<A: HasActions, P: Serial>(
+    ca: &ContractAddress,
+    receive_name: &ReceiveName,
+    amount: Amount,
+    parameter: &P,
+) -> A {
+    let param_bytes = to_bytes(parameter);
+    HasActions::send(ca, receive_name, amount, &param_bytes)
 }
 
 impl<A, E> UnwrapAbort for Result<A, E> {
