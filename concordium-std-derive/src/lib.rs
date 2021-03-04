@@ -1312,7 +1312,7 @@ fn generate_variant_error_conversions(
 }
 
 /// Generate error conversion for a given enum variant.
-fn parse_attr_and_gen_error_conversions<'a>(
+fn parse_attr_and_gen_error_conversions(
     attr: &syn::Attribute,
     enum_name: &syn::Ident,
     variant_name: &syn::Ident,
@@ -1322,24 +1322,21 @@ fn parse_attr_and_gen_error_conversions<'a>(
             x.span(),
             "The `from` attribute expects a list of error types, e.g.: #[from(ParseError)].",
         );
-        vec![err.to_compile_error().into()]
+        vec![err.to_compile_error()]
     };
     match attr.parse_meta() {
         Ok(syn::Meta::List(list)) if list.path.is_ident("from") => {
             let mut from_error_names = vec![];
             for nested in list.nested.iter() {
-                match nested {
-                    syn::NestedMeta::Meta(syn::Meta::Path(from_error)) => {
-                        match from_error.get_ident() {
-                            Some(ident) => {
-                                from_error_names.push(ident);
-                            }
-                            None => {
-                                return wrong_from_usage(from_error);
-                            }
+                if let syn::NestedMeta::Meta(syn::Meta::Path(from_error)) = nested {
+                    match from_error.get_ident() {
+                        Some(ident) => {
+                            from_error_names.push(ident);
+                        }
+                        None => {
+                            return wrong_from_usage(from_error);
                         }
                     }
-                    _ => (),
                 }
             }
             from_error_token_stream(from_error_names, &enum_name, variant_name)
