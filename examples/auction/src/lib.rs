@@ -116,7 +116,7 @@ fn auction_bid<A: HasActions>(
         Address::Contract(_) => bail!(BidError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let bid_to_update = state.bids.entry(sender_address).or_insert_with(|| Amount::zero());
+    let bid_to_update = state.bids.entry(sender_address).or_insert_with(Amount::zero);
 
     *bid_to_update += amount;
     // Ensure that the new bid exceeds the highest bid so far
