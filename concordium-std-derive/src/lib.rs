@@ -7,7 +7,9 @@ extern crate quote;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::{parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, Ident, Meta, Token};
+use syn::{
+    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
+};
 
 /// A helper to report meaningful compilation errors
 /// - If applied to an Ok value they simply return the underlying value.
@@ -166,7 +168,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
         syn::Error::new(
             attrs.span(),
-            "A name for the contract must be provided, using the contract attribute.For example, \
+            "A name for the contract must be provided, using the contract attribute. For example, \
              #[init(contract = \"my-contract\")]",
         )
     })?;
@@ -1250,31 +1252,127 @@ const RESERVED_ERROR_CODES: u32 = 100;
 /// #[receive(contract = "my_contract", name = "some_receive")]
 /// fn receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState)
 /// -> Result<A, MyError> {...} ```
-#[proc_macro_derive(Reject)]
+#[proc_macro_derive(Reject, attributes(from))]
 pub fn reject_derive(input: TokenStream) -> TokenStream {
-    let ast: syn::DeriveInput = syn::parse(input).unwrap(); // TODO (MRA) unsafe?
-    let ts = match ast.data {
-        syn::Data::Enum(data) =>
-            Ok(impl_reject_derive(ast.ident, data)),
-        _ => Err(syn::Error::new(ast.span(), "Reject can only be derived for enums."))
-    };
-    unwrap_or_report(ts)
+    unwrap_or_report(reject_derive_worker(input))
 }
 
-fn impl_reject_derive(enum_name: Ident, data: syn::DataEnum) -> TokenStream {
+fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
+    let ast: syn::DeriveInput = syn::parse(input)?;
+    let enum_data = match ast.data {
+        syn::Data::Enum(data) => Ok(data),
+        _ => Err(syn::Error::new(ast.span(), "Reject can only be derived for enums.")),
+    }?;
+    let enum_ident = ast.ident;
+
+    let variant_error_conversions: Vec<_> =
+        generate_variant_error_conversions(&enum_data, &enum_ident);
+
     let exceeded_error_code_limit = format!(
         "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
         i32::MAX - RESERVED_ERROR_CODES as i32
     );
 
     let gen = quote! {
-        impl From<#enum_name> for Reject {
-            fn from(e: #enum_name) -> Self {
-                Reject { error_code: (e as 32).checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
+        impl From<#enum_ident> for Reject {
+            fn from(e: #enum_ident) -> Self {
+                Reject { error_code: (e as u32).checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
             }
         }
+
+        #(#variant_error_conversions)*
     };
-    gen.into()
+    Ok(gen.into())
+}
+
+/// Generate error conversions for enum variants e.g. for converting
+/// `ParseError` to `MyParseErrorWrapper` in
+///
+/// ```ignore
+/// enum MyErrorType {
+///   #[from(ParseError)]
+///   MyParseErrorWrapper,
+///   ...
+/// }
+/// ```
+fn generate_variant_error_conversions(
+    enum_data: &DataEnum,
+    enum_name: &syn::Ident,
+) -> Vec<proc_macro2::TokenStream> {
+    enum_data
+        .variants
+        .iter()
+        .flat_map(|variant| {
+            let variant_attributes = variant.attrs.iter();
+            variant_attributes.flat_map(move |attr| {
+                parse_attr_and_gen_error_conversions(attr, enum_name, &variant.ident)
+            })
+        })
+        .collect()
+}
+
+/// Generate error conversion for a given enum variant.
+fn parse_attr_and_gen_error_conversions<'a>(
+    attr: &syn::Attribute,
+    enum_name: &syn::Ident,
+    variant_name: &syn::Ident,
+) -> Vec<proc_macro2::TokenStream> {
+    let wrong_from_usage = |x: &dyn Spanned| {
+        let err = syn::Error::new(
+            x.span(),
+            "The `from` attribute expects a list of error types, e.g.: #[from(ParseError)].",
+        );
+        vec![err.to_compile_error().into()]
+    };
+    match attr.parse_meta() {
+        Ok(syn::Meta::List(list)) if list.path.is_ident("from") => {
+            let mut from_error_names = vec![];
+            for nested in list.nested.iter() {
+                match nested {
+                    syn::NestedMeta::Meta(syn::Meta::Path(from_error)) => {
+                        match from_error.get_ident() {
+                            Some(ident) => {
+                                from_error_names.push(ident);
+                            }
+                            None => {
+                                return wrong_from_usage(from_error);
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            from_error_token_stream(from_error_names, &enum_name, variant_name)
+        }
+        Ok(syn::Meta::NameValue(mnv)) if mnv.path.is_ident("from") => wrong_from_usage(&mnv),
+        _ => vec![],
+    }
+}
+
+/// Generating the conversion code a la
+/// ```ignore
+/// impl From<ParseError> for MyErrorType {
+///    fn from(x: ParseError) -> Self {
+///      MyError::MyParseErrorWrapper
+///    }
+/// }
+/// ```
+fn from_error_token_stream(
+    paths: Vec<&syn::Ident>,
+    enum_name: &syn::Ident,
+    variant_name: &syn::Ident,
+) -> Vec<proc_macro2::TokenStream> {
+    paths
+        .iter()
+        .map(|from_error| {
+            quote! {
+            impl From<#from_error> for #enum_name {
+               fn from(fe: #from_error) -> Self {
+                 #enum_name::#variant_name
+               }
+            }}
+        })
+        .collect()
 }
 
 #[proc_macro_attribute]
