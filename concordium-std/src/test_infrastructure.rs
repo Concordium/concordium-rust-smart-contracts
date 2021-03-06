@@ -292,6 +292,8 @@ impl<'a, C> ContextTest<'a, C> {
         self
     }
 
+    /// Serialize your parameter by calling `to_bytes(parameter)` to create
+    /// a [u8] which you can then pass in here.
     pub fn set_parameter(&mut self, value: &'a [u8]) -> &mut Self {
         self.common.parameter = Some(value);
         self
