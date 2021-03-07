@@ -448,7 +448,16 @@ impl HasLogger for LogRecorder {
         }
     }
 
-    fn log_raw(&mut self, event: &[u8]) { self.logs.push(event.to_vec()) }
+    fn log_raw(&mut self, event: &[u8]) -> Result<(), LogError> {
+        if event.len() > constants::MAX_LOG_SIZE {
+            return Err(LogError::Malformed);
+        }
+        if self.logs.len() >= constants::MAX_NUM_LOGS {
+            return Err(LogError::Full);
+        }
+        self.logs.push(event.to_vec());
+        Ok(())
+    }
 }
 
 /// An actions tree, used to provide a simpler presentation for testing.

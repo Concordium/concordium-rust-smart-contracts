@@ -451,10 +451,12 @@ impl HasLogger for Logger {
         }
     }
 
-    #[inline(always)]
-    fn log_raw(&mut self, event: &[u8]) {
-        unsafe {
-            log_event(event.as_ptr(), event.len() as u32);
+    fn log_raw(&mut self, event: &[u8]) -> Result<(), LogError> {
+        let res = unsafe { log_event(event.as_ptr(), event.len() as u32) };
+        match res {
+            1 => Ok(()),
+            0 => Err(LogError::Full),
+            _ => Err(LogError::Malformed),
         }
     }
 }
