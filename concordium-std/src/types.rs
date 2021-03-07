@@ -27,6 +27,15 @@ pub struct Logger {
     pub(crate) _private: (),
 }
 
+/// Errors that can occur during logging.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum LogError {
+    /// The log is full.
+    Full,
+    /// The message to log was malformed (e.g., too long)
+    Malformed,
+}
+
 /// Actions that can be produced at the end of a contract execution. This
 /// type is deliberately not cloneable so that we can enforce that
 /// `and_then` and `or_else` can only be used when more than one event is

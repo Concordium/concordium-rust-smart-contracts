@@ -34,8 +34,11 @@ extern "C" {
     // of bytes written. The location is assumed to contain enough memory to
     // write the requested length into.
     pub(crate) fn get_policy_section(policy_bytes: *mut u8, length: u32, offset: u32) -> u32;
-    // Add a log item.
-    pub(crate) fn log_event(start: *const u8, length: u32);
+    // Add a log item. Return values are
+    // - -1 if logging failed due to the message being too long
+    // - 0 if the log is already full
+    // - 1 if data was successfully logged.
+    pub(crate) fn log_event(start: *const u8, length: u32) -> i32;
     // returns how many bytes were read.
     pub(crate) fn load_state(start: *mut u8, length: u32, offset: u32) -> u32;
     // returns how many bytes were written

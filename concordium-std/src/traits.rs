@@ -5,6 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+use crate::types::LogError;
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -137,12 +138,13 @@ pub trait HasLogger {
     /// Initialize a logger.
     fn init() -> Self;
 
-    /// Log the given bytes as-is.
-    fn log_raw(&mut self, event: &[u8]);
+    /// Log the given slice as-is. If logging is not successful an error will be
+    /// returned.
+    fn log_raw(&mut self, event: &[u8]) -> Result<(), LogError>;
 
     #[inline(always)]
     /// Log a serializable event by serializing it with a supplied serializer.
-    fn log<S: Serial>(&mut self, event: &S) {
+    fn log<S: Serial>(&mut self, event: &S) -> Result<(), LogError> {
         let mut out = Vec::new();
         if event.serial(&mut out).is_err() {
             crate::trap(); // should not happen
