@@ -6,6 +6,10 @@
   to be consistent with the Write implementation for ContractState.
 - Use little-endian encoding for sender contract addresses in receive contexts. This
   reverts the change in concordium-std 0.4.1.
+- Change the `receive_name` parameter of `HasActions::send` to use `ReceiveName`
+  instead of `str`.
+- Add `simple_send`, a wrapper for `HasActions::send`, which automatically
+  serializes `parameter` (using `Serial`).
 
 ## concordium-std 0.4.1 (2021-02-22)
 
