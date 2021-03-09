@@ -29,6 +29,7 @@ pub struct Logger {
 
 /// Errors that can occur during logging.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
 pub enum LogError {
     /// The log is full.
     Full,

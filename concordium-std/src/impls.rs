@@ -21,6 +21,20 @@ impl convert::From<ParseError> for Reject {
     }
 }
 
+/// Full is mapped to i32::MIN+3, Malformed is mapped to i32::MIN+4.
+impl From<LogError> for Reject {
+    #[inline(always)]
+    fn from(le: LogError) -> Self {
+        let error_code = match le {
+            LogError::Full => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 3) },
+            LogError::Malformed => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 4) },
+        };
+        Self {
+            error_code,
+        }
+    }
+}
+
 /// # Contract state trait implementations.
 impl Seek for ContractState {
     type Err = ();
