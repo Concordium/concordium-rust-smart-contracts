@@ -7,6 +7,8 @@ extern crate quote;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
+use std::ops::Neg;
+use std::convert::TryFrom;
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -1225,9 +1227,9 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
 }
 
 /// We reserve a number of error codes for custom errors, such as ParseError,
-/// that are provided by concordium-std. The error codes for user-defined error
-/// types will have this number as an offset.
-const RESERVED_ERROR_CODES: u32 = 100;
+/// that are provided by concordium-std. These reserved error codes can have
+/// indices i32::MIN, i32::MIN + 1, ..., RESERVED_ERROR_CODES
+const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 
 /// Derive the conversion of enums that represent error types into the Reject
 /// struct which can be used as the error type of init and receive functions.
@@ -1259,24 +1261,26 @@ pub fn reject_derive(input: TokenStream) -> TokenStream {
 
 fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     let ast: syn::DeriveInput = syn::parse(input)?;
-    let enum_data = match ast.data {
+    let enum_data = match &ast.data {
         syn::Data::Enum(data) => Ok(data),
         _ => Err(syn::Error::new(ast.span(), "Reject can only be derived for enums.")),
     }?;
-    let enum_ident = ast.ident;
+    let enum_ident = &ast.ident;
+
+    // Ensure that the number of enum variants fits into the number of error codes we can generate.
+    let too_many_variants = format!("Error enum {} cannot have more than {} variants.", enum_ident, RESERVED_ERROR_CODES.neg());
+    match i32::try_from(enum_data.variants.len()) {
+        Ok(n) if n <= RESERVED_ERROR_CODES.neg() => (),
+        _ => Err(syn::Error::new(ast.span(), &too_many_variants))?
+    };
 
     let variant_error_conversions: Vec<_> =
         generate_variant_error_conversions(&enum_data, &enum_ident);
 
-    let exceeded_error_code_limit = format!(
-        "Error code should not exceed {} (i32::MAX minus reserved error-code offset).",
-        i32::MAX - RESERVED_ERROR_CODES as i32
-    );
-
     let gen = quote! {
         impl From<#enum_ident> for Reject {
             fn from(e: #enum_ident) -> Self {
-                Reject { error_code: (e as u32 + 1).checked_add(#RESERVED_ERROR_CODES).expect(#exceeded_error_code_limit) }
+                Reject { error_code: (e as u32 + 1) }
             }
         }
 
