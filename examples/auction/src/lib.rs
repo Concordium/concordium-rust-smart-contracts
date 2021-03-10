@@ -74,7 +74,7 @@ struct InitParameter {
 }
 
 /// For errors in which the `bid` function can result
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Reject)]
+#[derive(Debug, PartialEq, Eq, Clone, Reject)]
 enum BidError {
     ContractSender, // raised if a contract, as opposed to account, tries to bid
     BidTooLow,      /* { bid: Amount, highest_bid: Amount } */
@@ -85,7 +85,7 @@ enum BidError {
 }
 
 /// For errors in which the `finalize` function can result
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Reject)]
+#[derive(Debug, PartialEq, Eq, Clone, Reject)]
 enum FinalizeError {
     BidMapError,        /* raised if there is a mistake in the bid map that keeps track of all
                          * accounts' bids */

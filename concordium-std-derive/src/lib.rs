@@ -1236,10 +1236,7 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Please note:
-///   - At the moment, we can only derive fieldless enums.
-///   - The error-type enum needs to derive (or implement) the Copy and Clone
-///     traits.
+/// Note that at the moment, we can only derive fieldless enums.
 ///
 /// ### Example
 /// ```ignore
