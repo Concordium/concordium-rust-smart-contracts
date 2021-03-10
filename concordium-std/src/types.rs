@@ -48,9 +48,19 @@ impl Action {
 /// provided, the error message corresponding to the error code will be
 /// displayed. The valid range for an error code is from 1 to i32::MAX. We are
 /// using a u32 here to highlight that the error code should be nonnegative.
-#[derive(Default, Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct Reject {
-    pub error_code: u32,
+    pub error_code: crate::num::NonZeroU32,
+}
+
+/// Default error is i32::MAX (the i32 is deliberate)
+impl Default for Reject {
+    #[inline(always)]
+    fn default() -> Self {
+        Self {
+            error_code: unsafe { crate::num::NonZeroU32::new_unchecked(i32::MAX as u32) },
+        }
+    }
 }
 
 // Macros for failing a contract function

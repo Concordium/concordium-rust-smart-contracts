@@ -181,8 +181,6 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("init_{}", contract_name);
     let amount_ident = format_ident!("amount");
-    let exceeded_error_code_limit =
-        format!("Error code should not exceed {} (i32::MAX).", i32::MAX);
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -198,15 +196,18 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
-                use concordium_std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(()) => 0,
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code;
-                        -i32::try_from(code).expect(#exceeded_error_code_limit)
+                        let code = Reject::from(reject).error_code.get();
+                        if code <= i32::MAX as u32 {
+                            - (code as i32)
+                        } else {
+                            trap() // precondition violation
+                        }
                     }
                 }
             }
@@ -216,7 +217,6 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
-                use concordium_std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 match #fn_name(&ctx, #(#fn_optional_args),*) {
@@ -228,8 +228,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         0
                     }
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code;
-                        -i32::try_from(code).expect(#exceeded_error_code_limit)
+                        let code = Reject::from(reject).error_code.get();
+                        if code <= i32::MAX as u32 {
+                            - (code as i32)
+                        } else {
+                            trap() // precondition violation
+                        }
                     }
                 }
             }
@@ -374,8 +378,6 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("{}.{}", contract_name, name);
     let amount_ident = format_ident!("amount");
-    let exceeded_error_code_limit =
-        format!("Error code should not exceed {} (i32::MAX).", i32::MAX);
 
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
@@ -391,7 +393,6 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
-                use concordium_std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state = ContractState::open(());
@@ -401,8 +402,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         act.tag() as i32
                     }
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code;
-                        -i32::try_from(code).expect(#exceeded_error_code_limit)
+                        let code = Reject::from(reject).error_code.get();
+                        if code <= i32::MAX as u32 {
+                            - (code as i32)
+                        } else {
+                            trap() // precondition violation
+                        }
                     }
                 }
             }
@@ -414,7 +419,6 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, trap};
-                use concordium_std::convert::TryFrom;
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state_bytes = ContractState::open(());
@@ -432,8 +436,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                             }
                         }
                         Err(reject) => {
-                            let code = Reject::from(reject).error_code;
-                            -i32::try_from(code).expect(#exceeded_error_code_limit)
+                            let code = Reject::from(reject).error_code.get();
+                            if code <= i32::MAX as u32 {
+                                - (code as i32)
+                            } else {
+                                trap() // precondition violation
+                            }
                         }
                     }
                 } else {
@@ -1246,10 +1254,12 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 ///     // TimeExpired(time: Timestamp), /* currently not supported */
 ///     ...
 /// }
+/// ```
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
 /// fn receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState)
-/// -> Result<A, MyError> {...} ```
+/// -> Result<A, MyError> {...}
+/// ```
 #[proc_macro_derive(Reject, attributes(from))]
 pub fn reject_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(reject_derive_worker(input))
@@ -1277,14 +1287,13 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         }
     };
 
-    let variant_error_conversions: Vec<_> =
-        generate_variant_error_conversions(&enum_data, &enum_ident);
+    let variant_error_conversions = generate_variant_error_conversions(&enum_data, &enum_ident)?;
 
     let gen = quote! {
         impl From<#enum_ident> for Reject {
-            #[inline]
+            #[inline(always)]
             fn from(e: #enum_ident) -> Self {
-                Reject { error_code: (e as u32 + 1) }
+                Reject { error_code: unsafe { concordium_std::num::NonZeroU32::new_unchecked((e as u32 + 1)) } }
             }
         }
 
@@ -1306,17 +1315,32 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 fn generate_variant_error_conversions(
     enum_data: &DataEnum,
     enum_name: &syn::Ident,
-) -> Vec<proc_macro2::TokenStream> {
-    enum_data
+) -> syn::Result<Vec<proc_macro2::TokenStream>> {
+    Ok(enum_data
         .variants
         .iter()
-        .flat_map(|variant| {
+        .map(|variant| {
+            // in the future we might incorporate explicit discriminants,
+            // but the general case of this requires evaluating constant expressions,
+            // which is not easily supported at the moment.
+            if let Some((_, discriminant)) = variant.discriminant.as_ref() {
+                return Err(syn::Error::new(
+                    discriminant.span(),
+                    "Explicit discriminants are not yet supported.",
+                ));
+            }
             let variant_attributes = variant.attrs.iter();
-            variant_attributes.flat_map(move |attr| {
-                parse_attr_and_gen_error_conversions(attr, enum_name, &variant.ident)
-            })
+            variant_attributes
+                .map(move |attr| {
+                    parse_attr_and_gen_error_conversions(attr, enum_name, &variant.ident)
+                })
+                .collect::<syn::Result<Vec<_>>>()
         })
-        .collect()
+        .collect::<syn::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect())
 }
 
 /// Generate error conversion for a given enum variant.
@@ -1324,33 +1348,35 @@ fn parse_attr_and_gen_error_conversions(
     attr: &syn::Attribute,
     enum_name: &syn::Ident,
     variant_name: &syn::Ident,
-) -> Vec<proc_macro2::TokenStream> {
+) -> syn::Result<Vec<proc_macro2::TokenStream>> {
     let wrong_from_usage = |x: &dyn Spanned| {
-        let err = syn::Error::new(
+        syn::Error::new(
             x.span(),
             "The `from` attribute expects a list of error types, e.g.: #[from(ParseError)].",
-        );
-        vec![err.to_compile_error()]
+        )
     };
     match attr.parse_meta() {
         Ok(syn::Meta::List(list)) if list.path.is_ident("from") => {
             let mut from_error_names = vec![];
             for nested in list.nested.iter() {
-                if let syn::NestedMeta::Meta(syn::Meta::Path(from_error)) = nested {
-                    match from_error.get_ident() {
-                        Some(ident) => {
+                // check that all items in the list are paths
+                match nested {
+                    syn::NestedMeta::Meta(meta) => match meta {
+                        Meta::Path(from_error) => {
+                            let ident = from_error
+                                .get_ident()
+                                .ok_or_else(|| wrong_from_usage(from_error))?;
                             from_error_names.push(ident);
                         }
-                        None => {
-                            return wrong_from_usage(from_error);
-                        }
-                    }
+                        other => return Err(wrong_from_usage(&other)),
+                    },
+                    syn::NestedMeta::Lit(l) => return Err(wrong_from_usage(&l)),
                 }
             }
-            from_error_token_stream(from_error_names, &enum_name, variant_name)
+            Ok(from_error_token_stream(&from_error_names, &enum_name, variant_name).collect())
         }
-        Ok(syn::Meta::NameValue(mnv)) if mnv.path.is_ident("from") => wrong_from_usage(&mnv),
-        _ => vec![],
+        Ok(syn::Meta::NameValue(mnv)) if mnv.path.is_ident("from") => Err(wrong_from_usage(&mnv)),
+        _ => Ok(vec![]),
     }
 }
 
@@ -1362,23 +1388,20 @@ fn parse_attr_and_gen_error_conversions(
 ///    }
 /// }
 /// ```
-fn from_error_token_stream(
-    paths: Vec<&syn::Ident>,
-    enum_name: &syn::Ident,
-    variant_name: &syn::Ident,
-) -> Vec<proc_macro2::TokenStream> {
-    paths
-        .iter()
-        .map(|from_error| {
-            quote! {
-            impl From<#from_error> for #enum_name {
-               #[inline]
-               fn from(fe: #from_error) -> Self {
-                 #enum_name::#variant_name
-               }
-            }}
-        })
-        .collect()
+fn from_error_token_stream<'a>(
+    paths: &'a [&'a syn::Ident],
+    enum_name: &'a syn::Ident,
+    variant_name: &'a syn::Ident,
+) -> impl Iterator<Item = proc_macro2::TokenStream> + 'a {
+    paths.iter().map(move |from_error| {
+        quote! {
+        impl From<#from_error> for #enum_name {
+           #[inline]
+           fn from(fe: #from_error) -> Self {
+             #enum_name::#variant_name
+           }
+        }}
+    })
 }
 
 #[proc_macro_attribute]
