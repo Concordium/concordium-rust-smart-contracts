@@ -7,7 +7,7 @@ impl convert::From<()> for Reject {
     #[inline(always)]
     fn from(_: ()) -> Self {
         Reject {
-            error_code: 1,
+            error_code: -(i32::MIN + 1) as u32,
         }
     }
 }
@@ -16,7 +16,7 @@ impl convert::From<ParseError> for Reject {
     #[inline(always)]
     fn from(_: ParseError) -> Self {
         Reject {
-            error_code: 2,
+            error_code: -(i32::MIN + 2) as u32,
         }
     }
 }
