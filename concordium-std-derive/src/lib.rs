@@ -7,8 +7,7 @@ extern crate quote;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use std::ops::Neg;
-use std::convert::TryFrom;
+use std::{convert::TryFrom, ops::Neg};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -1264,11 +1263,18 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     }?;
     let enum_ident = &ast.ident;
 
-    // Ensure that the number of enum variants fits into the number of error codes we can generate.
-    let too_many_variants = format!("Error enum {} cannot have more than {} variants.", enum_ident, RESERVED_ERROR_CODES.neg());
+    // Ensure that the number of enum variants fits into the number of error codes
+    // we can generate.
+    let too_many_variants = format!(
+        "Error enum {} cannot have more than {} variants.",
+        enum_ident,
+        RESERVED_ERROR_CODES.neg()
+    );
     match i32::try_from(enum_data.variants.len()) {
         Ok(n) if n <= RESERVED_ERROR_CODES.neg() => (),
-        _ => Err(syn::Error::new(ast.span(), &too_many_variants))?
+        _ => {
+            return Err(syn::Error::new(ast.span(), &too_many_variants));
+        }
     };
 
     let variant_error_conversions: Vec<_> =
@@ -1276,6 +1282,7 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 
     let gen = quote! {
         impl From<#enum_ident> for Reject {
+            #[inline]
             fn from(e: #enum_ident) -> Self {
                 Reject { error_code: (e as u32 + 1) }
             }
@@ -1365,6 +1372,7 @@ fn from_error_token_stream(
         .map(|from_error| {
             quote! {
             impl From<#from_error> for #enum_name {
+               #[inline]
                fn from(fe: #from_error) -> Self {
                  #enum_name::#variant_name
                }
