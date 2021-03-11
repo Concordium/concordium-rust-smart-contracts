@@ -7,7 +7,7 @@ impl convert::From<()> for Reject {
     #[inline(always)]
     fn from(_: ()) -> Self {
         Reject {
-            error_code: unsafe { num::NonZeroU32::new_unchecked((i32::MAX - 1) as u32) },
+            error_code: unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) },
         }
     }
 }
@@ -16,7 +16,7 @@ impl convert::From<ParseError> for Reject {
     #[inline(always)]
     fn from(_: ParseError) -> Self {
         Reject {
-            error_code: unsafe { num::NonZeroU32::new_unchecked((i32::MAX - 2) as u32) },
+            error_code: unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 2) },
         }
     }
 }

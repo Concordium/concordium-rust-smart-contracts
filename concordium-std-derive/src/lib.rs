@@ -203,8 +203,8 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                     Ok(()) => 0,
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
-                        if code <= i32::MAX as u32 {
-                            - (code as i32)
+                        if code < 0 {
+                            code
                         } else {
                             trap() // precondition violation
                         }
@@ -229,8 +229,8 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
-                        if code <= i32::MAX as u32 {
-                            - (code as i32)
+                        if code < 0 {
+                            code
                         } else {
                             trap() // precondition violation
                         }
@@ -403,8 +403,8 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
-                        if code <= i32::MAX as u32 {
-                            - (code as i32)
+                        if code < 0 {
+                            code
                         } else {
                             trap() // precondition violation
                         }
@@ -437,8 +437,8 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         }
                         Err(reject) => {
                             let code = Reject::from(reject).error_code.get();
-                            if code <= i32::MAX as u32 {
-                                - (code as i32)
+                            if code < 0 {
+                                code
                             } else {
                                 trap() // precondition violation
                             }
@@ -1245,12 +1245,15 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 ///
 /// Note that at the moment, we can only derive fieldless enums.
 ///
+/// The conversion will map the first variant to error code -1, second to -2,
+/// etc.
+///
 /// ### Example
 /// ```ignore
 /// #[derive(Clone, Copy, Reject)]
 /// enum MyError {
-///     IllegalState,
-///     WrongSender,
+///     IllegalState, // receives error code -1
+///     WrongSender, // receives error code -2
 ///     // TimeExpired(time: Timestamp), /* currently not supported */
 ///     ...
 /// }
@@ -1290,10 +1293,14 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     let variant_error_conversions = generate_variant_error_conversions(&enum_data, &enum_ident)?;
 
     let gen = quote! {
+        /// The from implementation maps the first variant to -1, second to -2, etc.
+        /// NB: This differs from the cast `variant as i32` since we cannot easily modify
+        /// the variant tags in the derive macro itself.
+        #[automatically_derived]
         impl From<#enum_ident> for Reject {
             #[inline(always)]
             fn from(e: #enum_ident) -> Self {
-                Reject { error_code: unsafe { concordium_std::num::NonZeroU32::new_unchecked((e as u32 + 1)) } }
+                Reject { error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) } }
             }
         }
 
