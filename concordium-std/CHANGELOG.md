@@ -8,6 +8,7 @@
   reverts the change in concordium-std 0.4.1.
 - Allow init and receive methods to return custom error codes that will be displayed to the user
   if a smart-contract invocation fails.
+- Add i128 and u128 support to serialization and schema.
 
 ## concordium-std 0.4.1 (2021-02-22)
 
