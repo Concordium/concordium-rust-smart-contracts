@@ -150,42 +150,18 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 
 // Provide some re-exports to make it easier to use the library.
 // This should be expanded in the future.
-#[cfg(not(feature = "std"))]
-pub use core::result::*;
-
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use alloc::collections;
+pub use alloc::{collections, string, string::String, string::ToString, vec, vec::Vec};
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use alloc::{string, string::String, string::ToString, vec, vec::Vec};
-/// Re-export.
-#[cfg(not(feature = "std"))]
-pub use core::convert;
-/// Re-export.
-#[cfg(not(feature = "std"))]
-pub use core::marker;
-/// Re-export.
-#[cfg(not(feature = "std"))]
-pub use core::mem;
+pub use core::{convert, marker, mem, num, result::*};
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
-#[cfg(feature = "std")]
-pub use std::vec::Vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
-pub use std::collections;
-/// Re-export.
-#[cfg(feature = "std")]
-pub use std::convert;
-#[cfg(feature = "std")]
-pub use std::marker;
-/// Re-export.
-#[cfg(feature = "std")]
-pub use std::mem;
-#[cfg(feature = "std")]
-pub use std::string::String;
+pub use std::{collections, convert, marker, mem, num, string::String, vec::Vec};
 
 /// Chain constants that impose limits on various aspects of smart contract
 /// execution.

@@ -43,10 +43,39 @@ impl Action {
     pub fn tag(&self) -> u32 { self._private }
 }
 
-/// A non-descript error message, signalling rejection of a smart contract
-/// invocation.
-#[derive(Default, Eq, PartialEq, Debug)]
-pub struct Reject {}
+/// An error message, signalling rejection of a smart contract invocation.
+/// The client will see the error code as a reject reason; if a schema is
+/// provided, the error message corresponding to the error code will be
+/// displayed. The valid range for an error code is from i32::MIN to  -1.
+#[derive(Eq, PartialEq, Debug)]
+#[repr(transparent)]
+pub struct Reject {
+    pub error_code: crate::num::NonZeroI32,
+}
+
+/// Default error is i32::MIN.
+impl Default for Reject {
+    #[inline(always)]
+    fn default() -> Self {
+        Self {
+            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+        }
+    }
+}
+
+impl Reject {
+    /// This returns `None` for all values >= 0 and `Some` otherwise.
+    pub fn new(x: i32) -> Option<Self> {
+        if x < 0 {
+            let error_code = unsafe { crate::num::NonZeroI32::new_unchecked(x) };
+            Some(Reject {
+                error_code,
+            })
+        } else {
+            None
+        }
+    }
+}
 
 // Macros for failing a contract function
 
@@ -207,7 +236,7 @@ macro_rules! claim_ne {
 /// The expected return type of the receive method of a smart contract.
 ///
 /// Optionally, to define a custom type for error instead of using
-/// Reject, allowing the track the reason for rejection, *but only in unit
+/// Reject, allowing to track the reason for rejection, *but only in unit
 /// tests*.
 ///
 /// See also the documentation for [bail!](macro.bail.html) for how to use
