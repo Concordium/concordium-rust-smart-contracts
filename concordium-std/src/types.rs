@@ -46,19 +46,33 @@ impl Action {
 /// An error message, signalling rejection of a smart contract invocation.
 /// The client will see the error code as a reject reason; if a schema is
 /// provided, the error message corresponding to the error code will be
-/// displayed. The valid range for an error code is from 1 to i32::MAX. We are
-/// using a u32 here to highlight that the error code should be nonnegative.
+/// displayed. The valid range for an error code is from i32::MIN to  -1.
 #[derive(Eq, PartialEq, Debug)]
+#[repr(transparent)]
 pub struct Reject {
-    pub error_code: crate::num::NonZeroU32,
+    pub error_code: crate::num::NonZeroI32,
 }
 
-/// Default error is i32::MAX (the i32 is deliberate)
+/// Default error is i32::MIN.
 impl Default for Reject {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            error_code: unsafe { crate::num::NonZeroU32::new_unchecked(i32::MAX as u32) },
+            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+        }
+    }
+}
+
+impl Reject {
+    /// This returns `None` for all values >= 0 and `Some` otherwise.
+    pub fn new(x: i32) -> Option<Self> {
+        if x < 0 {
+            let error_code = unsafe { crate::num::NonZeroI32::new_unchecked(x) };
+            Some(Reject {
+                error_code,
+            })
+        } else {
+            None
         }
     }
 }
