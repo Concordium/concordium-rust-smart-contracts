@@ -534,7 +534,8 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     ptr
 }
 
-/// Wrapper for HasActions::send_raw, which automatically serializes the parameter.
+/// Wrapper for HasActions::send_raw, which automatically serializes the
+/// parameter.
 pub fn send<A: HasActions, P: Serial>(
     ca: &ContractAddress,
     receive_name: ReceiveName,
