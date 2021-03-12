@@ -534,8 +534,12 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     ptr
 }
 
-/// Wrapper for HasActions::send_raw, which automatically serializes the
-/// parameter.
+/// Wrapper for
+/// [HasActions::send_raw](./trait.HasActions.html#tymethod.send_raw), which
+/// automatically serializes the parameter. Note that if the parameter is
+/// already a byte array or convertible to a byte array without allocations it
+/// is preferrable to use [send_raw](./trait.HasActions.html#tymethod.send_raw).
+/// It is more efficient and avoids memory allocations.
 pub fn send<A: HasActions, P: Serial>(
     ca: &ContractAddress,
     receive_name: ReceiveName,
