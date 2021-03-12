@@ -164,7 +164,7 @@ pub trait HasActions {
     fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self;
 
     /// Send a message to a contract.
-    fn send(
+    fn send_raw(
         ca: &ContractAddress,
         receive_name: ReceiveName,
         amount: Amount,

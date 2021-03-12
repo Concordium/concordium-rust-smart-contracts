@@ -485,7 +485,7 @@ impl HasActions for ActionsTree {
         }
     }
 
-    fn send(
+    fn send_raw(
         ca: &ContractAddress,
         receive_name: ReceiveName,
         amount: Amount,
