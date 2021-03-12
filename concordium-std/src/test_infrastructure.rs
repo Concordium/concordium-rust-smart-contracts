@@ -448,7 +448,7 @@ impl HasLogger for LogRecorder {
         }
     }
 
-    fn log_bytes(&mut self, event: &[u8]) { self.logs.push(event.to_vec()) }
+    fn log_raw(&mut self, event: &[u8]) { self.logs.push(event.to_vec()) }
 }
 
 /// An actions tree, used to provide a simpler presentation for testing.

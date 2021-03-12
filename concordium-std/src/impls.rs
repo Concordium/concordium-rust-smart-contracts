@@ -452,7 +452,7 @@ impl HasLogger for Logger {
     }
 
     #[inline(always)]
-    fn log_bytes(&mut self, event: &[u8]) {
+    fn log_raw(&mut self, event: &[u8]) {
         unsafe {
             log_event(event.as_ptr(), event.len() as u32);
         }
