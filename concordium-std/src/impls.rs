@@ -35,6 +35,42 @@ impl From<LogError> for Reject {
     }
 }
 
+/// MissingInitPrefix is mapped to i32::MIN + 5, and TooLong is mapped to
+/// i32::MIN + 6.
+impl From<NewContractNameError> for Reject {
+    fn from(nre: NewContractNameError) -> Self {
+        let error_code = match nre {
+            NewContractNameError::MissingInitPrefix => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 5)
+            },
+            NewContractNameError::TooLong => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 6)
+            },
+        };
+        Self {
+            error_code,
+        }
+    }
+}
+
+/// MissingDotSeparator is mapped to i32::MIN + 7, and TooLong is mapped to
+/// i32::MIN + 8.
+impl From<NewReceiveNameError> for Reject {
+    fn from(nre: NewReceiveNameError) -> Self {
+        let error_code = match nre {
+            NewReceiveNameError::MissingDotSeparator => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 7)
+            },
+            NewReceiveNameError::TooLong => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 8)
+            },
+        };
+        Self {
+            error_code,
+        }
+    }
+}
+
 /// # Contract state trait implementations.
 impl Seek for ContractState {
     type Err = ();
