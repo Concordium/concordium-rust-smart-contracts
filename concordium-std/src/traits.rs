@@ -166,7 +166,7 @@ pub trait HasActions {
     /// Send a message to a contract.
     fn send(
         ca: &ContractAddress,
-        receive_name: &ReceiveName,
+        receive_name: ReceiveName,
         amount: Amount,
         parameter: &[u8],
     ) -> Self;

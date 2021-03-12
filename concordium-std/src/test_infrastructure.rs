@@ -487,7 +487,7 @@ impl HasActions for ActionsTree {
 
     fn send(
         ca: &ContractAddress,
-        receive_name: &ReceiveName,
+        receive_name: ReceiveName,
         amount: Amount,
         parameter: &[u8],
     ) -> Self {

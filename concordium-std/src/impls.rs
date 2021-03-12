@@ -480,7 +480,7 @@ impl HasActions for Action {
     #[inline(always)]
     fn send(
         ca: &ContractAddress,
-        receive_name: &ReceiveName,
+        receive_name: ReceiveName,
         amount: Amount,
         parameter: &[u8],
     ) -> Self {
@@ -535,15 +535,14 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
 }
 
 /// Wrapper for HasActions::Send, which automatically serializes the parameter.
-#[inline(always)]
 pub fn simple_send<A: HasActions, P: Serial>(
     ca: &ContractAddress,
-    receive_name: &ReceiveName,
+    receive_name: ReceiveName,
     amount: Amount,
     parameter: &P,
 ) -> A {
     let param_bytes = to_bytes(parameter);
-    HasActions::send(ca, receive_name, amount, &param_bytes)
+    A::send(ca, receive_name, amount, &param_bytes)
 }
 
 impl<A, E> UnwrapAbort for Result<A, E> {
