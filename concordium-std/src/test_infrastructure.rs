@@ -448,7 +448,7 @@ impl HasLogger for LogRecorder {
         }
     }
 
-    fn log_bytes(&mut self, event: &[u8]) { self.logs.push(event.to_vec()) }
+    fn log_raw(&mut self, event: &[u8]) { self.logs.push(event.to_vec()) }
 }
 
 /// An actions tree, used to provide a simpler presentation for testing.
@@ -461,7 +461,7 @@ pub enum ActionsTree {
     },
     Send {
         to:           ContractAddress,
-        receive_name: String,
+        receive_name: OwnedReceiveName,
         amount:       Amount,
         parameter:    Vec<u8>,
     },
@@ -485,10 +485,15 @@ impl HasActions for ActionsTree {
         }
     }
 
-    fn send(ca: &ContractAddress, receive_name: &str, amount: Amount, parameter: &[u8]) -> Self {
+    fn send_raw(
+        ca: &ContractAddress,
+        receive_name: ReceiveName,
+        amount: Amount,
+        parameter: &[u8],
+    ) -> Self {
         ActionsTree::Send {
             to: *ca,
-            receive_name: receive_name.to_string(),
+            receive_name: receive_name.to_owned(),
             amount,
             parameter: parameter.to_vec(),
         }

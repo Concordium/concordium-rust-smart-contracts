@@ -138,7 +138,7 @@ pub trait HasLogger {
     fn init() -> Self;
 
     /// Log the given bytes as-is.
-    fn log_bytes(&mut self, event: &[u8]);
+    fn log_raw(&mut self, event: &[u8]);
 
     #[inline(always)]
     /// Log a serializable event by serializing it with a supplied serializer.
@@ -147,7 +147,7 @@ pub trait HasLogger {
         if event.serial(&mut out).is_err() {
             crate::trap(); // should not happen
         }
-        self.log_bytes(&out)
+        self.log_raw(&out)
     }
 }
 
@@ -164,7 +164,12 @@ pub trait HasActions {
     fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self;
 
     /// Send a message to a contract.
-    fn send(ca: &ContractAddress, receive_name: &str, amount: Amount, parameter: &[u8]) -> Self;
+    fn send_raw(
+        ca: &ContractAddress,
+        receive_name: ReceiveName,
+        amount: Amount,
+        parameter: &[u8],
+    ) -> Self;
 
     /// If the execution of the first action succeeds, run the second action
     /// as well.
