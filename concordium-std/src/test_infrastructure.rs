@@ -461,7 +461,7 @@ pub enum ActionsTree {
     },
     Send {
         to:           ContractAddress,
-        receive_name: String,
+        receive_name: OwnedReceiveName,
         amount:       Amount,
         parameter:    Vec<u8>,
     },
@@ -493,7 +493,7 @@ impl HasActions for ActionsTree {
     ) -> Self {
         ActionsTree::Send {
             to: *ca,
-            receive_name: receive_name.get_chain_name().to_string(),
+            receive_name: receive_name.to_owned(),
             amount,
             parameter: parameter.to_vec(),
         }
