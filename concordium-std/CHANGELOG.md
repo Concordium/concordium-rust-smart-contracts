@@ -9,7 +9,7 @@
 - Change the `receive_name` parameter of `HasActions::send` to use `ReceiveName`
   instead of `str`.
 - Rename `send` to `send_raw` in `HasActions`.
-- Add `simple_send`, a wrapper for `HasActions::send`, which automatically
+- Add `send`, a wrapper for `HasActions::send_raw`, which automatically
   serializes `parameter` (using `Serial`).
 - Allow init and receive methods to return custom error codes that will be displayed to the user
   if a smart-contract invocation fails.

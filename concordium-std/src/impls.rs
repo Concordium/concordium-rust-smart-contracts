@@ -1,4 +1,4 @@
-use crate::{convert, mem, num, prims::*, traits::*, types::*};
+use crate::{convert, mem, num, prims, prims::*, traits::*, types::*};
 use concordium_contracts_common::*;
 
 use mem::MaybeUninit;
@@ -486,7 +486,7 @@ impl HasActions for Action {
     ) -> Self {
         let receive_bytes = receive_name.get_chain_name().as_bytes();
         let res = unsafe {
-            send(
+            prims::send(
                 ca.index,
                 ca.subindex,
                 receive_bytes.as_ptr(),
@@ -535,7 +535,7 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
 }
 
 /// Wrapper for HasActions::send_raw, which automatically serializes the parameter.
-pub fn simple_send<A: HasActions, P: Serial>(
+pub fn send<A: HasActions, P: Serial>(
     ca: &ContractAddress,
     receive_name: ReceiveName,
     amount: Amount,
