@@ -194,7 +194,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
@@ -215,7 +215,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     } else {
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(amount: Amount) -> i32 {
+            pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
@@ -391,7 +391,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
@@ -417,7 +417,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
         quote! {
             #[export_name = #wasm_export_fn_name]
-            pub extern "C" fn #rust_export_fn_name(#amount_ident: Amount) -> i32 {
+            pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
