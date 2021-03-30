@@ -1,9 +1,9 @@
 [package]
 name = "piggy-bank-part2"
 version = "0.1.0"
-authors = ["Concordium AG <info@concordium.com>"]
+authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
-license = "Apache-2.0"
+license = "MPL-2.0"
 description = "Two-step transfer smart contract."
 homepage = "https://github.com/concordium/concordium-rust-smart-contracts"
 repository = "https://github.com/concordium/concordium-rust-smart-contracts"
