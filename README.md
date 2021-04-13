@@ -1,5 +1,7 @@
 ## Standard library for writing smart contracts for the Concordium blockchain.
 
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
+
 This repository consists of the core standard library for writing smart
 contracts for the Concordium blockchain in the Rust programming languages, as
 well as some sample smart contracts. The core libraries are
