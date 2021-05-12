@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std 0.5.0 (2021-05-12)
+
 - Make Write implementation for ContractStateTest resize the state automatically
   to be consistent with the Write implementation for ContractState.
 - Use little-endian encoding for sender contract addresses in receive contexts. This
