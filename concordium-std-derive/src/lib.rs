@@ -12,6 +12,8 @@ use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
 
+use concordium_contracts_common::*;
+
 /// A helper to report meaningful compilation errors
 /// - If applied to an Ok value they simply return the underlying value.
 /// - If applied to `Err(e)` then `e` is turned into a compiler error.
@@ -180,6 +182,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("init_{}", contract_name);
+
+    ContractName::is_valid_contract_name(&wasm_export_fn_name)
+        .map_err(|e| syn::Error::new(attrs.span(), format!("{}", e)))?;
+
     let amount_ident = format_ident!("amount");
 
     // Accumulate a list of required arguments, if the function contains a
@@ -377,6 +383,10 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("{}.{}", contract_name, name);
+
+    ReceiveName::is_valid_receive_name(&wasm_export_fn_name)
+        .map_err(|e| syn::Error::new(attrs.span(), format!("{}", e)))?;
+
     let amount_ident = format_ident!("amount");
 
     // Accumulate a list of required arguments, if the function contains a
