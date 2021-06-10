@@ -46,6 +46,12 @@ impl From<NewContractNameError> for Reject {
             NewContractNameError::TooLong => unsafe {
                 crate::num::NonZeroI32::new_unchecked(i32::MIN + 6)
             },
+            NewContractNameError::ContainsDot => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 9)
+            },
+            NewContractNameError::InvalidCharacters => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 10)
+            },
         };
         Self {
             error_code,
@@ -63,6 +69,9 @@ impl From<NewReceiveNameError> for Reject {
             },
             NewReceiveNameError::TooLong => unsafe {
                 crate::num::NonZeroI32::new_unchecked(i32::MIN + 8)
+            },
+            NewReceiveNameError::InvalidCharacters => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 11)
             },
         };
         Self {
