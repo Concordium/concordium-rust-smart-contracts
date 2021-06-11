@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased changes
+- Handle new cases for NewContractNameError and NewReceiveNameError
 
 ## concordium-std 0.5.0 (2021-05-12)
 
