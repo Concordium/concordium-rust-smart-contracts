@@ -1113,7 +1113,7 @@ fn contract_state_worker(attr: TokenStream, item: TokenStream) -> syn::Result<To
         )
     })?;
 
-    let wasm_schema_name = format!("concordium_schema_state_{}", contract_name);
+    let wasm_schema_name = format!("concordium_schema_state_{}", contract_name.value());
     let rust_schema_name = format_ident!("concordium_schema_state_{}", data_ident);
 
     let generate_schema_tokens = quote! {
