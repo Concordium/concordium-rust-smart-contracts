@@ -384,17 +384,24 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("{}.{}", contract_name.value(), name.value());
 
+    // Validate the contract name independently to ensure that it doesn't contain a
+    // '.' as this causes a subtle error when receive names are being split.
     let contract_name_validation =
         ContractName::is_valid_contract_name(&format!("init_{}", contract_name.value()))
             .map_err(|e| syn::Error::new(contract_name.span(), e.to_string()));
 
-    ReceiveName::is_valid_receive_name(&wasm_export_fn_name).map_err(|e| {
-        let mut receive_name_error = syn::Error::new(name.span(), e.to_string());
-        if let Err(contract_name_error) = contract_name_validation {
-            receive_name_error.combine(contract_name_error)
+    let receive_name_validation = ReceiveName::is_valid_receive_name(&wasm_export_fn_name)
+        .map_err(|e| syn::Error::new(name.span(), e.to_string()));
+
+    match (contract_name_validation, receive_name_validation) {
+        (Err(mut e0), Err(e1)) => {
+            e0.combine(e1);
+            return Err(e0);
         }
-        receive_name_error
-    })?;
+        (Err(e), _) => return Err(e),
+        (_, Err(e)) => return Err(e),
+        _ => (),
+    };
 
     let amount_ident = format_ident!("amount");
 
