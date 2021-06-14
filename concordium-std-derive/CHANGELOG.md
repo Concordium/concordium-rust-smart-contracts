@@ -6,3 +6,4 @@
 
 - Add macros for deriving error implementations.
 - Make derive macros slightly more hygienic.
+- Enable renaming of enum variants and field names.

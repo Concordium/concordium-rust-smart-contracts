@@ -567,8 +567,14 @@ pub fn deserial_derive(input: TokenStream) -> TokenStream {
 const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
 
 /// A list of valid concordium field attributes
-const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 5] =
-    ["size_length", "set_size_length", "map_size_length", "string_size_length", "ensure_ordered"];
+const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 6] = [
+    "size_length",
+    "set_size_length",
+    "map_size_length",
+    "string_size_length",
+    "ensure_ordered",
+    "rename",
+];
 
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
     attributes
@@ -1144,7 +1150,20 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
                 .variants
                 .iter()
                 .map(|variant| {
-                    let variant_name = &variant.ident.to_string();
+                    let variant_name = if let Some(renamed_variant_name) =
+                        find_field_attribute_value(&variant.attrs, "rename")?
+                    {
+                        match renamed_variant_name {
+                            syn::Lit::Str(renamed_variant_name) => renamed_variant_name.value(),
+                            _ => return Err(syn::Error::new(
+                                renamed_variant_name.span(),
+                                "Rename attribute value must be a string.",
+                            )),
+                        }
+                    } else {
+                        variant.ident.to_string()
+                    };
+
                     let fields_tokens = schema_type_fields(&variant.fields)?;
                     Ok(quote! {
                         (concordium_std::String::from(#variant_name), #fields_tokens)
@@ -1213,7 +1232,20 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
             let fields_tokens: Vec<_> = fields
                 .iter()
                 .map(|field| {
-                    let field_name = field.ident.clone().unwrap().to_string(); // safe since named fields
+                    let field_name = if let Some(renamed_field_name) =
+                        find_field_attribute_value(&field.attrs, "rename")?
+                    {
+                        match renamed_field_name {
+                            syn::Lit::Str(renamed_field_name) => renamed_field_name.value(),
+                            _ => return Err(syn::Error::new(
+                                renamed_field_name.span(),
+                                "Rename attribute value must be a string.",
+                            )),
+                        }
+                    } else {
+                        field.ident.clone().unwrap().to_string() // safe since named fields
+                    };
+
                     let field_schema_type = schema_type_field_type(&field)?;
                     Ok(quote! {
                         (concordium_std::String::from(#field_name), #field_schema_type)
