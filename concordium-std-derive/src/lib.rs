@@ -4,6 +4,7 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 
+use concordium_contracts_common::*;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
@@ -11,8 +12,6 @@ use std::{convert::TryFrom, ops::Neg};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
-
-use concordium_contracts_common::*;
 
 /// A helper to report meaningful compilation errors
 /// - If applied to an Ok value they simply return the underlying value.
@@ -183,8 +182,9 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
     let wasm_export_fn_name = format!("init_{}", contract_name.value());
 
-    ContractName::is_valid_contract_name(&wasm_export_fn_name)
-        .map_err(|e| syn::Error::new(contract_name.span(), e.to_string()))?;
+    if let Err(e) = ContractName::is_valid_contract_name(&wasm_export_fn_name) {
+        return Err(syn::Error::new(contract_name.span(), e.to_string()));
+    }
 
     let amount_ident = format_ident!("amount");
 
