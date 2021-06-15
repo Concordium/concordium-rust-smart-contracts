@@ -327,7 +327,7 @@ impl HasPolicy for Policy<AttributesCursor> {
 /// and [ExactSizeIterator](https://doc.rust-lang.org/std/iter/trait.ExactSizeIterator.html) traits.
 pub struct PoliciesIterator {
     /// Position in the policies binary serialization.
-    pos: u32,
+    pos:             u32,
     /// Number of remaining items in the stream.
     remaining_items: u16,
 }

@@ -18,7 +18,7 @@ pub struct AttributesCursor {
     /// `created_at` and `valid_to` will require.
     pub(crate) current_position: u32,
     /// The number of remaining items in the policy.
-    pub(crate) remaining_items: u16,
+    pub(crate) remaining_items:  u16,
 }
 
 /// A type representing the logger.
