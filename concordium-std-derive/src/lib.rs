@@ -7,7 +7,7 @@ extern crate quote;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use std::{convert::TryFrom, ops::Neg};
+use std::{collections::HashMap, convert::TryFrom, ops::Neg};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -1146,23 +1146,46 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
             }
         }
         syn::Data::Enum(ref data) => {
+            let mut used_variant_names = HashMap::new();
             let variant_tokens: Vec<_> = data
                 .variants
                 .iter()
                 .map(|variant| {
-                    let variant_name = if let Some(renamed_variant_name) =
+                    let (variant_name, variant_span) = if let Some(renamed_variant_name) =
                         find_field_attribute_value(&variant.attrs, "rename")?
                     {
                         match renamed_variant_name {
-                            syn::Lit::Str(renamed_variant_name) => renamed_variant_name.value(),
-                            _ => return Err(syn::Error::new(
-                                renamed_variant_name.span(),
-                                "Rename attribute value must be a string.",
-                            )),
+                            syn::Lit::Str(renamed_variant_name) => {
+                                (renamed_variant_name.value(), renamed_variant_name.span())
+                            }
+                            _ => {
+                                return Err(syn::Error::new(
+                                    renamed_variant_name.span(),
+                                    "Rename attribute value must be a string.",
+                                ))
+                            }
                         }
                     } else {
-                        variant.ident.to_string()
+                        (variant.ident.to_string(), variant.ident.span())
                     };
+
+                    // Check whether the name is defined multiple times
+                    if let Some(used_variant_span) =
+                        used_variant_names.insert(variant_name.clone(), variant_span.clone())
+                    {
+                        let mut error_at_first_def = syn::Error::new(
+                            used_variant_span.clone(),
+                            format!("the name `{}` is defined multiple times", variant_name),
+                        );
+                        let error_at_second_def = syn::Error::new(
+                            variant_span,
+                            format!("the name `{}` is defined multiple times", variant_name),
+                        );
+                        // Combine the errors to show both at once
+                        error_at_first_def.combine(error_at_second_def);
+
+                        return Err(error_at_first_def);
+                    }
 
                     let fields_tokens = schema_type_fields(&variant.fields)?;
                     Ok(quote! {
@@ -1229,22 +1252,47 @@ fn schema_type_field_type(field: &syn::Field) -> syn::Result<proc_macro2::TokenS
 fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStream> {
     match fields {
         syn::Fields::Named(_) => {
+            let mut used_field_names = HashMap::new();
             let fields_tokens: Vec<_> = fields
                 .iter()
                 .map(|field| {
-                    let field_name = if let Some(renamed_field_name) =
+                    let (field_name, field_span) = if let Some(renamed_field_name) =
                         find_field_attribute_value(&field.attrs, "rename")?
                     {
                         match renamed_field_name {
-                            syn::Lit::Str(renamed_field_name) => renamed_field_name.value(),
-                            _ => return Err(syn::Error::new(
-                                renamed_field_name.span(),
-                                "Rename attribute value must be a string.",
-                            )),
+                            syn::Lit::Str(renamed_field_name) => {
+                                (renamed_field_name.value(), renamed_field_name.span())
+                            }
+                            _ => {
+                                return Err(syn::Error::new(
+                                    renamed_field_name.span(),
+                                    "Rename attribute value must be a string.",
+                                ))
+                            }
                         }
                     } else {
-                        field.ident.clone().unwrap().to_string() // safe since named fields
+                        (field.ident.clone().unwrap().to_string(), field.ident.span())
+                        // safe since
+                        // // named fields
                     };
+
+                    // Check whether the name is defined multiple times
+                    if let Some(used_field_span) =
+                        used_field_names.insert(field_name.clone(), field_span.clone())
+                    {
+                        let mut error_at_first_def = syn::Error::new(
+                            used_field_span.clone(),
+                            format!("the name `{}` is defined multiple times", field_name),
+                        );
+                        let error_at_second_def = syn::Error::new(
+                            field_span,
+                            format!("the name `{}` is defined multiple times", field_name),
+                        );
+                        // Combine the errors to show both at once
+                        error_at_first_def.combine(error_at_second_def);
+
+                        return Err(error_at_first_def);
+                    }
 
                     let field_schema_type = schema_type_field_type(&field)?;
                     Ok(quote! {
