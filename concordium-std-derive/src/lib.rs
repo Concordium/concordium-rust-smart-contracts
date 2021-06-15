@@ -183,7 +183,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let wasm_export_fn_name = format!("init_{}", contract_name.value());
 
     if let Err(e) = ContractName::is_valid_contract_name(&wasm_export_fn_name) {
-        return Err(syn::Error::new(contract_name.span(), e.to_string()));
+        return Err(syn::Error::new(contract_name.span(), e));
     }
 
     let amount_ident = format_ident!("amount");
@@ -388,10 +388,10 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // '.' as this causes a subtle error when receive names are being split.
     let contract_name_validation =
         ContractName::is_valid_contract_name(&format!("init_{}", contract_name.value()))
-            .map_err(|e| syn::Error::new(contract_name.span(), e.to_string()));
+            .map_err(|e| syn::Error::new(contract_name.span(), e));
 
     let receive_name_validation = ReceiveName::is_valid_receive_name(&wasm_export_fn_name)
-        .map_err(|e| syn::Error::new(name.span(), e.to_string()));
+        .map_err(|e| syn::Error::new(name.span(), e));
 
     match (contract_name_validation, receive_name_validation) {
         (Err(mut e0), Err(e1)) => {
