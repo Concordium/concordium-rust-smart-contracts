@@ -81,7 +81,7 @@ pub struct TestPolicy {
     /// Current position in the vector of policies. Used to implement
     /// `next_item`.
     position: usize,
-    policy: OwnedPolicy,
+    policy:   OwnedPolicy,
 }
 
 impl TestPolicy {
@@ -103,12 +103,12 @@ impl TestPolicy {
 #[derive(Default, Clone)]
 #[doc(hidden)]
 pub struct CommonDataTest<'a> {
-    pub(crate) metadata: ChainMetaTest,
+    pub(crate) metadata:  ChainMetaTest,
     pub(crate) parameter: Option<&'a [u8]>,
     /// Policy of the creator. We keep the `Option` wrapper
     /// in order that the user can be warned that they are using a policy.
     /// Thus there is a distinction between `Some(Vec::new())` and `None`.
-    pub(crate) policies: Option<Vec<TestPolicy>>,
+    pub(crate) policies:  Option<Vec<TestPolicy>>,
 }
 
 /// Context used for testing. The type parameter C is used to determine whether
