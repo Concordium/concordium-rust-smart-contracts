@@ -7,7 +7,9 @@ extern crate quote;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use std::{collections::HashMap, convert::TryFrom, ops::Neg};
+#[cfg(feature = "build-schema")]
+use std::collections::HashMap;
+use std::{convert::TryFrom, ops::Neg};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -1171,10 +1173,10 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 
                     // Check whether the name is defined multiple times
                     if let Some(used_variant_span) =
-                        used_variant_names.insert(variant_name.clone(), variant_span.clone())
+                        used_variant_names.insert(variant_name.clone(), variant_span)
                     {
                         let mut error_at_first_def = syn::Error::new(
-                            used_variant_span.clone(),
+                            used_variant_span,
                             format!("the name `{}` is defined multiple times", variant_name),
                         );
                         let error_at_second_def = syn::Error::new(
@@ -1278,10 +1280,10 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
 
                     // Check whether the name is defined multiple times
                     if let Some(used_field_span) =
-                        used_field_names.insert(field_name.clone(), field_span.clone())
+                        used_field_names.insert(field_name.clone(), field_span)
                     {
                         let mut error_at_first_def = syn::Error::new(
-                            used_field_span.clone(),
+                            used_field_span,
                             format!("the name `{}` is defined multiple times", field_name),
                         );
                         let error_at_second_def = syn::Error::new(
