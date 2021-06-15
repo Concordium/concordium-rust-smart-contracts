@@ -41,16 +41,16 @@ pub struct State {
     auction_state: AuctionState,
     /// The highest bid so far (stored explicitly so that bidders can quickly
     /// see it)
-    highest_bid: Amount,
+    highest_bid:   Amount,
     /// The sold item (to be displayed to the auction participants), encoded in
     /// ASCII
-    item: Vec<u8>,
+    item:          Vec<u8>,
     /// Expiration time of the auction at which bids will be closed (to be
     /// displayed to the auction participants)
-    expiry: Timestamp,
+    expiry:        Timestamp,
     /// Keeping track of which account bid how much money
     #[concordium(map_size_length = 2)]
-    bids: BTreeMap<AccountAddress, Amount>,
+    bids:          BTreeMap<AccountAddress, Amount>,
 }
 
 /// A helper function to create a state for a new auction.
@@ -68,7 +68,7 @@ fn fresh_state(itm: Vec<u8>, exp: Timestamp) -> State {
 #[derive(Serialize, SchemaType)]
 struct InitParameter {
     /// The item to be sold, as a sequence of ASCII codes.
-    item: Vec<u8>,
+    item:   Vec<u8>,
     /// Time of the auction end in the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
     expiry: Timestamp,
 }
