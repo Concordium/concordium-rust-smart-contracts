@@ -221,17 +221,25 @@ pub trait ExpectNoneReport {
     fn expect_none_report(self, msg: &str);
 }
 
+/// A wrapper trait for 'Serial' with additional contextual information, namely
+/// the size_length property.
 pub trait SerialCtx {
-    // TODO: use SizeLength type
-    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err>;
+    /// A wrapper for 'Serial::serial' which uses the `size_length` property.
+    fn serial_ctx<W: Write>(
+        &self,
+        size_length: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err>;
 }
 
-pub trait DeserialCtx {
+/// A wrapper trait for 'Deserial' with additional contextual information,
+/// namely the size_length and ensure_ordered properties.
+pub trait DeserialCtx: Sized {
+    /// A wrapper for 'Deserial::deserial' which uses the `size_length` and
+    /// `ensure_ordered` properties.
     fn deserial_ctx<R: Read>(
         source: &mut R,
-        size_length: u32,
+        size_length: schema::SizeLength,
         ensure_ordered: bool,
-    ) -> ParseResult<Self>
-    where
-        Self: std::marker::Sized;
+    ) -> ParseResult<Self>;
 }

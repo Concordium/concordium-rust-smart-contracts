@@ -694,12 +694,13 @@ fn impl_deserial_field(
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
 
-    // Default size is u32, i.e. 4 bytes.
-    let size_length = find_length_attribute(&f.attrs, "size_length")?.unwrap_or(4);
+    // Default size length is u32, i.e. 4 bytes.
+    let l = find_length_attribute(&f.attrs, "size_length")?.unwrap_or(4);
+    let size_length = format_ident!("U{}", 8 * l);
 
     let ty = &f.ty;
     Ok(quote! {
-        let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, #size_length, #ensure_ordered)?;
+        let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, concordium_std::schema::SizeLength::#size_length, #ensure_ordered)?;
     })
 }
 
@@ -861,10 +862,11 @@ fn impl_serial_field(
     ident: &proc_macro2::TokenStream,
     out: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    // Default size is u32, i.e. 4 bytes.
-    let size_length = find_length_attribute(&field.attrs, "size_length")?.unwrap_or(4);
+    // Default size length is u32, i.e. 4 bytes.
+    let l = find_length_attribute(&field.attrs, "size_length")?.unwrap_or(4);
+    let size_length = format_ident!("U{}", 8 * l);
     Ok(quote! {
-        #ident.serial_ctx(#size_length, #out)?;
+        #ident.serial_ctx(concordium_std::schema::SizeLength::#size_length, #out)?;
     })
 }
 
