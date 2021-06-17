@@ -579,7 +579,7 @@ fn contract_function_schema_tokens(
 /// ``` ignore
 /// #[derive(Deserial)]
 /// struct Foo {
-///     #[concordium(set_size_length = 1, ensure_ordered)]
+///     #[concordium(size_length = 1, ensure_ordered)]
 ///     bar: BTreeSet<u8>,
 /// }
 /// ```
@@ -593,8 +593,7 @@ pub fn deserial_derive(input: TokenStream) -> TokenStream {
 const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
 
 /// A list of valid concordium field attributes
-const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 5] =
-    ["size_length", "set_size_length", "map_size_length", "string_size_length", "ensure_ordered"];
+const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 2] = ["size_length", "ensure_ordered"];
 
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
     attributes
@@ -824,11 +823,10 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 /// Serial trait.
 ///
 ///
-/// Collections (Vec, BTreeMap, BTreeSet) are by default serialized by
-/// prepending the number of elements as 4 bytes little-endian. If this is too
-/// much or too little, fields of the above types can be annotated with
-/// `size_length` for Vec, `map_size_length` for `BTreeMap` and
-/// `set_size_length` for `BTreeSet`.
+/// Collections (Vec, BTreeMap, BTreeSet) and strings (String, str) are by
+/// default serialized by prepending the number of elements as 4 bytes
+/// little-endian. If this is too much or too little, fields of the above types
+/// can be annotated with `size_length`.
 ///
 /// The value of this field is the number of bytes that will be used for
 /// encoding the number of elements. Supported values are 1, 2, 4, 8.
@@ -848,7 +846,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 /// ```ignore
 /// #[derive(Serial)]
 /// struct Foo {
-///     #[concordium(set_size_length = 1)]
+///     #[concordium(size_length = 1)]
 ///     bar: BTreeSet<u8>,
 /// }
 /// ```
@@ -1070,10 +1068,7 @@ fn contract_state_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<T
 /// Derive the `SchemaType` trait for a type.
 /// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
 /// not produce any code.
-#[proc_macro_derive(
-    SchemaType,
-    attributes(size_length, map_size_length, set_size_length, string_size_length)
-)]
+#[proc_macro_derive(SchemaType, attributes(size_length))]
 pub fn schema_type_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(schema_type_derive_worker(input))
 }
@@ -1127,26 +1122,9 @@ fn schema_type_derive_worker(_input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 #[cfg(feature = "build-schema")]
-fn or_else_joined<A>(
-    a: syn::Result<Option<A>>,
-    b: impl FnOnce() -> syn::Result<Option<A>>,
-) -> syn::Result<Option<A>> {
-    match a {
-        Ok(None) => b(),
-        _ => a,
-    }
-}
-
-#[cfg(feature = "build-schema")]
 fn schema_type_field_type(field: &syn::Field) -> syn::Result<proc_macro2::TokenStream> {
     let field_type = &field.ty;
-    if let Some(l) = or_else_joined(find_length_attribute(&field.attrs, "size_length"), || {
-        or_else_joined(find_length_attribute(&field.attrs, "map_size_length"), || {
-            or_else_joined(find_length_attribute(&field.attrs, "set_size_length"), || {
-                find_length_attribute(&field.attrs, "string_size_length")
-            })
-        })
-    })? {
+    if let Some(l) = find_length_attribute(&field.attrs, "size_length")? {
         let size = format_ident!("U{}", 8 * l);
         Ok(quote! {
             <#field_type as concordium_std::schema::SchemaType>::get_type().set_size_length(concordium_std::schema::SizeLength::#size)
