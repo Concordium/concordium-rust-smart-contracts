@@ -572,7 +572,7 @@ fn contract_function_schema_tokens(
 /// In addition to the attributes supported by `derive(Serial)`, this derivation
 /// macro supports the `ensure_ordered` attribute. If applied to a field the
 /// of type `BTreeMap` or `BTreeSet` deserialization will additionally ensure
-/// that there keys are in strictly increasing order. By default deserialization
+/// that the keys are in strictly increasing order. By default deserialization
 /// only ensures uniqueness.
 ///
 /// # Example
