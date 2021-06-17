@@ -668,6 +668,44 @@ fn find_length_attribute(
     }
 }
 
+/// Find a 'rename' attribute and return its value and span.
+/// Checks that the attribute is only defined once and that the value is a
+/// string.
+#[cfg(feature = "build-schema")]
+fn find_rename_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<(String, Span)>> {
+    let value = match find_field_attribute_value(attributes, "rename")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match value {
+        syn::Lit::Str(value) => Ok(Some((value.value(), value.span()))),
+        _ => Err(syn::Error::new(value.span(), "Rename attribute value must be a string.")),
+    }
+}
+
+/// Check for name collisions by inserting the name in the HashMap.
+/// On collisions it returns a combined error pointing to the previous and new
+/// definition.
+#[cfg(feature = "build-schema")]
+fn check_for_name_collisions(
+    used_names: &mut HashMap<String, Span>,
+    new_name: &str,
+    new_span: Span,
+) -> syn::Result<()> {
+    if let Some(used_span) = used_names.insert(String::from(new_name), new_span) {
+        let error_msg = format!("the name `{}` is defined multiple times", new_name);
+        let mut error_at_first_def = syn::Error::new(used_span, &error_msg);
+        let error_at_second_def = syn::Error::new(new_span, &error_msg);
+
+        // Combine the errors to show both at once
+        error_at_first_def.combine(error_at_second_def);
+
+        return Err(error_at_first_def);
+    }
+    Ok(())
+}
+
 fn impl_deserial_field(
     f: &syn::Field,
     ident: &syn::Ident,
@@ -1153,41 +1191,17 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
                 .variants
                 .iter()
                 .map(|variant| {
-                    let (variant_name, variant_span) = if let Some(renamed_variant_name) =
-                        find_field_attribute_value(&variant.attrs, "rename")?
+                    // Handle the 'rename' attribute.
+                    let (variant_name, variant_span) = match find_rename_attribute(&variant.attrs)?
                     {
-                        match renamed_variant_name {
-                            syn::Lit::Str(renamed_variant_name) => {
-                                (renamed_variant_name.value(), renamed_variant_name.span())
-                            }
-                            _ => {
-                                return Err(syn::Error::new(
-                                    renamed_variant_name.span(),
-                                    "Rename attribute value must be a string.",
-                                ))
-                            }
-                        }
-                    } else {
-                        (variant.ident.to_string(), variant.ident.span())
+                        Some(name_and_span) => name_and_span,
+                        None => (variant.ident.to_string(), variant.ident.span()),
                     };
-
-                    // Check whether the name is defined multiple times
-                    if let Some(used_variant_span) =
-                        used_variant_names.insert(variant_name.clone(), variant_span)
-                    {
-                        let mut error_at_first_def = syn::Error::new(
-                            used_variant_span,
-                            format!("the name `{}` is defined multiple times", variant_name),
-                        );
-                        let error_at_second_def = syn::Error::new(
-                            variant_span,
-                            format!("the name `{}` is defined multiple times", variant_name),
-                        );
-                        // Combine the errors to show both at once
-                        error_at_first_def.combine(error_at_second_def);
-
-                        return Err(error_at_first_def);
-                    }
+                    check_for_name_collisions(
+                        &mut used_variant_names,
+                        &variant_name,
+                        variant_span,
+                    )?;
 
                     let fields_tokens = schema_type_fields(&variant.fields)?;
                     Ok(quote! {
@@ -1258,43 +1272,12 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
             let fields_tokens: Vec<_> = fields
                 .iter()
                 .map(|field| {
-                    let (field_name, field_span) = if let Some(renamed_field_name) =
-                        find_field_attribute_value(&field.attrs, "rename")?
-                    {
-                        match renamed_field_name {
-                            syn::Lit::Str(renamed_field_name) => {
-                                (renamed_field_name.value(), renamed_field_name.span())
-                            }
-                            _ => {
-                                return Err(syn::Error::new(
-                                    renamed_field_name.span(),
-                                    "Rename attribute value must be a string.",
-                                ))
-                            }
-                        }
-                    } else {
-                        (field.ident.clone().unwrap().to_string(), field.ident.span())
-                        // safe since
-                        // // named fields
+                    // Handle the 'rename' attribute.
+                    let (field_name, field_span) = match find_rename_attribute(&field.attrs)? {
+                        Some(name_and_span) => name_and_span,
+                        None => (field.ident.clone().unwrap().to_string(), field.ident.span()), // safe since named fields.
                     };
-
-                    // Check whether the name is defined multiple times
-                    if let Some(used_field_span) =
-                        used_field_names.insert(field_name.clone(), field_span)
-                    {
-                        let mut error_at_first_def = syn::Error::new(
-                            used_field_span,
-                            format!("the name `{}` is defined multiple times", field_name),
-                        );
-                        let error_at_second_def = syn::Error::new(
-                            field_span,
-                            format!("the name `{}` is defined multiple times", field_name),
-                        );
-                        // Combine the errors to show both at once
-                        error_at_first_def.combine(error_at_second_def);
-
-                        return Err(error_at_first_def);
-                    }
+                    check_for_name_collisions(&mut used_field_names, &field_name, field_span)?;
 
                     let field_schema_type = schema_type_field_type(&field)?;
                     Ok(quote! {
