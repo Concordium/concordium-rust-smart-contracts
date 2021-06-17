@@ -665,24 +665,25 @@ fn find_length_attribute(
         None => return Ok(None),
     };
 
+    // Save the span to be used in errors.
+    let value_span = value.span();
+
     let value = match value {
         syn::Lit::Int(int) => int,
-        _ => {
-            return Err(syn::Error::new(value.span(), "Length attribute value must be an integer."))
-        }
+        _ => return Err(syn::Error::new(value_span, "Length attribute value must be an integer.")),
     };
     let value = match value.base10_parse() {
         Ok(v) => v,
         _ => {
             return Err(syn::Error::new(
-                value.span(),
+                value_span,
                 "Length attribute value must be a base 10 integer.",
             ))
         }
     };
     match value {
         1 | 2 | 4 | 8 => Ok(Some(value)),
-        _ => Err(syn::Error::new(value.span(), "Length info must be either 1, 2, 4, or 8.")),
+        _ => Err(syn::Error::new(value_span, "Length info must be either 1, 2, 4, or 8.")),
     }
 }
 
