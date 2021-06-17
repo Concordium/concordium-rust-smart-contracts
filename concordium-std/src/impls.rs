@@ -628,6 +628,7 @@ impl<A, E> UnwrapAbort for Result<A, E> {
 
 #[cfg(not(feature = "std"))]
 use core::fmt;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "std")]
 use std::fmt;
 
@@ -678,3 +679,130 @@ impl<A: fmt::Debug> ExpectNoneReport for Option<A> {
         }
     }
 }
+
+// fn serial_as_size_length<W: Write>(
+//     len: usize,
+//     size_length: schema::SizeLength,
+//     out: &mut W,
+// ) -> Result<(), W::Err> {
+//     match size_length {
+//         schema::SizeLength::U8 => (len as u8).serial(out),
+//         schema::SizeLength::U16 => (len as u16).serial(out),
+//         schema::SizeLength::U32 => (len as u32).serial(out),
+//         schema::SizeLength::U64 => (len as u64).serial(out),
+//     }
+// }
+
+fn deserial_length(source: &mut impl Read, size_length: u32) -> ParseResult<usize> {
+    use core::convert::TryInto;
+    let res = match size_length {
+        1 => u8::deserial(source)?.into(),
+        2 => u16::deserial(source)?.into(),
+        4 => u32::deserial(source)?.try_into().map_err(|_| ParseError::default())?,
+        8 => u64::deserial(source)?.try_into().map_err(|_| ParseError::default())?,
+        _ => return Err(Default::default()),
+    };
+    Ok(res)
+}
+
+fn serial_length<W: Write>(len: usize, size_length: u32, out: &mut W) -> Result<(), W::Err> {
+    match size_length {
+        1 => (len as u8).serial(out)?,
+        2 => (len as u16).serial(out)?,
+        4 => (len as u32).serial(out)?,
+        8 => (len as u64).serial(out)?,
+        _ => return Err(Default::default()),
+    }
+    Ok(())
+}
+
+impl<K: Serial + Ord> SerialCtx for BTreeSet<K> {
+    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err> {
+        serial_length(self.len(), size_length, out)?;
+        serial_set_no_length(self, out)
+    }
+}
+
+impl<K: Serial + Ord, V: Serial> SerialCtx for BTreeMap<K, V> {
+    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err> {
+        serial_length(self.len(), size_length, out)?;
+        serial_map_no_length(self, out)
+    }
+}
+
+impl<T: Serial> SerialCtx for &[T] {
+    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err> {
+        serial_length(self.len(), size_length, out)?;
+        serial_vector_no_length(self, out)
+    }
+}
+
+impl SerialCtx for &str {
+    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err> {
+        serial_length(self.len(), size_length, out)?;
+        // TODO: perhaps use the one from crypto, or move to a common place
+        serial_vector_no_length(&self.as_bytes().to_vec(), out)
+    }
+}
+
+impl SerialCtx for String {
+    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err> {
+        self.as_str().serial_ctx(size_length, out)
+    }
+}
+
+impl<K: Deserial + Ord + Copy> DeserialCtx for BTreeSet<K> {
+    fn deserial_ctx<R: Read>(
+        source: &mut R,
+        size_length: u32,
+        ensure_ordered: bool,
+    ) -> ParseResult<Self> {
+        let len = deserial_length(source, size_length)?;
+        if ensure_ordered {
+            deserial_set_no_length(source, len)
+        } else {
+            deserial_set_no_length_no_order_check(source, len)
+        }
+    }
+}
+
+impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
+    fn deserial_ctx<R: Read>(
+        source: &mut R,
+        size_length: u32,
+        ensure_ordered: bool,
+    ) -> ParseResult<Self> {
+        let len = deserial_length(source, size_length)?;
+        if ensure_ordered {
+            deserial_map_no_length(source, len)
+        } else {
+            deserial_map_no_length_no_order_check(source, len)
+        }
+    }
+}
+
+impl<T: Deserial> DeserialCtx for Vec<T> {
+    fn deserial_ctx<R: Read>(
+        source: &mut R,
+        size_length: u32,
+        _ensure_ordered: bool,
+    ) -> ParseResult<Self> {
+        let len = deserial_length(source, size_length)?;
+        deserial_vector_no_length(source, len)
+    }
+}
+
+impl DeserialCtx for String {
+    fn deserial_ctx<R: Read>(
+        source: &mut R,
+        size_length: u32,
+        _ensure_ordered: bool,
+    ) -> ParseResult<Self> {
+        let len = deserial_length(source, size_length)?;
+        let bytes = deserial_vector_no_length(source, len)?;
+        let res = String::from_utf8(bytes).map_err(|_| ParseError::default())?;
+        Ok(res)
+    }
+}
+
+// TODO: group by type instead of by trait

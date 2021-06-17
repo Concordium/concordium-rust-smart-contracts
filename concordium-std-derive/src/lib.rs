@@ -692,61 +692,27 @@ fn impl_deserial_field(
     source: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
-    if let Some(l) = find_length_attribute(&f.attrs, "size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let #ident = {
-                let len = #size::deserial(#source)?;
-                deserial_vector_no_length(#source, len as usize)?
-            };
-        })
-    } else if let Some(l) = find_length_attribute(&f.attrs, "map_size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&concordium_attributes, "ensure_ordered") {
+    let size_length = find_length_attribute(&f.attrs, "size_length")?;
+    let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
+
+    // TODO: this can be simplified
+    match (size_length, ensure_ordered) {
+        (None, false) => {
+            let ty = &f.ty;
             Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_map_no_length(#source, len as usize)?
-                };
-            })
-        } else {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_map_no_length_no_order_check(#source, len as usize)?
-                };
+                let #ident = <#ty as Deserial>::deserial(#source)?;
             })
         }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "set_size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&concordium_attributes, "ensure_ordered") {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_set_no_length(#source, len as usize)?
-                };
-            })
-        } else {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_set_no_length_no_order_check(#source, len as usize)?
-                };
-            })
-        }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "string_size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let #ident = {
-                let len = #size::deserial(#source)?;
-                deserial_string(#source, len as usize)?
-            };
-        })
-    } else {
-        let ty = &f.ty;
-        Ok(quote! {
-            let #ident = <#ty as Deserial>::deserial(#source)?;
-        })
+        (None, true) => Ok(quote! {
+            // TODO: Magic 4
+            let #ident = #ident.deserial_ctx(#source, 4, true)?;
+        }),
+        (Some(l), false) => Ok(quote! {
+            let #ident = #ident.deserial_ctx(#source, #l, false)?;
+        }),
+        (Some(l), true) => Ok(quote! {
+            let #ident = #ident.deserial_ctx(#source, #l, true)?;
+        }),
     }
 }
 
@@ -910,34 +876,12 @@ fn impl_serial_field(
     out: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
     if let Some(l) = find_length_attribute(&field.attrs, "size_length")? {
-        let id = format_ident!("u{}", 8 * l);
         Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_vector_no_length(&#ident, #out)?;
-        })
-    } else if let Some(l) = find_length_attribute(&field.attrs, "map_size_length")? {
-        let id = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_map_no_length(&#ident, #out)?;
-        })
-    } else if let Some(l) = find_length_attribute(&field.attrs, "set_size_length")? {
-        let id = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_set_no_length(&#ident, #out)?;
-        })
-    } else if let Some(l) = find_length_attribute(&field.attrs, "string_size_length")? {
-        let id = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_string(#ident.as_str(), #out)?;
+            #ident.serial_ctx(#l, #out)?;
         })
     } else {
+        // TODO: this is needed for two reasons: it uses the correct default size
+        // length, and it might be faster.
         Ok(quote! {
             #ident.serial(#out)?;
         })

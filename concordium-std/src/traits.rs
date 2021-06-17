@@ -220,3 +220,18 @@ pub trait ExpectNoneReport {
     /// [fail](macro.fail.html) with the given message, instead of `panic`.
     fn expect_none_report(self, msg: &str);
 }
+
+pub trait SerialCtx {
+    // TODO: use SizeLength type
+    fn serial_ctx<W: Write>(&self, size_length: u32, out: &mut W) -> Result<(), W::Err>;
+}
+
+pub trait DeserialCtx {
+    fn deserial_ctx<R: Read>(
+        source: &mut R,
+        size_length: u32,
+        ensure_ordered: bool,
+    ) -> ParseResult<Self>
+    where
+        Self: std::marker::Sized;
+}
