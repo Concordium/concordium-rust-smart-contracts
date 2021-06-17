@@ -35,8 +35,10 @@ impl From<LogError> for Reject {
     }
 }
 
-/// MissingInitPrefix is mapped to i32::MIN + 5, and TooLong is mapped to
-/// i32::MIN + 6.
+/// MissingInitPrefix is mapped to i32::MIN + 5,
+/// TooLong to i32::MIN + 6,
+/// ContainsDot to i32::MIN + 9, and
+/// InvalidCharacters to i32::MIN + 10.
 impl From<NewContractNameError> for Reject {
     fn from(nre: NewContractNameError) -> Self {
         let error_code = match nre {
@@ -46,6 +48,12 @@ impl From<NewContractNameError> for Reject {
             NewContractNameError::TooLong => unsafe {
                 crate::num::NonZeroI32::new_unchecked(i32::MIN + 6)
             },
+            NewContractNameError::ContainsDot => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 9)
+            },
+            NewContractNameError::InvalidCharacters => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 10)
+            },
         };
         Self {
             error_code,
@@ -53,8 +61,9 @@ impl From<NewContractNameError> for Reject {
     }
 }
 
-/// MissingDotSeparator is mapped to i32::MIN + 7, and TooLong is mapped to
-/// i32::MIN + 8.
+/// MissingDotSeparator is mapped to i32::MIN + 7,
+/// TooLong to i32::MIN + 8, and
+/// InvalidCharacters to i32::MIN + 11.
 impl From<NewReceiveNameError> for Reject {
     fn from(nre: NewReceiveNameError) -> Self {
         let error_code = match nre {
@@ -63,6 +72,9 @@ impl From<NewReceiveNameError> for Reject {
             },
             NewReceiveNameError::TooLong => unsafe {
                 crate::num::NonZeroI32::new_unchecked(i32::MIN + 8)
+            },
+            NewReceiveNameError::InvalidCharacters => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 11)
             },
         };
         Self {

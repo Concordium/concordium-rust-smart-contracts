@@ -4,6 +4,7 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 
+use concordium_contracts_common::*;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
@@ -39,13 +40,13 @@ fn attach_error<A>(mut v: syn::Result<A>, msg: &str) -> syn::Result<A> {
 fn get_attribute_value<'a, I: IntoIterator<Item = &'a Meta>>(
     iter: I,
     name: &str,
-) -> syn::Result<Option<String>> {
+) -> syn::Result<Option<&'a syn::LitStr>> {
     for attr in iter.into_iter() {
         match attr {
             Meta::NameValue(mnv) => {
                 if mnv.path.is_ident(name) {
                     if let syn::Lit::Str(lit) = &mnv.lit {
-                        return Ok(Some(lit.value()));
+                        return Ok(Some(lit));
                     } else {
                         return Err(syn::Error::new(
                             mnv.span(),
@@ -170,7 +171,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 
     let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
         syn::Error::new(
-            attrs.span(),
+            Span::call_site(),
             "A name for the contract must be provided, using the contract attribute. For example, \
              #[init(contract = \"my-contract\")]",
         )
@@ -181,7 +182,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
-    let wasm_export_fn_name = format!("init_{}", contract_name);
+    let wasm_export_fn_name = format!("init_{}", contract_name.value());
+
+    if let Err(e) = ContractName::is_valid_contract_name(&wasm_export_fn_name) {
+        return Err(syn::Error::new(contract_name.span(), e));
+    }
+
     let amount_ident = format_ident!("amount");
 
     // Accumulate a list of required arguments, if the function contains a
@@ -254,7 +260,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     }
 
     // Embed schema if 'parameter' attribute is set
-    let parameter_option = get_attribute_value(attrs.iter(), "parameter")?;
+    let parameter_option = get_attribute_value(attrs.iter(), "parameter")?.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
         rust_export_fn_name,
@@ -359,7 +365,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
         syn::Error::new(
-            attrs.span(),
+            Span::call_site(),
             "The name of the associated contract must be provided, using the 'contract' \
              attribute.\n\nFor example, #[receive(contract = \"my-contract\")]",
         )
@@ -367,7 +373,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     let name = get_attribute_value(attrs.iter(), "name")?.ok_or_else(|| {
         syn::Error::new(
-            attrs.span(),
+            Span::call_site(),
             "A name for the receive function must be provided, using the 'name' attribute.\n\nFor \
              example, #[receive(name = \"func-name\", ...)]",
         )
@@ -378,7 +384,27 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
-    let wasm_export_fn_name = format!("{}.{}", contract_name, name);
+    let wasm_export_fn_name = format!("{}.{}", contract_name.value(), name.value());
+
+    // Validate the contract name independently to ensure that it doesn't contain a
+    // '.' as this causes a subtle error when receive names are being split.
+    let contract_name_validation =
+        ContractName::is_valid_contract_name(&format!("init_{}", contract_name.value()))
+            .map_err(|e| syn::Error::new(contract_name.span(), e));
+
+    let receive_name_validation = ReceiveName::is_valid_receive_name(&wasm_export_fn_name)
+        .map_err(|e| syn::Error::new(name.span(), e));
+
+    match (contract_name_validation, receive_name_validation) {
+        (Err(mut e0), Err(e1)) => {
+            e0.combine(e1);
+            return Err(e0);
+        }
+        (Err(e), _) => return Err(e),
+        (_, Err(e)) => return Err(e),
+        _ => (),
+    };
+
     let amount_ident = format_ident!("amount");
 
     // Accumulate a list of required arguments, if the function contains a
@@ -465,7 +491,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     }
 
     // Embed schema if 'parameter' attribute is set
-    let parameter_option = get_attribute_value(attrs.iter(), "parameter")?;
+    let parameter_option = get_attribute_value(attrs.iter(), "parameter")?.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
         rust_export_fn_name,
@@ -1134,13 +1160,13 @@ fn contract_state_worker(attr: TokenStream, item: TokenStream) -> syn::Result<To
 
     let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
         syn::Error::new(
-            attrs.span(),
+            Span::call_site(),
             "A name of the contract must be provided, using the 'contract' attribute.\n\nFor \
              example #[contract_state(contract = \"my-contract\")].",
         )
     })?;
 
-    let wasm_schema_name = format!("concordium_schema_state_{}", contract_name);
+    let wasm_schema_name = format!("concordium_schema_state_{}", contract_name.value());
     let rust_schema_name = format_ident!("concordium_schema_state_{}", data_ident);
 
     let generate_schema_tokens = quote! {
