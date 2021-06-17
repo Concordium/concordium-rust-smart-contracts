@@ -700,7 +700,7 @@ fn impl_deserial_field(
 
     let ty = &f.ty;
     Ok(quote! {
-        let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, concordium_std::schema::SizeLength::#size_length, #ensure_ordered)?;
+        let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, &concordium_std::schema::SizeLength::#size_length, #ensure_ordered)?;
     })
 }
 
@@ -866,7 +866,7 @@ fn impl_serial_field(
     let l = find_length_attribute(&field.attrs, "size_length")?.unwrap_or(4);
     let size_length = format_ident!("U{}", 8 * l);
     Ok(quote! {
-        #ident.serial_ctx(concordium_std::schema::SizeLength::#size_length, #out)?;
+        #ident.serial_ctx(&concordium_std::schema::SizeLength::#size_length, #out)?;
     })
 }
 

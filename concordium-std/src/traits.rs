@@ -227,7 +227,7 @@ pub trait SerialCtx {
     /// A wrapper for 'Serial::serial' which uses the `size_length` property.
     fn serial_ctx<W: Write>(
         &self,
-        size_length: schema::SizeLength,
+        size_length: &schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err>;
 }
@@ -239,7 +239,7 @@ pub trait DeserialCtx: Sized {
     /// `ensure_ordered` properties.
     fn deserial_ctx<R: Read>(
         source: &mut R,
-        size_length: schema::SizeLength,
+        size_length: &schema::SizeLength,
         ensure_ordered: bool,
     ) -> ParseResult<Self>;
 }
