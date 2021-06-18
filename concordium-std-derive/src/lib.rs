@@ -655,11 +655,8 @@ fn find_field_attribute_value(
     }
 }
 
-fn find_length_attribute(
-    attributes: &[syn::Attribute],
-    target_attr: &str,
-) -> syn::Result<Option<u32>> {
-    let value = match find_field_attribute_value(attributes, target_attr)? {
+fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u32>> {
+    let value = match find_field_attribute_value(attributes, "size_length")? {
         Some(v) => v,
         None => return Ok(None),
     };
@@ -693,7 +690,7 @@ fn impl_deserial_field(
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
-    let size_length = find_length_attribute(&f.attrs, "size_length")?;
+    let size_length = find_length_attribute(&f.attrs)?;
     let has_ctx = ensure_ordered || size_length.is_some();
     let ty = &f.ty;
     if has_ctx {
@@ -867,7 +864,7 @@ fn impl_serial_field(
     ident: &proc_macro2::TokenStream,
     out: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    if let Some(size_length) = find_length_attribute(&field.attrs, "size_length")? {
+    if let Some(size_length) = find_length_attribute(&field.attrs)? {
         let l = format_ident!("U{}", 8 * size_length);
         Ok(quote! {
             #ident.serial_ctx(&concordium_std::schema::SizeLength::#l, #out)?;
@@ -1135,7 +1132,7 @@ fn schema_type_derive_worker(_input: TokenStream) -> syn::Result<TokenStream> {
 #[cfg(feature = "build-schema")]
 fn schema_type_field_type(field: &syn::Field) -> syn::Result<proc_macro2::TokenStream> {
     let field_type = &field.ty;
-    if let Some(l) = find_length_attribute(&field.attrs, "size_length")? {
+    if let Some(l) = find_length_attribute(&field.attrs)? {
         let size = format_ident!("U{}", 8 * l);
         Ok(quote! {
             <#field_type as concordium_std::schema::SchemaType>::get_type().set_size_length(concordium_std::schema::SizeLength::#size)
