@@ -1,7 +1,19 @@
 use crate::{convert, mem, num, prims, prims::*, traits::*, types::*};
+#[cfg(not(feature = "std"))]
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    string::String,
+    vec::Vec,
+};
 use concordium_contracts_common::*;
-
+#[cfg(not(feature = "std"))]
+use core::convert::{TryFrom, TryInto};
 use mem::MaybeUninit;
+#[cfg(feature = "std")]
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::{TryFrom, TryInto},
+};
 
 impl convert::From<()> for Reject {
     #[inline(always)]
@@ -88,7 +100,6 @@ impl Seek for ContractState {
     type Err = ();
 
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
-        use core::convert::TryFrom;
         use SeekFrom::*;
         match pos {
             Start(offset) => match u32::try_from(offset) {
@@ -145,7 +156,6 @@ impl Seek for ContractState {
 
 impl Read for ContractState {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
-        use core::convert::TryInto;
         let len: u32 = {
             match buf.len().try_into() {
                 Ok(v) => v,
@@ -204,7 +214,6 @@ impl Write for ContractState {
     type Err = ();
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
-        use core::convert::TryInto;
         let len: u32 = {
             match buf.len().try_into() {
                 Ok(v) => v,
@@ -257,7 +266,6 @@ impl HasContractState<()> for ContractState {
 /// # Trait implementations for Parameter
 impl Read for Parameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
-        use core::convert::TryInto;
         let len: u32 = {
             match buf.len().try_into() {
                 Ok(v) => v,
@@ -347,7 +355,6 @@ impl Iterator for PoliciesIterator {
             get_policy_section(buf.as_mut_ptr() as *mut u8, 2 + 4 + 8 + 8 + 2, self.pos);
             buf.assume_init()
         };
-        use convert::TryInto;
         let skip_part: [u8; 2] = buf[0..2].try_into().unwrap_abort();
         let ip_part: [u8; 4] = buf[2..2 + 4].try_into().unwrap_abort();
         let created_at_part: [u8; 8] = buf[2 + 4..2 + 4 + 8].try_into().unwrap_abort();
@@ -628,7 +635,6 @@ impl<A, E> UnwrapAbort for Result<A, E> {
 
 #[cfg(not(feature = "std"))]
 use core::fmt;
-use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "std")]
 use std::fmt;
 
