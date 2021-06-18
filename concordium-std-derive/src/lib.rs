@@ -693,15 +693,20 @@ fn impl_deserial_field(
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
-
-    // Default size length is u32, i.e. 4 bytes.
-    let l = find_length_attribute(&f.attrs, "size_length")?.unwrap_or(4);
-    let size_length = format_ident!("U{}", 8 * l);
-
+    let size_length = find_length_attribute(&f.attrs, "size_length")?;
+    let has_ctx = ensure_ordered || size_length.is_some();
     let ty = &f.ty;
-    Ok(quote! {
-        let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, &concordium_std::schema::SizeLength::#size_length, #ensure_ordered)?;
-    })
+    if has_ctx {
+        // Default size length is u32, i.e. 4 bytes.
+        let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
+        Ok(quote! {
+            let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, &concordium_std::schema::SizeLength::#l, #ensure_ordered)?;
+        })
+    } else {
+        Ok(quote! {
+            let #ident = <#ty as Deserial>::deserial(#source)?;
+        })
+    }
 }
 
 fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -862,12 +867,16 @@ fn impl_serial_field(
     ident: &proc_macro2::TokenStream,
     out: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    // Default size length is u32, i.e. 4 bytes.
-    let l = find_length_attribute(&field.attrs, "size_length")?.unwrap_or(4);
-    let size_length = format_ident!("U{}", 8 * l);
-    Ok(quote! {
-        #ident.serial_ctx(&concordium_std::schema::SizeLength::#size_length, #out)?;
-    })
+    if let Some(size_length) = find_length_attribute(&field.attrs, "size_length")? {
+        let l = format_ident!("U{}", 8 * size_length);
+        Ok(quote! {
+            #ident.serial_ctx(&concordium_std::schema::SizeLength::#l, #out)?;
+        })
+    } else {
+        Ok(quote! {
+            #ident.serial(#out)?;
+        })
+    }
 }
 
 fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
