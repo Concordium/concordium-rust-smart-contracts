@@ -685,7 +685,7 @@ impl<A: fmt::Debug> ExpectNoneReport for Option<A> {
 impl<K: Serial + Ord> SerialCtx for BTreeSet<K> {
     fn serial_ctx<W: Write>(
         &self,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err> {
         schema::serial_length(self.len(), size_len, out)?;
@@ -696,7 +696,7 @@ impl<K: Serial + Ord> SerialCtx for BTreeSet<K> {
 impl<K: Deserial + Ord + Copy> DeserialCtx for BTreeSet<K> {
     fn deserial_ctx<R: Read>(
         source: &mut R,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         ensure_ordered: bool,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
@@ -711,7 +711,7 @@ impl<K: Deserial + Ord + Copy> DeserialCtx for BTreeSet<K> {
 impl<K: Serial + Ord, V: Serial> SerialCtx for BTreeMap<K, V> {
     fn serial_ctx<W: Write>(
         &self,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err> {
         schema::serial_length(self.len(), size_len, out)?;
@@ -722,7 +722,7 @@ impl<K: Serial + Ord, V: Serial> SerialCtx for BTreeMap<K, V> {
 impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
     fn deserial_ctx<R: Read>(
         source: &mut R,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         ensure_ordered: bool,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
@@ -737,7 +737,7 @@ impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
 impl<T: Serial> SerialCtx for &[T] {
     fn serial_ctx<W: Write>(
         &self,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err> {
         schema::serial_length(self.len(), size_len, out)?;
@@ -748,7 +748,7 @@ impl<T: Serial> SerialCtx for &[T] {
 impl<T: Deserial> DeserialCtx for Vec<T> {
     fn deserial_ctx<R: Read>(
         source: &mut R,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         _ensure_ordered: bool,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
@@ -759,7 +759,7 @@ impl<T: Deserial> DeserialCtx for Vec<T> {
 impl SerialCtx for &str {
     fn serial_ctx<W: Write>(
         &self,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err> {
         schema::serial_length(self.len(), size_len, out)?;
@@ -770,7 +770,7 @@ impl SerialCtx for &str {
 impl SerialCtx for String {
     fn serial_ctx<W: Write>(
         &self,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err> {
         self.as_str().serial_ctx(size_len, out)
@@ -780,7 +780,7 @@ impl SerialCtx for String {
 impl DeserialCtx for String {
     fn deserial_ctx<R: Read>(
         source: &mut R,
-        size_len: &schema::SizeLength,
+        size_len: schema::SizeLength,
         _ensure_ordered: bool,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;

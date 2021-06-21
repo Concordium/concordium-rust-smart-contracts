@@ -697,7 +697,7 @@ fn impl_deserial_field(
         // Default size length is u32, i.e. 4 bytes.
         let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
         Ok(quote! {
-            let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, &concordium_std::schema::SizeLength::#l, #ensure_ordered)?;
+            let #ident = <#ty as DeserialCtx>::deserial_ctx(#source, concordium_std::schema::SizeLength::#l, #ensure_ordered)?;
         })
     } else {
         Ok(quote! {
@@ -867,7 +867,7 @@ fn impl_serial_field(
     if let Some(size_length) = find_length_attribute(&field.attrs)? {
         let l = format_ident!("U{}", 8 * size_length);
         Ok(quote! {
-            #ident.serial_ctx(&concordium_std::schema::SizeLength::#l, #out)?;
+            #ident.serial_ctx(concordium_std::schema::SizeLength::#l, #out)?;
         })
     } else {
         Ok(quote! {
