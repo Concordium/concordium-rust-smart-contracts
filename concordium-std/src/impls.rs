@@ -1,19 +1,15 @@
-use crate::{convert, mem, num, prims, prims::*, traits::*, types::*};
-#[cfg(not(feature = "std"))]
-use alloc::{
+use crate::{
     collections::{BTreeMap, BTreeSet},
-    string::String,
+    convert::{self, TryFrom, TryInto},
+    mem, num, prims,
+    prims::*,
+    traits::*,
+    types::*,
     vec::Vec,
+    String,
 };
 use concordium_contracts_common::*;
-#[cfg(not(feature = "std"))]
-use core::convert::{TryFrom, TryInto};
 use mem::MaybeUninit;
-#[cfg(feature = "std")]
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    convert::{TryFrom, TryInto},
-};
 
 impl convert::From<()> for Reject {
     #[inline(always)]
