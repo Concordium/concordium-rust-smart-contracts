@@ -8,4 +8,5 @@
 
 - Add macros for deriving error implementations.
 - Make derive macros slightly more hygienic.
-- Enable renaming of enum variants and field names for the schema.
+- Enable renaming of enum variants and field names for the schema with a
+  `#[concordium(rename = "<new-name>")]` attribute.
