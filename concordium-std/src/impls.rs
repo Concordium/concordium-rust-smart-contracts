@@ -695,9 +695,9 @@ impl<K: Serial + Ord> SerialCtx for BTreeSet<K> {
 
 impl<K: Deserial + Ord + Copy> DeserialCtx for BTreeSet<K> {
     fn deserial_ctx<R: Read>(
-        source: &mut R,
         size_len: schema::SizeLength,
         ensure_ordered: bool,
+        source: &mut R,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
         if ensure_ordered {
@@ -721,9 +721,9 @@ impl<K: Serial + Ord, V: Serial> SerialCtx for BTreeMap<K, V> {
 
 impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
     fn deserial_ctx<R: Read>(
-        source: &mut R,
         size_len: schema::SizeLength,
         ensure_ordered: bool,
+        source: &mut R,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
         if ensure_ordered {
@@ -747,9 +747,9 @@ impl<T: Serial> SerialCtx for &[T] {
 
 impl<T: Deserial> DeserialCtx for Vec<T> {
     fn deserial_ctx<R: Read>(
-        source: &mut R,
         size_len: schema::SizeLength,
         _ensure_ordered: bool,
+        source: &mut R,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
         deserial_vector_no_length(source, len)
@@ -779,9 +779,9 @@ impl SerialCtx for String {
 
 impl DeserialCtx for String {
     fn deserial_ctx<R: Read>(
-        source: &mut R,
         size_len: schema::SizeLength,
         _ensure_ordered: bool,
+        source: &mut R,
     ) -> ParseResult<Self> {
         let len = schema::deserial_length(source, size_len)?;
         let bytes = deserial_vector_no_length(source, len)?;

@@ -238,8 +238,8 @@ pub trait DeserialCtx: Sized {
     /// A wrapper for 'Deserial::deserial' which uses the `size_length` and
     /// `ensure_ordered` properties.
     fn deserial_ctx<R: Read>(
-        source: &mut R,
         size_length: schema::SizeLength,
         ensure_ordered: bool,
+        source: &mut R,
     ) -> ParseResult<Self>;
 }
