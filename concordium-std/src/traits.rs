@@ -241,10 +241,8 @@ pub trait SerialCtx {
     ) -> Result<(), W::Err>;
 }
 
-/// A wrapper trait for 'Deserial' with additional contextual information,
-/// namely the size_length and ensure_ordered properties.
 /// The `DeserialCtx` trait provides a means of reading structures from
-/// byte-sinks (`Read`) using contextual information.
+/// byte-sources (`Read`) using contextual information.
 /// The contextual information is:
 ///
 ///   - `size_length`: The expected number of bytes used for the length of the
