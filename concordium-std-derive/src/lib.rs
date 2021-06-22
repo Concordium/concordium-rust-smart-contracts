@@ -8,6 +8,8 @@ use concordium_contracts_common::*;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
+#[cfg(feature = "build-schema")]
+use std::collections::HashMap;
 use std::{convert::TryFrom, ops::Neg};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
@@ -593,7 +595,7 @@ pub fn deserial_derive(input: TokenStream) -> TokenStream {
 const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
 
 /// A list of valid concordium field attributes
-const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 2] = ["size_length", "ensure_ordered"];
+const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ordered", "rename"];
 
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
     attributes
@@ -681,6 +683,44 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
         1 | 2 | 4 | 8 => Ok(Some(value)),
         _ => Err(syn::Error::new(value_span, "Length info must be either 1, 2, 4, or 8.")),
     }
+}
+
+/// Find a 'rename' attribute and return its value and span.
+/// Checks that the attribute is only defined once and that the value is a
+/// string.
+#[cfg(feature = "build-schema")]
+fn find_rename_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<(String, Span)>> {
+    let value = match find_field_attribute_value(attributes, "rename")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match value {
+        syn::Lit::Str(value) => Ok(Some((value.value(), value.span()))),
+        _ => Err(syn::Error::new(value.span(), "Rename attribute value must be a string.")),
+    }
+}
+
+/// Check for name collisions by inserting the name in the HashMap.
+/// On collisions it returns a combined error pointing to the previous and new
+/// definition.
+#[cfg(feature = "build-schema")]
+fn check_for_name_collisions(
+    used_names: &mut HashMap<String, Span>,
+    new_name: &str,
+    new_span: Span,
+) -> syn::Result<()> {
+    if let Some(used_span) = used_names.insert(String::from(new_name), new_span) {
+        let error_msg = format!("the name `{}` is defined multiple times", new_name);
+        let mut error_at_first_def = syn::Error::new(used_span, &error_msg);
+        let error_at_second_def = syn::Error::new(new_span, &error_msg);
+
+        // Combine the errors to show both at once
+        error_at_first_def.combine(error_at_second_def);
+
+        return Err(error_at_first_def);
+    }
+    Ok(())
 }
 
 fn impl_deserial_field(
@@ -1096,11 +1136,23 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
             }
         }
         syn::Data::Enum(ref data) => {
+            let mut used_variant_names = HashMap::new();
             let variant_tokens: Vec<_> = data
                 .variants
                 .iter()
                 .map(|variant| {
-                    let variant_name = &variant.ident.to_string();
+                    // Handle the 'rename' attribute.
+                    let (variant_name, variant_span) = match find_rename_attribute(&variant.attrs)?
+                    {
+                        Some(name_and_span) => name_and_span,
+                        None => (variant.ident.to_string(), variant.ident.span()),
+                    };
+                    check_for_name_collisions(
+                        &mut used_variant_names,
+                        &variant_name,
+                        variant_span,
+                    )?;
+
                     let fields_tokens = schema_type_fields(&variant.fields)?;
                     Ok(quote! {
                         (concordium_std::String::from(#variant_name), #fields_tokens)
@@ -1149,10 +1201,17 @@ fn schema_type_field_type(field: &syn::Field) -> syn::Result<proc_macro2::TokenS
 fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStream> {
     match fields {
         syn::Fields::Named(_) => {
+            let mut used_field_names = HashMap::new();
             let fields_tokens: Vec<_> = fields
                 .iter()
                 .map(|field| {
-                    let field_name = field.ident.clone().unwrap().to_string(); // safe since named fields
+                    // Handle the 'rename' attribute.
+                    let (field_name, field_span) = match find_rename_attribute(&field.attrs)? {
+                        Some(name_and_span) => name_and_span,
+                        None => (field.ident.clone().unwrap().to_string(), field.ident.span()), // safe since named fields.
+                    };
+                    check_for_name_collisions(&mut used_field_names, &field_name, field_span)?;
+
                     let field_schema_type = schema_type_field_type(&field)?;
                     Ok(quote! {
                         (concordium_std::String::from(#field_name), #field_schema_type)
