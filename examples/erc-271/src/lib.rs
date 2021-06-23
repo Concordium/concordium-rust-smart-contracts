@@ -2,113 +2,170 @@
 use concordium_std::{collections::*, *};
 
 /*
- * An implementation of the ERC-271 Non-Fungible Token(NFT) Standard popular
- * on the Ethereum blockchain.
- *
- * An smart contract instance represents a number of NFTs and tracks
- * ownership of each. It allows other accounts to transfer a certain amount
- * from ones account.
+ * An implementation of the "ERC-271 Non-Fungible Token(NFT) Standard"
+ * specification popular on the Ethereum blockchain.
  *
  * https://eips.ethereum.org/EIPS/eip-721
  *
- * Instead of getter functions the information can be read directly from the
- * contract state directly. Events can be tracked in the log.
+ * # Description
+ * An smart contract instance represents a number of NFTs and tracks
+ * ownership of each. The globally unique id of an NFT is formed by the
+ * address of the contract instance and some token_id unique to the instance.
+ *
+ * A token can be transferred to an address (either an account and a contract
+ * instance). Each token can be approved to be transferred by one other
+ * address than the owner. Approvals are can be done by either the token
+ * owner or an "operator" of the owner.
+ *
+ * An address can enable one or more addresses as operators.
+ * An operator of some address is allowed to transfer and approve any tokens
+ * of the owner.
+ * Note: This can be used to implement 'atomic swap' in another contract.
+ *
+ * ## Differences from the specification
+ *
+ * Since the specification is written to target the Ethereum blockchain, some
+ * details are implemented differently.
+ *
+ * - Instead of the getter functions the information should be read from the
+ *   contract state off-chain.
+ * - The specification uses a "zero address" (which is a special address used
+ *   as a null-address) which is not a thing on Concordium blockchain,
+ *   instead the address is wrapped in an Option if relevant.
+ *
  */
 
 // Types
 
-/// Token Identifier, which combine with the address of the contract instance,
-/// forms the unique identifier of an NFT. The specification requires a u256,
-/// but for efficiency we use u64, which is expected to be sufficient for most
-/// cases.
+/// Token Identifier, which combined with the address of the contract instance,
+/// forms the unique identifier of an NFT.
+/// Note: The specification requires a u256, but for efficiency we use u64,
+/// which is expected to be sufficient for most cases.
 type TokenId = u64;
 
-/// Token metadata
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-struct TokenMetadata {
-    /// Name of the token, encoded as UTF8
-    name:   Vec<u8>,
-    /// Symbol of the token, encoded as UTF8
-    symbol: Vec<u8>,
-}
-
-type Tokens = BTreeMap<TokenId, TokenMetadata>;
+/// Information of which tokens included in this instance.
+/// Note: To add the erc271 metadata extension, change this to a Map from
+/// TokenId to some Metadata struct.
+type Tokens = BTreeSet<TokenId>;
 
 #[contract_state(contract = "erc271")]
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Serialize, SchemaType)]
 pub struct State {
+    /// Collection of the current tokens in this contract instance.
     tokens:          Tokens,
-    /// Map from a token id to the owning account address
+    /// Map from a token id to the owning account address.
     /// Every token must be an entry in this map.
-    token_owners:    BTreeMap<TokenId, AccountAddress>,
+    token_owners:    BTreeMap<TokenId, Address>,
     /// Map from a token id to an account which are allowed to transfer this
-    /// token on the owners behalf
+    /// token on the owners behalf.
     /// Only tokens with approvals have entries in this map.
-    token_approvals: BTreeMap<TokenId, AccountAddress>,
+    token_approvals: BTreeMap<TokenId, Address>,
     /// Map from an account to operator accounts, which can transfer any token
     /// on their behalf.
     /// Only accounts with operators have entries in this map.
-    owner_operators: BTreeMap<AccountAddress, BTreeSet<AccountAddress>>,
+    owner_operators: BTreeMap<Address, BTreeSet<Address>>,
 }
 
-// Event printed in the log
-#[derive(Debug, Serialize)]
+/// Event to be printed in the log.
+#[derive(Serialize)]
 enum Event {
-    /// Ownership of NFT changed
+    /// Ownership of NFT changed.
+    /// Note: To add minting and burning the `from` and `to` should be Options,
+    /// where `to` is None when burning, and `from` is None when minting.
     Transfer {
-        from:     AccountAddress,
-        to:       AccountAddress,
+        from:     Address,
+        to:       Address,
         token_id: TokenId,
     },
     /// Approved transfer of NFT, where `approved` = None means no one is
     /// approved.
     Approval {
-        owner:    AccountAddress,
-        approved: Option<AccountAddress>,
+        owner:    Address,
+        approved: Option<Address>,
         token_id: TokenId,
     },
-    /// Change to whether an operator can manage all NFTs of the owner
+    /// Change to whether an operator can manage all NFTs of the owner.
     ApprovalForAll {
-        owner:    AccountAddress,
-        operator: AccountAddress,
+        owner:    Address,
+        operator: Address,
         approved: bool,
     },
 }
 
 // Contract Function Parameters
 
+/// Parameter for `safeTransferFrom` and `transferFrom` contract functions.
 #[derive(Serialize, SchemaType)]
 struct SafeTransferFromParams {
-    from:     AccountAddress,
-    to:       AccountAddress,
+    /// The id of the token to be transferred.
     token_id: TokenId,
+    /// Current owner of the token.
+    from:     Address,
+    /// The new owner of the token.
+    to:       Address,
+    /// Optional blob of data, which is sent to the new owner if it is a
+    /// contract instance. Only used by `safeTransferFrom` and not by
+    /// `transferFrom`.
+    data:     Vec<u8>,
 }
 
+/// Parameter for the `approve` contract function.
 #[derive(Serialize, SchemaType)]
 struct ApproveParams {
-    approved: Option<AccountAddress>,
+    /// Address approved to transfer a token.
+    /// If None: Remove previous approvals to control this token.
+    approved: Option<Address>,
+    /// The token that the address is approved to transfer.
     token_id: TokenId,
 }
 
+/// Parameter for the `approveForAll` contract function.
 #[derive(Serialize, SchemaType)]
 struct ApproveForAllParams {
-    operator: AccountAddress,
+    /// Address to act as an operator for the sender of this message.
+    operator: Address,
+    /// Whether to enable or disable the operator.
     approved: bool,
 }
 
+/// Parameter for the `onERC721Receive` contract function, should only be used
+/// by ERC271 contracts.
+#[derive(Serialize, SchemaType)]
+struct OnERC721ReceivedParams {
+    /// The token which is transferred to this contract.
+    token_id: TokenId,
+    /// Previous owner of the token.
+    from:     Address,
+    /// Optional blob of data sent as part of the `safeTransferFrom` which would
+    /// trigger this.
+    data:     Vec<u8>,
+}
+
+/// Contract error type
 #[derive(Debug, PartialEq, Eq, Reject)]
 enum ContractError {
-    /// Failed parsing the parameter
+    /// Failed parsing the parameter.
+    #[from(ParseError)]
     ParseParams,
+    /// Failed logging: Log is full.
     LogFull,
+    /// Failed logging: Log is malformed.
     LogMalformed,
+    /// Invalid token id: No token with this id.
     NoTokenWithThisId,
-    InvalidTransfer,
+    /// The transfer is not from the current owner of the token.
+    FromIsNotTheOwner,
+    /// Sender is not authorized.
     Unauthorized,
-    AccountSenderOnly,
+    /// Approving the owner of the token is invalid.
     ApprovedIsOwner,
+    /// Make the sender an operator of the sender is invalid.
     OperatorIsSender,
+    /// Only contracts can send to this function.
+    ContractOnly,
 }
+
+type ContractResult<A> = Result<A, ContractError>;
 
 impl From<LogError> for ContractError {
     fn from(le: LogError) -> Self {
@@ -119,15 +176,11 @@ impl From<LogError> for ContractError {
     }
 }
 
-impl From<ParseError> for ContractError {
-    fn from(_: ParseError) -> Self { ContractError::ParseParams }
-}
-
 impl State {
-    /// Creates a new state with a number of tokens, all owned by the invoker.
-    fn new(tokens: Tokens, owner: AccountAddress) -> Self {
+    /// Creates a new state with a number of tokens all with the same owner.
+    fn new(tokens: Tokens, owner: Address) -> Self {
         let mut token_owners = BTreeMap::new();
-        for &token_id in tokens.keys() {
+        for &token_id in tokens.iter() {
             token_owners.insert(token_id, owner);
         }
 
@@ -139,40 +192,40 @@ impl State {
         }
     }
 
-    /// Get the current owner of a token
-    fn get_owner(&self, token_id: &TokenId) -> Result<&AccountAddress, ContractError> {
+    /// Get the current owner of a token.
+    fn get_owner(&self, token_id: &TokenId) -> ContractResult<&Address> {
         self.token_owners.get(token_id).ok_or(ContractError::NoTokenWithThisId)
     }
 
-    fn is_owner(&self, sender: &AccountAddress, token_id: &TokenId) -> bool {
-        if let Some(owner) = self.token_owners.get(token_id) {
-            return sender == owner;
-        }
-        false
+    /// Check if an address is the current owner of a token, results in an error
+    /// if no token exists with `token_id`.
+    fn is_owner(&self, address: &Address, token_id: &TokenId) -> ContractResult<bool> {
+        let owner = self.get_owner(token_id)?;
+        Ok(address == owner)
     }
 
-    fn is_approved(&self, sender: &AccountAddress, token_id: &TokenId) -> bool {
+    /// Check is an address is approved to transfer a specific token.
+    fn is_approved(&self, address: &Address, token_id: &TokenId) -> bool {
         if let Some(approval) = self.token_approvals.get(token_id) {
-            return sender == approval;
+            return address == approval;
         }
         false
     }
 
-    fn is_operator(&self, sender: &AccountAddress, owner: &AccountAddress) -> bool {
+    /// Check is an address is an operator of a specific owner address.
+    fn is_operator(&self, address: &Address, owner: &Address) -> bool {
         if let Some(operators) = self.owner_operators.get(owner) {
-            return operators.contains(sender);
+            return operators.contains(address);
         }
         false
     }
 
-    fn transfer(
-        &mut self,
-        token_id: &TokenId,
-        from: &AccountAddress,
-        to: &AccountAddress,
-    ) -> Result<(), ContractError> {
+    /// Transfer ownership of a token from one address to another, failing if
+    /// token does not exist or if the `from` address is not the current owner.
+    /// Removes any approvals on this specific token.
+    fn transfer(&mut self, from: &Address, to: &Address, token_id: &TokenId) -> ContractResult<()> {
         if let Some(previous_owner) = self.token_owners.insert(*token_id, *to) {
-            ensure!(previous_owner == *from, ContractError::InvalidTransfer)
+            ensure!(previous_owner == *from, ContractError::FromIsNotTheOwner)
         } else {
             bail!(ContractError::NoTokenWithThisId)
         }
@@ -180,7 +233,9 @@ impl State {
         Ok(())
     }
 
-    fn approve(&mut self, token_id: &TokenId, approved: &Option<AccountAddress>) {
+    /// Approve an address to transfer a specific token on the owners behalf.
+    /// If `approved` is None: Remove an previously approved address.
+    fn approve(&mut self, approved: &Option<Address>, token_id: &TokenId) {
         if let Some(approved) = approved {
             self.token_approvals.insert(*token_id, *approved);
         } else {
@@ -188,12 +243,8 @@ impl State {
         }
     }
 
-    fn approval_for_all(
-        &mut self,
-        owner: &AccountAddress,
-        operator: &AccountAddress,
-        approved: bool,
-    ) {
+    /// Enable/Disable an address as an operator of the owner address
+    fn approval_for_all(&mut self, owner: &Address, operator: &Address, approved: bool) {
         if let Some(operators) = self.owner_operators.get_mut(owner) {
             if approved {
                 operators.insert(*operator);
@@ -210,72 +261,115 @@ impl State {
     }
 }
 
-// Contract
+// Contract functions
 
+/// Initialize contract instance with a number of tokens all owned by the
+/// invoker.
+/// Note: Does not produce any `Transfer` events
 #[init(contract = "erc271", parameter = "Tokens")]
 fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
     let tokens: Tokens = ctx.parameter_cursor().get()?;
     let invoker = ctx.init_origin();
-    Ok(State::new(tokens, invoker))
+    let state = State::new(tokens, Address::Account(invoker));
+    Ok(state)
 }
 
+/// Transfer a token from one address to another and logs a `Transfer` event.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The sender is not: the owner of the token, or approved for this specific
+///   token or an operator for the owner.
+/// - The `token_id` does not exist.
+/// - The token is not owned by the `from`.
+///
+/// Note: It differs from `transferFrom` only when transferring to a contract
+/// instance, where it will ensure to call `onERC721Received` on the receiving
+/// instance and reject if the receiving instance rejects.
 #[receive(
     contract = "erc271",
     name = "safeTransferFrom",
-    parameters = "SafeTransferFromParams",
+    parameter = "SafeTransferFromParams",
     enable_logger
 )]
 fn contract_safe_transfer_from<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
     state: &mut State,
-) -> Result<A, ContractError> {
+) -> ContractResult<A> {
     let params: SafeTransferFromParams = ctx.parameter_cursor().get()?;
-    let sender = if let Address::Account(account) = ctx.sender() {
-        account
-    } else {
-        bail!(ContractError::AccountSenderOnly)
-    };
-
+    let sender = ctx.sender();
     ensure!(
-        state.is_owner(&sender, &params.token_id)
+        state.is_owner(&sender, &params.token_id)?
             || state.is_approved(&sender, &params.token_id)
             || state.is_operator(&sender, &params.from),
         ContractError::Unauthorized
     );
-    state.transfer(&params.token_id, &params.from, &params.to)?;
+    state.transfer(&params.from, &params.to, &params.token_id)?;
     logger.log(&Event::Transfer {
         from:     params.from,
         to:       params.to,
         token_id: params.token_id,
     })?;
 
-    Ok(A::accept())
+    let action = if let Address::Contract(receiving_contract) = params.to {
+        let parameter = OnERC721ReceivedParams {
+            from:     params.from,
+            token_id: params.token_id,
+            data:     params.data,
+        };
+
+        send(
+            &receiving_contract,
+            ReceiveName::new_unchecked("onERC721Received"),
+            Amount::zero(),
+            &parameter,
+        )
+    } else {
+        A::accept()
+    };
+
+    Ok(action)
 }
 
-#[receive(contract = "erc271", name = "transferFrom", enable_logger)]
+/// Transfer a token from one address to another, but without triggering
+/// `onERC721Received` on contract instances. See the contract function
+/// `safeTransferFrom` for more.
+#[receive(
+    contract = "erc271",
+    name = "transferFrom",
+    parameter = "SafeTransferFromParams",
+    enable_logger
+)]
 fn contract_transfer_from<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
     state: &mut State,
-) -> Result<A, ContractError> {
-    contract_safe_transfer_from(ctx, logger, state)
+) -> ContractResult<A> {
+    // Ignore the result to possible prevent triggering `onERC721Received` on
+    // contract.
+    let _result: A = contract_safe_transfer_from(ctx, logger, state)?;
+    Ok(A::accept())
 }
 
-#[receive(contract = "erc271", name = "approve", enable_logger)]
+/// Approve some optional address to transfer a specified token. If no address
+/// is sent, the previously approved address is removed if any.
+/// Only one address per token can be approved.
+/// An approval is removed if the token is transferred.
+/// Logs an `Approve` event.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The sender is not: the owner of the token or an operator for the owner.
+/// - The `token_id` does not exist.
+#[receive(contract = "erc271", name = "approve", parameter = "ApproveParams", enable_logger)]
 fn contract_approve<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
     state: &mut State,
-) -> Result<A, ContractError> {
+) -> ContractResult<A> {
     let params: ApproveParams = ctx.parameter_cursor().get()?;
-
-    let sender = if let Address::Account(account) = ctx.sender() {
-        account
-    } else {
-        bail!(ContractError::AccountSenderOnly)
-    };
-
+    let sender = ctx.sender();
     let owner = *state.get_owner(&params.token_id)?;
 
     if let Some(approved) = params.approved {
@@ -283,7 +377,7 @@ fn contract_approve<A: HasActions>(
     }
     ensure!(sender == owner || state.is_operator(&sender, &owner), ContractError::Unauthorized);
 
-    state.approve(&params.token_id, &params.approved);
+    state.approve(&params.approved, &params.token_id);
 
     logger.log(&Event::Approval {
         owner,
@@ -294,19 +388,26 @@ fn contract_approve<A: HasActions>(
     Ok(A::accept())
 }
 
-#[receive(contract = "erc271", name = "setApprovalForAll", enable_logger)]
+/// Enable or disable some address as an operator of the address of the sender.
+/// Logs an `ApproveForAll` event.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The operator address is the same as the sender address.
+#[receive(
+    contract = "erc271",
+    name = "setApprovalForAll",
+    parameter = "ApproveForAllParams",
+    enable_logger
+)]
 fn contract_set_approval_for_all<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
     state: &mut State,
-) -> Result<A, ContractError> {
+) -> ContractResult<A> {
     let params: ApproveForAllParams = ctx.parameter_cursor().get()?;
 
-    let sender = if let Address::Account(account) = ctx.sender() {
-        account
-    } else {
-        bail!(ContractError::AccountSenderOnly)
-    };
+    let sender = ctx.sender();
 
     // No reason to be an operator yourself
     ensure!(params.operator != sender, ContractError::OperatorIsSender);
@@ -322,6 +423,42 @@ fn contract_set_approval_for_all<A: HasActions>(
     Ok(A::accept())
 }
 
+/// Optional contract function called when a token is transferred to an instance
+/// of this contract. The parameter include a `data` field which can be used to
+/// implement some arbitrary functionality. In this example we choose not to use
+/// it, and define the function to forward any transfers to the owner of the
+/// contract instance.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not a contract.
+/// - `safeTransferFrom` to instance owner rejects
+#[receive(contract = "erc271", name = "onERC721Received")]
+fn contract_on_erc721_received<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    _state: &mut State,
+) -> ContractResult<A> {
+    let params: OnERC721ReceivedParams = ctx.parameter_cursor().get()?;
+
+    let sender = if let Address::Contract(contract) = ctx.sender() {
+        contract
+    } else {
+        bail!(ContractError::ContractOnly)
+    };
+
+    let parameter = SafeTransferFromParams {
+        from:     Address::Contract(ctx.self_address()),
+        to:       Address::Account(ctx.invoker()),
+        token_id: params.token_id,
+        data:     vec![],
+    };
+
+    let action =
+        send(&sender, ReceiveName::new_unchecked("safeTransferFrom"), Amount::zero(), &parameter);
+
+    Ok(action)
+}
+
 // Tests
 
 #[concordium_cfg_test]
@@ -330,17 +467,15 @@ mod tests {
     use test_infrastructure::*;
 
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
+    const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
+    const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
     const TOKEN_ID: TokenId = 0;
 
     fn initial_state() -> State {
-        let mut tokens: Tokens = BTreeMap::new();
-        tokens.insert(TOKEN_ID, TokenMetadata {
-            name:   b"MyToken".to_vec(),
-            symbol: b"MT".to_vec(),
-        });
-
-        State::new(tokens, ACCOUNT_0)
+        let mut tokens: Tokens = BTreeSet::new();
+        tokens.insert(TOKEN_ID);
+        State::new(tokens, ADDRESS_0)
     }
 
     #[concordium_test]
@@ -348,11 +483,8 @@ mod tests {
         let mut ctx = InitContextTest::empty();
         ctx.set_init_origin(ACCOUNT_0);
 
-        let mut tokens: Tokens = BTreeMap::new();
-        tokens.insert(0, TokenMetadata {
-            name:   b"MyToken".to_vec(),
-            symbol: b"MT".to_vec(),
-        });
+        let mut tokens: Tokens = BTreeSet::new();
+        tokens.insert(TOKEN_ID);
 
         let parameter_bytes = to_bytes(&tokens);
         ctx.set_parameter(&parameter_bytes);
@@ -369,14 +501,15 @@ mod tests {
     #[concordium_test]
     fn test_transfer() {
         let mut ctx = ReceiveContextTest::empty();
-        ctx.set_sender(Address::Account(ACCOUNT_0));
+        ctx.set_sender(ADDRESS_0);
 
         let mut state = initial_state();
 
         let parameter = SafeTransferFromParams {
-            from:     ACCOUNT_0,
-            to:       ACCOUNT_1,
+            from:     ADDRESS_0,
+            to:       ADDRESS_1,
             token_id: TOKEN_ID,
+            data:     vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -389,14 +522,14 @@ mod tests {
         claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
         let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ACCOUNT_1, "Ownership should be transferred");
+        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
 
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
             to_bytes(&Event::Transfer {
-                from:     ACCOUNT_0,
-                to:       ACCOUNT_1,
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
                 token_id: TOKEN_ID,
             }),
             "Incorrect event emitted"
@@ -406,14 +539,15 @@ mod tests {
     #[concordium_test]
     fn test_transfer_not_authorized() {
         let mut ctx = ReceiveContextTest::empty();
-        ctx.set_sender(Address::Account(ACCOUNT_1));
+        ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
 
         let parameter = SafeTransferFromParams {
-            from:     ACCOUNT_0,
-            to:       ACCOUNT_1,
+            from:     ADDRESS_0,
+            to:       ADDRESS_1,
             token_id: TOKEN_ID,
+            data:     vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -421,7 +555,7 @@ mod tests {
 
         let mut logger = LogRecorder::init();
 
-        let result: Result<ActionsTree, _> =
+        let result: ContractResult<ActionsTree> =
             contract_safe_transfer_from(&ctx, &mut logger, &mut state);
         let err = result.expect_err_report("Expected to fail");
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
@@ -430,15 +564,16 @@ mod tests {
     #[concordium_test]
     fn test_approved_transfer() {
         let mut ctx = ReceiveContextTest::empty();
-        ctx.set_sender(Address::Account(ACCOUNT_1));
+        ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
-        state.approve(&TOKEN_ID, &Some(ACCOUNT_1));
+        state.approve(&Some(ADDRESS_1), &TOKEN_ID);
 
         let parameter = SafeTransferFromParams {
-            from:     ACCOUNT_0,
-            to:       ACCOUNT_1,
+            from:     ADDRESS_0,
+            to:       ADDRESS_1,
             token_id: TOKEN_ID,
+            data:     vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -451,13 +586,13 @@ mod tests {
         claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
         let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ACCOUNT_1, "Ownership should be transferred");
+        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
             to_bytes(&Event::Transfer {
-                from:     ACCOUNT_0,
-                to:       ACCOUNT_1,
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
                 token_id: TOKEN_ID,
             }),
             "Incorrect event emitted"
@@ -467,22 +602,16 @@ mod tests {
     #[concordium_test]
     fn test_operator_transfer() {
         let mut ctx = ReceiveContextTest::empty();
-        ctx.set_sender(Address::Account(ACCOUNT_1));
+        ctx.set_sender(ADDRESS_1);
 
-        let mut tokens: Tokens = BTreeMap::new();
-        let token_id = 0;
-        tokens.insert(token_id, TokenMetadata {
-            name:   b"MyToken".to_vec(),
-            symbol: b"MT".to_vec(),
-        });
-
-        let mut state = State::new(tokens, ACCOUNT_0);
-        state.approval_for_all(&ACCOUNT_0, &ACCOUNT_1, true);
+        let mut state = initial_state();
+        state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true);
 
         let parameter = SafeTransferFromParams {
-            from: ACCOUNT_0,
-            to: ACCOUNT_1,
-            token_id,
+            from:     ADDRESS_0,
+            to:       ADDRESS_1,
+            token_id: TOKEN_ID,
+            data:     vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -495,14 +624,14 @@ mod tests {
         claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
         let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ACCOUNT_1, "Ownership should be transferred");
+        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
             to_bytes(&Event::Transfer {
-                from: ACCOUNT_0,
-                to: ACCOUNT_1,
-                token_id
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
+                token_id: TOKEN_ID,
             }),
             "Incorrect event emitted"
         )
@@ -511,20 +640,13 @@ mod tests {
     #[concordium_test]
     fn test_approve() {
         let mut ctx = ReceiveContextTest::empty();
-        ctx.set_sender(Address::Account(ACCOUNT_0));
+        ctx.set_sender(ADDRESS_0);
 
-        let mut tokens: Tokens = BTreeMap::new();
-        let token_id = 0;
-        tokens.insert(token_id, TokenMetadata {
-            name:   b"MyToken".to_vec(),
-            symbol: b"MT".to_vec(),
-        });
-
-        let mut state = State::new(tokens, ACCOUNT_0);
+        let mut state = initial_state();
 
         let parameter = ApproveParams {
-            approved: Some(ACCOUNT_1),
-            token_id,
+            approved: Some(ADDRESS_1),
+            token_id: TOKEN_ID,
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -537,15 +659,15 @@ mod tests {
         claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
         let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ACCOUNT_0, "Ownership should not be transferred");
-        claim!(state.is_approved(&ACCOUNT_1, &TOKEN_ID), "Account should be approved");
+        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
+        claim!(state.is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
             to_bytes(&Event::Approval {
-                owner: ACCOUNT_0,
-                approved: Some(ACCOUNT_1),
-                token_id
+                owner:    ADDRESS_0,
+                approved: Some(ADDRESS_1),
+                token_id: TOKEN_ID,
             }),
             "Incorrect event emitted"
         )
@@ -554,19 +676,12 @@ mod tests {
     #[concordium_test]
     fn test_set_approve_for_all() {
         let mut ctx = ReceiveContextTest::empty();
-        ctx.set_sender(Address::Account(ACCOUNT_0));
+        ctx.set_sender(ADDRESS_0);
 
-        let mut tokens: Tokens = BTreeMap::new();
-        let token_id = 0;
-        tokens.insert(token_id, TokenMetadata {
-            name:   b"MyToken".to_vec(),
-            symbol: b"MT".to_vec(),
-        });
-
-        let mut state = State::new(tokens, ACCOUNT_0);
+        let mut state = initial_state();
 
         let parameter = ApproveForAllParams {
-            operator: ACCOUNT_1,
+            operator: ADDRESS_1,
             approved: true,
         };
 
@@ -580,14 +695,14 @@ mod tests {
         claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
         let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ACCOUNT_0, "Ownership should not be transferred");
-        claim!(state.is_operator(&ACCOUNT_1, &ACCOUNT_0), "Account should be approved");
+        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
+        claim!(state.is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
             to_bytes(&Event::ApprovalForAll {
-                owner:    ACCOUNT_0,
-                operator: ACCOUNT_1,
+                owner:    ADDRESS_0,
+                operator: ADDRESS_1,
                 approved: true,
             }),
             "Incorrect event emitted"
