@@ -49,7 +49,7 @@ pub struct State {
     /// displayed to the auction participants)
     expiry:        Timestamp,
     /// Keeping track of which account bid how much money
-    #[concordium(map_size_length = 2)]
+    #[concordium(size_length = 2)]
     bids:          BTreeMap<AccountAddress, Amount>,
 }
 
