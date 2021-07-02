@@ -8,6 +8,8 @@ use concordium_contracts_common::*;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
+#[cfg(feature = "build-schema")]
+use std::collections::HashMap;
 use std::{convert::TryFrom, ops::Neg};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
@@ -572,14 +574,14 @@ fn contract_function_schema_tokens(
 /// In addition to the attributes supported by `derive(Serial)`, this derivation
 /// macro supports the `ensure_ordered` attribute. If applied to a field the
 /// of type `BTreeMap` or `BTreeSet` deserialization will additionally ensure
-/// that there keys are in strictly increasing order. By default deserialization
+/// that the keys are in strictly increasing order. By default deserialization
 /// only ensures uniqueness.
 ///
 /// # Example
 /// ``` ignore
 /// #[derive(Deserial)]
 /// struct Foo {
-///     #[concordium(set_size_length = 1, ensure_ordered)]
+///     #[concordium(size_length = 1, ensure_ordered)]
 ///     bar: BTreeSet<u8>,
 /// }
 /// ```
@@ -593,8 +595,7 @@ pub fn deserial_derive(input: TokenStream) -> TokenStream {
 const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
 
 /// A list of valid concordium field attributes
-const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 5] =
-    ["size_length", "set_size_length", "map_size_length", "string_size_length", "ensure_ordered"];
+const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ordered", "rename"];
 
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
     attributes
@@ -656,34 +657,70 @@ fn find_field_attribute_value(
     }
 }
 
-fn find_length_attribute(
-    attributes: &[syn::Attribute],
-    target_attr: &str,
-) -> syn::Result<Option<u32>> {
-    let value = match find_field_attribute_value(attributes, target_attr)? {
+fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u32>> {
+    let value = match find_field_attribute_value(attributes, "size_length")? {
         Some(v) => v,
         None => return Ok(None),
     };
 
+    // Save the span to be used in errors.
+    let value_span = value.span();
+
     let value = match value {
         syn::Lit::Int(int) => int,
-        _ => {
-            return Err(syn::Error::new(value.span(), "Length attribute value must be an integer."))
-        }
+        _ => return Err(syn::Error::new(value_span, "Length attribute value must be an integer.")),
     };
     let value = match value.base10_parse() {
         Ok(v) => v,
         _ => {
             return Err(syn::Error::new(
-                value.span(),
+                value_span,
                 "Length attribute value must be a base 10 integer.",
             ))
         }
     };
     match value {
         1 | 2 | 4 | 8 => Ok(Some(value)),
-        _ => Err(syn::Error::new(value.span(), "Length info must be either 1, 2, 4, or 8.")),
+        _ => Err(syn::Error::new(value_span, "Length info must be either 1, 2, 4, or 8.")),
     }
+}
+
+/// Find a 'rename' attribute and return its value and span.
+/// Checks that the attribute is only defined once and that the value is a
+/// string.
+#[cfg(feature = "build-schema")]
+fn find_rename_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<(String, Span)>> {
+    let value = match find_field_attribute_value(attributes, "rename")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match value {
+        syn::Lit::Str(value) => Ok(Some((value.value(), value.span()))),
+        _ => Err(syn::Error::new(value.span(), "Rename attribute value must be a string.")),
+    }
+}
+
+/// Check for name collisions by inserting the name in the HashMap.
+/// On collisions it returns a combined error pointing to the previous and new
+/// definition.
+#[cfg(feature = "build-schema")]
+fn check_for_name_collisions(
+    used_names: &mut HashMap<String, Span>,
+    new_name: &str,
+    new_span: Span,
+) -> syn::Result<()> {
+    if let Some(used_span) = used_names.insert(String::from(new_name), new_span) {
+        let error_msg = format!("the name `{}` is defined multiple times", new_name);
+        let mut error_at_first_def = syn::Error::new(used_span, &error_msg);
+        let error_at_second_def = syn::Error::new(new_span, &error_msg);
+
+        // Combine the errors to show both at once
+        error_at_first_def.combine(error_at_second_def);
+
+        return Err(error_at_first_def);
+    }
+    Ok(())
 }
 
 fn impl_deserial_field(
@@ -692,58 +729,17 @@ fn impl_deserial_field(
     source: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
-    if let Some(l) = find_length_attribute(&f.attrs, "size_length")? {
-        let size = format_ident!("u{}", 8 * l);
+    let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
+    let size_length = find_length_attribute(&f.attrs)?;
+    let has_ctx = ensure_ordered || size_length.is_some();
+    let ty = &f.ty;
+    if has_ctx {
+        // Default size length is u32, i.e. 4 bytes.
+        let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
         Ok(quote! {
-            let #ident = {
-                let len = #size::deserial(#source)?;
-                deserial_vector_no_length(#source, len as usize)?
-            };
-        })
-    } else if let Some(l) = find_length_attribute(&f.attrs, "map_size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&concordium_attributes, "ensure_ordered") {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_map_no_length(#source, len as usize)?
-                };
-            })
-        } else {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_map_no_length_no_order_check(#source, len as usize)?
-                };
-            })
-        }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "set_size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        if contains_attribute(&concordium_attributes, "ensure_ordered") {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_set_no_length(#source, len as usize)?
-                };
-            })
-        } else {
-            Ok(quote! {
-                let #ident = {
-                    let len = #size::deserial(#source)?;
-                    deserial_set_no_length_no_order_check(#source, len as usize)?
-                };
-            })
-        }
-    } else if let Some(l) = find_length_attribute(&f.attrs, "string_size_length")? {
-        let size = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let #ident = {
-                let len = #size::deserial(#source)?;
-                deserial_string(#source, len as usize)?
-            };
+            let #ident = <#ty as concordium_std::DeserialCtx>::deserial_ctx(concordium_std::schema::SizeLength::#l, #ensure_ordered, #source)?;
         })
     } else {
-        let ty = &f.ty;
         Ok(quote! {
             let #ident = <#ty as Deserial>::deserial(#source)?;
         })
@@ -870,11 +866,10 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 /// Serial trait.
 ///
 ///
-/// Collections (Vec, BTreeMap, BTreeSet) are by default serialized by
-/// prepending the number of elements as 4 bytes little-endian. If this is too
-/// much or too little, fields of the above types can be annotated with
-/// `size_length` for Vec, `map_size_length` for `BTreeMap` and
-/// `set_size_length` for `BTreeSet`.
+/// Collections (Vec, BTreeMap, BTreeSet) and strings (String, str) are by
+/// default serialized by prepending the number of elements as 4 bytes
+/// little-endian. If this is too much or too little, fields of the above types
+/// can be annotated with `size_length`.
 ///
 /// The value of this field is the number of bytes that will be used for
 /// encoding the number of elements. Supported values are 1, 2, 4, 8.
@@ -894,7 +889,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 /// ```ignore
 /// #[derive(Serial)]
 /// struct Foo {
-///     #[concordium(set_size_length = 1)]
+///     #[concordium(size_length = 1)]
 ///     bar: BTreeSet<u8>,
 /// }
 /// ```
@@ -909,33 +904,11 @@ fn impl_serial_field(
     ident: &proc_macro2::TokenStream,
     out: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    if let Some(l) = find_length_attribute(&field.attrs, "size_length")? {
-        let id = format_ident!("u{}", 8 * l);
+    if let Some(size_length) = find_length_attribute(&field.attrs)? {
+        let l = format_ident!("U{}", 8 * size_length);
         Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_vector_no_length(&#ident, #out)?;
-        })
-    } else if let Some(l) = find_length_attribute(&field.attrs, "map_size_length")? {
-        let id = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_map_no_length(&#ident, #out)?;
-        })
-    } else if let Some(l) = find_length_attribute(&field.attrs, "set_size_length")? {
-        let id = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_set_no_length(&#ident, #out)?;
-        })
-    } else if let Some(l) = find_length_attribute(&field.attrs, "string_size_length")? {
-        let id = format_ident!("u{}", 8 * l);
-        Ok(quote! {
-            let len: #id = #ident.len() as #id;
-            len.serial(#out)?;
-            serial_string(#ident.as_str(), #out)?;
+            use concordium_std::SerialCtx;
+            #ident.serial_ctx(concordium_std::schema::SizeLength::#l, #out)?;
         })
     } else {
         Ok(quote! {
@@ -1144,10 +1117,7 @@ fn contract_state_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<T
 /// Derive the `SchemaType` trait for a type.
 /// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
 /// not produce any code.
-#[proc_macro_derive(
-    SchemaType,
-    attributes(size_length, map_size_length, set_size_length, string_size_length)
-)]
+#[proc_macro_derive(SchemaType, attributes(size_length))]
 pub fn schema_type_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(schema_type_derive_worker(input))
 }
@@ -1166,11 +1136,23 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
             }
         }
         syn::Data::Enum(ref data) => {
+            let mut used_variant_names = HashMap::new();
             let variant_tokens: Vec<_> = data
                 .variants
                 .iter()
                 .map(|variant| {
-                    let variant_name = &variant.ident.to_string();
+                    // Handle the 'rename' attribute.
+                    let (variant_name, variant_span) = match find_rename_attribute(&variant.attrs)?
+                    {
+                        Some(name_and_span) => name_and_span,
+                        None => (variant.ident.to_string(), variant.ident.span()),
+                    };
+                    check_for_name_collisions(
+                        &mut used_variant_names,
+                        &variant_name,
+                        variant_span,
+                    )?;
+
                     let fields_tokens = schema_type_fields(&variant.fields)?;
                     Ok(quote! {
                         (concordium_std::String::from(#variant_name), #fields_tokens)
@@ -1201,26 +1183,9 @@ fn schema_type_derive_worker(_input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 #[cfg(feature = "build-schema")]
-fn or_else_joined<A>(
-    a: syn::Result<Option<A>>,
-    b: impl FnOnce() -> syn::Result<Option<A>>,
-) -> syn::Result<Option<A>> {
-    match a {
-        Ok(None) => b(),
-        _ => a,
-    }
-}
-
-#[cfg(feature = "build-schema")]
 fn schema_type_field_type(field: &syn::Field) -> syn::Result<proc_macro2::TokenStream> {
     let field_type = &field.ty;
-    if let Some(l) = or_else_joined(find_length_attribute(&field.attrs, "size_length"), || {
-        or_else_joined(find_length_attribute(&field.attrs, "map_size_length"), || {
-            or_else_joined(find_length_attribute(&field.attrs, "set_size_length"), || {
-                find_length_attribute(&field.attrs, "string_size_length")
-            })
-        })
-    })? {
+    if let Some(l) = find_length_attribute(&field.attrs)? {
         let size = format_ident!("U{}", 8 * l);
         Ok(quote! {
             <#field_type as concordium_std::schema::SchemaType>::get_type().set_size_length(concordium_std::schema::SizeLength::#size)
@@ -1236,10 +1201,17 @@ fn schema_type_field_type(field: &syn::Field) -> syn::Result<proc_macro2::TokenS
 fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStream> {
     match fields {
         syn::Fields::Named(_) => {
+            let mut used_field_names = HashMap::new();
             let fields_tokens: Vec<_> = fields
                 .iter()
                 .map(|field| {
-                    let field_name = field.ident.clone().unwrap().to_string(); // safe since named fields
+                    // Handle the 'rename' attribute.
+                    let (field_name, field_span) = match find_rename_attribute(&field.attrs)? {
+                        Some(name_and_span) => name_and_span,
+                        None => (field.ident.clone().unwrap().to_string(), field.ident.span()), // safe since named fields.
+                    };
+                    check_for_name_collisions(&mut used_field_names, &field_name, field_span)?;
+
                     let field_schema_type = schema_type_field_type(&field)?;
                     Ok(quote! {
                         (concordium_std::String::from(#field_name), #field_schema_type)
