@@ -152,7 +152,7 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 // This should be expanded in the future.
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use alloc::{collections, string, string::String, string::ToString, vec, vec::Vec};
+pub use alloc::{string, string::String, string::ToString, vec, vec::Vec};
 /// Re-export.
 #[cfg(not(feature = "std"))]
 pub use core::{convert, marker, mem, num, result::*};
@@ -161,7 +161,17 @@ pub(crate) use std::vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
-pub use std::{collections, convert, marker, mem, num, string::String, vec::Vec};
+pub use std::{convert, marker, mem, num, string::String, vec::Vec};
+
+pub mod collections {
+    #[cfg(not(feature = "std"))]
+    use alloc::collections;
+    #[cfg(feature = "std")]
+    use std::collections;
+
+    pub use collections::*;
+    pub use concordium_contracts_common::{HashMap, HashSet};
+}
 
 /// Chain constants that impose limits on various aspects of smart contract
 /// execution.

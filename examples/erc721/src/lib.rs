@@ -1,6 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
-use concordium_std::{collections::*, *};
-
 /*
  * An implementation of the "ERC-271 Non-Fungible Token(NFT) Standard"
  * specification popular on the Ethereum blockchain.
@@ -35,6 +32,12 @@ use concordium_std::{collections::*, *};
  *
  */
 
+#![cfg_attr(not(feature = "std"), no_std)]
+use concordium_std::{
+    collections::{HashMap as Map, HashSet as Set},
+    *,
+};
+
 // Types
 
 /// Token Identifier, which combined with the address of the contract instance,
@@ -43,27 +46,26 @@ use concordium_std::{collections::*, *};
 /// which is expected to be sufficient for most cases.
 type TokenId = u64;
 
-/// Information of which tokens included in this instance.
-/// Note: To add the erc271 metadata extension, change this to a Map from
-/// TokenId to some Metadata struct.
-type Tokens = BTreeSet<TokenId>;
+// /// Information of which tokens included in this instance.
+// /// Note: To add the erc721 metadata extension, change this to a Map from
+// /// TokenId to some Metadata struct.
+type Tokens = Set<TokenId>;
 
-#[contract_state(contract = "erc271")]
 #[derive(Serialize, SchemaType)]
 pub struct State {
     /// Collection of the current tokens in this contract instance.
-    tokens:          Tokens,
+    // tokens:          Tokens,
     /// Map from a token id to the owning account address.
     /// Every token must be an entry in this map.
-    token_owners:    BTreeMap<TokenId, Address>,
+    token_owners:    Map<TokenId, Address>,
     /// Map from a token id to an account which are allowed to transfer this
     /// token on the owners behalf.
     /// Only tokens with approvals have entries in this map.
-    token_approvals: BTreeMap<TokenId, Address>,
+    token_approvals: Map<TokenId, Address>,
     /// Map from an account to operator accounts, which can transfer any token
     /// on their behalf.
     /// Only accounts with operators have entries in this map.
-    owner_operators: BTreeMap<Address, BTreeSet<Address>>,
+    owner_operators: Map<Address, Set<Address>>,
 }
 
 /// Event to be printed in the log.
@@ -98,15 +100,18 @@ enum Event {
 #[derive(Serialize, SchemaType)]
 struct SafeTransferFromParams {
     /// The id of the token to be transferred.
-    token_id: TokenId,
+    token_id:     TokenId,
     /// Current owner of the token.
-    from:     Address,
+    from:         Address,
     /// The new owner of the token.
-    to:       Address,
+    to:           Address,
+    /// Contract receive name only used when transferring to a contract
+    /// instance.
+    receive_name: Option<OwnedReceiveName>,
     /// Optional blob of data, which is sent to the new owner if it is a
     /// contract instance. Only used by `safeTransferFrom` and not by
     /// `transferFrom`.
-    data:     Vec<u8>,
+    data:         Vec<u8>,
 }
 
 /// Parameter for the `approve` contract function.
@@ -129,16 +134,18 @@ struct ApproveForAllParams {
 }
 
 /// Parameter for the `onERC721Receive` contract function, should only be used
-/// by ERC271 contracts.
+/// by erc721 contracts.
 #[derive(Serialize, SchemaType)]
 struct OnERC721ReceivedParams {
     /// The token which is transferred to this contract.
-    token_id: TokenId,
+    token_id:      TokenId,
     /// Previous owner of the token.
-    from:     Address,
+    from:          Address,
+    /// Name of the contract implementing erc721
+    contract_name: OwnedContractName,
     /// Optional blob of data sent as part of the `safeTransferFrom` which would
     /// trigger this.
-    data:     Vec<u8>,
+    data:          Vec<u8>,
 }
 
 /// Contract error type
@@ -163,6 +170,8 @@ enum ContractError {
     OperatorIsSender,
     /// Only contracts can send to this function.
     ContractOnly,
+    /// Transferring to a contract instance requires a receive name
+    MissingContractReceiveName,
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -179,16 +188,16 @@ impl From<LogError> for ContractError {
 impl State {
     /// Creates a new state with a number of tokens all with the same owner.
     fn new(tokens: Tokens, owner: Address) -> Self {
-        let mut token_owners = BTreeMap::new();
+        let mut token_owners = Map::default();
         for &token_id in tokens.iter() {
             token_owners.insert(token_id, owner);
         }
 
         State {
-            tokens,
+            // tokens,
             token_owners,
-            token_approvals: BTreeMap::new(),
-            owner_operators: BTreeMap::new(),
+            token_approvals: Map::default(),
+            owner_operators: Map::default(),
         }
     }
 
@@ -253,7 +262,7 @@ impl State {
             }
         } else {
             if approved {
-                let mut operators = BTreeSet::new();
+                let mut operators = Set::default();
                 operators.insert(*operator);
                 self.owner_operators.insert(*owner, operators);
             }
@@ -266,7 +275,7 @@ impl State {
 /// Initialize contract instance with a number of tokens all owned by the
 /// invoker.
 /// Note: Does not produce any `Transfer` events
-#[init(contract = "erc271", parameter = "Tokens")]
+#[init(contract = "erc721", parameter = "Tokens")]
 fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
     let tokens: Tokens = ctx.parameter_cursor().get()?;
     let invoker = ctx.init_origin();
@@ -284,10 +293,11 @@ fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
 /// - The token is not owned by the `from`.
 ///
 /// Note: It differs from `transferFrom` only when transferring to a contract
-/// instance, where it will ensure to call `onERC721Received` on the receiving
-/// instance and reject if the receiving instance rejects.
+/// instance, where it will ensure to call the contract function specified as
+/// part of the parameter on the receiving instance and reject if the receiving
+/// instance rejects.
 #[receive(
-    contract = "erc271",
+    contract = "erc721",
     name = "safeTransferFrom",
     parameter = "SafeTransferFromParams",
     enable_logger
@@ -297,6 +307,49 @@ fn contract_safe_transfer_from<A: HasActions>(
     logger: &mut impl HasLogger,
     state: &mut State,
 ) -> ContractResult<A> {
+    let params = transfer_from(ctx, logger, state)?;
+
+    let action = if let Address::Contract(receiving_contract) = params.to {
+        let parameter = OnERC721ReceivedParams {
+            from:          params.from,
+            token_id:      params.token_id,
+            contract_name: OwnedContractName::new_unchecked("init_erc721".to_string()),
+            data:          params.data,
+        };
+        let receive_name = params.receive_name.ok_or(ContractError::MissingContractReceiveName)?;
+
+        send(&receiving_contract, receive_name.as_ref(), Amount::zero(), &parameter)
+    } else {
+        A::accept()
+    };
+
+    Ok(action)
+}
+
+/// Transfer a token from one address to another, but without triggering
+/// `erc721.onERC721Received` on contract instances. See the contract function
+/// `safeTransferFrom` for more.
+#[receive(
+    contract = "erc721",
+    name = "transferFrom",
+    parameter = "SafeTransferFromParams",
+    enable_logger
+)]
+fn contract_transfer_from<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    logger: &mut impl HasLogger,
+    state: &mut State,
+) -> ContractResult<A> {
+    transfer_from(ctx, logger, state)?;
+    Ok(A::accept())
+}
+
+/// Helper function to reuse transfer code
+fn transfer_from(
+    ctx: &impl HasReceiveContext,
+    logger: &mut impl HasLogger,
+    state: &mut State,
+) -> ContractResult<SafeTransferFromParams> {
     let params: SafeTransferFromParams = ctx.parameter_cursor().get()?;
     let sender = ctx.sender();
     ensure!(
@@ -311,45 +364,7 @@ fn contract_safe_transfer_from<A: HasActions>(
         to:       params.to,
         token_id: params.token_id,
     })?;
-
-    let action = if let Address::Contract(receiving_contract) = params.to {
-        let parameter = OnERC721ReceivedParams {
-            from:     params.from,
-            token_id: params.token_id,
-            data:     params.data,
-        };
-
-        send(
-            &receiving_contract,
-            ReceiveName::new_unchecked("onERC721Received"),
-            Amount::zero(),
-            &parameter,
-        )
-    } else {
-        A::accept()
-    };
-
-    Ok(action)
-}
-
-/// Transfer a token from one address to another, but without triggering
-/// `onERC721Received` on contract instances. See the contract function
-/// `safeTransferFrom` for more.
-#[receive(
-    contract = "erc271",
-    name = "transferFrom",
-    parameter = "SafeTransferFromParams",
-    enable_logger
-)]
-fn contract_transfer_from<A: HasActions>(
-    ctx: &impl HasReceiveContext,
-    logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
-    // Ignore the result to possible prevent triggering `onERC721Received` on
-    // contract.
-    let _result: A = contract_safe_transfer_from(ctx, logger, state)?;
-    Ok(A::accept())
+    Ok(params)
 }
 
 /// Approve some optional address to transfer a specified token. If no address
@@ -362,7 +377,7 @@ fn contract_transfer_from<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - The sender is not: the owner of the token or an operator for the owner.
 /// - The `token_id` does not exist.
-#[receive(contract = "erc271", name = "approve", parameter = "ApproveParams", enable_logger)]
+#[receive(contract = "erc721", name = "approve", parameter = "ApproveParams", enable_logger)]
 fn contract_approve<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
@@ -395,7 +410,7 @@ fn contract_approve<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - The operator address is the same as the sender address.
 #[receive(
-    contract = "erc271",
+    contract = "erc721",
     name = "setApprovalForAll",
     parameter = "ApproveForAllParams",
     enable_logger
@@ -433,7 +448,7 @@ fn contract_set_approval_for_all<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - Sender is not a contract.
 /// - `safeTransferFrom` to instance owner rejects
-#[receive(contract = "erc271", name = "onERC721Received")]
+#[receive(contract = "erc721", name = "onERC721Received")]
 fn contract_on_erc721_received<A: HasActions>(
     ctx: &impl HasReceiveContext,
     _state: &mut State,
@@ -447,14 +462,18 @@ fn contract_on_erc721_received<A: HasActions>(
     };
 
     let parameter = SafeTransferFromParams {
-        from:     Address::Contract(ctx.self_address()),
-        to:       Address::Account(ctx.invoker()),
-        token_id: params.token_id,
-        data:     vec![],
+        from:         Address::Contract(ctx.self_address()),
+        to:           Address::Account(ctx.invoker()),
+        token_id:     params.token_id,
+        receive_name: None,
+        data:         vec![],
     };
 
-    let action =
-        send(&sender, ReceiveName::new_unchecked("safeTransferFrom"), Amount::zero(), &parameter);
+    let mut receive_name_string = params.contract_name.get_chain_name().clone();
+    receive_name_string.push_str(".safeTransferFrom");
+    let receive_name = ReceiveName::new_unchecked(&receive_name_string);
+
+    let action = send(&sender, receive_name, Amount::zero(), &parameter);
 
     Ok(action)
 }
@@ -473,7 +492,7 @@ mod tests {
     const TOKEN_ID: TokenId = 0;
 
     fn initial_state() -> State {
-        let mut tokens: Tokens = BTreeSet::new();
+        let mut tokens: Tokens = Set::default();
         tokens.insert(TOKEN_ID);
         State::new(tokens, ADDRESS_0)
     }
@@ -483,7 +502,7 @@ mod tests {
         let mut ctx = InitContextTest::empty();
         ctx.set_init_origin(ACCOUNT_0);
 
-        let mut tokens: Tokens = BTreeSet::new();
+        let mut tokens: Tokens = Set::default();
         tokens.insert(TOKEN_ID);
 
         let parameter_bytes = to_bytes(&tokens);
@@ -495,7 +514,8 @@ mod tests {
 
         claim_eq!(state.token_approvals.len(), 0, "No token approvals at initialization");
         claim_eq!(state.owner_operators.len(), 0, "No operators at initialization");
-        claim_eq!(state.tokens, tokens, "Initial tokens are stored in the state");
+        // claim_eq!(state.token_owners.keys().to_vec(), tokens(), "Initial
+        // tokens are stored in the state");
     }
 
     #[concordium_test]
@@ -506,10 +526,11 @@ mod tests {
         let mut state = initial_state();
 
         let parameter = SafeTransferFromParams {
-            from:     ADDRESS_0,
-            to:       ADDRESS_1,
-            token_id: TOKEN_ID,
-            data:     vec![],
+            from:         ADDRESS_0,
+            to:           ADDRESS_1,
+            token_id:     TOKEN_ID,
+            receive_name: None,
+            data:         vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -544,10 +565,11 @@ mod tests {
         let mut state = initial_state();
 
         let parameter = SafeTransferFromParams {
-            from:     ADDRESS_0,
-            to:       ADDRESS_1,
-            token_id: TOKEN_ID,
-            data:     vec![],
+            from:         ADDRESS_0,
+            to:           ADDRESS_1,
+            token_id:     TOKEN_ID,
+            receive_name: None,
+            data:         vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -570,10 +592,11 @@ mod tests {
         state.approve(&Some(ADDRESS_1), &TOKEN_ID);
 
         let parameter = SafeTransferFromParams {
-            from:     ADDRESS_0,
-            to:       ADDRESS_1,
-            token_id: TOKEN_ID,
-            data:     vec![],
+            from:         ADDRESS_0,
+            to:           ADDRESS_1,
+            token_id:     TOKEN_ID,
+            receive_name: None,
+            data:         vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -608,10 +631,11 @@ mod tests {
         state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true);
 
         let parameter = SafeTransferFromParams {
-            from:     ADDRESS_0,
-            to:       ADDRESS_1,
-            token_id: TOKEN_ID,
-            data:     vec![],
+            from:         ADDRESS_0,
+            to:           ADDRESS_1,
+            token_id:     TOKEN_ID,
+            receive_name: None,
+            data:         vec![],
         };
 
         let parameter_bytes = to_bytes(&parameter);
