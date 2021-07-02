@@ -1,5 +1,5 @@
 /*
- * An implementation of the "ERC-271 Non-Fungible Token(NFT) Standard"
+ * An implementation of the "ERC-721 Non-Fungible Token(NFT) Standard"
  * specification popular on the Ethereum blockchain.
  *
  * https://eips.ethereum.org/EIPS/eip-721
@@ -52,9 +52,7 @@ type TokenId = u64;
 type Tokens = Set<TokenId>;
 
 #[derive(Serialize, SchemaType)]
-pub struct State {
-    /// Collection of the current tokens in this contract instance.
-    // tokens:          Tokens,
+struct State {
     /// Map from a token id to the owning account address.
     /// Every token must be an entry in this map.
     token_owners:    Map<TokenId, Address>,
@@ -194,7 +192,6 @@ impl State {
         }
 
         State {
-            // tokens,
             token_owners,
             token_approvals: Map::default(),
             owner_operators: Map::default(),
@@ -344,7 +341,8 @@ fn contract_transfer_from<A: HasActions>(
     Ok(A::accept())
 }
 
-/// Helper function to reuse transfer code
+/// Helper function, ensures the sender is authorized, then transfers ownership
+/// of a token and logs the transfer event.
 fn transfer_from(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
@@ -491,12 +489,17 @@ mod tests {
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
     const TOKEN_ID: TokenId = 0;
 
+    /// Test helper function which creates a contract state with one token with
+    /// id `TOKEN_ID` owned by `ADDRESS_0`
     fn initial_state() -> State {
         let mut tokens: Tokens = Set::default();
         tokens.insert(TOKEN_ID);
         State::new(tokens, ADDRESS_0)
     }
 
+    /// Test initialization succeeds, with no one approved and no operators from
+    /// start.
+    /// The initial tokens are owned by the sender.
     #[concordium_test]
     fn test_init() {
         let mut ctx = InitContextTest::empty();
@@ -514,10 +517,13 @@ mod tests {
 
         claim_eq!(state.token_approvals.len(), 0, "No token approvals at initialization");
         claim_eq!(state.owner_operators.len(), 0, "No operators at initialization");
-        // claim_eq!(state.token_owners.keys().to_vec(), tokens(), "Initial
-        // tokens are stored in the state");
+        claim_eq!(state.token_owners.len(), 1, "Initial tokens are stored in the state");
+        let token_owner =
+            *state.token_owners.get(&TOKEN_ID).expect_report("Token is expected to exist");
+        claim_eq!(token_owner, ADDRESS_0, "Initial token is owned by the sender");
     }
 
+    /// Test transfer succeeds when sender owns token.
     #[concordium_test]
     fn test_transfer() {
         let mut ctx = ReceiveContextTest::empty();
@@ -557,6 +563,8 @@ mod tests {
         )
     }
 
+    /// Test transfer token fails, when sender is not the owner, not approved
+    /// and not an operator of the owner.
     #[concordium_test]
     fn test_transfer_not_authorized() {
         let mut ctx = ReceiveContextTest::empty();
@@ -583,6 +591,8 @@ mod tests {
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
     }
 
+    /// Test transfer succeeds when sender is not the owner, but is approved by
+    /// the owner.
     #[concordium_test]
     fn test_approved_transfer() {
         let mut ctx = ReceiveContextTest::empty();
@@ -622,6 +632,8 @@ mod tests {
         )
     }
 
+    /// Test transfer succeeds when sender is not the owner, but is an operator
+    /// of the owner.
     #[concordium_test]
     fn test_operator_transfer() {
         let mut ctx = ReceiveContextTest::empty();
@@ -661,6 +673,7 @@ mod tests {
         )
     }
 
+    /// Test approve succeeds when sender is owner
     #[concordium_test]
     fn test_approve() {
         let mut ctx = ReceiveContextTest::empty();
@@ -697,6 +710,70 @@ mod tests {
         )
     }
 
+    /// Test approve fails when sender is not the owner and not an operator of
+    /// the owner.
+    #[concordium_test]
+    fn test_approve_unauthorized() {
+        let mut ctx = ReceiveContextTest::empty();
+        ctx.set_sender(ADDRESS_1);
+
+        let mut state = initial_state();
+
+        let parameter = ApproveParams {
+            approved: Some(ADDRESS_1),
+            token_id: TOKEN_ID,
+        };
+
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = LogRecorder::init();
+
+        let result: ContractResult<ActionsTree> = contract_approve(&ctx, &mut logger, &mut state);
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized");
+    }
+
+    /// Test approve succeeds when sender is not the owner, but is an operator
+    /// of the owner.
+    #[concordium_test]
+    fn test_operator_approve() {
+        let mut ctx = ReceiveContextTest::empty();
+        ctx.set_sender(ADDRESS_1);
+
+        let mut state = initial_state();
+        state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true);
+
+        let parameter = ApproveParams {
+            approved: Some(ADDRESS_1),
+            token_id: TOKEN_ID,
+        };
+
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = LogRecorder::init();
+
+        let actions: ActionsTree = contract_approve(&ctx, &mut logger, &mut state)
+            .expect_report("Failed valid approve call");
+        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
+
+        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
+        claim!(state.is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
+        claim_eq!(logger.logs.len(), 1, "One event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&Event::Approval {
+                owner:    ADDRESS_0,
+                approved: Some(ADDRESS_1),
+                token_id: TOKEN_ID,
+            }),
+            "Incorrect event emitted"
+        )
+    }
+
+    /// Test approve_for_all succeeds
     #[concordium_test]
     fn test_set_approve_for_all() {
         let mut ctx = ReceiveContextTest::empty();
