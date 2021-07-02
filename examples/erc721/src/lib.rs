@@ -257,12 +257,10 @@ impl State {
             } else {
                 operators.remove(operator);
             }
-        } else {
-            if approved {
-                let mut operators = Set::default();
-                operators.insert(*operator);
-                self.owner_operators.insert(*owner, operators);
-            }
+        } else if approved {
+            let mut operators = Set::default();
+            operators.insert(*operator);
+            self.owner_operators.insert(*owner, operators);
         }
     }
 }
