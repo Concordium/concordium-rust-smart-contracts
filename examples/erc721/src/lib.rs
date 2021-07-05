@@ -5,13 +5,13 @@
  * https://eips.ethereum.org/EIPS/eip-721
  *
  * # Description
- * An smart contract instance represents a number of NFTs and tracks
+ * A smart contract instance represents a number of NFTs and tracks
  * ownership of each. The globally unique id of an NFT is formed by the
  * address of the contract instance and some token_id unique to the instance.
  *
  * A token can be transferred to an address (either an account and a contract
  * instance). Each token can be approved to be transferred by one other
- * address than the owner. Approvals are can be done by either the token
+ * address than the owner. Approvals can be done by either the token
  * owner or an "operator" of the owner.
  *
  * An address can enable one or more addresses as operators.
@@ -28,7 +28,9 @@
  *   contract state off-chain.
  * - The specification uses a "zero address" (which is a special address used
  *   as a null-address) which is not a thing on Concordium blockchain,
- *   instead the address is wrapped in an Option if relevant.
+ *   instead when relevant a byte is used to represent whether the address is
+ *   the "zero address" and if not the address is followed, which in a Rust
+ *   smart contract corresponds to the serialization of `Option<Address>`.
  *
  */
 
@@ -42,13 +44,14 @@ use concordium_std::{
 
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of an NFT.
-/// Note: The specification requires a u256, but for efficiency we use u64,
-/// which is expected to be sufficient for most cases.
+/// Note: The ERC721 specification requires a u256 here, but for efficiency we
+/// instead use u64, which is expected to be large enough for all realistic use
+/// cases.
 type TokenId = u64;
 
-// /// Information of which tokens included in this instance.
-// /// Note: To add the erc721 metadata extension, change this to a Map from
-// /// TokenId to some Metadata struct.
+/// Information of which tokens included in this instance.
+/// Note: To add the ERC721 metadata extension, change this to a Map from
+/// TokenId to some Metadata struct.
 type Tokens = Set<TokenId>;
 
 #[derive(Serialize, SchemaType)]
@@ -106,9 +109,8 @@ struct SafeTransferFromParams {
     /// Contract receive name only used when transferring to a contract
     /// instance.
     receive_name: Option<OwnedReceiveName>,
-    /// Optional blob of data, which is sent to the new owner if it is a
-    /// contract instance. Only used by `safeTransferFrom` and not by
-    /// `transferFrom`.
+    /// Optional message, which is sent to the new owner if it is a contract
+    /// instance. Only used by `safeTransferFrom` and not by `transferFrom`.
     data:         Vec<u8>,
 }
 
@@ -131,8 +133,8 @@ struct ApproveForAllParams {
     approved: bool,
 }
 
-/// Parameter for the `onERC721Receive` contract function, should only be used
-/// by erc721 contracts.
+/// Parameter for the optional `onERC721Receive` contract function, is only
+/// intended to be used by other ERC721 contracts.
 #[derive(Serialize, SchemaType)]
 struct OnERC721ReceivedParams {
     /// The token which is transferred to this contract.
@@ -141,7 +143,7 @@ struct OnERC721ReceivedParams {
     from:          Address,
     /// Name of the contract implementing erc721
     contract_name: OwnedContractName,
-    /// Optional blob of data sent as part of the `safeTransferFrom` which would
+    /// Optional message sent as part of the `safeTransferFrom` which would
     /// trigger this.
     data:          Vec<u8>,
 }
@@ -168,8 +170,11 @@ enum ContractError {
     OperatorIsSender,
     /// Only contracts can send to this function.
     ContractOnly,
-    /// Transferring to a contract instance requires a receive name
+    /// Transferring to a contract instance requires a receive name.
     MissingContractReceiveName,
+    /// Invalid contract name.
+    /// Note this one is optional since it is only used by "onERC721Received".
+    InvalidContractName,
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -187,7 +192,7 @@ impl State {
     /// Creates a new state with a number of tokens all with the same owner.
     fn new(tokens: Tokens, owner: Address) -> Self {
         let mut token_owners = Map::default();
-        for &token_id in tokens.iter() {
+        for token_id in tokens {
             token_owners.insert(token_id, owner);
         }
 
@@ -213,17 +218,19 @@ impl State {
     /// Check is an address is approved to transfer a specific token.
     fn is_approved(&self, address: &Address, token_id: &TokenId) -> bool {
         if let Some(approval) = self.token_approvals.get(token_id) {
-            return address == approval;
+            address == approval
+        } else {
+            false
         }
-        false
     }
 
     /// Check is an address is an operator of a specific owner address.
     fn is_operator(&self, address: &Address, owner: &Address) -> bool {
         if let Some(operators) = self.owner_operators.get(owner) {
-            return operators.contains(address);
+            operators.contains(address)
+        } else {
+            false
         }
-        false
     }
 
     /// Transfer ownership of a token from one address to another, failing if
@@ -240,7 +247,7 @@ impl State {
     }
 
     /// Approve an address to transfer a specific token on the owners behalf.
-    /// If `approved` is None: Remove an previously approved address.
+    /// If `approved` is None: Remove a previously approved address.
     fn approve(&mut self, approved: &Option<Address>, token_id: &TokenId) {
         if let Some(approved) = approved {
             self.token_approvals.insert(*token_id, *approved);
@@ -302,9 +309,11 @@ fn contract_safe_transfer_from<A: HasActions>(
     logger: &mut impl HasLogger,
     state: &mut State,
 ) -> ContractResult<A> {
+    // Does the actual transfer, checks the sender is authorized, mutates the state
+    // and logs the Transfer event.
     let params = transfer_from(ctx, logger, state)?;
 
-    let action = if let Address::Contract(receiving_contract) = params.to {
+    if let Address::Contract(receiving_contract) = params.to {
         let parameter = OnERC721ReceivedParams {
             from:          params.from,
             token_id:      params.token_id,
@@ -313,12 +322,10 @@ fn contract_safe_transfer_from<A: HasActions>(
         };
         let receive_name = params.receive_name.ok_or(ContractError::MissingContractReceiveName)?;
 
-        send(&receiving_contract, receive_name.as_ref(), Amount::zero(), &parameter)
+        Ok(send(&receiving_contract, receive_name.as_ref(), Amount::zero(), &parameter))
     } else {
-        A::accept()
-    };
-
-    Ok(action)
+        Ok(A::accept())
+    }
 }
 
 /// Transfer a token from one address to another, but without triggering
@@ -335,6 +342,8 @@ fn contract_transfer_from<A: HasActions>(
     logger: &mut impl HasLogger,
     state: &mut State,
 ) -> ContractResult<A> {
+    // Does the actual transfer, checks the sender is authorized, mutates the state
+    // and logs the Transfer event.
     transfer_from(ctx, logger, state)?;
     Ok(A::accept())
 }
@@ -465,7 +474,8 @@ fn contract_on_erc721_received<A: HasActions>(
         data:         vec![],
     };
 
-    let mut receive_name_string = params.contract_name.get_chain_name().clone();
+    let mut receive_name_string =
+        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?.to_owned();
     receive_name_string.push_str(".safeTransferFrom");
     let receive_name = ReceiveName::new_unchecked(&receive_name_string);
 
