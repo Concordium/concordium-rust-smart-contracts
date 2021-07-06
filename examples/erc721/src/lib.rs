@@ -57,6 +57,7 @@ type TokenId = u64;
 /// TokenId to some Metadata struct.
 type Tokens = Set<TokenId>;
 
+#[contract_state(contract = "erc721")]
 #[derive(Serialize, SchemaType)]
 struct State {
     /// Map from a token id to the owning account address.
@@ -362,9 +363,9 @@ fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
+/// - The `token_id` does not exist.
 /// - The sender is not: the owner of the token, or approved for this specific
 ///   token or an operator for the owner.
-/// - The `token_id` does not exist.
 /// - The token is not owned by the `from`.
 ///
 /// Note: It differs from `transferFrom` only when transferring to a contract
@@ -541,7 +542,7 @@ fn contract_on_erc721_received<A: HasActions>(
 
     let parameter = SafeTransferFromParams {
         from:         Address::Contract(ctx.self_address()),
-        to:           Address::Account(ctx.invoker()),
+        to:           Address::Account(ctx.owner()),
         token_id:     params.token_id,
         receive_name: None,
         data:         vec![],
