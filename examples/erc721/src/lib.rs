@@ -24,8 +24,11 @@
  * Since the specification is written to target the Ethereum blockchain, some
  * details are implemented differently.
  *
- * - Instead of the getter functions the information should be read from the
- *   contract state off-chain.
+ * - The specification lists a number of "view" functions, which queries for
+ *   the current state of the contract and since the Concordium Blockchain
+ *   uses message passing for inter-contract communication, these query
+ *   functions must also take a name of the callback function to receive the
+ *   result of the query.
  * - The specification uses a "zero address" (which is a special address used
  *   as a null-address) which is not a thing on Concordium blockchain,
  *   instead when relevant a byte is used to represent whether the address is
@@ -148,6 +151,60 @@ struct OnERC721ReceivedParams {
     data:          Vec<u8>,
 }
 
+/// Parameter for the `balanceOf` function.
+/// Only intended to be used by other smart contracts.
+#[derive(Serialize)]
+struct BalanceOfParams {
+    /// The address for whom to query the balance.
+    owner:    Address,
+    /// The smart contract function to callback with the result.
+    callback: OwnedReceiveName,
+}
+
+/// The parameter provided to the callback of `balanceOf`.
+pub type BalanceOfResponse = u64;
+
+/// Parameter for the `ownerOf` function.
+/// Only intended to be used by other smart contracts.
+#[derive(Serialize)]
+struct OwnerOfParams {
+    /// The token id to query the ownership of.
+    token_id: TokenId,
+    /// The smart contract function to callback with the result.
+    callback: OwnedReceiveName,
+}
+
+/// The parameter provided to the callback of `ownerOf`.
+pub type OwnerOfResponse = Address;
+
+/// Parameter for the `getApproved` function.
+/// Only intended to be used by other smart contracts.
+#[derive(Serialize)]
+struct GetApprovedParams {
+    /// The token id to query who is approved.
+    token_id: TokenId,
+    /// The smart contract function to callback with the result.
+    callback: OwnedReceiveName,
+}
+
+/// The parameter provided to the callback of `getApproved`.
+pub type GetApprovedResponse = Option<Address>;
+
+/// Parameter for the `isApprovedForAll` function.
+/// Only intended to be used by other smart contracts.
+#[derive(Serialize)]
+struct IsApprovedForAllParams {
+    /// The address that could be owning tokens.
+    owner:    Address,
+    /// The address to query for being enabled as operator.
+    operator: Address,
+    /// The smart contract function to callback with the result.
+    callback: OwnedReceiveName,
+}
+
+/// The parameter provided to the callback of `isApprovedForAll`.
+pub type IsApprovedForAllResponse = bool;
+
 /// Contract error type
 #[derive(Debug, PartialEq, Eq, Reject)]
 enum ContractError {
@@ -203,6 +260,17 @@ impl State {
         }
     }
 
+    /// Count the number of tokens owned by a given address.
+    fn balance(&self, address: &Address) -> u64 {
+        let mut count = 0;
+        for owner in self.token_owners.values() {
+            if owner == address {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
     /// Get the current owner of a token.
     fn get_owner(&self, token_id: &TokenId) -> ContractResult<&Address> {
         self.token_owners.get(token_id).ok_or(ContractError::NoTokenWithThisId)
@@ -213,6 +281,11 @@ impl State {
     fn is_owner(&self, address: &Address, token_id: &TokenId) -> ContractResult<bool> {
         let owner = self.get_owner(token_id)?;
         Ok(address == owner)
+    }
+
+    /// Get the approve of a token.
+    fn get_approved(&self, token_id: &TokenId) -> Option<&Address> {
+        self.token_approvals.get(token_id)
     }
 
     /// Check is an address is approved to transfer a specific token.
@@ -482,6 +555,109 @@ fn contract_on_erc721_received<A: HasActions>(
     let action = send(&sender, receive_name, Amount::zero(), &parameter);
 
     Ok(action)
+}
+
+/// Get the number of tokens owned by a given address and callback contract
+/// function on sender with the result. Should only be called by other smart
+/// contracts.
+///
+/// It rejects if:
+/// - Sender is not a contract.
+/// - It fails to parse the parameter.
+/// - Callback with result rejects.
+#[receive(contract = "erc721", name = "balanceOf")]
+fn contract_balance_of<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    state: &State,
+) -> ContractResult<A> {
+    let sender = if let Address::Contract(contract) = ctx.sender() {
+        contract
+    } else {
+        bail!(ContractError::ContractOnly)
+    };
+
+    let params: BalanceOfParams = ctx.parameter_cursor().get()?;
+    let balance = state.balance(&params.owner);
+
+    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &balance))
+}
+
+/// Get the address of the current owner of a given tokenId and callback with
+/// the result to the sender. Should only be called by other smart contracts.
+///
+/// It rejects if:
+/// - Sender is not a contract.
+/// - It fails to parse the parameter.
+/// - The token id does not exist.
+/// - Callback with result rejects.
+#[receive(contract = "erc721", name = "ownerOf")]
+fn contract_owner_of<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    state: &State,
+) -> ContractResult<A> {
+    let sender = if let Address::Contract(contract) = ctx.sender() {
+        contract
+    } else {
+        bail!(ContractError::ContractOnly)
+    };
+
+    let params: OwnerOfParams = ctx.parameter_cursor().get()?;
+    let owner = state.get_owner(&params.token_id)?;
+
+    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), owner))
+}
+
+/// Get the address of the current address approved for a given tokenId and
+/// callback with the result to the sender. The result is 0u8 (None) if no
+/// address is approved for this token or if the tokenid does not exist. The
+/// result is 1u8 followed by the address approved for the token ID. Should only
+/// be called by other smart contracts.
+///
+/// It rejects if:
+/// - Sender is not a contract.
+/// - It fails to parse the parameter.
+/// - Callback with result rejects.
+#[receive(contract = "erc721", name = "getApproved")]
+fn contract_get_approved<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    state: &State,
+) -> ContractResult<A> {
+    let sender = if let Address::Contract(contract) = ctx.sender() {
+        contract
+    } else {
+        bail!(ContractError::ContractOnly)
+    };
+
+    let params: GetApprovedParams = ctx.parameter_cursor().get()?;
+    let approved = state.get_approved(&params.token_id).map(|n| n.to_owned());
+
+    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &approved))
+}
+
+/// Check if a given address is enabled as an operator for another given address
+/// and callback with the result to the sender. The result is 0u8 (false) if the
+/// address is not an operator otherwise it will result in 1u8 (true).
+/// Should only be called by other smart contracts.
+///
+/// It rejects if:
+/// - Sender is not a contract.
+/// - It fails to parse the parameter.
+/// - Callback with result rejects.
+#[receive(contract = "erc721", name = "isApprovedForAll")]
+fn contract_is_approved_for_all<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    state: &State,
+) -> ContractResult<A> {
+    let sender = if let Address::Contract(contract) = ctx.sender() {
+        contract
+    } else {
+        bail!(ContractError::ContractOnly)
+    };
+
+    let params: IsApprovedForAllParams = ctx.parameter_cursor().get()?;
+    let is_operator = state.is_operator(&params.operator, &params.owner);
+
+    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &is_operator))
 }
 
 // Tests

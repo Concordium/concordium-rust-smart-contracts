@@ -152,7 +152,7 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 // This should be expanded in the future.
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use alloc::{string, string::String, string::ToString, vec, vec::Vec};
+pub use alloc::{string, string::String, string::ToString, vec, vec::Vec, borrow::ToOwned};
 /// Re-export.
 #[cfg(not(feature = "std"))]
 pub use core::{convert, marker, mem, num, result::*};
