@@ -24,10 +24,10 @@
  * Since the specification is written to target the Ethereum blockchain, some
  * details are implemented differently.
  *
- * - The specification lists a number of "view" functions, which queries for
- *   the current state of the contract and since the Concordium Blockchain
- *   uses message passing for inter-contract communication, these query
- *   functions must also take a name of the callback function to receive the
+ * - The specification contains a number of "view" functions, which queries
+ *   for the current state of the contract and since the Concordium
+ *   Blockchain uses message passing for inter-contract communication, these
+ *   query functions must also take a name of a function to callback with the
  *   result of the query.
  * - The specification uses a "zero address" (which is a special address used
  *   as a null-address) which is not a thing on Concordium blockchain,
@@ -35,6 +35,8 @@
  *   the "zero address" and if not the address is followed, which in a Rust
  *   smart contract corresponds to the serialization of `Option<Address>`.
  *
+ * Note that the specification also requires implementing ERC165 for standard
+ * interface detection, which is not implemented in this example.
  */
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -269,7 +271,7 @@ impl State {
                 count += 1;
             }
         }
-        return count;
+        count
     }
 
     /// Get the current owner of a token.
