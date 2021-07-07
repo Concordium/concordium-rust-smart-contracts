@@ -11,6 +11,13 @@ use crate::{
 use concordium_contracts_common::*;
 use mem::MaybeUninit;
 
+#[cfg(not(feature = "std"))]
+use core::hash;
+#[cfg(feature = "std")]
+use std::hash;
+
+use hash::Hash;
+
 impl convert::From<()> for Reject {
     #[inline(always)]
     fn from(_: ()) -> Self {
@@ -731,6 +738,50 @@ impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
         } else {
             deserial_map_no_length_no_order_check(source, len)
         }
+    }
+}
+
+impl<K: Serial> SerialCtx for HashSet<K> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_hashset_no_length(self, out)
+    }
+}
+
+impl<K: Deserial + Eq + Hash> DeserialCtx for HashSet<K> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_hashset_no_length(source, len)
+    }
+}
+
+impl<K: Serial, V: Serial> SerialCtx for HashMap<K, V> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_hashmap_no_length(self, out)
+    }
+}
+
+impl<K: Deserial + Eq + Hash, V: Deserial> DeserialCtx for HashMap<K, V> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_hashmap_no_length(source, len)
     }
 }
 
