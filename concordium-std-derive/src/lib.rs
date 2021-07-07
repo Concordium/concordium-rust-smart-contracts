@@ -906,10 +906,10 @@ fn impl_serial_field(
 ) -> syn::Result<proc_macro2::TokenStream> {
     if let Some(size_length) = find_length_attribute(&field.attrs)? {
         let l = format_ident!("U{}", 8 * size_length);
-        Ok(quote! {
+        Ok(quote!({
             use concordium_std::SerialCtx;
             #ident.serial_ctx(concordium_std::schema::SizeLength::#l, #out)?;
-        })
+        }))
     } else {
         Ok(quote! {
             #ident.serial(#out)?;
