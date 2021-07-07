@@ -571,7 +571,7 @@ fn contract_on_erc721_received<A: HasActions>(
 #[receive(contract = "erc721", name = "balanceOf")]
 fn contract_balance_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
-    state: &State,
+    state: &mut State,
 ) -> ContractResult<A> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
@@ -596,7 +596,7 @@ fn contract_balance_of<A: HasActions>(
 #[receive(contract = "erc721", name = "ownerOf")]
 fn contract_owner_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
-    state: &State,
+    state: &mut State,
 ) -> ContractResult<A> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
@@ -623,7 +623,7 @@ fn contract_owner_of<A: HasActions>(
 #[receive(contract = "erc721", name = "getApproved")]
 fn contract_get_approved<A: HasActions>(
     ctx: &impl HasReceiveContext,
-    state: &State,
+    state: &mut State,
 ) -> ContractResult<A> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
@@ -649,7 +649,7 @@ fn contract_get_approved<A: HasActions>(
 #[receive(contract = "erc721", name = "isApprovedForAll")]
 fn contract_is_approved_for_all<A: HasActions>(
     ctx: &impl HasReceiveContext,
-    state: &State,
+    state: &mut State,
 ) -> ContractResult<A> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
