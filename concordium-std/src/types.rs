@@ -164,7 +164,7 @@ macro_rules! fail {
         {
             let msg = format!($($arg),+);
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
-            panic!(msg)
+            panic!("{}", msg)
         }
     };
 }
@@ -185,7 +185,7 @@ macro_rules! fail {
         {
             let msg = &$crate::alloc::format!($($arg),+);
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
-            panic!(msg)
+            panic!("{}", msg)
         }
     };
 }
