@@ -1,6 +1,7 @@
 use crate::{
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
+    hash::Hash,
     mem, num, prims,
     prims::*,
     traits::*,
@@ -10,13 +11,6 @@ use crate::{
 };
 use concordium_contracts_common::*;
 use mem::MaybeUninit;
-
-#[cfg(not(feature = "std"))]
-use core::hash;
-#[cfg(feature = "std")]
-use std::hash;
-
-use hash::Hash;
 
 impl convert::From<()> for Reject {
     #[inline(always)]
@@ -741,6 +735,8 @@ impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
     }
 }
 
+/// Serialization for HashSet given a size_len.
+/// Values are not serialized in any particular order.
 impl<K: Serial> SerialCtx for HashSet<K> {
     fn serial_ctx<W: Write>(
         &self,
@@ -752,6 +748,9 @@ impl<K: Serial> SerialCtx for HashSet<K> {
     }
 }
 
+/// Deserialization for HashSet given a size_len.
+/// Values are not verified to be in any particular order and setting
+/// ensure_ordering have no effect.
 impl<K: Deserial + Eq + Hash> DeserialCtx for HashSet<K> {
     fn deserial_ctx<R: Read>(
         size_len: schema::SizeLength,
@@ -763,6 +762,8 @@ impl<K: Deserial + Eq + Hash> DeserialCtx for HashSet<K> {
     }
 }
 
+/// Serialization for HashMap given a size_len.
+/// Keys are not serialized in any particular order.
 impl<K: Serial, V: Serial> SerialCtx for HashMap<K, V> {
     fn serial_ctx<W: Write>(
         &self,
@@ -774,6 +775,9 @@ impl<K: Serial, V: Serial> SerialCtx for HashMap<K, V> {
     }
 }
 
+/// Deserialization for HashMap given a size_len.
+/// Keys are not verified to be in any particular order and setting
+/// ensure_ordering have no effect.
 impl<K: Deserial + Eq + Hash, V: Deserial> DeserialCtx for HashMap<K, V> {
     fn deserial_ctx<R: Read>(
         size_len: schema::SizeLength,

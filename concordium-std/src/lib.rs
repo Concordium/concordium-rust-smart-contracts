@@ -155,13 +155,13 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 pub use alloc::{borrow::ToOwned, string, string::String, string::ToString, vec, vec::Vec};
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use core::{convert, marker, mem, num, result::*};
+pub use core::{convert, hash, marker, mem, num, result::*};
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
-pub use std::{convert, marker, mem, num, string::String, vec::Vec};
+pub use std::{convert, hash, marker, mem, num, string::String, vec::Vec};
 
 pub mod collections {
     #[cfg(not(feature = "std"))]
