@@ -1,6 +1,7 @@
 use crate::{
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
+    hash::Hash,
     mem, num, prims,
     prims::*,
     traits::*,
@@ -731,6 +732,60 @@ impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
         } else {
             deserial_map_no_length_no_order_check(source, len)
         }
+    }
+}
+
+/// Serialization for HashSet given a size_len.
+/// Values are not serialized in any particular order.
+impl<K: Serial> SerialCtx for HashSet<K> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_hashset_no_length(self, out)
+    }
+}
+
+/// Deserialization for HashSet given a size_len.
+/// Values are not verified to be in any particular order and setting
+/// ensure_ordering have no effect.
+impl<K: Deserial + Eq + Hash> DeserialCtx for HashSet<K> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_hashset_no_length(source, len)
+    }
+}
+
+/// Serialization for HashMap given a size_len.
+/// Keys are not serialized in any particular order.
+impl<K: Serial, V: Serial> SerialCtx for HashMap<K, V> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        schema::serial_length(self.len(), size_len, out)?;
+        serial_hashmap_no_length(self, out)
+    }
+}
+
+/// Deserialization for HashMap given a size_len.
+/// Keys are not verified to be in any particular order and setting
+/// ensure_ordering have no effect.
+impl<K: Deserial + Eq + Hash, V: Deserial> DeserialCtx for HashMap<K, V> {
+    fn deserial_ctx<R: Read>(
+        size_len: schema::SizeLength,
+        _ensure_ordered: bool,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        let len = schema::deserial_length(source, size_len)?;
+        deserial_hashmap_no_length(source, len)
     }
 }
 

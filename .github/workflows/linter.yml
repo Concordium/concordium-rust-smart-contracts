@@ -23,6 +23,7 @@ jobs:
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
           - examples/auction/Cargo.toml
+          - examples/erc721/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -164,6 +165,7 @@ jobs:
 
         crates:
           - examples/two-step-transfer/Cargo.toml
+          - examples/erc721/Cargo.toml
 
         features:
           -
@@ -204,6 +206,7 @@ jobs:
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
           - examples/auction/Cargo.toml
+          - examples/erc721/Cargo.toml
 
     steps:
       - name: Checkout sources

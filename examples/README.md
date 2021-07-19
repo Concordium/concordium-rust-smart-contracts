@@ -10,3 +10,6 @@ the logic of the contract is reasonable, or safe.
 The list of contracts is as follows
 - [two-step-transfer](./two-step-transfer) A contract that acts like an account (can send, store and accept GTU),
  but requires n > 1 ordained accounts to agree to the sending of GTU before it is accepted.
+- [auction](./auction) A contract implementing an simple auction.
+- [piggy-bank](./piggy-bank) The smart contract created as part of the Piggy Bank tutorial.
+- [ERC721](./erc721) A simple example implementation of the ERC721 non-fungible token standard.
