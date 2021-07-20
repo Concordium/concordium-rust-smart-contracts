@@ -3,6 +3,13 @@ use core::fmt::Debug;
 
 /// # Implementation of a smart contract that can receive transfers with a memo
 /// message and forward them to the owner account.
+/// All this contract does is expose a single `receive` method which checks that
+///
+/// - it is being invoked by an account
+/// - the message it is receiving is 32 bytes long
+///
+/// And if both of these are valid it forwards the amount it received to the
+/// owner account.
 
 /// The contract has no state.
 #[derive(Debug, Serialize, SchemaType)]
