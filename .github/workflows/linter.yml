@@ -24,6 +24,7 @@ jobs:
           - examples/piggy-bank/part2/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/erc721/Cargo.toml
+          - examples/memo/Cargo.toml
 
     steps:
       - name: Checkout sources
