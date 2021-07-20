@@ -13,3 +13,7 @@ The list of contracts is as follows
 - [auction](./auction) A contract implementing an simple auction.
 - [piggy-bank](./piggy-bank) The smart contract created as part of the Piggy Bank tutorial.
 - [ERC721](./erc721) A simple example implementation of the ERC721 non-fungible token standard.
+- [memo](./memo/) An extremely minimal contract that can be used to
+  mimic the memo feature. Normally a transfer between accounts cannot add any
+  information other than the amount being transferred. Making transfers to this
+  intermediate contract instead works around this limitation.

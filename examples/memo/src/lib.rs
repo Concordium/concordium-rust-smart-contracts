@@ -1,5 +1,4 @@
 use concordium_std::*;
-use core::fmt::Debug;
 
 /// # Implementation of a smart contract that can receive transfers with a memo
 /// message and forward them to the owner account.
@@ -10,10 +9,6 @@ use core::fmt::Debug;
 ///
 /// And if both of these are valid it forwards the amount it received to the
 /// owner account.
-
-/// The contract has no state.
-#[derive(Debug, Serialize, SchemaType)]
-struct MemoState;
 
 #[derive(Serialize, SchemaType)]
 /// The contract has no initialization parameters.
