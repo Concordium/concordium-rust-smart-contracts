@@ -32,7 +32,7 @@ fn memo_receive<A: HasActions>(
     amount: Amount,
     _state: &mut impl HasContractState,
 ) -> ReceiveResult<A> {
-    matches!(ctx.sender(), Address::Account(..));
+    ensure!(matches!(ctx.sender(), Address::Account(..)));
     ensure!(ctx.parameter_cursor().size() == EXPECTED_PARAMETER_SIZE);
     // Forward the received funds to the owner of the contract.
     let act = A::simple_transfer(&ctx.owner(), amount);
