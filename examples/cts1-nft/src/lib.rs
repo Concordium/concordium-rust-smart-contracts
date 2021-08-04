@@ -1,5 +1,5 @@
 /*
- * A multi token example implementation of the Concordium Token Standard
+ * A NFT token example implementation of the Concordium Token Standard
  * CTS1.
  *
  * # Description
@@ -38,13 +38,13 @@ use concordium_std::{
 // Types
 
 /// Tokens and their amounts to be minted at contract instantiation.
-type NewTokens = Map<TokenId, TokenAmount>;
+type NewTokens = Set<TokenId>;
 
 /// The state for each address.
 #[derive(Serialize, SchemaType, Default)]
 struct AddressState {
     /// The amount of tokens owned by this address.
-    balances:  Map<TokenId, TokenAmount>,
+    owned_tokens:    Set<TokenId>,
     /// The address which are currently enabled as operators for this address.
     operators: Set<Address>,
 }
@@ -53,13 +53,13 @@ struct AddressState {
 ///
 /// Note: The specification does not specify how to structure the contract state
 /// and this could be structured in a more space efficient way.
-#[contract_state(contract = "CTS1-Multi")]
+#[contract_state(contract = "CTS1-NFT")]
 #[derive(Serialize, SchemaType)]
 struct State {
     /// The state of addresses.
-    state:  Map<Address, AddressState>,
+    state:      Map<Address, AddressState>,
     /// All of the token IDs
-    tokens: Set<TokenId>,
+    all_tokens: Set<TokenId>,
 }
 
 /// Event to be printed in the log.
@@ -127,13 +127,8 @@ impl From<LogError> for ContractError {
 impl State {
     /// Creates a new state with a number of tokens all with the same owner.
     fn new(new_tokens: NewTokens, owner: Address) -> Self {
-        let mut tokens = Set::default();
-        for &token_id in new_tokens.keys() {
-            tokens.insert(token_id);
-        }
-
         let address_state = AddressState {
-            balances:  new_tokens,
+            owned_tokens:    new_tokens.clone(),
             operators: Set::default(),
         };
 
@@ -141,23 +136,29 @@ impl State {
         state.insert(owner, address_state);
         State {
             state,
-            tokens,
+            all_tokens: new_tokens,
         }
     }
 
     /// Get the current balance of a given token id for a given address.
     /// Results in an error if the token id does not exist in the state.
     fn balance(&self, token_id: &TokenId, address: &Address) -> ContractResult<TokenAmount> {
-        ensure!(self.tokens.contains(token_id), ContractError::InvalidTokenId);
+        ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
         let balance = self
             .state
             .get(address)
-            .and_then(|address_state| address_state.balances.get(token_id))
-            .unwrap_or(&0);
-        Ok(*balance)
+            .map(|address_state| {
+                if address_state.owned_tokens.contains(token_id) {
+                    1
+                } else {
+                    0
+                }
+            })
+            .unwrap_or(0);
+        Ok(balance)
     }
 
-    /// Check if an address is an operator of a given owner address.
+    /// Check is an address is an operator of a specific owner address.
     fn is_operator(&self, address: &Address, owner: &Address) -> bool {
         self.state
             .get(owner)
@@ -175,21 +176,19 @@ impl State {
         from: &Address,
         to: &Address,
     ) -> ContractResult<()> {
-        ensure!(self.tokens.contains(token_id), ContractError::InvalidTokenId);
+        ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
         if amount == 0 {
             return Ok(());
         }
+        ensure_eq!(amount, 1, ContractError::InsufficientFunds);
         let from_address_state =
             self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
-        let from_balance = from_address_state
-            .balances
-            .get_mut(token_id)
-            .ok_or(ContractError::InsufficientFunds)?;
-        ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
-        *from_balance -= amount;
+
+        let from_had_the_token = from_address_state.owned_tokens.remove(token_id);
+        ensure!(from_had_the_token, ContractError::InsufficientFunds);
+
         let to_address_state = self.state.entry(*to).or_insert_with(|| AddressState::default());
-        let to_balance = to_address_state.balances.entry(*token_id).or_insert(0);
-        *to_balance += amount;
+        to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
 
@@ -217,7 +216,7 @@ impl State {
 /// Initialize contract instance with a number of token types and some amount of
 /// tokens all owned by the invoker.
 /// Logs a `Minting` event for each token.
-#[init(contract = "CTS1-Multi", parameter = "NewTokens", enable_logger)]
+#[init(contract = "CTS1-NFT", parameter = "NewTokens", enable_logger)]
 fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
     // Parse the parameter.
     let tokens: NewTokens = ctx.parameter_cursor().get()?;
@@ -225,16 +224,15 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     let invoker = Address::Account(ctx.init_origin());
 
     // Log event for every newly minted token.
-    for (&token_id, &amount) in tokens.iter() {
+    for &token_id in tokens.iter() {
         logger.log(&Event::Minting(MintingEvent {
             token_id,
-            amount,
+            amount: 1,
             owner: invoker,
         }))?;
     }
     // Construct the initial contract state.
     let state = State::new(tokens, invoker);
-
     Ok(state)
 }
 
@@ -254,7 +252,7 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
 /// - Fails to log event.
 /// - Any of the messages sent to contracts receiving a transfer choose to
 ///   reject.
-#[receive(contract = "CTS1-Multi", name = "transfer", parameter = "TransferParams", enable_logger)]
+#[receive(contract = "CTS1-NFT", name = "transfer", parameter = "TransferParams", enable_logger)]
 fn contract_transfer<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
@@ -299,7 +297,7 @@ fn contract_transfer<A: HasActions>(
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked("init_CTS1-Multi".to_string()),
+                contract_name: OwnedContractName::new_unchecked(String::from("init_CTS1-NFT")),
                 data,
             };
             let action = send(&address, function.as_ref(), Amount::zero(), &parameter);
@@ -318,7 +316,7 @@ fn contract_transfer<A: HasActions>(
 /// - The `token_id` does not exist.
 /// - Fails to log event.
 #[receive(
-    contract = "CTS1-Multi",
+    contract = "CTS1-NFT",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     enable_logger
@@ -362,7 +360,7 @@ fn contract_update_operator<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CTS1-Multi", name = "balanceOf")]
+#[receive(contract = "CTS1-NFT", name = "balanceOf")]
 fn contract_balance_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
@@ -386,61 +384,6 @@ fn contract_balance_of<A: HasActions>(
     Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &BalanceOfQueryResponse(response)))
 }
 
-/// Example of implementing a function for receiving transfers.
-/// It is not required to be implemented by the token contract, but is required
-/// to implement such a function by any contract which should receive CTS1
-/// tokens.
-///
-/// This contract function is called when a token is transferred to an instance
-/// of this contract and should only be called by a contract implementing CTS1.
-/// The parameter include a `data` field which can be used to
-/// implement some arbitrary functionality. In this example we choose not to use
-/// it, and define the function to forward any transfers to the owner of the
-/// contract instance.
-///
-/// Note: The name of this function is not part the CTS1, and a contract can
-/// have multiple functions for receiving tokens.
-///
-/// It rejects if:
-/// - Sender is not a contract.
-/// - It fails to parse the parameter.
-/// - Contract name part of the parameter is invalid.
-/// - Calling back `transfer` to sender contract rejects.
-#[receive(contract = "CTS1-Multi", name = "onReceivingCTS1")]
-fn contract_on_cts1_received<A: HasActions>(
-    ctx: &impl HasReceiveContext,
-    _state: &mut State,
-) -> ContractResult<A> {
-    // Ensure the sender is a contract.
-    let sender = if let Address::Contract(contract) = ctx.sender() {
-        contract
-    } else {
-        bail!(ContractError::ContractOnly)
-    };
-
-    // Parse the parameter.
-    let params: OnReceivingCTS1Params = ctx.parameter_cursor().get()?;
-
-    // Build the transfer from this contract to the contract owner.
-    let transfer = Transfer {
-        token_id: params.token_id,
-        amount:   params.amount,
-        from:     Address::Contract(ctx.self_address()),
-        to:       Receiver::Account(ctx.owner()),
-    };
-
-    let parameter = TransferParams(vec![transfer]);
-
-    // Construct the CTS1 function name for transfer.
-    let mut receive_name_string =
-        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?.to_owned();
-    receive_name_string.push_str(".transfer");
-    let receive_name = ReceiveName::new_unchecked(&receive_name_string);
-
-    // Send back a transfer
-    Ok(send(&sender, receive_name, Amount::zero(), &parameter))
-}
-
 // Tests
 
 #[concordium_cfg_test]
@@ -458,9 +401,9 @@ mod tests {
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
     fn initial_state() -> State {
-        let mut tokens: NewTokens = Map::default();
-        tokens.insert(TOKEN_0, 400);
-        tokens.insert(TOKEN_1, 1);
+        let mut tokens: NewTokens = Set::default();
+        tokens.insert(TOKEN_0);
+        tokens.insert(TOKEN_1);
         State::new(tokens, ADDRESS_0)
     }
 
@@ -473,9 +416,9 @@ mod tests {
         ctx.set_init_origin(ACCOUNT_0);
 
         // and parameter.
-        let mut tokens: NewTokens = Map::default();
-        tokens.insert(TOKEN_0, 400);
-        tokens.insert(TOKEN_1, 1);
+        let mut tokens: NewTokens = Set::default();
+        tokens.insert(TOKEN_0);
+        tokens.insert(TOKEN_1);
         let parameter_bytes = to_bytes(&tokens);
         ctx.set_parameter(&parameter_bytes);
 
@@ -488,10 +431,10 @@ mod tests {
         let state = result.expect_report("Contract initialization failed");
 
         // Check the state
-        claim_eq!(state.tokens.len(), 2, "Only one token is initialized");
+        claim_eq!(state.all_tokens.len(), 2, "Only one token is initialized");
         let balance0 =
             state.balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 400, "Initial tokens are owned by the contract instantiater");
+        claim_eq!(balance0, 1, "Initial tokens are owned by the contract instantiater");
 
         let balance1 =
             state.balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
@@ -504,7 +447,7 @@ mod tests {
             to_bytes(&Event::Minting(MintingEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
-                amount:   400,
+                amount:   1,
             })),
             "Incorrect event emitted"
         );
@@ -529,7 +472,7 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             token_id: TOKEN_0,
-            amount:   100,
+            amount:   1,
             from:     ADDRESS_0,
             to:       Receiver::Account(ACCOUNT_1),
         };
@@ -551,14 +494,10 @@ mod tests {
             state.balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
         let balance1 =
             state.balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            300,
-            "Token owner balance should be decreased by the transferred amount"
-        );
+        claim_eq!(balance0, 0, "Token owner balance should be decreased by the transferred amount");
         claim_eq!(
             balance1,
-            100,
+            1,
             "Token receiver balance should be increased by the transferred amount"
         );
 
@@ -570,7 +509,7 @@ mod tests {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   100,
+                amount:   1,
             })),
             "Incorrect event emitted"
         )
@@ -589,7 +528,7 @@ mod tests {
             from:     ADDRESS_0,
             to:       Receiver::Account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount:   100,
+            amount:   1,
         };
         let parameter = vec![transfer];
         let parameter_bytes = to_bytes(&parameter);
@@ -618,7 +557,7 @@ mod tests {
             from:     ADDRESS_0,
             to:       Receiver::Account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount:   100,
+            amount:   1,
         };
         let parameter = TransferParams(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -640,10 +579,10 @@ mod tests {
             state.balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
         let balance1 =
             state.balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 300); //, "Token owner balance should be decreased by the transferred amount");
+        claim_eq!(balance0, 0, "Token owner balance should be decreased by the transferred amount");
         claim_eq!(
             balance1,
-            100,
+            1,
             "Token receiver balance should be increased by the transferred amount"
         );
 
@@ -655,7 +594,7 @@ mod tests {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   100,
+                amount:   1,
             })),
             "Incorrect event emitted"
         )

@@ -1,5 +1,5 @@
 [package]
-name = "cts1-uGTUt"
+name = "cts1_wgtu"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
@@ -7,10 +7,11 @@ license = "MPL-2.0"
 
 [features]
 default = ["std"]
-std = ["concordium-std/std"]
+std = ["concordium-std/std", "concordium-cts/std"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
+concordium-cts = {path = "../../concordium-cts", default-features = false}
 
 [lib]
 crate-type=["cdylib", "rlib"]

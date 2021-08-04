@@ -800,6 +800,17 @@ impl<T: Serial> SerialCtx for &[T] {
     }
 }
 
+impl<T: Serial> SerialCtx for Vec<T> {
+    fn serial_ctx<W: Write>(
+        &self,
+        size_len: schema::SizeLength,
+        out: &mut W,
+    ) -> Result<(), W::Err> {
+        let slice : &[T] = &self;
+        slice.serial_ctx(size_len, out)
+    }
+}
+
 impl<T: Deserial> DeserialCtx for Vec<T> {
     fn deserial_ctx<R: Read>(
         size_len: schema::SizeLength,

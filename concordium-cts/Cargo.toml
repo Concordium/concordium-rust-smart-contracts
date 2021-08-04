@@ -1,0 +1,24 @@
+[package]
+name = "concordium-cts"
+version = "0.1.0"
+authors = ["Concordium <developers@concordium.com>"]
+edition = "2018"
+license = "MPL-2.0"
+description = "A collection of types for implementing Concordium Token Standard."
+homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
+repository = "https://github.com/Concordium/concordium-rust-smart-contracts/"
+readme = "./README.md"
+
+[dependencies.concordium-std]
+path = "../concordium-std"
+version = "=0.5"
+
+[features]
+default = ["std"]
+std = ["concordium-std/std"]
+
+[lib]
+crate-type = ["rlib"]
+
+[profile.release]
+opt-level = "s"
