@@ -1,31 +1,29 @@
-/*
- * wGTU: An example implementation of CTS1 for a single fungible token.
- *
- * # Description
- * The token in this contract is a wrapped GTU (wGTU), meaning it holds a one
- * to one correspondence with the uGTU.
- *
- * Note: When we use the word 'address' is referring to either an account
- * address or a contract address.
- *
- * As according to the CTS1 specification, the contract have a `transfer`
- * function for transferring an amount of a specific token id from one
- * address to another address. Likewise an address can enable and/or disable
- * one or more addresses as operators per token. An operator of some address
- * and token id is allowed to transfer any amount of this token on behalf of
- * the owner.
- *
- * Besides the contract functions required CTS1, this contract also
- * implements a function `wrap` for converting GTU into wGTU tokens. It
- * accepts an amount of GTU and mints this amount of wGTU. The function takes
- * a receiving address as the parameter and transfers the amount of tokens.
- *
- * The contract also implements a contract function `unwrap` for converting
- * wGTU back into GTU. The function takes the amount of tokens to unwrap, the
- * address owning these wGTU and a receiver for the GTU. If the sender is the
- * owner or an operator of the owner, the wGTU are burned and the amount of
- * GTU is send to the receiver.
- */
+//! wGTU: An example implementation of CTS1 for a single fungible token.
+//!
+//! # Description
+//! The token in this contract is a wrapped GTU (wGTU), meaning it holds a one
+//! to one correspondence with the uGTU.
+//!
+//! Note: When we use the word 'address' is referring to either an account
+//! address or a contract address.
+//!
+//! As according to the CTS1 specification, the contract have a `transfer`
+//! function for transferring an amount of a specific token id from one
+//! address to another address. Likewise an address can enable and/or disable
+//! one or more addresses as operators per token. An operator of some address
+//! and token id is allowed to transfer any amount of this token on behalf of
+//! the owner.
+//!
+//! Besides the contract functions required CTS1, this contract implements a
+//! function `wrap` for converting GTU into wGTU tokens. It accepts an amount of
+//! GTU and mints this amount of wGTU. The function takes a receiving address as
+//! the parameter and transfers the amount of tokens.
+//!
+//! The contract also implements a contract function `unwrap` for converting
+//! wGTU back into GTU. The function takes the amount of tokens to unwrap, the
+//! address owning these wGTU and a receiver for the GTU. If the sender is the
+//! owner or an operator of the owner, the wGTU are burned and the amount of
+//! GTU is send to the receiver.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cts::*;
@@ -119,9 +117,6 @@ enum ContractError {
     OperatorIsSender,
     /// Only contracts can send to this function.
     ContractOnly,
-    /// Invalid contract name.
-    /// Note this one is only used by "onReceivingCTS1".
-    InvalidContractName,
 }
 
 type ContractResult<A> = Result<A, ContractError>;

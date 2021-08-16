@@ -1,32 +1,29 @@
-/*
- * A multi token example implementation of the Concordium Token Standard
- * CTS1.
- *
- * # Description
- * An instance of this smart contract can contain a number of different token
- * each identified by a token ID. A token is then globally identified by the
- * contract address together with the token ID.
- *
- * In this example the contract takes a list of token IDs and amounts, and
- * each token is then minted at instantiation with this specific amount and
- * they are all owned by the account instantiating initially.
- * No other minting or burning functionality is defined in this example.
- *
- * Note: When we use the word 'address' is referring to either an account
- * address or a contract address.
- *
- * As according to the CTS1 specification, the contract have a `transfer`
- * function for transferring an amount of a specific token id from one
- * address to another address. Likewise an address can enable and/or disable
- * one or more addresses as operators. An operator of some address is allowed
- * to transfer and approve any tokens of the owner.
- *
- * This contract also contains an example of a function to be called when
- * receiving tokens. In which case the contract will forward the tokens to
- * the contract owner.
- * This function is not very useful and is only there to showcase a simple
- * implementation.
- */
+//! A multi token example implementation of the Concordium Token Standard CTS1.
+//!
+//! # Description
+//! An instance of this smart contract can contain a number of different token
+//! types each identified by a token ID. A token type is then globally
+//! identified by the contract address together with the token ID.
+//!
+//! In this example the contract takes a list of token IDs and amounts, and
+//! each token is then minted at instantiation with this specific amount and
+//! they are all owned by the account instantiating initially.
+//! No other minting or burning functionality is defined in this example.
+//!
+//! Note: The word 'address' is referring to either an account address or a
+//! contract address.
+//!
+//! As according to the CTS1 specification, the contract have a `transfer`
+//! function for transferring an amount of a specific token id from one
+//! address to another address. Likewise an address can enable and/or disable
+//! one or more addresses as operators. An operator of some address is allowed
+//! to transfer and approve any tokens of the owner.
+//!
+//! This contract also contains an example of a function to be called when
+//! receiving tokens. In which case the contract will forward the tokens to
+//! the contract owner.
+//! This function is not very useful and is only there to showcase a simple
+//! implementation.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cts::*;
@@ -299,7 +296,7 @@ fn contract_transfer<A: HasActions>(
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked("init_CTS1-Multi".to_string()),
+                contract_name: OwnedContractName::new_unchecked(String::from("init_CTS1-Multi")),
                 data,
             };
             let action = send(&address, function.as_ref(), Amount::zero(), &parameter);
@@ -429,11 +426,14 @@ fn contract_on_cts1_received<A: HasActions>(
         to:       Receiver::Account(ctx.owner()),
     };
 
-    let parameter = TransferParams(vec![transfer]);
+    let mut transfers = Vec::new();
+    transfers.push(transfer);
+    let parameter = TransferParams(transfers);
 
     // Construct the CTS1 function name for transfer.
-    let mut receive_name_string =
-        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?.to_owned();
+    let mut receive_name_string = String::from(
+        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?,
+    );
     receive_name_string.push_str(".transfer");
     let receive_name = ReceiveName::new_unchecked(&receive_name_string);
 
