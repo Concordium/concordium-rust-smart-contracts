@@ -124,6 +124,9 @@ type ContractResult<A> = Result<A, ContractError>;
 /// The id of the wGTU token in this contract.
 const TOKEN_ID_WGTU: TokenId = 0;
 
+/// The metadata url for the wGTU token.
+const TOKEN_METADATA_URL: &str = "https://some.example/token/wgtu";
+
 /// Mapping the logging errors to ContractError.
 impl From<LogError> for ContractError {
     fn from(le: LogError) -> Self {
@@ -245,12 +248,22 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     let state = State::new();
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
-    // Log event for every newly minted token.
+    // Log event for the newly minted token.
     logger.log(&Event::Minting(MintingEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   0,
         owner:    invoker,
     }))?;
+
+    // Log event for where to find metadata for the token
+    logger.log(&Event::TokenMetadata(TokenMetadataEvent {
+        token_id:     TOKEN_ID_WGTU,
+        metadata_url: MetadataUrl {
+            url:  String::from(TOKEN_METADATA_URL),
+            hash: None,
+        },
+    }))?;
+
     Ok(state)
 }
 
@@ -549,15 +562,24 @@ mod tests {
         claim_eq!(balance0, 0, "No initial tokens are owned by the contract instantiater");
 
         // Check the logs
-        claim_eq!(logger.logs.len(), 1, "Exactly one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Event::Minting(MintingEvent {
+        claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
+        claim!(
+            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_ID_WGTU,
                 amount:   0,
-            })),
-            "Incorrect event emitted"
+            }))),
+            "Missing event for minting the token"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
+                token_id:     TOKEN_ID_WGTU,
+                metadata_url: MetadataUrl {
+                    url:  String::from(TOKEN_METADATA_URL),
+                    hash: None,
+                },
+            }))),
+            "Missing event with metadata for the token"
         );
     }
 

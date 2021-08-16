@@ -31,6 +31,14 @@ use concordium_std::{
     collections::{HashMap as Map, HashSet as Set},
     *,
 };
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(not(feature = "std"))]
+use alloc::string::ToString;
+
+/// The baseurl for the token metadata, gets appended with the token id before
+/// emitted in the TokenMetadata event.
+const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
 // Types
 
@@ -60,10 +68,9 @@ struct State {
 }
 
 /// Event to be printed in the log.
-///
-/// Note: For the serialization to be derived according to the CTS1
-/// specification, the order of these events and the order of their fields
-/// cannot be changed. However new custom events can safely be appended.
+// Note: For the serialization to be derived according to the CTS1
+// specification, the order of these events and the order of their fields
+// cannot be changed. However new custom events can safely be appended.
 #[derive(Serialize)]
 enum Event {
     /// A transfer between two addresses of some amount of tokens.
@@ -80,10 +87,9 @@ enum Event {
 }
 
 /// The different errors the contract can produce.
-///
-/// Note: For the error code to be derived according to the CTS1
-/// specification (derived by Reject), the order of these errors cannot be
-/// changed. However new custom errors can safely be appended.
+// Note: For the error code to be derived according to the CTS1
+// specification (derived by Reject), the order of these errors cannot be
+// changed. However new custom errors can safely be appended.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject)]
 enum ContractError {
     /// Failed parsing the parameter.
@@ -221,12 +227,24 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
 
-    // Log event for every newly minted token.
+    // Log events for every newly minted token.
     for (&token_id, &amount) in tokens.iter() {
+        // Event for minted NFT.
         logger.log(&Event::Minting(MintingEvent {
             token_id,
             amount,
             owner: invoker,
+        }))?;
+
+        // Metadata URL for the token.
+        let mut token_metadata_url = String::from(TOKEN_METADATA_BASE_URL);
+        token_metadata_url.push_str(&token_id.to_string());
+        logger.log(&Event::TokenMetadata(TokenMetadataEvent {
+            token_id,
+            metadata_url: MetadataUrl {
+                url:  token_metadata_url,
+                hash: None,
+            },
         }))?;
     }
     // Construct the initial contract state.
@@ -498,24 +516,42 @@ mod tests {
         claim_eq!(balance1, 1, "Initial tokens are owned by the contract instantiater");
 
         // Check the logs
-        claim_eq!(logger.logs.len(), 2, "Exactly two events should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Event::Minting(MintingEvent {
+        claim_eq!(logger.logs.len(), 4, "Exactly four events should be logged");
+        claim!(
+            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   400,
-            })),
-            "Incorrect event emitted"
+            }))),
+            "Expected an event for minting TOKEN_0"
         );
-        claim_eq!(
-            logger.logs[1],
-            to_bytes(&Event::Minting(MintingEvent {
+        claim!(
+            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_1,
                 amount:   1,
-            })),
-            "Incorrect event emitted"
+            }))),
+            "Expected an event for minting TOKEN_1"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
+                token_id:     TOKEN_0,
+                metadata_url: MetadataUrl {
+                    url:  String::from("https://some.example/token/0"),
+                    hash: None,
+                },
+            }))),
+            "Expected an event for token metadata for TOKEN_0"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
+                token_id:     TOKEN_1,
+                metadata_url: MetadataUrl {
+                    url:  String::from("https://some.example/token/42"),
+                    hash: None,
+                },
+            }))),
+            "Expected an event for token metadata for TOKEN_1"
         );
     }
 
