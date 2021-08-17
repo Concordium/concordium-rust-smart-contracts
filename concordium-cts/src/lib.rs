@@ -77,7 +77,7 @@ pub struct UpdateOperatorEvent {
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Serialize, SchemaType)]
-pub struct MintingEvent {
+pub struct MintEvent {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: TokenId,
     /// The number of tokens being minted, this is allowed to be 0 as well.
@@ -90,7 +90,7 @@ pub struct MintingEvent {
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Serialize, SchemaType)]
-pub struct BurningEvent {
+pub struct BurnEvent {
     /// The ID of the token where an amount is being burned.
     pub token_id: TokenId,
     /// The amount of tokens being burned.
@@ -126,6 +126,7 @@ pub enum Receiver {
         /// The function to call on the receiving contract.
         function: OwnedReceiveName,
         /// Some additional bytes to send with the function.
+        #[concordium(size_length = 2)]
         data:     Vec<u8>,
     },
 }

@@ -67,9 +67,9 @@ enum Event {
     UpdateOperator(UpdateOperatorEvent),
     /// Creation of new tokens, could be both adding some amounts to an existing
     /// token or a entirely new token.
-    Minting(MintingEvent),
+    Mint(MintEvent),
     /// Destruction of tokens removing some amounts of a token.
-    Burning(BurningEvent),
+    Burn(BurnEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent),
 }
@@ -241,7 +241,7 @@ impl State {
 // Contract functions
 
 /// Initialize contract instance with no initial tokens.
-/// Logs a `Minting` event for the single token id with no amounts.
+/// Logs a `Mint` event for the single token id with no amounts.
 #[init(contract = "CTS1-wGTU", enable_logger)]
 fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
     // Construct the initial contract state.
@@ -249,7 +249,7 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
-    logger.log(&Event::Minting(MintingEvent {
+    logger.log(&Event::Mint(MintEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   0,
         owner:    invoker,
@@ -286,13 +286,13 @@ fn contract_wrap<A: HasActions>(
     state.mint(&TOKEN_ID_WGTU, amount.micro_gtu, &receive_address)?;
 
     // Log the newly minted tokens.
-    logger.log(&Event::Minting(MintingEvent {
+    logger.log(&Event::Mint(MintEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   amount.micro_gtu,
         owner:    sender,
     }))?;
 
-    // Only log the transfer event if receiver is not the one who payed for this.
+    // Only log a transfer event if receiver is not the one who payed for this.
     if sender != receive_address {
         logger.log(&Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WGTU,
@@ -341,7 +341,7 @@ fn contract_unwrap<A: HasActions>(
     state.burn(&TOKEN_ID_WGTU, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
-    logger.log(&Event::Burning(BurningEvent {
+    logger.log(&Event::Burn(BurnEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   params.amount,
         owner:    params.owner,
@@ -443,7 +443,6 @@ fn contract_transfer<A: HasActions>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The operator address is the same as the sender address.
-/// - The `token_id` does not exist.
 /// - Fails to log event.
 #[receive(
     contract = "CTS1-wGTU",
@@ -564,7 +563,7 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
+            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_ID_WGTU,
                 amount:   0,

@@ -79,9 +79,9 @@ enum Event {
     UpdateOperator(UpdateOperatorEvent),
     /// Creation of new tokens, could be both adding some amounts to an existing
     /// token or a entirely new token.
-    Minting(MintingEvent),
+    Mint(MintEvent),
     /// Destruction of tokens removing some amounts of a token.
-    Burning(BurningEvent),
+    Burn(BurnEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent),
 }
@@ -227,7 +227,7 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     // Log events for every newly minted token.
     for &token_id in tokens.iter() {
         // Event for minted NFT.
-        logger.log(&Event::Minting(MintingEvent {
+        logger.log(&Event::Mint(MintEvent {
             token_id,
             amount: 1,
             owner: invoker,
@@ -455,7 +455,7 @@ mod tests {
 
         // Check the logs
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
+            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   1,
@@ -463,7 +463,7 @@ mod tests {
             "Expected an event for minting TOKEN_0"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
+            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_1,
                 amount:   1,

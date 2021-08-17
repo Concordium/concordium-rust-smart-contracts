@@ -79,9 +79,9 @@ enum Event {
     UpdateOperator(UpdateOperatorEvent),
     /// Creation of new tokens, could be both adding some amounts to an existing
     /// token or a entirely new token.
-    Minting(MintingEvent),
+    Mint(MintEvent),
     /// Destruction of tokens removing some amounts of a token.
-    Burning(BurningEvent),
+    Burn(BurnEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent),
 }
@@ -219,7 +219,7 @@ impl State {
 
 /// Initialize contract instance with a number of token types and some amount of
 /// tokens all owned by the invoker.
-/// Logs a `Minting` event for each token.
+/// Logs a `Mint` event for each token.
 #[init(contract = "CTS1-Multi", parameter = "NewTokens", enable_logger)]
 fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
     // Parse the parameter.
@@ -230,7 +230,7 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     // Log events for every newly minted token.
     for (&token_id, &amount) in tokens.iter() {
         // Event for minted NFT.
-        logger.log(&Event::Minting(MintingEvent {
+        logger.log(&Event::Mint(MintEvent {
             token_id,
             amount,
             owner: invoker,
@@ -518,7 +518,7 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 4, "Exactly four events should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
+            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   400,
@@ -526,7 +526,7 @@ mod tests {
             "Expected an event for minting TOKEN_0"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Minting(MintingEvent {
+            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_1,
                 amount:   1,
