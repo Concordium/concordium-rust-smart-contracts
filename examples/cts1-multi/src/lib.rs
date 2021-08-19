@@ -67,31 +67,9 @@ struct State {
     tokens: Set<TokenId>,
 }
 
-/// Event to be printed in the log.
-// Note: For the serialization to be derived according to the CTS1
-// specification, the order of these events and the order of their fields
-// cannot be changed. However new custom events can safely be appended.
-#[derive(Serialize)]
-enum Event {
-    /// A transfer between two addresses of some amount of tokens.
-    Transfer(TransferEvent),
-    /// Updates to an operator for a specific address and token id.
-    UpdateOperator(UpdateOperatorEvent),
-    /// Creation of new tokens, could be both adding some amounts to an existing
-    /// token or a entirely new token.
-    Mint(MintEvent),
-    /// Destruction of tokens removing some amounts of a token.
-    Burn(BurnEvent),
-    /// Setting the metadata for a token.
-    TokenMetadata(TokenMetadataEvent),
-}
-
 /// The different errors the contract can produce.
-// Note: For the error code to be derived according to the CTS1
-// specification (derived by Reject), the order of these errors cannot be
-// changed. However new custom errors can safely be appended.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject)]
-enum ContractError {
+enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
@@ -99,32 +77,28 @@ enum ContractError {
     LogFull,
     /// Failed logging: Log is malformed.
     LogMalformed,
-    /// Invalid token id
-    InvalidTokenId,
-    /// The balance of the token owner is insufficient for the transfer.
-    InsufficientFunds,
-    /// Sender is neither the token owner or an operator of the owner for this
-    /// token.
-    Unauthorized,
-    /// Make the sender an operator of the sender is invalid.
-    OperatorIsSender,
-    /// Only contracts can send to this function.
-    ContractOnly,
     /// Invalid contract name.
     /// Note this one is only used by "onReceivingCTS1".
     InvalidContractName,
 }
 
+type ContractError = Cts1Error<CustomContractError>;
+
 type ContractResult<A> = Result<A, ContractError>;
 
 /// Mapping the logging errors to ContractError.
-impl From<LogError> for ContractError {
+impl From<LogError> for CustomContractError {
     fn from(le: LogError) -> Self {
         match le {
             LogError::Full => Self::LogFull,
             LogError::Malformed => Self::LogMalformed,
         }
     }
+}
+
+/// Mapping CustomContractError to ContractError
+impl From<CustomContractError> for ContractError {
+    fn from(c: CustomContractError) -> Self { Cts1Error::Custom(c) }
 }
 
 impl State {
@@ -450,7 +424,7 @@ fn contract_on_cts1_received<A: HasActions>(
 
     // Construct the CTS1 function name for transfer.
     let mut receive_name_string = String::from(
-        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?,
+        params.contract_name.contract_name().ok_or(CustomContractError::InvalidContractName)?,
     );
     receive_name_string.push_str(".transfer");
     let receive_name = ReceiveName::new_unchecked(&receive_name_string);

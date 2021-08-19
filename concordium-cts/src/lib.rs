@@ -110,6 +110,75 @@ pub struct TokenMetadataEvent {
     pub metadata_url: MetadataUrl,
 }
 
+/// Event to be printed in the log.
+// Note: For the serialization to be derived according to the CTS1
+// specification, the order of these events and the order of their fields
+// cannot be changed. However new custom events can safely be appended.
+#[derive(Serialize, SchemaType)]
+pub enum Event {
+    /// A transfer between two addresses of some amount of tokens.
+    Transfer(TransferEvent),
+    /// Updates to an operator for a specific address and token id.
+    UpdateOperator(UpdateOperatorEvent),
+    /// Creation of new tokens, could be both adding some amounts to an existing
+    /// token or a entirely new token.
+    Mint(MintEvent),
+    /// Destruction of tokens removing some amounts of a token.
+    Burn(BurnEvent),
+    /// Setting the metadata for a token.
+    TokenMetadata(TokenMetadataEvent),
+    /// Custom event not specified by CTS1.
+    Custom(#[concordium(size_length = 2)] Vec<u8>),
+}
+
+/// The different errors the contract can produce.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Cts1Error<R> {
+    /// Invalid token id
+    InvalidTokenId,
+    /// The balance of the token owner is insufficient for the transfer.
+    InsufficientFunds,
+    /// Sender is neither the token owner or an operator of the owner for this
+    /// token.
+    Unauthorized,
+    /// Make the sender an operator of the sender is invalid.
+    OperatorIsSender,
+    /// Only contracts can send to this function.
+    ContractOnly,
+    /// Custom error
+    Custom(R),
+}
+
+impl<R: Into<Reject>> From<Cts1Error<R>> for Reject {
+    fn from(err: Cts1Error<R>) -> Self {
+        let error_code = match err {
+            Cts1Error::InvalidTokenId => unsafe {
+                crate::num::NonZeroI32::new_unchecked(-42000001)
+            },
+            Cts1Error::InsufficientFunds => unsafe {
+                crate::num::NonZeroI32::new_unchecked(-42000002)
+            },
+            Cts1Error::Unauthorized => unsafe { crate::num::NonZeroI32::new_unchecked(-42000003) },
+            Cts1Error::OperatorIsSender => unsafe {
+                crate::num::NonZeroI32::new_unchecked(-42000004)
+            },
+            Cts1Error::ContractOnly => unsafe { crate::num::NonZeroI32::new_unchecked(-42000005) },
+            Cts1Error::Custom(reject) => reject.into().error_code,
+        };
+        Self {
+            error_code,
+        }
+    }
+}
+
+impl<X: From<LogError>> From<LogError> for Cts1Error<X> {
+    fn from(err: LogError) -> Self { Cts1Error::Custom(X::from(err)) }
+}
+
+impl<X: From<ParseError>> From<ParseError> for Cts1Error<X> {
+    fn from(err: ParseError) -> Self { Cts1Error::Custom(X::from(err)) }
+}
+
 /// The receiving address for a transfer, similar to the Address type, but
 /// contains extra information when the receiver address is a contract.
 // Note: For the serialization to be derived according to the CTS1
