@@ -444,8 +444,8 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const TOKEN_0: TokenId = 0;
-    const TOKEN_1: TokenId = 42;
+    const TOKEN_0: TokenId = TokenId(0);
+    const TOKEN_1: TokenId = TokenId(42);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`

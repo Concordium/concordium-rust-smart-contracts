@@ -89,7 +89,7 @@ type ContractError = Cts1Error<CustomContractError>;
 type ContractResult<A> = Result<A, ContractError>;
 
 /// The id of the wGTU token in this contract.
-const TOKEN_ID_WGTU: TokenId = 0;
+const TOKEN_ID_WGTU: TokenId = TokenId(0);
 
 /// The metadata url for the wGTU token.
 const TOKEN_METADATA_URL: &str = "https://some.example/token/wgtu";

@@ -21,6 +21,10 @@
 //! }
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
+#[cfg(not(feature = "std"))]
+use core::fmt;
+#[cfg(feature = "std")]
+use std::fmt;
 
 /// Sha256 digest
 pub type Sha256 = [u8; 32];
@@ -28,7 +32,7 @@ pub type Sha256 = [u8; 32];
 /// The location of the metadata and an optional hash of the content.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct MetadataUrl {
     /// The URL following the specification RFC1738.
     #[concordium(size_length = 2)]
@@ -39,7 +43,52 @@ pub struct MetadataUrl {
 
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
-pub type TokenId = u64;
+///
+/// The CTS1 specification allows for up to 255 bytes for the token ID, but for
+/// most cases using 8 bytes is more than enough.
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct TokenId(pub u64);
+
+impl schema::SchemaType for TokenId {
+    fn get_type() -> schema::Type { schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8)) }
+}
+
+impl From<u64> for TokenId {
+    fn from(id: u64) -> Self {
+        TokenId(id)
+    }
+}
+
+/// The `TokenId` is serialized with one byte with the value 8 followed by 8 bytes to encode a u64 in little endian.
+impl Serial for TokenId {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_u8(8)?;
+        out.write_u64(self.0)
+    }
+}
+
+/// The `TokenId` will deserialize one byte ensuring this contains the value 8 and then deserialize a u64 as little endian.
+/// It will result in an error if the first byte is not 8.
+impl Deserial for TokenId {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let byte_length = source.read_u8()?;
+        if byte_length == 8 {
+            Ok(TokenId(source.read_u64()?))
+        } else {
+            Err(ParseError::default())
+        }
+    }
+}
+
+/// Display the token ID as a hex string
+impl fmt::Display for TokenId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for byte in self.0.to_le_bytes() {
+            write!(f, "{:X} ", byte)?;
+        }
+        Ok(())
+    }
+}
 
 /// An amount of a specific token type.
 pub type TokenAmount = u64;
@@ -47,7 +96,7 @@ pub type TokenAmount = u64;
 /// An event of a transfer of some amount of tokens from one address to another.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct TransferEvent {
     /// The ID of the token being transferred.
     pub token_id: TokenId,
@@ -59,24 +108,11 @@ pub struct TransferEvent {
     pub to:       Address,
 }
 
-/// An event of an update to an operator address for an owner address.
-// Note: For the serialization to be derived according to the CTS1
-// specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
-pub struct UpdateOperatorEvent {
-    /// The update to the operator.
-    pub update:   OperatorUpdate,
-    /// The address for whom, the operator is updated.
-    pub owner:    Address,
-    /// The address who is the operator being updated.
-    pub operator: Address,
-}
-
 /// An event of tokens being minted, could be a new token type or extending the
 /// total supply of existing token.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct MintEvent {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: TokenId,
@@ -89,7 +125,7 @@ pub struct MintEvent {
 /// An event of some amount of a token type being burned.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct BurnEvent {
     /// The ID of the token where an amount is being burned.
     pub token_id: TokenId,
@@ -99,10 +135,23 @@ pub struct BurnEvent {
     pub owner:    Address,
 }
 
+/// An event of an update to an operator address for an owner address.
+// Note: For the serialization to be derived according to the CTS1
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct UpdateOperatorEvent {
+    /// The update to the operator.
+    pub update:   OperatorUpdate,
+    /// The address for whom, the operator is updated.
+    pub owner:    Address,
+    /// The address who is the operator being updated.
+    pub operator: Address,
+}
+
 /// An event for setting the metadata for a token.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct TokenMetadataEvent {
     /// The ID of the token.
     pub token_id:     TokenId,
@@ -114,17 +163,17 @@ pub struct TokenMetadataEvent {
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of these events and the order of their fields
 // cannot be changed. However new custom events can safely be appended.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub enum Event {
     /// A transfer between two addresses of some amount of tokens.
     Transfer(TransferEvent),
-    /// Updates to an operator for a specific address and token id.
-    UpdateOperator(UpdateOperatorEvent),
     /// Creation of new tokens, could be both adding some amounts to an existing
-    /// token or a entirely new token.
+    /// token or introduce an entirely new token ID.
     Mint(MintEvent),
     /// Destruction of tokens removing some amounts of a token.
     Burn(BurnEvent),
+    /// Updates to an operator for a specific address and token id.
+    UpdateOperator(UpdateOperatorEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent),
     /// Custom event not specified by CTS1.
@@ -184,7 +233,7 @@ impl<X: From<ParseError>> From<ParseError> for Cts1Error<X> {
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the variants and the order of their fields
 // cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub enum Receiver {
     /// The receiver is an account address.
     Account(AccountAddress),
@@ -216,7 +265,7 @@ impl Receiver {
 /// A single transfer of some amount of a token.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct Transfer {
     /// The ID of the token being transferred.
     pub token_id: TokenId,
@@ -229,13 +278,13 @@ pub struct Transfer {
 }
 
 /// The parameter type for the contract function `transfer`.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct TransferParams(#[concordium(size_length = 1)] pub Vec<Transfer>);
 
 /// The update to an the operator.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the variants cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -246,7 +295,7 @@ pub enum OperatorUpdate {
 /// The parameter type for the contract function `updateOperator`.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct UpdateOperatorParams {
     /// The update for this operator.
     pub update:   OperatorUpdate,
@@ -259,7 +308,7 @@ pub struct UpdateOperatorParams {
 /// A query for the balance of a given address for a given token.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQuery {
     /// The ID of the token for which to query the balance of.
     pub token_id: TokenId,
@@ -272,7 +321,7 @@ pub struct BalanceOfQuery {
 /// and there is no reason to derive a SchemaType for this example.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQueryParams {
     /// The contract function to trigger with the results of the queries.
     pub callback: OwnedReceiveName,
@@ -284,7 +333,7 @@ pub struct BalanceOfQueryParams {
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
 /// It consists of the list of queries paired with their corresponding result.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQueryResponse(
     #[concordium(size_length = 1)] pub Vec<(BalanceOfQuery, TokenAmount)>,
 );
@@ -292,7 +341,7 @@ pub struct BalanceOfQueryResponse(
 /// The parameter type for a contract function which receives CTS1 tokens.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct OnReceivingCTS1Params {
     /// The ID of the token received.
     pub token_id:      TokenId,

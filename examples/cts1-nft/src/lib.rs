@@ -384,8 +384,8 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const TOKEN_0: TokenId = 0;
-    const TOKEN_1: TokenId = 42;
+    const TOKEN_0: TokenId = TokenId(0);
+    const TOKEN_1: TokenId = TokenId(42);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
@@ -450,7 +450,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_0,
                 metadata_url: MetadataUrl {
-                    url:  String::from("https://some.example/token/0"),
+                    url:  format!("https://some.example/token/{}", TOKEN_0),
                     hash: None,
                 },
             }))),
@@ -460,7 +460,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_1,
                 metadata_url: MetadataUrl {
-                    url:  String::from("https://some.example/token/42"),
+                    url:  format!("https://some.example/token/{}", TOKEN_1),
                     hash: None,
                 },
             }))),
@@ -536,7 +536,7 @@ mod tests {
             token_id: TOKEN_0,
             amount:   1,
         };
-        let parameter = vec![transfer];
+        let parameter = TransferParams(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
