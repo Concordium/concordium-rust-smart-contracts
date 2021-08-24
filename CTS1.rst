@@ -24,6 +24,8 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 General types and serialization
 -------------------------------
 
+.. _CTS-TokenID:
+
 ``TokenID``
 ^^^^^^^^^^^
 
@@ -33,11 +35,15 @@ It is serialized as 1 byte which value describes a number of bytes; followed by 
 - A token ID for a token type SHALL NOT change after a token type have been minted.
 - A token ID for a token type SHALL NOT be reused for another token type withing the same smart contract.
 
+.. _CTS-TokenAmount:
+
 ``TokenAmount``
 ^^^^^^^^^^^^^^^
 
 An amount of a token type.
 It is represented in WASM as an unsigned integer ``i64`` (8 bytes little endian).
+
+.. _CTS-ReceiveHookName:
 
 ``ReceiveHookName``
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -45,18 +51,23 @@ It is represented in WASM as an unsigned integer ``i64`` (8 bytes little endian)
 A smart contract receive function name.
 It is serialized as: the function name byte length is represented by the first 2 bytes, followed this many bytes for the function name.
 
+.. _CTS-ReceiveHookData:
+
 ``ReceiveHookData``
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 Additional bytes to include when calling a receive function on another smart contract.
 It is serialized as: the first 2 bytes encodes the length of the data, followed this many bytes for the data.
 
+.. _CTS-ContractName:
 
 ``ContractName``
 ^^^^^^^^^^^^^^^^
 
 A smart contract name.
 It is serialized as: the contract name byte length is represented by the first 2 bytes, followed this many bytes for the contract name.
+
+.. _CTS-Address:
 
 ``Address``
 ^^^^^^^^^^^
@@ -67,6 +78,8 @@ It is serialized as: First byte indicates whether it is an account address or a 
 In case the first byte is 0: 32 bytes for an account address is followed.
 In case the first byte is 1: 16 bytes for a contract address is followed.
 
+.. _CTS-Receiver:
+
 ``Receiver``
 ^^^^^^^^^^^^
 
@@ -74,15 +87,15 @@ The receiving address of a transfer, which is either an account address or a con
 In the case of a contract address, additional information such as the name of a receive function and some additional bytes to call on the receiving contract.
 
 It is serialized as: First byte indicates whether it is an account address or a contract address.
-In case the first byte is 0: 32 bytes for an account address is followed.
-In case the first byte is 1: 16 bytes for a contract address, bytes for ``ReceiveHookName`` and ``ReceiveHookData`` is followed.
+In case the first byte is 0 then 32 bytes for an account address is followed.
+In case the first byte is 1 then 16 bytes for a contract address, bytes for :ref:`ReceiveHookName` and :ref:`ReceiveHookData` is followed.
 
 .. _CTS-functions:
 
 Contract functions
 ------------------
 
-A smart contract implementing CTS1 MUST export three functions ``transfer``, ``updateOperator`` and ``balanceOf`` according to the following description:
+A smart contract implementing CTS1 MUST export three functions :ref:`transfer`, :ref:`updateOperator` and :ref:`balanceOf` according to the following description:
 
 .. _CTS-functions-transfer:
 
@@ -92,8 +105,6 @@ A smart contract implementing CTS1 MUST export three functions ``transfer``, ``u
 Executes a list of token transfers.
 A transfer is a token ID, an amount of this token ID to be transferred from one address to some other address.
 
-.. Hook to trigger for contract receiver
-
 When transferring tokens to a contract address additional information for a receive function hook to trigger is required.
 
 Parameter
@@ -101,13 +112,15 @@ Parameter
 
 The parameter is a list of transfers and is serialized as:
 1 byte representing the number of transfers followed by the bytes for this number of transfers.
-Each transfer is serialized as: a ``TokenID``, a ``TokenAmount``, the token owner address ``Address`` and the receiving address ``Receiver``.
+Each transfer is serialized as: a :ref:`TokenID`, a :ref:`TokenAmount`, the token owner address :ref:`Address` and the receiving address :ref:`Receiver`.
+
+.. _CTS-functions-transfer-receive-hook-parameter:
 
 Receive hook parameter
 ~~~~~~~~~~~~~~~~~~~~~~
 
 The parameter for the receive function hook contains information about the transfer, the name of the token contract and some additional data bytes.
-It is serialized as: a ``TokenID``, a ``TokenAmount``, the token owner address ``Address``, the name of the token contract ``ContractName`` and ``ReceiveHookData``
+It is serialized as: a :ref:`TokenID`, a :ref:`TokenAmount`, the token owner address :ref:`Address`, the name of the token contract :ref:`ContractName` and :ref:`ReceiveHookData`
 
 Requirements
 ~~~~~~~~~~~~
@@ -116,15 +129,15 @@ Requirements
 - The contract function MUST reject if any of the transfers fails to be executed.
 - A transfer MUST fail if:
 
-  - The token balance of the from address is insufficient to do the transfer with error INSUFFICIENT_FUNDS.
-  - TokenID is unknown with error: INVALID_TOKEN_ID.
-  - Fails to log the Transfer event in the contract logs because the log is full with error LOG_FULL.
+  - The token balance of the ``from`` address is insufficient to do the transfer with error :ref:`INSUFFICIENT_FUNDS<CTS-rejection-errors>`.
+  - TokenID is unknown with error: :ref:`INVALID_TOKEN_ID<CTS-rejection-errors>`.
 
 - A transfer MUST decrease the balance of the ``from`` address and increase the balance of the ``to`` address or fail.
 - A transfer with the same address as ``from`` and ``to`` MUST be executed as a normal transfer.
 - A transfer of a token amount zero MUST be executed as a normal transfer.
 - A transfer of some amount of a token type MUST only transfer the exact amount of tokens between balances.
-- The contract function MUST reject if a contract hook function called when receiving tokens rejects.
+- A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a receive hook parameter :ref:`described above<CTS-functions-transfer-receive-hook-parameter>`
+- The contract function MUST reject if a receive hook function called on the contract receiving tokens rejects.
 
 .. _CTS-functions-updateOperator:
 
@@ -137,15 +150,12 @@ Parameter
 ~~~~~~~~~
 
 The parameter is first a byte indicating whether to remove or add an operator, where if the byte is 0 the sender is removing an operator, if the byte is 1 the sender is adding an operator.
-The followed is the operator address `Address` to add or remove as operator for the sender.
+The followed is the operator address :ref:`Address` to add or remove as operator for the sender.
 
 Requirements
 ~~~~~~~~~~~~
 
-- The contract function MUST reject if:
-
-  - The sender address is the same as the operator address with error OPERATOR_IS_SENDER.
-  - Fails to log the UpdateOperator event because the log is full with error LOG_FULL.
+- The contract function MUST reject if the sender address is the same as the operator address with error :ref:`OPERATOR_IS_SENDER<CTS-rejection-errors>`.
 
 .. note::
 
@@ -164,24 +174,22 @@ Parameter
 ~~~~~~~~~
 
 The parameter consists of a name of the receive function to callback with the result and a list of token ID and address pairs.
-It is serialized as: ``ReceiveFunctionName`` followed by 1 byte for the number of queries and then this number of queries.
-A queries is serialized as ``TokenID`` followed by ``Address``.
+It is serialized as: :ref:`ReceiveFunctionName` followed by 1 byte for the number of queries and then this number of queries.
+A queries is serialized as :ref:`TokenID` followed by :ref:`Address`.
 
 Callback parameter
 ~~~~~~~~~~~~~~~~~~
 
 The parameter for the callback receive function is a list of query and token amount pairs.
 It is serialized as: 1 byte for the number of query-amount pairs and then this number of pairs.
-A query-amount pair is serialized as a ``TokenID``, an address ``Address`` and a ``TokenAmount``.
+A query-amount pair is serialized as a :ref:`TokenID`, an address :ref:`Address` and a :ref:`TokenAmount`.
 
 Requirements
 ~~~~~~~~~~~~
 
-- The contract function MUST reject if the sender is not a contract address with error CONTRACT_ONLY.
+- The contract function MUST reject if the sender is not a contract address with error :ref:`CONTRACT_ONLY<CTS-rejection-errors>`.
 - The contract function MUST reject if any of the queries fail.
-- A query MUST fail if:
-
-  - The token ID is unknown with error: INVALID_TOKEN_ID.
+- A query MUST fail if the token ID is unknown with error: :ref:`INVALID_TOKEN_ID<CTS-rejection-errors>`.
 
 Logged events
 -------------
@@ -197,9 +205,9 @@ Transfer
 ^^^^^^^^
 
 The event to log for a transfer of some amount of a token type.
-A contract function which transfers tokens MUST log a transfer for each of these transfers.
+A contract function which transfers tokens MUST log a transfer event for each of these transfers.
 
-The Transfer event is serialized as: first a byte with the value of 0, followed by the token ID ``TokenID``, an amount of tokens ``TokenAmount``, from address ``Address`` and to address ``Address``.
+The Transfer event is serialized as: first a byte with the value of 0, followed by the token ID :ref:`TokenID`, an amount of tokens :ref:`TokenAmount`, from address :ref:`Address` and to address :ref:`Address`.
 
 Mint
 ^^^^
@@ -207,35 +215,35 @@ Mint
 An event for minting MUST be logged every time a new token is minted. This also applies when introducing new token types and the initial token types and amounts in a contract.
 Minting a token with a zero amount is valid.
 
-The Mint event is serialized as: first a byte with the value of 1, followed by the token ID ``TokenID``, an amount of tokens being minted ``TokenAmount`` and the owner address for of the tokens ``Address``.
+The Mint event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`TokenID`, an amount of tokens being minted :ref:`TokenAmount` and the owner address for of the tokens :ref:`Address`.
 
 Burn
 ^^^^
 
 An event for burning MUST be logged every time an amount of tokens are burned.
-
 Burning a zero amount of a token is allowed.
 
 Summing all of the minted amounts from Mint events and subtracting all of the burned amounts from Burn events for a token type MUST sum up to the total supply for the token type.
 
-The Burn event is serialized as: first a byte with the value of 2, followed by the token ID ``TokenID``, an amount of tokens being burned ``TokenAmount`` and the owner address of the tokens ``Address``.
+The Burn event is serialized as: first a byte with the value of 2, followed by the token ID :ref:`TokenID`, an amount of tokens being burned :ref:`TokenAmount` and the owner address of the tokens :ref:`Address`.
 
 UpdateOperator
 ^^^^^^^^^^^^^^
 
 The event to log when updating an operator of some address.
-
-The UpdateOperator event is serialized as: first a byte with the value of 3, followed by a byte which is 0 if an operator is being removed and 1 if an operator is being added, then the owner address updating an operator ``Address`` and an operator address ``Address`` being added or removed.
+The UpdateOperator event is serialized as: first a byte with the value of 3, followed by a byte which is 0 if an operator is being removed and 1 if an operator is being added, then the owner address updating an operator :ref:`Address` and an operator address :ref:`Address` being added or removed.
 
 TokenMetadata
 ^^^^^^^^^^^^^
 
 The event to log when setting the metadata url for a token type.
-It consists of a token ID and an URL for the location of the metadata for this token type with an optional hash of the content.
-Logging the TokenMetadata event again with the same token ID, is used to update the metadata location.
+It consists of a token ID and an URL for the location of the metadata for this token type with an optional SHA256 checksum of the content.
+Logging the TokenMetadata event again with the same token ID, is used to update the metadata location and only the most recently logged token metadata event for certain token id should be used to get the token metadata.
 
-The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID ``TokenID``, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
+The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
 Lastly a byte to indicate whether a hash of the metadata is included, if it value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash is followed.
+
+.. _CTS-rejection-errors:
 
 Rejection errors
 ----------------
@@ -267,8 +275,8 @@ A smart contract following this specification MUST reject the specified errors f
 The smart contract implementing this specification MAY introduce custom error codes other than the ones specified in the table above.
 
 
-Token metadata JSON schema
---------------------------
+Token metadata JSON
+-------------------
 
 The token metadata is stored off chain and MUST be a JSON file.
 
@@ -433,7 +441,7 @@ In this section we point out some of the differences from other popular token st
 Only batched transfers
 ----------------------
 
-The specification only have a ``transfer`` smart contract function which takes list of transfer and no function for a single transfer.
+The specification only have a :ref:`transfer` smart contract function which takes list of transfer and no function for a single transfer.
 This will result in lower energy cost compared to multiple contract calls and only introduce a small overhead for single transfers.
 The reason for not also including a single transfer function, is to have smaller smart contract modules, which in terms lead saving cost on every function call.
 
@@ -459,6 +467,10 @@ These token could then be lost forever.
 
 The reason for this not being optional is to allow other smart contracts which integrates with a token smart contract to rely on this for functionality.
 An auction smart contract could take bids by token transfers directly.
+
+.. warning::
+
+  The smart contract receive hook function could be called by any smart contract and it is up to the integrating contract whether to trust the token contract.
 
 Receive hook function callback argument
 ---------------------------------------
@@ -487,3 +499,8 @@ No error code for receive hook rejecting
 The specification could include an error code, for the receive hook function to return if rejecting the token transferred (as seen in the FA2 standard on Tezos).
 But we chose to leave this error code up to the receiving smart contract, which allows for more informative error codes.
 
+Adding SHA256 checksum for token metadata event
+-----------------------------------------------
+
+A token can optionally include a SHA256 checksum when logging the token metadata event, this is to ensure the integrity of the token metadata.
+This checksum can be updated by logging a new event.
