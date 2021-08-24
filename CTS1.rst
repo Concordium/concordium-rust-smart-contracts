@@ -2,12 +2,15 @@
 Concordium Token Standard (CTS1)
 ================================
 
+Status: Draft
+
 Abstract
 ========
 
 An standard interface for both fungible and non-fungible tokens implemented in smart contracts.
 The interface provides functions for transferring token ownership, authenticating other address to transfer tokens and for other smart contracts to access token balances.
-It allows for off-chain applications to track token balances and authentication.
+It allows for off-chain applications to track token balances and authentication through logged events.
+Tokens can have metadata
 
 .. contents:: Table of Contents
    :local:
@@ -15,7 +18,7 @@ It allows for off-chain applications to track token balances and authentication.
 Specification
 =============
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in `RFC 2119<https://datatracker.ietf.org/doc/html/rfc2119>`.
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
 
 
 General types and serialization
@@ -74,11 +77,14 @@ It is serialized as: First byte indicates whether it is an account address or a 
 In case the first byte is 0: 32 bytes for an account address is followed.
 In case the first byte is 1: 16 bytes for a contract address, bytes for ``ReceiveHookName`` and ``ReceiveHookData`` is followed.
 
+.. _CTS-functions:
+
 Contract functions
 ------------------
 
-A smart contract implementing CTS1 MUST export all of the following functions:
+A smart contract implementing CTS1 MUST export three functions ``transfer``, ``updateOperator`` and ``balanceOf`` according to the following description:
 
+.. _CTS-functions-transfer:
 
 ``transfer``
 ^^^^^^^^^^^^
@@ -120,6 +126,8 @@ Requirements
 - A transfer of some amount of a token type MUST only transfer the exact amount of tokens between balances.
 - The contract function MUST reject if a contract hook function called when receiving tokens rejects.
 
+.. _CTS-functions-updateOperator:
+
 ``updateOperator``
 ^^^^^^^^^^^^^^^^^^
 
@@ -145,6 +153,7 @@ Requirements
   This was chosen to require less on the contract implementation and also simplify off-chain integration.
   If needed a more fine grained authentication system can still exist next to the operators.
 
+.. _CTS-functions-balanceOf:
 
 ``balanceOf``
 ^^^^^^^^^^^^^
@@ -265,7 +274,7 @@ The token metadata is stored off chain and MUST be a JSON file.
 
 All of the fields in the JSON file are optional, and this specification reserve a number of field names, shown in the table below.
 
-.. list-table:: Token metadata JSON fields
+.. list-table:: Token metadata JSON Object
   :header-rows: 1
 
   * - Property
@@ -278,47 +287,68 @@ All of the fields in the JSON file are optional, and this specification reserve 
     - string
     - Short text to display for the token type.
   * - ``decimals`` (optional)
-    - number [integer in inclusive range (0, 20)]
+    - number [``integer``]
     - The number of decimals, when displaying an amount of this token type in a user interface.
   * - ``description`` (optional)
     - string
     - A description for this token type.
   * - ``thumbnail`` (optional)
     - string
-    - An thumbnail image URI to display for the asset.
+    - An image URI to a small image for displaying the asset.
   * - ``display`` (optional)
     - string
-    - An image URI to display for the asset.
-  * - ``asset`` (optional)
+    - An image URI to a large image for displaying the asset.
+  * - ``artifact`` (optional)
     - URI JSON object
-    - An uri to a single asset.
+    - A URI to the token asset.
   * - ``assets`` (optional)
-    - JSON array of URI JSON objects
-    - URI's to a collection of assets.
+    - JSON array of Token metadata JSON objects
+    - Collection of assets.
+  * - ``attributes`` (optional)
+    - JSON array of Attribute JSON objects
+    - Assign a number of attributes to the token type.
   * - ``localization`` (optional)
     - JSON object with locales as field names (RFC5646) and field values are URI JSON object to JSON files.
     - URI's to JSON files with localized token metadata.
 
 Optionally a SHA256 hash of the JSON file can be logged with the TokenMetadata event for checking integrity.
 Since the metadata json file could contain URIs, a SHA256 hash can optionally be associated with the URI.
-To associate a hash with a URI the JSON value is an object
+To associate a hash with a URI the JSON value is an object:
 
-  .. list-table:: URI JSON Object
-    :header-rows: 1
+.. list-table:: URI JSON Object
+  :header-rows: 1
 
-    * - Property
-      - JSON value type [JSON-Schema]
-      - Description
-    * - ``uri``
-      - string [``uri-reference``]
-      - An URI.
-    * - ``hash`` (optional)
-      - string
-      - A SHA256 hash of the URI content encoded as a hex string.
+  * - Property
+    - JSON value type [JSON-Schema]
+    - Description
+  * - ``uri``
+    - string [``uri-reference``]
+    - An URI.
+  * - ``hash`` (optional)
+    - string
+    - A SHA256 hash of the URI content encoded as a hex string.
+
+Attributes are objects with the following fields:
+
+.. list-table:: Attribute JSON object
+  :header-rows: 1
+
+  * - Property
+    - JSON value type [JSON-Schema]
+    - Description
+  * - ``type``
+    - string
+    - Type for the value field of the attribute.
+  * - ``name``
+    - string
+    - Name of the attribute.
+  * - ``value``
+    - string
+    - Value of the attrbute.
 
 
-Example token metadata
-^^^^^^^^^^^^^^^^^^^^^^
+Example token metadata: Fungible
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 An example of token metadata for a CTS1 implementation wrapping the GTU could be:
 
@@ -330,6 +360,8 @@ An example of token metadata for a CTS1 implementation wrapping the GTU could be
     "decimals": 6,
     "description": "A CTS1 token wrapping the Global Transaction Unit",
     "thumbnail": { "uri": "https://location.of/the/thumbnail.png" },
+    "display": { "uri": "https://location.of/the/display.png" },
+    "artifact": { "uri": "https://location.of/the/artifact.png" },
     "localization": {
       "da-DK": {
         "uri": "https://location.of/the/danish/metadata.json",
@@ -346,44 +378,112 @@ The danish localization JSON file could be:
     "description": "CTS1 indpakket GTU"
   }
 
+Example token metadata: Non-fungible
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An example of token metadata for a NFT could be:
+
+.. code-block:: json
+
+  {
+    "name": "Bibi - The Ryan Cat",
+    "description": "Ryan cats are lonely creatures travelling the galaxy in search of their ancestors and true inheritance",
+    "thumbnail": { "uri": "https://location.of/the/thumbnail.png" },
+    "display": { "uri": "https://location.of/the/display.png" },
+    "attributes": [{
+      "type": "date",
+      "name": "Birthday",
+      "value": "1629792199610"
+    }, {
+      "type": "string",
+      "name": "Body",
+      "value": "Strong"
+    }, {
+      "type": "string",
+      "name": "Head",
+      "value": "Round"
+    }, {
+      "type": "string",
+      "name": "Tail",
+      "value": "Short"
+    }],
+    "localization": {
+      "da-DK": {
+        "uri": "https://location.of/the/danish/metadata.json",
+        "hash": "588d7c14883231cfee522479cc66565fd9a50024603a7b8c99bd7869ca2f0ea3"
+      }
+    }
+  }
+
+The danish localization JSON file could be:
+
+.. code-block:: json
+
+  {
+    "name": "Bibi - Ryan katten",
+    "description": "Ryan katte er ensomme væsner, som rejser rundt i galaxen søgende efter deres forfædre og sande fortid"
+  }
 
 
-Differences from other standards
-================================
+Decisions and rationale
+=======================
 
-ERC20
------
+In this section we point out some of the differences from other popular token standards found on other blockchains, and try to reason why this was decided.
 
-- No approval/allowance functions.
-- Added receiver hook, which is mandatory.
-- Support multiple tokens per contract.
-- Batched transfers.
-- Added operators per address.
-- Explicit events for minting and burning.
+Only batched transfers
+----------------------
 
-ERC721
-------
+The specification only have a ``transfer`` smart contract function which takes list of transfer and no function for a single transfer.
+This will result in lower energy cost compared to multiple contract calls and only introduce a small overhead for single transfers.
+The reason for not also including a single transfer function, is to have smaller smart contract modules, which in terms lead saving cost on every function call.
 
-- No approval/allowance functions.
-- Added receiver hook, which is mandatory (corresponding to safeTransferFrom).
-- Only "safeTransferFrom" to transfer.
-- Batched transfers.
-- Explicit events for minting and burning.
+No token level approval/allowance like in ERC20 and ERC721
+----------------------------------------------------------
 
-ERC1155
--------
+This standard only specifies address-level operators and no authentication on per token level.
+The main argument is simplicity and to save energy cost on common cases, but other reasons are:
 
-- Only batched transfers, each with their own sender and receiver.
-- No TransferBatch event.
-- Receiver hook function name is not part of the specification.
-- Explicit events for minting and burning.
+- A token level authentication requires the token smart contract to track more state, which increases the overall energy cost.
+- For token smart contracts with a lot of token types, such as a smart contract with a large collection of NFTs, a token level authentication could become very expensive.
+- For fungible tokens; approval/allowance introduces an attack vector as `described here<https://docs.google.com/document/d/1YLPtQxZu1UAvO9cZ1O2RPXBbT0mooh4DYKjA_jp-RLM/edit>`.
 
-FA2
----
+.. note::
 
-- Mandatory receiver hook, but the receive function name is not part of the specification.
-- No sender hook.
-- Mandatory operators.
-- Updating operators is not batched.
-- Operator for accounts, not scoped to tokens.
-- No error code for receiver hook functions, to allow for more custom errors when receiver is rejecting.
+  The specification does not prevent adding more fine-grained authentication, such as a token level authentication.
+
+Receive hook function
+---------------------
+
+The specification requires a token receive hook to be called on a smart contract receiving tokens, this will in some cases prevent mistakes such as sending tokens to smart contracts, which do not defined behavior for receiving tokens.
+These token could then be lost forever.
+
+The reason for this not being optional is to allow other smart contracts which integrates with a token smart contract to rely on this for functionality.
+An auction smart contract could take bids by token transfers directly.
+
+Receive hook function callback argument
+---------------------------------------
+
+The name of the receive hook function called on a smart contract receiving tokens is supplied as part of the parameter.
+This allows for a smart contract to integrating with a token smart contract to have multiple hooks and leave it to the caller to know which hook they want to trigger.
+An auction smart contract could receive the item to auction using one hook and bids on another hook.
+
+Another technical reason is that the name of the smart contract is part of the smart contract receive function name, which means the specification would include a requirement of the smart contract name for other to integrate reliably.
+
+No sender hook function
+-----------------------
+
+The FA2 token standard found on Tezos, allows for a hook function to be called on a smart contract sending tokens, such that the contract could reject the transfer on some criteria.
+This seems to only make sense, if some operator is transferring tokens from a contract, in which case the sender smart contract might as well contain the logic to transfer the tokens and trigger this directly.
+
+Explicit events for mint and burn
+---------------------------------
+
+In ERC20, ERC721 and ERC1155 they use a transfer event from or to the zero address to indicate mint and burn respectively, but since there are no such thing as the zero address on the Concordium blockchain these events are separate.
+Making it more explicit, instead of special case transfer events.
+
+No error code for receive hook rejecting
+----------------------------------------
+
+The specification could include an error code, for the receive hook function to return if rejecting the token transferred (as seen in the FA2 standard on Tezos).
+But we chose to leave this error code up to the receiving smart contract, which allows for more informative error codes.
+
