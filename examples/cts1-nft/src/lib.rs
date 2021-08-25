@@ -14,10 +14,10 @@
 //! address or a contract address.
 //!
 //! As according to the CTS1 specification, the contract have a `transfer`
-//! function for transferring an amount of a specific token id from one address
-//! to another address. Likewise an address can enable and/or disable one or
-//! more addresses as operators. An operator of some address is allowed to
-//! transfer and approve any tokens of the owner.
+//! function for transferring an amount of a specific token id from one
+//! address to another address. Likewise an address can enable and/or disable
+//! one or more addresses as operators. An operator of some token owner address
+//! is allowed to transfer any tokens of the owner.
 //!
 //! This contract also contains an example of a function to be called when
 //! receiving tokens. In which case the contract will forward the tokens to the
@@ -30,10 +30,6 @@ use concordium_std::{
     collections::{HashMap as Map, HashSet as Set},
     *,
 };
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-#[cfg(not(feature = "std"))]
-use alloc::string::ToString;
 
 /// The baseurl for the token metadata, gets appended with the token id before
 /// emitted in the TokenMetadata event.
@@ -164,7 +160,7 @@ impl State {
         let from_had_the_token = from_address_state.owned_tokens.remove(token_id);
         ensure!(from_had_the_token, ContractError::InsufficientFunds);
 
-        let to_address_state = self.state.entry(*to).or_insert_with(|| AddressState::default());
+        let to_address_state = self.state.entry(*to).or_insert_with(AddressState::default);
         to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
@@ -174,8 +170,7 @@ impl State {
     /// Succeeds even if the `operator` is already an operator for this
     /// `token_id` and `address`.
     fn add_operator(&mut self, owner: &Address, operator: &Address) {
-        let owner_address_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::default());
+        let owner_address_state = self.state.entry(*owner).or_insert_with(AddressState::default);
         owner_address_state.operators.insert(*operator);
     }
 

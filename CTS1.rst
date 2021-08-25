@@ -9,8 +9,7 @@ Abstract
 
 An standard interface for both fungible and non-fungible tokens implemented in smart contracts.
 The interface provides functions for transferring token ownership, authenticating other address to transfer tokens and for other smart contracts to access token balances.
-It allows for off-chain applications to track token balances and authentication through logged events.
-Tokens can have metadata
+It allows for off-chain applications to track token balances, authentication and the location of token metadata using logged events.
 
 .. contents:: Table of Contents
    :local:
@@ -438,12 +437,19 @@ Decisions and rationale
 
 In this section we point out some of the differences from other popular token standards found on other blockchains, and try to reason why this was decided.
 
+Token ID bytes instead of some integer
+--------------------------------------
+
+Token standards such as ERC721 and ERC1155 both uses an 256 bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
+But in the case where the token ID have no significance other than a simple identifier, smaller sized token IDs can reduce energy costs.
+Which is why we chose to let the first byte indicate the size of the token ID, meaning a token ID can vary between 1 byte and 256 bytes, resulting in more than 10^614 possible token IDs.
+
 Only batched transfers
 ----------------------
 
 The specification only have a :ref:`transfer` smart contract function which takes list of transfer and no function for a single transfer.
 This will result in lower energy cost compared to multiple contract calls and only introduce a small overhead for single transfers.
-The reason for not also including a single transfer function, is to have smaller smart contract modules, which in terms lead saving cost on every function call.
+The reason for not also including a single transfer function, is to have smaller smart contract modules, which in turn leads to saving cost on every function call.
 
 No token level approval/allowance like in ERC20 and ERC721
 ----------------------------------------------------------

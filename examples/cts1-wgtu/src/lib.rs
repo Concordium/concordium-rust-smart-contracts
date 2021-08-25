@@ -10,9 +10,8 @@
 //! As according to the CTS1 specification, the contract have a `transfer`
 //! function for transferring an amount of a specific token id from one
 //! address to another address. Likewise an address can enable and/or disable
-//! one or more addresses as operators per token. An operator of some address
-//! and token id is allowed to transfer any amount of this token on behalf of
-//! the owner.
+//! one or more addresses as operators. An operator of some token owner address
+//! is allowed to transfer any tokens of the owner.
 //!
 //! Besides the contract functions required CTS1, this contract implements a
 //! function `wrap` for converting GTU into wGTU tokens. It accepts an amount of

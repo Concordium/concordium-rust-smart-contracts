@@ -16,14 +16,14 @@
 //! As according to the CTS1 specification, the contract have a `transfer`
 //! function for transferring an amount of a specific token id from one
 //! address to another address. Likewise an address can enable and/or disable
-//! one or more addresses as operators. An operator of some address is allowed
-//! to transfer and approve any tokens of the owner.
+//! one or more addresses as operators. An operator of some token owner address
+//! is allowed to transfer any tokens of the owner.
 //!
 //! This contract also contains an example of a function to be called when
 //! receiving tokens. In which case the contract will forward the tokens to
 //! the contract owner.
 //! This function is not very useful and is only there to showcase a simple
-//! implementation.
+//! implementation of a token receive hook.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cts::*;
@@ -31,13 +31,9 @@ use concordium_std::{
     collections::{HashMap as Map, HashSet as Set},
     *,
 };
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-#[cfg(not(feature = "std"))]
-use alloc::string::ToString;
 
-/// The baseurl for the token metadata, gets appended with the token id before
-/// emitted in the TokenMetadata event.
+/// The baseurl for the token metadata, gets appended with the token ID as hex
+/// encoding before emitted in the TokenMetadata event.
 const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
 // Types
@@ -164,7 +160,7 @@ impl State {
             .ok_or(ContractError::InsufficientFunds)?;
         ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
         *from_balance -= amount;
-        let to_address_state = self.state.entry(*to).or_insert_with(|| AddressState::default());
+        let to_address_state = self.state.entry(*to).or_insert_with(AddressState::default);
         let to_balance = to_address_state.balances.entry(*token_id).or_insert(0);
         *to_balance += amount;
         Ok(())
@@ -175,8 +171,7 @@ impl State {
     /// Succeeds even if the `operator` is already an operator for this
     /// `token_id` and `address`.
     fn add_operator(&mut self, owner: &Address, operator: &Address) {
-        let owner_address_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::default());
+        let owner_address_state = self.state.entry(*owner).or_insert_with(AddressState::default);
         owner_address_state.operators.insert(*operator);
     }
 
@@ -418,9 +413,7 @@ fn contract_on_cts1_received<A: HasActions>(
         to:       Receiver::Account(ctx.owner()),
     };
 
-    let mut transfers = Vec::new();
-    transfers.push(transfer);
-    let parameter = TransferParams(transfers);
+    let parameter = TransferParams(vec![transfer]);
 
     // Construct the CTS1 function name for transfer.
     let mut receive_name_string = String::from(
@@ -601,7 +594,7 @@ mod tests {
             token_id: TOKEN_0,
             amount:   100,
         };
-        let parameter = vec![transfer];
+        let parameter = TransferParams(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 

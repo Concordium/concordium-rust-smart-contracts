@@ -4,6 +4,9 @@
 //! It contains types for the parameters for each of the contract functions and
 //! types for each event. Each type have implemented serialization according to
 //! CTS1.
+//! Additionally the crate exports an CTS1Error wrapper type which can be used
+//! to wrap and extend a custom error type. This will ensure the CTS1 errors
+//! have the correct error codes.
 //!
 //! # Example using `TransferParams`
 //!
@@ -50,16 +53,17 @@ pub struct MetadataUrl {
 pub struct TokenId(pub u64);
 
 impl schema::SchemaType for TokenId {
-    fn get_type() -> schema::Type { schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8)) }
-}
-
-impl From<u64> for TokenId {
-    fn from(id: u64) -> Self {
-        TokenId(id)
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
     }
 }
 
-/// The `TokenId` is serialized with one byte with the value 8 followed by 8 bytes to encode a u64 in little endian.
+impl From<u64> for TokenId {
+    fn from(id: u64) -> Self { TokenId(id) }
+}
+
+/// The `TokenId` is serialized with one byte with the value 8 followed by 8
+/// bytes to encode a u64 in little endian.
 impl Serial for TokenId {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         out.write_u8(8)?;
@@ -67,8 +71,9 @@ impl Serial for TokenId {
     }
 }
 
-/// The `TokenId` will deserialize one byte ensuring this contains the value 8 and then deserialize a u64 as little endian.
-/// It will result in an error if the first byte is not 8.
+/// The `TokenId` will deserialize one byte ensuring this contains the value 8
+/// and then deserialize a u64 as little endian. It will result in an error if
+/// the first byte is not 8.
 impl Deserial for TokenId {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let byte_length = source.read_u8()?;
@@ -83,7 +88,7 @@ impl Deserial for TokenId {
 /// Display the token ID as a hex string
 impl fmt::Display for TokenId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for byte in self.0.to_le_bytes() {
+        for byte in &self.0.to_le_bytes() {
             write!(f, "{:X} ", byte)?;
         }
         Ok(())
