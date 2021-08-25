@@ -6,6 +6,7 @@
   - `NewContractNameError::InvalidCharacters` is mapped to `i32::MIN + 10`
   - `NewReceiveNameError::InvalidCharacters` is mapped to `i32::MIN + 11`
 - Export `HashMap` and `HashSet` from `contract-common` in `collections` module.
+- Added implementation of `SerialCtx` for `Vec`.
 
 ## concordium-std 0.5.0 (2021-05-12)
 
