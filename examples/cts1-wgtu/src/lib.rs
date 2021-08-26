@@ -2,16 +2,16 @@
 //!
 //! # Description
 //! The token in this contract is a wrapped GTU (wGTU), meaning it holds a one
-//! to one correspondence with the uGTU.
+//! to one correspondence with the GTU.
 //!
 //! Note: When we use the word 'address' is referring to either an account
 //! address or a contract address.
 //!
 //! As according to the CTS1 specification, the contract have a `transfer`
-//! function for transferring an amount of a specific token id from one
-//! address to another address. Likewise an address can enable and/or disable
-//! one or more addresses as operators. An operator of some token owner address
-//! is allowed to transfer any tokens of the owner.
+//! function for transferring an amount of a specific token type from one
+//! address to another address. An address can enable and disable one or more
+//! addresses as operators. An operator of some token owner address is allowed
+//! to transfer any tokens of the owner.
 //!
 //! Besides the contract functions required CTS1, this contract implements a
 //! function `wrap` for converting GTU into wGTU tokens. It accepts an amount of
@@ -31,6 +31,12 @@ use concordium_std::{
     *,
 };
 
+/// The id of the wGTU token in this contract.
+const TOKEN_ID_WGTU: TokenId = TokenId(0);
+
+/// The metadata url for the wGTU token.
+const TOKEN_METADATA_URL: &str = "https://some.example/token/wgtu";
+
 // Types
 
 /// The state tracked for each address.
@@ -40,17 +46,16 @@ struct AddressState {
     balance:   TokenAmount,
     /// The address which are currently enabled as operators for this token and
     /// this address.
+    #[concordium(size_length = 1)]
     operators: Set<Address>,
 }
-
-type TokenState = Map<Address, AddressState>;
 
 /// The contract state,
 #[contract_state(contract = "CTS1-wGTU")]
 #[derive(Serialize, SchemaType)]
 struct State {
     /// The state the one token.
-    token: TokenState,
+    token: Map<Address, AddressState>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -86,12 +91,6 @@ enum CustomContractError {
 type ContractError = Cts1Error<CustomContractError>;
 
 type ContractResult<A> = Result<A, ContractError>;
-
-/// The id of the wGTU token in this contract.
-const TOKEN_ID_WGTU: TokenId = TokenId(0);
-
-/// The metadata url for the wGTU token.
-const TOKEN_METADATA_URL: &str = "https://some.example/token/wgtu";
 
 /// Mapping the logging errors to ContractError.
 impl From<LogError> for CustomContractError {

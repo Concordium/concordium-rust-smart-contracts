@@ -29,10 +29,15 @@ General types and serialization
 ^^^^^^^^^^^
 
 Token Identifier, which combined with the address of the smart contract instance implementing CTS1, forms the globally unique identifier of a token type.
-It is serialized as 1 byte which value describes a number of bytes; followed by this number of bytes for the token ID.
+It is serialized as 1 byte which value describes a number of bytes; followed by this number of bytes.
 
 - A token ID for a token type SHALL NOT change after a token type have been minted.
 - A token ID for a token type SHALL NOT be reused for another token type withing the same smart contract.
+
+.. note::
+
+  Token IDs can be as small as a single byte (by setting the first byte to the value 0) or as big as 256 bytes leaving more than 10^614 possible token IDs.
+  The token ID could be an encoding of a small text string or some checksum hash, but to save energy it is still recommended to use small token IDs if possible.
 
 .. _CTS-TokenAmount:
 
@@ -50,6 +55,11 @@ It is represented in WASM as an unsigned integer ``i64`` (8 bytes little endian)
 A smart contract receive function name.
 It is serialized as: the function name byte length is represented by the first 2 bytes, followed this many bytes for the function name.
 
+.. note::
+
+  This type is passed in a parameter for smart contract function calls, be aware of the parameter size limit of 1024 bytes.
+  Also receive function names are limited to 100 bytes.
+
 .. _CTS-ReceiveHookData:
 
 ``ReceiveHookData``
@@ -57,6 +67,10 @@ It is serialized as: the function name byte length is represented by the first 2
 
 Additional bytes to include when calling a receive function on another smart contract.
 It is serialized as: the first 2 bytes encodes the length of the data, followed this many bytes for the data.
+
+.. note::
+
+  This type is passed in a parameter for smart contract function calls, be aware of the parameter size limit of 1024 bytes.
 
 .. _CTS-ContractName:
 
@@ -74,8 +88,8 @@ It is serialized as: the contract name byte length is represented by the first 2
 Is either an account address or a contract address.
 
 It is serialized as: First byte indicates whether it is an account address or a contract address.
-In case the first byte is 0: 32 bytes for an account address is followed.
-In case the first byte is 1: 16 bytes for a contract address is followed.
+In case the first byte is 0 then 32 bytes for an account address is followed.
+In case the first byte is 1 then 16 bytes for a contract address is followed.
 
 .. _CTS-Receiver:
 
@@ -113,6 +127,12 @@ The parameter is a list of transfers and is serialized as:
 1 byte representing the number of transfers followed by the bytes for this number of transfers.
 Each transfer is serialized as: a :ref:`TokenID`, a :ref:`TokenAmount`, the token owner address :ref:`Address` and the receiving address :ref:`Receiver`.
 
+.. note::
+
+  Be aware of the smart contract parameter size limit of 1024 bytes.
+  Since the byte size of a single transfer can vary in size, this will limit the number of transfers can be included in the same function call.
+  Currently, with the smallest possible transfers, the parameter can contain 32 transfers and with the biggest possible transfer will take the whole parameter.
+
 .. _CTS-functions-transfer-receive-hook-parameter:
 
 Receive hook parameter
@@ -148,6 +168,9 @@ Add or remove an address as operator of the address sending this message.
 Parameter
 ~~~~~~~~~
 
+The parameter contains whether to add or remove an operator and the address to add/remove as operator.
+It does not contain the address which are adding/removing the operator as this will be the sender address of the transaction invoking this function.
+
 The parameter is first a byte indicating whether to remove or add an operator, where if the byte is 0 the sender is removing an operator, if the byte is 1 the sender is adding an operator.
 The followed is the operator address :ref:`Address` to add or remove as operator for the sender.
 
@@ -175,6 +198,10 @@ Parameter
 The parameter consists of a name of the receive function to callback with the result and a list of token ID and address pairs.
 It is serialized as: :ref:`ReceiveFunctionName` followed by 1 byte for the number of queries and then this number of queries.
 A queries is serialized as :ref:`TokenID` followed by :ref:`Address`.
+
+.. note::
+
+  Be aware of the size limit on contract function parameters which currently is 1024 bytes, depending on the byte size of the Token ID and the name of the receive function.
 
 Callback parameter
 ~~~~~~~~~~~~~~~~~~
@@ -216,6 +243,11 @@ Minting a token with a zero amount is valid.
 
 The Mint event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`TokenID`, an amount of tokens being minted :ref:`TokenAmount` and the owner address for of the tokens :ref:`Address`.
 
+.. note::
+
+  Be aware of the limit on the number of logs per smart contract function call which currently is 64.
+  A token smart contract function which needs to mint a large number of token types with token metadata might hit this limit.
+
 Burn
 ^^^^
 
@@ -241,6 +273,13 @@ Logging the TokenMetadata event again with the same token ID, is used to update 
 
 The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
 Lastly a byte to indicate whether a hash of the metadata is included, if it value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash is followed.
+
+.. note::
+
+  Be aware of the limit on the number of logs per smart contract function call which currently is 64, and also the byte size limit on each logged event, which currently is 512 bytes.
+  This will limit the length of the metadata URI depending on the size of the token ID and whether a content hash is included.
+  With the largest possible token ID and a content hash included; the URI can be up to 220 bytes.
+
 
 .. _CTS-rejection-errors:
 
@@ -437,8 +476,8 @@ Decisions and rationale
 
 In this section we point out some of the differences from other popular token standards found on other blockchains, and try to reason why this was decided.
 
-Token ID bytes instead of some integer
---------------------------------------
+Token ID bytes instead an integer
+---------------------------------
 
 Token standards such as ERC721 and ERC1155 both uses an 256 bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
 But in the case where the token ID have no significance other than a simple identifier, smaller sized token IDs can reduce energy costs.

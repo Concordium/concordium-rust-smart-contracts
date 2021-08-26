@@ -14,10 +14,10 @@
 //! address or a contract address.
 //!
 //! As according to the CTS1 specification, the contract have a `transfer`
-//! function for transferring an amount of a specific token id from one
-//! address to another address. Likewise an address can enable and/or disable
-//! one or more addresses as operators. An operator of some token owner address
-//! is allowed to transfer any tokens of the owner.
+//! function for transferring an amount of a specific token type from one
+//! address to another address. An address can enable and disable one or more
+//! addresses as operators. An operator of some token owner address is allowed
+//! to transfer any tokens of the owner.
 //!
 //! This contract also contains an example of a function to be called when
 //! receiving tokens. In which case the contract will forward the tokens to the
@@ -31,42 +31,37 @@ use concordium_std::{
     *,
 };
 
-/// The baseurl for the token metadata, gets appended with the token id before
-/// emitted in the TokenMetadata event.
+/// The baseurl for the token metadata, gets appended with the token ID as hex
+/// encoding before emitted in the TokenMetadata event.
 const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
 // Types
 
-/// Tokens and their amounts to be minted at contract instantiation.
+/// Tokens to be minted at contract instantiation.
 type NewTokens = Set<TokenId>;
 
 /// The state for each address.
 #[derive(Serialize, SchemaType, Default)]
 struct AddressState {
-    /// The amount of tokens owned by this address.
+    /// The tokens owned by this address.
     owned_tokens: Set<TokenId>,
     /// The address which are currently enabled as operators for this address.
     operators:    Set<Address>,
 }
 
-/// The contract state,
-///
-/// Note: The specification does not specify how to structure the contract state
-/// and this could be structured in a more space efficient way.
+/// The contract state.
+// Note: The specification does not specify how to structure the contract state
+// and this could be structured in a more space efficient way depending on the use case.
 #[contract_state(contract = "CTS1-NFT")]
 #[derive(Serialize, SchemaType)]
 struct State {
-    /// The state of addresses.
+    /// The state for each address.
     state:      Map<Address, AddressState>,
     /// All of the token IDs
     all_tokens: Set<TokenId>,
 }
 
-/// The different errors the contract can produce.
-///
-/// Note: For the error code to be derived according to the CTS1
-/// specification (derived by Reject), the order of these errors cannot be
-/// changed. However new custom errors can safely be appended.
+/// The custom errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject)]
 enum CustomContractError {
     /// Failed parsing the parameter.
@@ -78,11 +73,12 @@ enum CustomContractError {
     LogMalformed,
 }
 
+/// Wrapping the custom errors in a type with CTS1 errors.
 type ContractError = Cts1Error<CustomContractError>;
 
 type ContractResult<A> = Result<A, ContractError>;
 
-/// Mapping the logging errors to ContractError.
+/// Mapping the logging errors to CustomContractError.
 impl From<LogError> for CustomContractError {
     fn from(le: LogError) -> Self {
         match le {
@@ -97,6 +93,7 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cts1Error::Custom(c) }
 }
 
+// Functions for creating, updating and querying the contract state.
 impl State {
     /// Creates a new state with a number of tokens all with the same owner.
     fn new(new_tokens: NewTokens, owner: Address) -> Self {
@@ -114,7 +111,8 @@ impl State {
     }
 
     /// Get the current balance of a given token id for a given address.
-    /// Results in an error if the token id does not exist in the state.
+    /// Results in an error if the token ID does not exist in the state.
+    /// Since this contract only contains NFTs, the balance will always be either 1 or 0.
     fn balance(&self, token_id: &TokenId, address: &Address) -> ContractResult<TokenAmount> {
         ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
         let balance = self
@@ -131,7 +129,7 @@ impl State {
         Ok(balance)
     }
 
-    /// Check is an address is an operator of a specific owner address.
+    /// Check if a given address is an operator of a given owner address.
     fn is_operator(&self, address: &Address, owner: &Address) -> bool {
         self.state
             .get(owner)
@@ -139,8 +137,8 @@ impl State {
             .unwrap_or(false)
     }
 
-    /// Update the state with a transfer.
-    /// Results in an error if the token id does not exist in the state or if
+    /// Update the state with a transfer of some token.
+    /// Results in an error if the token ID does not exist in the state or if
     /// the from address have insufficient tokens to do the transfer.
     fn transfer(
         &mut self,
@@ -150,34 +148,36 @@ impl State {
         to: &Address,
     ) -> ContractResult<()> {
         ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
+        // A zero transfer does not modify the state
         if amount == 0 {
             return Ok(());
         }
+        // Since this contract only contains NFTs, no one will have an amount greater than 1.
+        // And since the amount cannot be the zero at this point, the address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
+
         let from_address_state =
             self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
 
+        // Find and remove the token from the owner, if nothing is removed, we know the address did not own the token.
         let from_had_the_token = from_address_state.owned_tokens.remove(token_id);
         ensure!(from_had_the_token, ContractError::InsufficientFunds);
 
+        // Add the token to the new owner.
         let to_address_state = self.state.entry(*to).or_insert_with(AddressState::default);
         to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
 
-    /// Update the state adding a new operator for a given token id and address.
-    /// Results in an error if the token id does not exist in the state.
-    /// Succeeds even if the `operator` is already an operator for this
-    /// `token_id` and `address`.
+    /// Update the state adding a new operator for a given token ID and address.
+    /// Succeeds even if the `operator` is already an operator for the `address`.
     fn add_operator(&mut self, owner: &Address, operator: &Address) {
         let owner_address_state = self.state.entry(*owner).or_insert_with(AddressState::default);
         owner_address_state.operators.insert(*operator);
     }
 
     /// Update the state removing an operator for a given token id and address.
-    /// Results in an error if the token id does not exist in the state.
-    /// Succeeds even if the `operator` is not an operator for this `token_id`
-    /// and `address`.
+    /// Succeeds even if the `operator` is _not_ an operator for the `address`.
     fn remove_operator(&mut self, owner: &Address, operator: &Address) {
         self.state.get_mut(owner).map(|address_state| address_state.operators.remove(operator));
     }
@@ -187,7 +187,8 @@ impl State {
 
 /// Initialize contract instance with a number of token types and some amount of
 /// tokens all owned by the invoker.
-/// Logs a `Minting` event for each token.
+/// Logs a `Mint` and a `TokenMetadata` event for each token.
+/// The url for the token metadata is the token ID encoded in hex, appended on the `TOKEN_METADATA_BASE_URL`.
 #[init(contract = "CTS1-NFT", parameter = "NewTokens", enable_logger)]
 fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
     // Parse the parameter.
