@@ -7,7 +7,7 @@ Status: Draft
 Abstract
 ========
 
-An standard interface for both fungible and non-fungible tokens implemented in smart contracts.
+An standard interface for both fungible and non-fungible tokens implemented in a smart contract.
 The interface provides functions for transferring token ownership, authenticating other address to transfer tokens and for other smart contracts to access token balances.
 It allows for off-chain applications to track token balances, authentication and the location of token metadata using logged events.
 
@@ -101,14 +101,14 @@ In the case of a contract address, additional information such as the name of a 
 
 It is serialized as: First byte indicates whether it is an account address or a contract address.
 In case the first byte is 0 then 32 bytes for an account address is followed.
-In case the first byte is 1 then 16 bytes for a contract address, bytes for :ref:`ReceiveHookName` and :ref:`ReceiveHookData` is followed.
+In case the first byte is 1 then 16 bytes for a contract address, bytes for :ref:`CTS-ReceiveHookName` and :ref:`CTS-ReceiveHookData` is followed.
 
 .. _CTS-functions:
 
 Contract functions
 ------------------
 
-A smart contract implementing CTS1 MUST export three functions :ref:`transfer`, :ref:`updateOperator` and :ref:`balanceOf` according to the following description:
+A smart contract implementing CTS1 MUST export three functions :ref:`CTS-functions-transfer`, :ref:`CTS-functions-updateOperator` and :ref:`CTS-functions-balanceOf` according to the following description:
 
 .. _CTS-functions-transfer:
 
@@ -125,7 +125,7 @@ Parameter
 
 The parameter is a list of transfers and is serialized as:
 1 byte representing the number of transfers followed by the bytes for this number of transfers.
-Each transfer is serialized as: a :ref:`TokenID`, a :ref:`TokenAmount`, the token owner address :ref:`Address` and the receiving address :ref:`Receiver`.
+Each transfer is serialized as: a :ref:`CTS-TokenID`, a :ref:`CTS-TokenAmount`, the token owner address :ref:`CTS-Address` and the receiving address :ref:`CTS-Receiver`.
 
 .. note::
 
@@ -139,7 +139,7 @@ Receive hook parameter
 ~~~~~~~~~~~~~~~~~~~~~~
 
 The parameter for the receive function hook contains information about the transfer, the name of the token contract and some additional data bytes.
-It is serialized as: a :ref:`TokenID`, a :ref:`TokenAmount`, the token owner address :ref:`Address`, the name of the token contract :ref:`ContractName` and :ref:`ReceiveHookData`
+It is serialized as: a :ref:`CTS-TokenID`, a :ref:`CTS-TokenAmount`, the token owner address :ref:`CTS-Address`, the name of the token contract :ref:`CTS-ContractName` and :ref:`CTS-ReceiveHookData`
 
 Requirements
 ~~~~~~~~~~~~
@@ -172,7 +172,7 @@ The parameter contains whether to add or remove an operator and the address to a
 It does not contain the address which are adding/removing the operator as this will be the sender address of the transaction invoking this function.
 
 The parameter is first a byte indicating whether to remove or add an operator, where if the byte is 0 the sender is removing an operator, if the byte is 1 the sender is adding an operator.
-The followed is the operator address :ref:`Address` to add or remove as operator for the sender.
+The followed is the operator address :ref:`CTS-Address` to add or remove as operator for the sender.
 
 Requirements
 ~~~~~~~~~~~~
@@ -196,8 +196,8 @@ Parameter
 ~~~~~~~~~
 
 The parameter consists of a name of the receive function to callback with the result and a list of token ID and address pairs.
-It is serialized as: :ref:`ReceiveFunctionName` followed by 1 byte for the number of queries and then this number of queries.
-A queries is serialized as :ref:`TokenID` followed by :ref:`Address`.
+It is serialized as: :ref:`CTS-ReceiveFunctionName` followed by 1 byte for the number of queries and then this number of queries.
+A queries is serialized as :ref:`CTS-TokenID` followed by :ref:`CTS-Address`.
 
 .. note::
 
@@ -208,7 +208,7 @@ Callback parameter
 
 The parameter for the callback receive function is a list of query and token amount pairs.
 It is serialized as: 1 byte for the number of query-amount pairs and then this number of pairs.
-A query-amount pair is serialized as a :ref:`TokenID`, an address :ref:`Address` and a :ref:`TokenAmount`.
+A query-amount pair is serialized as a :ref:`CTS-TokenID`, an address :ref:`CTS-Address` and a :ref:`CTS-TokenAmount`.
 
 Requirements
 ~~~~~~~~~~~~
@@ -233,7 +233,7 @@ Transfer
 The event to log for a transfer of some amount of a token type.
 A contract function which transfers tokens MUST log a transfer event for each of these transfers.
 
-The Transfer event is serialized as: first a byte with the value of 0, followed by the token ID :ref:`TokenID`, an amount of tokens :ref:`TokenAmount`, from address :ref:`Address` and to address :ref:`Address`.
+The Transfer event is serialized as: first a byte with the value of 0, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens :ref:`CTS-TokenAmount`, from address :ref:`CTS-Address` and to address :ref:`CTS-Address`.
 
 Mint
 ^^^^
@@ -241,7 +241,7 @@ Mint
 An event for minting MUST be logged every time a new token is minted. This also applies when introducing new token types and the initial token types and amounts in a contract.
 Minting a token with a zero amount is valid.
 
-The Mint event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`TokenID`, an amount of tokens being minted :ref:`TokenAmount` and the owner address for of the tokens :ref:`Address`.
+The Mint event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens being minted :ref:`CTS-TokenAmount` and the owner address for of the tokens :ref:`CTS-Address`.
 
 .. note::
 
@@ -256,13 +256,13 @@ Burning a zero amount of a token is allowed.
 
 Summing all of the minted amounts from Mint events and subtracting all of the burned amounts from Burn events for a token type MUST sum up to the total supply for the token type.
 
-The Burn event is serialized as: first a byte with the value of 2, followed by the token ID :ref:`TokenID`, an amount of tokens being burned :ref:`TokenAmount` and the owner address of the tokens :ref:`Address`.
+The Burn event is serialized as: first a byte with the value of 2, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens being burned :ref:`CTS-TokenAmount` and the owner address of the tokens :ref:`CTS-Address`.
 
 UpdateOperator
 ^^^^^^^^^^^^^^
 
 The event to log when updating an operator of some address.
-The UpdateOperator event is serialized as: first a byte with the value of 3, followed by a byte which is 0 if an operator is being removed and 1 if an operator is being added, then the owner address updating an operator :ref:`Address` and an operator address :ref:`Address` being added or removed.
+The UpdateOperator event is serialized as: first a byte with the value of 3, followed by a byte which is 0 if an operator is being removed and 1 if an operator is being added, then the owner address updating an operator :ref:`CTS-Address` and an operator address :ref:`CTS-Address` being added or removed.
 
 TokenMetadata
 ^^^^^^^^^^^^^
@@ -271,7 +271,7 @@ The event to log when setting the metadata url for a token type.
 It consists of a token ID and an URL for the location of the metadata for this token type with an optional SHA256 checksum of the content.
 Logging the TokenMetadata event again with the same token ID, is used to update the metadata location and only the most recently logged token metadata event for certain token id should be used to get the token metadata.
 
-The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
+The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`CTS-TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
 Lastly a byte to indicate whether a hash of the metadata is included, if it value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash is followed.
 
 .. note::
@@ -470,6 +470,19 @@ The danish localization JSON file could be:
     "description": "Ryan katte er ensomme væsner, som rejser rundt i galaxen søgende efter deres forfædre og sande fortid"
   }
 
+Smart contract limitations
+==========================
+
+A number of limitations are important to be aware of:
+
+- Smart contract state size is limited to 16 KiB.
+- Smart contract function parameters are limited to 1 KiB.
+- Each logged event is limited to 0.5 KiB.
+- The number of logged events is limited to 64.
+
+.. note::
+
+  Smart contracts where the contract state size limit is to low, can distribute the state across multiple smart contract instances.
 
 Decisions and rationale
 =======================
@@ -486,7 +499,7 @@ Which is why we chose to let the first byte indicate the size of the token ID, m
 Only batched transfers
 ----------------------
 
-The specification only have a :ref:`transfer` smart contract function which takes list of transfer and no function for a single transfer.
+The specification only have a ``transfer`` smart contract function which takes list of transfer and no function for a single transfer.
 This will result in lower energy cost compared to multiple contract calls and only introduce a small overhead for single transfers.
 The reason for not also including a single transfer function, is to have smaller smart contract modules, which in turn leads to saving cost on every function call.
 
