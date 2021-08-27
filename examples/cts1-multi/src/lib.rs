@@ -5,10 +5,10 @@
 //! types each identified by a token ID. A token type is then globally
 //! identified by the contract address together with the token ID.
 //!
-//! In this example the contract takes a list of token IDs and amounts, and
-//! each token is then minted at instantiation with this specific amount and
-//! they are all owned by the account instantiating initially.
-//! No other minting or burning functionality is defined in this example.
+//! In this example the contract is initialized with no tokens, and tokens can
+//! be minted through a `mint` contract function, which will only succeed for
+//! the contract owner. No functionality to burn token is defined in this
+//! example.
 //!
 //! Note: The word 'address' is referring to either an account address or a
 //! contract address.
@@ -16,8 +16,8 @@
 //! As according to the CTS1 specification, the contract have a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
-//! addresses as operators. An operator of some token owner address is allowed
-//! to transfer any tokens of the owner.
+//! addresses as operators. An operator of some address is allowed to transfer
+//! any tokens owned by this address.
 //!
 //! This contract also contains an example of a function to be called when
 //! receiving tokens. In which case the contract will forward the tokens to
@@ -38,8 +38,16 @@ const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
 // Types
 
-/// Tokens and their amounts to be minted at contract instantiation.
-type NewTokens = Map<TokenId, TokenAmount>;
+/// The parameter for the contract function `mint` which mints a number of
+/// token types and/or amounts of tokens to a given address.
+#[derive(Serialize, SchemaType)]
+struct MintParams {
+    /// Owner of the newly minted tokens.
+    owner:  Address,
+    /// A collection of tokens to mint.
+    #[concordium(size_length = 1)]
+    tokens: Map<TokenId, TokenAmount>,
+}
 
 /// The state for each address.
 #[derive(Serialize, SchemaType, Default)]
@@ -47,6 +55,7 @@ struct AddressState {
     /// The amount of tokens owned by this address.
     balances:  Map<TokenId, TokenAmount>,
     /// The address which are currently enabled as operators for this address.
+    #[concordium(size_length = 1)]
     operators: Set<Address>,
 }
 
@@ -60,6 +69,7 @@ struct State {
     /// The state of addresses.
     state:  Map<Address, AddressState>,
     /// All of the token IDs
+    #[concordium(size_length = 1)]
     tokens: Set<TokenId>,
 }
 
@@ -74,7 +84,6 @@ enum CustomContractError {
     /// Failed logging: Log is malformed.
     LogMalformed,
     /// Invalid contract name.
-    /// Note this one is only used by "onReceivingCTS1".
     InvalidContractName,
 }
 
@@ -98,24 +107,20 @@ impl From<CustomContractError> for ContractError {
 }
 
 impl State {
-    /// Creates a new state with a number of tokens all with the same owner.
-    fn new(new_tokens: NewTokens, owner: Address) -> Self {
-        let mut tokens = Set::default();
-        for &token_id in new_tokens.keys() {
-            tokens.insert(token_id);
-        }
-
-        let address_state = AddressState {
-            balances:  new_tokens,
-            operators: Set::default(),
-        };
-
-        let mut state = Map::default();
-        state.insert(owner, address_state);
+    /// Construct a state with no tokens
+    fn empty() -> Self {
         State {
-            state,
-            tokens,
+            state:  Map::default(),
+            tokens: Set::default(),
         }
+    }
+
+    /// Mints an amount of tokens with a given address as the owner.
+    fn mint(&mut self, token_id: &TokenId, amount: TokenAmount, owner: &Address) {
+        self.tokens.insert(*token_id);
+        let owner_state = self.state.entry(*owner).or_insert_with(AddressState::default);
+        let owner_balance = owner_state.balances.entry(*token_id).or_insert(0);
+        *owner_balance += amount;
     }
 
     /// Get the current balance of a given token id for a given address.
@@ -149,15 +154,21 @@ impl State {
         to: &Address,
     ) -> ContractResult<()> {
         ensure!(self.tokens.contains(token_id), ContractError::InvalidTokenId);
+        // A zero transfer does not modify the state.
         if amount == 0 {
             return Ok(());
         }
+
+        // Get the `from` state and balance, if not present it will fail since the
+        // balance is interpreted as 0 and the transfer amount must be more than
+        // 0 as this point.
         let from_address_state =
             self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
         let from_balance = from_address_state
             .balances
             .get_mut(token_id)
             .ok_or(ContractError::InsufficientFunds)?;
+
         ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
         *from_balance -= amount;
         let to_address_state = self.state.entry(*to).or_insert_with(AddressState::default);
@@ -166,19 +177,16 @@ impl State {
         Ok(())
     }
 
-    /// Update the state adding a new operator for a given token id and address.
-    /// Results in an error if the token id does not exist in the state.
-    /// Succeeds even if the `operator` is already an operator for this
-    /// `token_id` and `address`.
+    /// Update the state adding a new operator for a given address.
+    /// Succeeds even if the `operator` is already an operator for the
+    /// `address`.
     fn add_operator(&mut self, owner: &Address, operator: &Address) {
         let owner_address_state = self.state.entry(*owner).or_insert_with(AddressState::default);
         owner_address_state.operators.insert(*operator);
     }
 
-    /// Update the state removing an operator for a given token id and address.
-    /// Results in an error if the token id does not exist in the state.
-    /// Succeeds even if the `operator` is not an operator for this `token_id`
-    /// and `address`.
+    /// Update the state removing an operator for a given address.
+    /// Succeeds even if the `operator` is not an operator for the `address`.
     fn remove_operator(&mut self, owner: &Address, operator: &Address) {
         self.state.get_mut(owner).map(|address_state| address_state.operators.remove(operator));
     }
@@ -186,26 +194,56 @@ impl State {
 
 // Contract functions
 
-/// Initialize contract instance with a number of token types and some amount of
-/// tokens all owned by the invoker.
-/// Logs a `Mint` event for each token.
-#[init(contract = "CTS1-Multi", parameter = "NewTokens", enable_logger)]
-fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
-    // Parse the parameter.
-    let tokens: NewTokens = ctx.parameter_cursor().get()?;
-    // Get the instantiater of this contract instance.
-    let invoker = Address::Account(ctx.init_origin());
+/// Initialize contract instance with a no token types.
+#[init(contract = "CTS1-Multi")]
+fn contract_init(_ctx: &impl HasInitContext) -> InitResult<State> {
+    // Construct the initial contract state.
+    Ok(State::empty())
+}
 
-    // Log events for every newly minted token.
-    for (&token_id, &amount) in tokens.iter() {
+/// Mint new tokens with a given address as the owner of these tokens.
+/// Can only be called by the contract owner.
+/// Logs a `Mint` and a `TokenMetadata` event for each token.
+/// The url for the token metadata is the token ID encoded in hex, appended on
+/// the `TOKEN_METADATA_BASE_URL`.
+///
+/// It rejects if:
+/// - The sender is not the contract instance owner.
+/// - Fails to parse parameter.
+/// - Any of the tokens fails to be minted, which could be if:
+///     - Fails to log Mint event.
+///     - Fails to log TokenMetadata event.
+///
+/// Note: Can at most mint 32 token types in one call due to the limit on the
+/// number of logs a smart contract can produce on each function call.
+#[receive(contract = "CTS1-NFT", name = "mint", parameter = "MintParams", enable_logger)]
+fn contract_mint<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    logger: &mut impl HasLogger,
+    state: &mut State,
+) -> ContractResult<A> {
+    // Get the contract owner
+    let owner = ctx.owner();
+    // Get the sender of the transaction
+    let sender = ctx.sender();
+
+    ensure!(sender.matches_account(&owner), ContractError::Unauthorized);
+
+    // Parse the parameter.
+    let params: MintParams = ctx.parameter_cursor().get()?;
+
+    for (token_id, token_amount) in params.tokens {
+        // Mint the token in the state.
+        state.mint(&token_id, token_amount, &params.owner);
+
         // Event for minted NFT.
         logger.log(&Event::Mint(MintEvent {
             token_id,
-            amount,
-            owner: invoker,
+            amount: token_amount,
+            owner: params.owner,
         }))?;
 
-        // Metadata URL for the token.
+        // Metadata URL for the NFT.
         let mut token_metadata_url = String::from(TOKEN_METADATA_BASE_URL);
         token_metadata_url.push_str(&token_id.to_string());
         logger.log(&Event::TokenMetadata(TokenMetadataEvent {
@@ -216,12 +254,8 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
             },
         }))?;
     }
-    // Construct the initial contract state.
-    let state = State::new(tokens, invoker);
-
-    Ok(state)
+    Ok(A::accept())
 }
-
 /// Execute a list of token transfers, in the order of the list.
 ///
 /// Logs a `Transfer` event for each transfer in the list.
@@ -443,34 +477,57 @@ mod tests {
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
     fn initial_state() -> State {
-        let mut tokens: NewTokens = Map::default();
-        tokens.insert(TOKEN_0, 400);
-        tokens.insert(TOKEN_1, 1);
-        State::new(tokens, ADDRESS_0)
+        let mut state = State::empty();
+        state.mint(&TOKEN_0, 400, &ADDRESS_0);
+        state.mint(&TOKEN_1, 1, &ADDRESS_0);
+        state
     }
 
-    /// Test initialization succeeds and the tokens are owned by the contract
-    /// instantiater and the appropriate events are logged.
+    /// Test initialization succeeds with a state with no tokens.
     #[concordium_test]
     fn test_init() {
         // Setup the context
-        let mut ctx = InitContextTest::empty();
-        ctx.set_init_origin(ACCOUNT_0);
-
-        // and parameter.
-        let mut tokens: NewTokens = Map::default();
-        tokens.insert(TOKEN_0, 400);
-        tokens.insert(TOKEN_1, 1);
-        let parameter_bytes = to_bytes(&tokens);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = LogRecorder::init();
+        let ctx = InitContextTest::empty();
 
         // Call the contract function.
-        let result = contract_init(&ctx, &mut logger);
+        let result = contract_init(&ctx);
 
         // Check the result
         let state = result.expect_report("Contract initialization failed");
+
+        // Check the state
+        claim_eq!(state.tokens.len(), 0, "Only one token is initialized");
+    }
+
+    /// Test minting succeeds and the tokens are owned by the given address and
+    /// the appropriate events are logged.
+    #[concordium_test]
+    fn test_mint() {
+        // Setup the context
+        let mut ctx = ReceiveContextTest::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let mut tokens = Map::default();
+        tokens.insert(TOKEN_0, 400);
+        tokens.insert(TOKEN_1, 1);
+        let parameter = MintParams {
+            owner: ADDRESS_0,
+            tokens,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = LogRecorder::init();
+        let mut state = State::empty();
+
+        // Call the contract function.
+        let result: ContractResult<ActionsTree> = contract_mint(&ctx, &mut logger, &mut state);
+
+        // Check the result
+        let actions = result.expect_report("Results in rejection");
+        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
         // Check the state
         claim_eq!(state.tokens.len(), 2, "Only one token is initialized");
@@ -504,7 +561,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_0,
                 metadata_url: MetadataUrl {
-                    url:  String::from("https://some.example/token/0"),
+                    url:  format!("https://some.example/token/{}", TOKEN_0),
                     hash: None,
                 },
             }))),
@@ -514,7 +571,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_1,
                 metadata_url: MetadataUrl {
-                    url:  String::from("https://some.example/token/42"),
+                    url:  format!("https://some.example/token/{}", TOKEN_1),
                     hash: None,
                 },
             }))),
