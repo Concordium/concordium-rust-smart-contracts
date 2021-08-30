@@ -20,7 +20,7 @@
 //! any tokens owned by this address.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_cts::*;
+use concordium_cts1::*;
 use concordium_std::{
     collections::{HashMap as Map, HashSet as Set},
     *,
@@ -32,6 +32,11 @@ const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
 // Types
 
+/// Contract token ID type.
+/// To save bytes we use a small token ID type, but is limited to be represented
+/// by a `u8`.
+type ContractTokenId = TokenIdU8;
+
 /// The parameter for the contract function `mint` which mints a number of
 /// tokens to a given address.
 #[derive(Serialize, SchemaType)]
@@ -40,15 +45,17 @@ struct MintParams {
     owner:  Address,
     /// A collection of tokens to mint.
     #[concordium(size_length = 1)]
-    tokens: Set<TokenId>,
+    tokens: Set<ContractTokenId>,
 }
 
 /// The state for each address.
 #[derive(Serialize, SchemaType, Default)]
 struct AddressState {
     /// The tokens owned by this address.
-    owned_tokens: Set<TokenId>,
+    #[concordium(size_length = 2)]
+    owned_tokens: Set<ContractTokenId>,
     /// The address which are currently enabled as operators for this address.
+    #[concordium(size_length = 1)]
     operators:    Set<Address>,
 }
 
@@ -61,7 +68,7 @@ struct State {
     /// The state for each address.
     state:      Map<Address, AddressState>,
     /// All of the token IDs
-    all_tokens: Set<TokenId>,
+    all_tokens: Set<ContractTokenId>,
 }
 
 /// The custom errors the contract can produce.
@@ -110,7 +117,7 @@ impl State {
     }
 
     /// Mint a new token with a given address as the owner
-    fn mint(&mut self, token: TokenId, owner: &Address) -> ContractResult<()> {
+    fn mint(&mut self, token: ContractTokenId, owner: &Address) -> ContractResult<()> {
         ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
         let owner_address = self.state.entry(*owner).or_insert_with(AddressState::default);
         owner_address.owned_tokens.insert(token);
@@ -121,7 +128,11 @@ impl State {
     /// Results in an error if the token ID does not exist in the state.
     /// Since this contract only contains NFTs, the balance will always be
     /// either 1 or 0.
-    fn balance(&self, token_id: &TokenId, address: &Address) -> ContractResult<TokenAmount> {
+    fn balance(
+        &self,
+        token_id: &ContractTokenId,
+        address: &Address,
+    ) -> ContractResult<TokenAmount> {
         ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
         let balance = self
             .state
@@ -150,7 +161,7 @@ impl State {
     /// the from address have insufficient tokens to do the transfer.
     fn transfer(
         &mut self,
-        token_id: &TokenId,
+        token_id: &ContractTokenId,
         amount: TokenAmount,
         from: &Address,
         to: &Address,
@@ -260,6 +271,8 @@ fn contract_mint<A: HasActions>(
     Ok(A::accept())
 }
 
+type TransferParameter = TransferParams<ContractTokenId>;
+
 /// Execute a list of token transfers, in the order of the list.
 ///
 /// Logs a `Transfer` event for each transfer in the list.
@@ -276,14 +289,14 @@ fn contract_mint<A: HasActions>(
 /// - Fails to log event.
 /// - Any of the messages sent to contracts receiving a transfer choose to
 ///   reject.
-#[receive(contract = "CTS1-NFT", name = "transfer", parameter = "TransferParams", enable_logger)]
+#[receive(contract = "CTS1-NFT", name = "transfer", parameter = "TransferParameter", enable_logger)]
 fn contract_transfer<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
     state: &mut State,
 ) -> ContractResult<A> {
     // Parse the parameter.
-    let TransferParams(transfers) = ctx.parameter_cursor().get()?;
+    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
@@ -365,7 +378,7 @@ fn contract_update_operator<A: HasActions>(
     }
 
     // Log the appropriate event
-    logger.log(&Event::UpdateOperator(UpdateOperatorEvent {
+    logger.log(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
         owner:    sender,
         operator: params.operator,
         update:   params.update,
@@ -395,7 +408,7 @@ fn contract_balance_of<A: HasActions>(
         bail!(ContractError::ContractOnly)
     };
     // Parse the parameter.
-    let params: BalanceOfQueryParams = ctx.parameter_cursor().get()?;
+    let params: BalanceOfQueryParams<ContractTokenId> = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
@@ -418,8 +431,8 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const TOKEN_0: TokenId = TokenId(0);
-    const TOKEN_1: TokenId = TokenId(42);
+    const TOKEN_0: ContractTokenId = TokenIdU8(0);
+    const TOKEN_1: ContractTokenId = TokenIdU8(42);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
@@ -698,7 +711,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::UpdateOperator(UpdateOperatorEvent {
+            to_bytes(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
                 owner:    ADDRESS_0,
                 operator: ADDRESS_1,
                 update:   OperatorUpdate::Add,

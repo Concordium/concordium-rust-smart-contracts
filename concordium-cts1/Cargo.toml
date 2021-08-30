@@ -1,5 +1,5 @@
 [package]
-name = "concordium-cts"
+name = "concordium-cts1"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"

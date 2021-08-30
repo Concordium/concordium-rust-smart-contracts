@@ -25,19 +25,24 @@
 //! GTU is send to the receiver.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_cts::*;
+use concordium_cts1::*;
 use concordium_std::{
     collections::{HashMap as Map, HashSet as Set},
     *,
 };
 
 /// The id of the wGTU token in this contract.
-const TOKEN_ID_WGTU: TokenId = TokenId(0);
+const TOKEN_ID_WGTU: ContractTokenId = TokenIdUnit();
 
 /// The metadata url for the wGTU token.
 const TOKEN_METADATA_URL: &str = "https://some.example/token/wgtu";
 
 // Types
+
+/// Contract token ID type.
+/// Since this contract will only ever contain this one token type, we use the
+/// smallest possible token ID.
+type ContractTokenId = TokenIdUnit;
 
 /// The state tracked for each address.
 #[derive(Serialize, SchemaType)]
@@ -117,7 +122,11 @@ impl State {
 
     /// Get the current balance of a given token id for a given address.
     /// Results in an error if the token id does not exist in the state.
-    fn balance(&self, token_id: &TokenId, address: &Address) -> ContractResult<TokenAmount> {
+    fn balance(
+        &self,
+        token_id: &ContractTokenId,
+        address: &Address,
+    ) -> ContractResult<TokenAmount> {
         ensure_eq!(token_id, &TOKEN_ID_WGTU, ContractError::InvalidTokenId);
         Ok(self.token.get(address).map(|s| s.balance).unwrap_or(0))
     }
@@ -136,7 +145,7 @@ impl State {
     /// the from address have insufficient tokens to do the transfer.
     fn transfer(
         &mut self,
-        token_id: &TokenId,
+        token_id: &ContractTokenId,
         amount: TokenAmount,
         from: &Address,
         to: &Address,
@@ -178,7 +187,7 @@ impl State {
 
     fn mint(
         &mut self,
-        token_id: &TokenId,
+        token_id: &ContractTokenId,
         amount: TokenAmount,
         owner: &Address,
     ) -> ContractResult<()> {
@@ -193,7 +202,7 @@ impl State {
 
     fn burn(
         &mut self,
-        token_id: &TokenId,
+        token_id: &ContractTokenId,
         amount: TokenAmount,
         owner: &Address,
     ) -> ContractResult<()> {
@@ -333,6 +342,9 @@ fn contract_unwrap<A: HasActions>(
 
 // Contract functions required by CTS1
 
+#[allow(dead_code)]
+type TransferParameter = TransferParams<ContractTokenId>;
+
 /// Execute a list of token transfers, in the order of the list.
 ///
 /// Logs a `Transfer` event for each transfer in the list.
@@ -349,7 +361,12 @@ fn contract_unwrap<A: HasActions>(
 /// - Fails to log event.
 /// - Any of the messages sent to contracts receiving a transfer choose to
 ///   reject.
-#[receive(contract = "CTS1-wGTU", name = "transfer", parameter = "TransferParams", enable_logger)]
+#[receive(
+    contract = "CTS1-wGTU",
+    name = "transfer",
+    parameter = "TransferParameter",
+    enable_logger
+)]
 fn contract_transfer<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
@@ -440,7 +457,7 @@ fn contract_update_operator<A: HasActions>(
     }
 
     // Log the appropriate event
-    logger.log(&Event::UpdateOperator(UpdateOperatorEvent {
+    logger.log(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
         owner:    sender,
         operator: param.operator,
         update:   param.update,
@@ -479,7 +496,7 @@ fn contract_balance_of<A: HasActions>(
     let mut response = Vec::with_capacity(queries_length.into());
     for _ in 0..queries_length {
         // Parse one of the queries.
-        let query: BalanceOfQuery = ctx.parameter_cursor().get()?;
+        let query: BalanceOfQuery<ContractTokenId> = ctx.parameter_cursor().get()?;
         // Query the state for balance.
         let amount = state.balance(&query.token_id, &query.address)?;
         response.push((query, amount));
@@ -728,7 +745,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::UpdateOperator(UpdateOperatorEvent {
+            to_bytes(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
                 owner:    ADDRESS_0,
                 operator: ADDRESS_1,
                 update:   OperatorUpdate::Add,

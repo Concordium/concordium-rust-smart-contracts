@@ -7,11 +7,11 @@ license = "MPL-2.0"
 
 [features]
 default = ["std"]
-std = ["concordium-std/std", "concordium-cts/std"]
+std = ["concordium-std/std", "concordium-cts1/std"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
-concordium-cts = {path = "../../concordium-cts", default-features = false}
+concordium-cts1 = {path = "../../concordium-cts1", default-features = false}
 
 [lib]
 crate-type=["cdylib", "rlib"]
