@@ -77,7 +77,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.45.2
+          toolchain: 1.53
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -115,7 +115,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.45.2
+          toolchain: 1.53
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -228,7 +228,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.45.2
+          toolchain: 1.53
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -264,7 +264,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.45.2
+          toolchain: 1.53
           target: ${{ matrix.target }}
           override: true
 
