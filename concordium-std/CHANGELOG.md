@@ -8,6 +8,7 @@
 - Export `HashMap` and `HashSet` from `contract-common` in `collections` module.
 - Added implementation of `SerialCtx` for `Vec`.
 - Export `Box` when no `std` feature.
+- Bump minimum supported Rust version to 1.51.
 
 ## concordium-std 0.5.0 (2021-05-12)
 
