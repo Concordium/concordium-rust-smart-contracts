@@ -17,8 +17,7 @@ It allows for off-chain applications to track token balances, authentication and
 Specification
 =============
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
-
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in :rfc:`2119`.
 
 General types and serialization
 -------------------------------
@@ -44,8 +43,8 @@ It is serialized as 1 byte for the size of the identifier, followed by this numb
 ``TokenAmount``
 ^^^^^^^^^^^^^^^
 
-An amount of a token type.
-It is represented in WASM as an unsigned integer ``i64`` (8 bytes little endian).
+An amount of a token type is an unsigned 64bit integer represented in WASM by the type ``i64``.
+It is serialized using 8 bytes little endian.
 
 .. _CTS-ReceiveHookName:
 
@@ -53,7 +52,11 @@ It is represented in WASM as an unsigned integer ``i64`` (8 bytes little endian)
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 A smart contract receive function name.
+A receive function name is prefixed with the contract name, followed by a ``.`` and a name for the function.
+It MUST consist only of ASCII alphanumeric or punctuation characters.
+The contract name is not allowed to contain ``.``.
 It is serialized as: the function name byte length is represented by the first 2 bytes, followed this many bytes for the function name.
+The receive function name MUST be 100 bytes or less.
 
 .. note::
 
@@ -77,8 +80,11 @@ It is serialized as: the first 2 bytes encodes the length of the data, followed 
 ``ContractName``
 ^^^^^^^^^^^^^^^^
 
-A smart contract name.
+A name of a smart contract.
+It must be prefixed with ``init_`` and MUST consist only of ASCII alphanumeric or punctuation characters.
+The contract name is not allowed to contain ``.``.
 It is serialized as: the contract name byte length is represented by the first 2 bytes, followed this many bytes for the contract name.
+The contract name MUST be 100 bytes or less.
 
 .. _CTS-Address:
 
@@ -151,10 +157,10 @@ Requirements
   - The token balance of the ``from`` address is insufficient to do the transfer with error :ref:`INSUFFICIENT_FUNDS<CTS-rejection-errors>`.
   - TokenID is unknown with error: :ref:`INVALID_TOKEN_ID<CTS-rejection-errors>`.
 
-- A transfer MUST decrease the balance of the ``from`` address and increase the balance of the ``to`` address or fail.
+- A transfer MUST non-strictly decrease the balance of the ``from`` address and non-strictly increase the balance of the ``to`` address or fail.
 - A transfer with the same address as ``from`` and ``to`` MUST be executed as a normal transfer.
 - A transfer of a token amount zero MUST be executed as a normal transfer.
-- A transfer of some amount of a token type MUST only transfer the exact amount of tokens between balances.
+- A transfer of some amount of a token type MUST only transfer the exact amount of the given token type between balances.
 - A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a receive hook parameter :ref:`described above<CTS-functions-transfer-receive-hook-parameter>`
 - The contract function MUST reject if a receive hook function called on the contract receiving tokens rejects.
 
@@ -169,7 +175,7 @@ Parameter
 ~~~~~~~~~
 
 The parameter contains whether to add or remove an operator and the address to add/remove as operator.
-It does not contain the address which are adding/removing the operator as this will be the sender address of the transaction invoking this function.
+It does not contain the address which are adding/removing the operator as this will be the sender of the message invoking this function.
 
 The parameter is first a byte indicating whether to remove or add an operator, where if the byte is 0 the sender is removing an operator, if the byte is 1 the sender is adding an operator.
 The followed is the operator address :ref:`CTS-Address` to add or remove as operator for the sender.
@@ -179,11 +185,7 @@ Requirements
 
 - The contract function MUST reject if the sender address is the same as the operator address with error :ref:`OPERATOR_IS_SENDER<CTS-rejection-errors>`.
 
-.. note::
 
-  Operators are not set per token ID, and an operator can control any token type of the owner address.
-  This was chosen to require less on the contract implementation and also simplify off-chain integration.
-  If needed a more fine grained authentication system can still exist next to the operators.
 
 .. _CTS-functions-balanceOf:
 
@@ -201,7 +203,7 @@ A query is serialized as :ref:`CTS-TokenID` followed by :ref:`CTS-Address`.
 
 .. note::
 
-  Be aware of the size limit on contract function parameters which currently is 1024 bytes, depending on the byte size of the Token ID and the name of the receive function.
+  Be aware of the size limit on contract function parameters which currently is 1024 bytes, which puts a limit on the number of queries depending on the byte size of the Token ID and the name of the receive function.
 
 Callback parameter
 ~~~~~~~~~~~~~~~~~~
@@ -214,8 +216,8 @@ Requirements
 ~~~~~~~~~~~~
 
 - The contract function MUST reject if the sender is not a contract address with error :ref:`CONTRACT_ONLY<CTS-rejection-errors>`.
-- The contract function MUST reject if any of the queries fail.
-- A query MUST fail if the token ID is unknown with error: :ref:`INVALID_TOKEN_ID<CTS-rejection-errors>`.
+- The contract function MUST reject if any of the queries fail:
+  - A query MUST fail if the token ID is unknown with error: :ref:`INVALID_TOKEN_ID<CTS-rejection-errors>`.
 
 Logged events
 -------------
@@ -223,62 +225,69 @@ Logged events
 The idea of the logged events for this specification is for off-chain applications to be able to track balances and operators without knowledge of the contract specific implementation details.
 For this reason it is important to log events in any functionality of the token contract which modifies balances or operators.
 
-It MUST be safe for off-chain applications to assume a contract implementing this specification and no events logged have zero tokens and no operators enabled for any address.
+- It MUST be possible to derive the balance of an account for a token type from the logged :ref:`CTS-event-transfer`, :ref:`CTS-event-mint` and :ref:`CTS-event-burn` events.
+- It MUST be safe to assume that with no events logged, every address have zero tokens and no operators enabled for any address.
 
-.. Other events custom to the contract implementation MUST be safe for the off-application to ignore.
+.. _CTS-event-transfer:
 
-Transfer
+``Transfer``
+^^^^^^^^^^^^
+
+A ``Transfer`` event MUST be logged for every amount of a token type changing ownership from one address to another.
+The ``Transfer`` event is serialized as: first a byte with the value of 0, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens :ref:`CTS-TokenAmount`, from address :ref:`CTS-Address` and to address :ref:`CTS-Address`.
+
+.. _CTS-event-mint:
+
+``Mint``
 ^^^^^^^^
 
-The event to log for a transfer of some amount of a token type.
-A contract function which transfers tokens MUST log a transfer event for each of these transfers.
+A ``Mint`` event MUST be logged every time a new token is minted. This also applies when introducing new token types and the initial token types and amounts in a contract.
+Minting a token with a zero amount can be used to indicating the existence of a token type without minting any amount of tokens.
 
-The Transfer event is serialized as: first a byte with the value of 0, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens :ref:`CTS-TokenAmount`, from address :ref:`CTS-Address` and to address :ref:`CTS-Address`.
-
-Mint
-^^^^
-
-An event for minting MUST be logged every time a new token is minted. This also applies when introducing new token types and the initial token types and amounts in a contract.
-Minting a token with a zero amount is valid.
-
-The Mint event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens being minted :ref:`CTS-TokenAmount` and the owner address for of the tokens :ref:`CTS-Address`.
+The ``Mint`` event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens being minted :ref:`CTS-TokenAmount` and the owner address for of the tokens :ref:`CTS-Address`.
 
 .. note::
 
   Be aware of the limit on the number of logs per smart contract function call which currently is 64.
   A token smart contract function which needs to mint a large number of token types with token metadata might hit this limit.
 
-Burn
-^^^^
+.. _CTS-event-burn:
 
-An event for burning MUST be logged every time an amount of tokens are burned.
-Burning a zero amount of a token is allowed.
+``Burn``
+^^^^^^^^
 
-Summing all of the minted amounts from Mint events and subtracting all of the burned amounts from Burn events for a token type MUST sum up to the total supply for the token type.
+A ``Burn`` event MUST be logged every time an amount of a token type is burned.
 
-The Burn event is serialized as: first a byte with the value of 2, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens being burned :ref:`CTS-TokenAmount` and the owner address of the tokens :ref:`CTS-Address`.
+Summing all of the minted amounts from ``Mint`` events and subtracting all of the burned amounts from ``Burn`` events for a token type MUST sum up to the total supply for the token type.
+The total supply of a token type MUST be in the inclusive range of [0, 2^64 - 1].
 
-UpdateOperator
-^^^^^^^^^^^^^^
+The ``Burn`` event is serialized as: first a byte with the value of 2, followed by the token ID :ref:`CTS-TokenID`, an amount of tokens being burned :ref:`CTS-TokenAmount` and the owner address of the tokens :ref:`CTS-Address`.
+
+.. _CTS-event-updateOperator:
+
+``UpdateOperator``
+^^^^^^^^^^^^^^^^^^
 
 The event to log when updating an operator of some address.
-The UpdateOperator event is serialized as: first a byte with the value of 3, followed by a byte which is 0 if an operator is being removed and 1 if an operator is being added, then the owner address updating an operator :ref:`CTS-Address` and an operator address :ref:`CTS-Address` being added or removed.
+The ``UpdateOperator`` event is serialized as: first a byte with the value of 3, followed by a byte which is 0 if an operator is being removed and 1 if an operator is being added, then the owner address updating an operator :ref:`CTS-Address` and an operator address :ref:`CTS-Address` being added or removed.
 
-TokenMetadata
-^^^^^^^^^^^^^
+.. _CTS-event-tokenMetadata:
+
+``TokenMetadata``
+^^^^^^^^^^^^^^^^^
 
 The event to log when setting the metadata url for a token type.
-It consists of a token ID and an URL for the location of the metadata for this token type with an optional SHA256 checksum of the content.
-Logging the TokenMetadata event again with the same token ID, is used to update the metadata location and only the most recently logged token metadata event for certain token id should be used to get the token metadata.
+It consists of a token ID and an URL (:rfc:`3986`) for the location of the metadata for this token type with an optional SHA256 checksum of the content.
+Logging the ``TokenMetadata`` event again with the same token ID, is used to update the metadata location and only the most recently logged token metadata event for certain token id should be used to get the token metadata.
 
-The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`CTS-TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
+The ``TokenMetadata`` event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`CTS-TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
 Lastly a byte to indicate whether a hash of the metadata is included, if its value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash is followed.
 
 .. note::
 
   Be aware of the limit on the number of logs per smart contract function call which currently is 64, and also the byte size limit on each logged event, which currently is 512 bytes.
-  This will limit the length of the metadata URI depending on the size of the token ID and whether a content hash is included.
-  With the largest possible token ID and a content hash included; the URI can be up to 220 bytes.
+  This will limit the length of the metadata URL depending on the size of the token ID and whether a content hash is included.
+  With the largest possible token ID and a content hash included; the URL can be up to 220 bytes.
 
 
 .. _CTS-rejection-errors:
@@ -316,7 +325,7 @@ The smart contract implementing this specification MAY introduce custom error co
 Token metadata JSON
 -------------------
 
-The token metadata is stored off chain and MUST be a JSON file.
+The token metadata is stored off chain and MUST be a JSON (:rfc:`8259`) file.
 
 All of the fields in the JSON file are optional, and this specification reserves a number of field names, shown in the table below.
 
@@ -340,13 +349,13 @@ All of the fields in the JSON file are optional, and this specification reserves
     - A description for this token type.
   * - ``thumbnail`` (optional)
     - string
-    - An image URI to a small image for displaying the asset.
+    - An image URL to a small image for displaying the asset.
   * - ``display`` (optional)
     - string
-    - An image URI to a large image for displaying the asset.
+    - An image URL to a large image for displaying the asset.
   * - ``artifact`` (optional)
-    - URI JSON object
-    - A URI to the token asset.
+    - URL JSON object
+    - A URL to the token asset.
   * - ``assets`` (optional)
     - JSON array of Token metadata JSON objects
     - Collection of assets.
@@ -354,25 +363,25 @@ All of the fields in the JSON file are optional, and this specification reserves
     - JSON array of Attribute JSON objects
     - Assign a number of attributes to the token type.
   * - ``localization`` (optional)
-    - JSON object with locales as field names (RFC5646) and field values are URI JSON object to JSON files.
-    - URI's to JSON files with localized token metadata.
+    - JSON object with locales as field names (:rfc:`5646`) and field values are URL JSON object to JSON files.
+    - URL's to JSON files with localized token metadata.
 
 Optionally a SHA256 hash of the JSON file can be logged with the TokenMetadata event for checking integrity.
-Since the metadata json file could contain URIs, a SHA256 hash can optionally be associated with the URI.
-To associate a hash with a URI the JSON value is an object:
+Since the metadata json file could contain URLs, a SHA256 hash can optionally be associated with the URL.
+To associate a hash with a URL the JSON value is an object:
 
-.. list-table:: URI JSON Object
+.. list-table:: URL JSON Object
   :header-rows: 1
 
   * - Property
     - JSON value type [JSON-Schema]
     - Description
-  * - ``uri``
-    - string [``uri-reference``]
-    - An URI.
+  * - ``url``
+    - string (:rfc:`3986`) [``uri-reference``]
+    - An URL.
   * - ``hash`` (optional)
     - string
-    - A SHA256 hash of the URI content encoded as a hex string.
+    - A SHA256 hash of the URL content encoded as a hex string.
 
 Attributes are objects with the following fields:
 
@@ -405,12 +414,12 @@ An example of token metadata for a CTS1 implementation wrapping the GTU could be
     "symbol": "wGTU",
     "decimals": 6,
     "description": "A CTS1 token wrapping the Global Transaction Unit",
-    "thumbnail": { "uri": "https://location.of/the/thumbnail.png" },
-    "display": { "uri": "https://location.of/the/display.png" },
-    "artifact": { "uri": "https://location.of/the/artifact.png" },
+    "thumbnail": { "url": "https://location.of/the/thumbnail.png" },
+    "display": { "url": "https://location.of/the/display.png" },
+    "artifact": { "url": "https://location.of/the/artifact.png" },
     "localization": {
       "da-DK": {
-        "uri": "https://location.of/the/danish/metadata.json",
+        "url": "https://location.of/the/danish/metadata.json",
         "hash": "624a1a7e51f7a87effbf8261426cb7d436cf597be327ebbf113e62cb7814a34b"
       }
     }
@@ -434,8 +443,8 @@ An example of token metadata for a NFT could be:
   {
     "name": "Bibi - The Ryan Cat",
     "description": "Ryan cats are lonely creatures travelling the galaxy in search of their ancestors and true inheritance",
-    "thumbnail": { "uri": "https://location.of/the/thumbnail.png" },
-    "display": { "uri": "https://location.of/the/display.png" },
+    "thumbnail": { "url": "https://location.of/the/thumbnail.png" },
+    "display": { "url": "https://location.of/the/display.png" },
     "attributes": [{
       "type": "date",
       "name": "Birthday",
@@ -455,7 +464,7 @@ An example of token metadata for a NFT could be:
     }],
     "localization": {
       "da-DK": {
-        "uri": "https://location.of/the/danish/metadata.json",
+        "url": "https://location.of/the/danish/metadata.json",
         "hash": "588d7c14883231cfee522479cc66565fd9a50024603a7b8c99bd7869ca2f0ea3"
       }
     }
@@ -479,6 +488,7 @@ A number of limitations are important to be aware of:
 - Smart contract function parameters are limited to 1 KiB.
 - Each logged event is limited to 0.5 KiB.
 - The number of logged events is limited to 64.
+- The total size of the smart contract module is limited to 64KiB.
 
 .. note::
 
@@ -517,6 +527,15 @@ The main argument is simplicity and to save energy cost on common cases, but oth
 
   The specification does not prevent adding more fine-grained authentication, such as a token level authentication.
 
+Operator can transfer any amount of any token type of the owner
+---------------------------------------------------------------
+
+An operator of an address can transfer any amount of any token type owned by the address.
+An alternative approach could be to scope the operators per token type and the owner could then add the operator for every token type to achieve the same.
+Although it is a more flexible approach in terms of functionality, the complexity will require more of the contract implementation and the general interaction by off-chain integrations and other smart contracts, which in turn would increase the energy cost.
+
+However, if a more fine grained authentication system is needed it can still exist next to the operators.
+
 Receive hook function
 ---------------------
 
@@ -524,7 +543,6 @@ The specification requires a token receive hook to be called on a smart contract
 These token could then be lost forever.
 
 The reason for this not being optional is to allow other smart contracts which integrate with a token smart contract to rely on this for functionality.
-An auction smart contract could take bids by token transfers directly.
 
 .. warning::
 
@@ -535,7 +553,6 @@ Receive hook function callback argument
 
 The name of the receive hook function called on a smart contract receiving tokens is supplied as part of the parameter.
 This allows for a smart contract integrating with a token smart contract to have multiple hooks and leave it to the caller to know which hook they want to trigger.
-An auction smart contract could receive the item to auction using one hook and bids on another hook.
 
 Another technical reason is that the name of the smart contract is part of the smart contract receive function name, which means the specification would include a requirement of the smart contract name for other to integrate reliably.
 
