@@ -7,8 +7,8 @@ Status: Draft
 Abstract
 ========
 
-An standard interface for both fungible and non-fungible tokens implemented in a smart contract.
-The interface provides functions for transferring token ownership, authenticating other address to transfer tokens and for other smart contracts to access token balances.
+A standard interface for both fungible and non-fungible tokens implemented in a smart contract.
+The interface provides functions for transferring token ownership, authenticating other addresses to transfer tokens and for other smart contracts to access token balances.
 It allows for off-chain applications to track token balances, authentication and the location of token metadata using logged events.
 
 .. contents:: Table of Contents
@@ -29,10 +29,10 @@ General types and serialization
 ^^^^^^^^^^^
 
 Token Identifier, which combined with the address of the smart contract instance implementing CTS1, forms the globally unique identifier of a token type.
-It is serialized as 1 byte which value describes a number of bytes; followed by this number of bytes.
+It is serialized as 1 byte for the size of the identifier, followed by this number of bytes for the token id.
 
 - A token ID for a token type SHALL NOT change after a token type have been minted.
-- A token ID for a token type SHALL NOT be reused for another token type withing the same smart contract.
+- A token ID for a token type SHALL NOT be reused for another token type within the same smart contract.
 
 .. note::
 
@@ -190,14 +190,14 @@ Requirements
 ``balanceOf``
 ^^^^^^^^^^^^^
 
-Query balances of a list of addresses and token IDs, the result is then send back the sender.
+Query balances of a list of addresses and token IDs, the result is then send back to the sender.
 
 Parameter
 ~~~~~~~~~
 
 The parameter consists of a name of the receive function to callback with the result and a list of token ID and address pairs.
 It is serialized as: :ref:`CTS-ReceiveFunctionName` followed by 1 byte for the number of queries and then this number of queries.
-A queries is serialized as :ref:`CTS-TokenID` followed by :ref:`CTS-Address`.
+A query is serialized as :ref:`CTS-TokenID` followed by :ref:`CTS-Address`.
 
 .. note::
 
@@ -221,7 +221,7 @@ Logged events
 -------------
 
 The idea of the logged events for this specification is for off-chain applications to be able to track balances and operators without knowledge of the contract specific implementation details.
-For this reason it is important to log events in any custom functionality for the token contract, if these modifies balances or operators.
+For this reason it is important to log events in any functionality of the token contract which modifies balances or operators.
 
 It MUST be safe for off-chain applications to assume a contract implementing this specification and no events logged have zero tokens and no operators enabled for any address.
 
@@ -272,7 +272,7 @@ It consists of a token ID and an URL for the location of the metadata for this t
 Logging the TokenMetadata event again with the same token ID, is used to update the metadata location and only the most recently logged token metadata event for certain token id should be used to get the token metadata.
 
 The TokenMetadata event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`CTS-TokenID`, two bytes for the length of the metadata url and then this many bytes for the url to the metadata.
-Lastly a byte to indicate whether a hash of the metadata is included, if it value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash is followed.
+Lastly a byte to indicate whether a hash of the metadata is included, if its value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash is followed.
 
 .. note::
 
@@ -318,7 +318,7 @@ Token metadata JSON
 
 The token metadata is stored off chain and MUST be a JSON file.
 
-All of the fields in the JSON file are optional, and this specification reserve a number of field names, shown in the table below.
+All of the fields in the JSON file are optional, and this specification reserves a number of field names, shown in the table below.
 
 .. list-table:: Token metadata JSON Object
   :header-rows: 1
@@ -487,19 +487,19 @@ A number of limitations are important to be aware of:
 Decisions and rationale
 =======================
 
-In this section we point out some of the differences from other popular token standards found on other blockchains, and try to reason why this was decided.
+In this section we point out some of the differences from other popular token standards found on other blockchains, and provide reasons for deviating from them in CTS1.
 
 Token ID bytes instead an integer
 ---------------------------------
 
 Token standards such as ERC721 and ERC1155 both uses an 256 bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
 But in the case where the token ID have no significance other than a simple identifier, smaller sized token IDs can reduce energy costs.
-Which is why we chose to let the first byte indicate the size of the token ID, meaning a token ID can vary between 1 byte and 256 bytes, resulting in more than 10^614 possible token IDs.
+This is why we chose to let the first byte indicate the size of the token ID, meaning a token ID can vary between 1 byte and 256 bytes, resulting in more than 10^614 possible token IDs.
 
 Only batched transfers
 ----------------------
 
-The specification only have a ``transfer`` smart contract function which takes list of transfer and no function for a single transfer.
+The specification only has a ``transfer`` smart contract function which takes list of transfer and no function for a single transfer.
 This will result in lower energy cost compared to multiple contract calls and only introduce a small overhead for single transfers.
 The reason for not also including a single transfer function, is to have smaller smart contract modules, which in turn leads to saving cost on every function call.
 
@@ -520,10 +520,10 @@ The main argument is simplicity and to save energy cost on common cases, but oth
 Receive hook function
 ---------------------
 
-The specification requires a token receive hook to be called on a smart contract receiving tokens, this will in some cases prevent mistakes such as sending tokens to smart contracts, which do not defined behavior for receiving tokens.
+The specification requires a token receive hook to be called on a smart contract receiving tokens, this will in some cases prevent mistakes such as sending tokens to smart contracts which do not define behavior for receiving tokens.
 These token could then be lost forever.
 
-The reason for this not being optional is to allow other smart contracts which integrates with a token smart contract to rely on this for functionality.
+The reason for this not being optional is to allow other smart contracts which integrate with a token smart contract to rely on this for functionality.
 An auction smart contract could take bids by token transfers directly.
 
 .. warning::
@@ -534,7 +534,7 @@ Receive hook function callback argument
 ---------------------------------------
 
 The name of the receive hook function called on a smart contract receiving tokens is supplied as part of the parameter.
-This allows for a smart contract to integrating with a token smart contract to have multiple hooks and leave it to the caller to know which hook they want to trigger.
+This allows for a smart contract integrating with a token smart contract to have multiple hooks and leave it to the caller to know which hook they want to trigger.
 An auction smart contract could receive the item to auction using one hook and bids on another hook.
 
 Another technical reason is that the name of the smart contract is part of the smart contract receive function name, which means the specification would include a requirement of the smart contract name for other to integrate reliably.
@@ -549,7 +549,7 @@ Explicit events for mint and burn
 ---------------------------------
 
 In ERC20, ERC721 and ERC1155 they use a transfer event from or to the zero address to indicate mint and burn respectively, but since there are no such thing as the zero address on the Concordium blockchain these events are separate.
-Making it more explicit, instead of special case transfer events.
+Making it more explicit instead of special case transfer events.
 
 No error code for receive hook rejecting
 ----------------------------------------
