@@ -83,7 +83,7 @@ impl schema::SchemaType for TokenIdVec {
 impl fmt::Display for TokenIdVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0 {
-            write!(f, "{:X} ", byte)?;
+            write!(f, "{:02X}", byte)?;
         }
         Ok(())
     }
@@ -147,7 +147,7 @@ impl<const N: usize> Deserial for TokenIdFixed<N> {
 impl<const N: usize> fmt::Display for TokenIdFixed<N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0 {
-            write!(f, "{:X} ", byte)?;
+            write!(f, "{:02X}", byte)?;
         }
         Ok(())
     }
@@ -205,7 +205,7 @@ impl Deserial for TokenIdU64 {
 impl fmt::Display for TokenIdU64 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:X} ", byte)?;
+            write!(f, "{:02X} ", byte)?;
         }
         Ok(())
     }
@@ -263,7 +263,7 @@ impl Deserial for TokenIdU32 {
 impl fmt::Display for TokenIdU32 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:X} ", byte)?;
+            write!(f, "{:02X} ", byte)?;
         }
         Ok(())
     }
@@ -321,7 +321,7 @@ impl Deserial for TokenIdU16 {
 impl fmt::Display for TokenIdU16 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:X} ", byte)?;
+            write!(f, "{:02X} ", byte)?;
         }
         Ok(())
     }
@@ -379,7 +379,7 @@ impl Deserial for TokenIdU8 {
 impl fmt::Display for TokenIdU8 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:X} ", byte)?;
+            write!(f, "{:02X} ", byte)?;
         }
         Ok(())
     }

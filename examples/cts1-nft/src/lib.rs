@@ -521,7 +521,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_0,
                 metadata_url: MetadataUrl {
-                    url:  format!("https://some.example/token/{}", TOKEN_0),
+                    url:  "https://some.example/token/00".to_string(),
                     hash: None,
                 },
             }))),
@@ -531,7 +531,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_1,
                 metadata_url: MetadataUrl {
-                    url:  format!("https://some.example/token/{}", TOKEN_1),
+                    url:  "https://some.example/token/2a".to_string(),
                     hash: None,
                 },
             }))),
