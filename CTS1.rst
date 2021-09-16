@@ -95,7 +95,16 @@ Is either an account address or a contract address.
 
 It is serialized as: First byte indicates whether it is an account address or a contract address.
 In case the first byte is 0 then 32 bytes for an account address is followed.
-In case the first byte is 1 then 16 bytes for a contract address is followed.
+In case the first byte is 1 then ``ContractAddress`` is followed.
+.. _CTS-ContractAddress:
+
+``ContractAddress``
+^^^^^^^^^^^^^^^^^^^
+
+An address of a contract instance.
+
+It consists of an index and a subindex both unsigned 64 bit integers.
+It is serialized as: first 8 bytes for the index followed by 8 bytes for the subindex both little endian.
 
 .. _CTS-Receiver:
 
@@ -344,6 +353,7 @@ All of the fields in the JSON file are optional, and this specification reserves
   * - ``decimals`` (optional)
     - number [``integer``]
     - The number of decimals, when displaying an amount of this token type in a user interface.
+      If the decimal is set to ``d`` then a token amount ``a`` should be displayed as ``a * 10^(-d)``
   * - ``description`` (optional)
     - string
     - A description for this token type.
@@ -362,6 +372,7 @@ All of the fields in the JSON file are optional, and this specification reserves
   * - ``attributes`` (optional)
     - JSON array of Attribute JSON objects
     - Assign a number of attributes to the token type.
+      Attributes can be used to include extra information about the token type.
   * - ``localization`` (optional)
     - JSON object with locales as field names (:rfc:`5646`) and field values are URL JSON object to JSON files.
     - URL's to JSON files with localized token metadata.
