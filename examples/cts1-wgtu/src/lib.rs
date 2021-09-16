@@ -73,13 +73,22 @@ struct UnwrapParams {
     owner:    Address,
     /// The address to receive these unwrapped GTU.
     receiver: Receiver,
+    /// Some additional bytes to include in the transfer.
+    data:     AdditionalData,
 }
 
 /// The parameter type for the contract function `wrap`.
 ///
 /// The receiver for the wrapped GTU tokens.
-#[allow(dead_code)]
-type WrapParams = Receiver;
+#[derive(Serialize, SchemaType)]
+struct WrapParams {
+    /// The address to receive these tokens.
+    /// If the receiver is the sender of the message wrapping the tokens, it
+    /// will not log a transfer.
+    to:   Receiver,
+    /// Some additional bytes to include in a transfer.
+    data: AdditionalData,
+}
 
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject)]
@@ -255,11 +264,11 @@ fn contract_wrap<A: HasActions>(
     logger: &mut impl HasLogger,
     state: &mut State,
 ) -> ContractResult<A> {
-    let params: Receiver = ctx.parameter_cursor().get()?;
+    let params: WrapParams = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    let receive_address = params.address();
+    let receive_address = params.to.address();
 
     // Update the state.
     state.mint(&TOKEN_ID_WGTU, amount.micro_gtu, &receive_address)?;
@@ -284,16 +293,15 @@ fn contract_wrap<A: HasActions>(
     // Send message to the receiver of the tokens.
     if let Receiver::Contract {
         address,
-        data,
         function,
-    } = params
+    } = params.to
     {
         let parameter = OnReceivingCTS1Params {
-            token_id: TOKEN_ID_WGTU,
-            amount: amount.micro_gtu,
-            from: sender,
+            token_id:      TOKEN_ID_WGTU,
+            amount:        amount.micro_gtu,
+            from:          sender,
             contract_name: OwnedContractName::new_unchecked(String::from("init_CTS1-wGTU")),
-            data,
+            data:          params.data,
         };
         Ok(send(&address, function.as_ref(), Amount::zero(), &parameter))
     } else {
@@ -329,12 +337,13 @@ fn contract_unwrap<A: HasActions>(
     let unwrapped_amount = Amount::from_micro_gtu(params.amount);
 
     let action = match params.receiver {
-        Receiver::Account(address) => A::simple_transfer(&address, unwrapped_amount),
+        Receiver::Account {
+            address,
+        } => A::simple_transfer(&address, unwrapped_amount),
         Receiver::Contract {
             address,
-            data,
             function,
-        } => send(&address, function.as_ref(), unwrapped_amount, &data),
+        } => send(&address, function.as_ref(), unwrapped_amount, &params.data),
     };
 
     Ok(action)
@@ -387,6 +396,7 @@ fn contract_transfer<A: HasActions>(
             amount,
             from,
             to,
+            data,
         } = cursor.get()?;
         // Authenticate the sender for this transfer
         ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
@@ -406,7 +416,6 @@ fn contract_transfer<A: HasActions>(
         // actions.
         if let Receiver::Contract {
             address,
-            data,
             function,
         } = to
         {
@@ -502,7 +511,7 @@ fn contract_balance_of<A: HasActions>(
         response.push((query, amount));
     }
     // Send back the response.
-    Ok(send(&sender, callback.as_ref(), Amount::zero(), &BalanceOfQueryResponse(response)))
+    Ok(send(&sender, callback.as_ref(), Amount::zero(), &BalanceOfQueryResponse::from(response)))
 }
 
 // Tests
@@ -581,9 +590,10 @@ mod tests {
             token_id: TOKEN_ID_WGTU,
             amount:   100,
             from:     ADDRESS_0,
-            to:       Receiver::Account(ACCOUNT_1),
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
         };
-        let parameter = TransferParams(vec![transfer]);
+        let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
@@ -638,11 +648,12 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
-            to:       Receiver::Account(ACCOUNT_1),
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_ID_WGTU,
             amount:   100,
+            data:     AdditionalData::empty(),
         };
-        let parameter = TransferParams(vec![transfer]);
+        let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
@@ -667,11 +678,12 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
-            to:       Receiver::Account(ACCOUNT_1),
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_ID_WGTU,
             amount:   100,
+            data:     AdditionalData::empty(),
         };
-        let parameter = TransferParams(vec![transfer]);
+        let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 

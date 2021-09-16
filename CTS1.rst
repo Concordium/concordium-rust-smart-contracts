@@ -54,7 +54,7 @@ It is serialized using 8 bytes little endian::
 .. _CTS-ReceiveHookName:
 
 ``ReceiveHookName``
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 A smart contract receive function name.
 A receive function name is prefixed with the contract name, followed by a ``.`` and a name for the function.
@@ -66,20 +66,6 @@ It is serialized as: the function name byte length (``n``) is represented by the
 The receive function name MUST be 100 bytes or less::
 
   ReceiveHookName ::= (n: Byte²) (name: Byteⁿ)
-
-.. note::
-
-  This type is passed in a parameter for smart contract function calls, be aware of the parameter size limit of 1024 bytes.
-
-.. _CTS-ReceiveHookData:
-
-``ReceiveHookData``
-^^^^^^^^^^^^^^^^^^^^^^^
-
-Additional bytes to include when calling a receive function on another smart contract.
-It is serialized as: the first 2 bytes encodes the length (``n``) of the data, followed this many bytes for the data (``data``)::
-
-  ReceiveHookData ::= (n: Byte²) (data: Byteⁿ)
 
 .. note::
 
@@ -146,10 +132,25 @@ In the case of a contract address, additional information such as the name of a 
 
 It is serialized as: First byte indicates whether it is an account address or a contract address.
 In case the first byte is 0 then ``AccountAddress`` (``address``) is followed.
-In case the first byte is 1 then ``ContractAddress`` (``address``), bytes for :ref:`CTS-ReceiveHookName` (``hook``) and :ref:`CTS-ReceiveHookData` (``data``) is followed::
+In case the first byte is 1 then ``ContractAddress`` (``address``), bytes for :ref:`CTS-ReceiveHookName` (``hook``) is followed::
 
     Receiver ::= (0: Byte) (address: AccountAddress)
-               | (1: Byte) (address: ContractAddress) (hook: ReceiveHookName) (data: ReceiveHookData)
+               | (1: Byte) (address: ContractAddress) (hook: ReceiveHookName)
+
+.. _CTS-AdditionalData:
+
+``AdditionalData``
+^^^^^^^^^^^^^^^^^^^
+
+Additional bytes to include in a transfer, can be used to add additional parameters for the transfer function call.
+
+It is serialized as: the first 2 bytes encodes the length (``n``) of the data, followed this many bytes for the data (``data``)::
+
+  AdditionalData ::= (n: Byte²) (data: Byteⁿ)
+
+.. note::
+
+  This type is passed in a parameter for smart contract function calls, be aware of the parameter size limit of 1024 bytes.
 
 .. _CTS-functions:
 
@@ -174,9 +175,9 @@ Parameter
 The parameter is a list of transfers.
 
 It is serialized as: 1 byte representing the number of transfers (``n``) followed by the bytes for this number of transfers (``transfers``).
-Each transfer is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-TokenAmount` (``amount``), the token owner address :ref:`CTS-Address` (``from``) and the receiving address :ref:`CTS-Receiver` (``to``)::
+Each transfer is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-TokenAmount` (``amount``), the token owner address :ref:`CTS-Address` (``from``), the receiving address :ref:`CTS-Receiver` (``to``) and some additional data (``data``)::
 
-  Transfer ::= (id: TokenID) (amount: TokenAmount) (from: Address) (to: Receiver)
+  Transfer ::= (id: TokenID) (amount: TokenAmount) (from: Address) (to: Receiver) (data: AdditionalData)
 
   TransferParameter ::= (n: Byte) (transfers: Transferⁿ)
 
@@ -184,7 +185,7 @@ Each transfer is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-Token
 
   Be aware of the smart contract parameter size limit of 1024 bytes.
   Since the byte size of a single transfer can vary in size, this will limit the number of transfers can be included in the same function call.
-  Currently, with the smallest possible transfers, the parameter can contain 32 transfers and with the biggest possible transfer will take the whole parameter.
+  Currently, with the smallest possible transfers, the parameter can contain 21 transfers and with the biggest possible transfer will take the whole parameter.
 
 .. _CTS-functions-transfer-receive-hook-parameter:
 
@@ -192,9 +193,9 @@ Receive hook parameter
 ~~~~~~~~~~~~~~~~~~~~~~
 
 The parameter for the receive function hook contains information about the transfer, the name of the token contract and some additional data bytes.
-It is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-TokenAmount` (``amount``), the token owner address :ref:`CTS-Address` (``from``), the name of the token contract :ref:`CTS-ContractName` (``contract``) and :ref:`CTS-ReceiveHookData` (``data``)::
+It is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-TokenAmount` (``amount``), the token owner address :ref:`CTS-Address` (``from``), the name of the token contract :ref:`CTS-ContractName` (``contract``) and :ref:`CTS-AdditionalData` (``data``)::
 
-  ReceiveHookParameter ::= (id: TokenID) (amount: TokenAmount) (from: Address) (contract: ContractName) (data: ReceiveHookData)
+  ReceiveHookParameter ::= (id: TokenID) (amount: TokenAmount) (from: Address) (contract: ContractName) (data: AdditionalData)
 
 Requirements
 ~~~~~~~~~~~~

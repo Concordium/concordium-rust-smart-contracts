@@ -306,6 +306,7 @@ fn contract_transfer<A: HasActions>(
         amount,
         from,
         to,
+        data,
     } in transfers
     {
         // Authenticate the sender for this transfer
@@ -326,7 +327,6 @@ fn contract_transfer<A: HasActions>(
         // actions.
         if let Receiver::Contract {
             address,
-            data,
             function,
         } = to
         {
@@ -417,7 +417,12 @@ fn contract_balance_of<A: HasActions>(
         response.push((query, amount));
     }
     // Send back the response.
-    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &BalanceOfQueryResponse(response)))
+    Ok(send(
+        &sender,
+        params.callback.as_ref(),
+        Amount::zero(),
+        &BalanceOfQueryResponse::from(response),
+    ))
 }
 
 // Tests
@@ -531,7 +536,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_1,
                 metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/2a".to_string(),
+                    url:  "https://some.example/token/2A".to_string(),
                     hash: None,
                 },
             }))),
@@ -551,9 +556,10 @@ mod tests {
             token_id: TOKEN_0,
             amount:   1,
             from:     ADDRESS_0,
-            to:       Receiver::Account(ACCOUNT_1),
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
         };
-        let parameter = TransferParams(vec![transfer]);
+        let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
@@ -603,11 +609,12 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
-            to:       Receiver::Account(ACCOUNT_1),
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
             amount:   1,
+            data:     AdditionalData::empty(),
         };
-        let parameter = TransferParams(vec![transfer]);
+        let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
@@ -632,11 +639,12 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
-            to:       Receiver::Account(ACCOUNT_1),
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
             amount:   1,
+            data:     AdditionalData::empty(),
         };
-        let parameter = TransferParams(vec![transfer]);
+        let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 

@@ -79,7 +79,7 @@ impl schema::SchemaType for TokenIdVec {
     }
 }
 
-/// Display the token ID as a hex string
+/// Display the token ID as a uppercase hex string
 impl fmt::Display for TokenIdVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0 {
@@ -143,7 +143,7 @@ impl<const N: usize> Deserial for TokenIdFixed<N> {
     }
 }
 
-/// Display the token ID as a hex string
+/// Display the token ID as a uppercase hex string
 impl<const N: usize> fmt::Display for TokenIdFixed<N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0 {
@@ -201,11 +201,11 @@ impl Deserial for TokenIdU64 {
     }
 }
 
-/// Display the token ID as a hex string
+/// Display the token ID as a uppercase hex string
 impl fmt::Display for TokenIdU64 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:02X} ", byte)?;
+            write!(f, "{:02X}", byte)?;
         }
         Ok(())
     }
@@ -259,11 +259,11 @@ impl Deserial for TokenIdU32 {
     }
 }
 
-/// Display the token ID as a hex string
+/// Display the token ID as a uppercase hex string
 impl fmt::Display for TokenIdU32 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:02X} ", byte)?;
+            write!(f, "{:02X}", byte)?;
         }
         Ok(())
     }
@@ -317,11 +317,11 @@ impl Deserial for TokenIdU16 {
     }
 }
 
-/// Display the token ID as a hex string
+/// Display the token ID as a uppercase hex string
 impl fmt::Display for TokenIdU16 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:02X} ", byte)?;
+            write!(f, "{:02X}", byte)?;
         }
         Ok(())
     }
@@ -375,11 +375,11 @@ impl Deserial for TokenIdU8 {
     }
 }
 
-/// Display the token ID as a hex string
+/// Display the token ID as a uppercase hex string
 impl fmt::Display for TokenIdU8 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for byte in &self.0.to_le_bytes() {
-            write!(f, "{:02X} ", byte)?;
+            write!(f, "{:02X}", byte)?;
         }
         Ok(())
     }
@@ -573,30 +573,69 @@ impl<X: From<ParseError>> From<ParseError> for Cts1Error<X> {
 #[derive(Debug, Serialize, SchemaType)]
 pub enum Receiver {
     /// The receiver is an account address.
-    Account(AccountAddress),
+    Account {
+        /// The receiving address.
+        address: AccountAddress,
+    },
     /// The receiver is a contract address.
     Contract {
         /// The receiving address.
         address:  ContractAddress,
         /// The function to call on the receiving contract.
         function: OwnedReceiveName,
-        /// Some additional bytes to send with the function.
-        #[concordium(size_length = 2)]
-        data:     Vec<u8>,
     },
 }
 
 impl Receiver {
+    /// Construct a receiver from an account address.
+    pub fn from_account(address: AccountAddress) -> Self {
+        Receiver::Account {
+            address,
+        }
+    }
+
+    /// Construct a receiver from a contract address.
+    pub fn from_contract(address: ContractAddress, function: OwnedReceiveName) -> Self {
+        Receiver::Contract {
+            address,
+            function,
+        }
+    }
+
     /// Get the Address of the receiver.
     pub fn address(&self) -> Address {
         match self {
-            Receiver::Account(address) => Address::Account(*address),
+            Receiver::Account {
+                address,
+                ..
+            } => Address::Account(*address),
             Receiver::Contract {
                 address,
                 ..
             } => Address::Contract(*address),
         }
     }
+}
+
+impl From<AccountAddress> for Receiver {
+    fn from(address: AccountAddress) -> Self { Self::from_account(address) }
+}
+
+/// Additional information to include with a transfer.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
+
+impl AdditionalData {
+    /// Construct an AdditionalData containing no data.
+    pub fn empty() -> Self { AdditionalData(Vec::new()) }
+}
+
+impl From<Vec<u8>> for AdditionalData {
+    fn from(data: Vec<u8>) -> Self { AdditionalData(data) }
+}
+
+impl AsRef<[u8]> for AdditionalData {
+    fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
 /// A single transfer of some amount of a token.
@@ -612,11 +651,22 @@ pub struct Transfer<T: IsTokenId> {
     pub from:     Address,
     /// The address receiving the tokens being transferred.
     pub to:       Receiver,
+    /// Additional data to include in the transfer.
+    /// Can be used for additional arguments.
+    pub data:     AdditionalData,
 }
 
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 1)] pub Vec<Transfer<T>>);
+
+impl<T: IsTokenId> From<Vec<Transfer<T>>> for TransferParams<T> {
+    fn from(transfers: Vec<Transfer<T>>) -> Self { TransferParams(transfers) }
+}
+
+impl<T: IsTokenId> AsRef<[Transfer<T>]> for TransferParams<T> {
+    fn as_ref(&self) -> &[Transfer<T>] { &self.0 }
+}
 
 /// The update to an the operator.
 // Note: For the serialization to be derived according to the CTS1
@@ -667,13 +717,24 @@ pub struct BalanceOfQueryParams<T: IsTokenId> {
     pub queries:  Vec<BalanceOfQuery<T>>,
 }
 
+/// BalanceOf query with the result of the query.
+pub type BalanceOfQueryResult<T> = (BalanceOfQuery<T>, TokenAmount);
+
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
 /// It consists of the list of queries paired with their corresponding result.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQueryResponse<T: IsTokenId>(
-    #[concordium(size_length = 1)] pub Vec<(BalanceOfQuery<T>, TokenAmount)>,
+    #[concordium(size_length = 1)] Vec<BalanceOfQueryResult<T>>,
 );
+
+impl<T: IsTokenId> From<Vec<BalanceOfQueryResult<T>>> for BalanceOfQueryResponse<T> {
+    fn from(results: Vec<BalanceOfQueryResult<T>>) -> Self { BalanceOfQueryResponse(results) }
+}
+
+impl<T: IsTokenId> AsRef<[BalanceOfQueryResult<T>]> for BalanceOfQueryResponse<T> {
+    fn as_ref(&self) -> &[BalanceOfQueryResult<T>] { &self.0 }
+}
 
 /// The parameter type for a contract function which receives CTS1 tokens.
 // Note: For the serialization to be derived according to the CTS1
@@ -690,6 +751,5 @@ pub struct OnReceivingCTS1Params<T: IsTokenId> {
     /// implements CTS1.
     pub contract_name: OwnedContractName,
     /// Some extra information which where sent as part of the transfer.
-    #[concordium(size_length = 2)]
-    pub data:          Vec<u8>,
+    pub data:          AdditionalData,
 }
