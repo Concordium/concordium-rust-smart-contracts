@@ -46,7 +46,8 @@ It is serialized as 1 byte for the size (``n``) of the identifier, followed by t
 ``TokenAmount``
 ^^^^^^^^^^^^^^^
 
-An amount of a token type is an unsigned 64bit integer represented in WASM by the type ``i64``.
+An amount of a token type is an unsigned 64 bit integer.
+
 It is serialized using 8 bytes little endian::
 
   TokenAmount ::= (amount: Byte⁸)
@@ -60,7 +61,6 @@ A smart contract receive function name.
 A receive function name is prefixed with the contract name, followed by a ``.`` and a name for the function.
 It MUST consist only of ASCII alphanumeric or punctuation characters.
 The contract name is not allowed to contain ``.``.
-
 
 It is serialized as: the function name byte length (``n``) is represented by the first 2 bytes, followed this many bytes for the function name (``name``).
 The receive function name MUST be 100 bytes or less::
@@ -79,6 +79,7 @@ The receive function name MUST be 100 bytes or less::
 A name of a smart contract.
 It must be prefixed with ``init_`` and MUST consist only of ASCII alphanumeric or punctuation characters.
 The contract name is not allowed to contain ``.``.
+
 It is serialized as: the contract name byte length (``n``) is represented by the first 2 bytes, followed this many bytes for the contract name (``name``).
 The contract name MUST be 100 bytes or less::
 
@@ -101,8 +102,8 @@ It is serialized as 32 bytes::
 ^^^^^^^^^^^^^^^^^^^
 
 An address of a contract instance.
-
 It consists of an index and a subindex both unsigned 64 bit integers.
+
 It is serialized as: first 8 bytes for the index (``index``) followed by 8 bytes for the subindex (``subindex``) both little endian::
 
   ContractAddress ::= (index: Byte⁸) (subindex: Byte⁸)
@@ -193,6 +194,7 @@ Receive hook parameter
 ~~~~~~~~~~~~~~~~~~~~~~
 
 The parameter for the receive function hook contains information about the transfer, the name of the token contract and some additional data bytes.
+
 It is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-TokenAmount` (``amount``), the token owner address :ref:`CTS-Address` (``from``), the name of the token contract :ref:`CTS-ContractName` (``contract``) and :ref:`CTS-AdditionalData` (``data``)::
 
   ReceiveHookParameter ::= (id: TokenID) (amount: TokenAmount) (from: Address) (contract: ContractName) (data: AdditionalData)
@@ -289,7 +291,7 @@ Logged events
 The idea of the logged events for this specification is for off-chain applications to be able to track balances and operators without knowledge of the contract specific implementation details.
 For this reason it is important to log events in any functionality of the token contract which modifies balances or operators.
 
-- It MUST be possible to derive the balance of an account for a token type from the logged :ref:`CTS-event-transfer`, :ref:`CTS-event-mint` and :ref:`CTS-event-burn` events.
+- It MUST be possible to derive the balance of an address for a token type from the logged :ref:`CTS-event-transfer`, :ref:`CTS-event-mint` and :ref:`CTS-event-burn` events.
 - It MUST be safe to assume that with no events logged, every address have zero tokens and no operators enabled for any address.
 
 .. _CTS-event-transfer:
