@@ -571,7 +571,7 @@ A number of limitations are important to be aware of:
 - Smart contract function parameters are limited to 1 KiB.
 - Each logged event is limited to 0.5 KiB.
 - The number of logged events is limited to 64.
-- The total size of the smart contract module is limited to 64KiB.
+- The total size of the smart contract module is limited to 64 KiB.
 
 .. note::
 

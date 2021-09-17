@@ -325,11 +325,7 @@ fn contract_transfer<A: HasActions>(
 
         // If the receiver is a contract, we add sending it a message to the list of
         // actions.
-        if let Receiver::Contract {
-            address,
-            function,
-        } = to
-        {
+        if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCTS1Params {
                 token_id,
                 amount,

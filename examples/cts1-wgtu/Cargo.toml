@@ -17,4 +17,5 @@ concordium-cts1 = {path = "../../concordium-cts1", default-features = false}
 crate-type=["cdylib", "rlib"]
 
 [profile.release]
-opt-level = "z"
+opt-level = "s"
+codegen-units = 1

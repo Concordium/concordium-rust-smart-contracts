@@ -291,11 +291,7 @@ fn contract_wrap<A: HasActions>(
     }
 
     // Send message to the receiver of the tokens.
-    if let Receiver::Contract {
-        address,
-        function,
-    } = params.to
-    {
+    if let Receiver::Contract(address, function) = params.to {
         let parameter = OnReceivingCTS1Params {
             token_id:      TOKEN_ID_WGTU,
             amount:        amount.micro_gtu,
@@ -337,13 +333,10 @@ fn contract_unwrap<A: HasActions>(
     let unwrapped_amount = Amount::from_micro_gtu(params.amount);
 
     let action = match params.receiver {
-        Receiver::Account {
-            address,
-        } => A::simple_transfer(&address, unwrapped_amount),
-        Receiver::Contract {
-            address,
-            function,
-        } => send(&address, function.as_ref(), unwrapped_amount, &params.data),
+        Receiver::Account(address) => A::simple_transfer(&address, unwrapped_amount),
+        Receiver::Contract(address, function) => {
+            send(&address, function.as_ref(), unwrapped_amount, &params.data)
+        }
     };
 
     Ok(action)
@@ -414,11 +407,7 @@ fn contract_transfer<A: HasActions>(
 
         // If the receiver is a contract, we add sending it a message to the list of
         // actions.
-        if let Receiver::Contract {
-            address,
-            function,
-        } = to
-        {
+        if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCTS1Params {
                 token_id,
                 amount,

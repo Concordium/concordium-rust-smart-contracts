@@ -573,46 +573,33 @@ impl<X: From<ParseError>> From<ParseError> for Cts1Error<X> {
 #[derive(Debug, Serialize, SchemaType)]
 pub enum Receiver {
     /// The receiver is an account address.
-    Account {
+    Account(
         /// The receiving address.
-        address: AccountAddress,
-    },
+        AccountAddress,
+    ),
     /// The receiver is a contract address.
-    Contract {
+    Contract(
         /// The receiving address.
-        address:  ContractAddress,
+        ContractAddress,
         /// The function to call on the receiving contract.
-        function: OwnedReceiveName,
-    },
+        OwnedReceiveName,
+    ),
 }
 
 impl Receiver {
     /// Construct a receiver from an account address.
-    pub fn from_account(address: AccountAddress) -> Self {
-        Receiver::Account {
-            address,
-        }
-    }
+    pub fn from_account(address: AccountAddress) -> Self { Receiver::Account(address) }
 
     /// Construct a receiver from a contract address.
     pub fn from_contract(address: ContractAddress, function: OwnedReceiveName) -> Self {
-        Receiver::Contract {
-            address,
-            function,
-        }
+        Receiver::Contract(address, function)
     }
 
     /// Get the Address of the receiver.
     pub fn address(&self) -> Address {
         match self {
-            Receiver::Account {
-                address,
-                ..
-            } => Address::Account(*address),
-            Receiver::Contract {
-                address,
-                ..
-            } => Address::Contract(*address),
+            Receiver::Account(address) => Address::Account(*address),
+            Receiver::Contract(address, ..) => Address::Contract(*address),
         }
     }
 }
@@ -622,8 +609,14 @@ impl From<AccountAddress> for Receiver {
 }
 
 /// Additional information to include with a transfer.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
+
+impl schema::SchemaType for AdditionalData {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(schema::Type::U8))
+    }
+}
 
 impl AdditionalData {
     /// Construct an AdditionalData containing no data.
