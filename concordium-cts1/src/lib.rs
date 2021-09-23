@@ -527,8 +527,6 @@ pub enum Cts1Error<R> {
     /// Sender is neither the token owner or an operator of the owner for this
     /// token.
     Unauthorized,
-    /// Make the sender an operator of the sender is invalid.
-    OperatorIsSender,
     /// Only contracts can send to this function.
     ContractOnly,
     /// Custom error
@@ -545,10 +543,7 @@ impl<R: Into<Reject>> From<Cts1Error<R>> for Reject {
                 crate::num::NonZeroI32::new_unchecked(-42000002)
             },
             Cts1Error::Unauthorized => unsafe { crate::num::NonZeroI32::new_unchecked(-42000003) },
-            Cts1Error::OperatorIsSender => unsafe {
-                crate::num::NonZeroI32::new_unchecked(-42000004)
-            },
-            Cts1Error::ContractOnly => unsafe { crate::num::NonZeroI32::new_unchecked(-42000005) },
+            Cts1Error::ContractOnly => unsafe { crate::num::NonZeroI32::new_unchecked(-42000004) },
             Cts1Error::Custom(reject) => reject.into().error_code,
         };
         Self {
@@ -672,11 +667,11 @@ pub enum OperatorUpdate {
     Add,
 }
 
-/// The parameter type for the contract function `updateOperator`.
+/// A single update of an operator.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct UpdateOperatorParams {
+pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,
     /// The address which is either added or removed as an operator.
@@ -684,6 +679,10 @@ pub struct UpdateOperatorParams {
     /// the contract transaction.
     pub operator: Address,
 }
+
+/// The parameter type for the contract function `updateOperator`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct UpdateOperatorParams(#[concordium(size_length = 1)] pub Vec<UpdateOperator>);
 
 /// A query for the balance of a given address for a given token.
 // Note: For the serialization to be derived according to the CTS1

@@ -340,7 +340,7 @@ fn contract_transfer<A: HasActions>(
     Ok(actions)
 }
 
-/// Enable or disable some address as an operator of the sender address.
+/// Enable or disable addresses as operators of the sender address.
 /// Logs an `UpdateOperator` event.
 ///
 /// It rejects if:
@@ -359,26 +359,24 @@ fn contract_update_operator<A: HasActions>(
     state: &mut State,
 ) -> ContractResult<A> {
     // Parse the parameter.
-    let params: UpdateOperatorParams = ctx.parameter_cursor().get()?;
-
+    let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    // No reason to be an operator yourself.
-    ensure!(params.operator != sender, ContractError::OperatorIsSender);
+    for param in params {
+        // Update the operator in the state.
+        match param.update {
+            OperatorUpdate::Add => state.add_operator(&sender, &param.operator),
+            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
+        }
 
-    // Update the operator in the state.
-    match params.update {
-        OperatorUpdate::Add => state.add_operator(&sender, &params.operator),
-        OperatorUpdate::Remove => state.remove_operator(&sender, &params.operator),
+        // Log the appropriate event
+        logger.log(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+            owner:    sender,
+            operator: param.operator,
+            update:   param.update,
+        }))?;
     }
-
-    // Log the appropriate event
-    logger.log(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
-        owner:    sender,
-        operator: params.operator,
-        update:   params.update,
-    }))?;
 
     Ok(A::accept())
 }
@@ -689,10 +687,11 @@ mod tests {
         ctx.set_sender(ADDRESS_0);
 
         // and parameter.
-        let parameter = UpdateOperatorParams {
-            operator: ADDRESS_1,
+        let update = UpdateOperator {
             update:   OperatorUpdate::Add,
+            operator: ADDRESS_1,
         };
+        let parameter = UpdateOperatorParams(vec![update]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 

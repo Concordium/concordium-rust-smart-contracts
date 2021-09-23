@@ -11,9 +11,6 @@ A standard interface for both fungible and non-fungible tokens implemented in a 
 The interface provides functions for transferring token ownership, authenticating other addresses to transfer tokens and for other smart contracts to access token balances.
 It allows for off-chain applications to track token balances, authentication and the location of token metadata using logged events.
 
-.. contents:: Table of Contents
-   :local:
-
 Specification
 =============
 
@@ -166,7 +163,7 @@ A smart contract implementing CTS1 MUST export three functions :ref:`CTS-functio
 ^^^^^^^^^^^^
 
 Executes a list of token transfers.
-A transfer is a token ID, an amount of this token ID to be transferred from one address to some other address.
+A transfer is a token ID, an amount of tokens to be transferred, and the from address and to address.
 
 When transferring tokens to a contract address additional information for a receive function hook to trigger is required.
 
@@ -221,33 +218,37 @@ Requirements
 ``updateOperator``
 ^^^^^^^^^^^^^^^^^^
 
-Add or remove an address as operator of the address sending this message.
+Add or remove a number of addresses as operators of the address sending this message.
 
 Parameter
 ~~~~~~~~~
 
-The parameter contains whether to add or remove an operator and the address to add/remove as operator.
-It does not contain the address which are adding/removing the operator as this will be the sender of the message invoking this function.
+The parameter contains a list of operator updates. An operator update contains information whether to add or remove an operator and the address to add/remove as operator.
+It does not contain the address which is adding/removing the operator as this will be the sender of the message invoking this function.
 
-The parameter is first a byte (``update``) indicating whether to remove or add an operator, where if the byte is 0 the sender is removing an operator, if the byte is 1 the sender is adding an operator.
+The parameter is serialized as: first 1 byte (``n``) for the number of updates followed by this number of operator updates (``updates``).
+An operator update is serialized as: 1 byte (``update``) indicating whether to remove or add an operator, where if the byte value is 0 the sender is removing an operator, if the byte value is 1 the sender is adding an operator.
 The followed is the operator address (``operator``) :ref:`CTS-Address` to add or remove as operator for the sender::
 
   OperatorUpdate ::= (0: Byte) // Remove operator
                    | (1: Byte) // Add operator
 
-  UpdateOperatorParameter ::= (update: OperatorUpdate) (operator: Address)
+  UpdateOperator ::= (update: OperatorUpdate) (operator: Address)
+
+  UpdateOperatorParameter ::= (n: Byte) (updates: UpdateOperatorⁿ)
 
 Requirements
 ~~~~~~~~~~~~
 
-- The contract function MUST reject if the sender address is the same as the operator address with error :ref:`OPERATOR_IS_SENDER<CTS-rejection-errors>`.
+- The list of updates MUST be executed in order.
+- The contract function MUST reject if any of the updates fails to be executed.
 
 .. _CTS-functions-balanceOf:
 
 ``balanceOf``
 ^^^^^^^^^^^^^
 
-Query balances of a list of addresses and token IDs, the result is then send back to the sender.
+Query balances of a list of addresses and token IDs, the result is then sent back to the sender.
 
 Parameter
 ~~~~~~~~~
@@ -395,11 +396,8 @@ A smart contract following this specification MUST reject the specified errors f
   * - UNAUTHORIZED
     - -42000003
     - Sender is not the address owning the tokens or an operator of the owning address. Note this can also be used if adding another authentication level on top of the standard.
-  * - OPERATOR_IS_SENDER
-    - -42000004
-    - Sender is updating an operator, where the operator is the same as the sender address.
   * - CONTRACT_ONLY
-    - -42000005
+    - -42000004
     - The sender is not a contract address.
 
 The smart contract implementing this specification MAY introduce custom error codes other than the ones specified in the table above.
@@ -587,7 +585,7 @@ In this section we point out some of the differences from other popular token st
 Token ID bytes instead an integer
 ---------------------------------
 
-Token standards such as ERC721 and ERC1155 both uses an 256 bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
+Token standards such as ERC721 and ERC1155 both use an 256 bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
 But in the case where the token ID have no significance other than a simple identifier, smaller sized token IDs can reduce energy costs.
 This is why we chose to let the first byte indicate the size of the token ID, meaning a token ID can vary between 1 byte and 256 bytes, resulting in more than 10^614 possible token IDs.
 
@@ -595,8 +593,8 @@ Only batched transfers
 ----------------------
 
 The specification only has a ``transfer`` smart contract function which takes list of transfer and no function for a single transfer.
-This will result in lower energy cost compared to multiple contract calls and only introduce a small overhead for single transfers.
-The reason for not also including a single transfer function, is to have smaller smart contract modules, which in turn leads to saving cost on every function call.
+This will result in lower energy cost compared to multiple contract calls and only introduces a small overhead for single transfers.
+The reason for not also including a single transfer function is to have smaller smart contract modules, which in turn leads to saving cost on every function call.
 
 No token level approval/allowance like in ERC20 and ERC721
 ----------------------------------------------------------
@@ -606,7 +604,7 @@ The main argument is simplicity and to save energy cost on common cases, but oth
 
 - A token level authentication requires the token smart contract to track more state, which increases the overall energy cost.
 - For token smart contracts with a lot of token types, such as a smart contract with a large collection of NFTs, a token level authentication could become very expensive.
-- For fungible tokens; approval/allowance introduces an attack vector as `described here<https://docs.google.com/document/d/1YLPtQxZu1UAvO9cZ1O2RPXBbT0mooh4DYKjA_jp-RLM/edit>`.
+- For fungible tokens; approval/allowance introduces an attack vector as `described here <https://docs.google.com/document/d/1YLPtQxZu1UAvO9cZ1O2RPXBbT0mooh4DYKjA_jp-RLM/edit>`_.
 
 .. note::
 
@@ -650,13 +648,13 @@ This seems to only make sense, if some operator is transferring tokens from a co
 Explicit events for mint and burn
 ---------------------------------
 
-In ERC20, ERC721 and ERC1155 they use a transfer event from or to the zero address to indicate mint and burn respectively, but since there are no such thing as the zero address on the Concordium blockchain these events are separate.
+ERC20, ERC721 and ERC1155 use a transfer event from or to the zero address to indicate mint and burn respectively, but since there are no such thing as the zero address on the Concordium blockchain these events are separate.
 Making it more explicit instead of special case transfer events.
 
 No error code for receive hook rejecting
 ----------------------------------------
 
-The specification could include an error code, for the receive hook function to return if rejecting the token transferred (as seen in the FA2 standard on Tezos).
+The specification could include an error code, for the receive hook function to return if rejecting the token transferred (as seen in the `FA2 standard <https://gitlab.com/tezos/tzip/-/blob/master/proposals/tzip-12/tzip-12.md#error-handling>`_ on Tezos).
 But we chose to leave this error code up to the receiving smart contract, which allows for more informative error codes.
 
 Adding SHA256 checksum for token metadata event
