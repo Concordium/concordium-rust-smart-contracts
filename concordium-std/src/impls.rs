@@ -806,8 +806,7 @@ impl<T: Serial> SerialCtx for Vec<T> {
         size_len: schema::SizeLength,
         out: &mut W,
     ) -> Result<(), W::Err> {
-        let slice: &[T] = &self;
-        slice.serial_ctx(size_len, out)
+        self.as_slice().serial_ctx(size_len, out)
     }
 }
 
