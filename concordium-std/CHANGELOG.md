@@ -1,10 +1,12 @@
 # Changelog
 
 ## Unreleased changes
-- Added error codes for the new cases in NewContractNameError and NewReceiveNameError:
+- Add error codes for the new cases in NewContractNameError and NewReceiveNameError:
   - `NewContractNameError::ContainsDot` is mapped to `i32::MIN + 9`
   - `NewContractNameError::InvalidCharacters` is mapped to `i32::MIN + 10`
   - `NewReceiveNameError::InvalidCharacters` is mapped to `i32::MIN + 11`
+- Change error code for when a contract that was not marked as payable received
+  tokens. The error code is now `i32::MIN + 12`, changed from the previous `-1`.
 - Export `HashMap` and `HashSet` from `contract-common` in `collections` module.
 - Bump minimum supported Rust version to 1.51.
 
