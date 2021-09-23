@@ -84,7 +84,7 @@
 //! - [HasParameter](./trait.HasParameter.html) for accessing the contract
 //!   parameter
 //! - [HasCommonData](./trait.HasCommonData.html) for accessing the data that is
-//!   common to both init and receive methodss
+//!   common to both init and receive methods
 //! - [HasInitContext](./trait.HasInitContext.html) for all the context data
 //!   available to the init functions (note that this includes all the common
 //!   data)
@@ -108,6 +108,49 @@
 //! [test_infrastructure](./test_infrastructure/index.html) module, and is
 //! intended to be used for unit-testing together with the `concordium_test`
 //! infrastructure.
+//!
+//! # Signalling errors
+//! On the Wasm level Contracts can signal errors by returning a negative i32
+//! value as a result of either initialization or invocation of the receive
+//! method. To make error handling more pleasant we provide the
+//! [Reject](./struct.Reject.html) structure. The result type of a contract init
+//! or a receive method is assumed to be of the form `Result<_, E>` where
+//! `Reject: From<E>`.
+//!
+//! The intention is that smart contract writers will write their own custom,
+//! precise, error types and either manually implement `Reject: From<E>` for
+//! their type `E`, or use the [Reject macro](./derive.Reject.html) which
+//! supports the common use cases.
+//!
+//! In addition to the custom errors that signal contract-specific error
+//! conditions this library provides some common error cases that most contracts
+//! will have to handle and their conversions to [Reject](./struct.Reject.html).
+//! These are
+//!
+//! | Variant | Error code |
+//! |---------|------------|
+//! | [()](https://doc.rust-lang.org/std/primitive.unit.html) | [i32::MIN](https://doc.rust-lang.org/std/primitive.i32.html#associatedconstant.MIN) + 1 (`-2147483647`) |
+//! | [ParseError](./struct.ParseError.html) | [i32::MIN] + 2 (`-2147483646`) |
+//! | [LogError::Full](./enum.LogError.html#variant.Full) | [i32::MIN] + 3
+//! (`-2147483645`) | | [LogError::Malformed](./enum.LogError.html#variant.
+//! Malformed) | [i32::MIN] + 4 (`-2147483644`) | | [NewContractNameError::
+//! MissingInitPrefix](./enum.LogError.html#variant.Malformed) | [i32::MIN] + 5
+//! (`-2147483643`) | | [NewContractNameError::TooLong](./enum.
+//! NewContractNameError.html#variant.TooLong) | [i32::MIN] + 6 (`-2147483642`)
+//! | | [NewContractNameError::ContainsDot](./enum.NewContractNameError.html#
+//! variant.ContainsDot) | [i32::MIN] + 9 (`-2147483639`) |
+//! | [NewContractNameError::InvalidCharacters](./enum.NewContractNameError.
+//! html#variant.InvalidCharacters) | [i32::MIN] + 10 (`-2147483638`) |
+//! | [NewReceiveNameError::MissingDotSeparator](./enum.NewReceiveNameError.
+//! html#variant.MissingDotSeparator) | [i32::MIN] + 7 (`-2147483641`) |
+//! | [NewReceiveNameError::TooLong](./enum.NewReceiveNameError.html#variant.
+//! TooLong) | [i32::MIN] + 8 (`-2147483640`) | | [NewReceiveNameError::
+//! InvalidCharacters](./enum.NewReceiveNameError.html#variant.
+//! InvalidCharacters) | [i32::MIN] + 11 (`-2147483637`) | | [NotPayableError](.
+//! /struct.NotPayableError.html) | [i32::MIN] + 12 (`-2147483636`) |
+//!
+//! Other error codes may be added in the future and custom error codes should
+//! not use the range `i32::MIN` to `i32::MIN + 100`.
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
 
 #[cfg(not(feature = "std"))]

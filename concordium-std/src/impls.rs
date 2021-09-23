@@ -92,6 +92,16 @@ impl From<NewReceiveNameError> for Reject {
     }
 }
 
+/// The error code is i32::MIN + 12
+impl From<NotPayableError> for Reject {
+    #[inline(always)]
+    fn from(_: NotPayableError) -> Self {
+        Self {
+            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) },
+        }
+    }
+}
+
 /// # Contract state trait implementations.
 impl Seek for ContractState {
     type Err = ();

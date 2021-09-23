@@ -37,6 +37,11 @@ pub enum LogError {
     Malformed,
 }
 
+/// Error triggered when a non-zero amount of GTU is sent to a contract
+/// init or receive function that is not marked as `payable`.
+#[derive(Clone, Copy, Debug)]
+pub struct NotPayableError;
+
 /// Actions that can be produced at the end of a contract execution. This
 /// type is deliberately not cloneable so that we can enforce that
 /// `and_then` and `or_else` can only be used when more than one event is

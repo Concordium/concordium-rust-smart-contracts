@@ -521,7 +521,7 @@ fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a 
     } else {
         setup_fn_args.extend(quote! {
             if #amount_ident.micro_gtu != 0 {
-                return -1;
+                return concordium_std::Reject::from(concordium_std::NotPayableError).error_code.get();
             }
         });
     };
