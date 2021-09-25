@@ -10,7 +10,11 @@ use proc_macro2::Span;
 use quote::ToTokens;
 #[cfg(feature = "build-schema")]
 use std::collections::HashMap;
-use std::{convert::TryFrom, ops::Neg};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::TryFrom,
+    ops::Neg,
+};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -33,47 +37,275 @@ fn attach_error<A>(mut v: syn::Result<A>, msg: &str) -> syn::Result<A> {
     v
 }
 
-/// Get the name item from a list, if available and a string literal.
-/// If the named item does not have the expected (string) value, this will
-/// return an Err. If the item does not exist the return value is Ok(None).
-/// FIXME: Ensure there is only one.
-fn get_attribute_value<'a, I: IntoIterator<Item = &'a Meta>>(
-    iter: I,
-    name: &str,
-) -> syn::Result<Option<&'a syn::LitStr>> {
+/// Attributes that can be attached either to the init or receive method of a
+/// smart contract.
+struct OptionalArguments {
+    /// If set, the contract can receive gTU.
+    pub(crate) payable:       bool,
+    /// If enabled, the function has access to logging facilities.
+    pub(crate) enable_logger: bool,
+    /// The function is a low-level one, with direct access to contract memory.
+    pub(crate) low_level:     bool,
+    /// Which type, if any, is the parameter type of the contract.
+    /// This is used when generating schemas.
+    pub(crate) parameter:     Option<syn::LitStr>,
+}
+
+/// Attributes that can be attached to the initialization method.
+struct InitAttributes {
+    /// Name of the contract.
+    pub(crate) contract: syn::LitStr,
+    pub(crate) optional: OptionalArguments,
+}
+
+/// Attributes that can be attached to the receive method.
+struct ReceiveAttributes {
+    /// Name of the contract the method applies to.
+    pub(crate) contract: syn::LitStr,
+    /// Name of the method.
+    pub(crate) name:     syn::LitStr,
+    pub(crate) optional: OptionalArguments,
+}
+
+#[derive(Default)]
+struct ParsedAttributes {
+    /// We use BTreeSet to have consistent order of iteration when reporting
+    /// errors.
+    pub(crate) flags:  BTreeSet<syn::Ident>,
+    /// We use BTreeMap to have consistent order of iteration when reporting
+    /// errors.
+    pub(crate) values: BTreeMap<syn::Ident, syn::LitStr>,
+}
+
+impl ParsedAttributes {
+    /// Remove an attribute and return it, if present. The key must be a valid
+    /// Rust identifier, otherwise this function will panic.
+    pub(crate) fn extract_value(&mut self, key: &str) -> Option<syn::LitStr> {
+        // This is not clean, constructing a new identifier with a call_site span.
+        // But the only alternative I see is iterating over the map and locating the key
+        // since Ident implements equality comparison with &str.
+        let key = syn::Ident::new(key, Span::call_site());
+        self.values.remove(&key)
+    }
+
+    /// Remove an attribute return whether it was present.
+    pub(crate) fn extract_flag(&mut self, key: &str) -> bool {
+        // This is not clean, constructing a new identifier with a call_site span.
+        // But the only alternative I see is iterating over the map and locating the key
+        // since Ident implements equality comparison with &str.
+        let key = syn::Ident::new(key, Span::call_site());
+        self.flags.remove(&key)
+    }
+
+    /// If there are any remaining attributes signal an error. Otherwise return
+    /// Ok(())
+    pub(crate) fn report_all_attributes(self) -> syn::Result<()> {
+        // TODO: Replace into_iter + map with into_keys when only supporting rust 1.54+
+        let mut iter = self.flags.into_iter().chain(self.values.into_iter().map(|(k, _)| k));
+        if let Some(ident) = iter.next() {
+            let mut err =
+                syn::Error::new(ident.span(), format!("Unrecognized attribute {}.", ident));
+            for next_ident in iter {
+                err.combine(syn::Error::new(
+                    ident.span(),
+                    format!("Unrecognized attribute {}.", next_ident),
+                ));
+            }
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Parse attributes ensuring there are no duplicate items.
+fn parse_attributes<'a>(iter: impl IntoIterator<Item = &'a Meta>) -> syn::Result<ParsedAttributes> {
+    let mut ret = ParsedAttributes::default();
+    let mut errors = Vec::new();
+    let mut duplicate_values = BTreeMap::new();
+    let mut duplicate_flags = BTreeMap::new();
     for attr in iter.into_iter() {
         match attr {
             Meta::NameValue(mnv) => {
-                if mnv.path.is_ident(name) {
-                    if let syn::Lit::Str(lit) = &mnv.lit {
-                        return Ok(Some(lit));
+                if let Some(ident) = mnv.path.get_ident() {
+                    if let syn::Lit::Str(ls) = &mnv.lit {
+                        if let Some((existing_ident, _)) = ret.values.get_key_value(ident) {
+                            let v = duplicate_values.entry(ident).or_insert_with(|| {
+                                syn::Error::new(
+                                    existing_ident.span(),
+                                    format!("Duplicate attribute '{}'.", existing_ident),
+                                )
+                            });
+                            v.combine(syn::Error::new(
+                                ident.span(),
+                                format!("'{}' also appears here.", ident),
+                            ));
+                        } else {
+                            ret.values.insert(ident.clone(), ls.clone());
+                        }
                     } else {
-                        return Err(syn::Error::new(
-                            mnv.span(),
-                            format!("The `{}` attribute must be a string literal.", name),
+                        errors.push(syn::Error::new(
+                            mnv.path.span(),
+                            format!(
+                                "Values of attribute must be string literals, e.g., '{} = \
+                                 \"value\"'",
+                                ident
+                            ),
                         ));
                     }
+                } else {
+                    errors.push(syn::Error::new(
+                        mnv.path.span(),
+                        "Unrecognized attribute. Only attribute names consisting of a single \
+                         identifier are recognized.",
+                    ))
                 }
             }
             Meta::Path(p) => {
-                if p.is_ident(name) {
-                    return Err(syn::Error::new(
-                        attr.span(),
-                        format!("The `{}` attribute must have a string literal value.", name),
-                    ));
+                if let Some(ident) = p.get_ident() {
+                    if let Some(existing_ident) = ret.flags.get(ident) {
+                        let v = duplicate_flags.entry(ident).or_insert_with(|| {
+                            syn::Error::new(
+                                existing_ident.span(),
+                                format!("Duplicate attribute '{}'.", existing_ident),
+                            )
+                        });
+                        v.combine(syn::Error::new(
+                            ident.span(),
+                            format!("'{}' also appears here.", ident),
+                        ));
+                    } else {
+                        ret.flags.insert(ident.clone());
+                    }
+                } else {
+                    errors.push(syn::Error::new(
+                        p.span(),
+                        "Unrecognized attribute. Only attribute names consisting of a single \
+                         identifier are recognized.",
+                    ))
                 }
             }
             Meta::List(p) => {
-                if p.path.is_ident(name) {
-                    return Err(syn::Error::new(
-                        attr.span(),
-                        format!("The `{}` attribute must have a string literal value.", name),
-                    ));
-                }
+                errors.push(syn::Error::new(p.span(), "Unrecognized attribute."));
             }
         }
     }
-    Ok(None)
+    // TODO: Replace with into_values when least rust version becomes 1.54.
+    let mut iter = errors
+        .into_iter()
+        .chain(duplicate_values.into_iter().map(|(_, v)| v))
+        .chain(duplicate_flags.into_iter().map(|(_, v)| v));
+    // If there are any errors we combine them.
+    if let Some(err) = iter.next() {
+        let mut err = err;
+        for next_err in iter {
+            err.combine(next_err);
+        }
+        Err(err)
+    } else {
+        Ok(ret)
+    }
+}
+
+#[cfg(feature = "build-schema")]
+/// Attributes applicable to the `contract_state` annotation.
+struct ContractStateAttributes {
+    /// Name of the contract the contract state applies to.
+    pub(crate) contract: syn::LitStr,
+}
+
+#[cfg(feature = "build-schema")]
+/// Parse nested attributes to the `contract_state` attribute.
+fn parse_contract_state_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
+    attrs: I,
+) -> syn::Result<ContractStateAttributes> {
+    let mut attributes = parse_attributes(attrs)?;
+    let contract = attributes.extract_value("contract").ok_or_else(|| {
+        syn::Error::new(
+            Span::call_site(),
+            "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
+             example, #[contract_state(contract = \"my-contract\")]",
+        )
+    })?;
+    attributes.report_all_attributes()?;
+    Ok(ContractStateAttributes {
+        contract,
+    })
+}
+
+fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
+    attrs: I,
+) -> syn::Result<InitAttributes> {
+    let mut attributes = parse_attributes(attrs)?;
+    let contract: syn::LitStr = attributes.extract_value("contract").ok_or_else(|| {
+        syn::Error::new(
+            Span::call_site(),
+            "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
+             example, #[init(contract = \"my-contract\")]",
+        )
+    })?;
+    let parameter: Option<syn::LitStr> = attributes.extract_value("parameter");
+    let payable = attributes.extract_flag("payable");
+    let enable_logger = attributes.extract_flag("enable_logger");
+    let low_level = attributes.extract_flag("low_level");
+    // Make sure that there are no unrecognized attributes. These would typically be
+    // there due to an error. An improvement would be to find the nearest valid one
+    // for each of them and report that in the error.
+    attributes.report_all_attributes()?;
+    Ok(InitAttributes {
+        contract,
+        optional: OptionalArguments {
+            payable,
+            enable_logger,
+            low_level,
+            parameter,
+        },
+    })
+}
+
+fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
+    attrs: I,
+) -> syn::Result<ReceiveAttributes> {
+    let mut attributes = parse_attributes(attrs)?;
+
+    let contract = attributes.extract_value("contract");
+    let name = attributes.extract_value("name");
+    let parameter: Option<syn::LitStr> = attributes.extract_value("parameter");
+    let payable = attributes.extract_flag("payable");
+    let enable_logger = attributes.extract_flag("enable_logger");
+    let low_level = attributes.extract_flag("low_level");
+    // Make sure that there are no unrecognized attributes. These would typically be
+    // there due to an error. An improvement would be to find the nearest valid one
+    // for each of them and report that in the error.
+    attributes.report_all_attributes()?;
+    match (contract, name) {
+        (Some(contract), Some(name)) => Ok(ReceiveAttributes {
+            contract,
+            name,
+            optional: OptionalArguments {
+                payable,
+                enable_logger,
+                low_level,
+                parameter,
+            },
+        }),
+        (Some(_), None) => Err(syn::Error::new(
+            Span::call_site(),
+            "A name for the method must be provided, using the 'name' attribute.\n\nFor example, \
+             #[receive(name = \"receive\")]",
+        )),
+        (None, Some(_)) => Err(syn::Error::new(
+            Span::call_site(),
+            "A name for the method must be provided, using the 'contract' attribute.\n\nFor \
+             example, #[receive(contract = \"my-contract\")]",
+        )),
+        (None, None) => Err(syn::Error::new(
+            Span::call_site(),
+            "A contract name and a name for the method must be provided, using the 'contract' and \
+             'name' attributes.\n\nFor example, #[receive(contract = \"my-contract\", name = \
+             \"receive\")]",
+        )),
+    }
 }
 
 // Return whether a attribute item is present.
@@ -169,13 +401,9 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
 
-    let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "A name for the contract must be provided, using the contract attribute. For example, \
-             #[init(contract = \"my-contract\")]",
-        )
-    })?;
+    let init_attributes = parse_init_attributes(&attrs)?;
+
+    let contract_name = init_attributes.contract;
 
     let ast: syn::ItemFn =
         attach_error(syn::parse(item), "#[init] can only be applied to functions.")?;
@@ -195,10 +423,13 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     // strings are displayed as the expected arguments.
     let mut required_args = vec!["ctx: &impl HasInitContext"];
 
-    let (setup_fn_optional_args, fn_optional_args) =
-        contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
+    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
+        &init_attributes.optional,
+        &amount_ident,
+        &mut required_args,
+    );
 
-    let mut out = if contains_attribute(attrs.iter(), "low_level") {
+    let mut out = if init_attributes.optional.low_level {
         required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
@@ -260,7 +491,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     }
 
     // Embed schema if 'parameter' attribute is set
-    let parameter_option = get_attribute_value(attrs.iter(), "parameter")?.map(|a| a.value());
+    let parameter_option = init_attributes.optional.parameter.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
         rust_export_fn_name,
@@ -363,28 +594,18 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
 
-    let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "The name of the associated contract must be provided, using the 'contract' \
-             attribute.\n\nFor example, #[receive(contract = \"my-contract\")]",
-        )
-    })?;
-
-    let name = get_attribute_value(attrs.iter(), "name")?.ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "A name for the receive function must be provided, using the 'name' attribute.\n\nFor \
-             example, #[receive(name = \"func-name\", ...)]",
-        )
-    })?;
-
     let ast: syn::ItemFn =
         attach_error(syn::parse(item), "#[receive] can only be applied to functions.")?;
 
+    let receive_attributes = parse_receive_attributes(&attrs)?;
+
+    let contract_name = receive_attributes.contract;
+
+    let method_name = receive_attributes.name;
+
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
-    let wasm_export_fn_name = format!("{}.{}", contract_name.value(), name.value());
+    let wasm_export_fn_name = format!("{}.{}", contract_name.value(), method_name.value());
 
     // Validate the contract name independently to ensure that it doesn't contain a
     // '.' as this causes a subtle error when receive names are being split.
@@ -393,7 +614,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             .map_err(|e| syn::Error::new(contract_name.span(), e));
 
     let receive_name_validation = ReceiveName::is_valid_receive_name(&wasm_export_fn_name)
-        .map_err(|e| syn::Error::new(name.span(), e));
+        .map_err(|e| syn::Error::new(method_name.span(), e));
 
     match (contract_name_validation, receive_name_validation) {
         (Err(mut e0), Err(e1)) => {
@@ -412,10 +633,13 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // strings are displayed as the expected arguments.
     let mut required_args = vec!["ctx: &impl HasReceiveContext"];
 
-    let (setup_fn_optional_args, fn_optional_args) =
-        contract_function_optional_args_tokens(&attrs, &amount_ident, &mut required_args);
+    let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
+        &receive_attributes.optional,
+        &amount_ident,
+        &mut required_args,
+    );
 
-    let mut out = if contains_attribute(&attrs, "low_level") {
+    let mut out = if receive_attributes.optional.low_level {
         required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
@@ -491,7 +715,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     }
 
     // Embed schema if 'parameter' attribute is set
-    let parameter_option = get_attribute_value(attrs.iter(), "parameter")?.map(|a| a.value());
+    let parameter_option = receive_attributes.optional.parameter.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
         rust_export_fn_name,
@@ -508,14 +732,14 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 ///
 /// It also mutates a vector of required arguments with the expected type
 /// signature of each.
-fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a Meta>>(
-    attrs: I,
+fn contract_function_optional_args_tokens(
+    optional: &OptionalArguments,
     amount_ident: &syn::Ident,
     required_args: &mut Vec<&str>,
 ) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
     let mut setup_fn_args = proc_macro2::TokenStream::new();
     let mut fn_args = vec![];
-    if contains_attribute(attrs, "payable") {
+    if optional.payable {
         required_args.push("amount: Amount");
         fn_args.push(quote!(#amount_ident));
     } else {
@@ -526,7 +750,7 @@ fn contract_function_optional_args_tokens<'a, I: Copy + IntoIterator<Item = &'a 
         });
     };
 
-    if contains_attribute(attrs, "enable_logger") {
+    if optional.enable_logger {
         required_args.push("logger: &mut impl HasLogger");
         let logger_ident = format_ident!("logger");
         setup_fn_args.extend(quote!(let mut #logger_ident = concordium_std::Logger::init();));
@@ -1085,14 +1309,8 @@ fn contract_state_worker(attr: TokenStream, item: TokenStream) -> syn::Result<To
 
     let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
 
-    let contract_name = get_attribute_value(attrs.iter(), "contract")?.ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "A name of the contract must be provided, using the 'contract' attribute.\n\nFor \
-             example #[contract_state(contract = \"my-contract\")].",
-        )
-    })?;
-
+    let contract_state_attributes = parse_contract_state_attributes(&attrs)?;
+    let contract_name = contract_state_attributes.contract;
     let wasm_schema_name = format!("concordium_schema_state_{}", contract_name.value());
     let rust_schema_name = format_ident!("concordium_schema_state_{}", data_ident);
 
