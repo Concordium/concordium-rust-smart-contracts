@@ -215,39 +215,53 @@ struct ContractStateAttributes {
 }
 
 #[cfg(feature = "build-schema")]
+// Attribute names for the contract_state macro.
+const CONTRACT_STATE_ATTRIBUTE_CONTRACT: &str = "contract";
+
+#[cfg(feature = "build-schema")]
 /// Parse nested attributes to the `contract_state` attribute.
 fn parse_contract_state_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
 ) -> syn::Result<ContractStateAttributes> {
     let mut attributes = parse_attributes(attrs)?;
-    let contract = attributes.extract_value("contract").ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
-             example, #[contract_state(contract = \"my-contract\")]",
-        )
-    })?;
+    let contract =
+        attributes.extract_value(CONTRACT_STATE_ATTRIBUTE_CONTRACT).ok_or_else(|| {
+            syn::Error::new(
+                Span::call_site(),
+                "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
+                 example, #[contract_state(contract = \"my-contract\")]",
+            )
+        })?;
     attributes.report_all_attributes()?;
     Ok(ContractStateAttributes {
         contract,
     })
 }
 
+// Supported attributes for the init methods.
+
+const INIT_ATTRIBUTE_PARAMETER: &str = "parameter";
+const INIT_ATTRIBUTE_CONTRACT: &str = "contract";
+const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
+const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
+const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
+
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
 ) -> syn::Result<InitAttributes> {
     let mut attributes = parse_attributes(attrs)?;
-    let contract: syn::LitStr = attributes.extract_value("contract").ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
-             example, #[init(contract = \"my-contract\")]",
-        )
-    })?;
-    let parameter: Option<syn::LitStr> = attributes.extract_value("parameter");
-    let payable = attributes.extract_flag("payable");
-    let enable_logger = attributes.extract_flag("enable_logger");
-    let low_level = attributes.extract_flag("low_level");
+    let contract: syn::LitStr =
+        attributes.extract_value(INIT_ATTRIBUTE_CONTRACT).ok_or_else(|| {
+            syn::Error::new(
+                Span::call_site(),
+                "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
+                 example, #[init(contract = \"my-contract\")]",
+            )
+        })?;
+    let parameter: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_PARAMETER);
+    let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
+    let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
+    let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
@@ -263,17 +277,26 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     })
 }
 
+// Supported attributes for the receive methods.
+
+const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
+const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
+const RECEIVE_ATTRIBUTE_NAME: &str = "name";
+const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
+const RECEIVE_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
+const RECEIVE_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
+
 fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
 ) -> syn::Result<ReceiveAttributes> {
     let mut attributes = parse_attributes(attrs)?;
 
-    let contract = attributes.extract_value("contract");
-    let name = attributes.extract_value("name");
-    let parameter: Option<syn::LitStr> = attributes.extract_value("parameter");
-    let payable = attributes.extract_flag("payable");
-    let enable_logger = attributes.extract_flag("enable_logger");
-    let low_level = attributes.extract_flag("low_level");
+    let contract = attributes.extract_value(RECEIVE_ATTRIBUTE_CONTRACT);
+    let name = attributes.extract_value(RECEIVE_ATTRIBUTE_NAME);
+    let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
+    let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE);
+    let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER);
+    let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
