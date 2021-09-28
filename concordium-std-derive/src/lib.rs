@@ -88,7 +88,7 @@ impl ParsedAttributes {
         self.values.remove(&key)
     }
 
-    /// Remove an attribute return whether it was present.
+    /// Remove an attribute and return whether it was present.
     pub(crate) fn extract_flag(&mut self, key: &str) -> bool {
         // This is not clean, constructing a new identifier with a call_site span.
         // But the only alternative I see is iterating over the map and locating the key
@@ -399,14 +399,14 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let ast: syn::ItemFn =
+        attach_error(syn::parse(item), "#[init] can only be applied to functions.")?;
+
     let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
 
     let init_attributes = parse_init_attributes(&attrs)?;
 
     let contract_name = init_attributes.contract;
-
-    let ast: syn::ItemFn =
-        attach_error(syn::parse(item), "#[init] can only be applied to functions.")?;
 
     let fn_name = &ast.sig.ident;
     let rust_export_fn_name = format_ident!("export_{}", fn_name);
@@ -592,10 +592,10 @@ pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
-
     let ast: syn::ItemFn =
         attach_error(syn::parse(item), "#[receive] can only be applied to functions.")?;
+
+    let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
 
     let receive_attributes = parse_receive_attributes(&attrs)?;
 
