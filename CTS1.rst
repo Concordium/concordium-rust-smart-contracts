@@ -59,7 +59,7 @@ A receive function name is prefixed with the contract name, followed by a ``.`` 
 It MUST consist only of ASCII alphanumeric or punctuation characters.
 The contract name is not allowed to contain ``.``.
 
-It is serialized as: the function name byte length (``n``) is represented by the first 2 bytes, followed this many bytes for the function name (``name``).
+It is serialized as: the function name byte length (``n``) is represented by the first 2 bytes, followed by this many bytes for the function name (``name``).
 The receive function name MUST be 100 bytes or less::
 
   ReceiveHookName ::= (n: Byte²) (name: Byteⁿ)
@@ -77,7 +77,7 @@ A name of a smart contract.
 It must be prefixed with ``init_`` and MUST consist only of ASCII alphanumeric or punctuation characters.
 The contract name is not allowed to contain ``.``.
 
-It is serialized as: the contract name byte length (``n``) is represented by the first 2 bytes, followed this many bytes for the contract name (``name``).
+It is serialized as: the contract name byte length (``n``) is represented by the first 2 bytes, followed by this many bytes for the contract name (``name``).
 The contract name MUST be 100 bytes or less::
 
   ContractName ::= (n: Byte²) (name: Byteⁿ)
@@ -140,15 +140,16 @@ In case the first byte is 1 then ``ContractAddress`` (``address``), bytes for :r
 ``AdditionalData``
 ^^^^^^^^^^^^^^^^^^^
 
-Additional bytes to include in a transfer, can be used to add additional parameters for the transfer function call.
+Additional bytes to include in a transfer, which can be used to add additional parameters for the transfer function call.
 
-It is serialized as: the first 2 bytes encodes the length (``n``) of the data, followed this many bytes for the data (``data``)::
+It is serialized as: the first 2 bytes encode the length (``n``) of the data, followed by this many bytes for the data (``data``)::
 
   AdditionalData ::= (n: Byte²) (data: Byteⁿ)
 
 .. note::
 
-  This type is passed in a parameter for smart contract function calls, be aware of the parameter size limit of 1024 bytes.
+  This type is passed in a parameter for smart contract function calls.
+  Be aware of the parameter size limit of 1024 bytes.
 
 .. _CTS-functions:
 
@@ -585,7 +586,7 @@ In this section we point out some of the differences from other popular token st
 Token ID bytes instead an integer
 ---------------------------------
 
-Token standards such as ERC721 and ERC1155 both use an 256 bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
+Token standards such as ERC721 and ERC1155 both use a 256-bit unsigned integer (32 bytes) for the token ID, to support using something like a SHA256 hash for the token ID.
 But in the case where the token ID have no significance other than a simple identifier, smaller sized token IDs can reduce energy costs.
 This is why we chose to let the first byte indicate the size of the token ID, meaning a token ID can vary between 1 byte and 256 bytes, resulting in more than 10^614 possible token IDs.
 
@@ -604,14 +605,14 @@ The main argument is simplicity and to save energy cost on common cases, but oth
 
 - A token level authentication requires the token smart contract to track more state, which increases the overall energy cost.
 - For token smart contracts with a lot of token types, such as a smart contract with a large collection of NFTs, a token level authentication could become very expensive.
-- For fungible tokens; approval/allowance introduces an attack vector as `described here <https://docs.google.com/document/d/1YLPtQxZu1UAvO9cZ1O2RPXBbT0mooh4DYKjA_jp-RLM/edit>`_.
+- For fungible tokens; `approval/allowance introduces an attack vector <https://docs.google.com/document/d/1YLPtQxZu1UAvO9cZ1O2RPXBbT0mooh4DYKjA_jp-RLM/edit>`_.
 
 .. note::
 
   The specification does not prevent adding more fine-grained authentication, such as a token level authentication.
 
-Operator can transfer any amount of any token type of the owner
----------------------------------------------------------------
+Operator can transfer any amount of any token type for the owner
+----------------------------------------------------------------
 
 An operator of an address can transfer any amount of any token type owned by the address.
 An alternative approach could be to scope the operators per token type and the owner could then add the operator for every token type to achieve the same.
@@ -637,7 +638,7 @@ Receive hook function callback argument
 The name of the receive hook function called on a smart contract receiving tokens is supplied as part of the parameter.
 This allows for a smart contract integrating with a token smart contract to have multiple hooks and leave it to the caller to know which hook they want to trigger.
 
-Another technical reason is that the name of the smart contract is part of the smart contract receive function name, which means the specification would include a requirement of the smart contract name for other to integrate reliably.
+Another technical reason is that the name of the smart contract is part of the smart contract receive function name, which means the specification would include a requirement of the smart contract name for others to integrate reliably.
 
 No sender hook function
 -----------------------
@@ -654,7 +655,7 @@ Making it more explicit instead of special case transfer events.
 No error code for receive hook rejecting
 ----------------------------------------
 
-The specification could include an error code, for the receive hook function to return if rejecting the token transferred (as seen in the `FA2 standard <https://gitlab.com/tezos/tzip/-/blob/master/proposals/tzip-12/tzip-12.md#error-handling>`_ on Tezos).
+The specification could include an error code for the receive hook function to return if rejecting the token transferred (as seen in the `FA2 standard <https://gitlab.com/tezos/tzip/-/blob/master/proposals/tzip-12/tzip-12.md#error-handling>`_ on Tezos).
 But we chose to leave this error code up to the receiving smart contract, which allows for more informative error codes.
 
 Adding SHA256 checksum for token metadata event
