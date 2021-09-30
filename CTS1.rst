@@ -126,7 +126,7 @@ In case the first byte is 1 then ``ContractAddress`` (``address``) is followed::
 ^^^^^^^^^^^^
 
 The receiving address of a transfer, which is either an account address or a contract address.
-In the case of a contract address, additional information such as the name of a receive function and some additional bytes to call on the receiving contract.
+In the case of a contract address: a name of the hook receive function to invoke is also needed.
 
 It is serialized as: First byte indicates whether it is an account address or a contract address.
 In case the first byte is 0 then ``AccountAddress`` (``address``) is followed.
@@ -183,8 +183,8 @@ Each transfer is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-Token
 .. note::
 
   Be aware of the smart contract parameter size limit of 1024 bytes.
-  Since the byte size of a single transfer can vary in size, this will limit the number of transfers can be included in the same function call.
-  Currently, with the smallest possible transfers, the parameter can contain 21 transfers and with the biggest possible transfer will take the whole parameter.
+  Since the byte size of a single transfer can vary in size, this will limit the number of transfers that can be included in the same function call.
+  Currently, with the smallest possible transfers, the parameter can contain 21 transfers and with the biggest possible transfer, it will take the whole parameter.
 
 .. _CTS-functions-transfer-receive-hook-parameter:
 
@@ -211,7 +211,7 @@ Requirements
 - A transfer with the same address as ``from`` and ``to`` MUST be executed as a normal transfer.
 - A transfer of a token amount zero MUST be executed as a normal transfer.
 - A transfer of some amount of a token type MUST only transfer the exact amount of the given token type between balances.
-- A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a receive hook parameter :ref:`described above<CTS-functions-transfer-receive-hook-parameter>`
+- A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a receive hook parameter :ref:`described above<CTS-functions-transfer-receive-hook-parameter>`.
 - The contract function MUST reject if a receive hook function called on the contract receiving tokens rejects.
 
 .. _CTS-functions-updateOperator:
@@ -229,7 +229,7 @@ It does not contain the address which is adding/removing the operator as this wi
 
 The parameter is serialized as: first 1 byte (``n``) for the number of updates followed by this number of operator updates (``updates``).
 An operator update is serialized as: 1 byte (``update``) indicating whether to remove or add an operator, where if the byte value is 0 the sender is removing an operator, if the byte value is 1 the sender is adding an operator.
-The followed is the operator address (``operator``) :ref:`CTS-Address` to add or remove as operator for the sender::
+The is followed by the operator address (``operator``) :ref:`CTS-Address` to add or remove as operator for the sender::
 
   OperatorUpdate ::= (0: Byte) // Remove operator
                    | (1: Byte) // Add operator
@@ -285,12 +285,13 @@ Requirements
 
 - The contract function MUST reject if the sender is not a contract address with error :ref:`CONTRACT_ONLY<CTS-rejection-errors>`.
 - The contract function MUST reject if any of the queries fail:
+
   - A query MUST fail if the token ID is unknown with error: :ref:`INVALID_TOKEN_ID<CTS-rejection-errors>`.
 
 Logged events
 -------------
 
-The idea of the logged events for this specification is for off-chain applications to be able to track balances and operators without knowledge of the contract specific implementation details.
+The idea of the logged events for this specification is for off-chain applications to be able to track balances and operators without knowledge of the contract-specific implementation details.
 For this reason it is important to log events in any functionality of the token contract which modifies balances or operators.
 
 - It MUST be possible to derive the balance of an address for a token type from the logged :ref:`CTS-event-transfer`, :ref:`CTS-event-mint` and :ref:`CTS-event-burn` events.
@@ -315,7 +316,7 @@ The ``TransferEvent`` event is serialized as: first a byte with the value of 0, 
 A ``MintEvent`` event MUST be logged every time a new token is minted. This also applies when introducing new token types and the initial token types and amounts in a contract.
 Minting a token with a zero amount can be used to indicating the existence of a token type without minting any amount of tokens.
 
-The ``MintEvent`` event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens being minted :ref:`CTS-TokenAmount` (``amount``) and the owner address for of the tokens :ref:`CTS-Address` (``to``)::
+The ``MintEvent`` event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens being minted :ref:`CTS-TokenAmount` (``amount``) and the owner address of the tokens :ref:`CTS-Address` (``to``)::
 
   MintEvent ::= (1: Byte) (id: TokenID) (amount: TokenAmount) (to: Address)
 
@@ -361,7 +362,7 @@ Logging the ``TokenMetadataEvent`` event again with the same token ID, is used t
 The ``TokenMetadataEvent`` event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`CTS-TokenID` (``id``), two bytes for the length of the metadata url (``n``) and then this many bytes for the url to the metadata (``url``).
 Lastly a byte to indicate whether a hash of the metadata is included, if its value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash (``hash``) is followed::
 
-  MetadataUrl ::= (n: Byte) (url: Byteⁿ)
+  MetadataUrl ::= (n: Byte²) (url: Byteⁿ)
 
   MetadataChecksum ::= (0: Byte)
                      | (1: Byte) (hash: Byte³²)
@@ -370,7 +371,7 @@ Lastly a byte to indicate whether a hash of the metadata is included, if its val
 
 .. note::
 
-  Be aware of the limit on the number of logs per smart contract function call which currently is 64, and also the byte size limit on each logged event, which currently is 512 bytes.
+  Be aware of the limit on the number of logs per smart contract function call, which currently is 64, and also the byte size limit on each logged event, which currently is 512 bytes.
   This will limit the length of the metadata URL depending on the size of the token ID and whether a content hash is included.
   With the largest possible token ID and a content hash included; the URL can be up to 220 bytes.
 
@@ -576,7 +577,7 @@ A number of limitations are important to be aware of:
 
 .. note::
 
-  Smart contracts where the contract state size limit is to low, can distribute the state across multiple smart contract instances.
+  Smart contracts, where the contract state size limit is too low, can distribute the state across multiple smart contract instances.
 
 Decisions and rationale
 =======================
