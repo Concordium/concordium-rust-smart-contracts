@@ -565,7 +565,7 @@ impl<X: From<ParseError>> From<ParseError> for Cts1Error<X> {
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the variants and the order of their fields
 // cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub enum Receiver {
     /// The receiver is an account address.
     Account(
@@ -599,6 +599,21 @@ impl Receiver {
     }
 }
 
+impl schema::SchemaType for Receiver {
+    fn get_type() -> schema::Type {
+        schema::Type::Enum(vec![
+            (String::from("Account"), schema::Fields::Unnamed(vec![AccountAddress::get_type()])),
+            (
+                String::from("Contract"),
+                schema::Fields::Unnamed(vec![
+                    ContractAddress::get_type(),
+                    OwnedReceiveName::get_type(),
+                ]),
+            ),
+        ])
+    }
+}
+
 impl From<AccountAddress> for Receiver {
     fn from(address: AccountAddress) -> Self { Self::from_account(address) }
 }
@@ -629,7 +644,7 @@ impl AsRef<[u8]> for AdditionalData {
 /// A single transfer of some amount of a token.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct Transfer<T: IsTokenId> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -644,9 +659,27 @@ pub struct Transfer<T: IsTokenId> {
     pub data:     AdditionalData,
 }
 
+impl<T: IsTokenId> schema::SchemaType for Transfer<T> {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            (String::from("token_id"), T::get_type()),
+            (String::from("amount"), TokenAmount::get_type()),
+            (String::from("from"), Address::get_type()),
+            (String::from("to"), Receiver::get_type()),
+            (String::from("data"), AdditionalData::get_type()),
+        ]))
+    }
+}
+
 /// The parameter type for the contract function `transfer`.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 1)] pub Vec<Transfer<T>>);
+
+impl<T: IsTokenId> schema::SchemaType for TransferParams<T> {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U8, Box::new(Transfer::<T>::get_type()))
+    }
+}
 
 impl<T: IsTokenId> From<Vec<Transfer<T>>> for TransferParams<T> {
     fn from(transfers: Vec<Transfer<T>>) -> Self { TransferParams(transfers) }
