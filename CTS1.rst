@@ -214,6 +214,12 @@ Requirements
 - A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a receive hook parameter :ref:`described above<CTS-functions-transfer-receive-hook-parameter>`.
 - The contract function MUST reject if a receive hook function called on the contract receiving tokens rejects.
 
+.. warning::
+
+  Be aware of transferring tokens to a non-existing account address.
+  This specification by itself does not include a mechanism to recover these tokens.
+  Checking the existence of an account address would ideally be done off-chain before the message is even sent to the token smart contract.
+
 .. _CTS-functions-updateOperator:
 
 ``updateOperator``
@@ -572,7 +578,7 @@ A number of limitations are important to be aware of:
 - Smart contract state size is limited to 16 KiB.
 - Smart contract function parameters are limited to 1 KiB.
 - Each logged event is limited to 0.5 KiB.
-- The number of logged events is limited to 64.
+- The number of logged events is limited to 64 per contract function invocation.
 - The total size of the smart contract module is limited to 64 KiB.
 
 .. note::
