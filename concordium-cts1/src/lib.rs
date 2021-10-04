@@ -734,7 +734,7 @@ impl<T: IsTokenId> schema::SchemaType for Transfer<T> {
 
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize)]
-pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 1)] pub Vec<Transfer<T>>);
+pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 2)] pub Vec<Transfer<T>>);
 
 impl<T: IsTokenId> schema::SchemaType for TransferParams<T> {
     fn get_type() -> schema::Type {
@@ -776,7 +776,7 @@ pub struct UpdateOperator {
 
 /// The parameter type for the contract function `updateOperator`.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct UpdateOperatorParams(#[concordium(size_length = 1)] pub Vec<UpdateOperator>);
+pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
 
 /// A query for the balance of a given address for a given token.
 // Note: For the serialization to be derived according to the CTS1
@@ -799,7 +799,7 @@ pub struct BalanceOfQueryParams<T: IsTokenId> {
     /// The contract function to trigger with the results of the queries.
     pub callback: OwnedReceiveName,
     /// List of balance queries.
-    #[concordium(size_length = 1)]
+    #[concordium(size_length = 2)]
     pub queries:  Vec<BalanceOfQuery<T>>,
 }
 
@@ -811,7 +811,7 @@ pub type BalanceOfQueryResult<T> = (BalanceOfQuery<T>, TokenAmount);
 /// It consists of the list of queries paired with their corresponding result.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQueryResponse<T: IsTokenId>(
-    #[concordium(size_length = 1)] Vec<BalanceOfQueryResult<T>>,
+    #[concordium(size_length = 2)] Vec<BalanceOfQueryResult<T>>,
 );
 
 impl<T: IsTokenId> From<Vec<BalanceOfQueryResult<T>>> for BalanceOfQueryResponse<T> {

@@ -173,12 +173,12 @@ Parameter
 
 The parameter is a list of transfers.
 
-It is serialized as: 1 byte representing the number of transfers (``n``) followed by the bytes for this number of transfers (``transfers``).
+It is serialized as: 2 bytes representing the number of transfers (``n``) followed by the bytes for this number of transfers (``transfers``).
 Each transfer is serialized as: a :ref:`CTS-TokenID` (``id``), a :ref:`CTS-TokenAmount` (``amount``), the token owner address :ref:`CTS-Address` (``from``), the receiving address :ref:`CTS-Receiver` (``to``) and some additional data (``data``)::
 
   Transfer ::= (id: TokenID) (amount: TokenAmount) (from: Address) (to: Receiver) (data: AdditionalData)
 
-  TransferParameter ::= (n: Byte) (transfers: Transferⁿ)
+  TransferParameter ::= (n: Byte²) (transfers: Transferⁿ)
 
 .. note::
 
@@ -233,7 +233,7 @@ Parameter
 The parameter contains a list of operator updates. An operator update contains information whether to add or remove an operator and the address to add/remove as operator.
 It does not contain the address which is adding/removing the operator as this will be the sender of the message invoking this function.
 
-The parameter is serialized as: first 1 byte (``n``) for the number of updates followed by this number of operator updates (``updates``).
+The parameter is serialized as: first 2 bytes (``n``) for the number of updates followed by this number of operator updates (``updates``).
 An operator update is serialized as: 1 byte (``update``) indicating whether to remove or add an operator, where if the byte value is 0 the sender is removing an operator, if the byte value is 1 the sender is adding an operator.
 The is followed by the operator address (``operator``) :ref:`CTS-Address` to add or remove as operator for the sender::
 
@@ -242,7 +242,7 @@ The is followed by the operator address (``operator``) :ref:`CTS-Address` to add
 
   UpdateOperator ::= (update: OperatorUpdate) (operator: Address)
 
-  UpdateOperatorParameter ::= (n: Byte) (updates: UpdateOperatorⁿ)
+  UpdateOperatorParameter ::= (n: Byte²) (updates: UpdateOperatorⁿ)
 
 Requirements
 ~~~~~~~~~~~~
@@ -278,12 +278,12 @@ Callback parameter
 
 The parameter for the callback receive function is a list of query and token amount pairs.
 
-It is serialized as: 1 byte for the number of query-amount pairs (``n``) and then this number of pairs (``results``).
+It is serialized as: 2 bytes for the number of query-amount pairs (``n``) and then this number of pairs (``results``).
 A query-amount pair is serialized as a query (``query``) and then a :ref:`CTS-TokenAmount` (``amount``)::
 
   BalanceOfQueryResult ::= (query: BalanceOfQuery) (balance: TokenAmount)
 
-  BalanceOfCallbackParameter ::= (n: Byte) (results: BalanceOfQueryResultⁿ)
+  BalanceOfCallbackParameter ::= (n: Byte²) (results: BalanceOfQueryResultⁿ)
 
 
 Requirements
