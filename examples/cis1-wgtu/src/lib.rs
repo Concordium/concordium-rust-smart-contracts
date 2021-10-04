@@ -1,4 +1,4 @@
-//! wGTU: An example implementation of CTS1 for a single fungible token.
+//! wGTU: An example implementation of CIS1 for a single fungible token.
 //!
 //! # Description
 //! The token in this contract is a wrapped GTU (wGTU), meaning it holds a one
@@ -7,13 +7,13 @@
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
-//! As follows from the CTS1 specification, the contract has a `transfer`
+//! As follows from the CIS1 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some token owner address is allowed
 //! to transfer any tokens of the owner.
 //!
-//! Besides the contract functions required CTS1, this contract implements a
+//! Besides the contract functions required CIS1, this contract implements a
 //! function `wrap` for converting GTU into wGTU tokens. It accepts an amount of
 //! GTU and mints this amount of wGTU. The function takes a receiving address as
 //! the parameter and transfers the amount of tokens.
@@ -25,7 +25,7 @@
 //! GTU is sent to the receiver.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_cts1::*;
+use concordium_cis1::*;
 use concordium_std::{
     collections::{HashMap as Map, HashSet as Set},
     *,
@@ -56,7 +56,7 @@ struct AddressState {
 }
 
 /// The contract state,
-#[contract_state(contract = "CTS1-wGTU")]
+#[contract_state(contract = "CIS1-wGTU")]
 #[derive(Serialize, SchemaType)]
 struct State {
     /// The state the one token.
@@ -102,7 +102,7 @@ enum CustomContractError {
     LogMalformed,
 }
 
-type ContractError = Cts1Error<CustomContractError>;
+type ContractError = Cis1Error<CustomContractError>;
 
 type ContractResult<A> = Result<A, ContractError>;
 
@@ -118,7 +118,7 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self { Cts1Error::Custom(c) }
+    fn from(c: CustomContractError) -> Self { Cis1Error::Custom(c) }
 }
 
 impl State {
@@ -230,21 +230,21 @@ impl State {
 
 /// Initialize contract instance with no initial tokens.
 /// Logs a `Mint` event for the single token id with no amounts.
-#[init(contract = "CTS1-wGTU", enable_logger)]
+#[init(contract = "CIS1-wGTU", enable_logger)]
 fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
     // Construct the initial contract state.
     let state = State::new();
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
-    logger.log(&Cts1Event::Mint(MintEvent {
+    logger.log(&Cis1Event::Mint(MintEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   0,
         owner:    invoker,
     }))?;
 
     // Log event for where to find metadata for the token
-    logger.log(&Cts1Event::TokenMetadata(TokenMetadataEvent {
+    logger.log(&Cis1Event::TokenMetadata(TokenMetadataEvent {
         token_id:     TOKEN_ID_WGTU,
         metadata_url: MetadataUrl {
             url:  String::from(TOKEN_METADATA_URL),
@@ -257,7 +257,7 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
 
 /// Wrap an amount of GTU into wGTU tokens and transfer the tokens if the sender
 /// is not the receiver.
-#[receive(contract = "CTS1-wGTU", name = "wrap", parameter = "WrapParams", enable_logger, payable)]
+#[receive(contract = "CIS1-wGTU", name = "wrap", parameter = "WrapParams", enable_logger, payable)]
 fn contract_wrap<A: HasActions>(
     ctx: &impl HasReceiveContext,
     amount: Amount,
@@ -274,7 +274,7 @@ fn contract_wrap<A: HasActions>(
     state.mint(&TOKEN_ID_WGTU, amount.micro_gtu, &receive_address)?;
 
     // Log the newly minted tokens.
-    logger.log(&Cts1Event::Mint(MintEvent {
+    logger.log(&Cis1Event::Mint(MintEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   amount.micro_gtu,
         owner:    sender,
@@ -282,7 +282,7 @@ fn contract_wrap<A: HasActions>(
 
     // Only log a transfer event if receiver is not the one who payed for this.
     if sender != receive_address {
-        logger.log(&Cts1Event::Transfer(TransferEvent {
+        logger.log(&Cis1Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WGTU,
             amount:   amount.micro_gtu,
             from:     sender,
@@ -292,11 +292,11 @@ fn contract_wrap<A: HasActions>(
 
     // Send message to the receiver of the tokens.
     if let Receiver::Contract(address, function) = params.to {
-        let parameter = OnReceivingCTS1Params {
+        let parameter = OnReceivingCis1Params {
             token_id:      TOKEN_ID_WGTU,
             amount:        amount.micro_gtu,
             from:          sender,
-            contract_name: OwnedContractName::new_unchecked(String::from("init_CTS1-wGTU")),
+            contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-wGTU")),
             data:          params.data,
         };
         Ok(send(&address, function.as_ref(), Amount::zero(), &parameter))
@@ -306,7 +306,7 @@ fn contract_wrap<A: HasActions>(
 }
 
 /// Unwrap an amount of wGTU tokens into GTU
-#[receive(contract = "CTS1-wGTU", name = "unwrap", parameter = "UnwrapParams", enable_logger)]
+#[receive(contract = "CIS1-wGTU", name = "unwrap", parameter = "UnwrapParams", enable_logger)]
 fn contract_unwrap<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
@@ -324,7 +324,7 @@ fn contract_unwrap<A: HasActions>(
     state.burn(&TOKEN_ID_WGTU, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
-    logger.log(&Cts1Event::Burn(BurnEvent {
+    logger.log(&Cis1Event::Burn(BurnEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   params.amount,
         owner:    params.owner,
@@ -342,7 +342,7 @@ fn contract_unwrap<A: HasActions>(
     Ok(action)
 }
 
-// Contract functions required by CTS1
+// Contract functions required by CIS1
 
 #[allow(dead_code)]
 type TransferParameter = TransferParams<ContractTokenId>;
@@ -364,7 +364,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 /// - Any of the messages sent to contracts receiving a transfer choose to
 ///   reject.
 #[receive(
-    contract = "CTS1-wGTU",
+    contract = "CIS1-wGTU",
     name = "transfer",
     parameter = "TransferParameter",
     enable_logger
@@ -398,7 +398,7 @@ fn contract_transfer<A: HasActions>(
         state.transfer(&token_id, amount, &from, &to_address)?;
 
         // Log transfer event
-        logger.log(&Cts1Event::Transfer(TransferEvent {
+        logger.log(&Cis1Event::Transfer(TransferEvent {
             token_id,
             amount,
             from,
@@ -408,11 +408,11 @@ fn contract_transfer<A: HasActions>(
         // If the receiver is a contract, we add sending it a message to the list of
         // actions.
         if let Receiver::Contract(address, function) = to {
-            let parameter = OnReceivingCTS1Params {
+            let parameter = OnReceivingCis1Params {
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked(String::from("init_CTS1-Multi")),
+                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-Multi")),
                 data,
             };
             let action = send(&address, function.as_ref(), Amount::zero(), &parameter);
@@ -430,7 +430,7 @@ fn contract_transfer<A: HasActions>(
 /// - The operator address is the same as the sender address.
 /// - Fails to log event.
 #[receive(
-    contract = "CTS1-wGTU",
+    contract = "CIS1-wGTU",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     enable_logger
@@ -453,7 +453,7 @@ fn contract_update_operator<A: HasActions>(
         }
 
         // Log the appropriate event
-        logger.log(&Cts1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+        logger.log(&Cis1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
             owner:    sender,
             operator: param.operator,
             update:   param.update,
@@ -472,7 +472,7 @@ fn contract_update_operator<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CTS1-wGTU", name = "balanceOf")]
+#[receive(contract = "CIS1-wGTU", name = "balanceOf")]
 fn contract_balance_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
@@ -547,7 +547,7 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Cts1Event::Mint(MintEvent {
+            logger.logs.contains(&to_bytes(&Cis1Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_ID_WGTU,
                 amount:   0,
@@ -555,7 +555,7 @@ mod tests {
             "Missing event for minting the token"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cts1Event::TokenMetadata(TokenMetadataEvent {
+            logger.logs.contains(&to_bytes(&Cis1Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_ID_WGTU,
                 metadata_url: MetadataUrl {
                     url:  String::from(TOKEN_METADATA_URL),
@@ -615,7 +615,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cts1Event::Transfer(TransferEvent {
+            to_bytes(&Cis1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WGTU,
@@ -702,7 +702,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cts1Event::Transfer(TransferEvent {
+            to_bytes(&Cis1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WGTU,
@@ -746,7 +746,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cts1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+            to_bytes(&Cis1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
                 owner:    ADDRESS_0,
                 operator: ADDRESS_1,
                 update:   OperatorUpdate::Add,

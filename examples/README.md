@@ -17,9 +17,9 @@ The list of contracts is as follows
   mimic the memo feature. Normally a transfer between accounts cannot add any
   information other than the amount being transferred. Making transfers to this
   intermediate contract instead works around this limitation.
-- [cts1-multi](./cts1-multi) An example implementation of the Concordium Token Standard
+- [cis1-multi](./cis1-multi) An example implementation of the CIS-1 Concordium Token Standard
   containing multiple token types.
-- [cts1-nft](./cts1-nft) An example implementation of the Concordium Token Standard
+- [cis1-nft](./cis1-nft) An example implementation of the CIS-1 Concordium Token Standard
   containing NFTs.
-- [cts1-wgtu](./cts1-wgtu) An example implementation of the Concordium Token Standard
+- [cis1-wgtu](./cis1-wgtu) An example implementation of the CIS-1 Concordium Token Standard
   containing a single fungible token which is a wrapped GTU.
