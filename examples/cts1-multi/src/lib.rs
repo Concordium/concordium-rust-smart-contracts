@@ -246,7 +246,7 @@ fn contract_mint<A: HasActions>(
         state.mint(&token_id, token_amount, &params.owner);
 
         // Event for minted token.
-        logger.log(&Event::Mint(MintEvent {
+        logger.log(&Cts1Event::Mint(MintEvent {
             token_id,
             amount: token_amount,
             owner: params.owner,
@@ -255,7 +255,7 @@ fn contract_mint<A: HasActions>(
         // Metadata URL for the token.
         let mut token_metadata_url = String::from(TOKEN_METADATA_BASE_URL);
         token_metadata_url.push_str(&token_id.to_string());
-        logger.log(&Event::TokenMetadata(TokenMetadataEvent {
+        logger.log(&Cts1Event::TokenMetadata(TokenMetadataEvent {
             token_id,
             metadata_url: MetadataUrl {
                 url:  token_metadata_url,
@@ -316,7 +316,7 @@ fn contract_transfer<A: HasActions>(
         state.transfer(&token_id, amount, &from, &to_address)?;
 
         // Log transfer event
-        logger.log(&Event::Transfer(TransferEvent {
+        logger.log(&Cts1Event::Transfer(TransferEvent {
             token_id,
             amount,
             from,
@@ -372,7 +372,7 @@ fn contract_update_operator<A: HasActions>(
         }
 
         // Log the appropriate event
-        logger.log(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+        logger.log(&Cts1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
             owner:    sender,
             operator: param.operator,
             update:   param.update,
@@ -559,7 +559,7 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 4, "Exactly four events should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
+            logger.logs.contains(&to_bytes(&Cts1Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   400,
@@ -567,7 +567,7 @@ mod tests {
             "Expected an event for minting TOKEN_0"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
+            logger.logs.contains(&to_bytes(&Cts1Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_1,
                 amount:   1,
@@ -575,7 +575,7 @@ mod tests {
             "Expected an event for minting TOKEN_1"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
+            logger.logs.contains(&to_bytes(&Cts1Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_0,
                 metadata_url: MetadataUrl {
                     url:  "https://some.example/token/02".to_string(),
@@ -585,7 +585,7 @@ mod tests {
             "Expected an event for token metadata for TOKEN_0"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
+            logger.logs.contains(&to_bytes(&Cts1Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_1,
                 metadata_url: MetadataUrl {
                     url:  "https://some.example/token/2A".to_string(),
@@ -644,7 +644,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::Transfer(TransferEvent {
+            to_bytes(&Cts1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
@@ -731,7 +731,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::Transfer(TransferEvent {
+            to_bytes(&Cts1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
@@ -776,7 +776,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+            to_bytes(&Cts1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
                 owner:    ADDRESS_0,
                 operator: ADDRESS_1,
                 update:   OperatorUpdate::Add,

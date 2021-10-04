@@ -33,6 +33,17 @@ use std::fmt;
 
 use convert::TryFrom;
 
+/// Tag for the CTS1 Transfer event.
+pub const TRANSFER_EVENT_TAG: u8 = u8::MAX;
+/// Tag for the CTS1 Mint event.
+pub const MINT_EVENT_TAG: u8 = u8::MAX - 1;
+/// Tag for the CTS1 Burn event.
+pub const BURN_EVENT_TAG: u8 = u8::MAX - 2;
+/// Tag for the CTS1 UpdateOperator event.
+pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
+/// Tag for the CTS1 TokenMetadata event.
+pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
+
 /// Sha256 digest
 pub type Sha256 = [u8; 32];
 
@@ -427,7 +438,8 @@ impl Deserial for TokenIdUnit {
 /// An amount of a specific token type.
 pub type TokenAmount = u64;
 
-/// An event of a transfer of some amount of tokens from one address to another.
+/// An untagged event of a transfer of some amount of tokens from one address to
+/// another. For a tagged version, use `Cts1Event`.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
@@ -442,8 +454,9 @@ pub struct TransferEvent<T: IsTokenId> {
     pub to:       Address,
 }
 
-/// An event of tokens being minted, could be a new token type or extending the
-/// total supply of existing token.
+/// An untagged event of tokens being minted, could be a new token type or
+/// extending the total supply of existing token.
+/// For a tagged version, use `Cts1Event`.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
@@ -456,7 +469,8 @@ pub struct MintEvent<T: IsTokenId> {
     pub owner:    Address,
 }
 
-/// An event of some amount of a token type being burned.
+/// An untagged event of some amount of a token type being burned.
+/// For a tagged version, use `Cts1Event`.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
@@ -469,7 +483,8 @@ pub struct BurnEvent<T: IsTokenId> {
     pub owner:    Address,
 }
 
-/// An event of an update to an operator address for an owner address.
+/// An untagged event of an update to an operator address for an owner address.
+/// For a tagged version, use `Cts1Event`.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
@@ -482,7 +497,8 @@ pub struct UpdateOperatorEvent {
     pub operator: Address,
 }
 
-/// An event for setting the metadata for a token.
+/// An untagged event for setting the metadata for a token.
+/// For a tagged version, use `Cts1Event`.
 // Note: For the serialization to be derived according to the CTS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
@@ -493,12 +509,9 @@ pub struct TokenMetadataEvent<T: IsTokenId> {
     pub metadata_url: MetadataUrl,
 }
 
-/// Event to be printed in the log.
-// Note: For the serialization to be derived according to the CTS1
-// specification, the order of these events and the order of their fields
-// cannot be changed. However new custom events can safely be appended.
-#[derive(Debug, Serialize, SchemaType)]
-pub enum Event<T: IsTokenId> {
+/// Tagged CTS1 event to be serialized for the event log.
+#[derive(Debug)]
+pub enum Cts1Event<T: IsTokenId> {
     /// A transfer between two addresses of some amount of tokens.
     Transfer(TransferEvent<T>),
     /// Creation of new tokens, could be both adding some amounts to an existing
@@ -510,8 +523,51 @@ pub enum Event<T: IsTokenId> {
     UpdateOperator(UpdateOperatorEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent<T>),
-    /// Custom event not specified by CTS1.
-    Custom(#[concordium(size_length = 2)] Vec<u8>),
+}
+
+impl<T: IsTokenId> Serial for Cts1Event<T> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            Cts1Event::Transfer(event) => {
+                out.write_u8(TRANSFER_EVENT_TAG)?;
+                event.serial(out)
+            }
+            Cts1Event::Mint(event) => {
+                out.write_u8(MINT_EVENT_TAG)?;
+                event.serial(out)
+            }
+            Cts1Event::Burn(event) => {
+                out.write_u8(BURN_EVENT_TAG)?;
+                event.serial(out)
+            }
+            Cts1Event::UpdateOperator(event) => {
+                out.write_u8(UPDATE_OPERATOR_EVENT_TAG)?;
+                event.serial(out)
+            }
+            Cts1Event::TokenMetadata(event) => {
+                out.write_u8(TOKEN_METADATA_EVENT_TAG)?;
+                event.serial(out)
+            }
+        }
+    }
+}
+
+impl<T: IsTokenId> Deserial for Cts1Event<T> {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let tag = source.read_u8()?;
+        match tag {
+            TRANSFER_EVENT_TAG => TransferEvent::<T>::deserial(source).map(Cts1Event::Transfer),
+            MINT_EVENT_TAG => MintEvent::<T>::deserial(source).map(Cts1Event::Mint),
+            BURN_EVENT_TAG => BurnEvent::<T>::deserial(source).map(Cts1Event::Burn),
+            UPDATE_OPERATOR_EVENT_TAG => {
+                UpdateOperatorEvent::deserial(source).map(Cts1Event::UpdateOperator)
+            }
+            TOKEN_METADATA_EVENT_TAG => {
+                TokenMetadataEvent::<T>::deserial(source).map(Cts1Event::TokenMetadata)
+            }
+            _ => Err(ParseError::default()),
+        }
+    }
 }
 
 /// The different errors the contract can produce.

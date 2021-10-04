@@ -237,14 +237,14 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
-    logger.log(&Event::Mint(MintEvent {
+    logger.log(&Cts1Event::Mint(MintEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   0,
         owner:    invoker,
     }))?;
 
     // Log event for where to find metadata for the token
-    logger.log(&Event::TokenMetadata(TokenMetadataEvent {
+    logger.log(&Cts1Event::TokenMetadata(TokenMetadataEvent {
         token_id:     TOKEN_ID_WGTU,
         metadata_url: MetadataUrl {
             url:  String::from(TOKEN_METADATA_URL),
@@ -274,7 +274,7 @@ fn contract_wrap<A: HasActions>(
     state.mint(&TOKEN_ID_WGTU, amount.micro_gtu, &receive_address)?;
 
     // Log the newly minted tokens.
-    logger.log(&Event::Mint(MintEvent {
+    logger.log(&Cts1Event::Mint(MintEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   amount.micro_gtu,
         owner:    sender,
@@ -282,7 +282,7 @@ fn contract_wrap<A: HasActions>(
 
     // Only log a transfer event if receiver is not the one who payed for this.
     if sender != receive_address {
-        logger.log(&Event::Transfer(TransferEvent {
+        logger.log(&Cts1Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WGTU,
             amount:   amount.micro_gtu,
             from:     sender,
@@ -324,7 +324,7 @@ fn contract_unwrap<A: HasActions>(
     state.burn(&TOKEN_ID_WGTU, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
-    logger.log(&Event::Burn(BurnEvent {
+    logger.log(&Cts1Event::Burn(BurnEvent {
         token_id: TOKEN_ID_WGTU,
         amount:   params.amount,
         owner:    params.owner,
@@ -398,7 +398,7 @@ fn contract_transfer<A: HasActions>(
         state.transfer(&token_id, amount, &from, &to_address)?;
 
         // Log transfer event
-        logger.log(&Event::Transfer(TransferEvent {
+        logger.log(&Cts1Event::Transfer(TransferEvent {
             token_id,
             amount,
             from,
@@ -453,7 +453,7 @@ fn contract_update_operator<A: HasActions>(
         }
 
         // Log the appropriate event
-        logger.log(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+        logger.log(&Cts1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
             owner:    sender,
             operator: param.operator,
             update:   param.update,
@@ -547,7 +547,7 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Event::Mint(MintEvent {
+            logger.logs.contains(&to_bytes(&Cts1Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_ID_WGTU,
                 amount:   0,
@@ -555,7 +555,7 @@ mod tests {
             "Missing event for minting the token"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Event::TokenMetadata(TokenMetadataEvent {
+            logger.logs.contains(&to_bytes(&Cts1Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_ID_WGTU,
                 metadata_url: MetadataUrl {
                     url:  String::from(TOKEN_METADATA_URL),
@@ -615,7 +615,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::Transfer(TransferEvent {
+            to_bytes(&Cts1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WGTU,
@@ -702,7 +702,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::Transfer(TransferEvent {
+            to_bytes(&Cts1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WGTU,
@@ -746,7 +746,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+            to_bytes(&Cts1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
                 owner:    ADDRESS_0,
                 operator: ADDRESS_1,
                 update:   OperatorUpdate::Add,

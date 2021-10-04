@@ -211,7 +211,7 @@ Requirements
 - A transfer with the same address as ``from`` and ``to`` MUST be executed as a normal transfer.
 - A transfer of a token amount zero MUST be executed as a normal transfer.
 - A transfer of some amount of a token type MUST only transfer the exact amount of the given token type between balances.
-- A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a receive hook parameter :ref:`described above<CTS-functions-transfer-receive-hook-parameter>`.
+- A transfer of any amount of a token type to a contract address MUST call receive hook function on the receiving smart contract with a :ref:`receive hook parameter<CTS-functions-transfer-receive-hook-parameter>`.
 - The contract function MUST reject if a receive hook function called on the contract receiving tokens rejects.
 
 .. warning::
@@ -303,6 +303,9 @@ For this reason it is important to log events in any functionality of the token 
 - It MUST be possible to derive the balance of an address for a token type from the logged :ref:`CTS-event-transfer`, :ref:`CTS-event-mint` and :ref:`CTS-event-burn` events.
 - It MUST be safe to assume that with no events logged, every address have zero tokens and no operators enabled for any address.
 
+The events defined by this specification are serialized using one byte to the discriminate the different events.
+Any custom event SHOULD NOT have a first byte colliding with any of the events defined by this specification.
+
 .. _CTS-event-transfer:
 
 ``TransferEvent``
@@ -310,9 +313,9 @@ For this reason it is important to log events in any functionality of the token 
 
 A ``TransferEvent`` event MUST be logged for every amount of a token type changing ownership from one address to another.
 
-The ``TransferEvent`` event is serialized as: first a byte with the value of 0, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens :ref:`CTS-TokenAmount` (``amount``), from address :ref:`CTS-Address` (``from``) and to address :ref:`CTS-Address` (``to``)::
+The ``TransferEvent`` event is serialized as: first a byte with the value of 255, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens :ref:`CTS-TokenAmount` (``amount``), from address :ref:`CTS-Address` (``from``) and to address :ref:`CTS-Address` (``to``)::
 
-  TransferEvent ::= (0: Byte) (id: TokenID) (amount: TokenAmount) (from: Address) (to: Address)
+  TransferEvent ::= (255: Byte) (id: TokenID) (amount: TokenAmount) (from: Address) (to: Address)
 
 .. _CTS-event-mint:
 
@@ -322,9 +325,9 @@ The ``TransferEvent`` event is serialized as: first a byte with the value of 0, 
 A ``MintEvent`` event MUST be logged every time a new token is minted. This also applies when introducing new token types and the initial token types and amounts in a contract.
 Minting a token with a zero amount can be used to indicating the existence of a token type without minting any amount of tokens.
 
-The ``MintEvent`` event is serialized as: first a byte with the value of 1, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens being minted :ref:`CTS-TokenAmount` (``amount``) and the owner address of the tokens :ref:`CTS-Address` (``to``)::
+The ``MintEvent`` event is serialized as: first a byte with the value of 254, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens being minted :ref:`CTS-TokenAmount` (``amount``) and the owner address of the tokens :ref:`CTS-Address` (``to``)::
 
-  MintEvent ::= (1: Byte) (id: TokenID) (amount: TokenAmount) (to: Address)
+  MintEvent ::= (254: Byte) (id: TokenID) (amount: TokenAmount) (to: Address)
 
 .. note::
 
@@ -341,9 +344,9 @@ A ``BurnEvent`` event MUST be logged every time an amount of a token type is bur
 Summing all of the minted amounts from ``MintEvent`` events and subtracting all of the burned amounts from ``BurnEvent`` events for a token type MUST sum up to the total supply for the token type.
 The total supply of a token type MUST be in the inclusive range of [0, 2^64 - 1].
 
-The ``BurnEvent`` event is serialized as: first a byte with the value of 2, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens being burned :ref:`CTS-TokenAmount` (``amount``) and the owner address of the tokens :ref:`CTS-Address` (``from``)::
+The ``BurnEvent`` event is serialized as: first a byte with the value of 253, followed by the token ID :ref:`CTS-TokenID` (``id``), an amount of tokens being burned :ref:`CTS-TokenAmount` (``amount``) and the owner address of the tokens :ref:`CTS-Address` (``from``)::
 
-  BurnEvent ::= (2: Byte) (id: TokenID) (amount: TokenAmount) (from: Address)
+  BurnEvent ::= (253: Byte) (id: TokenID) (amount: TokenAmount) (from: Address)
 
 .. _CTS-event-updateOperator:
 
@@ -352,9 +355,9 @@ The ``BurnEvent`` event is serialized as: first a byte with the value of 2, foll
 
 The event to log when updating an operator of some address.
 
-The ``UpdateOperatorEvent`` event is serialized as: first a byte with the value of 3, followed by a ``OperatorUpdate`` (``update``), then the owner address updating an operator :ref:`CTS-Address` (``owner``) and an operator address :ref:`CTS-Address` (``operator``) being added or removed::
+The ``UpdateOperatorEvent`` event is serialized as: first a byte with the value of 252, followed by a ``OperatorUpdate`` (``update``), then the owner address updating an operator :ref:`CTS-Address` (``owner``) and an operator address :ref:`CTS-Address` (``operator``) being added or removed::
 
-  UpdateOperatorEvent ::= (3: Byte) (update: OperatorUpdate) (owner: Address) (operator: Address)
+  UpdateOperatorEvent ::= (252: Byte) (update: OperatorUpdate) (owner: Address) (operator: Address)
 
 .. _CTS-event-tokenMetadata:
 
@@ -365,7 +368,7 @@ The event to log when setting the metadata url for a token type.
 It consists of a token ID and an URL (:rfc:`3986`) for the location of the metadata for this token type with an optional SHA256 checksum of the content.
 Logging the ``TokenMetadataEvent`` event again with the same token ID, is used to update the metadata location and only the most recently logged token metadata event for certain token id should be used to get the token metadata.
 
-The ``TokenMetadataEvent`` event is serialized as: first a byte with the value of 4, followed by the token ID :ref:`CTS-TokenID` (``id``), two bytes for the length of the metadata url (``n``) and then this many bytes for the url to the metadata (``url``).
+The ``TokenMetadataEvent`` event is serialized as: first a byte with the value of 251, followed by the token ID :ref:`CTS-TokenID` (``id``), two bytes for the length of the metadata url (``n``) and then this many bytes for the url to the metadata (``url``).
 Lastly a byte to indicate whether a hash of the metadata is included, if its value is 0, then no content hash, if the value is 1 then 32 bytes for a SHA256 hash (``hash``) is followed::
 
   MetadataUrl ::= (n: Byte²) (url: Byteⁿ)
@@ -373,7 +376,7 @@ Lastly a byte to indicate whether a hash of the metadata is included, if its val
   MetadataChecksum ::= (0: Byte)
                      | (1: Byte) (hash: Byte³²)
 
-  TokenMetadataEvent ::= (4: Byte) (id: TokenID) (metadata: MetadataUrl) (checksum: MetadataChecksum)
+  TokenMetadataEvent ::= (251: Byte) (id: TokenID) (metadata: MetadataUrl) (checksum: MetadataChecksum)
 
 .. note::
 
