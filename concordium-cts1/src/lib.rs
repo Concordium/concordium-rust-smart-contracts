@@ -408,10 +408,7 @@ impl schema::SchemaType for TokenIdUnit {
 
 /// The `TokenIdUnit` is serialized with one byte with the value 0.
 impl Serial for TokenIdUnit {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        out.write_u8(0)?;
-        Ok(())
-    }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_u8(0) }
 }
 
 /// The `TokenIdUnit` will deserialize one byte ensuring this contains the value
@@ -520,19 +517,25 @@ pub enum Event<T: IsTokenId> {
 /// The different errors the contract can produce.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cts1Error<R> {
-    /// Invalid token id
+    /// Invalid token id (Error code: -42000001).
     InvalidTokenId,
-    /// The balance of the token owner is insufficient for the transfer.
+    /// The balance of the token owner is insufficient for the transfer (Error
+    /// code: -42000002).
     InsufficientFunds,
     /// Sender is neither the token owner or an operator of the owner for this
-    /// token.
+    /// token (Error code: -42000003).
     Unauthorized,
-    /// Only contracts can send to this function.
+    /// Only contracts can send to this function (Error code: -42000004).
     ContractOnly,
     /// Custom error
     Custom(R),
 }
 
+/// Convert Cts1Error into a reject with error code:
+/// - InvalidTokenId: -42000001
+/// - InsufficientFunds: -42000002
+/// - Unauthorized: -42000003
+/// - ContractOnly: -42000004
 impl<R: Into<Reject>> From<Cts1Error<R>> for Reject {
     fn from(err: Cts1Error<R>) -> Self {
         let error_code = match err {
@@ -553,10 +556,12 @@ impl<R: Into<Reject>> From<Cts1Error<R>> for Reject {
 }
 
 impl<X: From<LogError>> From<LogError> for Cts1Error<X> {
+    #[inline]
     fn from(err: LogError) -> Self { Cts1Error::Custom(X::from(err)) }
 }
 
 impl<X: From<ParseError>> From<ParseError> for Cts1Error<X> {
+    #[inline]
     fn from(err: ParseError) -> Self { Cts1Error::Custom(X::from(err)) }
 }
 
