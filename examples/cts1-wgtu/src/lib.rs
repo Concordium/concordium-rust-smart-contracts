@@ -4,10 +4,10 @@
 //! The token in this contract is a wrapped GTU (wGTU), meaning it holds a one
 //! to one correspondence with the GTU.
 //!
-//! Note: When we use the word 'address' is referring to either an account
-//! address or a contract address.
+//! Note: The word 'address' refers to either an account address or a
+//! contract address.
 //!
-//! As according to the CTS1 specification, the contract have a `transfer`
+//! As follows from the CTS1 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some token owner address is allowed
@@ -22,7 +22,7 @@
 //! wGTU back into GTU. The function takes the amount of tokens to unwrap, the
 //! address owning these wGTU and a receiver for the GTU. If the sender is the
 //! owner or an operator of the owner, the wGTU are burned and the amount of
-//! GTU is send to the receiver.
+//! GTU is sent to the receiver.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cts1::*;

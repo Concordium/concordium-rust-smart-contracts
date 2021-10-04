@@ -13,7 +13,7 @@
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
-//! As according to the CTS1 specification, the contract have a `transfer`
+//! As follows from the CTS1 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some address is allowed to transfer
