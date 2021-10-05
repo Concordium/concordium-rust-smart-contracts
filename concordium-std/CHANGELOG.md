@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased changes
+
+## concordium-std 1.0.0 (2021-10-05)
+
 - Add error codes for the new cases in NewContractNameError and NewReceiveNameError:
   - `NewContractNameError::ContainsDot` is mapped to `i32::MIN + 9`
   - `NewContractNameError::InvalidCharacters` is mapped to `i32::MIN + 10`

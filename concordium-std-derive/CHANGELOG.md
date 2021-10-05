@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased changes
+
+## concordium-std-derive 1.0.0 (2021-10-05)
+
 - Validate contract and receive names
 - Improve precision of error locations in init and receive_workers
 - Improve precision of error locations for `size_length`
