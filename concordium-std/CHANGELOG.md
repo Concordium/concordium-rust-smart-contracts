@@ -9,6 +9,7 @@
 - Added implementation of `SerialCtx` for `Vec`.
 - Export `Box` when no `std` feature.
 - Bump minimum supported Rust version to 1.51.
+- Deriving SchemaType supports types with generics.
 
 ## concordium-std 0.5.0 (2021-05-12)
 
