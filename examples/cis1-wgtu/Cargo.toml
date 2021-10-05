@@ -1,0 +1,21 @@
+[package]
+name = "cis1_wgtu"
+version = "0.1.0"
+authors = ["Concordium <developers@concordium.com>"]
+edition = "2018"
+license = "MPL-2.0"
+
+[features]
+default = ["std"]
+std = ["concordium-std/std", "concordium-cis1/std"]
+
+[dependencies]
+concordium-std = {path = "../../concordium-std", default-features = false}
+concordium-cis1 = {path = "../../concordium-cis1", default-features = false}
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1

@@ -1369,6 +1369,8 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 
     let data_name = &ast.ident;
 
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+
     let body = match ast.data {
         syn::Data::Struct(ref data) => {
             let fields_tokens = schema_type_fields(&data.fields)?;
@@ -1409,7 +1411,7 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 
     let out = quote! {
         #[automatically_derived]
-        impl concordium_std::schema::SchemaType for #data_name {
+        impl #impl_generics concordium_std::schema::SchemaType for #data_name #ty_generics #where_clauses {
             fn get_type() -> concordium_std::schema::Type {
                 #body
             }
