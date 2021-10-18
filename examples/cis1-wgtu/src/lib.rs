@@ -463,29 +463,27 @@ fn contract_update_operator<A: HasActions>(
     Ok(A::accept())
 }
 
-/// Get the balance of a given token id for a given address and callback
-/// contract function on sender with the result.
-/// Will only succeed if called a smart contracts.
+#[allow(dead_code)]
+type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+
+/// Get the balance of given token IDs and addresses, and it takes a contract
+/// address plus contract function to invoke with the result.
 ///
 /// It rejects if:
 /// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CIS1-wGTU", name = "balanceOf")]
+#[receive(contract = "CIS1-wGTU", name = "balanceOf", parameter = "ContractBalanceOfQueryParams")]
 fn contract_balance_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
 ) -> ContractResult<A> {
-    // Ensure the sender is a contract.
-    let sender = if let Address::Contract(contract) = ctx.sender() {
-        contract
-    } else {
-        bail!(ContractError::ContractOnly)
-    };
     let mut cursor = ctx.parameter_cursor();
-    // Parse the callback function name.
-    let callback: OwnedReceiveName = cursor.get()?;
+    // Parse the contract address to receive the result.
+    let result_contract: ContractAddress = cursor.get()?;
+    // Parse the contract function name to call with the result.
+    let result_hook: OwnedReceiveName = cursor.get()?;
     // Parse the number of queries.
     let queries_length: u8 = cursor.get()?;
 
@@ -499,7 +497,61 @@ fn contract_balance_of<A: HasActions>(
         response.push((query, amount));
     }
     // Send back the response.
-    Ok(send(&sender, callback.as_ref(), Amount::zero(), &BalanceOfQueryResponse::from(response)))
+    Ok(send(
+        &result_contract,
+        result_hook.as_ref(),
+        Amount::zero(),
+        &BalanceOfQueryResponse::from(response),
+    ))
+}
+
+#[allow(dead_code)]
+type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
+
+/// Get the token metadata URLs and checksums given a list of token IDs and it
+/// takes a contract address plus contract function to invoke with the result.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Any of the queried `token_id` does not exist.
+/// - Message sent back with the result rejects.
+#[receive(
+    contract = "CIS1-wGTU",
+    name = "tokenMetadata",
+    parameter = "ContractTokenMetadataQueryParams"
+)]
+fn contract_token_metadata<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    _state: &mut State,
+) -> ContractResult<A> {
+    let mut cursor = ctx.parameter_cursor();
+    // Parse the contract address to receive the result.
+    let result_contract: ContractAddress = cursor.get()?;
+    // Parse the contract function name to call with the result.
+    let result_hook: OwnedReceiveName = cursor.get()?;
+    // Parse the number of queries.
+    let queries_length: u8 = cursor.get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(queries_length.into());
+    for _ in 0..queries_length {
+        let token_id: ContractTokenId = cursor.get()?;
+        // Check the token exists.
+        ensure_eq!(token_id, TOKEN_ID_WGTU, ContractError::InvalidTokenId);
+
+        let metadata_url = MetadataUrl {
+            url:  TOKEN_METADATA_URL.to_string(),
+            hash: None,
+        };
+        response.push((token_id, metadata_url));
+    }
+    // Send back the response.
+    Ok(send(
+        &result_contract,
+        result_hook.as_ref(),
+        Amount::zero(),
+        &TokenMetadataQueryResponse::from(response),
+    ))
 }
 
 // Tests

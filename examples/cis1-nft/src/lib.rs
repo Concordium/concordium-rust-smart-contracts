@@ -124,6 +124,12 @@ impl State {
         Ok(())
     }
 
+    /// Check that the token ID currently exists in this contract.
+    #[inline(always)]
+    fn contains_token(&self, token_id: &ContractTokenId) -> bool {
+        self.all_tokens.contains(token_id)
+    }
+
     /// Get the current balance of a given token ID for a given address.
     /// Results in an error if the token ID does not exist in the state.
     /// Since this contract only contains NFTs, the balance will always be
@@ -133,7 +139,7 @@ impl State {
         token_id: &ContractTokenId,
         address: &Address,
     ) -> ContractResult<TokenAmount> {
-        ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
+        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         let balance = self
             .state
             .get(address)
@@ -166,7 +172,7 @@ impl State {
         from: &Address,
         to: &Address,
     ) -> ContractResult<()> {
-        ensure!(self.all_tokens.contains(token_id), ContractError::InvalidTokenId);
+        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
         if amount == 0 {
             return Ok(());
@@ -203,6 +209,14 @@ impl State {
     fn remove_operator(&mut self, owner: &Address, operator: &Address) {
         self.state.get_mut(owner).map(|address_state| address_state.operators.remove(operator));
     }
+}
+
+/// Build a string from TOKEN_METADATA_BASE_URL appended with the token ID
+/// encoded as hex.
+fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
+    let mut token_metadata_url = String::from(TOKEN_METADATA_BASE_URL);
+    token_metadata_url.push_str(&token_id.to_string());
+    token_metadata_url
 }
 
 // Contract functions
@@ -258,12 +272,10 @@ fn contract_mint<A: HasActions>(
         }))?;
 
         // Metadata URL for the NFT.
-        let mut token_metadata_url = String::from(TOKEN_METADATA_BASE_URL);
-        token_metadata_url.push_str(&token_id.to_string());
         logger.log(&Cis1Event::TokenMetadata(TokenMetadataEvent {
             token_id,
             metadata_url: MetadataUrl {
-                url:  token_metadata_url,
+                url:  build_token_metadata_url(&token_id),
                 hash: None,
             },
         }))?;
@@ -381,26 +393,21 @@ fn contract_update_operator<A: HasActions>(
     Ok(A::accept())
 }
 
-/// Get the balance of given token IDs and addresses and callback contract
-/// function on sender with the result. Will only succeed if sender is a smart
-/// contract.
+#[allow(dead_code)]
+type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+
+/// Get the balance of given token IDs and addresses, and it takes a contract
+/// address plus contract function to invoke with the result.
 ///
 /// It rejects if:
-/// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CIS1-NFT", name = "balanceOf")]
+#[receive(contract = "CIS1-NFT", name = "balanceOf", parameter = "ContractBalanceOfQueryParams")]
 fn contract_balance_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
 ) -> ContractResult<A> {
-    // Ensure the sender is a contract.
-    let sender = if let Address::Contract(contract) = ctx.sender() {
-        contract
-    } else {
-        bail!(ContractError::ContractOnly)
-    };
     // Parse the parameter.
     let params: BalanceOfQueryParams<ContractTokenId> = ctx.parameter_cursor().get()?;
     // Build the response.
@@ -412,10 +419,52 @@ fn contract_balance_of<A: HasActions>(
     }
     // Send back the response.
     Ok(send(
-        &sender,
-        params.callback.as_ref(),
+        &params.result_contract,
+        params.result_function.as_ref(),
         Amount::zero(),
         &BalanceOfQueryResponse::from(response),
+    ))
+}
+
+#[allow(dead_code)]
+type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
+
+/// Get the token metadata URLs and checksums given a list of token IDs and it
+/// takes a contract address plus contract function to invoke with the result.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Any of the queried `token_id` does not exist.
+/// - Message sent back with the result rejects.
+#[receive(
+    contract = "CIS1-NFT",
+    name = "tokenMetadata",
+    parameter = "ContractTokenMetadataQueryParams"
+)]
+fn contract_token_metadata<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    state: &mut State,
+) -> ContractResult<A> {
+    // Parse the parameter.
+    let params: TokenMetadataQueryParams<ContractTokenId> = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for token_id in params.queries {
+        // Check the token exists.
+        ensure!(state.contains_token(&token_id), ContractError::InvalidTokenId);
+
+        let metadata_url = MetadataUrl {
+            url:  build_token_metadata_url(&token_id),
+            hash: None,
+        };
+        response.push((token_id, metadata_url));
+    }
+    // Send back the response.
+    Ok(send(
+        &params.result_contract,
+        params.result_function.as_ref(),
+        Amount::zero(),
+        &TokenMetadataQueryResponse::from(response),
     ))
 }
 
