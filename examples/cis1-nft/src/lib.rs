@@ -393,10 +393,11 @@ fn contract_update_operator<A: HasActions>(
     Ok(A::accept())
 }
 
-#[allow(dead_code)]
+/// Parameter type for the CIS-1 function `balanceOf` specialized to the subset
+/// of TokenIDs used by this contract.
 type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
-/// Get the balance of given token IDs and addresses, and it takes a contract
+/// Get the balance of given token IDs and addresses. It takes a contract
 /// address plus contract function to invoke with the result.
 ///
 /// It rejects if:
@@ -409,7 +410,7 @@ fn contract_balance_of<A: HasActions>(
     state: &mut State,
 ) -> ContractResult<A> {
     // Parse the parameter.
-    let params: BalanceOfQueryParams<ContractTokenId> = ctx.parameter_cursor().get()?;
+    let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
@@ -426,10 +427,11 @@ fn contract_balance_of<A: HasActions>(
     ))
 }
 
-#[allow(dead_code)]
+/// Parameter type for the CIS-1 function `tokenMetadata` specialized to the
+/// subset of TokenIDs used by this contract.
 type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
 
-/// Get the token metadata URLs and checksums given a list of token IDs and it
+/// Get the token metadata URLs and checksums given a list of token IDs. It
 /// takes a contract address plus contract function to invoke with the result.
 ///
 /// It rejects if:
@@ -446,7 +448,7 @@ fn contract_token_metadata<A: HasActions>(
     state: &mut State,
 ) -> ContractResult<A> {
     // Parse the parameter.
-    let params: TokenMetadataQueryParams<ContractTokenId> = ctx.parameter_cursor().get()?;
+    let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for token_id in params.queries {

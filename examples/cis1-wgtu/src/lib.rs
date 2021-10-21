@@ -463,10 +463,13 @@ fn contract_update_operator<A: HasActions>(
     Ok(A::accept())
 }
 
-#[allow(dead_code)]
-type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+/// Parameter type for the CIS-1 function `balanceOf` specialized to the subset
+/// of TokenIDs used by this contract.
+// This type is pub to silence the dead_code warning, as this type is only used
+// for when generating the schema.
+pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
-/// Get the balance of given token IDs and addresses, and it takes a contract
+/// Get the balance of given token IDs and addresses. It takes a contract
 /// address plus contract function to invoke with the result.
 ///
 /// It rejects if:
@@ -505,10 +508,13 @@ fn contract_balance_of<A: HasActions>(
     ))
 }
 
-#[allow(dead_code)]
-type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
+/// Parameter type for the CIS-1 function `tokenMetadata` specialized to the
+/// subset of TokenIDs used by this contract.
+// This type is pub to silence the dead_code warning, as this type is only used
+// for when generating the schema.
+pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
 
-/// Get the token metadata URLs and checksums given a list of token IDs and it
+/// Get the token metadata URLs and checksums given a list of token IDs. It
 /// takes a contract address plus contract function to invoke with the result.
 ///
 /// It rejects if:
