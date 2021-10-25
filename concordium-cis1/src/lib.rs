@@ -817,6 +817,48 @@ impl<T: IsTokenId> AsRef<[BalanceOfQueryResult<T>]> for BalanceOfQueryResponse<T
     fn as_ref(&self) -> &[BalanceOfQueryResult<T>] { &self.0 }
 }
 
+/// A query for the operator of a given address for a given token.
+// Note: For the serialization to be derived according to the CIS1
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct OperatorOfQuery {
+    /// The ID of the token for which to query the balance of.
+    pub owner:   Address,
+    /// The address for which to check for being an operator of the owner.
+    pub address: Address,
+}
+
+/// The parameter type for the contract function `operatorOf`.
+// Note: For the serialization to be derived according to the CIS1
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct OperatorOfQueryParams {
+    /// The contract to trigger with the results of the queries.
+    pub result_contract: ContractAddress,
+    /// The contract function to trigger with the results of the queries.
+    pub result_function: OwnedReceiveName,
+    /// List of operatorOf queries.
+    #[concordium(size_length = 2)]
+    pub queries:         Vec<OperatorOfQuery>,
+}
+
+/// OperatorOf query with the result of the query.
+pub type OperatorOfQueryResult = (OperatorOfQuery, bool);
+
+/// The response which is sent back when calling the contract function
+/// `operatorOf`.
+/// It consists of the list of queries paired with their corresponding result.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] Vec<OperatorOfQueryResult>);
+
+impl From<Vec<OperatorOfQueryResult>> for OperatorOfQueryResponse {
+    fn from(results: Vec<OperatorOfQueryResult>) -> Self { OperatorOfQueryResponse(results) }
+}
+
+impl AsRef<[OperatorOfQueryResult]> for OperatorOfQueryResponse {
+    fn as_ref(&self) -> &[OperatorOfQueryResult] { &self.0 }
+}
+
 /// The parameter type for the contract function `tokenMetadata`.
 // Note: For the serialization to be derived according to the CIS1
 // specification, the order of the fields cannot be changed.

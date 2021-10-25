@@ -393,6 +393,36 @@ fn contract_update_operator<A: HasActions>(
     Ok(A::accept())
 }
 
+/// Takes a list of queries. Each query is an owner address and some address to
+/// check as an operator of the owner address. It takes a contract address plus
+/// contract function to invoke with the result.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Message sent back with the result rejects.
+#[receive(contract = "CIS1-NFT", name = "operatorOf", parameter = "OperatorOfQueryParams")]
+fn contract_operator_of<A: HasActions>(
+    ctx: &impl HasReceiveContext,
+    state: &mut State,
+) -> ContractResult<A> {
+    // Parse the parameter.
+    let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
+        // Query the state for address being an operator of owner.
+        let is_operator = state.is_operator(&query.owner, &query.address);
+        response.push((query, is_operator));
+    }
+    // Send back the response.
+    Ok(send(
+        &params.result_contract,
+        params.result_function.as_ref(),
+        Amount::zero(),
+        &OperatorOfQueryResponse::from(response),
+    ))
+}
+
 /// Parameter type for the CIS-1 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
 type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
