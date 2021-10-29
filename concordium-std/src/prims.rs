@@ -39,6 +39,9 @@ extern "C" {
     // - 0 if the log is already full
     // - 1 if data was successfully logged.
     pub(crate) fn log_event(start: *const u8, length: u32) -> i32;
+
+    // -- CURRENT state implementation --
+
     // returns how many bytes were read.
     pub(crate) fn load_state(start: *mut u8, length: u32, offset: u32) -> u32;
     // returns how many bytes were written
@@ -48,6 +51,72 @@ extern "C" {
     pub(crate) fn resize_state(new_size: u32) -> u32; // returns 0 or 1.
                                                       // get current state size in bytes.
     pub(crate) fn state_size() -> u32;
+
+    // -- NEW state implementation --
+
+    // Lookup an entry. Concretely this will be some internal identifier
+    // given out by the host. Conceptually the return value is *mut Entry.
+    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> i64;
+
+    /// Checks whether the entry is vacant, i.e., a key does not exist in the
+    /// map.
+    pub(crate) fn vacant(entry: i64) -> i32;
+
+    /// Populates the entry. Returns whether it succeeded or not.
+    pub(crate) fn create(entry: i64, capacity: u32) -> i32;
+
+    /// Delete the entry. Returns whether the entry was vacant or not.
+    pub(crate) fn delete_entry(entry: i64) -> i32;
+
+    /// This might or might not be necessary.
+    /// If exact is set then only delete the specifi key, otherwise the entire
+    /// subtree. It seems useful to have the ability to delete the entire
+    /// tree
+    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: i32) -> i32;
+
+    /// Iteration. Returns an iterator.
+    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: *const u8) -> i64;
+
+    /// Returns the entry with the key that is the successor of the current key
+    /// subject to prefix restrictions.
+    ///
+    /// Example 1: The entry that we are currently looking at is deleted via
+    /// delete_entry. next should behave in the same way as if the entry was
+    /// not deleted.
+    ///
+    /// Example 2: The successor of the entry we are currently looking at is
+    /// deleted. That entry will be skipped by next.
+    ///
+    /// Example 3: A new entry is inserted. If it is inserted before the current
+    /// key then it will never be returned. If it is inserted after then it
+    /// will be part of the returned sequence.
+    ///
+    /// The rules for next allow us to, for example, filter a map by traversing
+    /// keys and deleting unwanted ones.
+    pub(crate) fn next(iterator: i64) -> i64;
+
+    // Operations on the entry.
+    // entry ... entry id returned by lookup_key
+    // start ... where to write in Wasm memory
+    // length ... length of the data to read
+    // offset ... where to start reading in the entry
+    // returns how many bytes were read.
+    pub(crate) fn load_entry_state(entry: i64, start: *mut u8, length: u32, offset: u32) -> u32;
+
+    // entry ... entry id returned by lookup_key
+    // start ... where to write in Wasm memory
+    // length ... length of the data to read
+    // offset ... where to start reading in the entry
+    // returns how many bytes were written (this might be removed since we might not
+    // have a limit on value size)
+    pub(crate) fn write_entry_state(entry: i64, start: *const u8, length: u32, offset: u32) -> u32;
+
+    // Resize entry size to the new value (truncate if new size is smaller). Return
+    // 0 if this was unsuccesful (new state too big), or 1 if successful.
+    pub(crate) fn resize_entry_state(entry: i64, new_size: u32) -> u32; // returns 0 or 1.
+
+    // get current entry size in bytes.
+    pub(crate) fn entry_state_size(entry: i64) -> u32;
 
     // Getter for the init context.
     /// Address of the sender, 32 bytes
@@ -137,6 +206,8 @@ mod host_dummy_functions {
     pub(crate) extern "C" fn log_event(_start: *const u8, _length: u32) {
         unimplemented!("Dummy function! Not to be executed")
     }
+
+    // -- CURRENT state implementation --
     #[no_mangle]
     pub(crate) extern "C" fn load_state(_start: *mut u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
@@ -153,6 +224,64 @@ mod host_dummy_functions {
     pub(crate) extern "C" fn state_size() -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
+
+    // -- NEW state implementation --
+
+    #[no_mangle]
+    pub(crate) fn entry(_key_start: *const u8, _key_length: u32) -> i64 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn vacant(_entry: i64) -> i32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn create(_entry: i64, _capacity: u32) -> i32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn delete_entry(_entry: i64) -> i32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn delete_prefix(_key_start: *const u8, _key_length: u32, _exact: i32) -> i32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn iterator(_prefix_start: *const u8, _prefix_length: *const u8) -> i64 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn next(_iterator: i64) -> i64 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn load_entry_state(
+        _entry: i64,
+        _start: *mut u8,
+        _length: u32,
+        _offset: u32,
+    ) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn write_entry_state(
+        _entry: i64,
+        _start: *const u8,
+        _length: u32,
+        _offset: u32,
+    ) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn resize_entry_state(_entry: i64, _new_size: u32) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn entry_state_size(_entry: i64) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
     #[no_mangle]
     pub(crate) extern "C" fn get_init_origin(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
