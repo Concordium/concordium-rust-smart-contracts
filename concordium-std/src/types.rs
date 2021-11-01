@@ -4,6 +4,31 @@ pub struct ContractState {
     pub(crate) current_position: u32,
 }
 
+pub struct NewContractState;
+
+#[derive(Default)]
+pub struct ContractStateEntry {
+    pub(crate) entry_id:         i64,
+    pub(crate) current_position: u32,
+}
+
+pub type EntryId = i64;
+
+pub struct VacantEntry {
+    // TODO: rename to entry_id? Should key only be used for the bytearray?
+    pub(crate) key: EntryId,
+}
+
+pub struct OccupiedEntry<V: crate::HasContractStateEntry> {
+    pub(crate) key:   EntryId,
+    pub(crate) value: V,
+}
+
+pub enum Entry<V: crate::HasContractStateEntry> {
+    Vacant(VacantEntry),
+    Occupied(OccupiedEntry<V>),
+}
+
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.
 pub struct Parameter {

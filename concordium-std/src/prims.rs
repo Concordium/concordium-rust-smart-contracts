@@ -54,8 +54,8 @@ extern "C" {
 
     // -- NEW state implementation --
 
-    // Lookup an entry. Concretely this will be some internal identifier
-    // given out by the host. Conceptually the return value is *mut Entry.
+    /// Lookup an entry. Concretely this will be some internal identifier
+    /// given out by the host. Conceptually the return value is *mut Entry.
     pub(crate) fn entry(key_start: *const u8, key_length: u32) -> i64;
 
     /// Checks whether the entry is vacant, i.e., a key does not exist in the
@@ -63,6 +63,7 @@ extern "C" {
     pub(crate) fn vacant(entry: i64) -> i32;
 
     /// Populates the entry. Returns whether it succeeded or not.
+    /// TODO: Should it return false when the entry is not vacant?
     pub(crate) fn create(entry: i64, capacity: u32) -> i32;
 
     /// Delete the entry. Returns whether the entry was vacant or not.

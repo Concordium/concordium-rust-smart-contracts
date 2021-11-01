@@ -270,6 +270,238 @@ impl HasContractState<()> for ContractState {
     }
 }
 
+impl HasContractStateEntry<()> for ContractStateEntry {
+    type ContractStateData = ();
+
+    #[inline(always)]
+    fn open(entry_id: i64, _: Self::ContractStateData) -> Self {
+        ContractStateEntry {
+            entry_id,
+            current_position: 0,
+        }
+    }
+
+    fn reserve(&mut self, len: u32) -> bool {
+        let cur_size = unsafe { state_size() };
+        if cur_size < len {
+            let res = unsafe { resize_entry_state(self.entry_id, len) };
+            res == 1
+        } else {
+            true
+        }
+    }
+
+    #[inline(always)]
+    fn size(&self) -> u32 { unsafe { entry_state_size(self.entry_id) } }
+
+    fn truncate(&mut self, new_size: u32) {
+        let cur_size = self.size();
+        if cur_size > new_size {
+            unsafe { resize_entry_state(self.entry_id, new_size) };
+        }
+        if new_size < self.current_position {
+            self.current_position = new_size
+        }
+    }
+}
+
+/// # NEW Contract state trait implementations.
+impl Seek for ContractStateEntry {
+    type Err = ();
+
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
+        use SeekFrom::*;
+        match pos {
+            Start(offset) => match u32::try_from(offset) {
+                Ok(offset_u32) => {
+                    self.current_position = offset_u32;
+                    Ok(offset)
+                }
+                _ => Err(()),
+            },
+            End(delta) => {
+                let end = self.size();
+                if delta >= 0 {
+                    match u32::try_from(delta)
+                        .ok()
+                        .and_then(|x| self.current_position.checked_add(x))
+                    {
+                        Some(offset_u32) => {
+                            self.current_position = offset_u32;
+                            Ok(u64::from(offset_u32))
+                        }
+                        _ => Err(()),
+                    }
+                } else {
+                    match delta.checked_abs().and_then(|x| u32::try_from(x).ok()) {
+                        Some(before) if before <= end => {
+                            let new_pos = end - before;
+                            self.current_position = new_pos;
+                            Ok(u64::from(new_pos))
+                        }
+                        _ => Err(()),
+                    }
+                }
+            }
+            Current(delta) => {
+                let new_offset = if delta >= 0 {
+                    u32::try_from(delta).ok().and_then(|x| self.current_position.checked_add(x))
+                } else {
+                    delta
+                        .checked_abs()
+                        .and_then(|x| u32::try_from(x).ok())
+                        .and_then(|x| self.current_position.checked_sub(x))
+                };
+                match new_offset {
+                    Some(offset) => {
+                        self.current_position = offset;
+                        Ok(u64::from(offset))
+                    }
+                    _ => Err(()),
+                }
+            }
+        }
+    }
+}
+
+impl Read for ContractStateEntry {
+    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
+        let len: u32 = {
+            match buf.len().try_into() {
+                Ok(v) => v,
+                _ => return Err(ParseError::default()),
+            }
+        };
+        let num_read = unsafe {
+            load_entry_state(self.entry_id, buf.as_mut_ptr(), len, self.current_position)
+        };
+        self.current_position += num_read;
+        Ok(num_read as usize)
+    }
+
+    /// Read a `u32` in little-endian format. This is optimized to not
+    /// initialize a dummy value before calling an external function.
+    fn read_u64(&mut self) -> ParseResult<u64> {
+        let mut bytes: MaybeUninit<[u8; 8]> = MaybeUninit::uninit();
+        let num_read = unsafe {
+            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 8, self.current_position)
+        };
+        self.current_position += num_read;
+        if num_read == 8 {
+            unsafe { Ok(u64::from_le_bytes(bytes.assume_init())) }
+        } else {
+            Err(ParseError::default())
+        }
+    }
+
+    /// Read a `u32` in little-endian format. This is optimized to not
+    /// initialize a dummy value before calling an external function.
+    fn read_u32(&mut self) -> ParseResult<u32> {
+        let mut bytes: MaybeUninit<[u8; 4]> = MaybeUninit::uninit();
+        let num_read = unsafe {
+            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 4, self.current_position)
+        };
+        self.current_position += num_read;
+        if num_read == 4 {
+            unsafe { Ok(u32::from_le_bytes(bytes.assume_init())) }
+        } else {
+            Err(ParseError::default())
+        }
+    }
+
+    /// Read a `u8` in little-endian format. This is optimized to not
+    /// initialize a dummy value before calling an external function.
+    fn read_u8(&mut self) -> ParseResult<u8> {
+        let mut bytes: MaybeUninit<[u8; 1]> = MaybeUninit::uninit();
+        let num_read = unsafe {
+            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 1, self.current_position)
+        };
+        self.current_position += num_read;
+        if num_read == 1 {
+            unsafe { Ok(bytes.assume_init()[0]) }
+        } else {
+            Err(ParseError::default())
+        }
+    }
+}
+
+impl Write for ContractStateEntry {
+    type Err = ();
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
+        let len: u32 = {
+            match buf.len().try_into() {
+                Ok(v) => v,
+                _ => return Err(()),
+            }
+        };
+        if self.current_position.checked_add(len).is_none() {
+            return Err(());
+        }
+        let num_bytes =
+            unsafe { write_entry_state(self.entry_id, buf.as_ptr(), len, self.current_position) };
+        self.current_position += num_bytes; // safe because of check above that len + pos is small enough
+        Ok(num_bytes as usize)
+    }
+}
+
+impl VacantEntry {
+    // TODO: Should this be an EntryID or the &[u8] key?
+    fn key(&self) -> &EntryId { &self.key }
+
+    fn into_key(self) -> EntryId { self.key }
+
+    /// TODO: could the value be anything that the Write trait supports (i.e.
+    /// also i8, i16..)?
+    fn insert(self, value: &[u8]) -> bool {
+        todo!("Assume its vacant? Then call create and write_entry")
+    }
+}
+
+impl<V: HasContractStateEntry> HasNewContractState<V, ()> for NewContractState {
+    // TODO: Replace () error
+    fn entry(key: &[u8]) -> Result<Entry<V>, ()> {
+        if key.len() == 0 {
+            return Err(());
+        }
+        let ptr = key.as_ptr();
+        let len = key.len() as u32; // TODO: Safe?
+        let entry_id = unsafe { entry(ptr, len) };
+        if entry_id < 0 {
+            return Err(());
+        }
+        if vacant(entry_id) == 1 {
+            Ok(Entry::Vacant(VacantEntry {
+                key: entry_id,
+            }))
+        } else {
+            Ok(Entry::Occupied(OccupiedEntry {
+                key:   entry_id,
+                value: V::open(entry_id, V::ContractStateData),
+            }))
+        }
+    }
+
+    fn vacant(entry_id: EntryId) -> bool { todo!() }
+
+    fn create(entry_id: EntryId, capacity: u32) -> bool { todo!() }
+
+    fn delete_entry(entry_id: EntryId) -> bool { todo!() }
+
+    fn delete_prefix(prefix: &[u8], exact: bool) -> bool { todo!() }
+}
+
+impl<V> OccupiedEntry<V>
+where
+    V: HasContractStateEntry,
+{
+    fn key(&self) -> &EntryId { &self.key }
+
+    fn get(&self) -> &V { &self.value }
+
+    fn get_mut(&mut self) -> &mut V { &mut self.value }
+}
+
 /// # Trait implementations for Parameter
 impl Read for Parameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {

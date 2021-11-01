@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::types::LogError;
+use crate::{types::LogError, Entry, EntryId};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -126,6 +126,50 @@ where
     /// Returns true iff this was successful. The new bytes are initialized as
     /// 0.
     fn reserve(&mut self, len: u32) -> bool;
+}
+
+/// A type that can serve as the contract state entry type.
+pub trait HasContractStateEntry<Error: Default = ()>
+where
+    Self: Read,
+    Self: Write<Err = Error>,
+    Self: Seek<Err = Error>, {
+    type ContractStateData;
+    /// Open the contract state. Only one instance can be opened at the same
+    /// time.
+    fn open(entry_id: i64, _: Self::ContractStateData) -> Self;
+
+    /// Get the current size of contract state.
+    fn size(&self) -> u32;
+
+    /// Truncate the state to the given size. If the given size is more than the
+    /// current state size this operation does nothing. The new position is at
+    /// most at the end of the stream.
+    fn truncate(&mut self, new_size: u32);
+
+    /// Make sure that the memory size is at least that many bytes in size.
+    /// Returns true iff this was successful. The new bytes are initialized as
+    /// 0.
+    fn reserve(&mut self, len: u32) -> bool;
+}
+
+pub trait HasNewContractState<V: HasContractStateEntry, Error: Default = ()> {
+    /// TODO: This should only fail if the key is empty, right?
+    fn entry(key: &[u8]) -> Result<Entry<V>, Error>;
+
+    fn vacant(entry_id: EntryId) -> bool;
+
+    /// Returns whether it succeeded or not.
+    fn create(entry_id: EntryId, capacity: u32) -> bool;
+
+    /// Returns whether the entry existed.
+    fn delete_entry(entry_id: EntryId) -> bool;
+
+    /// If exact is set, delete the specific key. Otherwise, delete the entire
+    /// subtree. Returns whether the entry or subtree existed.
+    fn delete_prefix(prefix: &[u8], exact: bool) -> bool;
+
+    // fn iterator(prefix: &[u8]) -> Iterator;
 }
 
 /// Objects which can serve as loggers.
