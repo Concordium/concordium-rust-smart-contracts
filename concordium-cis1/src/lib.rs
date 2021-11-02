@@ -578,11 +578,8 @@ pub enum Cis1Error<R> {
     /// The balance of the token owner is insufficient for the transfer (Error
     /// code: -42000002).
     InsufficientFunds,
-    /// Sender is neither the token owner or an operator of the owner for this
-    /// token (Error code: -42000003).
+    /// Sender is unauthorized to call this function (Error code: -42000003).
     Unauthorized,
-    /// Only contracts can send to this function (Error code: -42000004).
-    ContractOnly,
     /// Custom error
     Custom(R),
 }
@@ -591,7 +588,6 @@ pub enum Cis1Error<R> {
 /// - InvalidTokenId: -42000001
 /// - InsufficientFunds: -42000002
 /// - Unauthorized: -42000003
-/// - ContractOnly: -42000004
 impl<R: Into<Reject>> From<Cis1Error<R>> for Reject {
     fn from(err: Cis1Error<R>) -> Self {
         let error_code = match err {
@@ -602,7 +598,6 @@ impl<R: Into<Reject>> From<Cis1Error<R>> for Reject {
                 crate::num::NonZeroI32::new_unchecked(-42000002)
             },
             Cis1Error::Unauthorized => unsafe { crate::num::NonZeroI32::new_unchecked(-42000003) },
-            Cis1Error::ContractOnly => unsafe { crate::num::NonZeroI32::new_unchecked(-42000004) },
             Cis1Error::Custom(reject) => reject.into().error_code,
         };
         Self {
@@ -790,17 +785,17 @@ pub struct BalanceOfQuery<T: IsTokenId> {
 }
 
 /// The parameter type for the contract function `balanceOf`.
-/// This is contract function can only be called by another contract instance,
-/// and there is no reason to derive a SchemaType for this example.
 // Note: For the serialization to be derived according to the CIS1
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQueryParams<T: IsTokenId> {
+    /// The contract to trigger with the results of the queries.
+    pub result_contract: ContractAddress,
     /// The contract function to trigger with the results of the queries.
-    pub callback: OwnedReceiveName,
+    pub result_function: OwnedReceiveName,
     /// List of balance queries.
     #[concordium(size_length = 2)]
-    pub queries:  Vec<BalanceOfQuery<T>>,
+    pub queries:         Vec<BalanceOfQuery<T>>,
 }
 
 /// BalanceOf query with the result of the query.
@@ -820,6 +815,83 @@ impl<T: IsTokenId> From<Vec<BalanceOfQueryResult<T>>> for BalanceOfQueryResponse
 
 impl<T: IsTokenId> AsRef<[BalanceOfQueryResult<T>]> for BalanceOfQueryResponse<T> {
     fn as_ref(&self) -> &[BalanceOfQueryResult<T>] { &self.0 }
+}
+
+/// A query for the operator of a given address for a given token.
+// Note: For the serialization to be derived according to the CIS1
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct OperatorOfQuery {
+    /// The ID of the token for which to query the balance of.
+    pub owner:   Address,
+    /// The address for which to check for being an operator of the owner.
+    pub address: Address,
+}
+
+/// The parameter type for the contract function `operatorOf`.
+// Note: For the serialization to be derived according to the CIS1
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct OperatorOfQueryParams {
+    /// The contract to trigger with the results of the queries.
+    pub result_contract: ContractAddress,
+    /// The contract function to trigger with the results of the queries.
+    pub result_function: OwnedReceiveName,
+    /// List of operatorOf queries.
+    #[concordium(size_length = 2)]
+    pub queries:         Vec<OperatorOfQuery>,
+}
+
+/// OperatorOf query with the result of the query.
+pub type OperatorOfQueryResult = (OperatorOfQuery, bool);
+
+/// The response which is sent back when calling the contract function
+/// `operatorOf`.
+/// It consists of the list of queries paired with their corresponding result.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] Vec<OperatorOfQueryResult>);
+
+impl From<Vec<OperatorOfQueryResult>> for OperatorOfQueryResponse {
+    fn from(results: Vec<OperatorOfQueryResult>) -> Self { OperatorOfQueryResponse(results) }
+}
+
+impl AsRef<[OperatorOfQueryResult]> for OperatorOfQueryResponse {
+    fn as_ref(&self) -> &[OperatorOfQueryResult] { &self.0 }
+}
+
+/// The parameter type for the contract function `tokenMetadata`.
+// Note: For the serialization to be derived according to the CIS1
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct TokenMetadataQueryParams<T: IsTokenId> {
+    /// The contract to trigger with the results of the queries.
+    pub result_contract: ContractAddress,
+    /// The contract function to trigger with the results of the queries.
+    pub result_function: OwnedReceiveName,
+    /// List of balance queries.
+    #[concordium(size_length = 2)]
+    pub queries:         Vec<T>,
+}
+
+/// TokenMetadata query with the result of the query.
+pub type TokenMetadataQueryResult<T> = (T, MetadataUrl);
+
+/// The response which is sent back when calling the contract function
+/// `tokenMetadata`.
+/// It consists of the list of queries paired with their corresponding result.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct TokenMetadataQueryResponse<T: IsTokenId>(
+    #[concordium(size_length = 2)] Vec<TokenMetadataQueryResult<T>>,
+);
+
+impl<T: IsTokenId> From<Vec<TokenMetadataQueryResult<T>>> for TokenMetadataQueryResponse<T> {
+    fn from(results: Vec<TokenMetadataQueryResult<T>>) -> Self {
+        TokenMetadataQueryResponse(results)
+    }
+}
+
+impl<T: IsTokenId> AsRef<[TokenMetadataQueryResult<T>]> for TokenMetadataQueryResponse<T> {
+    fn as_ref(&self) -> &[TokenMetadataQueryResult<T>] { &self.0 }
 }
 
 /// The parameter type for a contract function which receives CIS1 tokens.
