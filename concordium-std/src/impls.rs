@@ -453,6 +453,7 @@ impl VacantEntry {
 impl HasNewContractState for NewContractState {
     type ContractStateData = ();
     type EntryType = ContractStateEntry;
+    type IterType = ContractStateIter;
 
     fn open(_: Self::ContractStateData) -> Self { NewContractState }
 
@@ -510,6 +511,36 @@ impl HasNewContractState for NewContractState {
         };
         let prefix_ptr = prefix.as_ptr();
         unsafe { delete_prefix(prefix_ptr, len, exact as u32) == 1 }
+    }
+
+    /// Returns an iterator over all entries with the given prefix.
+    fn iter(&self, prefix: &[u8]) -> Self::IterType {
+        let len = match u32::try_from(prefix.len()) {
+            Ok(l) => l,
+            Err(_) => 0, // FIXME: Prefix too long, return error?
+        };
+        let prefix_ptr = prefix.as_ptr();
+        let iterator_id = unsafe { iterator(prefix_ptr, len) };
+        ContractStateIter {
+            iterator_id,
+        }
+    }
+}
+
+impl Iterator for ContractStateIter {
+    type Item = ContractStateEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let entry_id = unsafe { next(self.iterator_id) };
+        if entry_id < 0 {
+            // Iterator is empty.
+            None
+        } else {
+            Some(ContractStateEntry {
+                entry_id,
+                current_position: 0,
+            }) // TODO: Add helper method? In trait?
+        }
     }
 }
 

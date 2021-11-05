@@ -6,6 +6,10 @@ pub struct ContractState {
 
 pub struct NewContractState;
 
+pub struct ContractStateIter {
+    pub(crate) iterator_id: IteratorId,
+}
+
 #[derive(Default)]
 pub struct ContractStateEntry {
     pub(crate) entry_id:         i64,
@@ -13,6 +17,7 @@ pub struct ContractStateEntry {
 }
 
 pub type EntryId = i64;
+pub type IteratorId = i64;
 
 pub struct VacantEntry {
     // TODO: rename to entry_id? Should key only be used for the bytearray?

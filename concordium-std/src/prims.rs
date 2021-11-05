@@ -78,7 +78,8 @@ extern "C" {
     pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> i32;
 
     /// Iteration. Returns an iterator.
-    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: *const u8) -> i64;
+    /// TODO: When will this return an error?
+    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: u32) -> i64;
 
     /// Returns the entry with the key that is the successor of the current key
     /// subject to prefix restrictions.

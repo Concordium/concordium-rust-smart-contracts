@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, EntryId};
+use crate::{types::LogError, ContractStateIter, Entry, EntryId};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -154,6 +154,7 @@ where
 pub trait HasNewContractState<Error: Default = ()> {
     type ContractStateData;
     type EntryType: HasContractStateEntry;
+    type IterType: Iterator<Item = Self::EntryType>;
 
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
@@ -175,7 +176,7 @@ pub trait HasNewContractState<Error: Default = ()> {
     /// subtree. Returns whether the entry or subtree existed.
     fn delete_prefix(&self, prefix: &[u8], exact: bool) -> bool;
 
-    // fn iterator(prefix: &[u8]) -> Iterator;
+    fn iter(&self, prefix: &[u8]) -> Self::IterType;
 }
 
 /// Objects which can serve as loggers.
