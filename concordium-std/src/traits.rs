@@ -161,19 +161,19 @@ pub trait HasNewContractState<Error: Default = ()> {
 
     /// Only returns an error if key is invalid, i.e. empty or too large.
     /// Otherwise, it returns an Entry.
-    fn entry(key: &[u8]) -> Result<Entry<Self::EntryType>, Error>;
+    fn entry(&self, key: &[u8]) -> Result<Entry<Self::EntryType>, Error>;
 
-    fn vacant(entry_id: EntryId) -> bool;
+    fn vacant(&self, entry_id: EntryId) -> bool;
 
     /// Returns whether it succeeded or not.
-    fn create(entry_id: EntryId, capacity: u32) -> bool;
+    fn create(&self, entry_id: EntryId, capacity: u32) -> bool;
 
     /// Returns whether the entry existed.
-    fn delete_entry(entry_id: EntryId) -> bool;
+    fn delete_entry(&self, entry_id: EntryId) -> bool;
 
     /// If exact is set, delete the specific key. Otherwise, delete the entire
     /// subtree. Returns whether the entry or subtree existed.
-    fn delete_prefix(prefix: &[u8], exact: bool) -> bool;
+    fn delete_prefix(&self, prefix: &[u8], exact: bool) -> bool;
 
     // fn iterator(prefix: &[u8]) -> Iterator;
 }

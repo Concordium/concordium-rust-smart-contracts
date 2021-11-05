@@ -457,17 +457,20 @@ impl HasNewContractState for NewContractState {
     fn open(_: Self::ContractStateData) -> Self { NewContractState }
 
     // TODO: Replace Error = () with?
-    fn entry(key: &[u8]) -> Result<Entry<Self::EntryType>, ()> {
-        if key.len() == 0 {
-            return Err(());
-        }
+    /// Only returns Err if the key is invalid, i.e. empty or too long (> 32
+    /// bits). Otherwise it returns an Entry.
+    fn entry(&self, key: &[u8]) -> Result<Entry<Self::EntryType>, ()> {
+        let len = match u32::try_from(key.len()) {
+            Ok(0) => return Err(()),
+            Ok(l) => l,
+            Err(_) => return Err(()),
+        };
         let ptr = key.as_ptr();
-        let len = key.len() as u32; // TODO: Safe?
         let entry_id = unsafe { entry(ptr, len) };
         if entry_id < 0 {
             return Err(());
         }
-        if unsafe { vacant(entry_id) == 1 } {
+        if self.vacant(entry_id) {
             Ok(Entry::Vacant(VacantEntry {
                 key: entry_id,
             }))
@@ -482,13 +485,32 @@ impl HasNewContractState for NewContractState {
         }
     }
 
-    fn vacant(entry_id: EntryId) -> bool { todo!() }
+    /// Returns whether the entry is vacant, i.e. the key does not exist in the
+    /// map.
+    fn vacant(&self, entry_id: EntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
 
-    fn create(entry_id: EntryId, capacity: u32) -> bool { todo!() }
+    /// Populate the entry. Returns whether it succeeded or not.
+    fn create(&self, entry_id: EntryId, capacity: u32) -> bool {
+        unsafe { create(entry_id, capacity) == 1 }
+    }
 
-    fn delete_entry(entry_id: EntryId) -> bool { todo!() }
+    /// Delete the entry. Returns true if the entry was occupied and false
+    /// otherwise.
+    fn delete_entry(&self, entry_id: EntryId) -> bool { unsafe { delete_entry(entry_id) == 1 } }
 
-    fn delete_prefix(prefix: &[u8], exact: bool) -> bool { todo!() }
+    /// If exact, delete the specific key, otherwise delete the subtree.
+    /// Returns true if entry/subtree was occupied and false otherwise
+    /// (including if the key was too long or empty).
+    /// FIXME: Should this return a result?
+    fn delete_prefix(&self, prefix: &[u8], exact: bool) -> bool {
+        let len = match u32::try_from(prefix.len()) {
+            Ok(0) => return false, // Err?
+            Ok(l) => l,
+            Err(_) => return false, // Err?
+        };
+        let prefix_ptr = prefix.as_ptr();
+        unsafe { delete_prefix(prefix_ptr, len, exact as u32) == 1 }
+    }
 }
 
 impl<V> OccupiedEntry<V>

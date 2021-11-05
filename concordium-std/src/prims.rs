@@ -67,13 +67,15 @@ extern "C" {
     pub(crate) fn create(entry: i64, capacity: u32) -> i32;
 
     /// Delete the entry. Returns whether the entry was vacant or not.
+    /// TODO: Agree on false vacant, true for occupied?
     pub(crate) fn delete_entry(entry: i64) -> i32;
 
     /// This might or might not be necessary.
     /// If exact is set then only delete the specifi key, otherwise the entire
     /// subtree. It seems useful to have the ability to delete the entire
     /// tree
-    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: i32) -> i32;
+    /// TODO: Agree on false vacant, true for occupied?
+    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> i32;
 
     /// Iteration. Returns an iterator.
     pub(crate) fn iterator(prefix_start: *const u8, prefix_length: *const u8) -> i64;
