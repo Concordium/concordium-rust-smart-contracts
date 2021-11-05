@@ -19,14 +19,14 @@ pub struct VacantEntry {
     pub(crate) key: EntryId,
 }
 
-pub struct OccupiedEntry<V: crate::HasContractStateEntry> {
+pub struct OccupiedEntry<EntryType: crate::HasContractStateEntry> {
     pub(crate) key:   EntryId,
-    pub(crate) value: V,
+    pub(crate) value: EntryType,
 }
 
-pub enum Entry<V: crate::HasContractStateEntry> {
+pub enum Entry<EntryType: crate::HasContractStateEntry> {
     Vacant(VacantEntry),
-    Occupied(OccupiedEntry<V>),
+    Occupied(OccupiedEntry<EntryType>),
 }
 
 #[derive(Default)]

@@ -270,26 +270,8 @@ impl HasContractState<()> for ContractState {
     }
 }
 
-impl HasContractStateEntry<()> for ContractStateEntry {
-    type ContractStateData = ();
-
-    #[inline(always)]
-    fn open(entry_id: i64, _: Self::ContractStateData) -> Self {
-        ContractStateEntry {
-            entry_id,
-            current_position: 0,
-        }
-    }
-
-    fn reserve(&mut self, len: u32) -> bool {
-        let cur_size = unsafe { state_size() };
-        if cur_size < len {
-            let res = unsafe { resize_entry_state(self.entry_id, len) };
-            res == 1
-        } else {
-            true
-        }
-    }
+impl HasContractStateEntry for ContractStateEntry {
+    fn entry_id(&self) -> EntryId { self.entry_id }
 
     #[inline(always)]
     fn size(&self) -> u32 { unsafe { entry_state_size(self.entry_id) } }
@@ -301,6 +283,16 @@ impl HasContractStateEntry<()> for ContractStateEntry {
         }
         if new_size < self.current_position {
             self.current_position = new_size
+        }
+    }
+
+    fn reserve(&mut self, len: u32) -> bool {
+        let cur_size = unsafe { state_size() };
+        if cur_size < len {
+            let res = unsafe { resize_entry_state(self.entry_id, len) };
+            res == 1
+        } else {
+            true
         }
     }
 }
@@ -458,9 +450,14 @@ impl VacantEntry {
     }
 }
 
-impl<V: HasContractStateEntry> HasNewContractState<V, ()> for NewContractState {
-    // TODO: Replace () error
-    fn entry(key: &[u8]) -> Result<Entry<V>, ()> {
+impl HasNewContractState for NewContractState {
+    type ContractStateData = ();
+    type EntryType = ContractStateEntry;
+
+    fn open(_: Self::ContractStateData) -> Self { NewContractState }
+
+    // TODO: Replace Error = () with?
+    fn entry(key: &[u8]) -> Result<Entry<Self::EntryType>, ()> {
         if key.len() == 0 {
             return Err(());
         }
@@ -470,14 +467,17 @@ impl<V: HasContractStateEntry> HasNewContractState<V, ()> for NewContractState {
         if entry_id < 0 {
             return Err(());
         }
-        if vacant(entry_id) == 1 {
+        if unsafe { vacant(entry_id) == 1 } {
             Ok(Entry::Vacant(VacantEntry {
                 key: entry_id,
             }))
         } else {
             Ok(Entry::Occupied(OccupiedEntry {
                 key:   entry_id,
-                value: V::open(entry_id, V::ContractStateData),
+                value: ContractStateEntry {
+                    entry_id,
+                    current_position: 0,
+                }, // TODO: Add helper method? In trait?
             }))
         }
     }

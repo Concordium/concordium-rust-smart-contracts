@@ -134,10 +134,8 @@ where
     Self: Read,
     Self: Write<Err = Error>,
     Self: Seek<Err = Error>, {
-    type ContractStateData;
-    /// Open the contract state. Only one instance can be opened at the same
-    /// time.
-    fn open(entry_id: i64, _: Self::ContractStateData) -> Self;
+    /// Get the entry id.
+    fn entry_id(&self) -> EntryId;
 
     /// Get the current size of contract state.
     fn size(&self) -> u32;
@@ -153,9 +151,17 @@ where
     fn reserve(&mut self, len: u32) -> bool;
 }
 
-pub trait HasNewContractState<V: HasContractStateEntry, Error: Default = ()> {
-    /// TODO: This should only fail if the key is empty, right?
-    fn entry(key: &[u8]) -> Result<Entry<V>, Error>;
+pub trait HasNewContractState<Error: Default = ()> {
+    type ContractStateData;
+    type EntryType: HasContractStateEntry;
+
+    /// Open the contract state. Only one instance can be opened at the same
+    /// time.
+    fn open(_: Self::ContractStateData) -> Self;
+
+    /// Only returns an error if key is invalid, i.e. empty or too large.
+    /// Otherwise, it returns an Entry.
+    fn entry(key: &[u8]) -> Result<Entry<Self::EntryType>, Error>;
 
     fn vacant(entry_id: EntryId) -> bool;
 
