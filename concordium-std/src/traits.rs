@@ -160,10 +160,14 @@ pub trait HasNewContractState<Error: Default = ()> {
     /// time.
     fn open(_: Self::ContractStateData) -> Self;
 
-    /// Only returns an error if key is invalid, i.e. empty or too large.
-    /// Otherwise, it returns an Entry.
+    /// Return an entry from the state.
+    /// Err is returned if the key is invalid, i.e., empty or too large.
     fn entry(&self, key: &[u8]) -> Result<Entry<Self::EntryType>, Error>;
 
+    /// Returns a reference to the value corresponding to the key.
+    fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
+
+    /// Check whether an entry is vacant.
     fn vacant(&self, entry_id: EntryId) -> bool;
 
     /// Returns whether it succeeded or not.

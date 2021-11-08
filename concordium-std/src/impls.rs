@@ -270,6 +270,15 @@ impl HasContractState<()> for ContractState {
     }
 }
 
+impl ContractStateEntry {
+    pub(crate) fn new(entry_id: EntryId) -> Self {
+        Self {
+            entry_id,
+            current_position: 0,
+        }
+    }
+}
+
 impl HasContractStateEntry for ContractStateEntry {
     fn entry_id(&self) -> EntryId { self.entry_id }
 
@@ -439,13 +448,13 @@ impl Write for ContractStateEntry {
 
 impl VacantEntry {
     // TODO: Should this be an EntryID or the &[u8] key?
-    fn key(&self) -> &EntryId { &self.key }
+    pub fn key(&self) -> &EntryId { &self.key }
 
-    fn into_key(self) -> EntryId { self.key }
+    pub fn into_key(self) -> EntryId { self.key }
 
     /// TODO: could the value be anything that the Write trait supports (i.e.
     /// also i8, i16..)?
-    fn insert(self, value: &[u8]) -> bool {
+    pub fn insert(self, value: &[u8]) -> bool {
         todo!("Assume its vacant? Then call create and write_entry")
     }
 }
@@ -478,12 +487,23 @@ impl HasNewContractState for NewContractState {
         } else {
             Ok(Entry::Occupied(OccupiedEntry {
                 key:   entry_id,
-                value: ContractStateEntry {
-                    entry_id,
-                    current_position: 0,
-                }, // TODO: Add helper method? In trait?
+                value: ContractStateEntry::new(entry_id),
             }))
         }
+    }
+
+    fn get(&self, key: &[u8]) -> Option<Self::EntryType> {
+        let len = match u32::try_from(key.len()) {
+            Ok(0) => return None,
+            Ok(l) => l,
+            Err(_) => return None,
+        };
+        let ptr = key.as_ptr();
+        let entry_id = unsafe { entry(ptr, len) };
+        if entry_id < 0 || self.vacant(entry_id) {
+            return None;
+        }
+        Some(ContractStateEntry::new(entry_id))
     }
 
     /// Returns whether the entry is vacant, i.e. the key does not exist in the
@@ -536,10 +556,7 @@ impl Iterator for ContractStateIter {
             // Iterator is empty.
             None
         } else {
-            Some(ContractStateEntry {
-                entry_id,
-                current_position: 0,
-            }) // TODO: Add helper method? In trait?
+            Some(ContractStateEntry::new(entry_id))
         }
     }
 }
@@ -548,11 +565,11 @@ impl<V> OccupiedEntry<V>
 where
     V: HasContractStateEntry,
 {
-    fn key(&self) -> &EntryId { &self.key }
+    pub fn key(&self) -> &EntryId { &self.key }
 
-    fn get(&self) -> &V { &self.value }
+    pub fn get(&self) -> &V { &self.value }
 
-    fn get_mut(&mut self) -> &mut V { &mut self.value }
+    pub fn get_mut(&mut self) -> &mut V { &mut self.value }
 }
 
 /// # Trait implementations for Parameter
