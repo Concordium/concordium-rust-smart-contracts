@@ -1,7 +1,21 @@
+use crate::HasNewContractState;
+use concordium_contracts_common::Serialize;
+use std::marker::PhantomData;
+
 /// A type representing the constract state bytes.
 #[derive(Default)]
 pub struct ContractState {
     pub(crate) current_position: u32,
+}
+
+pub struct ContractStateMap<K, V, S>
+where
+    K: Serialize,
+    V: Serialize,
+    S: HasNewContractState, {
+    pub(crate) phantom_k:      PhantomData<K>,
+    pub(crate) phantom_v:      PhantomData<V>,
+    pub(crate) contract_state: S,
 }
 
 pub struct NewContractState;

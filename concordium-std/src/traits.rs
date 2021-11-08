@@ -164,6 +164,10 @@ pub trait HasNewContractState<Error: Default = ()> {
     /// Err is returned if the key is invalid, i.e., empty or too large.
     fn entry(&self, key: &[u8]) -> Result<Entry<Self::EntryType>, Error>;
 
+    /// Insert the keypair into the state. Returns whether the position was
+    /// vacant.
+    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, Error>;
+
     /// Returns a reference to the value corresponding to the key.
     fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
 

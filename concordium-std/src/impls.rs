@@ -492,6 +492,27 @@ impl HasNewContractState for NewContractState {
         }
     }
 
+    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, ()> {
+        match self.entry(key) {
+            Ok(Entry::Occupied(mut occupied_entry)) => {
+                let entry = occupied_entry.get_mut();
+                let new_len = u32::try_from(value.len()).map_err(|_| ())?;
+
+                // Truncate excess state.
+                if entry.size() > new_len {
+                    entry.truncate(new_len);
+                }
+                entry.write_all(value)?;
+                Ok(true) // The entry was occupied.
+            }
+            Ok(Entry::Vacant(vacant_entry)) => {
+                vacant_entry.insert(value);
+                Ok(false) // The entry was not occupied.
+            }
+            Err(_) => Err(()),
+        }
+    }
+
     fn get(&self, key: &[u8]) -> Option<Self::EntryType> {
         let len = match u32::try_from(key.len()) {
             Ok(0) => return None,
@@ -557,6 +578,37 @@ impl Iterator for ContractStateIter {
             None
         } else {
             Some(ContractStateEntry::new(entry_id))
+        }
+    }
+}
+
+impl<K, V, S> ContractStateMap<K, V, S>
+where
+    K: Serialize,
+    V: Serialize,
+    S: HasNewContractState,
+{
+    pub fn open(contract_state: S) -> Self {
+        Self {
+            phantom_k: PhantomData,
+            phantom_v: PhantomData,
+            contract_state,
+        }
+    }
+
+    // TODO: Return option with old value?
+    pub fn insert(&mut self, key: K, value: V) {
+        let k = to_bytes(&key);
+        let v = to_bytes(&value);
+        let _ = self.contract_state.insert(&k, &v);
+    }
+
+    pub fn get(&self, key: K) -> Option<V> {
+        let k = to_bytes(&key);
+        let v = self.contract_state.get(&k);
+        match V::deserial(v) {
+            Ok(value) => Some(value),
+            Err(_) => None, // This should never happen.
         }
     }
 }
@@ -946,6 +998,7 @@ impl<A, E> UnwrapAbort for Result<A, E> {
 use core::fmt;
 #[cfg(feature = "std")]
 use std::fmt;
+use std::marker::PhantomData;
 
 impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     type Unwrap = A;
