@@ -454,7 +454,7 @@ impl VacantEntry {
 
     /// TODO: could the value be anything that the Write trait supports (i.e.
     /// also i8, i16..)?
-    pub fn insert(self, value: &[u8]) -> bool {
+    pub fn insert(self, _value: &[u8]) -> bool {
         todo!("Assume its vacant? Then call create and write_entry")
     }
 }
@@ -466,62 +466,48 @@ impl HasNewContractState for NewContractState {
 
     fn open(_: Self::ContractStateData) -> Self { NewContractState }
 
-    // TODO: Replace Error = () with?
-    /// Only returns Err if the key is invalid, i.e. empty or too long (> 32
-    /// bits). Otherwise it returns an Entry.
-    fn entry(&self, key: &[u8]) -> Result<Entry<Self::EntryType>, ()> {
-        let len = match u32::try_from(key.len()) {
-            Ok(0) => return Err(()),
-            Ok(l) => l,
-            Err(_) => return Err(()),
-        };
+    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType> {
+        let len = key.len() as u32; // Safe because usize is 32bit in WASM.
         let ptr = key.as_ptr();
         let entry_id = unsafe { entry(ptr, len) };
-        if entry_id < 0 {
-            return Err(());
-        }
         if self.vacant(entry_id) {
-            Ok(Entry::Vacant(VacantEntry {
+            Entry::Vacant(VacantEntry {
                 key: entry_id,
-            }))
+            })
         } else {
-            Ok(Entry::Occupied(OccupiedEntry {
+            Entry::Occupied(OccupiedEntry {
                 key:   entry_id,
                 value: ContractStateEntry::new(entry_id),
-            }))
+            })
         }
     }
 
+    /// Returns whether a value was overwritten.
     fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, ()> {
         match self.entry(key) {
-            Ok(Entry::Occupied(mut occupied_entry)) => {
+            Entry::Occupied(mut occupied_entry) => {
                 let entry = occupied_entry.get_mut();
-                let new_len = u32::try_from(value.len()).map_err(|_| ())?;
+                let new_len = value.len() as u32; // Safe because usize is 32it in WASM.
 
                 // Truncate excess state.
                 if entry.size() > new_len {
                     entry.truncate(new_len);
                 }
                 entry.write_all(value)?;
-                Ok(true) // The entry was occupied.
+                Ok(true)
             }
-            Ok(Entry::Vacant(vacant_entry)) => {
+            Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(value);
-                Ok(false) // The entry was not occupied.
+                Ok(false)
             }
-            Err(_) => Err(()),
         }
     }
 
     fn get(&self, key: &[u8]) -> Option<Self::EntryType> {
-        let len = match u32::try_from(key.len()) {
-            Ok(0) => return None,
-            Ok(l) => l,
-            Err(_) => return None,
-        };
+        let len = key.len() as u32; // Safe because usize is 32bit in WASM.
         let ptr = key.as_ptr();
         let entry_id = unsafe { entry(ptr, len) };
-        if entry_id < 0 || self.vacant(entry_id) {
+        if self.vacant(entry_id) {
             return None;
         }
         Some(ContractStateEntry::new(entry_id))
@@ -531,7 +517,7 @@ impl HasNewContractState for NewContractState {
     /// map.
     fn vacant(&self, entry_id: EntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
 
-    /// Populate the entry. Returns whether it succeeded or not.
+    /// Populate the entry. Returns whether a value was overwritten.
     fn create(&self, entry_id: EntryId, capacity: u32) -> bool {
         unsafe { create(entry_id, capacity) == 1 }
     }
@@ -543,23 +529,15 @@ impl HasNewContractState for NewContractState {
     /// If exact, delete the specific key, otherwise delete the subtree.
     /// Returns true if entry/subtree was occupied and false otherwise
     /// (including if the key was too long or empty).
-    /// FIXME: Should this return a result?
     fn delete_prefix(&self, prefix: &[u8], exact: bool) -> bool {
-        let len = match u32::try_from(prefix.len()) {
-            Ok(0) => return false, // Err?
-            Ok(l) => l,
-            Err(_) => return false, // Err?
-        };
+        let len = prefix.len() as u32; // Safe because usize is 32bit in WASM.
         let prefix_ptr = prefix.as_ptr();
         unsafe { delete_prefix(prefix_ptr, len, exact as u32) == 1 }
     }
 
     /// Returns an iterator over all entries with the given prefix.
     fn iter(&self, prefix: &[u8]) -> Self::IterType {
-        let len = match u32::try_from(prefix.len()) {
-            Ok(l) => l,
-            Err(_) => 0, // FIXME: Prefix too long, return error?
-        };
+        let len = prefix.len() as u32; // Safe because usize is 32bit in WASM.
         let prefix_ptr = prefix.as_ptr();
         let iterator_id = unsafe { iterator(prefix_ptr, len) };
         ContractStateIter {
@@ -573,11 +551,12 @@ impl Iterator for ContractStateIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         let entry_id = unsafe { next(self.iterator_id) };
+        // The iterator returns -1 when empty and an entry id (u32) otherwise.
         if entry_id < 0 {
             // Iterator is empty.
             None
         } else {
-            Some(ContractStateEntry::new(entry_id))
+            Some(ContractStateEntry::new(entry_id as u32))
         }
     }
 }
@@ -605,10 +584,12 @@ where
 
     pub fn get(&self, key: K) -> Option<V> {
         let k = to_bytes(&key);
-        let v = self.contract_state.get(&k);
-        match V::deserial(v) {
-            Ok(value) => Some(value),
-            Err(_) => None, // This should never happen.
+        match self.contract_state.get(&k) {
+            None => None,
+            Some(mut v) => match V::deserial(&mut v) {
+                Ok(value) => Some(value),
+                Err(_) => None, // This should never happen.
+            },
         }
     }
 }

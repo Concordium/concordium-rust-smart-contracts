@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, ContractStateIter, Entry, EntryId};
+use crate::{types::LogError, Entry, EntryId};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -161,12 +161,11 @@ pub trait HasNewContractState<Error: Default = ()> {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Return an entry from the state.
-    /// Err is returned if the key is invalid, i.e., empty or too large.
-    fn entry(&self, key: &[u8]) -> Result<Entry<Self::EntryType>, Error>;
+    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType>;
 
     /// Insert the keypair into the state. Returns whether the position was
-    /// vacant.
-    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, Error>;
+    /// occupied.
+    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, ()>;
 
     /// Returns a reference to the value corresponding to the key.
     fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
@@ -174,7 +173,7 @@ pub trait HasNewContractState<Error: Default = ()> {
     /// Check whether an entry is vacant.
     fn vacant(&self, entry_id: EntryId) -> bool;
 
-    /// Returns whether it succeeded or not.
+    /// Returns whether a value was overwritten.
     fn create(&self, entry_id: EntryId, capacity: u32) -> bool;
 
     /// Returns whether the entry existed.

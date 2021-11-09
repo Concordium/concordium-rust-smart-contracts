@@ -26,12 +26,12 @@ pub struct ContractStateIter {
 
 #[derive(Default)]
 pub struct ContractStateEntry {
-    pub(crate) entry_id:         i64,
+    pub(crate) entry_id:         EntryId,
     pub(crate) current_position: u32,
 }
 
-pub type EntryId = i64;
-pub type IteratorId = i64;
+pub type EntryId = u32;
+pub type IteratorId = u32;
 
 pub struct VacantEntry {
     // TODO: rename to entry_id? Should key only be used for the bytearray?

@@ -56,48 +56,46 @@ extern "C" {
 
     /// Lookup an entry. Concretely this will be some internal identifier
     /// given out by the host. Conceptually the return value is *mut Entry.
-    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> i64;
+    /// Empty key means the root.
+    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> u32;
 
     /// Checks whether the entry is vacant, i.e., a key does not exist in the
     /// map.
-    pub(crate) fn vacant(entry: i64) -> i32;
+    /// 1 => exists
+    /// 0 => does not exist
+    pub(crate) fn vacant(entry: u32) -> u32;
 
-    /// Populates the entry. Returns whether it succeeded or not.
-    /// TODO: Should it return false when the entry is not vacant?
-    pub(crate) fn create(entry: i64, capacity: u32) -> i32;
+    /// Populates the entry. Returns whether an existing value was overwritten.
+    /// 1 => created new by overwriting existing value
+    /// 0 => created new value
+    pub(crate) fn create(entry: u32, capacity: u32) -> u32;
 
-    /// Delete the entry. Returns whether the entry was vacant or not.
-    /// TODO: Agree on false vacant, true for occupied?
-    pub(crate) fn delete_entry(entry: i64) -> i32;
+    /// Delete the entry. Returns whether the entry was or not.
+    /// 1 => did exists
+    /// 0 => did not exist
+    pub(crate) fn delete_entry(entry: u32) -> u32;
 
     /// This might or might not be necessary.
     /// If exact is set then only delete the specifi key, otherwise the entire
     /// subtree. It seems useful to have the ability to delete the entire
     /// tree
-    /// TODO: Agree on false vacant, true for occupied?
-    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> i32;
+    /// 1 => deleted something
+    /// 0 => didn't delete anything
+    /// TODO: could also say how much was deleted (number of entries).
+    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> u32;
 
     /// Iteration. Returns an iterator.
-    /// TODO: When will this return an error?
-    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: u32) -> i64;
+    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: u32) -> u32;
 
     /// Returns the entry with the key that is the successor of the current key
     /// subject to prefix restrictions.
+    /// If the iterator is empty, -1 is returned.
     ///
-    /// Example 1: The entry that we are currently looking at is deleted via
-    /// delete_entry. next should behave in the same way as if the entry was
-    /// not deleted.
-    ///
-    /// Example 2: The successor of the entry we are currently looking at is
-    /// deleted. That entry will be skipped by next.
-    ///
-    /// Example 3: A new entry is inserted. If it is inserted before the current
-    /// key then it will never be returned. If it is inserted after then it
-    /// will be part of the returned sequence.
-    ///
-    /// The rules for next allow us to, for example, filter a map by traversing
-    /// keys and deleting unwanted ones.
-    pub(crate) fn next(iterator: i64) -> i64;
+    /// This will be a snapshot. If you mutate, it will mutate the original
+    /// tree, but the snapshot and its entries will remain the same.
+    /// Getting a new iterator subsequently will get you a snapshot with your
+    /// new changes.
+    pub(crate) fn next(iterator: u32) -> i64;
 
     // Operations on the entry.
     // entry ... entry id returned by lookup_key
@@ -105,7 +103,7 @@ extern "C" {
     // length ... length of the data to read
     // offset ... where to start reading in the entry
     // returns how many bytes were read.
-    pub(crate) fn load_entry_state(entry: i64, start: *mut u8, length: u32, offset: u32) -> u32;
+    pub(crate) fn load_entry_state(entry: u32, start: *mut u8, length: u32, offset: u32) -> u32;
 
     // entry ... entry id returned by lookup_key
     // start ... where to write in Wasm memory
@@ -113,14 +111,14 @@ extern "C" {
     // offset ... where to start reading in the entry
     // returns how many bytes were written (this might be removed since we might not
     // have a limit on value size)
-    pub(crate) fn write_entry_state(entry: i64, start: *const u8, length: u32, offset: u32) -> u32;
+    pub(crate) fn write_entry_state(entry: u32, start: *const u8, length: u32, offset: u32) -> u32;
 
     // Resize entry size to the new value (truncate if new size is smaller). Return
     // 0 if this was unsuccesful (new state too big), or 1 if successful.
-    pub(crate) fn resize_entry_state(entry: i64, new_size: u32) -> u32; // returns 0 or 1.
+    pub(crate) fn resize_entry_state(entry: u32, new_size: u32) -> u32; // returns 0 or 1.
 
     // get current entry size in bytes.
-    pub(crate) fn entry_state_size(entry: i64) -> u32;
+    pub(crate) fn entry_state_size(entry: u32) -> u32;
 
     // Getter for the init context.
     /// Address of the sender, 32 bytes
