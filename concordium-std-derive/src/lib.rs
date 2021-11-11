@@ -452,6 +452,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         &mut required_args,
     );
 
+    // TODO: refactor
     let mut out = if init_attributes.optional.low_level {
         required_args.push("state: &mut impl HasContractStateLL");
         quote! {
@@ -658,6 +659,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         &mut required_args,
     );
 
+    // TODO: refactor
     let mut out = if receive_attributes.optional.low_level {
         required_args.push("state: &mut impl HasContractStateLL");
         quote! {

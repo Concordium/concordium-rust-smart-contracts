@@ -635,33 +635,6 @@ where
     }
 }
 
-impl<V> StateSet<V>
-where
-    V: Serialize,
-{
-    pub fn new() -> Self { todo!() }
-
-    pub fn insert(&mut self, _value: V) { todo!() }
-
-    pub fn first(&self) -> Option<V> { todo!() }
-}
-
-impl<'a, K, V> Serial for StateMap<'a, K, V>
-where
-    K: Serialize,
-    V: Serialize,
-{
-    fn serial<W: Write>(&self, _out: &mut W) -> Result<(), W::Err> { todo!() }
-}
-
-impl<'a, K, V> Deserial for StateMap<'a, K, V>
-where
-    K: Serialize,
-    V: Serialize,
-{
-    fn deserial<R: Read>(_source: &mut R) -> ParseResult<Self> { todo!() }
-}
-
 impl<'a, K, V> SchemaType for StateMap<'a, K, V>
 where
     K: SchemaType + Serialize,
@@ -670,79 +643,11 @@ where
     fn get_type() -> concordium_contracts_common::schema::Type { todo!() }
 }
 
-impl<'a, K, V> DeserialCtx for StateMap<'a, K, V>
-where
-    K: Serialize,
-    V: Serialize,
-{
-    fn deserial_ctx<R: Read>(
-        _size_length: schema::SizeLength,
-        _ensure_ordered: bool,
-        _source: &mut R,
-    ) -> ParseResult<Self> {
-        todo!()
-    }
-}
-
-impl<'a, K, V> SerialCtx for StateMap<'a, K, V>
-where
-    K: Serialize,
-    V: Serialize,
-{
-    fn serial_ctx<W: Write>(
-        &self,
-        _size_length: schema::SizeLength,
-        _out: &mut W,
-    ) -> Result<(), W::Err> {
-        todo!()
-    }
-}
-
-impl<V> Serial for StateSet<V>
-where
-    V: Serialize,
-{
-    fn serial<W: Write>(&self, _out: &mut W) -> Result<(), W::Err> { todo!() }
-}
-
-impl<V> Deserial for StateSet<V>
-where
-    V: Serialize,
-{
-    fn deserial<R: Read>(_source: &mut R) -> ParseResult<Self> { todo!() }
-}
-
 impl<V> SchemaType for StateSet<V>
 where
     V: SchemaType + Serialize,
 {
     fn get_type() -> concordium_contracts_common::schema::Type { todo!() }
-}
-
-impl<V> DeserialCtx for StateSet<V>
-where
-    V: Serialize,
-{
-    fn deserial_ctx<R: Read>(
-        _size_length: schema::SizeLength,
-        _ensure_ordered: bool,
-        _source: &mut R,
-    ) -> ParseResult<Self> {
-        todo!()
-    }
-}
-
-impl<V> SerialCtx for StateSet<V>
-where
-    V: Serialize,
-{
-    fn serial_ctx<W: Write>(
-        &self,
-        _size_length: schema::SizeLength,
-        _out: &mut W,
-    ) -> Result<(), W::Err> {
-        todo!()
-    }
 }
 
 impl<V> OccupiedEntry<V>
