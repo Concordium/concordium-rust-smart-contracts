@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, EntryId};
+use crate::{types::LogError, Entry, EntryId, StateMap};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -151,7 +151,7 @@ where
     fn reserve(&mut self, len: u32) -> bool;
 }
 
-pub trait HasNewContractState<Error: Default = ()> {
+pub trait HasContractStateLL<Error: Default = ()> {
     type ContractStateData;
     type EntryType: HasContractStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
@@ -165,7 +165,7 @@ pub trait HasNewContractState<Error: Default = ()> {
 
     /// Insert the keypair into the state. Returns whether the position was
     /// occupied.
-    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, ()>;
+    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, Error>;
 
     /// Returns a reference to the value corresponding to the key.
     fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
@@ -184,6 +184,30 @@ pub trait HasNewContractState<Error: Default = ()> {
     fn delete_prefix(&self, prefix: &[u8], exact: bool) -> bool;
 
     fn iter(&self, prefix: &[u8]) -> Self::IterType;
+}
+
+pub trait HasContractStateHL<Error: Default = ()> {
+    type ContractStateData;
+    fn open(_: Self::ContractStateData) -> Self;
+    fn new_map<P: Serial, K: Serialize, V: Serialize>(
+        &self,
+        key: P,
+    ) -> Result<StateMap<K, V>, Error>;
+    fn get_map<P: Serial, K: Serialize, V: Serialize>(
+        &self,
+        key: P,
+    ) -> Result<StateMap<K, V>, Error>;
+}
+
+pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
+    type ContractStateLLType: HasContractStateLL;
+    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self;
+
+    /// Returns whether anything was overwritten.
+    /// TODO: Returns result due to write_all.
+    fn insert(&self, key: K, value: V) -> Result<bool, ()>;
+
+    fn get(&self, key: K) -> Option<V>;
 }
 
 /// Objects which can serve as loggers.

@@ -9,7 +9,7 @@ use crate::{
     vec::Vec,
     String,
 };
-use concordium_contracts_common::*;
+use concordium_contracts_common::{schema::SchemaType, *};
 use mem::MaybeUninit;
 
 impl convert::From<()> for Reject {
@@ -448,9 +448,9 @@ impl Write for ContractStateEntry {
 
 impl VacantEntry {
     // TODO: Should this be an EntryID or the &[u8] key?
-    pub fn key(&self) -> &EntryId { &self.key }
+    pub fn key(&self) -> &EntryId { &self.entry_id }
 
-    pub fn into_key(self) -> EntryId { self.key }
+    pub fn into_key(self) -> EntryId { self.entry_id }
 
     /// TODO: could the value be anything that the Write trait supports (i.e.
     /// also i8, i16..)?
@@ -459,12 +459,40 @@ impl VacantEntry {
     }
 }
 
-impl HasNewContractState for NewContractState {
+impl HasContractStateHL for ContractStateHL {
+    type ContractStateData = ();
+
+    fn open(_: Self::ContractStateData) -> Self {
+        Self {
+            contract_state_ll: ContractStateLL::open(()),
+        }
+    }
+
+    fn new_map<P: Serial, K: Serialize, V: Serialize>(
+        &self,
+        prefix: P,
+    ) -> Result<StateMap<K, V>, ()> {
+        let prefix = to_bytes(&prefix);
+
+        // Check if any entries already use this prefix.
+        // FIXME: You can create maps with common prefixes until you add entries.
+        if self.contract_state_ll.iter(&prefix).next().is_some() {
+            return Err(());
+        }
+        Ok(StateMap::open(&self.contract_state_ll, prefix))
+    }
+
+    fn get_map<P: Serial, K: Serialize, V: Serialize>(&self, key: P) -> Result<StateMap<K, V>, ()> {
+        self.new_map(key)
+    }
+}
+
+impl HasContractStateLL for ContractStateLL {
     type ContractStateData = ();
     type EntryType = ContractStateEntry;
     type IterType = ContractStateIter;
 
-    fn open(_: Self::ContractStateData) -> Self { NewContractState }
+    fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
     fn entry(&self, key: &[u8]) -> Entry<Self::EntryType> {
         let len = key.len() as u32; // Safe because usize is 32bit in WASM.
@@ -472,7 +500,7 @@ impl HasNewContractState for NewContractState {
         let entry_id = unsafe { entry(ptr, len) };
         if self.vacant(entry_id) {
             Entry::Vacant(VacantEntry {
-                key: entry_id,
+                entry_id,
             })
         } else {
             Entry::Occupied(OccupiedEntry {
@@ -561,36 +589,159 @@ impl Iterator for ContractStateIter {
     }
 }
 
-impl<K, V, S> ContractStateMap<K, V, S>
+impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
 where
     K: Serialize,
     V: Serialize,
-    S: HasNewContractState,
 {
-    pub fn open(contract_state: S) -> Self {
+    type ContractStateLLType = ContractStateLL;
+
+    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self {
         Self {
             phantom_k: PhantomData,
             phantom_v: PhantomData,
-            contract_state,
+            prefix: to_bytes(&prefix),
+            contract_state_ll,
         }
     }
 
-    // TODO: Return option with old value?
-    pub fn insert(&mut self, key: K, value: V) {
-        let k = to_bytes(&key);
+    fn insert(&self, key: K, value: V) -> Result<bool, ()> {
+        let k = self.key_with_map_prefix(key);
         let v = to_bytes(&value);
-        let _ = self.contract_state.insert(&k, &v);
+        self.contract_state_ll.insert(&k, &v)
     }
 
-    pub fn get(&self, key: K) -> Option<V> {
-        let k = to_bytes(&key);
-        match self.contract_state.get(&k) {
+    fn get(&self, key: K) -> Option<V> {
+        let k = self.key_with_map_prefix(key);
+        match self.contract_state_ll.get(&k) {
             None => None,
             Some(mut v) => match V::deserial(&mut v) {
                 Ok(value) => Some(value),
                 Err(_) => None, // This should never happen.
             },
         }
+    }
+}
+
+impl<'a, K, V> StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    pub(crate) fn key_with_map_prefix(&self, key: K) -> Vec<u8> {
+        let mut key_with_prefix = self.prefix.clone();
+        key_with_prefix.append(&mut to_bytes(&key));
+        key_with_prefix
+    }
+}
+
+impl<V> StateSet<V>
+where
+    V: Serialize,
+{
+    pub fn new() -> Self { todo!() }
+
+    pub fn insert(&mut self, _value: V) { todo!() }
+
+    pub fn first(&self) -> Option<V> { todo!() }
+}
+
+impl<'a, K, V> Serial for StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    fn serial<W: Write>(&self, _out: &mut W) -> Result<(), W::Err> { todo!() }
+}
+
+impl<'a, K, V> Deserial for StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    fn deserial<R: Read>(_source: &mut R) -> ParseResult<Self> { todo!() }
+}
+
+impl<'a, K, V> SchemaType for StateMap<'a, K, V>
+where
+    K: SchemaType + Serialize,
+    V: SchemaType + Serialize,
+{
+    fn get_type() -> concordium_contracts_common::schema::Type { todo!() }
+}
+
+impl<'a, K, V> DeserialCtx for StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    fn deserial_ctx<R: Read>(
+        _size_length: schema::SizeLength,
+        _ensure_ordered: bool,
+        _source: &mut R,
+    ) -> ParseResult<Self> {
+        todo!()
+    }
+}
+
+impl<'a, K, V> SerialCtx for StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    fn serial_ctx<W: Write>(
+        &self,
+        _size_length: schema::SizeLength,
+        _out: &mut W,
+    ) -> Result<(), W::Err> {
+        todo!()
+    }
+}
+
+impl<V> Serial for StateSet<V>
+where
+    V: Serialize,
+{
+    fn serial<W: Write>(&self, _out: &mut W) -> Result<(), W::Err> { todo!() }
+}
+
+impl<V> Deserial for StateSet<V>
+where
+    V: Serialize,
+{
+    fn deserial<R: Read>(_source: &mut R) -> ParseResult<Self> { todo!() }
+}
+
+impl<V> SchemaType for StateSet<V>
+where
+    V: SchemaType + Serialize,
+{
+    fn get_type() -> concordium_contracts_common::schema::Type { todo!() }
+}
+
+impl<V> DeserialCtx for StateSet<V>
+where
+    V: Serialize,
+{
+    fn deserial_ctx<R: Read>(
+        _size_length: schema::SizeLength,
+        _ensure_ordered: bool,
+        _source: &mut R,
+    ) -> ParseResult<Self> {
+        todo!()
+    }
+}
+
+impl<V> SerialCtx for StateSet<V>
+where
+    V: Serialize,
+{
+    fn serial_ctx<W: Write>(
+        &self,
+        _size_length: schema::SizeLength,
+        _out: &mut W,
+    ) -> Result<(), W::Err> {
+        todo!()
     }
 }
 

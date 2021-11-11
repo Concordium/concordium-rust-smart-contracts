@@ -1,4 +1,3 @@
-use crate::HasNewContractState;
 use concordium_contracts_common::Serialize;
 use std::marker::PhantomData;
 
@@ -8,17 +7,30 @@ pub struct ContractState {
     pub(crate) current_position: u32,
 }
 
-pub struct ContractStateMap<K, V, S>
-where
-    K: Serialize,
-    V: Serialize,
-    S: HasNewContractState, {
-    pub(crate) phantom_k:      PhantomData<K>,
-    pub(crate) phantom_v:      PhantomData<V>,
-    pub(crate) contract_state: S,
+pub struct ContractStateHL {
+    pub(crate) contract_state_ll: ContractStateLL,
 }
 
-pub struct NewContractState;
+pub struct StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize, {
+    // S: HasNewContractState, {
+    pub(crate) phantom_k:         PhantomData<K>,
+    pub(crate) phantom_v:         PhantomData<V>,
+    pub(crate) prefix:            Vec<u8>,
+    pub(crate) contract_state_ll: &'a ContractStateLL,
+}
+
+pub struct StateSet<V>
+where
+    V: Serialize, {
+    // S: HasNewContractState, {
+    pub(crate) phantom_v: PhantomData<V>,
+    // pub(crate) contract_state: S,
+}
+
+pub struct ContractStateLL;
 
 pub struct ContractStateIter {
     pub(crate) iterator_id: IteratorId,
@@ -34,8 +46,7 @@ pub type EntryId = u32;
 pub type IteratorId = u32;
 
 pub struct VacantEntry {
-    // TODO: rename to entry_id? Should key only be used for the bytearray?
-    pub(crate) key: EntryId,
+    pub(crate) entry_id: EntryId,
 }
 
 pub struct OccupiedEntry<EntryType: crate::HasContractStateEntry> {
