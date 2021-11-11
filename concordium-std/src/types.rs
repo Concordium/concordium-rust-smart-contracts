@@ -45,17 +45,18 @@ pub struct ContractStateEntry {
 pub type EntryId = u32;
 pub type IteratorId = u32;
 
-pub struct VacantEntry {
+pub struct VacantEntry<EntryType: crate::HasContractStateEntry> {
     pub(crate) entry_id: EntryId,
+    pub(crate) _marker:  PhantomData<EntryType>,
 }
 
 pub struct OccupiedEntry<EntryType: crate::HasContractStateEntry> {
-    pub(crate) key:   EntryId,
-    pub(crate) value: EntryType,
+    pub(crate) entry_id: EntryId,
+    pub(crate) value:    EntryType,
 }
 
 pub enum Entry<EntryType: crate::HasContractStateEntry> {
-    Vacant(VacantEntry),
+    Vacant(VacantEntry<EntryType>),
     Occupied(OccupiedEntry<EntryType>),
 }
 

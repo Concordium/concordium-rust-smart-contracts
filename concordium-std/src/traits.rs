@@ -134,6 +134,8 @@ where
     Self: Read,
     Self: Write<Err = Error>,
     Self: Seek<Err = Error>, {
+    fn open(entry_id: EntryId) -> Self;
+
     /// Get the entry id.
     fn entry_id(&self) -> EntryId;
 
@@ -205,7 +207,7 @@ pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
 
     /// Returns whether anything was overwritten.
     /// TODO: Returns result due to write_all.
-    fn insert(&self, key: K, value: V) -> Result<bool, ()>;
+    fn insert(&mut self, key: K, value: V) -> Result<bool, ()>;
 
     fn get(&self, key: K) -> Option<V>;
 }

@@ -9,7 +9,7 @@ use crate::{
     vec::Vec,
     String,
 };
-use concordium_contracts_common::{schema::SchemaType, *};
+pub(crate) use concordium_contracts_common::*;
 use mem::MaybeUninit;
 
 impl convert::From<()> for Reject {
@@ -280,6 +280,8 @@ impl ContractStateEntry {
 }
 
 impl HasContractStateEntry for ContractStateEntry {
+    fn open(entry_id: EntryId) -> Self { Self::new(entry_id) }
+
     fn entry_id(&self) -> EntryId { self.entry_id }
 
     #[inline(always)]
@@ -446,7 +448,10 @@ impl Write for ContractStateEntry {
     }
 }
 
-impl VacantEntry {
+impl<V> VacantEntry<V>
+where
+    V: HasContractStateEntry,
+{
     // TODO: Should this be an EntryID or the &[u8] key?
     pub fn key(&self) -> &EntryId { &self.entry_id }
 
@@ -454,8 +459,12 @@ impl VacantEntry {
 
     /// TODO: could the value be anything that the Write trait supports (i.e.
     /// also i8, i16..)?
-    pub fn insert(self, _value: &[u8]) -> bool {
-        todo!("Assume its vacant? Then call create and write_entry")
+    pub fn insert(self, value: &[u8]) -> Result<(), ()> {
+        let mut state_entry = V::open(self.entry_id);
+        match state_entry.write_all(value) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
     }
 }
 
@@ -501,10 +510,11 @@ impl HasContractStateLL for ContractStateLL {
         if self.vacant(entry_id) {
             Entry::Vacant(VacantEntry {
                 entry_id,
+                _marker: PhantomData,
             })
         } else {
             Entry::Occupied(OccupiedEntry {
-                key:   entry_id,
+                entry_id,
                 value: ContractStateEntry::new(entry_id),
             })
         }
@@ -525,7 +535,7 @@ impl HasContractStateLL for ContractStateLL {
                 Ok(true)
             }
             Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(value);
+                vacant_entry.insert(value)?;
                 Ok(false)
             }
         }
@@ -605,7 +615,7 @@ where
         }
     }
 
-    fn insert(&self, key: K, value: V) -> Result<bool, ()> {
+    fn insert(&mut self, key: K, value: V) -> Result<bool, ()> {
         let k = self.key_with_map_prefix(key);
         let v = to_bytes(&value);
         self.contract_state_ll.insert(&k, &v)
@@ -635,26 +645,11 @@ where
     }
 }
 
-impl<'a, K, V> SchemaType for StateMap<'a, K, V>
-where
-    K: SchemaType + Serialize,
-    V: SchemaType + Serialize,
-{
-    fn get_type() -> concordium_contracts_common::schema::Type { todo!() }
-}
-
-impl<V> SchemaType for StateSet<V>
-where
-    V: SchemaType + Serialize,
-{
-    fn get_type() -> concordium_contracts_common::schema::Type { todo!() }
-}
-
 impl<V> OccupiedEntry<V>
 where
     V: HasContractStateEntry,
 {
-    pub fn key(&self) -> &EntryId { &self.key }
+    pub fn key(&self) -> &EntryId { &self.entry_id }
 
     pub fn get(&self) -> &V { &self.value }
 
