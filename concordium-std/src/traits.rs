@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, EntryId, StateMap};
+use crate::{types::LogError, StateDirectory, StateFileId, StateItem, StateMap};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -129,21 +129,21 @@ where
 }
 
 /// A type that can serve as the contract state entry type.
-pub trait HasContractStateEntry<Error: Default = ()>
+pub trait HasContractStateFile<Error: Default = ()>
 where
     Self: Read,
     Self: Write<Err = Error>,
     Self: Seek<Err = Error>, {
-    fn open(entry_id: EntryId) -> Self;
+    fn open(file_id: StateFileId) -> Self;
 
-    /// Get the entry id.
-    fn entry_id(&self) -> EntryId;
+    /// Get the file id.
+    fn file_id(&self) -> StateFileId;
 
-    /// Get the current size of contract state.
+    /// Get the current size of the file.
     fn size(&self) -> u32;
 
-    /// Truncate the state to the given size. If the given size is more than the
-    /// current state size this operation does nothing. The new position is at
+    /// Truncate the file to the given size. If the given size is more than the
+    /// current size this operation does nothing. The new position is at
     /// most at the end of the stream.
     fn truncate(&mut self, new_size: u32);
 
@@ -155,37 +155,47 @@ where
 
 pub trait HasContractStateLL<Error: Default = ()> {
     type ContractStateData;
-    type EntryType: HasContractStateEntry;
-    type IterType: Iterator<Item = Self::EntryType>;
+    type FileType: HasContractStateFile;
+    type IterType: Iterator<Item = StateItem<Self::FileType>>;
 
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
     fn open(_: Self::ContractStateData) -> Self;
 
-    /// Return an entry from the state.
-    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType>;
+    /// Get the root directory.
+    fn root_dir(&self) -> StateDirectory;
 
-    /// Insert the keypair into the state. Returns whether the position was
-    /// occupied.
-    fn insert(&self, key: &[u8], value: &[u8]) -> Result<bool, Error>;
+    /// Create a new directory and return a reference to it.
+    /// Returns an error if the path (parent_dir/name) is occupied.
+    fn create_dir(
+        &mut self,
+        parent_dir: StateDirectory,
+        name: &[u8],
+    ) -> Result<StateDirectory, Error>;
 
-    /// Returns a reference to the value corresponding to the key.
-    fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
+    /// Delete a directory.
+    /// Returns whether the directory existed.
+    /// Will panic if the path leads to a file.
+    fn delete_dir(&mut self, parent_dir: StateDirectory, name: &[u8]) -> bool;
 
-    /// Check whether an entry is vacant.
-    fn vacant(&self, entry_id: EntryId) -> bool;
+    /// Create a new file and return a reference to it.
+    /// Returns an error if the path (parent_dir/name) is occupied.
+    fn create_file(
+        &mut self,
+        parent_dir: StateDirectory,
+        name: &[u8],
+    ) -> Result<Self::FileType, Error>;
 
-    /// Returns whether a value was overwritten.
-    fn create(&self, entry_id: EntryId, capacity: u32) -> bool;
+    /// Delete a file.
+    /// Returns whether the file existed.
+    /// Will panic if the path leads to a directory.
+    fn delete_file(&mut self, parent_dir: StateDirectory, name: &[u8]) -> bool;
 
-    /// Returns whether the entry existed.
-    fn delete_entry(&self, entry_id: EntryId) -> bool;
+    /// Find an item with at the given location.
+    fn find(&self, parent_dir: StateDirectory, name: &[u8]) -> Option<StateItem<Self::FileType>>;
 
-    /// If exact is set, delete the specific key. Otherwise, delete the entire
-    /// subtree. Returns whether the entry or subtree existed.
-    fn delete_prefix(&self, prefix: &[u8], exact: bool) -> bool;
-
-    fn iter(&self, prefix: &[u8]) -> Self::IterType;
+    /// Get an iterator for the directory.
+    fn list_dir(&self, dir: StateDirectory) -> Self::IterType;
 }
 
 pub trait HasContractStateHL<Error: Default = ()> {

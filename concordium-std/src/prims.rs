@@ -54,71 +54,68 @@ extern "C" {
 
     // -- NEW state implementation --
 
-    /// Lookup an entry. Concretely this will be some internal identifier
-    /// given out by the host. Conceptually the return value is *mut Entry.
-    /// Empty key means the root.
-    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> u32;
+    /// Get the root directory.
+    pub(crate) fn root_dir() -> u32;
 
-    /// Checks whether the entry is vacant, i.e., a key does not exist in the
-    /// map.
-    /// 1 => exists
-    /// 0 => does not exist
-    pub(crate) fn vacant(entry: u32) -> u32;
+    /// Create a new directory inside another directory.
+    /// If successful, it returns the new directory as a u32.
+    /// Otherwise, if a directory or file with the same path already exists, it
+    /// returns -1.
+    pub(crate) fn create_dir(parent_dir: u32, name_start: *const u8, name_length: u32) -> i64;
 
-    /// Populates the entry. Returns whether an existing value was overwritten.
-    /// 1 => created new by overwriting existing value
-    /// 0 => created new value
-    pub(crate) fn create(entry: u32, capacity: u32) -> u32;
+    /// Delete a directory. Returns whether the directory actually existed.
+    /// Panics if the path leads to a file.
+    pub(crate) fn delete_dir(parent_dir: u32, name_start: *const u8, name_length: u32) -> u32;
 
-    /// Delete the entry. Returns whether the entry was or not.
-    /// 1 => did exists
-    /// 0 => did not exist
-    pub(crate) fn delete_entry(entry: u32) -> u32;
+    /// Create a new file in a directory.
+    /// If succesful, it returns the new file as a u32.
+    /// Otherwise, if a directory or file with the same path already exists, it
+    /// returns -1.
+    pub(crate) fn create_file(parent_dir: u32, name_start: *const u8, name_length: u32) -> i64;
 
-    /// This might or might not be necessary.
-    /// If exact is set then only delete the specifi key, otherwise the entire
-    /// subtree. It seems useful to have the ability to delete the entire
-    /// tree
-    /// 1 => deleted something
-    /// 0 => didn't delete anything
-    /// TODO: could also say how much was deleted (number of entries).
-    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> u32;
+    /// Delete a file. Returns whether file the actually existed.
+    /// Panics if the path leads to a directory.
+    pub(crate) fn delete_file(parant_dir: u32, name_start: *const u8, name_length: u32) -> u32;
 
-    /// Iteration. Returns an iterator.
-    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: u32) -> u32;
+    /// Finds an item and returns it as an Option<Dir + File>.
+    /// (opt: u16, type: u16, item: u32) = u64
+    /// (0, _, _) => Found nothing
+    /// (1, 0, dir) => Found dir
+    /// (1, 1, file) => Found file
+    pub(crate) fn find(parent_dir: u32, name_start: *const u8, name_length: u32) -> u64;
 
-    /// Returns the entry with the key that is the successor of the current key
-    /// subject to prefix restrictions.
-    /// If the iterator is empty, -1 is returned.
-    ///
-    /// This will be a snapshot. If you mutate, it will mutate the original
-    /// tree, but the snapshot and its entries will remain the same.
-    /// Getting a new iterator subsequently will get you a snapshot with your
-    /// new changes.
-    pub(crate) fn next(iterator: u32) -> i64;
+    /// Get an iterator for the directory.
+    pub(crate) fn list_dir(dir: u32) -> u32;
+
+    /// Get next element in an iterator.
+    /// (success: u16, type: u16, item: u32) = u64
+    /// (0, _, _) => Iterator is empty
+    /// (1, 0, dir) => Found dir
+    /// (1, 1, file) => Found file
+    pub(crate) fn next(iterator: u32) -> u64;
 
     // Operations on the entry.
-    // entry ... entry id returned by lookup_key
+    // file ... file id returned by iterator or find
     // start ... where to write in Wasm memory
     // length ... length of the data to read
-    // offset ... where to start reading in the entry
+    // offset ... where to start reading in the file
     // returns how many bytes were read.
-    pub(crate) fn load_entry_state(entry: u32, start: *mut u8, length: u32, offset: u32) -> u32;
+    pub(crate) fn load_file_state(file: u32, start: *mut u8, length: u32, offset: u32) -> u32;
 
-    // entry ... entry id returned by lookup_key
-    // start ... where to write in Wasm memory
-    // length ... length of the data to read
-    // offset ... where to start reading in the entry
+    // file ... file id returned by iterator or find
+    // start ... where to read in Wasm memory
+    // length ... length of the data to write
+    // offset ... where to start writing in the file
     // returns how many bytes were written (this might be removed since we might not
     // have a limit on value size)
-    pub(crate) fn write_entry_state(entry: u32, start: *const u8, length: u32, offset: u32) -> u32;
+    pub(crate) fn write_file_state(file: u32, start: *const u8, length: u32, offset: u32) -> u32;
 
     // Resize entry size to the new value (truncate if new size is smaller). Return
     // 0 if this was unsuccesful (new state too big), or 1 if successful.
-    pub(crate) fn resize_entry_state(entry: u32, new_size: u32) -> u32; // returns 0 or 1.
+    pub(crate) fn resize_file_state(file: u32, new_size: u32) -> u32; // returns 0 or 1.
 
     // get current entry size in bytes.
-    pub(crate) fn entry_state_size(entry: u32) -> u32;
+    pub(crate) fn file_state_size(file: u32) -> u32;
 
     // Getter for the init context.
     /// Address of the sender, 32 bytes

@@ -1,6 +1,8 @@
 use concordium_contracts_common::Serialize;
 use std::marker::PhantomData;
 
+use crate::HasContractStateFile;
+
 /// A type representing the constract state bytes.
 #[derive(Default)]
 pub struct ContractState {
@@ -33,32 +35,48 @@ where
 pub struct ContractStateLL;
 
 pub struct ContractStateIter {
-    pub(crate) iterator_id: IteratorId,
+    pub(crate) iterator_id: StateIteratorId,
 }
 
-#[derive(Default)]
-pub struct ContractStateEntry {
-    pub(crate) entry_id:         EntryId,
+// #[derive(Default)]
+// pub struct ContractStateEntry {
+//     pub(crate) entry_id:         EntryId,
+//     pub(crate) current_position: u32,
+// }
+
+pub type StateFileId = u32;
+pub type StateDirectoryId = u32;
+pub type StateIteratorId = u32;
+
+pub struct StateDirectory {
+    pub(crate) dir_id: StateDirectoryId,
+}
+
+pub struct StateFile {
+    pub(crate) file_id:          StateFileId,
     pub(crate) current_position: u32,
 }
 
-pub type EntryId = u32;
-pub type IteratorId = u32;
-
-pub struct VacantEntry<EntryType: crate::HasContractStateEntry> {
-    pub(crate) entry_id: EntryId,
-    pub(crate) _marker:  PhantomData<EntryType>,
+// TODO: Find a better name.
+pub enum StateItem<FileType: HasContractStateFile> {
+    Directory(StateDirectory),
+    File(FileType),
 }
 
-pub struct OccupiedEntry<EntryType: crate::HasContractStateEntry> {
-    pub(crate) entry_id: EntryId,
-    pub(crate) value:    EntryType,
-}
+// pub struct VacantEntry<EntryType: crate::HasContractStateEntry> {
+//     pub(crate) entry_id: EntryId,
+//     pub(crate) _marker:  PhantomData<EntryType>,
+// }
 
-pub enum Entry<EntryType: crate::HasContractStateEntry> {
-    Vacant(VacantEntry<EntryType>),
-    Occupied(OccupiedEntry<EntryType>),
-}
+// pub struct OccupiedEntry<EntryType: crate::HasContractStateEntry> {
+//     pub(crate) entry_id: EntryId,
+//     pub(crate) value:    EntryType,
+// }
+
+// pub enum Entry<EntryType: crate::HasContractStateEntry> {
+//     Vacant(VacantEntry<EntryType>),
+//     Occupied(OccupiedEntry<EntryType>),
+// }
 
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.
