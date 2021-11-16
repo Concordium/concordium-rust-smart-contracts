@@ -582,11 +582,11 @@ impl HasContractStateLL for ContractStateLL {
         let (found, is_file, id) =
             split_u64(unsafe { find(parent_dir.dir_id, name_start, name_len) });
 
-        if !found {
+        if found != 1 {
             return None;
         };
 
-        if is_file {
+        if is_file == 1 {
             Some(StateItem::File(StateFile::open(id)))
         } else {
             Some(StateItem::Directory(StateDirectory::open(id)))
@@ -601,16 +601,37 @@ impl HasContractStateLL for ContractStateLL {
     }
 }
 
-// FIXME: This might be wrong, add tests.
-fn split_u64(n: u64) -> (bool, bool, u32) {
+/// Split a u64 into (u16, u16, u32).
+/// Used to handle results returned from the host functions.
+fn split_u64(n: u64) -> (u16, u16, u32) {
     let n = n.to_le_bytes();
-    let a_bytes: [u8; 2] = [n[0], n[1]];
-    let b_bytes: [u8; 2] = [n[2], n[3]];
-    let c_bytes: [u8; 4] = [n[4], n[5], n[6], n[7]];
-    let a = u16::from_le_bytes(a_bytes);
-    let b = u16::from_le_bytes(b_bytes);
-    let c = u32::from_le_bytes(c_bytes);
-    (a == 1, b == 1, c)
+    let found = u16::from_le_bytes([n[0], n[1]]);
+    let is_file = u16::from_le_bytes([n[2], n[3]]);
+    let id = u32::from_le_bytes([n[4], n[5], n[6], n[7]]);
+    (found, is_file, id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_u64;
+    #[test]
+    fn test_split_u64() {
+        let input_bytes: [u8; 8] = [
+            // found
+            0b_0000_0001, // 1
+            0b_0000_0010, // 512
+            // is_file
+            0b_0000_0100, // 4
+            0b_0000_1000, // 2,048
+            // id
+            0b_0001_0000, // 16
+            0b_0010_0000, // 8,192
+            0b_0100_0000, // 4,194,304
+            0b_1000_0000, // 2,147,483,648
+        ];
+        let input = u64::from_le_bytes(input_bytes);
+        assert_eq!(split_u64(input), (1 + 512, 4 + 2_048, 16 + 8_192 + 4_194_304 + 2_147_483_648));
+    }
 }
 
 impl Iterator for ContractStateIter {
@@ -619,11 +640,11 @@ impl Iterator for ContractStateIter {
     fn next(&mut self) -> Option<Self::Item> {
         let (found, is_file, id) = split_u64(unsafe { next(self.iterator_id) });
 
-        if !found {
+        if found != 1 {
             return None;
         };
 
-        if is_file {
+        if is_file == 1 {
             Some(StateItem::File(StateFile::open(id)))
         } else {
             Some(StateItem::Directory(StateDirectory::open(id)))
