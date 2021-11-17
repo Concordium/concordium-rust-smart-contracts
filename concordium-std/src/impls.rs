@@ -478,7 +478,22 @@ where
 {
     pub fn new(entry: EntryType) -> Self {
         Self {
+            entry_id: entry.entry_id(),
             entry,
+        }
+    }
+
+    pub fn entry_id(&self) -> &StateEntryId { &self.entry_id }
+}
+
+impl<EntryType> Entry<EntryType>
+where
+    EntryType: HasContractStateEntry,
+{
+    pub fn entry_id(&self) -> &StateEntryId {
+        match self {
+            Entry::Vacant(vac) => vac.entry_id(),
+            Entry::Occupied(occ) => occ.entry_id(),
         }
     }
 }
@@ -515,11 +530,11 @@ impl HasContractStateLL for ContractStateLL {
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
-    fn root_map(&self) -> StateMapId { unsafe { root_map() } }
+    fn root_map(&mut self) -> StateMapId { unsafe { root_map() } }
 
     fn new_map(&mut self) -> StateMapId { unsafe { new_map() } }
 
-    fn entry(&self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType> {
+    fn entry(&mut self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let entry_id = unsafe { entry(map_id, key_start, key_len) };
@@ -531,7 +546,7 @@ impl HasContractStateLL for ContractStateLL {
         }
     }
 
-    fn vacant(&self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
+    fn vacant(&mut self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
 
     fn create_entry(&mut self, entry_id: StateEntryId, capacity: u32) -> bool {
         unsafe { create_entry(entry_id, capacity) == 1 }
@@ -541,7 +556,9 @@ impl HasContractStateLL for ContractStateLL {
         unsafe { delete_entry(entry_id) == 1 }
     }
 
-    fn iterate_map(&self, map_id: StateMapId) -> StateIteratorId { unsafe { iterate_map(map_id) } }
+    fn iterate_map(&mut self, map_id: StateMapId) -> StateIteratorId {
+        unsafe { iterate_map(map_id) }
+    }
 }
 
 impl Iterator for ContractStateIter {
@@ -604,17 +621,6 @@ impl Iterator for ContractStateIter {
 //         key_with_prefix.append(&mut to_bytes(&key));
 //         key_with_prefix
 //     }
-// }
-
-// impl<V> OccupiedEntry<V>
-// where
-//     V: HasContractStateEntry,
-// {
-//     pub fn key(&self) -> &EntryId { &self.entry_id }
-
-//     pub fn get(&self) -> &V { &self.value }
-
-//     pub fn get_mut(&mut self) -> &mut V { &mut self.value }
 // }
 
 /// # Trait implementations for Parameter

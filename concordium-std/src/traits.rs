@@ -163,16 +163,16 @@ pub trait HasContractStateLL<Error: Default = ()> {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Get the root map.
-    fn root_map(&self) -> StateMapId;
+    fn root_map(&mut self) -> StateMapId;
 
     /// Constructs a new map and returns its id.
     fn new_map(&mut self) -> StateMapId;
 
     /// Lookup an entry in a map.
-    fn entry(&self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType>;
+    fn entry(&mut self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType>;
 
     /// Returns whether an entry is vacant.
-    fn vacant(&self, entry_id: StateEntryId) -> bool;
+    fn vacant(&mut self, entry_id: StateEntryId) -> bool;
 
     /// Creates an entry with the given capacity..
     /// Returns whether another value was overwritten.
@@ -183,7 +183,7 @@ pub trait HasContractStateLL<Error: Default = ()> {
     fn delete_entry(&mut self, entry_id: StateEntryId) -> bool;
 
     /// Get an iterator over a map in the state.
-    fn iterate_map(&self, map_id: StateMapId) -> StateIteratorId;
+    fn iterate_map(&mut self, map_id: StateMapId) -> StateIteratorId;
 }
 
 pub trait HasContractStateHL<Error: Default = ()> {

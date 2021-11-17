@@ -53,7 +53,8 @@ pub struct VacantEntry<EntryType: HasContractStateEntry> {
 }
 
 pub struct OccupiedEntry<EntryType: HasContractStateEntry> {
-    pub(crate) entry: EntryType,
+    pub(crate) entry_id: StateEntryId,
+    pub(crate) entry:    EntryType,
 }
 
 pub enum Entry<EntryType: HasContractStateEntry> {
