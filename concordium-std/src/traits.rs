@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, StateDirectory, StateFileId, StateItem, StateMap};
+use crate::{types::LogError, Entry, StateDirectory, StateFileId, StateItem, StateMap};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -220,6 +220,10 @@ pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
     fn insert(&mut self, key: K, value: V) -> Result<bool, ()>;
 
     fn get(&self, key: K) -> Option<V>;
+
+    fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as HasContractStateLL>::FileType>;
+}
+
 }
 
 /// Objects which can serve as loggers.

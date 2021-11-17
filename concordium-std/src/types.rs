@@ -38,12 +38,6 @@ pub struct ContractStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
 
-// #[derive(Default)]
-// pub struct ContractStateEntry {
-//     pub(crate) entry_id:         EntryId,
-//     pub(crate) current_position: u32,
-// }
-
 pub type StateFileId = u32;
 pub type StateDirectoryId = u32;
 pub type StateIteratorId = u32;
@@ -63,20 +57,25 @@ pub enum StateItem<FileType: HasContractStateFile> {
     File(FileType),
 }
 
-// pub struct VacantEntry<EntryType: crate::HasContractStateEntry> {
-//     pub(crate) entry_id: EntryId,
-//     pub(crate) _marker:  PhantomData<EntryType>,
-// }
+pub enum StateItemId {
+    DirectoryId(StateDirectoryId),
+    FileId(StateFileId),
+}
 
-// pub struct OccupiedEntry<EntryType: crate::HasContractStateEntry> {
-//     pub(crate) entry_id: EntryId,
-//     pub(crate) value:    EntryType,
-// }
+pub struct VacantEntry<FileType: HasContractStateFile> {
+    pub(crate) id:      StateItemId,
+    pub(crate) _marker: PhantomData<FileType>,
+}
 
-// pub enum Entry<EntryType: crate::HasContractStateEntry> {
-//     Vacant(VacantEntry<EntryType>),
-//     Occupied(OccupiedEntry<EntryType>),
-// }
+pub struct OccupiedEntry<FileType: HasContractStateFile> {
+    pub(crate) id:    StateItemId,
+    pub(crate) value: FileType,
+}
+
+pub enum Entry<FileType: HasContractStateFile> {
+    Vacant(VacantEntry<FileType>),
+    Occupied(OccupiedEntry<FileType>),
+}
 
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.

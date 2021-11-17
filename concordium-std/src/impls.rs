@@ -475,33 +475,29 @@ impl Write for StateFile {
 //     }
 // }
 
-// impl HasContractStateHL for ContractStateHL {
-//     type ContractStateData = ();
+impl HasContractStateHL for ContractStateHL {
+    type ContractStateData = ();
 
-//     fn open(_: Self::ContractStateData) -> Self {
-//         Self {
-//             contract_state_ll: ContractStateLL::open(()),
-//         }
-//     }
+    fn open(_: Self::ContractStateData) -> Self {
+        Self {
+            contract_state_ll: ContractStateLL::open(()),
+        }
+    }
 
-//     fn new_map<P: Serial, K: Serialize, V: Serialize>(
-//         &self,
-//         prefix: P,
-//     ) -> Result<StateMap<K, V>, ()> {
-//         let prefix = to_bytes(&prefix);
+    fn new_map<P: Serial, K: Serialize, V: Serialize>(
+        &self,
+        _prefix: P,
+    ) -> Result<StateMap<K, V>, ()> {
+        todo!()
+    }
 
-//         // Check if any entries already use this prefix.
-//         // FIXME: You can create maps with common prefixes until you add
-// entries.         if self.contract_state_ll.iter(&prefix).next().is_some() {
-//             return Err(());
-//         }
-//         Ok(StateMap::open(&self.contract_state_ll, prefix))
-//     }
-
-//     fn get_map<P: Serial, K: Serialize, V: Serialize>(&self, key: P) ->
-// Result<StateMap<K, V>, ()> {         self.new_map(key)
-//     }
-// }
+    fn get_map<P: Serial, K: Serialize, V: Serialize>(
+        &self,
+        _key: P,
+    ) -> Result<StateMap<K, V>, ()> {
+        todo!()
+    }
+}
 
 impl HasContractStateLL for ContractStateLL {
     type ContractStateData = ();
@@ -652,39 +648,41 @@ impl Iterator for ContractStateIter {
     }
 }
 
-// impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
-// where
-//     K: Serialize,
-//     V: Serialize,
-// {
-//     type ContractStateLLType = ContractStateLL;
+impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    type ContractStateLLType = ContractStateLL;
 
-//     fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType,
-// prefix: P) -> Self {         Self {
-//             phantom_k: PhantomData,
-//             phantom_v: PhantomData,
-//             prefix: to_bytes(&prefix),
-//             contract_state_ll,
-//         }
-//     }
+    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self {
+        Self {
+            phantom_k: PhantomData,
+            phantom_v: PhantomData,
+            prefix: to_bytes(&prefix),
+            contract_state_ll,
+        }
+    }
 
-//     fn insert(&mut self, key: K, value: V) -> Result<bool, ()> {
-//         let k = self.key_with_map_prefix(key);
-//         let v = to_bytes(&value);
-//         self.contract_state_ll.insert(&k, &v)
-//     }
+    fn insert(&mut self, key: K, value: V) -> Result<bool, ()> {
+        let k = self.key_with_map_prefix(key);
+        let v = to_bytes(&value);
+        self.contract_state_ll.insert(&k, &v)
+    }
 
-//     fn get(&self, key: K) -> Option<V> {
-//         let k = self.key_with_map_prefix(key);
-//         match self.contract_state_ll.get(&k) {
-//             None => None,
-//             Some(mut v) => match V::deserial(&mut v) {
-//                 Ok(value) => Some(value),
-//                 Err(_) => None, // This should never happen.
-//             },
-//         }
-//     }
-// }
+    fn get(&self, key: K) -> Option<V> {
+        let k = self.key_with_map_prefix(key);
+        match self.contract_state_ll.get(&k) {
+            None => None,
+            Some(mut v) => match V::deserial(&mut v) {
+                Ok(value) => Some(value),
+                Err(_) => None, // This should never happen.
+            },
+        }
+    }
+
+    fn entry(&self, key: K) -> Entry<HasContractStateLL::FileType> { todo!() }
+}
 
 // impl<'a, K, V> StateMap<'a, K, V>
 // where
