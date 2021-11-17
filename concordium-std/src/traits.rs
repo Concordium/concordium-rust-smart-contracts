@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, StateDirectory, StateFileId, StateItem, StateMap};
+use crate::{types::LogError, Entry, StateEntryId, StateIteratorId, StateMap, StateMapId};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -129,15 +129,15 @@ where
 }
 
 /// A type that can serve as the contract state entry type.
-pub trait HasContractStateFile<Error: Default = ()>
+pub trait HasContractStateEntry<Error: Default = ()>
 where
     Self: Read,
     Self: Write<Err = Error>,
     Self: Seek<Err = Error>, {
-    fn open(file_id: StateFileId) -> Self;
+    fn open(entry_id: StateEntryId) -> Self;
 
     /// Get the file id.
-    fn file_id(&self) -> StateFileId;
+    fn entry_id(&self) -> StateEntryId;
 
     /// Get the current size of the file.
     fn size(&self) -> u32;
@@ -155,47 +155,35 @@ where
 
 pub trait HasContractStateLL<Error: Default = ()> {
     type ContractStateData;
-    type FileType: HasContractStateFile;
-    type IterType: Iterator<Item = StateItem<Self::FileType>>;
+    type EntryType: HasContractStateEntry;
+    type IterType: Iterator<Item = Self::EntryType>;
 
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
     fn open(_: Self::ContractStateData) -> Self;
 
-    /// Get the root directory.
-    fn root_dir(&self) -> StateDirectory;
+    /// Get the root map.
+    fn root_map(&self) -> StateMapId;
 
-    /// Create a new directory and return a reference to it.
-    /// Returns an error if the path (parent_dir/name) is occupied.
-    fn create_dir(
-        &mut self,
-        parent_dir: StateDirectory,
-        name: &[u8],
-    ) -> Result<StateDirectory, Error>;
+    /// Constructs a new map and returns its id.
+    fn new_map(&mut self) -> StateMapId;
 
-    /// Delete a directory.
-    /// Returns whether the directory existed.
-    /// Will panic if the path leads to a file.
-    fn delete_dir(&mut self, parent_dir: StateDirectory, name: &[u8]) -> bool;
+    /// Lookup an entry in a map.
+    fn entry(&self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType>;
 
-    /// Create a new file and return a reference to it.
-    /// Returns an error if the path (parent_dir/name) is occupied.
-    fn create_file(
-        &mut self,
-        parent_dir: StateDirectory,
-        name: &[u8],
-    ) -> Result<Self::FileType, Error>;
+    /// Returns whether an entry is vacant.
+    fn vacant(&self, entry_id: StateEntryId) -> bool;
 
-    /// Delete a file.
-    /// Returns whether the file existed.
-    /// Will panic if the path leads to a directory.
-    fn delete_file(&mut self, parent_dir: StateDirectory, name: &[u8]) -> bool;
+    /// Creates an entry with the given capacity..
+    /// Returns whether another value was overwritten.
+    fn create_entry(&mut self, entry_id: StateEntryId, capacity: u32) -> bool;
 
-    /// Find an item with at the given location.
-    fn find(&self, parent_dir: StateDirectory, name: &[u8]) -> Option<StateItem<Self::FileType>>;
+    /// Delete an entry.
+    /// Returns whether the entry actually existed.
+    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool;
 
-    /// Get an iterator for the directory.
-    fn list_dir(&self, dir: StateDirectory) -> Self::IterType;
+    /// Get an iterator over a map in the state.
+    fn iterate_map(&self, map_id: StateMapId) -> StateIteratorId;
 }
 
 pub trait HasContractStateHL<Error: Default = ()> {
@@ -211,20 +199,20 @@ pub trait HasContractStateHL<Error: Default = ()> {
     ) -> Result<StateMap<K, V>, Error>;
 }
 
-pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
-    type ContractStateLLType: HasContractStateLL;
-    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self;
+// pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
+//     type ContractStateLLType: HasContractStateLL;
+//     fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType,
+// prefix: P) -> Self;
 
-    /// Returns whether anything was overwritten.
-    /// TODO: Returns result due to write_all.
-    fn insert(&mut self, key: K, value: V) -> Result<bool, ()>;
+//     /// Returns whether anything was overwritten.
+//     /// TODO: Returns result due to write_all.
+//     fn insert(&mut self, key: K, value: V) -> Result<bool, ()>;
 
-    fn get(&self, key: K) -> Option<V>;
+//     fn get(&self, key: K) -> Option<V>;
 
-    fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as HasContractStateLL>::FileType>;
-}
-
-}
+//     // fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as
+//     // HasContractStateLL>::EntryType>;
+// }
 
 /// Objects which can serve as loggers.
 ///

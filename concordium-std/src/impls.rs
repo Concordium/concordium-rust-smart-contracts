@@ -270,35 +270,27 @@ impl HasContractState<()> for ContractState {
     }
 }
 
-impl StateFile {
-    pub(crate) fn open(file_id: StateFileId) -> Self {
+impl StateEntry {
+    pub(crate) fn open(entry_id: StateEntryId) -> Self {
         Self {
-            file_id,
+            entry_id,
             current_position: 0,
         }
     }
 }
 
-impl StateDirectory {
-    pub(crate) fn open(dir_id: StateDirectoryId) -> Self {
-        Self {
-            dir_id,
-        }
-    }
-}
+impl HasContractStateEntry for StateEntry {
+    fn open(entry_id: StateEntryId) -> Self { Self::open(entry_id) }
 
-impl HasContractStateFile for StateFile {
-    fn open(file_id: StateFileId) -> Self { Self::open(file_id) }
-
-    fn file_id(&self) -> StateFileId { self.file_id }
+    fn entry_id(&self) -> StateEntryId { self.entry_id }
 
     #[inline(always)]
-    fn size(&self) -> u32 { unsafe { file_state_size(self.file_id) } }
+    fn size(&self) -> u32 { unsafe { entry_state_size(self.entry_id) } }
 
     fn truncate(&mut self, new_size: u32) {
         let cur_size = self.size();
         if cur_size > new_size {
-            unsafe { resize_file_state(self.file_id, new_size) };
+            unsafe { resize_entry_state(self.entry_id, new_size) };
         }
         if new_size < self.current_position {
             self.current_position = new_size
@@ -306,9 +298,9 @@ impl HasContractStateFile for StateFile {
     }
 
     fn reserve(&mut self, len: u32) -> bool {
-        let cur_size = unsafe { state_size() };
+        let cur_size = unsafe { entry_state_size(self.entry_id) };
         if cur_size < len {
-            let res = unsafe { resize_file_state(self.file_id, len) };
+            let res = unsafe { resize_entry_state(self.entry_id, len) };
             res == 1
         } else {
             true
@@ -317,7 +309,7 @@ impl HasContractStateFile for StateFile {
 }
 
 /// # NEW Contract state trait implementations.
-impl Seek for StateFile {
+impl Seek for StateEntry {
     type Err = ();
 
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
@@ -375,7 +367,7 @@ impl Seek for StateFile {
     }
 }
 
-impl Read for StateFile {
+impl Read for StateEntry {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -383,8 +375,9 @@ impl Read for StateFile {
                 _ => return Err(ParseError::default()),
             }
         };
-        let num_read =
-            unsafe { load_file_state(self.file_id, buf.as_mut_ptr(), len, self.current_position) };
+        let num_read = unsafe {
+            load_entry_state(self.entry_id, buf.as_mut_ptr(), len, self.current_position)
+        };
         self.current_position += num_read;
         Ok(num_read as usize)
     }
@@ -394,7 +387,7 @@ impl Read for StateFile {
     fn read_u64(&mut self) -> ParseResult<u64> {
         let mut bytes: MaybeUninit<[u8; 8]> = MaybeUninit::uninit();
         let num_read = unsafe {
-            load_file_state(self.file_id, bytes.as_mut_ptr() as *mut u8, 8, self.current_position)
+            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 8, self.current_position)
         };
         self.current_position += num_read;
         if num_read == 8 {
@@ -409,7 +402,7 @@ impl Read for StateFile {
     fn read_u32(&mut self) -> ParseResult<u32> {
         let mut bytes: MaybeUninit<[u8; 4]> = MaybeUninit::uninit();
         let num_read = unsafe {
-            load_file_state(self.file_id, bytes.as_mut_ptr() as *mut u8, 4, self.current_position)
+            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 4, self.current_position)
         };
         self.current_position += num_read;
         if num_read == 4 {
@@ -424,7 +417,7 @@ impl Read for StateFile {
     fn read_u8(&mut self) -> ParseResult<u8> {
         let mut bytes: MaybeUninit<[u8; 1]> = MaybeUninit::uninit();
         let num_read = unsafe {
-            load_file_state(self.file_id, bytes.as_mut_ptr() as *mut u8, 1, self.current_position)
+            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 1, self.current_position)
         };
         self.current_position += num_read;
         if num_read == 1 {
@@ -435,7 +428,7 @@ impl Read for StateFile {
     }
 }
 
-impl Write for StateFile {
+impl Write for StateEntry {
     type Err = ();
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
@@ -449,31 +442,46 @@ impl Write for StateFile {
             return Err(());
         }
         let num_bytes =
-            unsafe { write_file_state(self.file_id, buf.as_ptr(), len, self.current_position) };
+            unsafe { write_entry_state(self.entry_id, buf.as_ptr(), len, self.current_position) };
         self.current_position += num_bytes; // safe because of check above that len + pos is small enough
         Ok(num_bytes as usize)
     }
 }
 
-// impl<V> VacantEntry<V>
-// where
-//     V: HasContractStateFile,
-// {
-//     // TODO: Should this be an FileID or the &[u8] key?
-//     pub fn key(&self) -> &FileId { &self.file_id }
+impl<EntryType> VacantEntry<EntryType>
+where
+    EntryType: HasContractStateEntry,
+{
+    pub fn new(entry_id: StateEntryId) -> Self {
+        Self {
+            entry_id,
+            _marker: PhantomData,
+        }
+    }
 
-//     pub fn into_key(self) -> FileId { self.file_id }
+    pub fn entry_id(&self) -> &StateEntryId { &self.entry_id }
 
-//     /// TODO: could the value be anything that the Write trait supports (i.e.
-//     /// also i8, i16..)?
-//     pub fn insert(self, value: &[u8]) -> Result<(), ()> {
-//         let mut state_entry = V::open(self.file_id);
-//         match state_entry.write_all(value) {
-//             Ok(_) => Ok(()),
-//             Err(_) => Err(()),
-//         }
-//     }
-// }
+    pub fn into_entry_id(self) -> StateEntryId { self.entry_id }
+
+    pub fn insert(self, value: &[u8]) -> Result<(), ()> {
+        let mut state_entry = EntryType::open(self.entry_id);
+        match state_entry.write_all(value) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+}
+
+impl<EntryType> OccupiedEntry<EntryType>
+where
+    EntryType: HasContractStateEntry,
+{
+    pub fn new(entry: EntryType) -> Self {
+        Self {
+            entry,
+        }
+    }
+}
 
 impl HasContractStateHL for ContractStateHL {
     type ContractStateData = ();
@@ -501,188 +509,90 @@ impl HasContractStateHL for ContractStateHL {
 
 impl HasContractStateLL for ContractStateLL {
     type ContractStateData = ();
-    type FileType = StateFile;
+    type EntryType = StateEntry;
     type IterType = ContractStateIter;
 
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
-    /// Get the root directory.
-    fn root_dir(&self) -> StateDirectory {
-        let dir_id = unsafe { root_dir() };
-        StateDirectory::open(dir_id)
-    }
+    fn root_map(&self) -> StateMapId { unsafe { root_map() } }
 
-    /// Create a new directory inside another directory.
-    /// If successful, it returns the new directory.
-    /// Otherwise, it returns an error.
-    fn create_dir(
-        &mut self,
-        parent_dir: StateDirectory,
-        name: &[u8],
-    ) -> Result<StateDirectory, ()> {
-        let name_start = name.as_ptr();
-        let name_len = name.len() as u32; // Wasm usize == 32bit.
-        match unsafe { create_dir(parent_dir.dir_id, name_start, name_len) } {
-            -1 => Err(()),
-            dir_id => Ok(StateDirectory::open(dir_id as u32)),
-        }
-    }
+    fn new_map(&mut self) -> StateMapId { unsafe { new_map() } }
 
-    /// Delete a directory.
-    /// Returns whether the directory actually existed.
-    /// Panics if the path leads to a file.
-    fn delete_dir(&mut self, parent_dir: StateDirectory, name: &[u8]) -> bool {
-        let name_start = name.as_ptr();
-        let name_len = name.len() as u32; // Wasm usize == 32bit.
-        if unsafe { delete_dir(parent_dir.dir_id, name_start, name_len) } == 1 {
-            true
+    fn entry(&self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType> {
+        let key_start = key.as_ptr();
+        let key_len = key.len() as u32; // Wasm usize == 32bit.
+        let entry_id = unsafe { entry(map_id, key_start, key_len) };
+
+        if self.vacant(entry_id) {
+            Entry::Vacant(VacantEntry::new(entry_id))
         } else {
-            false
+            Entry::Occupied(OccupiedEntry::new(StateEntry::open(entry_id)))
         }
     }
 
-    /// Create a new file in a directory.
-    /// If succesful, it returns the new file.
-    /// Otherwise, it returns an error.
-    fn create_file(
-        &mut self,
-        parent_dir: StateDirectory,
-        name: &[u8],
-    ) -> Result<Self::FileType, ()> {
-        let name_start = name.as_ptr();
-        let name_len = name.len() as u32; // Wasm usize == 32bit.
-        match unsafe { create_file(parent_dir.dir_id, name_start, name_len) } {
-            -1 => Err(()),
-            file_id => Ok(StateFile::open(file_id as u32)),
-        }
+    fn vacant(&self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
+
+    fn create_entry(&mut self, entry_id: StateEntryId, capacity: u32) -> bool {
+        unsafe { create_entry(entry_id, capacity) == 1 }
     }
 
-    /// Delete a file.
-    /// Returns whether file the actually existed.
-    /// Panics if the path leads to a directory.
-    fn delete_file(&mut self, parent_dir: StateDirectory, name: &[u8]) -> bool {
-        let name_start = name.as_ptr();
-        let name_len = name.len() as u32; // Wasm usize == 32bit.
-        if unsafe { delete_file(parent_dir.dir_id, name_start, name_len) } == 1 {
-            true
-        } else {
-            false
-        }
+    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool {
+        unsafe { delete_entry(entry_id) == 1 }
     }
 
-    /// Find an item in the state and return it.
-    fn find(&self, parent_dir: StateDirectory, name: &[u8]) -> Option<StateItem<Self::FileType>> {
-        let name_start = name.as_ptr();
-        let name_len = name.len() as u32; // Wasm usize == 32bit.
-        let (found, is_file, id) =
-            split_u64(unsafe { find(parent_dir.dir_id, name_start, name_len) });
-
-        if found != 1 {
-            return None;
-        };
-
-        if is_file == 1 {
-            Some(StateItem::File(StateFile::open(id)))
-        } else {
-            Some(StateItem::Directory(StateDirectory::open(id)))
-        }
-    }
-
-    /// Get an iterator for a directory.
-    fn list_dir(&self, dir: StateDirectory) -> Self::IterType {
-        ContractStateIter {
-            iterator_id: unsafe { list_dir(dir.dir_id) },
-        }
-    }
-}
-
-/// Split a u64 into (u16, u16, u32).
-/// Used to handle results returned from the host functions.
-fn split_u64(n: u64) -> (u16, u16, u32) {
-    let n = n.to_le_bytes();
-    let found = u16::from_le_bytes([n[0], n[1]]);
-    let is_file = u16::from_le_bytes([n[2], n[3]]);
-    let id = u32::from_le_bytes([n[4], n[5], n[6], n[7]]);
-    (found, is_file, id)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_u64;
-    #[test]
-    fn test_split_u64() {
-        let input_bytes: [u8; 8] = [
-            // found
-            0b_0000_0001, // 1
-            0b_0000_0010, // 512
-            // is_file
-            0b_0000_0100, // 4
-            0b_0000_1000, // 2,048
-            // id
-            0b_0001_0000, // 16
-            0b_0010_0000, // 8,192
-            0b_0100_0000, // 4,194,304
-            0b_1000_0000, // 2,147,483,648
-        ];
-        let input = u64::from_le_bytes(input_bytes);
-        assert_eq!(split_u64(input), (1 + 512, 4 + 2_048, 16 + 8_192 + 4_194_304 + 2_147_483_648));
-    }
+    fn iterate_map(&self, map_id: StateMapId) -> StateIteratorId { unsafe { iterate_map(map_id) } }
 }
 
 impl Iterator for ContractStateIter {
-    type Item = StateItem<StateFile>;
+    type Item = StateEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (found, is_file, id) = split_u64(unsafe { next(self.iterator_id) });
+        let res = unsafe { next(self.iterator_id) };
 
-        if found != 1 {
-            return None;
-        };
-
-        if is_file == 1 {
-            Some(StateItem::File(StateFile::open(id)))
+        if res < 0 {
+            Some(StateEntry::open(res as u32))
         } else {
-            Some(StateItem::Directory(StateDirectory::open(id)))
+            None
         }
     }
 }
 
-impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
-where
-    K: Serialize,
-    V: Serialize,
-{
-    type ContractStateLLType = ContractStateLL;
+// impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
+// where
+//     K: Serialize,
+//     V: Serialize,
+// {
+//     type ContractStateLLType = ContractStateLL;
 
-    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self {
-        Self {
-            phantom_k: PhantomData,
-            phantom_v: PhantomData,
-            prefix: to_bytes(&prefix),
-            contract_state_ll,
-        }
-    }
+//     fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType,
+// prefix: P) -> Self {         Self {
+//             phantom_k: PhantomData,
+//             phantom_v: PhantomData,
+//             prefix: to_bytes(&prefix),
+//             contract_state_ll,
+//         }
+//     }
 
-    fn insert(&mut self, key: K, value: V) -> Result<bool, ()> {
-        let k = self.key_with_map_prefix(key);
-        let v = to_bytes(&value);
-        self.contract_state_ll.insert(&k, &v)
-    }
+//     fn insert(&mut self, key: K, value: V) -> Result<bool, ()> {
+//         let k = self.key_with_map_prefix(key);
+//         let v = to_bytes(&value);
+//         self.contract_state_ll.insert(&k, &v)
+//     }
 
-    fn get(&self, key: K) -> Option<V> {
-        let k = self.key_with_map_prefix(key);
-        match self.contract_state_ll.get(&k) {
-            None => None,
-            Some(mut v) => match V::deserial(&mut v) {
-                Ok(value) => Some(value),
-                Err(_) => None, // This should never happen.
-            },
-        }
-    }
+//     fn get(&self, key: K) -> Option<V> {
+//         let k = self.key_with_map_prefix(key);
+//         match self.contract_state_ll.get(&k) {
+//             None => None,
+//             Some(mut v) => match V::deserial(&mut v) {
+//                 Ok(value) => Some(value),
+//                 Err(_) => None, // This should never happen.
+//             },
+//         }
+//     }
 
-    fn entry(&self, key: K) -> Entry<HasContractStateLL::FileType> { todo!() }
-}
+//     // fn entry(&self, key: K) -> Entry<HasContractStateLL::EntryType> {
+// todo!() } }
 
 // impl<'a, K, V> StateMap<'a, K, V>
 // where
@@ -698,9 +608,9 @@ where
 
 // impl<V> OccupiedEntry<V>
 // where
-//     V: HasContractStateFile,
+//     V: HasContractStateEntry,
 // {
-//     pub fn key(&self) -> &EntryId { &self.file_id }
+//     pub fn key(&self) -> &EntryId { &self.entry_id }
 
 //     pub fn get(&self) -> &V { &self.value }
 
@@ -1081,6 +991,7 @@ impl<A, E> UnwrapAbort for Result<A, E> {
 use core::fmt;
 #[cfg(feature = "std")]
 use std::fmt;
+use std::marker::PhantomData;
 
 impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     type Unwrap = A;

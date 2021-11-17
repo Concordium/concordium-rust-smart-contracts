@@ -1,7 +1,7 @@
 use concordium_contracts_common::Serialize;
 use std::marker::PhantomData;
 
-use crate::HasContractStateFile;
+use crate::HasContractStateEntry;
 
 /// A type representing the constract state bytes.
 #[derive(Default)]
@@ -38,43 +38,27 @@ pub struct ContractStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
 
-pub type StateFileId = u32;
-pub type StateDirectoryId = u32;
+pub type StateEntryId = u32;
+pub type StateMapId = u32;
 pub type StateIteratorId = u32;
 
-pub struct StateDirectory {
-    pub(crate) dir_id: StateDirectoryId,
-}
-
-pub struct StateFile {
-    pub(crate) file_id:          StateFileId,
+pub struct StateEntry {
+    pub(crate) entry_id:         StateEntryId,
     pub(crate) current_position: u32,
 }
 
-// TODO: Find a better name.
-pub enum StateItem<FileType: HasContractStateFile> {
-    Directory(StateDirectory),
-    File(FileType),
+pub struct VacantEntry<EntryType: HasContractStateEntry> {
+    pub(crate) entry_id: StateEntryId,
+    pub(crate) _marker:  PhantomData<EntryType>,
 }
 
-pub enum StateItemId {
-    DirectoryId(StateDirectoryId),
-    FileId(StateFileId),
+pub struct OccupiedEntry<EntryType: HasContractStateEntry> {
+    pub(crate) entry: EntryType,
 }
 
-pub struct VacantEntry<FileType: HasContractStateFile> {
-    pub(crate) id:      StateItemId,
-    pub(crate) _marker: PhantomData<FileType>,
-}
-
-pub struct OccupiedEntry<FileType: HasContractStateFile> {
-    pub(crate) id:    StateItemId,
-    pub(crate) value: FileType,
-}
-
-pub enum Entry<FileType: HasContractStateFile> {
-    Vacant(VacantEntry<FileType>),
-    Occupied(OccupiedEntry<FileType>),
+pub enum Entry<EntryType: HasContractStateEntry> {
+    Vacant(VacantEntry<EntryType>),
+    Occupied(OccupiedEntry<EntryType>),
 }
 
 #[derive(Default)]
