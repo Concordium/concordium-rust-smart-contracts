@@ -17,10 +17,9 @@ pub struct StateMap<'a, K, V>
 where
     K: Serialize,
     V: Serialize, {
-    // S: HasNewContractState, {
     pub(crate) phantom_k:         PhantomData<K>,
     pub(crate) phantom_v:         PhantomData<V>,
-    pub(crate) prefix:            Vec<u8>,
+    pub(crate) map_id:            StateMapId,
     pub(crate) contract_state_ll: &'a ContractStateLL,
 }
 

@@ -171,6 +171,10 @@ pub trait HasContractStateLL<Error: Default = ()> {
     /// Lookup an entry in a map.
     fn entry(&mut self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType>;
 
+    /// Insert a kvp in a map.
+    /// Returns whether anything was overwritten.
+    fn insert(&mut self, map_id: StateMapId, key: &[u8], value: &[u8]) -> bool;
+
     /// Returns whether an entry is vacant.
     fn vacant(&mut self, entry_id: StateEntryId) -> bool;
 
@@ -189,30 +193,28 @@ pub trait HasContractStateLL<Error: Default = ()> {
 pub trait HasContractStateHL<Error: Default = ()> {
     type ContractStateData;
     fn open(_: Self::ContractStateData) -> Self;
-    fn new_map<P: Serial, K: Serialize, V: Serialize>(
-        &self,
-        key: P,
-    ) -> Result<StateMap<K, V>, Error>;
+    fn new_map<P: Serial, K: Serialize, V: Serialize>(&mut self) -> Result<StateMap<K, V>, Error>;
     fn get_map<P: Serial, K: Serialize, V: Serialize>(
         &self,
         key: P,
     ) -> Result<StateMap<K, V>, Error>;
+    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
 }
 
-// pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
-//     type ContractStateLLType: HasContractStateLL;
-//     fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType,
-// prefix: P) -> Self;
+pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
+    type ContractStateLLType: HasContractStateLL;
+    fn open<P: Serial>(
+        contract_state_ll: &'a Self::ContractStateLLType,
+        map_id: StateMapId,
+    ) -> Self;
 
-//     /// Returns whether anything was overwritten.
-//     /// TODO: Returns result due to write_all.
-//     fn insert(&mut self, key: K, value: V) -> Result<bool, ()>;
+    fn insert(&mut self, key: K, value: V) -> bool;
 
-//     fn get(&self, key: K) -> Option<V>;
+    fn get(&self, key: K) -> Option<V>;
 
-//     // fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as
-//     // HasContractStateLL>::EntryType>;
-// }
+    // fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as
+    // HasContractStateLL>::EntryType>;
+}
 
 /// Objects which can serve as loggers.
 ///

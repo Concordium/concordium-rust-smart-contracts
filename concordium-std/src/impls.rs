@@ -484,6 +484,13 @@ where
     }
 
     pub fn entry_id(&self) -> &StateEntryId { &self.entry_id }
+
+    pub fn insert(&mut self, value: &[u8]) -> Result<(), ()> {
+        match self.entry.write_all(value) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
 }
 
 impl<EntryType> Entry<EntryType>
@@ -507,10 +514,7 @@ impl HasContractStateHL for ContractStateHL {
         }
     }
 
-    fn new_map<P: Serial, K: Serialize, V: Serialize>(
-        &self,
-        _prefix: P,
-    ) -> Result<StateMap<K, V>, ()> {
+    fn new_map<P: Serial, K: Serialize, V: Serialize>(&mut self) -> Result<StateMap<K, V>, ()> {
         todo!()
     }
 
@@ -519,6 +523,10 @@ impl HasContractStateHL for ContractStateHL {
         _key: P,
     ) -> Result<StateMap<K, V>, ()> {
         todo!()
+    }
+
+    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool {
+        self.insert(to_bytes(&key), to_bytes(&value))
     }
 }
 
@@ -543,6 +551,19 @@ impl HasContractStateLL for ContractStateLL {
             Entry::Vacant(VacantEntry::new(entry_id))
         } else {
             Entry::Occupied(OccupiedEntry::new(StateEntry::open(entry_id)))
+        }
+    }
+
+    fn insert(&mut self, map_id: StateMapId, key: &[u8], value: &[u8]) -> bool {
+        match self.entry(map_id, key) {
+            Entry::Vacant(vac) => {
+                vac.insert(value).unwrap(); // TODO: Returns result due to write_all
+                false // Nothing overwritten
+            }
+            Entry::Occupied(mut occ) => {
+                occ.insert(value).unwrap(); // TODO: returns result due to write_all
+                true // Something was overwritten
+            }
         }
     }
 
