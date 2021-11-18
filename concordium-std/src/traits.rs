@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, StateEntryId, StateIteratorId, StateMap, StateMapId};
+use crate::{types::LogError, Entry, StateEntryId, StateMap, StateMapPrefix};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -162,32 +162,30 @@ pub trait HasContractStateLL<Error: Default = ()> {
     /// time.
     fn open(_: Self::ContractStateData) -> Self;
 
-    /// Get the root map.
-    fn root_map(&mut self) -> StateMapId;
+    /// Lookup an entry in the state.
+    fn entry(&mut self, key: &[u8]) -> Entry<Self::EntryType>;
 
-    /// Constructs a new map and returns its id.
-    fn new_map(&mut self) -> StateMapId;
-
-    /// Lookup an entry in a map.
-    fn entry(&mut self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType>;
-
-    /// Insert a kvp in a map.
+    /// Insert a key-value-pair in the state..
     /// Returns whether anything was overwritten.
-    fn insert(&mut self, map_id: StateMapId, key: &[u8], value: &[u8]) -> bool;
+    fn insert(&mut self, key: &[u8], value: &[u8]) -> bool;
 
     /// Returns whether an entry is vacant.
     fn vacant(&mut self, entry_id: StateEntryId) -> bool;
 
-    /// Creates an entry with the given capacity..
+    /// Creates an entry with the given capacity.
     /// Returns whether another value was overwritten.
-    fn create_entry(&mut self, entry_id: StateEntryId, capacity: u32) -> bool;
+    fn create(&mut self, entry_id: StateEntryId, capacity: u32) -> bool;
 
     /// Delete an entry.
     /// Returns whether the entry actually existed.
     fn delete_entry(&mut self, entry_id: StateEntryId) -> bool;
 
+    /// If exact is set, delete the specific key. Otherwise, delete the entire
+    /// subtree. Returns whether the entry or subtree existed.
+    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool;
+
     /// Get an iterator over a map in the state.
-    fn iterate_map(&mut self, map_id: StateMapId) -> StateIteratorId;
+    fn iterator(&mut self, prefix: &[u8]) -> Self::IterType;
 }
 
 pub trait HasContractStateHL<Error: Default = ()> {
@@ -205,7 +203,7 @@ pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
     type ContractStateLLType: HasContractStateLL;
     fn open<P: Serial>(
         contract_state_ll: &'a Self::ContractStateLLType,
-        map_id: StateMapId,
+        prefix: StateMapPrefix,
     ) -> Self;
 
     fn insert(&mut self, key: K, value: V) -> bool;

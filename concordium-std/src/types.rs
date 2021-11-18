@@ -19,7 +19,7 @@ where
     V: Serialize, {
     pub(crate) phantom_k:         PhantomData<K>,
     pub(crate) phantom_v:         PhantomData<V>,
-    pub(crate) map_id:            StateMapId,
+    pub(crate) prefix:            StateMapPrefix,
     pub(crate) contract_state_ll: &'a ContractStateLL,
 }
 
@@ -38,8 +38,8 @@ pub struct ContractStateIter {
 }
 
 pub type StateEntryId = u32;
-pub type StateMapId = u32;
 pub type StateIteratorId = u32;
+pub type StateMapPrefix = u64;
 
 pub struct StateEntry {
     pub(crate) entry_id:         StateEntryId,

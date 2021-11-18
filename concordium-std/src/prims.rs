@@ -54,24 +54,10 @@ extern "C" {
 
     // -- NEW state implementation --
 
-    /// Get the root directory.
-    pub(crate) fn root_map() -> u32;
-
-    /// Constructs a new trie map and returns a map ID.
-    pub(crate) fn new_map() -> u32;
-
-    /// Iterator for all of the current trie maps.
-    /// TODO: May be needed
-    // fn iterate_maps() -> _
-
-    /// Delete a tree map.
-    /// TODO: Is needed if we add iterate_maps
-    // fn delete_map(map_id: u32) -> _
-
     /// Lookup an entry. Concretely this will be some internal identifier
     /// given out by the host. Conceptually the return value is *mut Entry.
     /// Empty key means the root.
-    pub(crate) fn entry(map_id: u32, key_start: *const u8, key_length: u32) -> u32;
+    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> u32;
 
     /// Checks whether the entry is vacant, i.e., a key does not exist in the
     /// map.
@@ -82,18 +68,33 @@ extern "C" {
     /// Populates the entry. Returns whether an existing value was overwritten.
     /// 1 => created new by overwriting existing value
     /// 0 => created new value
-    pub(crate) fn create_entry(entry: u32, capacity: u32) -> u32;
+    pub(crate) fn create(entry: u32, capacity: u32) -> u32;
 
-    /// Delete the entry. Returns whether the entry existed or not.
+    /// Delete the entry. Returns whether the entry was or not.
     /// 1 => did exists
     /// 0 => did not exist
     pub(crate) fn delete_entry(entry: u32) -> u32;
 
-    /// Returns an iterator for the map.
-    pub(crate) fn iterate_map(map_id: u32) -> u32;
+    /// This might or might not be necessary.
+    /// If exact is set then only delete the specifi key, otherwise the entire
+    /// subtree. It seems useful to have the ability to delete the entire
+    /// tree
+    /// 1 => deleted something
+    /// 0 => didn't delete anything
+    /// TODO: could also say how much was deleted (number of entries).
+    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> u32;
 
-    /// Get next element in an iterator.
-    /// Returns -1 when the iterator is empty and entry_id:u32 otherwise.
+    /// Iteration. Returns an iterator.
+    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: u32) -> u32;
+
+    /// Returns the entry with the key that is the successor of the current key
+    /// subject to prefix restrictions.
+    /// If the iterator is empty, -1 is returned.
+    ///
+    /// This will be a snapshot. If you mutate, it will mutate the original
+    /// tree, but the snapshot and its entries will remain the same.
+    /// Getting a new iterator subsequently will get you a snapshot with your
+    /// new changes.
     pub(crate) fn next(iterator: u32) -> i64;
 
     // Operations on the entry.
@@ -229,11 +230,7 @@ mod host_dummy_functions {
     // -- NEW state implementation --
 
     #[no_mangle]
-    pub(crate) fn root_map() -> u32 { unimplemented!("Dummy function! Not to be executed") }
-    #[no_mangle]
-    pub(crate) fn new_map() -> u32 { unimplemented!("Dummy function! Not to be executed") }
-    #[no_mangle]
-    pub(crate) fn entry(_map_id: u32, _key_start: *const u8, _key_length: u32) -> u32 {
+    pub(crate) fn entry(_key_start: *const u8, _key_length: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
@@ -241,7 +238,7 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn create_entry(_entry: u32, _capacity: u32) -> u32 {
+    pub(crate) fn create(_entry: u32, _capacity: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
@@ -249,7 +246,11 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn iterate_map(_map_id: u32) -> u32 {
+    pub(crate) fn delete_prefix(_prefix_start: *const u8, _prefix_length: u32) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn iterator(_prefix_start: *const u8, _prefix_length: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]

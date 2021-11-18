@@ -538,14 +538,10 @@ impl HasContractStateLL for ContractStateLL {
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
-    fn root_map(&mut self) -> StateMapId { unsafe { root_map() } }
-
-    fn new_map(&mut self) -> StateMapId { unsafe { new_map() } }
-
-    fn entry(&mut self, map_id: StateMapId, key: &[u8]) -> Entry<Self::EntryType> {
+    fn entry(&mut self, key: &[u8]) -> Entry<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
-        let entry_id = unsafe { entry(map_id, key_start, key_len) };
+        let entry_id = unsafe { entry(key_start, key_len) };
 
         if self.vacant(entry_id) {
             Entry::Vacant(VacantEntry::new(entry_id))
@@ -554,8 +550,9 @@ impl HasContractStateLL for ContractStateLL {
         }
     }
 
-    fn insert(&mut self, map_id: StateMapId, key: &[u8], value: &[u8]) -> bool {
-        match self.entry(map_id, key) {
+    /// Returns whether a value was overwritten.
+    fn insert(&mut self, key: &[u8], value: &[u8]) -> bool {
+        match self.entry(key) {
             Entry::Vacant(vac) => {
                 vac.insert(value).unwrap(); // TODO: Returns result due to write_all
                 false // Nothing overwritten
@@ -567,18 +564,37 @@ impl HasContractStateLL for ContractStateLL {
         }
     }
 
+    /// Returns whether the entry is vacant, i.e. the key does not exist in the
+    /// map.
     fn vacant(&mut self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
 
-    fn create_entry(&mut self, entry_id: StateEntryId, capacity: u32) -> bool {
-        unsafe { create_entry(entry_id, capacity) == 1 }
+    /// Populate the entry. Returns whether a value was overwritten.
+    fn create(&mut self, entry_id: StateEntryId, capacity: u32) -> bool {
+        unsafe { create(entry_id, capacity) == 1 }
     }
 
+    /// Delete the entry. Returns true if the entry was occupied and false
+    /// otherwise.
     fn delete_entry(&mut self, entry_id: StateEntryId) -> bool {
         unsafe { delete_entry(entry_id) == 1 }
     }
 
-    fn iterate_map(&mut self, map_id: StateMapId) -> StateIteratorId {
-        unsafe { iterate_map(map_id) }
+    /// If exact, delete the specific key, otherwise delete the subtree.
+    /// Returns true if entry/subtree was occupied and false otherwise
+    /// (including if the key was too long or empty).
+    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool {
+        let len = prefix.len() as u32; // Safe because usize is 32bit in WASM.
+        let prefix_ptr = prefix.as_ptr();
+        unsafe { delete_prefix(prefix_ptr, len, exact as u32) == 1 }
+    }
+
+    fn iterator(&mut self, prefix: &[u8]) -> Self::IterType {
+        let prefix_start = prefix.as_ptr();
+        let prefix_len = prefix.len() as u32; // Wasm usize == 32bit.
+        let iterator_id = unsafe { iterator(prefix_start, prefix_len) };
+        ContractStateIter {
+            iterator_id,
+        }
     }
 }
 
@@ -587,7 +603,6 @@ impl Iterator for ContractStateIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         let res = unsafe { next(self.iterator_id) };
-
         if res < 0 {
             Some(StateEntry::open(res as u32))
         } else {
