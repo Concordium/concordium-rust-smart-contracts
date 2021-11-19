@@ -465,7 +465,7 @@ where
 
     pub fn insert(self, value: &[u8]) -> EntryType {
         let mut state_entry = EntryType::open(self.entry_id);
-        state_entry.write_all(value).unwrap(); // TODO: Can this ever fail?
+        state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever fail?
         state_entry
     }
 }
@@ -490,7 +490,7 @@ where
     pub fn get_mut(&mut self) -> &mut EntryType { &mut self.entry }
 
     pub fn insert(&mut self, value: &[u8]) {
-        self.entry.write_all(value).unwrap(); // TODO: Can this ever fail?
+        self.entry.write_all(value).unwrap_abort(); // TODO: Can this ever fail?
     }
 }
 
@@ -675,18 +675,32 @@ where
     }
 
     fn get(&self, key: K) -> Option<V> {
-        let _k = self.key_with_map_prefix(key);
-        // match self.contract_state_ll.get(&k) {
-        //     None => None,
-        //     Some(mut v) => match V::deserial(&mut v) {
-        //         Ok(value) => Some(value),
-        //         Err(_) => None, // This should never happen.
-        //     },
-        // }
-        todo!()
+        let k = self.key_with_map_prefix(key);
+        match self.state_ll.borrow().get(&k) {
+            None => None,
+            Some(mut v) => match V::deserial(&mut v) {
+                Ok(value) => Some(value),
+                Err(_) => None, /* TODO: This should only happen if you try to get the wrong
+                                 * thing. Return ParseError? */
+            },
+        }
     }
 
-    fn insert(&mut self, _key: K, _valuee: V) -> Option<V> { todo!() }
+    fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let key_bytes = self.key_with_map_prefix(key);
+        let value_bytes = to_bytes(&value);
+        match self.state_ll.borrow_mut().entry(&key_bytes) {
+            Entry::Vacant(vac) => {
+                let _ = vac.insert(&value_bytes);
+                None
+            }
+            Entry::Occupied(mut occ) => {
+                let old_value = V::deserial(occ.get_mut()).unwrap_abort(); // TODO: Consider Option<Result<V, ParseError>>.
+                occ.insert(&value_bytes);
+                Some(old_value)
+            }
+        }
+    }
 }
 
 impl<K, V> StateMap<K, V>
