@@ -555,7 +555,7 @@ impl HasContractStateHL for ContractStateHL {
         self.state_ll.borrow_mut().insert(&key_with_map_prefix, &to_bytes(&value))
     }
 
-    fn get<K: Serial, V: Deserial>(&mut self, key: K) -> Result<V, ()> {
+    fn get<K: Serial, V: Deserial>(&self, key: K) -> Result<V, ()> {
         let key_with_map_prefix = prepend_generic_map_key(key);
         match self.state_ll.borrow_mut().get(&key_with_map_prefix) {
             Some(mut entry) => V::deserial(&mut entry).map_err(|_| ()),
@@ -578,7 +578,7 @@ impl HasContractStateLL for ContractStateLL {
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
-    fn entry(&mut self, key: &[u8]) -> Entry<Self::EntryType> {
+    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let entry_id = unsafe { entry(key_start, key_len) };
@@ -604,7 +604,7 @@ impl HasContractStateLL for ContractStateLL {
         }
     }
 
-    fn get(&mut self, key: &[u8]) -> Option<Self::EntryType> {
+    fn get(&self, key: &[u8]) -> Option<Self::EntryType> {
         match self.entry(key) {
             Entry::Vacant(_) => None,
             Entry::Occupied(occ) => Some(occ.get()),
@@ -613,7 +613,7 @@ impl HasContractStateLL for ContractStateLL {
 
     /// Returns whether the entry is vacant, i.e. the key does not exist in the
     /// map.
-    fn vacant(&mut self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
+    fn vacant(&self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
 
     /// Populate the entry. Returns whether a value was overwritten.
     fn create(&mut self, entry_id: StateEntryId, capacity: u32) -> bool {
@@ -635,7 +635,7 @@ impl HasContractStateLL for ContractStateLL {
         unsafe { delete_prefix(prefix_ptr, len, exact as u32) == 1 }
     }
 
-    fn iterator(&mut self, prefix: &[u8]) -> Self::IterType {
+    fn iterator(&self, prefix: &[u8]) -> Self::IterType {
         let prefix_start = prefix.as_ptr();
         let prefix_len = prefix.len() as u32; // Wasm usize == 32bit.
         let iterator_id = unsafe { iterator(prefix_start, prefix_len) };

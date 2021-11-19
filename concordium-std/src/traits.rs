@@ -165,17 +165,17 @@ pub trait HasContractStateLL<Error: Default = ()> {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Lookup an entry in the state.
-    fn entry(&mut self, key: &[u8]) -> Entry<Self::EntryType>; // FIXME: use &self
+    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType>;
 
     /// Insert a key-value-pair in the state..
     /// Returns whether anything was overwritten.
     fn insert(&mut self, key: &[u8], value: &[u8]) -> bool;
 
     /// Try to get the entry at the given key.
-    fn get(&mut self, key: &[u8]) -> Option<Self::EntryType>;
+    fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
 
     /// Returns whether an entry is vacant.
-    fn vacant(&mut self, entry_id: StateEntryId) -> bool;
+    fn vacant(&self, entry_id: StateEntryId) -> bool;
 
     /// Creates an entry with the given capacity.
     /// Returns whether another value was overwritten.
@@ -190,7 +190,7 @@ pub trait HasContractStateLL<Error: Default = ()> {
     fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool;
 
     /// Get an iterator over a map in the state.
-    fn iterator(&mut self, prefix: &[u8]) -> Self::IterType;
+    fn iterator(&self, prefix: &[u8]) -> Self::IterType;
 }
 
 pub trait HasContractStateHL<Error: Default = ()> {
@@ -198,7 +198,7 @@ pub trait HasContractStateHL<Error: Default = ()> {
     fn open(_: Self::ContractStateData) -> Self;
     fn new_map<K: Serialize, V: Serialize>(&mut self) -> StateMap<K, V>;
     // fn new_set<V: Serialize>(&mut self) -> StateSet<V>;
-    fn get<K: Serial, V: Deserial>(&mut self, key: K) -> Result<V, Error>;
+    fn get<K: Serial, V: Deserial>(&self, key: K) -> Result<V, Error>;
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
 }
 
