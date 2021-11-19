@@ -463,12 +463,10 @@ where
 
     pub fn into_entry_id(self) -> StateEntryId { self.entry_id }
 
-    pub fn insert(self, value: &[u8]) -> Result<(), ()> {
+    pub fn insert(self, value: &[u8]) -> EntryType {
         let mut state_entry = EntryType::open(self.entry_id);
-        match state_entry.write_all(value) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
+        state_entry.write_all(value).unwrap(); // TODO: Can this ever fail?
+        state_entry
     }
 }
 
@@ -485,11 +483,14 @@ where
 
     pub fn entry_id(&self) -> &StateEntryId { &self.entry_id }
 
-    pub fn insert(&mut self, value: &[u8]) -> Result<(), ()> {
-        match self.entry.write_all(value) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
+    pub fn get_ref(&self) -> &EntryType { &self.entry }
+
+    pub fn get(self) -> EntryType { self.entry }
+
+    pub fn get_mut(&mut self) -> &mut EntryType { &mut self.entry }
+
+    pub fn insert(&mut self, value: &[u8]) {
+        self.entry.write_all(value).unwrap(); // TODO: Can this ever fail?
     }
 }
 
@@ -503,8 +504,26 @@ where
             Entry::Occupied(occ) => occ.entry_id(),
         }
     }
+
+    pub fn or_insert(self, default: &[u8]) -> EntryType {
+        match self {
+            Entry::Vacant(vac) => vac.insert(default),
+            Entry::Occupied(occ) => occ.get(),
+        }
+    }
 }
 
+const NEXT_COLLECTION_PREFIX_KEY: u64 = 0;
+const GENERIC_MAP_PREFIX: u64 = 1;
+const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
+
+/// Keeps the following state:
+/// 0 => next_collection_prefix: u64
+/// 1/<key> => values stored and retrieved with insert/get
+/// <2..u64::MAX>/<key> => collections with a prefix from new_map or
+/// new_set.
+///
+/// The slashes (/) are only conceptually added for readability.
 impl HasContractStateHL for ContractStateHL {
     type ContractStateData = ();
 
@@ -514,20 +533,42 @@ impl HasContractStateHL for ContractStateHL {
         }
     }
 
-    fn new_map<P: Serial, K: Serialize, V: Serialize>(&mut self) -> Result<StateMap<K, V>, ()> {
-        todo!()
-    }
+    fn new_map<K: Serialize, V: Serialize>(&mut self) -> StateMap<K, V> {
+        // Get the next prefix or insert and use the initial one.
+        let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
+        let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
+        let mut next_collection_prefix_entry =
+            self.contract_state_ll.entry(&entry_key).or_insert(&default_prefix);
 
-    fn get_map<P: Serial, K: Serialize, V: Serialize>(
-        &self,
-        _key: P,
-    ) -> Result<StateMap<K, V>, ()> {
-        todo!()
+        // Get the next collection prefix
+        let map_prefix = next_collection_prefix_entry
+            .read_u64() // TODO: Does this cause problems for the write position?
+            .expect("next_collection_prefix is not a valid u64.");
+
+        // Increment the collection prefix
+        next_collection_prefix_entry.write_u64(map_prefix + 1).unwrap(); // TODO: Can this ever fail?
+
+        StateMap::open(&self.contract_state_ll, map_prefix)
     }
 
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool {
-        self.insert(to_bytes(&key), to_bytes(&value))
+        let key_with_map_prefix = prepend_generic_map_key(key);
+        self.contract_state_ll.insert(&key_with_map_prefix, &to_bytes(&value))
     }
+
+    fn get<K: Serial, V: Deserial>(&mut self, key: K) -> Result<V, ()> {
+        let key_with_map_prefix = prepend_generic_map_key(key);
+        match self.contract_state_ll.get(&key_with_map_prefix) {
+            Some(mut entry) => V::deserial(&mut entry).map_err(|_| ()),
+            None => Err(()),
+        }
+    }
+}
+
+fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
+    let mut key_with_map_prefix = to_bytes(&GENERIC_MAP_PREFIX);
+    key_with_map_prefix.append(&mut to_bytes(&key));
+    key_with_map_prefix
 }
 
 impl HasContractStateLL for ContractStateLL {
@@ -554,13 +595,20 @@ impl HasContractStateLL for ContractStateLL {
     fn insert(&mut self, key: &[u8], value: &[u8]) -> bool {
         match self.entry(key) {
             Entry::Vacant(vac) => {
-                vac.insert(value).unwrap(); // TODO: Returns result due to write_all
+                vac.insert(value);
                 false // Nothing overwritten
             }
             Entry::Occupied(mut occ) => {
-                occ.insert(value).unwrap(); // TODO: returns result due to write_all
+                occ.insert(value);
                 true // Something was overwritten
             }
+        }
+    }
+
+    fn get(&mut self, key: &[u8]) -> Option<Self::EntryType> {
+        match self.entry(key) {
+            Entry::Vacant(_) => None,
+            Entry::Occupied(occ) => Some(occ.get()),
         }
     }
 
@@ -611,53 +659,48 @@ impl Iterator for ContractStateIter {
     }
 }
 
-// impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
-// where
-//     K: Serialize,
-//     V: Serialize,
-// {
-//     type ContractStateLLType = ContractStateLL;
+impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    type ContractStateLLType = ContractStateLL;
 
-//     fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType,
-// prefix: P) -> Self {         Self {
-//             phantom_k: PhantomData,
-//             phantom_v: PhantomData,
-//             prefix: to_bytes(&prefix),
-//             contract_state_ll,
-//         }
-//     }
+    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self {
+        Self {
+            phantom_k: PhantomData,
+            phantom_v: PhantomData,
+            prefix: to_bytes(&prefix),
+            contract_state_ll,
+        }
+    }
 
-//     fn insert(&mut self, key: K, value: V) -> Result<bool, ()> {
-//         let k = self.key_with_map_prefix(key);
-//         let v = to_bytes(&value);
-//         self.contract_state_ll.insert(&k, &v)
-//     }
+    fn get(&self, key: K) -> Option<V> {
+        let _k = self.key_with_map_prefix(key);
+        // match self.contract_state_ll.get(&k) {
+        //     None => None,
+        //     Some(mut v) => match V::deserial(&mut v) {
+        //         Ok(value) => Some(value),
+        //         Err(_) => None, // This should never happen.
+        //     },
+        // }
+        todo!()
+    }
 
-//     fn get(&self, key: K) -> Option<V> {
-//         let k = self.key_with_map_prefix(key);
-//         match self.contract_state_ll.get(&k) {
-//             None => None,
-//             Some(mut v) => match V::deserial(&mut v) {
-//                 Ok(value) => Some(value),
-//                 Err(_) => None, // This should never happen.
-//             },
-//         }
-//     }
+    fn insert(&mut self, _key: K, _valuee: V) -> Option<V> { todo!() }
+}
 
-//     // fn entry(&self, key: K) -> Entry<HasContractStateLL::EntryType> {
-// todo!() } }
-
-// impl<'a, K, V> StateMap<'a, K, V>
-// where
-//     K: Serialize,
-//     V: Serialize,
-// {
-//     pub(crate) fn key_with_map_prefix(&self, key: K) -> Vec<u8> {
-//         let mut key_with_prefix = self.prefix.clone();
-//         key_with_prefix.append(&mut to_bytes(&key));
-//         key_with_prefix
-//     }
-// }
+impl<'a, K, V> StateMap<'a, K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    pub(crate) fn key_with_map_prefix(&self, key: K) -> Vec<u8> {
+        let mut key_with_prefix = self.prefix.clone();
+        key_with_prefix.append(&mut to_bytes(&key));
+        key_with_prefix
+    }
+}
 
 /// # Trait implementations for Parameter
 impl Read for Parameter {

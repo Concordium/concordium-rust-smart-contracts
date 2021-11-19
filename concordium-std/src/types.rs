@@ -39,7 +39,7 @@ pub struct ContractStateIter {
 
 pub type StateEntryId = u32;
 pub type StateIteratorId = u32;
-pub type StateMapPrefix = u64;
+pub type StateMapPrefix = Vec<u8>;
 
 pub struct StateEntry {
     pub(crate) entry_id:         StateEntryId,

@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, StateEntryId, StateMap, StateMapPrefix};
+use crate::{types::LogError, Entry, StateEntryId, StateMap};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -169,6 +169,9 @@ pub trait HasContractStateLL<Error: Default = ()> {
     /// Returns whether anything was overwritten.
     fn insert(&mut self, key: &[u8], value: &[u8]) -> bool;
 
+    /// Try to get the entry at the given key.
+    fn get(&mut self, key: &[u8]) -> Option<Self::EntryType>;
+
     /// Returns whether an entry is vacant.
     fn vacant(&mut self, entry_id: StateEntryId) -> bool;
 
@@ -191,22 +194,17 @@ pub trait HasContractStateLL<Error: Default = ()> {
 pub trait HasContractStateHL<Error: Default = ()> {
     type ContractStateData;
     fn open(_: Self::ContractStateData) -> Self;
-    fn new_map<P: Serial, K: Serialize, V: Serialize>(&mut self) -> Result<StateMap<K, V>, Error>;
-    fn get_map<P: Serial, K: Serialize, V: Serialize>(
-        &self,
-        key: P,
-    ) -> Result<StateMap<K, V>, Error>;
+    fn new_map<K: Serialize, V: Serialize>(&mut self) -> StateMap<K, V>;
+    // fn new_set<V: Serialize>(&mut self) -> StateSet<V>;
+    fn get<K: Serial, V: Deserial>(&mut self, key: K) -> Result<V, Error>;
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
 }
 
 pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
     type ContractStateLLType: HasContractStateLL;
-    fn open<P: Serial>(
-        contract_state_ll: &'a Self::ContractStateLLType,
-        prefix: StateMapPrefix,
-    ) -> Self;
+    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self;
 
-    fn insert(&mut self, key: K, value: V) -> bool;
+    fn insert(&mut self, key: K, value: V) -> Option<V>;
 
     fn get(&self, key: K) -> Option<V>;
 
