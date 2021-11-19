@@ -520,8 +520,7 @@ const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
 /// Keeps the following state:
 /// 0 => next_collection_prefix: u64
 /// 1/<key> => values stored and retrieved with insert/get
-/// <2..u64::MAX>/<key> => collections with a prefix from new_map or
-/// new_set.
+/// <2..u64::MAX>/ => collections with a prefix from new_map or new_set.
 ///
 /// The slashes (/) are only conceptually added for readability.
 impl HasContractStateHL for ContractStateHL {
@@ -529,7 +528,7 @@ impl HasContractStateHL for ContractStateHL {
 
     fn open(_: Self::ContractStateData) -> Self {
         Self {
-            contract_state_ll: ContractStateLL::open(()),
+            state_ll: Rc::new(RefCell::new(ContractStateLL::open(()))),
         }
     }
 
@@ -538,27 +537,27 @@ impl HasContractStateHL for ContractStateHL {
         let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
         let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
         let mut next_collection_prefix_entry =
-            self.contract_state_ll.entry(&entry_key).or_insert(&default_prefix);
+            self.state_ll.borrow_mut().entry(&entry_key).or_insert(&default_prefix);
 
         // Get the next collection prefix
         let map_prefix = next_collection_prefix_entry
             .read_u64() // TODO: Does this cause problems for the write position?
-            .expect("next_collection_prefix is not a valid u64.");
+            .expect_report("next_collection_prefix is not a valid u64.");
 
         // Increment the collection prefix
-        next_collection_prefix_entry.write_u64(map_prefix + 1).unwrap(); // TODO: Can this ever fail?
+        next_collection_prefix_entry.write_u64(map_prefix + 1).unwrap_abort(); // TODO: Can this ever fail?
 
-        StateMap::open(&self.contract_state_ll, map_prefix)
+        StateMap::open(Rc::clone(&self.state_ll), map_prefix)
     }
 
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool {
         let key_with_map_prefix = prepend_generic_map_key(key);
-        self.contract_state_ll.insert(&key_with_map_prefix, &to_bytes(&value))
+        self.state_ll.borrow_mut().insert(&key_with_map_prefix, &to_bytes(&value))
     }
 
     fn get<K: Serial, V: Deserial>(&mut self, key: K) -> Result<V, ()> {
         let key_with_map_prefix = prepend_generic_map_key(key);
-        match self.contract_state_ll.get(&key_with_map_prefix) {
+        match self.state_ll.borrow_mut().get(&key_with_map_prefix) {
             Some(mut entry) => V::deserial(&mut entry).map_err(|_| ()),
             None => Err(()),
         }
@@ -659,19 +658,19 @@ impl Iterator for ContractStateIter {
     }
 }
 
-impl<'a, K, V> HasStateMap<'a, K, V> for StateMap<'a, K, V>
+impl<K, V> HasStateMap<K, V> for StateMap<K, V>
 where
     K: Serialize,
     V: Serialize,
 {
     type ContractStateLLType = ContractStateLL;
 
-    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self {
+    fn open<P: Serial>(state_ll: Rc<RefCell<Self::ContractStateLLType>>, prefix: P) -> Self {
         Self {
             phantom_k: PhantomData,
             phantom_v: PhantomData,
             prefix: to_bytes(&prefix),
-            contract_state_ll,
+            state_ll,
         }
     }
 
@@ -690,7 +689,7 @@ where
     fn insert(&mut self, _key: K, _valuee: V) -> Option<V> { todo!() }
 }
 
-impl<'a, K, V> StateMap<'a, K, V>
+impl<K, V> StateMap<K, V>
 where
     K: Serialize,
     V: Serialize,
@@ -700,6 +699,14 @@ where
         key_with_prefix.append(&mut to_bytes(&key));
         key_with_prefix
     }
+}
+
+impl<K, V> Serial for StateMap<K, V>
+where
+    K: Serialize,
+    V: Serialize,
+{
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.prefix.serial(out) }
 }
 
 /// # Trait implementations for Parameter
@@ -1076,7 +1083,7 @@ impl<A, E> UnwrapAbort for Result<A, E> {
 use core::fmt;
 #[cfg(feature = "std")]
 use std::fmt;
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     type Unwrap = A;

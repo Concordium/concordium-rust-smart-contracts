@@ -2,6 +2,8 @@
 //! This allows setting-up mock objects for testing individual
 //! contract invocations.
 
+use std::{cell::RefCell, rc::Rc};
+
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
@@ -163,7 +165,7 @@ pub trait HasContractStateLL<Error: Default = ()> {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Lookup an entry in the state.
-    fn entry(&mut self, key: &[u8]) -> Entry<Self::EntryType>;
+    fn entry(&mut self, key: &[u8]) -> Entry<Self::EntryType>; // FIXME: use &self
 
     /// Insert a key-value-pair in the state..
     /// Returns whether anything was overwritten.
@@ -200,9 +202,12 @@ pub trait HasContractStateHL<Error: Default = ()> {
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
 }
 
-pub trait HasStateMap<'a, K: Serialize, V: Serialize, Error: Default = ()> {
+pub trait HasStateMap<K: Serialize, V: Serialize, Error: Default = ()> {
     type ContractStateLLType: HasContractStateLL;
-    fn open<P: Serial>(contract_state_ll: &'a Self::ContractStateLLType, prefix: P) -> Self;
+    fn open<P: Serial>(
+        contract_state_ll: Rc<RefCell<Self::ContractStateLLType>>,
+        prefix: P,
+    ) -> Self;
 
     fn insert(&mut self, key: K, value: V) -> Option<V>;
 

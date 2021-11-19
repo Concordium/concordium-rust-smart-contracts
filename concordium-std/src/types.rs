@@ -1,5 +1,5 @@
 use concordium_contracts_common::Serialize;
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::HasContractStateEntry;
 
@@ -10,17 +10,17 @@ pub struct ContractState {
 }
 
 pub struct ContractStateHL {
-    pub(crate) contract_state_ll: ContractStateLL,
+    pub(crate) state_ll: Rc<RefCell<ContractStateLL>>,
 }
 
-pub struct StateMap<'a, K, V>
+pub struct StateMap<K, V>
 where
     K: Serialize,
     V: Serialize, {
-    pub(crate) phantom_k:         PhantomData<K>,
-    pub(crate) phantom_v:         PhantomData<V>,
-    pub(crate) prefix:            StateMapPrefix,
-    pub(crate) contract_state_ll: &'a ContractStateLL,
+    pub(crate) phantom_k: PhantomData<K>,
+    pub(crate) phantom_v: PhantomData<V>,
+    pub(crate) prefix:    StateMapPrefix,
+    pub(crate) state_ll:  Rc<RefCell<ContractStateLL>>,
 }
 
 pub struct StateSet<V>
