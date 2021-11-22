@@ -199,6 +199,10 @@ pub trait HasContractStateHL<Error: Default = ()> {
     fn new_map<K: Serialize, V: Serialize>(&mut self) -> StateMap<K, V>;
     // fn new_set<V: Serialize>(&mut self) -> StateSet<V>;
     fn get<K: Serial, V: Deserial>(&self, key: K) -> Result<V, Error>;
+    fn get_map<K1: Serial, K2: Serialize, V: Serialize>(
+        &self,
+        key: K1,
+    ) -> Result<StateMap<K2, V>, ()>;
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
 }
 

@@ -522,7 +522,7 @@ const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
 /// 1/<key> => values stored and retrieved with insert/get
 /// <2..u64::MAX>/ => collections with a prefix from new_map or new_set.
 ///
-/// The slashes (/) are only conceptually added for readability.
+/// The slashes (/) are only added conceptually for readability.
 impl HasContractStateHL for ContractStateHL {
     type ContractStateData = ();
 
@@ -559,6 +559,21 @@ impl HasContractStateHL for ContractStateHL {
         let key_with_map_prefix = prepend_generic_map_key(key);
         match self.state_ll.borrow_mut().get(&key_with_map_prefix) {
             Some(mut entry) => V::deserial(&mut entry).map_err(|_| ()),
+            None => Err(()),
+        }
+    }
+
+    fn get_map<K1, K2, V>(&self, key: K1) -> Result<StateMap<K2, V>, ()>
+    where
+        K1: Serial,
+        K2: Serialize,
+        V: Serialize, {
+        let key_with_map_prefix = prepend_generic_map_key(key);
+        match self.state_ll.borrow_mut().get(&key_with_map_prefix) {
+            Some(mut entry) => {
+                let map_prefix: u64 = entry.read_u64().map_err(|_| ())?;
+                Ok(StateMap::open(Rc::clone(&self.state_ll), map_prefix))
+            }
             None => Err(()),
         }
     }
