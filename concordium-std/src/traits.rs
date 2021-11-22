@@ -155,7 +155,7 @@ where
     fn reserve(&mut self, len: u32) -> bool;
 }
 
-pub trait HasContractStateLL<Error: Default = ()> {
+pub trait HasContractStateLL {
     type ContractStateData;
     type EntryType: HasContractStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
@@ -193,29 +193,29 @@ pub trait HasContractStateLL<Error: Default = ()> {
     fn iterator(&self, prefix: &[u8]) -> Self::IterType;
 }
 
-pub trait HasContractStateHL<Error: Default = ()> {
+pub trait HasContractStateHL {
     type ContractStateData;
     fn open(_: Self::ContractStateData) -> Self;
     fn new_map<K: Serialize, V: Serialize>(&mut self) -> StateMap<K, V>;
     // fn new_set<V: Serialize>(&mut self) -> StateSet<V>;
-    fn get<K: Serial, V: Deserial>(&self, key: K) -> Result<V, Error>;
+    fn get<K: Serial, V: Deserial>(&self, key: K) -> Option<ParseResult<V>>;
     fn get_map<K1: Serial, K2: Serialize, V: Serialize>(
         &self,
         key: K1,
-    ) -> Result<StateMap<K2, V>, ()>;
+    ) -> Option<ParseResult<StateMap<K2, V>>>;
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
 }
 
-pub trait HasStateMap<K: Serialize, V: Serialize, Error: Default = ()> {
+pub trait HasStateMap<K: Serialize, V: Serialize> {
     type ContractStateLLType: HasContractStateLL;
     fn open<P: Serial>(
         contract_state_ll: Rc<RefCell<Self::ContractStateLLType>>,
         prefix: P,
     ) -> Self;
 
-    fn insert(&mut self, key: K, value: V) -> Option<V>;
+    fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>>;
 
-    fn get(&self, key: K) -> Option<V>;
+    fn get(&self, key: K) -> Option<ParseResult<V>>;
 
     // fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as
     // HasContractStateLL>::EntryType>;

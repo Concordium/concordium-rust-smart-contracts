@@ -555,27 +555,31 @@ impl HasContractStateHL for ContractStateHL {
         self.state_ll.borrow_mut().insert(&key_with_map_prefix, &to_bytes(&value))
     }
 
-    fn get<K: Serial, V: Deserial>(&self, key: K) -> Result<V, ()> {
+    /// Some(Err(_)) means that something exists in the state with that key, but
+    /// it isn't of type `V`.
+    fn get<K: Serial, V: Deserial>(&self, key: K) -> Option<ParseResult<V>> {
         let key_with_map_prefix = prepend_generic_map_key(key);
-        match self.state_ll.borrow_mut().get(&key_with_map_prefix) {
-            Some(mut entry) => V::deserial(&mut entry).map_err(|_| ()),
-            None => Err(()),
-        }
+
+        self.state_ll
+            .borrow_mut()
+            .get(&key_with_map_prefix)
+            .and_then(|mut entry| Some(V::deserial(&mut entry)))
     }
 
-    fn get_map<K1, K2, V>(&self, key: K1) -> Result<StateMap<K2, V>, ()>
+    /// Some(Err(_)) means that something exists in the state with that key, but
+    /// it isn't a `StateMap<_,_>`.
+    fn get_map<K1, K2, V>(&self, key: K1) -> Option<ParseResult<StateMap<K2, V>>>
     where
         K1: Serial,
         K2: Serialize,
         V: Serialize, {
         let key_with_map_prefix = prepend_generic_map_key(key);
-        match self.state_ll.borrow_mut().get(&key_with_map_prefix) {
-            Some(mut entry) => {
-                let map_prefix: u64 = entry.read_u64().map_err(|_| ())?;
-                Ok(StateMap::open(Rc::clone(&self.state_ll), map_prefix))
+        self.state_ll.borrow_mut().get(&key_with_map_prefix).and_then(|mut entry| {
+            match entry.read_u64() {
+                Ok(map_prefix) => Some(Ok(StateMap::open(Rc::clone(&self.state_ll), map_prefix))),
+                Err(_) => Some(Err(ParseError::default())),
             }
-            None => Err(()),
-        }
+        })
     }
 }
 
@@ -689,19 +693,12 @@ where
         }
     }
 
-    fn get(&self, key: K) -> Option<V> {
+    fn get(&self, key: K) -> Option<ParseResult<V>> {
         let k = self.key_with_map_prefix(key);
-        match self.state_ll.borrow().get(&k) {
-            None => None,
-            Some(mut v) => match V::deserial(&mut v) {
-                Ok(value) => Some(value),
-                Err(_) => None, /* TODO: This should only happen if you try to get the wrong
-                                 * thing. Return ParseError? */
-            },
-        }
+        self.state_ll.borrow().get(&k).and_then(|mut entry| Some(V::deserial(&mut entry)))
     }
 
-    fn insert(&mut self, key: K, value: V) -> Option<V> {
+    fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
         let key_bytes = self.key_with_map_prefix(key);
         let value_bytes = to_bytes(&value);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
@@ -710,7 +707,7 @@ where
                 None
             }
             Entry::Occupied(mut occ) => {
-                let old_value = V::deserial(occ.get_mut()).unwrap_abort(); // TODO: Consider Option<Result<V, ParseError>>.
+                let old_value = V::deserial(occ.get_mut());
                 occ.insert(&value_bytes);
                 Some(old_value)
             }
