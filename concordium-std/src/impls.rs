@@ -525,6 +525,7 @@ const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
 /// The slashes (/) are only added conceptually for readability.
 impl HasContractStateHL for ContractStateHL {
     type ContractStateData = ();
+    type ContractStateLLType = ContractStateLL;
 
     fn open(_: Self::ContractStateData) -> Self {
         Self {
@@ -532,7 +533,12 @@ impl HasContractStateHL for ContractStateHL {
         }
     }
 
-    fn new_map<K: Serialize, V: Serialize>(&mut self) -> StateMap<K, V> {
+    fn new_map<
+        K: Serialize,
+        V: Serial + DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>,
+    >(
+        &mut self,
+    ) -> StateMap<K, V> {
         // Get the next prefix or insert and use the initial one.
         let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
         let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
@@ -557,29 +563,16 @@ impl HasContractStateHL for ContractStateHL {
 
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
-    fn get<K: Serial, V: Deserial>(&self, key: K) -> Option<ParseResult<V>> {
+    fn get<K: Serial, V: DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>>(
+        &self,
+        key: K,
+    ) -> Option<ParseResult<V>> {
         let key_with_map_prefix = prepend_generic_map_key(key);
 
         self.state_ll
             .borrow_mut()
             .get(&key_with_map_prefix)
-            .and_then(|mut entry| Some(V::deserial(&mut entry)))
-    }
-
-    /// Some(Err(_)) means that something exists in the state with that key, but
-    /// it isn't a `StateMap<_,_>`.
-    fn get_map<K1, K2, V>(&self, key: K1) -> Option<ParseResult<StateMap<K2, V>>>
-    where
-        K1: Serial,
-        K2: Serialize,
-        V: Serialize, {
-        let key_with_map_prefix = prepend_generic_map_key(key);
-        self.state_ll.borrow_mut().get(&key_with_map_prefix).and_then(|mut entry| {
-            match entry.read_u64() {
-                Ok(map_prefix) => Some(Ok(StateMap::open(Rc::clone(&self.state_ll), map_prefix))),
-                Err(_) => Some(Err(ParseError::default())),
-            }
-        })
+            .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
     }
 }
 
@@ -680,7 +673,7 @@ impl Iterator for ContractStateIter {
 impl<K, V> HasStateMap<K, V> for StateMap<K, V>
 where
     K: Serialize,
-    V: Serialize,
+    V: Serial + DeserialStateCtx<ContractStateLLType = ContractStateLL>,
 {
     type ContractStateLLType = ContractStateLL;
 
@@ -695,7 +688,10 @@ where
 
     fn get(&self, key: K) -> Option<ParseResult<V>> {
         let k = self.key_with_map_prefix(key);
-        self.state_ll.borrow().get(&k).and_then(|mut entry| Some(V::deserial(&mut entry)))
+        self.state_ll
+            .borrow()
+            .get(&k)
+            .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
     }
 
     fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
@@ -707,7 +703,7 @@ where
                 None
             }
             Entry::Occupied(mut occ) => {
-                let old_value = V::deserial(occ.get_mut());
+                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut());
                 occ.insert(&value_bytes);
                 Some(old_value)
             }
@@ -718,7 +714,7 @@ where
 impl<K, V> StateMap<K, V>
 where
     K: Serialize,
-    V: Serialize,
+    V: Serial,
 {
     pub(crate) fn key_with_map_prefix(&self, key: K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
@@ -730,7 +726,7 @@ where
 impl<K, V> Serial for StateMap<K, V>
 where
     K: Serialize,
-    V: Serialize,
+    V: Serial + DeserialStateCtx,
 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.prefix.serial(out) }
 }
@@ -1328,5 +1324,33 @@ impl DeserialCtx for String {
         let bytes = deserial_vector_no_length(source, len)?;
         let res = String::from_utf8(bytes).map_err(|_| ParseError::default())?;
         Ok(res)
+    }
+}
+
+/// Blanket implementation for Deserial, which simply does not use the state
+/// argument.
+impl<D: Deserial> DeserialStateCtx for D {
+    type ContractStateLLType = ContractStateLL;
+
+    fn deserial_state_ctx<R: Read>(
+        _state: &Rc<RefCell<Self::ContractStateLLType>>,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        Self::deserial(source)
+    }
+}
+
+impl<K, V> DeserialStateCtx for StateMap<K, V>
+where
+    K: Serialize,
+    V: Serial + DeserialStateCtx<ContractStateLLType = ContractStateLL>,
+{
+    type ContractStateLLType = ContractStateLL;
+
+    fn deserial_state_ctx<R: Read>(
+        state: &Rc<RefCell<Self::ContractStateLLType>>,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        source.read_u64().and_then(|map_prefix| Ok(StateMap::open(Rc::clone(state), map_prefix)))
     }
 }

@@ -1,4 +1,4 @@
-use concordium_contracts_common::Serialize;
+use concordium_contracts_common::{Serial, Serialize};
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::HasContractStateEntry;
@@ -16,7 +16,7 @@ pub struct ContractStateHL {
 pub struct StateMap<K, V>
 where
     K: Serialize,
-    V: Serialize, {
+    V: Serial, {
     pub(crate) phantom_k: PhantomData<K>,
     pub(crate) phantom_v: PhantomData<V>,
     pub(crate) prefix:    StateMapPrefix,
