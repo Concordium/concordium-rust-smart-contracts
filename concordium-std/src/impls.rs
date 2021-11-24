@@ -533,12 +533,9 @@ impl HasContractStateHL for ContractStateHL {
         }
     }
 
-    fn new_map<
-        K: Serialize,
-        V: Serial + DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>,
-    >(
+    fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
-    ) -> StateMap<K, V> {
+    ) -> StateMap<Self::ContractStateLLType, K, V> {
         // Get the next prefix or insert and use the initial one.
         let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
         let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
@@ -563,7 +560,7 @@ impl HasContractStateHL for ContractStateHL {
 
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
-    fn get<K: Serial, V: DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>>(
+    fn get<K: Serial, V: DeserialStateCtx<Self::ContractStateLLType>>(
         &self,
         key: K,
     ) -> Option<ParseResult<V>> {
@@ -670,12 +667,13 @@ impl Iterator for ContractStateIter {
     }
 }
 
-impl<K, V> HasStateMap<K, V> for StateMap<K, V>
+impl<S, K, V> HasStateMap<K, V> for StateMap<S, K, V>
 where
+    S: HasContractStateLL,
     K: Serialize,
-    V: Serial + DeserialStateCtx<ContractStateLLType = ContractStateLL>,
+    V: Serial + DeserialStateCtx<S>,
 {
-    type ContractStateLLType = ContractStateLL;
+    type ContractStateLLType = S;
 
     fn open<P: Serial>(state_ll: Rc<RefCell<Self::ContractStateLLType>>, prefix: P) -> Self {
         Self {
@@ -711,10 +709,11 @@ where
     }
 }
 
-impl<K, V> StateMap<K, V>
+impl<S, K, V> StateMap<S, K, V>
 where
     K: Serialize,
     V: Serial,
+    S: HasContractStateLL,
 {
     pub(crate) fn key_with_map_prefix(&self, key: K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
@@ -723,10 +722,11 @@ where
     }
 }
 
-impl<K, V> Serial for StateMap<K, V>
+impl<S, K, V> Serial for StateMap<S, K, V>
 where
     K: Serialize,
-    V: Serial + DeserialStateCtx,
+    V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.prefix.serial(out) }
 }
@@ -1329,28 +1329,20 @@ impl DeserialCtx for String {
 
 /// Blanket implementation for Deserial, which simply does not use the state
 /// argument.
-impl<D: Deserial> DeserialStateCtx for D {
-    type ContractStateLLType = ContractStateLL;
-
-    fn deserial_state_ctx<R: Read>(
-        _state: &Rc<RefCell<Self::ContractStateLLType>>,
-        source: &mut R,
-    ) -> ParseResult<Self> {
+/// TODO: Is this possible?
+impl<D: Deserial, S: HasContractStateLL> DeserialStateCtx<S> for D {
+    fn deserial_state_ctx<R: Read>(_state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
         Self::deserial(source)
     }
 }
 
-impl<K, V> DeserialStateCtx for StateMap<K, V>
+impl<S, K, V> DeserialStateCtx<S> for StateMap<S, K, V>
 where
+    S: HasContractStateLL,
     K: Serialize,
-    V: Serial + DeserialStateCtx<ContractStateLLType = ContractStateLL>,
+    V: Serial + DeserialStateCtx<S>,
 {
-    type ContractStateLLType = ContractStateLL;
-
-    fn deserial_state_ctx<R: Read>(
-        state: &Rc<RefCell<Self::ContractStateLLType>>,
-        source: &mut R,
-    ) -> ParseResult<Self> {
+    fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
         source.read_u64().and_then(|map_prefix| Ok(StateMap::open(Rc::clone(state), map_prefix)))
     }
 }

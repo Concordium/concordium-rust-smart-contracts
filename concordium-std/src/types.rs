@@ -1,7 +1,7 @@
 use concordium_contracts_common::{Serial, Serialize};
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
-use crate::HasContractStateEntry;
+use crate::{HasContractStateEntry, HasContractStateLL};
 
 /// A type representing the constract state bytes.
 #[derive(Default)]
@@ -13,14 +13,16 @@ pub struct ContractStateHL {
     pub(crate) state_ll: Rc<RefCell<ContractStateLL>>,
 }
 
-pub struct StateMap<K, V>
+// TODO: Remove serialize constraints?
+pub struct StateMap<S, K, V>
 where
     K: Serialize,
-    V: Serial, {
+    V: Serial,
+    S: HasContractStateLL, {
     pub(crate) phantom_k: PhantomData<K>,
     pub(crate) phantom_v: PhantomData<V>,
     pub(crate) prefix:    StateMapPrefix,
-    pub(crate) state_ll:  Rc<RefCell<ContractStateLL>>,
+    pub(crate) state_ll:  Rc<RefCell<S>>,
 }
 
 pub struct StateSet<V>

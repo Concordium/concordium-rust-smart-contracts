@@ -197,14 +197,11 @@ pub trait HasContractStateHL {
     type ContractStateData;
     type ContractStateLLType: HasContractStateLL;
     fn open(_: Self::ContractStateData) -> Self;
-    fn new_map<
-        K: Serialize,
-        V: Serial + DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>,
-    >(
+    fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
-    ) -> StateMap<K, V>;
+    ) -> StateMap<Self::ContractStateLLType, K, V>;
     // fn new_set<V: Serialize>(&mut self) -> StateSet<V>;
-    fn get<K: Serial, V: DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>>(
+    fn get<K: Serial, V: DeserialStateCtx<Self::ContractStateLLType>>(
         &self,
         key: K,
     ) -> Option<ParseResult<V>>;
@@ -214,7 +211,7 @@ pub trait HasContractStateHL {
 pub trait HasStateMap<K, V>
 where
     K: Serialize,
-    V: Serial + DeserialStateCtx<ContractStateLLType = Self::ContractStateLLType>, {
+    V: Serial + DeserialStateCtx<Self::ContractStateLLType>, {
     type ContractStateLLType: HasContractStateLL;
     fn open<P: Serial>(
         contract_state_ll: Rc<RefCell<Self::ContractStateLLType>>,
@@ -360,10 +357,8 @@ pub trait DeserialCtx: Sized {
     ) -> ParseResult<Self>;
 }
 
-pub trait DeserialStateCtx: Sized {
-    type ContractStateLLType: HasContractStateLL;
-    fn deserial_state_ctx<R: Read>(
-        state: &Rc<RefCell<Self::ContractStateLLType>>,
-        source: &mut R,
-    ) -> ParseResult<Self>;
+pub trait DeserialStateCtx<S>: Sized
+where
+    S: HasContractStateLL, {
+    fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self>;
 }
