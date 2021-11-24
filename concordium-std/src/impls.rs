@@ -271,9 +271,9 @@ impl HasContractState<()> for ContractState {
 }
 
 impl StateEntry {
-    pub(crate) fn open(entry_id: StateEntryId) -> Self {
+    pub(crate) fn open(state_entry_id: StateEntryId) -> Self {
         Self {
-            entry_id,
+            state_entry_id,
             current_position: 0,
         }
     }
@@ -282,15 +282,15 @@ impl StateEntry {
 impl HasContractStateEntry for StateEntry {
     fn open(entry_id: StateEntryId) -> Self { Self::open(entry_id) }
 
-    fn entry_id(&self) -> StateEntryId { self.entry_id }
+    fn entry_id(&self) -> StateEntryId { self.state_entry_id }
 
     #[inline(always)]
-    fn size(&self) -> u32 { unsafe { entry_state_size(self.entry_id) } }
+    fn size(&self) -> u32 { unsafe { entry_state_size(self.state_entry_id) } }
 
     fn truncate(&mut self, new_size: u32) {
         let cur_size = self.size();
         if cur_size > new_size {
-            unsafe { resize_entry_state(self.entry_id, new_size) };
+            unsafe { resize_entry_state(self.state_entry_id, new_size) };
         }
         if new_size < self.current_position {
             self.current_position = new_size
@@ -298,9 +298,9 @@ impl HasContractStateEntry for StateEntry {
     }
 
     fn reserve(&mut self, len: u32) -> bool {
-        let cur_size = unsafe { entry_state_size(self.entry_id) };
+        let cur_size = unsafe { entry_state_size(self.state_entry_id) };
         if cur_size < len {
-            let res = unsafe { resize_entry_state(self.entry_id, len) };
+            let res = unsafe { resize_entry_state(self.state_entry_id, len) };
             res == 1
         } else {
             true
@@ -376,7 +376,7 @@ impl Read for StateEntry {
             }
         };
         let num_read = unsafe {
-            load_entry_state(self.entry_id, buf.as_mut_ptr(), len, self.current_position)
+            load_entry_state(self.state_entry_id, buf.as_mut_ptr(), len, self.current_position)
         };
         self.current_position += num_read;
         Ok(num_read as usize)
@@ -387,7 +387,12 @@ impl Read for StateEntry {
     fn read_u64(&mut self) -> ParseResult<u64> {
         let mut bytes: MaybeUninit<[u8; 8]> = MaybeUninit::uninit();
         let num_read = unsafe {
-            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 8, self.current_position)
+            load_entry_state(
+                self.state_entry_id,
+                bytes.as_mut_ptr() as *mut u8,
+                8,
+                self.current_position,
+            )
         };
         self.current_position += num_read;
         if num_read == 8 {
@@ -402,7 +407,12 @@ impl Read for StateEntry {
     fn read_u32(&mut self) -> ParseResult<u32> {
         let mut bytes: MaybeUninit<[u8; 4]> = MaybeUninit::uninit();
         let num_read = unsafe {
-            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 4, self.current_position)
+            load_entry_state(
+                self.state_entry_id,
+                bytes.as_mut_ptr() as *mut u8,
+                4,
+                self.current_position,
+            )
         };
         self.current_position += num_read;
         if num_read == 4 {
@@ -417,7 +427,12 @@ impl Read for StateEntry {
     fn read_u8(&mut self) -> ParseResult<u8> {
         let mut bytes: MaybeUninit<[u8; 1]> = MaybeUninit::uninit();
         let num_read = unsafe {
-            load_entry_state(self.entry_id, bytes.as_mut_ptr() as *mut u8, 1, self.current_position)
+            load_entry_state(
+                self.state_entry_id,
+                bytes.as_mut_ptr() as *mut u8,
+                1,
+                self.current_position,
+            )
         };
         self.current_position += num_read;
         if num_read == 1 {
@@ -441,74 +456,127 @@ impl Write for StateEntry {
         if self.current_position.checked_add(len).is_none() {
             return Err(());
         }
-        let num_bytes =
-            unsafe { write_entry_state(self.entry_id, buf.as_ptr(), len, self.current_position) };
+        let num_bytes = unsafe {
+            write_entry_state(self.state_entry_id, buf.as_ptr(), len, self.current_position)
+        };
         self.current_position += num_bytes; // safe because of check above that len + pos is small enough
         Ok(num_bytes as usize)
     }
 }
 
-impl<EntryType> VacantEntry<EntryType>
+// The low-level entry type.
+impl<StateEntryType> VacantEntryRaw<StateEntryType>
 where
-    EntryType: HasContractStateEntry,
+    StateEntryType: HasContractStateEntry,
 {
-    pub fn new(entry_id: StateEntryId) -> Self {
+    pub fn new(state_entry_id: StateEntryId) -> Self {
         Self {
-            entry_id,
-            _marker: PhantomData,
+            state_entry_id,
+            _marker_state_entry: PhantomData,
         }
     }
 
-    pub fn entry_id(&self) -> &StateEntryId { &self.entry_id }
+    pub fn entry_id(&self) -> &StateEntryId { &self.state_entry_id }
 
-    pub fn into_entry_id(self) -> StateEntryId { self.entry_id }
+    pub fn into_entry_id(self) -> StateEntryId { self.state_entry_id }
 
-    pub fn insert(self, value: &[u8]) -> EntryType {
-        let mut state_entry = EntryType::open(self.entry_id);
+    pub fn insert(self, value: &[u8]) -> StateEntryType {
+        let mut state_entry = StateEntryType::open(self.state_entry_id);
         state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever fail?
         state_entry
     }
 }
 
-impl<EntryType> OccupiedEntry<EntryType>
+impl<K, V, S> VacantEntry<K, V, S>
 where
-    EntryType: HasContractStateEntry,
+    K: Serial,
+    V: Serial,
+    S: HasContractStateLL,
 {
-    pub fn new(entry: EntryType) -> Self {
+    pub fn new(state_entry_id: StateEntryId, key: K, state_ll: Rc<RefCell<S>>) -> Self {
         Self {
-            entry_id: entry.entry_id(),
-            entry,
+            state_entry_id,
+            key,
+            state_ll,
+            _marker_value: PhantomData,
         }
     }
 
-    pub fn entry_id(&self) -> &StateEntryId { &self.entry_id }
+    pub fn key(&self) -> &K { &self.key }
 
-    pub fn get_ref(&self) -> &EntryType { &self.entry }
+    pub fn into_key(self) -> K { self.key }
 
-    pub fn get(self) -> EntryType { self.entry }
-
-    pub fn get_mut(&mut self) -> &mut EntryType { &mut self.entry }
-
-    pub fn insert(&mut self, value: &[u8]) {
-        self.entry.write_all(value).unwrap_abort(); // TODO: Can this ever fail?
+    pub fn insert(self, value: V) {
+        let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
+        state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // TODO: Can this ever fail?
     }
 }
 
-impl<EntryType> Entry<EntryType>
+// The low-level entry type.
+impl<StateEntryType> OccupiedEntryRaw<StateEntryType>
 where
-    EntryType: HasContractStateEntry,
+    StateEntryType: HasContractStateEntry,
 {
-    pub fn entry_id(&self) -> &StateEntryId {
-        match self {
-            Entry::Vacant(vac) => vac.entry_id(),
-            Entry::Occupied(occ) => occ.entry_id(),
+    pub fn new(state_entry: StateEntryType) -> Self {
+        Self {
+            state_entry_id: state_entry.entry_id(),
+            state_entry,
         }
     }
 
-    pub fn or_insert(self, default: &[u8]) -> EntryType {
+    pub fn entry_id(&self) -> &StateEntryId { &self.state_entry_id }
+
+    pub fn get_ref(&self) -> &StateEntryType { &self.state_entry }
+
+    pub fn get(self) -> StateEntryType { self.state_entry }
+
+    pub fn get_mut(&mut self) -> &mut StateEntryType { &mut self.state_entry }
+
+    pub fn insert(&mut self, value: &[u8]) {
+        self.state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever
+                                                          // fail?
+    }
+}
+
+impl<K, V, S> OccupiedEntry<K, V, S>
+where
+    K: Serial,
+    V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    pub fn new(key: K, value: V, state_entry: S::EntryType, state_ll: Rc<RefCell<S>>) -> Self {
+        Self {
+            key,
+            value,
+            state_entry_id: state_entry.entry_id(),
+            state_entry,
+            state_ll,
+        }
+    }
+
+    pub fn key(&self) -> &K { &self.key }
+
+    pub fn insert(self, value: V) {
+        let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
+        state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // TODO: Can this ever fail?
+    }
+}
+
+impl<StateEntryType> EntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry,
+{
+    pub fn entry_id(&self) -> &StateEntryId {
         match self {
-            Entry::Vacant(vac) => vac.insert(default),
-            Entry::Occupied(occ) => occ.get(),
+            EntryRaw::Vacant(vac) => vac.entry_id(),
+            EntryRaw::Occupied(occ) => occ.entry_id(),
+        }
+    }
+
+    pub fn or_insert(self, default: &[u8]) -> StateEntryType {
+        match self {
+            EntryRaw::Vacant(vac) => vac.insert(default),
+            EntryRaw::Occupied(occ) => occ.get(),
         }
     }
 }
@@ -587,26 +655,26 @@ impl HasContractStateLL for ContractStateLL {
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
-    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType> {
+    fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let entry_id = unsafe { entry(key_start, key_len) };
 
         if self.vacant(entry_id) {
-            Entry::Vacant(VacantEntry::new(entry_id))
+            EntryRaw::Vacant(VacantEntryRaw::new(entry_id))
         } else {
-            Entry::Occupied(OccupiedEntry::new(StateEntry::open(entry_id)))
+            EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id)))
         }
     }
 
     /// Returns whether a value was overwritten.
     fn insert(&mut self, key: &[u8], value: &[u8]) -> bool {
         match self.entry(key) {
-            Entry::Vacant(vac) => {
+            EntryRaw::Vacant(vac) => {
                 vac.insert(value);
                 false // Nothing overwritten
             }
-            Entry::Occupied(mut occ) => {
+            EntryRaw::Occupied(mut occ) => {
                 occ.insert(value);
                 true // Something was overwritten
             }
@@ -615,8 +683,8 @@ impl HasContractStateLL for ContractStateLL {
 
     fn get(&self, key: &[u8]) -> Option<Self::EntryType> {
         match self.entry(key) {
-            Entry::Vacant(_) => None,
-            Entry::Occupied(occ) => Some(occ.get()),
+            EntryRaw::Vacant(_) => None,
+            EntryRaw::Occupied(occ) => Some(occ.get()),
         }
     }
 
@@ -696,17 +764,19 @@ where
         let key_bytes = self.key_with_map_prefix(key);
         let value_bytes = to_bytes(&value);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
-            Entry::Vacant(vac) => {
+            EntryRaw::Vacant(vac) => {
                 let _ = vac.insert(&value_bytes);
                 None
             }
-            Entry::Occupied(mut occ) => {
+            EntryRaw::Occupied(mut occ) => {
                 let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut());
                 occ.insert(&value_bytes);
                 Some(old_value)
             }
         }
     }
+
+    fn entry(&self, key: K) -> Entry<K, V, Self::ContractStateLLType> { todo!() }
 }
 
 impl<K, V, S> StateMap<K, V, S>

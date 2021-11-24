@@ -44,23 +44,53 @@ pub type StateIteratorId = u32;
 pub type StateMapPrefix = Vec<u8>;
 
 pub struct StateEntry {
-    pub(crate) entry_id:         StateEntryId,
+    pub(crate) state_entry_id:   StateEntryId,
     pub(crate) current_position: u32,
 }
 
-pub struct VacantEntry<EntryType: HasContractStateEntry> {
-    pub(crate) entry_id: StateEntryId,
-    pub(crate) _marker:  PhantomData<EntryType>,
+pub struct VacantEntry<K, V, S> {
+    pub(crate) key:            K,
+    pub(crate) state_entry_id: StateEntryId,
+    pub(crate) state_ll:       Rc<RefCell<S>>,
+    pub(crate) _marker_value:  PhantomData<V>,
 }
 
-pub struct OccupiedEntry<EntryType: HasContractStateEntry> {
-    pub(crate) entry_id: StateEntryId,
-    pub(crate) entry:    EntryType,
+pub struct OccupiedEntry<K, V, S>
+where
+    S: HasContractStateLL, {
+    pub(crate) key:            K,
+    pub(crate) value:          V,
+    pub(crate) state_entry_id: StateEntryId,
+    pub(crate) state_entry:    S::EntryType,
+    pub(crate) state_ll:       Rc<RefCell<S>>,
 }
 
-pub enum Entry<EntryType: HasContractStateEntry> {
-    Vacant(VacantEntry<EntryType>),
-    Occupied(OccupiedEntry<EntryType>),
+pub enum Entry<K, V, S>
+where
+    S: HasContractStateLL, {
+    Vacant(VacantEntry<K, V, S>),
+    Occupied(OccupiedEntry<K, V, S>),
+}
+
+pub struct VacantEntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry, {
+    pub(crate) state_entry_id:      StateEntryId,
+    pub(crate) _marker_state_entry: PhantomData<StateEntryType>,
+}
+
+pub struct OccupiedEntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry, {
+    pub(crate) state_entry_id: StateEntryId,
+    pub(crate) state_entry:    StateEntryType,
+}
+
+pub enum EntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry, {
+    Vacant(VacantEntryRaw<StateEntryType>),
+    Occupied(OccupiedEntryRaw<StateEntryType>),
 }
 
 #[derive(Default)]

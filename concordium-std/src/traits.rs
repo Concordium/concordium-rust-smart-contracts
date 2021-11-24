@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, StateEntryId, StateMap};
+use crate::{types::LogError, Entry, EntryRaw, StateEntryId, StateMap};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -165,7 +165,7 @@ pub trait HasContractStateLL {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Lookup an entry in the state.
-    fn entry(&self, key: &[u8]) -> Entry<Self::EntryType>;
+    fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType>;
 
     /// Insert a key-value-pair in the state..
     /// Returns whether anything was overwritten.
@@ -222,8 +222,7 @@ where
 
     fn get(&self, key: K) -> Option<ParseResult<V>>;
 
-    // fn entry(&self, key: K) -> Entry<<Self::ContractStateLLType as
-    // HasContractStateLL>::EntryType>;
+    fn entry(&self, key: K) -> Entry<K, V, Self::ContractStateLLType>;
 }
 
 /// Objects which can serve as loggers.
