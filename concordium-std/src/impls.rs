@@ -482,7 +482,7 @@ where
 
     pub fn insert(self, value: &[u8]) -> StateEntryType {
         let mut state_entry = StateEntryType::open(self.state_entry_id);
-        state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever fail?
+        state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
         state_entry
     }
 }
@@ -508,8 +508,10 @@ where
     pub fn get_mut(&mut self) -> &mut StateEntryType { &mut self.state_entry }
 
     pub fn insert(&mut self, value: &[u8]) {
-        self.state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever
-                                                          // fail?
+        // Rewind state entry. Cannot fail.
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        self.state_entry.write_all(value).unwrap_abort(); // Writing to state
+                                                          // cannot fail.
     }
 }
 
@@ -553,7 +555,9 @@ where
 
     pub fn insert(self, value: V) {
         let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
-        state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // TODO: Can this ever fail?
+        state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // Writing to
+                                                                 // state cannot
+                                                                 // fail.
     }
 }
 
@@ -575,9 +579,12 @@ where
 
     pub fn key(&self) -> &K { &self.key }
 
-    pub fn insert(self, value: V) {
-        let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
-        state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // TODO: Can this ever fail?
+    pub fn insert(mut self, value: V) {
+        // Rewind state entry. Cannot fail.
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        value.serial(&mut self.state_entry).unwrap_abort(); // Writing to
+                                                            // state cannot
+                                                            // fail.
     }
 
     pub fn get_ref(&self) -> &V { &self.value }
@@ -589,7 +596,9 @@ where
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         f(&mut self.value)?;
-        self.state_entry.write(&to_bytes(&self.value)).unwrap_abort(); // TODO: Can fail?
+        // Rewind state entry. Cannot fail.
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        self.value.serial(&mut self.state_entry).unwrap_abort(); // Writing to state cannot fail.
         Ok(())
     }
 }
@@ -660,11 +669,14 @@ impl HasContractStateHL for ContractStateHL {
 
         // Get the next collection prefix
         let map_prefix = next_collection_prefix_entry
-            .read_u64() // TODO: Does this cause problems for the write position?
+            .read_u64()
             .expect_report("next_collection_prefix is not a valid u64.");
 
+        // Rewind state entry position. Cannot fail.
+        next_collection_prefix_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+
         // Increment the collection prefix
-        next_collection_prefix_entry.write_u64(map_prefix + 1).unwrap_abort(); // TODO: Can this ever fail?
+        next_collection_prefix_entry.write_u64(map_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
 
         StateMap::open(Rc::clone(&self.state_ll), map_prefix)
     }
