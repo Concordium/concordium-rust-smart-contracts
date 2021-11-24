@@ -579,6 +579,53 @@ where
         let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
         state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // TODO: Can this ever fail?
     }
+
+    pub fn get_ref(&self) -> &V { &self.value }
+
+    pub fn get(self) -> V { self.value }
+
+    // If we had Stored<V> then we wouldn't need this.
+    pub fn modify<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut V), {
+        f(&mut self.value);
+        self.state_entry.write(&to_bytes(&self.value)).unwrap_abort(); // TODO: Can fail?
+    }
+}
+
+impl<K, V, S> Entry<K, V, S>
+where
+    K: Serial,
+    V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    pub fn or_insert(self, default: V) {
+        if let Entry::Vacant(vac) = self {
+            vac.insert(default);
+        }
+    }
+
+    pub fn and_modify<F>(mut self, f: F) -> Entry<K, V, S>
+    where
+        F: FnOnce(&mut V), {
+        if let Entry::Occupied(ref mut occ) = self {
+            occ.modify(f);
+        }
+        self
+    }
+}
+
+impl<K, V, S> Entry<K, V, S>
+where
+    K: Serial,
+    V: Serial + DeserialStateCtx<S> + Default,
+    S: HasContractStateLL,
+{
+    pub fn or_default(self) {
+        if let Entry::Vacant(vac) = self {
+            vac.insert(Default::default());
+        }
+    }
 }
 
 const NEXT_COLLECTION_PREFIX_KEY: u64 = 0;
@@ -753,7 +800,7 @@ where
     }
 
     fn get(&self, key: K) -> Option<ParseResult<V>> {
-        let k = self.key_with_map_prefix(key);
+        let k = self.key_with_map_prefix(&key);
         self.state_ll
             .borrow()
             .get(&k)
@@ -761,7 +808,7 @@ where
     }
 
     fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
-        let key_bytes = self.key_with_map_prefix(key);
+        let key_bytes = self.key_with_map_prefix(&key);
         let value_bytes = to_bytes(&value);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
             EntryRaw::Vacant(vac) => {
@@ -776,7 +823,25 @@ where
         }
     }
 
-    fn entry(&self, key: K) -> Entry<K, V, Self::ContractStateLLType> { todo!() }
+    fn entry(&mut self, key: K) -> ParseResult<Entry<K, V, Self::ContractStateLLType>> {
+        let key_bytes = self.key_with_map_prefix(&key);
+        match self.state_ll.borrow_mut().entry(&key_bytes) {
+            EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(
+                vac.state_entry_id,
+                key,
+                Rc::clone(&self.state_ll),
+            ))),
+            EntryRaw::Occupied(mut occ) => {
+                let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut())?;
+                Ok(Entry::Occupied(OccupiedEntry::new(
+                    key,
+                    value,
+                    occ.state_entry,
+                    Rc::clone(&self.state_ll),
+                )))
+            }
+        }
+    }
 }
 
 impl<K, V, S> StateMap<K, V, S>
@@ -785,9 +850,9 @@ where
     V: Serial,
     S: HasContractStateLL,
 {
-    pub(crate) fn key_with_map_prefix(&self, key: K) -> Vec<u8> {
+    pub(crate) fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
-        key_with_prefix.append(&mut to_bytes(&key));
+        key_with_prefix.append(&mut to_bytes(key));
         key_with_prefix
     }
 }

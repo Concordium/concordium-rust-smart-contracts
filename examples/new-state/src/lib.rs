@@ -48,48 +48,26 @@ fn receive<A: HasActions>(
     // Inserts value in state
     let _ = simple_map.insert(1, 2);
 
-    let mut token_state: StateMap<Address, StateMap<TokenId, TokenCount, _>, _> =
-        state.get(Keys::TokenState).unwrap_abort()?;
-
-    let _ = token_state.insert(params.owner, {
-        let mut map = state.new_map();
-        map.insert(params.token_id, params.token_count);
-        map
-    });
-
     let old_token_count: u64 = state.get(Keys::TokenCount).unwrap_abort()?;
     state.insert(Keys::TokenCount, old_token_count + params.token_count);
 
-    //     token_state
-    //         .entry(params.owner)
-    //         .and_modify(|owner_map| {
-    //             owner_map
-    //                 .entry(params.token_id)
-    //                 .and_modify(|current_count| *current_count +=
-    // params.token_count)                 .or_insert(params.token_count);
-    //         })
-    //         .or_insert({
-    //             let mut owner_map = state.new_map(); // Creating a nested map
-    // without knowing its location. Only possible with the scoped entry API.
-    //             let _ = owner_map.insert(params.token_id, params.token_count);
-    //             owner_map
-    //         });
-    //     token_state
-    //         .entry(params.owner)
-    //         .and_modify(|owner_map| {
-    //             (
-    //                 counter + 1,
-    //                 owner_map
-    //                     .entry(params.token_id)
-    //                     .and_modify(|current_count| *current_count +=
-    // params.token_count)                     .or_insert(params.token_count),
-    //             )
-    //         })
-    //         .or_insert({
-    //             let mut owner_map = state.new_map();
-    //              let _ = owner_map.insert(params.token_id,
-    // params.token_count);             (0, owner_map)
-    //         });
+    let mut token_state: StateMap<Address, StateMap<TokenId, TokenCount, _>, _> =
+        state.get(Keys::TokenState).unwrap_abort()?;
+
+    token_state
+        .entry(params.owner)?
+        .and_modify(|owner_map| match owner_map.entry(params.token_id) {
+            Ok(Entry::Vacant(vac)) => vac.insert(params.token_count),
+            Ok(Entry::Occupied(mut occ)) => {
+                occ.modify(|current_count| *current_count += params.token_count)
+            }
+            Err(_) => (),
+        })
+        .or_insert({
+            let mut owner_map = state.new_map();
+            let _ = owner_map.insert(params.token_id, params.token_count);
+            owner_map
+        });
 
     Ok(A::accept())
 }
