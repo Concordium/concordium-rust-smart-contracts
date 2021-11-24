@@ -1329,7 +1329,6 @@ impl DeserialCtx for String {
 
 /// Blanket implementation for Deserial, which simply does not use the state
 /// argument.
-/// TODO: Is this possible?
 impl<D: Deserial, S: HasContractStateLL> DeserialStateCtx<S> for D {
     fn deserial_state_ctx<R: Read>(_state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
         Self::deserial(source)
