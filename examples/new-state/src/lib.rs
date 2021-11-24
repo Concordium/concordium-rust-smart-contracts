@@ -25,10 +25,10 @@ struct MintParams {
 
 #[init(contract = "new-state", parameter = "MintParams")]
 fn init(_ctx: &impl HasInitContext, state: &mut impl HasContractStateHL) -> InitResult<()> {
-    let simple_map: StateMap<_, u8, u8> = state.new_map();
+    let simple_map: StateMap<u8, u8, _> = state.new_map();
     state.insert(Keys::SimpleMap, simple_map);
 
-    let token_state: StateMap<_, Address, StateMap<_, TokenId, TokenCount>> = state.new_map();
+    let token_state: StateMap<Address, StateMap<TokenId, TokenCount, _>, _> = state.new_map();
     state.insert(Keys::TokenState, token_state);
     state.insert(Keys::TokenCount, 0u64);
     Ok(())
@@ -41,14 +41,14 @@ fn receive<A: HasActions>(
 ) -> ReceiveResult<A> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
-    let mut simple_map: StateMap<_, u8, u8> = state.get(Keys::SimpleMap).unwrap_abort()?;
+    let mut simple_map: StateMap<u8, u8, _> = state.get(Keys::SimpleMap).unwrap_abort()?;
 
     // Inserts value in state
     let _ = simple_map.insert(0, 0);
     // Inserts value in state
     let _ = simple_map.insert(1, 2);
 
-    let mut token_state: StateMap<_, Address, StateMap<_, TokenId, TokenCount>> =
+    let mut token_state: StateMap<Address, StateMap<TokenId, TokenCount, _>, _> =
         state.get(Keys::TokenState).unwrap_abort()?;
 
     let _ = token_state.insert(params.owner, {

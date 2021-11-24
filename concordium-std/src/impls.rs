@@ -535,7 +535,7 @@ impl HasContractStateHL for ContractStateHL {
 
     fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
-    ) -> StateMap<Self::ContractStateLLType, K, V> {
+    ) -> StateMap<K, V, Self::ContractStateLLType> {
         // Get the next prefix or insert and use the initial one.
         let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
         let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
@@ -667,7 +667,7 @@ impl Iterator for ContractStateIter {
     }
 }
 
-impl<S, K, V> HasStateMap<K, V> for StateMap<S, K, V>
+impl<K, V, S> HasStateMap<K, V> for StateMap<K, V, S>
 where
     S: HasContractStateLL,
     K: Serialize,
@@ -709,7 +709,7 @@ where
     }
 }
 
-impl<S, K, V> StateMap<S, K, V>
+impl<K, V, S> StateMap<K, V, S>
 where
     K: Serialize,
     V: Serial,
@@ -722,7 +722,7 @@ where
     }
 }
 
-impl<S, K, V> Serial for StateMap<S, K, V>
+impl<K, V, S> Serial for StateMap<K, V, S>
 where
     K: Serialize,
     V: Serial + DeserialStateCtx<S>,
@@ -1335,7 +1335,7 @@ impl<D: Deserial, S: HasContractStateLL> DeserialStateCtx<S> for D {
     }
 }
 
-impl<S, K, V> DeserialStateCtx<S> for StateMap<S, K, V>
+impl<K, V, S> DeserialStateCtx<S> for StateMap<K, V, S>
 where
     S: HasContractStateLL,
     K: Serialize,

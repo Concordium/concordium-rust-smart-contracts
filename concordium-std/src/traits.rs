@@ -199,7 +199,7 @@ pub trait HasContractStateHL {
     fn open(_: Self::ContractStateData) -> Self;
     fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
-    ) -> StateMap<Self::ContractStateLLType, K, V>;
+    ) -> StateMap<K, V, Self::ContractStateLLType>;
     // fn new_set<V: Serialize>(&mut self) -> StateSet<V>;
     fn get<K: Serial, V: DeserialStateCtx<Self::ContractStateLLType>>(
         &self,

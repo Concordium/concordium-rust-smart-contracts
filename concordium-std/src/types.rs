@@ -14,7 +14,7 @@ pub struct ContractStateHL {
 }
 
 // TODO: Remove serialize constraints?
-pub struct StateMap<S, K, V>
+pub struct StateMap<K, V, S>
 where
     K: Serialize,
     V: Serial,
