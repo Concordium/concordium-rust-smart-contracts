@@ -1,4 +1,4 @@
-use concordium_contracts_common::{Serial, Serialize};
+use concordium_contracts_common::Serialize;
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{HasContractStateEntry, HasContractStateLL};
@@ -13,11 +13,8 @@ pub struct ContractStateHL {
     pub(crate) state_ll: Rc<RefCell<ContractStateLL>>,
 }
 
-// TODO: Remove serialize constraints?
 pub struct StateMap<K, V, S>
 where
-    K: Serialize,
-    V: Serial,
     S: HasContractStateLL, {
     pub(crate) phantom_k: PhantomData<K>,
     pub(crate) phantom_v: PhantomData<V>,
