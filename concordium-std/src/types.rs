@@ -48,6 +48,27 @@ pub struct StateEntry {
     pub(crate) current_position: u32,
 }
 
+pub struct VacantEntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry, {
+    pub(crate) state_entry_id:      StateEntryId,
+    pub(crate) _marker_state_entry: PhantomData<StateEntryType>,
+}
+
+pub struct OccupiedEntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry, {
+    pub(crate) state_entry_id: StateEntryId,
+    pub(crate) state_entry:    StateEntryType,
+}
+
+pub enum EntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry, {
+    Vacant(VacantEntryRaw<StateEntryType>),
+    Occupied(OccupiedEntryRaw<StateEntryType>),
+}
+
 pub struct VacantEntry<K, V, S> {
     pub(crate) key:            K,
     pub(crate) state_entry_id: StateEntryId,
@@ -70,27 +91,6 @@ where
     S: HasContractStateLL, {
     Vacant(VacantEntry<K, V, S>),
     Occupied(OccupiedEntry<K, V, S>),
-}
-
-pub struct VacantEntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry, {
-    pub(crate) state_entry_id:      StateEntryId,
-    pub(crate) _marker_state_entry: PhantomData<StateEntryType>,
-}
-
-pub struct OccupiedEntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry, {
-    pub(crate) state_entry_id: StateEntryId,
-    pub(crate) state_entry:    StateEntryType,
-}
-
-pub enum EntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry, {
-    Vacant(VacantEntryRaw<StateEntryType>),
-    Occupied(OccupiedEntryRaw<StateEntryType>),
 }
 
 #[derive(Default)]

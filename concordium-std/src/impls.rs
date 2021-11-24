@@ -282,7 +282,7 @@ impl StateEntry {
 impl HasContractStateEntry for StateEntry {
     fn open(entry_id: StateEntryId) -> Self { Self::open(entry_id) }
 
-    fn entry_id(&self) -> StateEntryId { self.state_entry_id }
+    fn state_entry_id(&self) -> StateEntryId { self.state_entry_id }
 
     #[inline(always)]
     fn size(&self) -> u32 { unsafe { entry_state_size(self.state_entry_id) } }
@@ -476,7 +476,7 @@ where
         }
     }
 
-    pub fn entry_id(&self) -> &StateEntryId { &self.state_entry_id }
+    pub fn state_entry_id(&self) -> &StateEntryId { &self.state_entry_id }
 
     pub fn into_entry_id(self) -> StateEntryId { self.state_entry_id }
 
@@ -484,6 +484,51 @@ where
         let mut state_entry = StateEntryType::open(self.state_entry_id);
         state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever fail?
         state_entry
+    }
+}
+
+// The low-level entry type.
+impl<StateEntryType> OccupiedEntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry,
+{
+    pub fn new(state_entry: StateEntryType) -> Self {
+        Self {
+            state_entry_id: state_entry.state_entry_id(),
+            state_entry,
+        }
+    }
+
+    pub fn state_entry_id(&self) -> &StateEntryId { &self.state_entry_id }
+
+    pub fn get_ref(&self) -> &StateEntryType { &self.state_entry }
+
+    pub fn get(self) -> StateEntryType { self.state_entry }
+
+    pub fn get_mut(&mut self) -> &mut StateEntryType { &mut self.state_entry }
+
+    pub fn insert(&mut self, value: &[u8]) {
+        self.state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever
+                                                          // fail?
+    }
+}
+
+impl<StateEntryType> EntryRaw<StateEntryType>
+where
+    StateEntryType: HasContractStateEntry,
+{
+    pub fn state_entry_id(&self) -> &StateEntryId {
+        match self {
+            EntryRaw::Vacant(vac) => vac.state_entry_id(),
+            EntryRaw::Occupied(occ) => occ.state_entry_id(),
+        }
+    }
+
+    pub fn or_insert(self, default: &[u8]) -> StateEntryType {
+        match self {
+            EntryRaw::Vacant(vac) => vac.insert(default),
+            EntryRaw::Occupied(occ) => occ.get(),
+        }
     }
 }
 
@@ -512,32 +557,6 @@ where
     }
 }
 
-// The low-level entry type.
-impl<StateEntryType> OccupiedEntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry,
-{
-    pub fn new(state_entry: StateEntryType) -> Self {
-        Self {
-            state_entry_id: state_entry.entry_id(),
-            state_entry,
-        }
-    }
-
-    pub fn entry_id(&self) -> &StateEntryId { &self.state_entry_id }
-
-    pub fn get_ref(&self) -> &StateEntryType { &self.state_entry }
-
-    pub fn get(self) -> StateEntryType { self.state_entry }
-
-    pub fn get_mut(&mut self) -> &mut StateEntryType { &mut self.state_entry }
-
-    pub fn insert(&mut self, value: &[u8]) {
-        self.state_entry.write_all(value).unwrap_abort(); // TODO: Can this ever
-                                                          // fail?
-    }
-}
-
 impl<K, V, S> OccupiedEntry<K, V, S>
 where
     K: Serial,
@@ -548,7 +567,7 @@ where
         Self {
             key,
             value,
-            state_entry_id: state_entry.entry_id(),
+            state_entry_id: state_entry.state_entry_id(),
             state_entry,
             state_ll,
         }
@@ -559,25 +578,6 @@ where
     pub fn insert(self, value: V) {
         let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
         state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // TODO: Can this ever fail?
-    }
-}
-
-impl<StateEntryType> EntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry,
-{
-    pub fn entry_id(&self) -> &StateEntryId {
-        match self {
-            EntryRaw::Vacant(vac) => vac.entry_id(),
-            EntryRaw::Occupied(occ) => occ.entry_id(),
-        }
-    }
-
-    pub fn or_insert(self, default: &[u8]) -> StateEntryType {
-        match self {
-            EntryRaw::Vacant(vac) => vac.insert(default),
-            EntryRaw::Occupied(occ) => occ.get(),
-        }
     }
 }
 

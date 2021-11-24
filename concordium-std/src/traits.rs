@@ -139,7 +139,7 @@ where
     fn open(entry_id: StateEntryId) -> Self;
 
     /// Get the file id.
-    fn entry_id(&self) -> StateEntryId;
+    fn state_entry_id(&self) -> StateEntryId;
 
     /// Get the current size of the file.
     fn size(&self) -> u32;
