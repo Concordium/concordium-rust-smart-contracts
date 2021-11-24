@@ -534,18 +534,18 @@ where
     }
 }
 
-impl<K, V, S> VacantEntry<K, V, S>
+impl<K, V, StateEntryType> VacantEntry<K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
-    S: HasContractStateLL,
+    StateEntryType: HasContractStateEntry,
 {
-    pub fn new(state_entry_id: StateEntryId, key: K, state_ll: Rc<RefCell<S>>) -> Self {
+    pub fn new(state_entry_id: StateEntryId, key: K) -> Self {
         Self {
             state_entry_id,
             key,
-            state_ll,
             _marker_value: PhantomData,
+            _marker_state_entry: PhantomData,
         }
     }
 
@@ -554,26 +554,24 @@ where
     pub fn into_key(self) -> K { self.key }
 
     pub fn insert(self, value: V) {
-        let mut state_entry = <S as HasContractStateLL>::EntryType::open(self.state_entry_id);
+        let mut state_entry = StateEntryType::open(self.state_entry_id);
         state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // Writing to
                                                                  // state cannot
                                                                  // fail.
     }
 }
 
-impl<K, V, S> OccupiedEntry<K, V, S>
+impl<K, V, StateEntryType> OccupiedEntry<K, V, StateEntryType>
 where
     K: Serial,
-    V: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    V: Serial,
+    StateEntryType: HasContractStateEntry,
 {
-    pub fn new(key: K, value: V, state_entry: S::EntryType, state_ll: Rc<RefCell<S>>) -> Self {
+    pub fn new(key: K, value: V, state_entry: StateEntryType) -> Self {
         Self {
             key,
             value,
-            state_entry_id: state_entry.state_entry_id(),
             state_entry,
-            state_ll,
         }
     }
 
@@ -603,11 +601,11 @@ where
     }
 }
 
-impl<K, V, S> Entry<K, V, S>
+impl<K, V, StateEntryType> Entry<K, V, StateEntryType>
 where
     K: Serial,
-    V: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    V: Serial,
+    StateEntryType: HasContractStateEntry,
 {
     pub fn or_insert(self, default: V) {
         if let Entry::Vacant(vac) = self {
@@ -615,7 +613,7 @@ where
         }
     }
 
-    pub fn and_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, S>, E>
+    pub fn and_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, StateEntryType>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         if let Entry::Occupied(ref mut occ) = self {
@@ -625,11 +623,11 @@ where
     }
 }
 
-impl<K, V, S> Entry<K, V, S>
+impl<K, V, StateEntryType> Entry<K, V, StateEntryType>
 where
     K: Serial,
-    V: Serial + DeserialStateCtx<S> + Default,
-    S: HasContractStateLL,
+    V: Serial + Default,
+    StateEntryType: HasContractStateEntry,
 {
     pub fn or_default(self) {
         if let Entry::Vacant(vac) = self {
@@ -836,22 +834,17 @@ where
         }
     }
 
-    fn entry(&mut self, key: K) -> ParseResult<Entry<K, V, Self::ContractStateLLType>> {
+    fn entry(
+        &mut self,
+        key: K,
+    ) -> ParseResult<Entry<K, V, <Self::ContractStateLLType as HasContractStateLL>::EntryType>>
+    {
         let key_bytes = self.key_with_map_prefix(&key);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
-            EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(
-                vac.state_entry_id,
-                key,
-                Rc::clone(&self.state_ll),
-            ))),
+            EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(vac.state_entry_id, key))),
             EntryRaw::Occupied(mut occ) => {
                 let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut())?;
-                Ok(Entry::Occupied(OccupiedEntry::new(
-                    key,
-                    value,
-                    occ.state_entry,
-                    Rc::clone(&self.state_ll),
-                )))
+                Ok(Entry::Occupied(OccupiedEntry::new(key, value, occ.state_entry)))
             }
         }
     }

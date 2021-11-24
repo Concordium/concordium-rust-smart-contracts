@@ -222,7 +222,10 @@ where
 
     fn get(&self, key: K) -> Option<ParseResult<V>>;
 
-    fn entry(&mut self, key: K) -> ParseResult<Entry<K, V, Self::ContractStateLLType>>;
+    fn entry(
+        &mut self,
+        key: K,
+    ) -> ParseResult<Entry<K, V, <Self::ContractStateLLType as HasContractStateLL>::EntryType>>;
 }
 
 /// Objects which can serve as loggers.

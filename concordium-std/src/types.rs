@@ -66,26 +66,20 @@ where
     Occupied(OccupiedEntryRaw<StateEntryType>),
 }
 
-pub struct VacantEntry<K, V, S> {
-    pub(crate) key:            K,
-    pub(crate) state_entry_id: StateEntryId,
-    pub(crate) state_ll:       Rc<RefCell<S>>,
-    pub(crate) _marker_value:  PhantomData<V>,
+pub struct VacantEntry<K, V, StateEntryType> {
+    pub(crate) key:                 K,
+    pub(crate) state_entry_id:      StateEntryId,
+    pub(crate) _marker_value:       PhantomData<V>,
+    pub(crate) _marker_state_entry: PhantomData<StateEntryType>,
 }
 
-pub struct OccupiedEntry<K, V, S>
-where
-    S: HasContractStateLL, {
-    pub(crate) key:            K,
-    pub(crate) value:          V,
-    pub(crate) state_entry_id: StateEntryId,
-    pub(crate) state_entry:    S::EntryType,
-    pub(crate) state_ll:       Rc<RefCell<S>>,
+pub struct OccupiedEntry<K, V, StateEntryType> {
+    pub(crate) key:         K,
+    pub(crate) value:       V,
+    pub(crate) state_entry: StateEntryType,
 }
 
-pub enum Entry<K, V, S>
-where
-    S: HasContractStateLL, {
+pub enum Entry<K, V, S> {
     Vacant(VacantEntry<K, V, S>),
     Occupied(OccupiedEntry<K, V, S>),
 }
