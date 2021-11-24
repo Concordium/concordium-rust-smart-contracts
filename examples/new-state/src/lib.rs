@@ -18,19 +18,17 @@ struct MintParams {
     token_count: TokenCount,
 }
 
+// With GATs (Generic Associated Types), we could avoid the _ parameter and do:
+// init<State: HasContractStateHL> .. {
+//    let simple_map: State::Map<u8,u8> = state.new_map();
+// }
+
 #[init(contract = "new-state", parameter = "MintParams")]
-fn init<State: HasContractStateHL>(
-    _ctx: &impl HasInitContext,
-    state: &mut State,
-) -> InitResult<()> {
-    let simple_map: StateMap<State::ContractStateLLType, u8, u8> = state.new_map::<u8, u8>();
+fn init(_ctx: &impl HasInitContext, state: &mut impl HasContractStateHL) -> InitResult<()> {
+    let simple_map: StateMap<_, u8, u8> = state.new_map();
     state.insert(Keys::SimpleMap, simple_map);
 
-    let token_state = state.new_map::<Address, StateMap<
-        State::ContractStateLLType,
-        TokenId,
-        StateMap<State::ContractStateLLType, TokenId, TokenCount>,
-    >>();
+    let token_state: StateMap<_, TokenId, StateMap<_, TokenId, TokenCount>> = state.new_map();
     state.insert(Keys::TokenState, token_state);
     state.insert(Keys::MintEventCounter, 0u64);
     Ok(())
@@ -39,7 +37,7 @@ fn init<State: HasContractStateHL>(
 #[receive(contract = "new-state", name = "mint", parameter = "MintParams")]
 fn receive<A: HasActions, State: HasContractStateHL>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
+    _state: &mut State,
 ) -> ReceiveResult<A> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
