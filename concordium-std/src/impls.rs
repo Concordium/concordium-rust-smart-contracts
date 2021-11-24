@@ -585,11 +585,12 @@ where
     pub fn get(self) -> V { self.value }
 
     // If we had Stored<V> then we wouldn't need this.
-    pub fn modify<F>(&mut self, f: F)
+    pub fn modify<F, E>(&mut self, f: F) -> Result<(), E>
     where
-        F: FnOnce(&mut V), {
-        f(&mut self.value);
+        F: FnOnce(&mut V) -> Result<(), E>, {
+        f(&mut self.value)?;
         self.state_entry.write(&to_bytes(&self.value)).unwrap_abort(); // TODO: Can fail?
+        Ok(())
     }
 }
 
@@ -605,13 +606,13 @@ where
         }
     }
 
-    pub fn and_modify<F>(mut self, f: F) -> Entry<K, V, S>
+    pub fn and_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, S>, E>
     where
-        F: FnOnce(&mut V), {
+        F: FnOnce(&mut V) -> Result<(), E>, {
         if let Entry::Occupied(ref mut occ) = self {
-            occ.modify(f);
+            occ.modify(f)?;
         }
-        self
+        Ok(self)
     }
 }
 

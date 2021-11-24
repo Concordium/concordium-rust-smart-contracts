@@ -56,13 +56,16 @@ fn receive<A: HasActions>(
 
     token_state
         .entry(params.owner)?
-        .and_modify(|owner_map| match owner_map.entry(params.token_id) {
-            Ok(Entry::Vacant(vac)) => vac.insert(params.token_count),
-            Ok(Entry::Occupied(mut occ)) => {
-                occ.modify(|current_count| *current_count += params.token_count)
-            }
-            Err(_) => (),
-        })
+        .and_modify::<_, Reject>(|owner_map| {
+            owner_map
+                .entry(params.token_id)?
+                .and_modify::<_, Reject>(|current_count| {
+                    *current_count += params.token_count;
+                    Ok(())
+                })?
+                .or_insert(params.token_count);
+            Ok(())
+        })?
         .or_insert({
             let mut owner_map = state.new_map();
             let _ = owner_map.insert(params.token_id, params.token_count);
