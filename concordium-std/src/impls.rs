@@ -786,9 +786,9 @@ impl Iterator for ContractStateIter {
     fn next(&mut self) -> Option<Self::Item> {
         let res = unsafe { next(self.iterator_id) };
         if res < 0 {
-            Some(StateEntry::open(res as u32))
-        } else {
             None
+        } else {
+            Some(StateEntry::open(res as u32))
         }
     }
 }
