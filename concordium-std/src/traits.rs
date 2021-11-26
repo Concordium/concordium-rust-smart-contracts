@@ -172,10 +172,6 @@ pub trait HasContractStateLL {
     /// Lookup an entry in the state.
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
 
-    /// Insert a key-value-pair in the state.
-    /// Returns whether anything was overwritten.
-    fn insert(&mut self, key: &[u8], value: &[u8]) -> bool;
-
     /// Delete an entry.
     /// Returns whether the entry actually existed.
     fn delete_entry(&mut self, entry_id: StateEntryId) -> bool;
@@ -200,7 +196,7 @@ pub trait HasContractStateHL {
         &self,
         key: K,
     ) -> Option<ParseResult<V>>;
-    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool;
+    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V);
 }
 
 pub trait HasStateMap<K, V>

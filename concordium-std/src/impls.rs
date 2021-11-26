@@ -678,11 +678,6 @@ impl HasContractStateHL for ContractStateHL {
         StateMap::open(Rc::clone(&self.state_ll), map_prefix)
     }
 
-    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) -> bool {
-        let key_with_map_prefix = prepend_generic_map_key(key);
-        self.state_ll.borrow_mut().insert(&key_with_map_prefix, &to_bytes(&value))
-    }
-
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
     fn get<K: Serial, V: DeserialStateCtx<Self::ContractStateLLType>>(
@@ -695,6 +690,17 @@ impl HasContractStateHL for ContractStateHL {
             .borrow_mut()
             .lookup(&key_with_map_prefix)
             .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
+    }
+
+    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) {
+        let key_with_map_prefix = prepend_generic_map_key(key);
+        let value_bytes = to_bytes(&value);
+        match self.state_ll.borrow_mut().entry(&key_with_map_prefix) {
+            EntryRaw::Vacant(vac) => {
+                let _ = vac.insert(&value_bytes);
+            }
+            EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
+        }
     }
 }
 
@@ -733,20 +739,6 @@ impl HasContractStateLL for ContractStateLL {
             None
         } else {
             Some(StateEntry::open(entry_id_option as u32))
-        }
-    }
-
-    /// Returns whether a value was overwritten.
-    fn insert(&mut self, key: &[u8], value: &[u8]) -> bool {
-        match self.entry(key) {
-            EntryRaw::Vacant(vac) => {
-                vac.insert(value);
-                false // Nothing overwritten
-            }
-            EntryRaw::Occupied(mut occ) => {
-                occ.insert(value);
-                true // Something was overwritten
-            }
         }
     }
 
