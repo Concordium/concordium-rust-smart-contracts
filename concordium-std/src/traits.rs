@@ -136,7 +136,9 @@ where
     Self: Read,
     Self: Write<Err = Error>,
     Self: Seek<Err = Error>, {
-    fn open(entry_id: StateEntryId) -> Self;
+    type StateEntryData;
+
+    fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self;
 
     /// Get the file id.
     fn state_entry_id(&self) -> StateEntryId;
@@ -164,22 +166,15 @@ pub trait HasContractStateLL {
     /// time.
     fn open(_: Self::ContractStateData) -> Self;
 
-    /// Lookup an entry in the state.
+    /// Get an entry in the state.
     fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType>;
 
-    /// Insert a key-value-pair in the state..
+    /// Lookup an entry in the state.
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
+
+    /// Insert a key-value-pair in the state.
     /// Returns whether anything was overwritten.
     fn insert(&mut self, key: &[u8], value: &[u8]) -> bool;
-
-    /// Try to get the entry at the given key.
-    fn get(&self, key: &[u8]) -> Option<Self::EntryType>;
-
-    /// Returns whether an entry is vacant.
-    fn vacant(&self, entry_id: StateEntryId) -> bool;
-
-    /// Creates an entry with the given capacity.
-    /// Returns whether another value was overwritten.
-    fn create(&mut self, entry_id: StateEntryId, capacity: u32) -> bool;
 
     /// Delete an entry.
     /// Returns whether the entry actually existed.

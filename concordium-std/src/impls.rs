@@ -280,7 +280,9 @@ impl StateEntry {
 }
 
 impl HasContractStateEntry for StateEntry {
-    fn open(entry_id: StateEntryId) -> Self { Self::open(entry_id) }
+    type StateEntryData = ();
+
+    fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self { Self::open(entry_id) }
 
     fn state_entry_id(&self) -> StateEntryId { self.state_entry_id }
 
@@ -469,10 +471,10 @@ impl<StateEntryType> VacantEntryRaw<StateEntryType>
 where
     StateEntryType: HasContractStateEntry,
 {
-    pub fn new(state_entry_id: StateEntryId) -> Self {
+    pub fn new(state_entry: StateEntryType) -> Self {
         Self {
-            state_entry_id,
-            _marker_state_entry: PhantomData,
+            state_entry_id: state_entry.state_entry_id(),
+            state_entry,
         }
     }
 
@@ -480,10 +482,9 @@ where
 
     pub fn into_entry_id(self) -> StateEntryId { self.state_entry_id }
 
-    pub fn insert(self, value: &[u8]) -> StateEntryType {
-        let mut state_entry = StateEntryType::open(self.state_entry_id);
-        state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
-        state_entry
+    pub fn insert(mut self, value: &[u8]) -> StateEntryType {
+        self.state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
+        self.state_entry
     }
 }
 
@@ -540,12 +541,11 @@ where
     V: Serial,
     StateEntryType: HasContractStateEntry,
 {
-    pub fn new(state_entry_id: StateEntryId, key: K) -> Self {
+    pub fn new(key: K, state_entry: StateEntryType) -> Self {
         Self {
-            state_entry_id,
             key,
+            state_entry,
             _marker_value: PhantomData,
-            _marker_state_entry: PhantomData,
         }
     }
 
@@ -553,11 +553,9 @@ where
 
     pub fn into_key(self) -> K { self.key }
 
-    pub fn insert(self, value: V) {
-        let mut state_entry = StateEntryType::open(self.state_entry_id);
-        state_entry.write_all(&to_bytes(&value)).unwrap_abort(); // Writing to
-                                                                 // state cannot
-                                                                 // fail.
+    pub fn insert(mut self, value: V) {
+        // Writing to state cannot fail.
+        self.state_entry.write_all(&to_bytes(&value)).unwrap_abort();
     }
 }
 
@@ -613,6 +611,7 @@ where
         }
     }
 
+    // TODO: Add non-result version for non-nested maps.
     pub fn and_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, StateEntryType>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
@@ -694,7 +693,7 @@ impl HasContractStateHL for ContractStateHL {
 
         self.state_ll
             .borrow_mut()
-            .get(&key_with_map_prefix)
+            .lookup(&key_with_map_prefix)
             .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
     }
 }
@@ -716,12 +715,24 @@ impl HasContractStateLL for ContractStateLL {
     fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
-        let entry_id = unsafe { entry(key_start, key_len) };
+        let res = unsafe { entry(key_start, key_len) };
 
-        if self.vacant(entry_id) {
-            EntryRaw::Vacant(VacantEntryRaw::new(entry_id))
-        } else {
+        let (occupied, entry_id) = split_u64(res);
+        if occupied == 1 {
             EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id)))
+        } else {
+            EntryRaw::Vacant(VacantEntryRaw::new(StateEntry::open(entry_id)))
+        }
+    }
+
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> {
+        let key_start = key.as_ptr();
+        let key_len = key.len() as u32; // Wasm usize == 32bit.
+        let entry_id_option = unsafe { lookup(key_start, key_len) };
+        if entry_id_option < 0 {
+            None
+        } else {
+            Some(StateEntry::open(entry_id_option as u32))
         }
     }
 
@@ -737,22 +748,6 @@ impl HasContractStateLL for ContractStateLL {
                 true // Something was overwritten
             }
         }
-    }
-
-    fn get(&self, key: &[u8]) -> Option<Self::EntryType> {
-        match self.entry(key) {
-            EntryRaw::Vacant(_) => None,
-            EntryRaw::Occupied(occ) => Some(occ.get()),
-        }
-    }
-
-    /// Returns whether the entry is vacant, i.e. the key does not exist in the
-    /// map.
-    fn vacant(&self, entry_id: StateEntryId) -> bool { unsafe { vacant(entry_id) == 1 } }
-
-    /// Populate the entry. Returns whether a value was overwritten.
-    fn create(&mut self, entry_id: StateEntryId, capacity: u32) -> bool {
-        unsafe { create(entry_id, capacity) == 1 }
     }
 
     /// Delete the entry. Returns true if the entry was occupied and false
@@ -777,6 +772,40 @@ impl HasContractStateLL for ContractStateLL {
         ContractStateIter {
             iterator_id,
         }
+    }
+}
+
+/// Split a u64 into (u32, u32).
+/// Used to handle results returned from the host functions.
+fn split_u64(n: u64) -> (u32, u32) {
+    let n = n.to_le_bytes();
+    let occupied = u32::from_le_bytes([n[0], n[1], n[2], n[3]]);
+    let entry_id = u32::from_le_bytes([n[4], n[5], n[6], n[7]]);
+    (occupied, entry_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_u64;
+    #[test]
+    fn test_split_u64() {
+        let input_bytes: [u8; 8] = [
+            // occupied
+            0b_0000_0001, // 1
+            0b_0000_0010, // 512
+            0b_0000_0100, // 262,144
+            0b_0000_1000, // 134,217,728
+            // entry_id
+            0b_0001_0000, // 16
+            0b_0010_0000, // 8,192
+            0b_0100_0000, // 4,194,304
+            0b_1000_0000, // 2,147,483,648
+        ];
+        let input = u64::from_le_bytes(input_bytes);
+        assert_eq!(
+            split_u64(input),
+            (1 + 512 + 262_144 + 134_217_728, 16 + 8_192 + 4_194_304 + 2_147_483_648)
+        );
     }
 }
 
@@ -814,7 +843,7 @@ where
         let k = self.key_with_map_prefix(&key);
         self.state_ll
             .borrow()
-            .get(&k)
+            .lookup(&k)
             .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
     }
 
@@ -841,7 +870,7 @@ where
     {
         let key_bytes = self.key_with_map_prefix(&key);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
-            EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(vac.state_entry_id, key))),
+            EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(key, vac.state_entry))),
             EntryRaw::Occupied(mut occ) => {
                 let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut())?;
                 Ok(Entry::Occupied(OccupiedEntry::new(key, value, occ.state_entry)))

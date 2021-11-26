@@ -48,8 +48,8 @@ pub struct StateEntry {
 pub struct VacantEntryRaw<StateEntryType>
 where
     StateEntryType: HasContractStateEntry, {
-    pub(crate) state_entry_id:      StateEntryId,
-    pub(crate) _marker_state_entry: PhantomData<StateEntryType>,
+    pub(crate) state_entry_id: StateEntryId,
+    pub(crate) state_entry:    StateEntryType,
 }
 
 pub struct OccupiedEntryRaw<StateEntryType>
@@ -67,10 +67,9 @@ where
 }
 
 pub struct VacantEntry<K, V, StateEntryType> {
-    pub(crate) key:                 K,
-    pub(crate) state_entry_id:      StateEntryId,
-    pub(crate) _marker_value:       PhantomData<V>,
-    pub(crate) _marker_state_entry: PhantomData<StateEntryType>,
+    pub(crate) key:           K,
+    pub(crate) state_entry:   StateEntryType,
+    pub(crate) _marker_value: PhantomData<V>,
 }
 
 pub struct OccupiedEntry<K, V, StateEntryType> {

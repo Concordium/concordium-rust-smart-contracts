@@ -54,21 +54,17 @@ extern "C" {
 
     // -- NEW state implementation --
 
-    /// Lookup an entry. Concretely this will be some internal identifier
+    /// Get an entry. Concretely this will be some internal identifier
     /// given out by the host. Conceptually the return value is *mut Entry.
     /// Empty key means the root.
-    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> u32;
+    /// This will populate the entry if it is vacant.
+    /// (occupied: u32, entry_id: u32) = u64
+    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> u64;
 
-    /// Checks whether the entry is vacant, i.e., a key does not exist in the
-    /// map.
-    /// 1 => exists
-    /// 0 => does not exist
-    pub(crate) fn vacant(entry: u32) -> u32;
-
-    /// Populates the entry. Returns whether an existing value was overwritten.
-    /// 1 => created new by overwriting existing value
-    /// 0 => created new value
-    pub(crate) fn create(entry: u32, capacity: u32) -> u32;
+    /// Lookup an entry.
+    /// Returns -1 if the entry does not exist.
+    /// Otherwise it returns an entry id as a u32.
+    pub(crate) fn lookup(key_start: *const u8, key_length: u32) -> i64;
 
     /// Delete the entry. Returns whether the entry was or not.
     /// 1 => did exists
@@ -231,6 +227,10 @@ mod host_dummy_functions {
 
     #[no_mangle]
     pub(crate) fn entry(_key_start: *const u8, _key_length: u32) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn lookup(_key_start: *const u8, _key_length: u32) -> i64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
