@@ -721,13 +721,14 @@ impl HasContractStateLL for ContractStateLL {
     fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
-        let res = unsafe { entry(key_start, key_len) };
+        let res = unsafe { lookup(key_start, key_len) };
 
-        let (occupied, entry_id) = split_u64(res);
-        if occupied == 1 {
-            EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id)))
-        } else {
+        if res == -1 {
+            let entry_id = unsafe { create(key_start, key_len) };
             EntryRaw::Vacant(VacantEntryRaw::new(StateEntry::open(entry_id)))
+        } else {
+            let entry_id = res as u32;
+            EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id)))
         }
     }
 
@@ -764,40 +765,6 @@ impl HasContractStateLL for ContractStateLL {
         ContractStateIter {
             iterator_id,
         }
-    }
-}
-
-/// Split a u64 into (u32, u32).
-/// Used to handle results returned from the host functions.
-fn split_u64(n: u64) -> (u32, u32) {
-    let n = n.to_le_bytes();
-    let occupied = u32::from_le_bytes([n[0], n[1], n[2], n[3]]);
-    let entry_id = u32::from_le_bytes([n[4], n[5], n[6], n[7]]);
-    (occupied, entry_id)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_u64;
-    #[test]
-    fn test_split_u64() {
-        let input_bytes: [u8; 8] = [
-            // occupied
-            0b_0000_0001, // 1
-            0b_0000_0010, // 512
-            0b_0000_0100, // 262,144
-            0b_0000_1000, // 134,217,728
-            // entry_id
-            0b_0001_0000, // 16
-            0b_0010_0000, // 8,192
-            0b_0100_0000, // 4,194,304
-            0b_1000_0000, // 2,147,483,648
-        ];
-        let input = u64::from_le_bytes(input_bytes);
-        assert_eq!(
-            split_u64(input),
-            (1 + 512 + 262_144 + 134_217_728, 16 + 8_192 + 4_194_304 + 2_147_483_648)
-        );
     }
 }
 

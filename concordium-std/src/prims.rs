@@ -54,12 +54,12 @@ extern "C" {
 
     // -- NEW state implementation --
 
-    /// Get an entry. Concretely this will be some internal identifier
-    /// given out by the host. Conceptually the return value is *mut Entry.
-    /// Empty key means the root.
-    /// This will populate the entry if it is vacant.
-    /// (occupied: u32, entry_id: u32) = u64
-    pub(crate) fn entry(key_start: *const u8, key_length: u32) -> u64;
+    /// Create an entry with the given key and return its entry id.
+    /// - vacant => Allocates an empty state entry and returns its id.
+    /// - Occupied by entry `e` => Allocates an empty state entry and returns
+    ///   its entry id `e'`, where `e' != e`. Entry `e` is eventually
+    ///   deallocated.
+    pub(crate) fn create(key_start: *const u8, key_length: u32) -> u32;
 
     /// Lookup an entry.
     /// Returns -1 if the entry does not exist.
