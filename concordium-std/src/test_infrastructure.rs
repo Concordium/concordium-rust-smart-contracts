@@ -56,6 +56,11 @@ use alloc::boxed::Box;
 use convert::TryInto;
 #[cfg(not(feature = "std"))]
 use core::{cmp, num};
+use std::{
+    borrow::BorrowMut,
+    cell::{RefCell, RefMut},
+    rc::Rc,
+};
 #[cfg(feature = "std")]
 use std::{boxed::Box, cmp, num};
 
@@ -678,6 +683,189 @@ impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
                     let x = x.try_into()?;
                     let new_pos = self.cursor.offset.checked_add(x).ok_or(Overflow)?;
                     if new_pos <= self.cursor.data.as_ref().len() {
+                        self.cursor.offset = new_pos;
+                        new_pos.try_into().map_err(Self::Err::from)
+                    } else {
+                        Err(Offset)
+                    }
+                }
+                x => {
+                    let x = (-x).try_into()?;
+                    let new_pos = self.cursor.offset.checked_sub(x).ok_or(Overflow)?;
+                    self.cursor.offset = new_pos;
+                    new_pos.try_into().map_err(Self::Err::from)
+                }
+            },
+        }
+    }
+}
+
+struct StateTrie;
+
+// TODO: Replace the Vec with a generic T.
+struct StateEntryTest {
+    pub(crate) cursor:         Cursor<Rc<RefCell<Vec<u8>>>>,
+    pub(crate) state_entry_id: StateEntryId,
+}
+
+struct ContractStateLLTest {
+    trie: StateTrie,
+}
+
+impl StateTrie {
+    fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> { todo!() }
+
+    fn create(&mut self, key: &[u8]) -> StateEntryTest { todo!() }
+
+    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool { todo!() }
+
+    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool { todo!() }
+}
+
+impl HasContractStateLL for ContractStateLLTest {
+    type ContractStateData = StateTrie;
+    type EntryType = StateEntryTest;
+    type IterType = ContractStateIter<StateEntryTest>;
+
+    fn open(trie: Self::ContractStateData) -> Self {
+        Self {
+            trie,
+        }
+    }
+
+    fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType> {
+        if let Some(state_entry) = self.trie.lookup(key) {
+            EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
+        } else {
+            EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create(key)))
+        }
+    }
+
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.lookup(key) }
+
+    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool { self.trie.delete_entry(entry_id) }
+
+    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool {
+        self.trie.delete_prefix(prefix, exact)
+    }
+
+    fn iterator(&self, _prefix: &[u8]) -> Self::IterType { todo!() }
+}
+
+impl HasContractStateEntry for StateEntryTest {
+    type Error = ContractStateError;
+    type StateEntryData = Rc<RefCell<Vec<u8>>>;
+
+    fn open(data: Self::StateEntryData, entry_id: StateEntryId) -> Self {
+        Self {
+            cursor:         Cursor::new(data),
+            state_entry_id: entry_id,
+        }
+    }
+
+    fn state_entry_id(&self) -> StateEntryId { self.state_entry_id }
+
+    fn size(&self) -> u32 { self.cursor.data.borrow().len() as u32 }
+
+    fn truncate(&mut self, new_size: u32) {
+        if self.size() > new_size {
+            let new_size = new_size as usize;
+            let data: &mut Vec<u8> = &mut self.cursor.data.as_ref().borrow_mut();
+            data.truncate(new_size);
+            if self.cursor.offset > new_size {
+                self.cursor.offset = new_size
+            }
+        }
+    }
+
+    fn reserve(&mut self, len: u32) -> bool {
+        // TODO: Max still needed?
+        if len <= constants::MAX_CONTRACT_STATE_SIZE {
+            if self.size() < len {
+                let data: &mut Vec<u8> = &mut self.cursor.data.as_ref().borrow_mut();
+                data.resize(len as usize, 0u8);
+            }
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Read for StateEntryTest {
+    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
+        let mut len = self.cursor.data.borrow().len() - self.cursor.offset;
+        if len > buf.len() {
+            len = buf.len();
+        }
+        if len > 0 {
+            buf[0..len].copy_from_slice(
+                &self.cursor.data.borrow()[self.cursor.offset..self.cursor.offset + len],
+            );
+            self.cursor.offset += len;
+            Ok(len)
+        } else {
+            Ok(0)
+        }
+    }
+}
+
+impl Write for StateEntryTest {
+    type Err = ContractStateError;
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
+        // The chain automatically resizes the state up until MAX_CONTRACT_STATE_SIZE.
+        // TODO: Still the case?
+        let end = cmp::min(MAX_CONTRACT_STATE_SIZE as usize, self.cursor.offset + buf.len());
+        if self.cursor.data.borrow().len() < end {
+            let mut data: RefMut<Vec<u8>> = self.cursor.data.as_ref().borrow_mut();
+            data.resize(end as usize, 0u8);
+        }
+        let data = &mut self.cursor.data.as_ref().borrow_mut()[self.cursor.offset..];
+        let to_write = cmp::min(data.len(), buf.len());
+        data[..to_write].copy_from_slice(&buf[..to_write]);
+        self.cursor.offset += to_write;
+        Ok(to_write)
+    }
+}
+
+impl Seek for StateEntryTest {
+    type Err = ContractStateError;
+
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
+        use ContractStateError::*;
+        match pos {
+            SeekFrom::Start(x) => {
+                // We can set the position to just after the end of the current length.
+                let new_offset = x.try_into()?;
+                if new_offset <= self.cursor.data.borrow().len() {
+                    self.cursor.offset = new_offset;
+                    Ok(x)
+                } else {
+                    Err(Offset)
+                }
+            }
+            SeekFrom::End(x) => {
+                // cannot seek beyond end, nor before beginning
+                if x <= 0 {
+                    let end: u32 = self.cursor.data.borrow().len().try_into()?;
+                    let minus_x = x.checked_abs().ok_or(Overflow)?;
+                    if let Some(new_pos) = end.checked_sub(minus_x.try_into()?) {
+                        self.cursor.offset = new_pos.try_into()?;
+                        Ok(u64::from(new_pos))
+                    } else {
+                        Err(Offset)
+                    }
+                } else {
+                    Err(Offset)
+                }
+            }
+            SeekFrom::Current(x) => match x {
+                0 => Ok(self.cursor.offset.try_into()?),
+                x if x > 0 => {
+                    let x = x.try_into()?;
+                    let new_pos = self.cursor.offset.checked_add(x).ok_or(Overflow)?;
+                    if new_pos <= self.cursor.data.borrow().len() {
                         self.cursor.offset = new_pos;
                         new_pos.try_into().map_err(Self::Err::from)
                     } else {

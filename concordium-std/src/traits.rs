@@ -131,12 +131,13 @@ where
 }
 
 /// A type that can serve as the contract state entry type.
-pub trait HasContractStateEntry<Error: Default = ()>
+pub trait HasContractStateEntry
 where
     Self: Read,
-    Self: Write<Err = Error>,
-    Self: Seek<Err = Error>, {
+    Self: Write<Err = Self::Error>,
+    Self: Seek<Err = Self::Error>, {
     type StateEntryData;
+    type Error: Default;
 
     fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self;
 
@@ -167,7 +168,7 @@ pub trait HasContractStateLL {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Get an entry in the state.
-    fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType>;
+    fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType>;
 
     /// Lookup an entry in the state.
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;

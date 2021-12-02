@@ -280,6 +280,7 @@ impl StateEntry {
 }
 
 impl HasContractStateEntry for StateEntry {
+    type Error = ();
     type StateEntryData = ();
 
     fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self { Self::open(entry_id) }
@@ -718,7 +719,7 @@ impl HasContractStateLL for ContractStateLL {
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
 
-    fn entry(&self, key: &[u8]) -> EntryRaw<Self::EntryType> {
+    fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let res = unsafe { lookup(key_start, key_len) };
@@ -764,19 +765,23 @@ impl HasContractStateLL for ContractStateLL {
         let iterator_id = unsafe { iterator(prefix_start, prefix_len) };
         ContractStateIter {
             iterator_id,
+            _marker_state_entry_type: PhantomData,
         }
     }
 }
 
-impl Iterator for ContractStateIter {
-    type Item = StateEntry;
+impl<StateEntryType: HasContractStateEntry> Iterator for ContractStateIter<StateEntryType> {
+    type Item = StateEntryType;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // TODO: Needs to get the actual entry instead, otherwise it won't work in
+        // test_infrastructure. Add a next() to state_ll.
         let res = unsafe { next(self.iterator_id) };
         if res < 0 {
             None
         } else {
-            Some(StateEntry::open(res as u32))
+            todo!()
+            // Some(StateEntryType::open(res as u32))
         }
     }
 }
