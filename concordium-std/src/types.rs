@@ -32,8 +32,9 @@ where
 
 pub struct ContractStateLL;
 
-pub struct ContractStateIter {
-    pub(crate) iterator_id: StateIteratorId,
+pub struct ContractStateIter<StateEntryType: HasContractStateEntry> {
+    pub(crate) iterator_id:              StateIteratorId,
+    pub(crate) _marker_state_entry_type: PhantomData<StateEntryType>,
 }
 
 pub type StateEntryId = u32;

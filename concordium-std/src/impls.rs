@@ -713,7 +713,7 @@ fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
 impl HasContractStateLL for ContractStateLL {
     type ContractStateData = ();
     type EntryType = StateEntry;
-    type IterType = ContractStateIter;
+    type IterType = ContractStateIter<Self::EntryType>;
 
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
