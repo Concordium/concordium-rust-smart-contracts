@@ -56,13 +56,16 @@ use alloc::boxed::Box;
 use convert::TryInto;
 #[cfg(not(feature = "std"))]
 use core::{cmp, num};
+#[cfg(feature = "std")]
+use std::{boxed::Box, cmp, num};
 use std::{
-    borrow::BorrowMut,
     cell::{RefCell, RefMut},
     rc::Rc,
 };
-#[cfg(feature = "std")]
-use std::{boxed::Box, cmp, num};
+
+use self::trie::StateTrie;
+
+mod trie;
 
 /// Placeholder for the context chain meta data.
 /// All the fields are optionally set and the getting an unset field will result
@@ -700,26 +703,14 @@ impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
     }
 }
 
-struct StateTrie;
-
 // TODO: Replace the Vec with a generic T.
-struct StateEntryTest {
+pub struct StateEntryTest {
     pub(crate) cursor:         Cursor<Rc<RefCell<Vec<u8>>>>,
     pub(crate) state_entry_id: StateEntryId,
 }
 
-struct ContractStateLLTest {
+pub struct ContractStateLLTest {
     trie: StateTrie,
-}
-
-impl StateTrie {
-    fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> { todo!() }
-
-    fn create(&mut self, key: &[u8]) -> StateEntryTest { todo!() }
-
-    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool { todo!() }
-
-    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool { todo!() }
 }
 
 impl HasContractStateLL for ContractStateLLTest {
@@ -734,14 +725,17 @@ impl HasContractStateLL for ContractStateLLTest {
     }
 
     fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType> {
-        if let Some(state_entry) = self.trie.lookup(key) {
-            EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
-        } else {
-            EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create(key)))
-        }
+        todo!()
+        // if let Some(state_entry) = self.trie.lookup(key) {
+        //     EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
+        // } else {
+        //     EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create(key)))
+        // }
     }
 
-    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.lookup(key) }
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { todo!() }
+
+    //self.trie.lookup(key) }
 
     fn delete_entry(&mut self, entry_id: StateEntryId) -> bool { self.trie.delete_entry(entry_id) }
 
