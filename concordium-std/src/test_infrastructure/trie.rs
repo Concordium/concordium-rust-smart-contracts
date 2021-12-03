@@ -58,9 +58,17 @@ impl StateTrie {
         self.construct_state_entry_test(indexes, data)
     }
 
-    pub fn delete_entry(&mut self, entry: StateEntryTest) -> bool { todo!() }
+    pub fn delete_entry(&mut self, entry: StateEntryTest) -> bool {
+        match self.entry_map.borrow_mut().remove(&entry.state_entry_id) {
+            Some(indexes) => self.nodes.delete_entry(&indexes),
+            None => false, /* Entry did not exist. Only happens when entry was deleted using
+                            * delete_prefix. */
+        }
+    }
 
-    pub fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool { todo!() }
+    pub fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool {
+        self.nodes.delete_prefix(&Self::to_indexes(prefix), exact)
+    }
 
     fn to_indexes(key: &[u8]) -> Vec<Index> {
         let mut indexes = Vec::new();
@@ -108,11 +116,11 @@ impl Node {
     fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<Vec<u8>>>> {
         match indexes.first() {
             Some(idx) => match idx {
-                Index::Zero => self.child_zero.as_ref().and_then(|trie| trie.lookup(&indexes[1..])),
-                Index::One => self.child_one.as_ref().and_then(|trie| trie.lookup(&indexes[1..])),
-                Index::Two => self.child_two.as_ref().and_then(|trie| trie.lookup(&indexes[1..])),
+                Index::Zero => self.child_zero.as_ref().and_then(|node| node.lookup(&indexes[1..])),
+                Index::One => self.child_one.as_ref().and_then(|node| node.lookup(&indexes[1..])),
+                Index::Two => self.child_two.as_ref().and_then(|node| node.lookup(&indexes[1..])),
                 Index::Three => {
-                    self.child_three.as_ref().and_then(|trie| trie.lookup(&indexes[1..]))
+                    self.child_three.as_ref().and_then(|node| node.lookup(&indexes[1..]))
                 }
             },
             None => match &self.entry {
@@ -147,7 +155,80 @@ impl Node {
         }
     }
 
-    fn delete_entry(&mut self, indexes: &[Index]) -> bool { todo!() }
+    fn delete_entry(&mut self, indexes: &[Index]) -> bool { self.delete_prefix(indexes, true) }
+
+    fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> bool {
+        match prefix.first() {
+            Some(idx) => match idx {
+                Index::Zero => {
+                    match &mut self.child_zero {
+                        Some(child) => {
+                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
+                            if child.is_empty() {
+                                self.child_zero = None;
+                            }
+                            something_was_deleted
+                        }
+                        None => false, // No such prefix or entry exists.
+                    }
+                }
+                Index::One => {
+                    match &mut self.child_one {
+                        Some(child) => {
+                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
+                            if child.is_empty() {
+                                self.child_one = None;
+                            }
+                            something_was_deleted
+                        }
+                        None => false, // No such prefix or entry exists.
+                    }
+                }
+                Index::Two => {
+                    match &mut self.child_two {
+                        Some(child) => {
+                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
+                            if child.is_empty() {
+                                self.child_two = None;
+                            }
+                            something_was_deleted
+                        }
+                        None => false, // No such prefix or entry exists.
+                    }
+                }
+                Index::Three => {
+                    match &mut self.child_three {
+                        Some(child) => {
+                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
+                            if child.is_empty() {
+                                self.child_three = None;
+                            }
+                            something_was_deleted
+                        }
+                        None => false, // No such prefix or entry exists.
+                    }
+                }
+            },
+            None => {
+                // If `exact` and we found a non-leaf node, then do nothing and return false.
+                if exact && self.entry.is_none() {
+                    // Make no changes and return false.
+                    return false;
+                }
+
+                // If not `exact` delete the children, as we are deleting the whole prefix.
+                if !exact {
+                    self.child_zero = None;
+                    self.child_one = None;
+                    self.child_two = None;
+                    self.child_three = None;
+                }
+
+                self.entry = None;
+                true
+            }
+        }
+    }
 
     // A node is considered empty when it has no data and no children.
     fn is_empty(&self) -> bool {
@@ -163,10 +244,10 @@ impl Node {
 mod tests {
     use concordium_contracts_common::{to_bytes, Deserial, Write};
 
-    use crate::test_infrastructure::trie::{Node, StateTrie};
+    use crate::test_infrastructure::trie::StateTrie;
 
     #[test]
-    fn trie_insert_get() {
+    fn insert_get_test() {
         let expected_value = "hello";
         let key = [0, 1, 2];
         let mut trie = StateTrie::new();
@@ -179,11 +260,49 @@ mod tests {
     }
 
     #[test]
-    fn delete_entry() {
-        let key = []; // Empty key is root.
-        let mut trie = Node::new();
-        trie.create(&key);
-        let entry = trie.lookup(&key).expect("Entry not found");
-        trie.delete_entry(entry);
+    fn delete_entry_test() {
+        let key1 = [0];
+        let key2 = [0, 0]; // A leaf, which is the child of the key1 node.
+        let mut trie = StateTrie::new();
+        trie.create(&key1);
+        trie.create(&key2);
+
+        // Both entries exist in the tree.
+        let entry1 = trie.lookup(&key1).expect("entry1 not found");
+        assert!(trie.lookup(&key2).is_some());
+
+        trie.delete_entry(entry1); // Delete the data in the parent node.
+        assert!(trie.lookup(&key1).is_none());
+        assert!(trie.lookup(&key2).is_some()); // The child should still exist.
+    }
+
+    #[test]
+    fn delete_prefix_test() {
+        let key1 = [0];
+        let key2 = [0, 0];
+        let key3 = [0, 0, 0];
+
+        let mut trie = StateTrie::new();
+        trie.create(&key1);
+        trie.create(&key2);
+        trie.create(&key3);
+
+        assert_eq!(trie.delete_prefix(&key2, false), true);
+
+        assert!(trie.lookup(&key1).is_some());
+        assert!(trie.lookup(&key2).is_none());
+        assert!(trie.lookup(&key3).is_none());
+    }
+
+    #[test]
+    fn double_create_overwrites_data() {
+        let key = [];
+        let mut trie = StateTrie::new();
+        trie.create(&key).write_all(&to_bytes(&"hello")).expect("Writing to state failed");
+
+        // Creating again overwrites the old data.
+        let res = String::deserial(&mut trie.create(&key));
+
+        assert!(res.is_err())
     }
 }
