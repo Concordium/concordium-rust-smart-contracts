@@ -1,6 +1,6 @@
 [package]
 name = "piggy-bank-part1"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -17,7 +17,7 @@ default = ["std"]
 std = ["concordium-std/std"]
 
 [dependencies.concordium-std]
-version = "1.0"
+version = "2.0"
 path = "../../../concordium-std"
 default-features = false
 
