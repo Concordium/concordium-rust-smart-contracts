@@ -24,7 +24,7 @@ jobs:
           - examples/piggy-bank/part2/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/erc721/Cargo.toml
-          - examples/cis1-wgtu/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
           - examples/cis1-nft/Cargo.toml
           - examples/cis1-multi/Cargo.toml
           - examples/memo/Cargo.toml
@@ -170,7 +170,7 @@ jobs:
         crates:
           - examples/two-step-transfer/Cargo.toml
           - examples/erc721/Cargo.toml
-          - examples/cis1-wgtu/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
           - examples/cis1-nft/Cargo.toml
           - examples/cis1-multi/Cargo.toml
 
@@ -214,7 +214,7 @@ jobs:
           - examples/piggy-bank/part2/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/erc721/Cargo.toml
-          - examples/cis1-wgtu/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
           - examples/cis1-nft/Cargo.toml
           - examples/cis1-multi/Cargo.toml
 

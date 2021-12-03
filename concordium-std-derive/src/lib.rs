@@ -359,15 +359,15 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// # Optional attributes
 ///
-/// ## `payable`: Make function accept an amount of GTU
+/// ## `payable`: Make function accept an amount of CCD
 /// Without setting the `payable` attribute, the generated function will reject
-/// any non-zero amount of GTU supplied with the transaction. This means we are
+/// any non-zero amount of CCD supplied with the transaction. This means we are
 /// required to explicitly mark our functions as `payable`, if they are to
-/// accept GTU.
+/// accept CCD.
 ///
 /// Setting the `payable` attribute changes the required signature to include an
 /// extra argument of type `Amount`, allowing the function to access the amount
-/// of GTU supplied with the transaction.
+/// of CCD supplied with the transaction.
 ///
 /// ### Example
 /// ```ignore
@@ -551,15 +551,15 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///
 /// # Optional attributes
 ///
-/// ## `payable`: Make function accept an amount of GTU
+/// ## `payable`: Make function accept an amount of CCD
 /// Without setting the `payable` attribute, the function will reject any
-/// non-zero amount of GTU, supplied with the transaction. This means we are
+/// non-zero amount of CCD, supplied with the transaction. This means we are
 /// required to explicitly mark our functions as `payable`, if they are to
-/// accept GTU.
+/// accept CCD.
 ///
 /// Setting the `payable` attribute changes the required signature to include an
 /// extra argument of type `Amount`, allowing the function to access the amount
-/// of GTU supplied with the transaction.
+/// of CCD supplied with the transaction.
 ///
 /// ### Example
 /// ```ignore
@@ -767,7 +767,7 @@ fn contract_function_optional_args_tokens(
         fn_args.push(quote!(#amount_ident));
     } else {
         setup_fn_args.extend(quote! {
-            if #amount_ident.micro_gtu != 0 {
+            if #amount_ident.micro_ccd != 0 {
                 return concordium_std::Reject::from(concordium_std::NotPayableError).error_code.get();
             }
         });

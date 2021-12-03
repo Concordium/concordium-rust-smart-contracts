@@ -478,7 +478,7 @@ impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
-        Amount::from_micro_gtu(unsafe { get_receive_self_balance() })
+        Amount::from_micro_ccd(unsafe { get_receive_self_balance() })
     }
 
     #[inline(always)]
@@ -549,7 +549,7 @@ impl HasActions for Action {
 
     #[inline(always)]
     fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self {
-        let res = unsafe { simple_transfer(acc.0.as_ptr(), amount.micro_gtu) };
+        let res = unsafe { simple_transfer(acc.0.as_ptr(), amount.micro_ccd) };
         Action {
             _private: res,
         }
@@ -569,7 +569,7 @@ impl HasActions for Action {
                 ca.subindex,
                 receive_bytes.as_ptr(),
                 receive_bytes.len() as u32,
-                amount.micro_gtu,
+                amount.micro_ccd,
                 parameter.as_ptr(),
                 parameter.len() as u32,
             )
