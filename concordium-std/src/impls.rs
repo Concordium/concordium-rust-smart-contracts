@@ -646,13 +646,12 @@ const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
 /// <2..u64::MAX>/ => collections with a prefix from new_map or new_set.
 ///
 /// The slashes (/) are only added conceptually for readability.
-impl HasContractStateHL for ContractStateHL {
-    type ContractStateData = ();
-    type ContractStateLLType = ContractStateLL;
+impl<S: HasContractStateLL> HasContractStateHL for ContractStateHL<S> {
+    type ContractStateLLType = S;
 
-    fn open(_: Self::ContractStateData) -> Self {
+    fn open(state_ll: Self::ContractStateLLType) -> Self {
         Self {
-            state_ll: Rc::new(RefCell::new(ContractStateLL::open(()))),
+            state_ll: Rc::new(RefCell::new(state_ll)),
         }
     }
 

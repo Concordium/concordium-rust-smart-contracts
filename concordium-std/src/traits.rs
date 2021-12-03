@@ -188,9 +188,8 @@ pub trait HasContractStateLL {
 }
 
 pub trait HasContractStateHL {
-    type ContractStateData;
     type ContractStateLLType: HasContractStateLL;
-    fn open(_: Self::ContractStateData) -> Self;
+    fn open(state_ll: Self::ContractStateLLType) -> Self;
     fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
     ) -> StateMap<K, V, Self::ContractStateLLType>;

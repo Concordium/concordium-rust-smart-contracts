@@ -734,15 +734,14 @@ impl HasContractStateLL for ContractStateLLTest {
     }
 
     fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType> {
-        todo!()
-        // if let Some(state_entry) = self.trie.lookup(key) {
-        //     EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
-        // } else {
-        //     EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create(key)))
-        // }
+        if let Some(state_entry) = self.trie.lookup(key) {
+            EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
+        } else {
+            EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create(key)))
+        }
     }
 
-    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { todo!() }
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.lookup(key) }
 
     fn delete_entry(&mut self, entry: Self::EntryType) -> bool { self.trie.delete_entry(entry) }
 
@@ -888,8 +887,11 @@ impl Seek for StateEntryTest {
 mod test {
     use concordium_contracts_common::{Read, Seek, SeekFrom, Write};
 
-    use super::ContractStateTest;
-    use crate::{constants, traits::HasContractState};
+    use super::{trie::StateTrie, ContractStateLLTest, ContractStateTest};
+    use crate::{
+        constants, traits::HasContractState, ContractStateHL, HasContractStateHL,
+        HasContractStateLL, HasStateMap,
+    };
 
     #[test]
     // Perform a number of operations from Seek, Read, Write and HasContractState

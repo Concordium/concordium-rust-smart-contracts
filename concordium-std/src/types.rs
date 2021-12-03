@@ -9,8 +9,8 @@ pub struct ContractState {
     pub(crate) current_position: u32,
 }
 
-pub struct ContractStateHL {
-    pub(crate) state_ll: Rc<RefCell<ContractStateLL>>,
+pub struct ContractStateHL<S> {
+    pub(crate) state_ll: Rc<RefCell<S>>,
 }
 
 pub struct StateMap<K, V, S>
