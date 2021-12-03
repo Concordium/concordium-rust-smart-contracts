@@ -175,7 +175,9 @@ pub trait HasContractStateLL {
 
     /// Delete an entry.
     /// Returns whether the entry actually existed.
-    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool;
+    /// The only way this will return false is if the entry was deleted via
+    /// `delete_prefix`.
+    fn delete_entry(&mut self, entry: Self::EntryType) -> bool;
 
     /// If exact is set, delete the specific key. Otherwise, delete the entire
     /// subtree. Returns whether the entry or subtree existed.

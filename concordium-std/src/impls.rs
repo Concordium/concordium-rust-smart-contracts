@@ -746,8 +746,8 @@ impl HasContractStateLL for ContractStateLL {
 
     /// Delete the entry. Returns true if the entry was occupied and false
     /// otherwise.
-    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool {
-        unsafe { delete_entry(entry_id) == 1 }
+    fn delete_entry(&mut self, entry: Self::EntryType) -> bool {
+        unsafe { delete_entry(entry.state_entry_id) == 1 }
     }
 
     /// If exact, delete the specific key, otherwise delete the subtree.

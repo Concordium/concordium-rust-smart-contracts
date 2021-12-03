@@ -709,6 +709,15 @@ pub struct StateEntryTest {
     pub(crate) state_entry_id: StateEntryId,
 }
 
+impl StateEntryTest {
+    pub fn new(data: Rc<RefCell<Vec<u8>>>, state_entry_id: StateEntryId) -> Self {
+        Self {
+            cursor: Cursor::new(data),
+            state_entry_id,
+        }
+    }
+}
+
 pub struct ContractStateLLTest {
     trie: StateTrie,
 }
@@ -735,9 +744,7 @@ impl HasContractStateLL for ContractStateLLTest {
 
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { todo!() }
 
-    //self.trie.lookup(key) }
-
-    fn delete_entry(&mut self, entry_id: StateEntryId) -> bool { self.trie.delete_entry(entry_id) }
+    fn delete_entry(&mut self, entry: Self::EntryType) -> bool { self.trie.delete_entry(entry) }
 
     fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool {
         self.trie.delete_prefix(prefix, exact)
