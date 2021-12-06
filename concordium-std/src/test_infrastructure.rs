@@ -884,13 +884,13 @@ impl Seek for StateEntryTest {
 #[cfg(test)]
 mod test {
     use concordium_contracts_common::{
-        to_bytes, Deserial, ParseError, ParseResult, Read, Seek, SeekFrom, Write,
+        to_bytes, Deserial, ParseError, Read, Seek, SeekFrom, Write,
     };
 
     use super::{trie::StateTrie, ContractStateLLTest, ContractStateTest};
     use crate::{
-        constants, traits::HasContractState, ContractStateHL, EntryRaw, ExpectReport,
-        HasContractStateHL, HasContractStateLL, HasStateMap, StateMap, UnwrapAbort,
+        constants, traits::HasContractState, ContractStateHL, EntryRaw, HasContractStateHL,
+        HasContractStateLL, HasStateMap, StateMap, UnwrapAbort,
     };
 
     #[test]

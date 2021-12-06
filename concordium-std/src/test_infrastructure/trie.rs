@@ -4,6 +4,8 @@ use crate::StateEntryId;
 
 use super::StateEntryTest;
 
+const BRANCHING_FACTOR: usize = 4;
+
 #[derive(PartialEq, Eq)]
 enum Index {
     Zero,
@@ -95,34 +97,45 @@ impl StateTrie {
 }
 
 struct Node {
-    entry:       Option<Rc<RefCell<Vec<u8>>>>,
-    child_zero:  Option<Box<Node>>,
-    child_one:   Option<Box<Node>>,
-    child_two:   Option<Box<Node>>,
-    child_three: Option<Box<Node>>,
+    entry:    Option<Rc<RefCell<Vec<u8>>>>,
+    children: [Option<Box<Node>>; BRANCHING_FACTOR],
+}
+
+impl std::ops::Index<&Index> for [Option<Box<Node>>] {
+    type Output = Option<Box<Node>>;
+
+    fn index(&self, index: &Index) -> &Self::Output {
+        match index {
+            Index::Zero => &self[0],
+            Index::One => &self[1],
+            Index::Two => &self[2],
+            Index::Three => &self[3],
+        }
+    }
+}
+
+impl std::ops::IndexMut<&Index> for [Option<Box<Node>>] {
+    fn index_mut(&mut self, index: &Index) -> &mut Self::Output {
+        match index {
+            Index::Zero => &mut self[0],
+            Index::One => &mut self[1],
+            Index::Two => &mut self[2],
+            Index::Three => &mut self[3],
+        }
+    }
 }
 
 impl Node {
     pub fn new() -> Self {
         Self {
-            entry:       None,
-            child_zero:  None,
-            child_one:   None,
-            child_two:   None,
-            child_three: None,
+            entry:    None,
+            children: Default::default(),
         }
     }
 
     fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<Vec<u8>>>> {
         match indexes.first() {
-            Some(idx) => match idx {
-                Index::Zero => self.child_zero.as_ref().and_then(|node| node.lookup(&indexes[1..])),
-                Index::One => self.child_one.as_ref().and_then(|node| node.lookup(&indexes[1..])),
-                Index::Two => self.child_two.as_ref().and_then(|node| node.lookup(&indexes[1..])),
-                Index::Three => {
-                    self.child_three.as_ref().and_then(|node| node.lookup(&indexes[1..]))
-                }
-            },
+            Some(idx) => self.children[idx].as_ref().and_then(|node| node.lookup(&indexes[1..])),
             None => match &self.entry {
                 Some(entry) => Some(Rc::clone(&entry)),
                 None => None,
@@ -132,20 +145,9 @@ impl Node {
 
     fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<Vec<u8>>> {
         match indexes.first() {
-            Some(idx) => match idx {
-                Index::Zero => {
-                    self.child_zero.get_or_insert(Box::new(Self::new())).create(&indexes[1..])
-                }
-                Index::One => {
-                    self.child_one.get_or_insert(Box::new(Self::new())).create(&indexes[1..])
-                }
-                Index::Two => {
-                    self.child_two.get_or_insert(Box::new(Self::new())).create(&indexes[1..])
-                }
-                Index::Three => {
-                    self.child_three.get_or_insert(Box::new(Self::new())).create(&indexes[1..])
-                }
-            },
+            Some(idx) => {
+                self.children[idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
+            }
             None => {
                 let new_entry = Rc::new(RefCell::new(Vec::new()));
                 let new_entry_clone = Rc::clone(&new_entry);
@@ -159,55 +161,15 @@ impl Node {
 
     fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> bool {
         match prefix.first() {
-            Some(idx) => match idx {
-                Index::Zero => {
-                    match &mut self.child_zero {
-                        Some(child) => {
-                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
-                            if child.is_empty() {
-                                self.child_zero = None;
-                            }
-                            something_was_deleted
-                        }
-                        None => false, // No such prefix or entry exists.
+            Some(idx) => match &mut self.children[idx] {
+                Some(child) => {
+                    let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
+                    if child.is_empty() {
+                        self.children[idx] = None;
                     }
+                    something_was_deleted
                 }
-                Index::One => {
-                    match &mut self.child_one {
-                        Some(child) => {
-                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
-                            if child.is_empty() {
-                                self.child_one = None;
-                            }
-                            something_was_deleted
-                        }
-                        None => false, // No such prefix or entry exists.
-                    }
-                }
-                Index::Two => {
-                    match &mut self.child_two {
-                        Some(child) => {
-                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
-                            if child.is_empty() {
-                                self.child_two = None;
-                            }
-                            something_was_deleted
-                        }
-                        None => false, // No such prefix or entry exists.
-                    }
-                }
-                Index::Three => {
-                    match &mut self.child_three {
-                        Some(child) => {
-                            let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
-                            if child.is_empty() {
-                                self.child_three = None;
-                            }
-                            something_was_deleted
-                        }
-                        None => false, // No such prefix or entry exists.
-                    }
-                }
+                None => false, // No such prefix or entry exists.
             },
             None => {
                 // If `exact` and we found a non-leaf node, then do nothing and return false.
@@ -218,10 +180,9 @@ impl Node {
 
                 // If not `exact` delete the children, as we are deleting the whole prefix.
                 if !exact {
-                    self.child_zero = None;
-                    self.child_one = None;
-                    self.child_two = None;
-                    self.child_three = None;
+                    self.children.iter_mut().for_each(|child| {
+                        *child = None;
+                    });
                 }
 
                 self.entry = None;
@@ -231,13 +192,7 @@ impl Node {
     }
 
     // A node is considered empty when it has no data and no children.
-    fn is_empty(&self) -> bool {
-        self.entry.is_none()
-            && self.child_zero.is_none()
-            && self.child_one.is_none()
-            && self.child_two.is_none()
-            && self.child_three.is_none()
-    }
+    fn is_empty(&self) -> bool { self.entry.is_none() && self.children.iter().all(|x| x.is_none()) }
 }
 
 #[cfg(test)]
