@@ -285,8 +285,6 @@ impl HasContractStateEntry for StateEntry {
 
     fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self { Self::open(entry_id) }
 
-    fn state_entry_id(&self) -> StateEntryId { self.state_entry_id }
-
     #[inline(always)]
     fn size(&self) -> u32 { unsafe { entry_state_size(self.state_entry_id) } }
 
@@ -474,14 +472,9 @@ where
 {
     pub fn new(state_entry: StateEntryType) -> Self {
         Self {
-            state_entry_id: state_entry.state_entry_id(),
             state_entry,
         }
     }
-
-    pub fn state_entry_id(&self) -> &StateEntryId { &self.state_entry_id }
-
-    pub fn into_entry_id(self) -> StateEntryId { self.state_entry_id }
 
     pub fn insert(mut self, value: &[u8]) -> StateEntryType {
         self.state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
@@ -497,12 +490,9 @@ where
 {
     pub fn new(state_entry: StateEntryType) -> Self {
         Self {
-            state_entry_id: state_entry.state_entry_id(),
             state_entry,
         }
     }
-
-    pub fn state_entry_id(&self) -> &StateEntryId { &self.state_entry_id }
 
     pub fn get_ref(&self) -> &StateEntryType { &self.state_entry }
 
@@ -522,13 +512,6 @@ impl<StateEntryType> EntryRaw<StateEntryType>
 where
     StateEntryType: HasContractStateEntry,
 {
-    pub fn state_entry_id(&self) -> &StateEntryId {
-        match self {
-            EntryRaw::Vacant(vac) => vac.state_entry_id(),
-            EntryRaw::Occupied(occ) => occ.state_entry_id(),
-        }
-    }
-
     pub fn or_insert(self, default: &[u8]) -> StateEntryType {
         match self {
             EntryRaw::Vacant(vac) => vac.insert(default),

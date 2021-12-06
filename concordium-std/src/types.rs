@@ -49,15 +49,13 @@ pub struct StateEntry {
 pub struct VacantEntryRaw<StateEntryType>
 where
     StateEntryType: HasContractStateEntry, {
-    pub(crate) state_entry_id: StateEntryId,
-    pub(crate) state_entry:    StateEntryType,
+    pub(crate) state_entry: StateEntryType,
 }
 
 pub struct OccupiedEntryRaw<StateEntryType>
 where
     StateEntryType: HasContractStateEntry, {
-    pub(crate) state_entry_id: StateEntryId,
-    pub(crate) state_entry:    StateEntryType,
+    pub(crate) state_entry: StateEntryType,
 }
 
 pub enum EntryRaw<StateEntryType>

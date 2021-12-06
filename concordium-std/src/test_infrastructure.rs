@@ -763,8 +763,6 @@ impl HasContractStateEntry for StateEntryTest {
         }
     }
 
-    fn state_entry_id(&self) -> StateEntryId { self.state_entry_id }
-
     fn size(&self) -> u32 { self.cursor.data.borrow().len() as u32 }
 
     fn truncate(&mut self, new_size: u32) {

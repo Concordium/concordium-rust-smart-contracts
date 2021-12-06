@@ -141,13 +141,10 @@ where
 
     fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self;
 
-    /// Get the file id.
-    fn state_entry_id(&self) -> StateEntryId;
-
-    /// Get the current size of the file.
+    /// Get the current size of the entry.
     fn size(&self) -> u32;
 
-    /// Truncate the file to the given size. If the given size is more than the
+    /// Truncate the entry to the given size. If the given size is more than the
     /// current size this operation does nothing. The new position is at
     /// most at the end of the stream.
     fn truncate(&mut self, new_size: u32);
