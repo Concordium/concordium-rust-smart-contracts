@@ -1,8 +1,8 @@
-//! wGTU: An example implementation of CIS1 for a single fungible token.
+//! wCCD: An example implementation of CIS1 for a single fungible token.
 //!
 //! # Description
-//! The token in this contract is a wrapped GTU (wGTU), meaning it holds a one
-//! to one correspondence with the GTU.
+//! The token in this contract is a wrapped CCD (wCCD), meaning it holds a one
+//! to one correspondence with the CCD.
 //!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
@@ -14,15 +14,15 @@
 //! to transfer any tokens of the owner.
 //!
 //! Besides the contract functions required CIS1, this contract implements a
-//! function `wrap` for converting GTU into wGTU tokens. It accepts an amount of
-//! GTU and mints this amount of wGTU. The function takes a receiving address as
+//! function `wrap` for converting CCD into wCCD tokens. It accepts an amount of
+//! CCD and mints this amount of wCCD. The function takes a receiving address as
 //! the parameter and transfers the amount of tokens.
 //!
 //! The contract also implements a contract function `unwrap` for converting
-//! wGTU back into GTU. The function takes the amount of tokens to unwrap, the
-//! address owning these wGTU and a receiver for the GTU. If the sender is the
-//! owner or an operator of the owner, the wGTU are burned and the amount of
-//! GTU is sent to the receiver.
+//! wCCD back into CCD. The function takes the amount of tokens to unwrap, the
+//! address owning these wCCD and a receiver for the CCD. If the sender is the
+//! owner or an operator of the owner, the wCCD are burned and the amount of
+//! CCD is sent to the receiver.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis1::*;
@@ -31,11 +31,11 @@ use concordium_std::{
     *,
 };
 
-/// The id of the wGTU token in this contract.
-const TOKEN_ID_WGTU: ContractTokenId = TokenIdUnit();
+/// The id of the wCCD token in this contract.
+const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
-/// The metadata url for the wGTU token.
-const TOKEN_METADATA_URL: &str = "https://some.example/token/wgtu";
+/// The metadata url for the wCCD token.
+const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 
 // Types
 
@@ -56,7 +56,7 @@ struct AddressState {
 }
 
 /// The contract state,
-#[contract_state(contract = "CIS1-wGTU")]
+#[contract_state(contract = "CIS1-wCCD")]
 #[derive(Serialize, SchemaType)]
 struct State {
     /// The state the one token.
@@ -64,14 +64,14 @@ struct State {
 }
 
 /// The parameter type for the contract function `unwrap`.
-/// Takes an amount of tokens and unwrap the GTU and send it to a receiver.
+/// Takes an amount of tokens and unwrap the CCD and send it to a receiver.
 #[derive(Serialize, SchemaType)]
 struct UnwrapParams {
     /// The amount of tokens to unwrap.
     amount:   TokenAmount,
     /// The owner of the tokens.
     owner:    Address,
-    /// The address to receive these unwrapped GTU.
+    /// The address to receive these unwrapped CCD.
     receiver: Receiver,
     /// Some additional bytes to include in the transfer.
     data:     AdditionalData,
@@ -79,7 +79,7 @@ struct UnwrapParams {
 
 /// The parameter type for the contract function `wrap`.
 ///
-/// The receiver for the wrapped GTU tokens.
+/// The receiver for the wrapped CCD tokens.
 #[derive(Serialize, SchemaType)]
 struct WrapParams {
     /// The address to receive these tokens.
@@ -136,7 +136,7 @@ impl State {
         token_id: &ContractTokenId,
         address: &Address,
     ) -> ContractResult<TokenAmount> {
-        ensure_eq!(token_id, &TOKEN_ID_WGTU, ContractError::InvalidTokenId);
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         Ok(self.token.get(address).map(|s| s.balance).unwrap_or(0))
     }
 
@@ -159,7 +159,7 @@ impl State {
         from: &Address,
         to: &Address,
     ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WGTU, ContractError::InvalidTokenId);
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         if amount == 0 {
             return Ok(());
         }
@@ -200,7 +200,7 @@ impl State {
         amount: TokenAmount,
         owner: &Address,
     ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WGTU, ContractError::InvalidTokenId);
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         let address_state = self.token.entry(*owner).or_insert_with(|| AddressState {
             balance:   0,
             operators: Set::default(),
@@ -215,7 +215,7 @@ impl State {
         amount: TokenAmount,
         owner: &Address,
     ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WGTU, ContractError::InvalidTokenId);
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         if amount == 0 {
             return Ok(());
         }
@@ -230,7 +230,7 @@ impl State {
 
 /// Initialize contract instance with no initial tokens.
 /// Logs a `Mint` event for the single token id with no amounts.
-#[init(contract = "CIS1-wGTU", enable_logger)]
+#[init(contract = "CIS1-wCCD", enable_logger)]
 fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
     // Construct the initial contract state.
     let state = State::new();
@@ -238,14 +238,14 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
     logger.log(&Cis1Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WGTU,
+        token_id: TOKEN_ID_WCCD,
         amount:   0,
         owner:    invoker,
     }))?;
 
     // Log event for where to find metadata for the token
     logger.log(&Cis1Event::TokenMetadata(TokenMetadataEvent {
-        token_id:     TOKEN_ID_WGTU,
+        token_id:     TOKEN_ID_WCCD,
         metadata_url: MetadataUrl {
             url:  String::from(TOKEN_METADATA_URL),
             hash: None,
@@ -255,9 +255,9 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     Ok(state)
 }
 
-/// Wrap an amount of GTU into wGTU tokens and transfer the tokens if the sender
+/// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
 /// is not the receiver.
-#[receive(contract = "CIS1-wGTU", name = "wrap", parameter = "WrapParams", enable_logger, payable)]
+#[receive(contract = "CIS1-wCCD", name = "wrap", parameter = "WrapParams", enable_logger, payable)]
 fn contract_wrap<A: HasActions>(
     ctx: &impl HasReceiveContext,
     amount: Amount,
@@ -271,20 +271,20 @@ fn contract_wrap<A: HasActions>(
     let receive_address = params.to.address();
 
     // Update the state.
-    state.mint(&TOKEN_ID_WGTU, amount.micro_gtu, &receive_address)?;
+    state.mint(&TOKEN_ID_WCCD, amount.micro_ccd, &receive_address)?;
 
     // Log the newly minted tokens.
     logger.log(&Cis1Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WGTU,
-        amount:   amount.micro_gtu,
+        token_id: TOKEN_ID_WCCD,
+        amount:   amount.micro_ccd,
         owner:    sender,
     }))?;
 
     // Only log a transfer event if receiver is not the one who payed for this.
     if sender != receive_address {
         logger.log(&Cis1Event::Transfer(TransferEvent {
-            token_id: TOKEN_ID_WGTU,
-            amount:   amount.micro_gtu,
+            token_id: TOKEN_ID_WCCD,
+            amount:   amount.micro_ccd,
             from:     sender,
             to:       receive_address,
         }))?;
@@ -293,10 +293,10 @@ fn contract_wrap<A: HasActions>(
     // Send message to the receiver of the tokens.
     if let Receiver::Contract(address, function) = params.to {
         let parameter = OnReceivingCis1Params {
-            token_id:      TOKEN_ID_WGTU,
-            amount:        amount.micro_gtu,
+            token_id:      TOKEN_ID_WCCD,
+            amount:        amount.micro_ccd,
             from:          sender,
-            contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-wGTU")),
+            contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-wCCD")),
             data:          params.data,
         };
         Ok(send(&address, function.as_ref(), Amount::zero(), &parameter))
@@ -305,8 +305,8 @@ fn contract_wrap<A: HasActions>(
     }
 }
 
-/// Unwrap an amount of wGTU tokens into GTU
-#[receive(contract = "CIS1-wGTU", name = "unwrap", parameter = "UnwrapParams", enable_logger)]
+/// Unwrap an amount of wCCD tokens into CCD
+#[receive(contract = "CIS1-wCCD", name = "unwrap", parameter = "UnwrapParams", enable_logger)]
 fn contract_unwrap<A: HasActions>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
@@ -321,16 +321,16 @@ fn contract_unwrap<A: HasActions>(
     );
 
     // Update the state.
-    state.burn(&TOKEN_ID_WGTU, params.amount, &params.owner)?;
+    state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
     logger.log(&Cis1Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_WGTU,
+        token_id: TOKEN_ID_WCCD,
         amount:   params.amount,
         owner:    params.owner,
     }))?;
 
-    let unwrapped_amount = Amount::from_micro_gtu(params.amount);
+    let unwrapped_amount = Amount::from_micro_ccd(params.amount);
 
     let action = match params.receiver {
         Receiver::Account(address) => A::simple_transfer(&address, unwrapped_amount),
@@ -364,7 +364,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 /// - Any of the messages sent to contracts receiving a transfer choose to
 ///   reject.
 #[receive(
-    contract = "CIS1-wGTU",
+    contract = "CIS1-wCCD",
     name = "transfer",
     parameter = "TransferParameter",
     enable_logger
@@ -430,7 +430,7 @@ fn contract_transfer<A: HasActions>(
 /// - The operator address is the same as the sender address.
 /// - Fails to log event.
 #[receive(
-    contract = "CIS1-wGTU",
+    contract = "CIS1-wCCD",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     enable_logger
@@ -477,7 +477,7 @@ pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CIS1-wGTU", name = "balanceOf", parameter = "ContractBalanceOfQueryParams")]
+#[receive(contract = "CIS1-wCCD", name = "balanceOf", parameter = "ContractBalanceOfQueryParams")]
 fn contract_balance_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
@@ -515,7 +515,7 @@ fn contract_balance_of<A: HasActions>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CIS1-wGTU", name = "operatorOf", parameter = "OperatorOfQueryParams")]
+#[receive(contract = "CIS1-wCCD", name = "operatorOf", parameter = "OperatorOfQueryParams")]
 fn contract_operator_of<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
@@ -552,7 +552,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 /// - Any of the queried `token_id` does not exist.
 /// - Message sent back with the result rejects.
 #[receive(
-    contract = "CIS1-wGTU",
+    contract = "CIS1-wCCD",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams"
 )]
@@ -573,7 +573,7 @@ fn contract_token_metadata<A: HasActions>(
     for _ in 0..queries_length {
         let token_id: ContractTokenId = cursor.get()?;
         // Check the token exists.
-        ensure_eq!(token_id, TOKEN_ID_WGTU, ContractError::InvalidTokenId);
+        ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
         let metadata_url = MetadataUrl {
             url:  TOKEN_METADATA_URL.to_string(),
@@ -606,7 +606,7 @@ mod tests {
     /// 400 tokens.
     fn initial_state() -> State {
         let mut state = State::new();
-        state.mint(&TOKEN_ID_WGTU, 400, &ADDRESS_0).expect_report("Failed to setup state");
+        state.mint(&TOKEN_ID_WCCD, 400, &ADDRESS_0).expect_report("Failed to setup state");
         state
     }
 
@@ -629,7 +629,7 @@ mod tests {
         // Check the state
         claim_eq!(state.token.len(), 0, "Only one token is initialized");
         let balance0 =
-            state.balance(&TOKEN_ID_WGTU, &ADDRESS_0).expect_report("Token is expected to exist");
+            state.balance(&TOKEN_ID_WCCD, &ADDRESS_0).expect_report("Token is expected to exist");
         claim_eq!(balance0, 0, "No initial tokens are owned by the contract instantiater");
 
         // Check the logs
@@ -637,14 +637,14 @@ mod tests {
         claim!(
             logger.logs.contains(&to_bytes(&Cis1Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
-                token_id: TOKEN_ID_WGTU,
+                token_id: TOKEN_ID_WCCD,
                 amount:   0,
             }))),
             "Missing event for minting the token"
         );
         claim!(
             logger.logs.contains(&to_bytes(&Cis1Event::TokenMetadata(TokenMetadataEvent {
-                token_id:     TOKEN_ID_WGTU,
+                token_id:     TOKEN_ID_WCCD,
                 metadata_url: MetadataUrl {
                     url:  String::from(TOKEN_METADATA_URL),
                     hash: None,
@@ -663,7 +663,7 @@ mod tests {
 
         // and parameter.
         let transfer = Transfer {
-            token_id: TOKEN_ID_WGTU,
+            token_id: TOKEN_ID_WCCD,
             amount:   100,
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
@@ -675,7 +675,7 @@ mod tests {
 
         let mut logger = LogRecorder::init();
         let mut state = State::new();
-        state.mint(&TOKEN_ID_WGTU, 400, &ADDRESS_0).expect_report("Failed to setup state");
+        state.mint(&TOKEN_ID_WCCD, 400, &ADDRESS_0).expect_report("Failed to setup state");
 
         // Call the contract function.
         let result: ContractResult<ActionsTree> = contract_transfer(&ctx, &mut logger, &mut state);
@@ -685,9 +685,9 @@ mod tests {
 
         // Check the state.
         let balance0 =
-            state.balance(&TOKEN_ID_WGTU, &ADDRESS_0).expect_report("Token is expected to exist");
+            state.balance(&TOKEN_ID_WCCD, &ADDRESS_0).expect_report("Token is expected to exist");
         let balance1 =
-            state.balance(&TOKEN_ID_WGTU, &ADDRESS_1).expect_report("Token is expected to exist");
+            state.balance(&TOKEN_ID_WCCD, &ADDRESS_1).expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
             300,
@@ -706,7 +706,7 @@ mod tests {
             to_bytes(&Cis1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
-                token_id: TOKEN_ID_WGTU,
+                token_id: TOKEN_ID_WCCD,
                 amount:   100,
             })),
             "Incorrect event emitted"
@@ -725,7 +725,7 @@ mod tests {
         let transfer = Transfer {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
-            token_id: TOKEN_ID_WGTU,
+            token_id: TOKEN_ID_WCCD,
             amount:   100,
             data:     AdditionalData::empty(),
         };
@@ -755,7 +755,7 @@ mod tests {
         let transfer = Transfer {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
-            token_id: TOKEN_ID_WGTU,
+            token_id: TOKEN_ID_WCCD,
             amount:   100,
             data:     AdditionalData::empty(),
         };
@@ -776,9 +776,9 @@ mod tests {
 
         // Check the state.
         let balance0 =
-            state.balance(&TOKEN_ID_WGTU, &ADDRESS_0).expect_report("Token is expected to exist");
+            state.balance(&TOKEN_ID_WCCD, &ADDRESS_0).expect_report("Token is expected to exist");
         let balance1 =
-            state.balance(&TOKEN_ID_WGTU, &ADDRESS_1).expect_report("Token is expected to exist");
+            state.balance(&TOKEN_ID_WCCD, &ADDRESS_1).expect_report("Token is expected to exist");
         claim_eq!(balance0, 300); //, "Token owner balance should be decreased by the transferred amount");
         claim_eq!(
             balance1,
@@ -793,7 +793,7 @@ mod tests {
             to_bytes(&Cis1Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
-                token_id: TOKEN_ID_WGTU,
+                token_id: TOKEN_ID_WCCD,
                 amount:   100,
             })),
             "Incorrect event emitted"

@@ -37,7 +37,7 @@ pub enum LogError {
     Malformed,
 }
 
-/// Error triggered when a non-zero amount of GTU is sent to a contract
+/// Error triggered when a non-zero amount of CCD is sent to a contract
 /// init or receive function that is not marked as `payable`.
 #[derive(Clone, Copy, Debug)]
 pub struct NotPayableError;
