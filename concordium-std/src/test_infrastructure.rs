@@ -885,12 +885,14 @@ impl Seek for StateEntryTest {
 
 #[cfg(test)]
 mod test {
-    use concordium_contracts_common::{Read, Seek, SeekFrom, Write};
+    use concordium_contracts_common::{
+        to_bytes, Deserial, ParseError, ParseResult, Read, Seek, SeekFrom, Write,
+    };
 
     use super::{trie::StateTrie, ContractStateLLTest, ContractStateTest};
     use crate::{
-        constants, traits::HasContractState, ContractStateHL, HasContractStateHL,
-        HasContractStateLL, HasStateMap,
+        constants, traits::HasContractState, ContractStateHL, EntryRaw, ExpectReport,
+        HasContractStateHL, HasContractStateLL, HasStateMap, StateMap, UnwrapAbort,
     };
 
     #[test]
@@ -984,5 +986,45 @@ mod test {
             vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
             "Correct data was written."
         );
+    }
+
+    #[test]
+    fn high_level_insert_get() {
+        let expected_value: u64 = 123123123;
+        let mut state: ContractStateHL<ContractStateLLTest> =
+            HasContractStateHL::open(ContractStateLLTest::open(StateTrie::new()));
+        state.insert(0, expected_value);
+        let actual_value: u64 = state.get(0).expect("Not found").expect("Not a valid u64");
+        assert_eq!(expected_value, actual_value);
+    }
+
+    #[test]
+    fn low_level_entry() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(&42u64);
+        let mut state = ContractStateLLTest::open(StateTrie::new());
+        state.entry(&key).or_insert(&to_bytes(&expected_value));
+
+        match state.entry(&key) {
+            EntryRaw::Vacant(_) => assert!(false),
+            EntryRaw::Occupied(occ) => {
+                assert_eq!(u64::deserial(&mut occ.get()), Ok(expected_value))
+            }
+        }
+    }
+
+    #[test]
+    fn high_level_statemap() -> Result<(), ParseError> {
+        let my_map_key = "my_map";
+        let mut state: ContractStateHL<ContractStateLLTest> =
+            HasContractStateHL::open(ContractStateLLTest::open(StateTrie::new()));
+
+        let map_to_insert = state.new_map::<String, String>();
+        state.insert(my_map_key, map_to_insert);
+
+        let mut my_map: StateMap<String, String, _> = state.get(my_map_key).unwrap_abort()?;
+        my_map.insert("hello".to_string(), "world".to_string());
+        assert_eq!(my_map.get("hello".to_string()), Some(Ok("world".to_string())));
+        Ok(())
     }
 }

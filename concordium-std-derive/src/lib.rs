@@ -483,7 +483,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractStateHL, HasContractStateHL};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state = ContractStateHL::open(());
+                let mut state = ContractStateHL::open(ContractStateLL::open(()));
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(()) => 0,
                     Err(reject) => {
@@ -694,7 +694,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, ContractStateHL, HasContractStateHL, Logger, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut state = ContractStateHL::open(());
+                let mut state = ContractStateHL::open(ContractStateLL::open(()));
                 let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
                 match res {
                     Ok(act) => {

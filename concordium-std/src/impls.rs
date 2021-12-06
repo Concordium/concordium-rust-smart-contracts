@@ -485,6 +485,7 @@ where
 
     pub fn insert(mut self, value: &[u8]) -> StateEntryType {
         self.state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
         self.state_entry
     }
 }
@@ -557,6 +558,7 @@ where
     pub fn insert(mut self, value: V) {
         // Writing to state cannot fail.
         self.state_entry.write_all(&to_bytes(&value)).unwrap_abort();
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
     }
 }
 
