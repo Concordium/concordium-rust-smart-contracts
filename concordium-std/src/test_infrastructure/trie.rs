@@ -1,8 +1,6 @@
-use core::fmt;
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, VecDeque},
-    fmt::Write,
     rc::Rc,
 };
 
@@ -12,24 +10,7 @@ use super::StateEntryTest;
 
 const BRANCHING_FACTOR: usize = 4;
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum Index {
-    Zero,
-    One,
-    Two,
-    Three,
-}
-
-impl fmt::Debug for Index {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Index::Zero => f.write_char('0'),
-            Index::One => f.write_char('1'),
-            Index::Two => f.write_char('2'),
-            Index::Three => f.write_char('3'),
-        }
-    }
-}
+type Index = usize;
 
 #[derive(Debug)]
 pub struct StateTrie {
@@ -93,24 +74,12 @@ impl StateTrie {
     pub fn iter(&self, prefix: &[u8]) -> Iter { Iter::new(&self, prefix) }
 
     fn to_indexes(key: &[u8]) -> Vec<Index> {
-        // Expects input to be in range 0..4.
-        // Will panic if that is not the case.
-        fn to_index(x: u8) -> Index {
-            match x {
-                0 => Index::Zero,
-                1 => Index::One,
-                2 => Index::Two,
-                3 => Index::Three,
-                invalid => panic!("Input should be in range 0..4, but got {}.", invalid),
-            }
-        }
-
         let mut indexes = Vec::new();
         for byte in key {
-            indexes.push(to_index((byte & 0b_11_00_00_00) >> 6));
-            indexes.push(to_index((byte & 0b_00_11_00_00) >> 4));
-            indexes.push(to_index((byte & 0b_00_00_11_00) >> 2));
-            indexes.push(to_index(byte & 0b_00_00_00_11));
+            indexes.push(((byte & 0b_11_00_00_00) >> 6) as Index);
+            indexes.push(((byte & 0b_00_11_00_00) >> 4) as Index);
+            indexes.push(((byte & 0b_00_00_11_00) >> 2) as Index);
+            indexes.push((byte & 0b_00_00_00_11) as Index);
         }
         indexes
     }
@@ -151,30 +120,6 @@ struct Node {
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
 }
 
-impl std::ops::Index<&Index> for [Option<Box<Node>>] {
-    type Output = Option<Box<Node>>;
-
-    fn index(&self, index: &Index) -> &Self::Output {
-        match index {
-            Index::Zero => &self[0],
-            Index::One => &self[1],
-            Index::Two => &self[2],
-            Index::Three => &self[3],
-        }
-    }
-}
-
-impl std::ops::IndexMut<&Index> for [Option<Box<Node>>] {
-    fn index_mut(&mut self, index: &Index) -> &mut Self::Output {
-        match index {
-            Index::Zero => &mut self[0],
-            Index::One => &mut self[1],
-            Index::Two => &mut self[2],
-            Index::Three => &mut self[3],
-        }
-    }
-}
-
 impl Node {
     fn new() -> Self {
         Self {
@@ -198,7 +143,7 @@ impl Node {
     fn lookup_node(&self, indexes: &[Index]) -> Option<&Self> {
         match indexes.first() {
             Some(idx) => {
-                self.children[idx].as_ref().and_then(|node| node.lookup_node(&indexes[1..]))
+                self.children[*idx].as_ref().and_then(|node| node.lookup_node(&indexes[1..]))
             }
             None => Some(&self),
         }
@@ -207,7 +152,7 @@ impl Node {
     fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<Vec<u8>>> {
         match indexes.first() {
             Some(idx) => {
-                self.children[idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
+                self.children[*idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
             }
             None => {
                 let new_entry = Rc::new(RefCell::new(Vec::new()));
@@ -222,11 +167,11 @@ impl Node {
 
     fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> bool {
         match prefix.first() {
-            Some(idx) => match &mut self.children[idx] {
+            Some(idx) => match &mut self.children[*idx] {
                 Some(child) => {
                     let something_was_deleted = child.delete_prefix(&prefix[1..], exact);
                     if child.is_empty() {
-                        self.children[idx] = None;
+                        self.children[*idx] = None;
                     }
                     something_was_deleted
                 }
@@ -275,8 +220,8 @@ impl NodeIter {
             index: Vec<Index>,
             node: &Node,
         ) {
-            for idx in [Index::Zero, Index::One, Index::Two, Index::Three] {
-                if let Some(child) = &node.children[&idx] {
+            for idx in 0..4 {
+                if let Some(child) = &node.children[idx] {
                     let mut new_index = index.clone();
                     new_index.push(idx);
 
