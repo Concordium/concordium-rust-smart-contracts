@@ -217,23 +217,26 @@ impl NodeIter {
 
         fn build_queue(
             queue: &mut VecDeque<(Vec<Index>, Rc<RefCell<Vec<u8>>>)>,
-            index: Vec<Index>,
+            indexes: &mut Vec<Index>,
             node: &Node,
         ) {
             for idx in 0..4 {
                 if let Some(child) = &node.children[idx] {
-                    let mut new_index = index.clone();
-                    new_index.push(idx);
+                    // Push current index.
+                    indexes.push(idx);
 
                     if let Some(entry) = &child.entry {
-                        queue.push_back((new_index.clone(), Rc::clone(entry)));
+                        queue.push_back((indexes.clone(), Rc::clone(entry)));
                     }
-                    build_queue(queue, new_index, &child)
+                    build_queue(queue, indexes, &child);
+
+                    // Pop current index again.
+                    indexes.pop();
                 }
             }
         }
 
-        build_queue(&mut queue, root_index.to_vec(), root_of_iter);
+        build_queue(&mut queue, &mut root_index.to_vec(), root_of_iter);
 
         Self {
             queue,
