@@ -1,6 +1,8 @@
+use core::fmt;
 use std::{
     cell::{Cell, RefCell},
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
+    fmt::Write,
     rc::Rc,
 };
 
@@ -10,7 +12,7 @@ use super::StateEntryTest;
 
 const BRANCHING_FACTOR: usize = 4;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 enum Index {
     Zero,
     One,
@@ -18,6 +20,18 @@ enum Index {
     Three,
 }
 
+impl fmt::Debug for Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Index::Zero => f.write_char('0'),
+            Index::One => f.write_char('1'),
+            Index::Two => f.write_char('2'),
+            Index::Three => f.write_char('3'),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct StateTrie {
     nodes:         Node,
     next_entry_id: Cell<StateEntryId>,
@@ -76,6 +90,8 @@ impl StateTrie {
         self.nodes.delete_prefix(&Self::to_indexes(prefix), exact)
     }
 
+    pub fn iter(&self, prefix: &[u8]) -> Iter { Iter::new(&self, prefix) }
+
     fn to_indexes(key: &[u8]) -> Vec<Index> {
         // Expects input to be in range 0..4.
         // Will panic if that is not the case.
@@ -100,6 +116,36 @@ impl StateTrie {
     }
 }
 
+#[derive(Debug)]
+pub struct Iter<'a> {
+    node_iter: Option<NodeIter>,
+    trie:      &'a StateTrie,
+}
+
+impl<'a> Iter<'a> {
+    fn new(trie: &'a StateTrie, prefix: &[u8]) -> Self {
+        let index_prefix = StateTrie::to_indexes(prefix);
+        Self {
+            node_iter: trie.nodes.iter(&index_prefix),
+            trie,
+        }
+    }
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = StateEntryTest;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.node_iter {
+            Some(ref mut node_iter) => node_iter.next().and_then(|(indexes, data)| {
+                Some(self.trie.construct_state_entry_test(indexes, data))
+            }),
+            None => None,
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Node {
     entry:    Option<Rc<RefCell<Vec<u8>>>>,
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
@@ -130,20 +176,31 @@ impl std::ops::IndexMut<&Index> for [Option<Box<Node>>] {
 }
 
 impl Node {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             entry:    None,
             children: Default::default(),
         }
     }
 
+    /// Tries to find the data in a node with the given index.
+    /// Returns `None` iff the node doesn't exist, or, if the node exists, but
+    /// has not data.
     fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<Vec<u8>>>> {
+        self.lookup_node(indexes).and_then(|node| match &node.entry {
+            Some(entry) => Some(Rc::clone(&entry)),
+            None => None,
+        })
+    }
+
+    /// Tries to find the node with the given index.
+    /// Returns `None` if the node doesn't exist.
+    fn lookup_node(&self, indexes: &[Index]) -> Option<&Self> {
         match indexes.first() {
-            Some(idx) => self.children[idx].as_ref().and_then(|node| node.lookup(&indexes[1..])),
-            None => match &self.entry {
-                Some(entry) => Some(Rc::clone(&entry)),
-                None => None,
-            },
+            Some(idx) => {
+                self.children[idx].as_ref().and_then(|node| node.lookup_node(&indexes[1..]))
+            }
+            None => Some(&self),
         }
     }
 
@@ -195,15 +252,61 @@ impl Node {
         }
     }
 
+    fn iter(&self, prefix: &[Index]) -> Option<NodeIter> {
+        self.lookup_node(prefix)
+            .and_then(|iter_root_node| Some(NodeIter::new(prefix, iter_root_node)))
+    }
+
     // A node is considered empty when it has no data and no children.
     fn is_empty(&self) -> bool { self.entry.is_none() && self.children.iter().all(|x| x.is_none()) }
+}
+
+#[derive(Debug)]
+struct NodeIter {
+    queue: VecDeque<(Vec<Index>, Rc<RefCell<Vec<u8>>>)>,
+}
+
+impl NodeIter {
+    fn new(root_index: &[Index], root_of_iter: &Node) -> Self {
+        let mut queue = VecDeque::new();
+
+        fn build_queue(
+            queue: &mut VecDeque<(Vec<Index>, Rc<RefCell<Vec<u8>>>)>,
+            index: Vec<Index>,
+            node: &Node,
+        ) {
+            for idx in [Index::Zero, Index::One, Index::Two, Index::Three] {
+                if let Some(child) = &node.children[&idx] {
+                    let mut new_index = index.clone();
+                    new_index.push(idx);
+
+                    if let Some(entry) = &child.entry {
+                        queue.push_back((new_index.clone(), Rc::clone(entry)));
+                    }
+                    build_queue(queue, new_index, &child)
+                }
+            }
+        }
+
+        build_queue(&mut queue, root_index.to_vec(), root_of_iter);
+
+        Self {
+            queue,
+        }
+    }
+}
+
+impl Iterator for NodeIter {
+    type Item = (Vec<Index>, Rc<RefCell<Vec<u8>>>);
+
+    fn next(&mut self) -> Option<Self::Item> { self.queue.pop_front() }
 }
 
 #[cfg(test)]
 mod tests {
     use concordium_contracts_common::{to_bytes, Deserial, Write};
 
-    use crate::test_infrastructure::trie::StateTrie;
+    use crate::{test_infrastructure::trie::StateTrie, UnwrapAbort};
 
     #[test]
     fn insert_get_test() {
@@ -263,5 +366,41 @@ mod tests {
         let res = String::deserial(&mut trie.create(&key));
 
         assert!(res.is_err())
+    }
+
+    #[test]
+    fn iterator_test() {
+        let mut trie = StateTrie::new();
+
+        trie.create(b"a").write_u8(42).unwrap_abort();
+        trie.create(b"ab").write_u8(43).unwrap_abort();
+        let mut entry_abd = trie.create(b"abd");
+        let mut entry_abdf = trie.create(b"abdf");
+        let mut entry_abdg = trie.create(b"abdg");
+        let mut entry_abe = trie.create(b"abe");
+        trie.create(b"ac").write_u8(44).unwrap_abort();
+
+        entry_abd.write_u8(0).unwrap_abort();
+        entry_abdf.write_u8(1).unwrap_abort();
+        entry_abdg.write_u8(2).unwrap_abort();
+        entry_abe.write_u8(3).unwrap_abort();
+
+        // Get an iterator of the trie.
+        let mut iter = trie.iter(b"ab");
+        assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(0));
+        assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(1));
+        assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(2));
+        assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(3));
+        assert_eq!(iter.next(), None);
+
+        // Delete some entries.
+        trie.delete_entry(entry_abd);
+        trie.delete_entry(entry_abdf);
+        trie.delete_entry(entry_abe);
+
+        // Only "abdg" is left.
+        let mut new_trie = trie.iter(b"ab");
+        assert_eq!(u8::deserial(&mut new_trie.next().unwrap_abort()), Ok(2));
+        assert_eq!(new_trie.next(), None);
     }
 }

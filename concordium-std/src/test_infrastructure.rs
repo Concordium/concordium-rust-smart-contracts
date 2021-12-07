@@ -704,6 +704,7 @@ impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
 }
 
 // TODO: Replace the Vec with a generic T.
+#[derive(Debug, PartialEq)]
 pub struct StateEntryTest {
     pub(crate) cursor:         Cursor<Rc<RefCell<Vec<u8>>>>,
     pub(crate) state_entry_id: StateEntryId,
