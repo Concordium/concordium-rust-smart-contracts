@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, ops::AddAssign, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
 
 use crate::StateEntryId;
 
@@ -16,7 +20,7 @@ enum Index {
 
 pub struct StateTrie {
     nodes:         Node,
-    next_entry_id: RefCell<StateEntryId>,
+    next_entry_id: Cell<StateEntryId>,
     entry_map:     RefCell<HashMap<StateEntryId, Vec<Index>>>,
 }
 
@@ -24,7 +28,7 @@ impl StateTrie {
     pub fn new() -> Self {
         Self {
             nodes:         Node::new(),
-            next_entry_id: RefCell::new(0),
+            next_entry_id: Cell::new(0),
             entry_map:     RefCell::new(HashMap::new()),
         }
     }
@@ -45,11 +49,11 @@ impl StateTrie {
         data: Rc<RefCell<Vec<u8>>>,
     ) -> StateEntryTest {
         // Get the current next_entry_id
-        let state_entry_id: u32 = *self.next_entry_id.borrow();
+        let state_entry_id: u32 = self.next_entry_id.get();
 
         // Add the id and indexes to the map and increment the next_entry_id
         self.entry_map.borrow_mut().insert(state_entry_id, indexes);
-        self.next_entry_id.borrow_mut().add_assign(1);
+        self.next_entry_id.set(state_entry_id + 1);
 
         StateEntryTest::new(data, state_entry_id)
     }
