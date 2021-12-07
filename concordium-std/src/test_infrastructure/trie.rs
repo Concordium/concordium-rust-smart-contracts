@@ -77,26 +77,26 @@ impl StateTrie {
     }
 
     fn to_indexes(key: &[u8]) -> Vec<Index> {
+        // Expects input to be in range 0..4.
+        // Will panic if that is not the case.
+        fn to_index(x: u8) -> Index {
+            match x {
+                0 => Index::Zero,
+                1 => Index::One,
+                2 => Index::Two,
+                3 => Index::Three,
+                invalid => panic!("Input should be in range 0..4, but got {}.", invalid),
+            }
+        }
+
         let mut indexes = Vec::new();
         for byte in key {
-            indexes.push(Self::to_index((byte & 0b_11_00_00_00) >> 6));
-            indexes.push(Self::to_index((byte & 0b_00_11_00_00) >> 4));
-            indexes.push(Self::to_index((byte & 0b_00_00_11_00) >> 2));
-            indexes.push(Self::to_index(byte & 0b_00_00_00_11));
+            indexes.push(to_index((byte & 0b_11_00_00_00) >> 6));
+            indexes.push(to_index((byte & 0b_00_11_00_00) >> 4));
+            indexes.push(to_index((byte & 0b_00_00_11_00) >> 2));
+            indexes.push(to_index(byte & 0b_00_00_00_11));
         }
         indexes
-    }
-
-    // Expects input to be in range 0..4.
-    // Will panic if that is not the case.
-    fn to_index(x: u8) -> Index {
-        match x {
-            0 => Index::Zero,
-            1 => Index::One,
-            2 => Index::Two,
-            3 => Index::Three,
-            invalid => panic!("Input should be in range 0..4, but got {}.", invalid),
-        }
     }
 }
 
