@@ -719,6 +719,7 @@ impl StateEntryTest {
     }
 }
 
+#[derive(Debug)]
 pub struct ContractStateLLTest {
     trie: StateTrie,
 }
@@ -726,7 +727,7 @@ pub struct ContractStateLLTest {
 impl HasContractStateLL for ContractStateLLTest {
     type ContractStateData = StateTrie;
     type EntryType = StateEntryTest;
-    type IterType = ContractStateIter<StateEntryTest>;
+    type IterType = ContractStateIter<Self::EntryType>;
 
     fn open(trie: Self::ContractStateData) -> Self {
         Self {
@@ -750,7 +751,17 @@ impl HasContractStateLL for ContractStateLLTest {
         self.trie.delete_prefix(prefix, exact)
     }
 
-    fn iterator(&self, _prefix: &[u8]) -> Self::IterType { todo!() }
+    fn iterator(&self, _prefix: &[u8]) -> Self::IterType {
+        todo!() // TODO: Iterator
+    }
+}
+
+impl ContractStateLLTest {
+    pub fn new() -> Self {
+        Self {
+            trie: StateTrie::new(),
+        }
+    }
 }
 
 impl HasContractStateEntry for StateEntryTest {
@@ -991,7 +1002,7 @@ mod test {
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::open(StateTrie::new()));
+            HasContractStateHL::open(ContractStateLLTest::new());
         state.insert(0, expected_value);
         let actual_value: u64 = state.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
@@ -1001,7 +1012,7 @@ mod test {
     fn low_level_entry() {
         let expected_value: u64 = 123123123;
         let key = to_bytes(&42u64);
-        let mut state = ContractStateLLTest::open(StateTrie::new());
+        let mut state = ContractStateLLTest::new();
         state.entry(&key).or_insert(&to_bytes(&expected_value));
 
         match state.entry(&key) {
@@ -1016,7 +1027,7 @@ mod test {
     fn high_level_statemap() -> Result<(), ParseError> {
         let my_map_key = "my_map";
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::open(StateTrie::new()));
+            HasContractStateHL::open(ContractStateLLTest::new());
 
         let map_to_insert = state.new_map::<String, String>();
         state.insert(my_map_key, map_to_insert);

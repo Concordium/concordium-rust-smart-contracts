@@ -216,6 +216,8 @@ where
         &mut self,
         key: K,
     ) -> ParseResult<Entry<K, V, <Self::ContractStateLLType as HasContractStateLL>::EntryType>>;
+
+    fn is_empty(&self) -> bool;
 }
 
 /// Objects which can serve as loggers.

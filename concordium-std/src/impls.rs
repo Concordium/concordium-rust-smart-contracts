@@ -825,6 +825,14 @@ where
             }
         }
     }
+
+    fn is_empty(&self) -> bool {
+        if let Some(_) = self.state_ll.borrow().iterator(&self.prefix).next() {
+            false
+        } else {
+            true
+        }
+    }
 }
 
 impl<K, V, S> StateMap<K, V, S>

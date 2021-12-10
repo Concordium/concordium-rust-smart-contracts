@@ -9,10 +9,12 @@ pub struct ContractState {
     pub(crate) current_position: u32,
 }
 
+#[derive(Debug)]
 pub struct ContractStateHL<S> {
     pub(crate) state_ll: Rc<RefCell<S>>,
 }
 
+#[derive(Debug)]
 pub struct StateMap<K, V, S>
 where
     S: HasContractStateLL, {
@@ -30,6 +32,7 @@ where
     // pub(crate) contract_state: S,
 }
 
+#[derive(Debug)]
 pub struct ContractStateLL;
 
 pub struct ContractStateIter<StateEntryType: HasContractStateEntry> {
