@@ -61,7 +61,7 @@ impl StateTrie {
 
     pub fn delete_entry(&mut self, entry: StateEntryTest) -> bool {
         match self.entry_map.borrow_mut().remove(&entry.state_entry_id) {
-            Some(indexes) => self.nodes.delete_entry(&indexes),
+            Some(indexes) => self.nodes.delete_data(&indexes),
             None => false, /* Entry did not exist. Only happens when entry was deleted using
                             * delete_prefix. */
         }
@@ -117,9 +117,9 @@ impl Iter {
                     // Push current index.
                     indexes.push(idx);
 
-                    if let Some(entry) = &child.entry {
+                    if let Some(data) = &child.data {
                         let state_entry =
-                            trie.construct_state_entry_test(indexes.clone(), Rc::clone(entry));
+                            trie.construct_state_entry_test(indexes.clone(), Rc::clone(data));
                         queue.push_back(state_entry);
                     }
                     build_queue(trie, queue, indexes, &child);
@@ -151,15 +151,14 @@ impl Iterator for Iter {
 
 #[derive(Debug)]
 struct Node {
-    // TODO: rename to data
-    entry:    Option<Rc<RefCell<Vec<u8>>>>,
+    data:     Option<Rc<RefCell<Vec<u8>>>>,
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
 }
 
 impl Node {
     fn new() -> Self {
         Self {
-            entry:    None,
+            data:     None,
             children: Default::default(),
         }
     }
@@ -168,8 +167,8 @@ impl Node {
     /// Returns `None` iff the node doesn't exist, or, if the node exists, but
     /// has not data.
     fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<Vec<u8>>>> {
-        self.lookup_node(indexes).and_then(|node| match &node.entry {
-            Some(entry) => Some(Rc::clone(&entry)),
+        self.lookup_node(indexes).and_then(|node| match &node.data {
+            Some(data) => Some(Rc::clone(&data)),
             None => None,
         })
     }
@@ -191,15 +190,15 @@ impl Node {
                 self.children[*idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
             }
             None => {
-                let new_entry = Rc::new(RefCell::new(Vec::new()));
-                let new_entry_clone = Rc::clone(&new_entry);
-                self.entry = Some(new_entry);
-                new_entry_clone
+                let new_data = Rc::new(RefCell::new(Vec::new()));
+                let new_data_clone = Rc::clone(&new_data);
+                self.data = Some(new_data);
+                new_data_clone
             }
         }
     }
 
-    fn delete_entry(&mut self, indexes: &[Index]) -> bool { self.delete_prefix(indexes, true) }
+    fn delete_data(&mut self, indexes: &[Index]) -> bool { self.delete_prefix(indexes, true) }
 
     fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> bool {
         match prefix.first() {
@@ -215,7 +214,7 @@ impl Node {
             },
             None => {
                 // If `exact` and we found a non-leaf node, then do nothing and return false.
-                if exact && self.entry.is_none() {
+                if exact && self.data.is_none() {
                     // Make no changes and return false.
                     return false;
                 }
@@ -227,14 +226,14 @@ impl Node {
                     });
                 }
 
-                self.entry = None;
+                self.data = None;
                 true
             }
         }
     }
 
     // A node is considered empty when it has no data and no children.
-    fn is_empty(&self) -> bool { self.entry.is_none() && self.children.iter().all(|x| x.is_none()) }
+    fn is_empty(&self) -> bool { self.data.is_none() && self.children.iter().all(|x| x.is_none()) }
 }
 
 #[cfg(test)]
