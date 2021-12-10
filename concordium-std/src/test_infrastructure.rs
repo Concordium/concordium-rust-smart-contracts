@@ -1035,4 +1035,23 @@ mod test {
         assert_eq!(my_map.get("hello".to_string()), Some(Ok("world".to_string())));
         Ok(())
     }
+
+    #[test]
+    fn high_level_nested_statemaps() {
+        let inner_map_key = 0u8;
+        let key_to_value = 77u8;
+        let value = 255u8;
+        let mut state: ContractStateHL<ContractStateLLTest> =
+            HasContractStateHL::open(ContractStateLLTest::new());
+        let mut outer_map = state.new_map::<u8, StateMap<u8, u8, _>>();
+        let mut inner_map = state.new_map::<u8, u8>();
+
+        inner_map.insert(key_to_value, value);
+        outer_map.insert(inner_map_key, inner_map);
+
+        assert_eq!(
+            outer_map.get(inner_map_key).unwrap().unwrap().get(key_to_value),
+            Some(Ok(value))
+        );
+    }
 }

@@ -854,7 +854,9 @@ where
     V: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.prefix.serial(out) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        serial_vector_no_length(&self.prefix, out)
+    }
 }
 
 /// # Trait implementations for Parameter
