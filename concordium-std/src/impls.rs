@@ -552,7 +552,7 @@ fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
 impl HasContractStateLL for ContractStateLL {
     type ContractStateData = ();
     type EntryType = StateEntry;
-    type IterType = ContractStateIter<Self::EntryType>;
+    type IterType = ContractStateIter;
 
     /// Open the contract state.
     fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
@@ -603,23 +603,19 @@ impl HasContractStateLL for ContractStateLL {
         let iterator_id = unsafe { iterator(prefix_start, prefix_len) };
         ContractStateIter {
             iterator_id,
-            _marker_state_entry_type: PhantomData,
         }
     }
 }
 
-impl<StateEntryType: HasContractStateEntry> Iterator for ContractStateIter<StateEntryType> {
-    type Item = StateEntryType;
+impl Iterator for ContractStateIter {
+    type Item = StateEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO: Needs to get the actual entry instead, otherwise it won't work in
-        // test_infrastructure. Add a next() to state_ll.
         let res = unsafe { next(self.iterator_id) };
         if res < 0 {
             None
         } else {
-            todo!()
-            // Some(StateEntryType::open(res as u32))
+            Some(StateEntry::open(res as u32))
         }
     }
 }
