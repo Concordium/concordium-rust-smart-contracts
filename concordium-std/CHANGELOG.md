@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 - Update references to token to match token name (CCD).
+- Improve `claim_eq` and `claim_ne` macros such that:
+  - Arguments are only evaluated once.
+  - Type inference works as you would expect.
 
 ## concordium-std 1.0.0 (2021-10-05)
 
