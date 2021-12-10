@@ -129,26 +129,32 @@
 //!
 //! | Variant | Error code |
 //! |---------|------------|
-//! | [()](https://doc.rust-lang.org/std/primitive.unit.html) | [i32::MIN](https://doc.rust-lang.org/std/primitive.i32.html#associatedconstant.MIN) + 1 (`-2147483647`) |
-//! | [ParseError](./struct.ParseError.html) | [i32::MIN] + 2 (`-2147483646`) |
-//! | [LogError::Full](./enum.LogError.html#variant.Full) | [i32::MIN] + 3
-//! (`-2147483645`) | | [LogError::Malformed](./enum.LogError.html#variant.
-//! Malformed) | [i32::MIN] + 4 (`-2147483644`) | | [NewContractNameError::
-//! MissingInitPrefix](./enum.LogError.html#variant.Malformed) | [i32::MIN] + 5
-//! (`-2147483643`) | | [NewContractNameError::TooLong](./enum.
-//! NewContractNameError.html#variant.TooLong) | [i32::MIN] + 6 (`-2147483642`)
-//! | | [NewContractNameError::ContainsDot](./enum.NewContractNameError.html#
-//! variant.ContainsDot) | [i32::MIN] + 9 (`-2147483639`) |
-//! | [NewContractNameError::InvalidCharacters](./enum.NewContractNameError.
-//! html#variant.InvalidCharacters) | [i32::MIN] + 10 (`-2147483638`) |
-//! | [NewReceiveNameError::MissingDotSeparator](./enum.NewReceiveNameError.
-//! html#variant.MissingDotSeparator) | [i32::MIN] + 7 (`-2147483641`) |
-//! | [NewReceiveNameError::TooLong](./enum.NewReceiveNameError.html#variant.
-//! TooLong) | [i32::MIN] + 8 (`-2147483640`) | | [NewReceiveNameError::
-//! InvalidCharacters](./enum.NewReceiveNameError.html#variant.
-//! InvalidCharacters) | [i32::MIN] + 11 (`-2147483637`) | | [NotPayableError](.
-//! /struct.NotPayableError.html) | [i32::MIN] + 12 (`-2147483636`) |
+//! | [()][1] | `-2147483647` |
+//! | [ParseError][2] | `-2147483646` |
+//! | [LogError::Full][3] | `-2147483645` |
+//! | [LogError::Malformed][4] | `-2147483644`
+//! | [NewContractNameError::MissingInitPrefix][5] | `-2147483643` |
+//! | [NewContractNameError::TooLong][6] | `-2147483642` |
+//! | [NewContractNameError::ContainsDot][7] | `-2147483639` |
+//! | [NewContractNameError::InvalidCharacters][8] | `-2147483638` |
+//! | [NewReceiveNameError::MissingDotSeparator][9] | `-2147483641` |
+//! | [NewReceiveNameError::TooLong][10] | `-2147483640` |
+//! | [NewReceiveNameError::InvalidCharacters][11] | `-2147483637` |
+//! | [NotPayableError][12] | `-2147483636` |
 //!
+//! [MIN]: https://doc.rust-lang.org/std/primitive.i32.html#associatedconstant.MIN
+//! [1]: https://doc.rust-lang.org/std/primitive.unit.html
+//! [2]: ./struct.ParseError.html
+//! [3]: ./enum.LogError.html#variant.Full
+//! [4]: ./enum.LogError.html#variant.Malformed
+//! [5]: ./enum.LogError.html#variant.Malformed
+//! [6]: ./enum.NewContractNameError.html#variant.TooLong
+//! [7]: ./enum.NewContractNameError.html#variant.ContainsDot
+//! [8]: ./enum.NewContractNameError.html#variant.InvalidCharacters
+//! [9]: ./enum.NewReceiveNameError.html#variant.MissingDotSeparator
+//! [10]: ./enum.NewReceiveNameError.html#variant.TooLong
+//! [11]: ./enum.NewReceiveNameError.html#variant.InvalidCharacters
+//! [12]: ./struct.NotPayableError.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
