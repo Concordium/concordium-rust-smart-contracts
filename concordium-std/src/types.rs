@@ -1,4 +1,3 @@
-use concordium_contracts_common::Serialize;
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{HasContractStateEntry, HasContractStateLL};
@@ -12,18 +11,18 @@ pub struct ContractStateHL<S> {
 pub struct StateMap<K, V, S>
 where
     S: HasContractStateLL, {
-    pub(crate) phantom_k: PhantomData<K>,
-    pub(crate) phantom_v: PhantomData<V>,
-    pub(crate) prefix:    StateMapPrefix,
-    pub(crate) state_ll:  Rc<RefCell<S>>,
+    pub(crate) _marker_key:   PhantomData<K>,
+    pub(crate) _marker_value: PhantomData<V>,
+    pub(crate) prefix:        StateMapPrefix,
+    pub(crate) state_ll:      Rc<RefCell<S>>,
 }
 
-pub struct StateSet<V>
+pub struct StateSet<T, S>
 where
-    V: Serialize, {
-    // S: HasNewContractState, {
-    pub(crate) phantom_v: PhantomData<V>,
-    // pub(crate) contract_state: S,
+    S: HasContractStateLL, {
+    pub(crate) _marker:  PhantomData<T>,
+    pub(crate) prefix:   StateMapPrefix,
+    pub(crate) state_ll: Rc<RefCell<S>>,
 }
 
 #[derive(Debug)]

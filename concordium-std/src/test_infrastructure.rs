@@ -778,7 +778,7 @@ mod test {
     use crate::{
         constants, test_infrastructure::StateEntryTest, ContractStateHL, EntryRaw,
         HasContractStateEntry, HasContractStateHL, HasContractStateLL, HasStateMap, StateMap,
-        UnwrapAbort,
+        StateSet, UnwrapAbort,
     };
 
     #[test]

@@ -497,24 +497,15 @@ impl<S: HasContractStateLL> HasContractStateHL for ContractStateHL<S> {
     fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
     ) -> StateMap<K, V, Self::ContractStateLLType> {
-        // Get the next prefix or insert and use the initial one.
-        let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
-        let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
-        let mut next_collection_prefix_entry =
-            self.state_ll.borrow_mut().entry(&entry_key).or_insert(&default_prefix);
-
-        // Get the next collection prefix
-        let map_prefix = next_collection_prefix_entry
-            .read_u64()
-            .expect_report("next_collection_prefix is not a valid u64.");
-
-        // Rewind state entry position. Cannot fail.
-        next_collection_prefix_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-
-        // Increment the collection prefix
-        next_collection_prefix_entry.write_u64(map_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
-
+        let map_prefix = self.get_and_update_collection_prefix();
         StateMap::open(Rc::clone(&self.state_ll), map_prefix)
+    }
+
+    fn new_set<T: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
+        &mut self,
+    ) -> StateSet<T, Self::ContractStateLLType> {
+        let set_prefix = self.get_and_update_collection_prefix();
+        StateSet::open(Rc::clone(&self.state_ll), set_prefix)
     }
 
     /// Some(Err(_)) means that something exists in the state with that key, but
@@ -540,6 +531,29 @@ impl<S: HasContractStateLL> HasContractStateHL for ContractStateHL<S> {
             }
             EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
         }
+    }
+}
+
+impl<S: HasContractStateLL> ContractStateHL<S> {
+    fn get_and_update_collection_prefix(&self) -> u64 {
+        // Get the next prefix or insert and use the initial one.
+        let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
+        let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
+        let mut next_collection_prefix_entry =
+            self.state_ll.borrow_mut().entry(&entry_key).or_insert(&default_prefix);
+
+        // Get the next collection prefix
+        let collection_prefix = next_collection_prefix_entry
+            .read_u64()
+            .expect_report("next_collection_prefix is not a valid u64.");
+
+        // Rewind state entry position. Cannot fail.
+        next_collection_prefix_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+
+        // Increment the collection prefix
+        next_collection_prefix_entry.write_u64(collection_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
+
+        collection_prefix
     }
 }
 
@@ -630,8 +644,8 @@ where
 
     fn open<P: Serial>(state_ll: Rc<RefCell<Self::ContractStateLLType>>, prefix: P) -> Self {
         Self {
-            phantom_k: PhantomData,
-            phantom_v: PhantomData,
+            _marker_key: PhantomData,
+            _marker_value: PhantomData,
             prefix: to_bytes(&prefix),
             state_ll,
         }
@@ -702,6 +716,65 @@ impl<K, V, S> Serial for StateMap<K, V, S>
 where
     K: Serialize,
     V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        serial_vector_no_length(&self.prefix, out)
+    }
+}
+
+impl<T, S> StateSet<T, S>
+where
+    T: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    pub(crate) fn open<P: Serial>(state_ll: Rc<RefCell<S>>, prefix: P) -> Self {
+        Self {
+            _marker: PhantomData,
+            prefix: to_bytes(&prefix),
+            state_ll,
+        }
+    }
+
+    /// Adds a value to the set.
+    /// If the set did not have this value, `true` is returned. Otherwise,
+    /// `false`.
+    pub fn insert(&mut self, value: T) -> bool {
+        let key_bytes = self.key_with_set_prefix(&value);
+        match self.state_ll.borrow_mut().entry(&key_bytes) {
+            EntryRaw::Vacant(vac) => {
+                let _ = vac.insert(&[99]);
+                true
+            }
+            EntryRaw::Occupied(_) => false,
+        }
+    }
+
+    pub fn contains(&self, value: &T) -> bool {
+        let key_bytes = self.key_with_set_prefix(&value);
+        self.state_ll.borrow().lookup(&key_bytes).is_some()
+    }
+
+    /// Removes a value from the set. Returns whether the value was present in
+    /// the set.
+    pub fn remove(&mut self, value: &T) -> bool {
+        let key_bytes = self.key_with_set_prefix(&value);
+        match self.state_ll.borrow_mut().entry(&key_bytes) {
+            EntryRaw::Vacant(_) => false,
+            EntryRaw::Occupied(occ) => self.state_ll.borrow_mut().delete_entry(occ.get()),
+        }
+    }
+
+    pub(crate) fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
+        let mut key_with_prefix = self.prefix.clone();
+        key_with_prefix.append(&mut to_bytes(key));
+        key_with_prefix
+    }
+}
+
+impl<T, S> Serial for StateSet<T, S>
+where
+    T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
@@ -1321,5 +1394,15 @@ where
 {
     fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
         source.read_u64().and_then(|map_prefix| Ok(StateMap::open(Rc::clone(state), map_prefix)))
+    }
+}
+
+impl<T, S> DeserialStateCtx<S> for StateSet<T, S>
+where
+    S: HasContractStateLL,
+    T: Serial + DeserialStateCtx<S>,
+{
+    fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
+        source.read_u64().and_then(|set_prefix| Ok(StateSet::open(Rc::clone(state), set_prefix)))
     }
 }
