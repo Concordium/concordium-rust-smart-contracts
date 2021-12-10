@@ -56,13 +56,12 @@ fn receive<A: HasActions>(
 
     token_state
         .entry(params.owner)?
-        .and_modify::<_, Reject>(|owner_map| {
+        .and_try_modify::<_, Reject>(|owner_map| {
             owner_map
                 .entry(params.token_id)?
-                .and_modify::<_, Reject>(|current_count| {
+                .and_modify(|current_count| {
                     *current_count += params.token_count;
-                    Ok(())
-                })?
+                })
                 .or_insert(params.token_count);
             Ok(())
         })?
