@@ -40,20 +40,6 @@ extern "C" {
     // - 1 if data was successfully logged.
     pub(crate) fn log_event(start: *const u8, length: u32) -> i32;
 
-    // -- CURRENT state implementation --
-
-    // returns how many bytes were read.
-    pub(crate) fn load_state(start: *mut u8, length: u32, offset: u32) -> u32;
-    // returns how many bytes were written
-    pub(crate) fn write_state(start: *const u8, length: u32, offset: u32) -> u32;
-    // Resize state to the new value (truncate if new size is smaller). Return 0 if
-    // this was unsuccesful (new state too big), or 1 if successful.
-    pub(crate) fn resize_state(new_size: u32) -> u32; // returns 0 or 1.
-                                                      // get current state size in bytes.
-    pub(crate) fn state_size() -> u32;
-
-    // -- NEW state implementation --
-
     /// Create an entry with the given key and return its entry id.
     /// - vacant => Allocates an empty state entry and returns its id.
     /// - Occupied by entry `e` => Allocates an empty state entry and returns

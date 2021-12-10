@@ -50,7 +50,7 @@ impl StateTrie {
         self.entry_map.borrow_mut().insert(state_entry_id, indexes);
         self.next_entry_id.set(state_entry_id + 1);
 
-        StateEntryTest::new(data, state_entry_id)
+        StateEntryTest::open(data, state_entry_id)
     }
 
     pub fn create(&mut self, key: &[u8]) -> StateEntryTest {

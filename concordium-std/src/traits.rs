@@ -105,31 +105,6 @@ pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
     fn owner(&self) -> AccountAddress;
 }
 
-/// A type that can serve as the contract state type.
-pub trait HasContractState<Error: Default = ()>
-where
-    Self: Read,
-    Self: Write<Err = Error>,
-    Self: Seek<Err = Error>, {
-    type ContractStateData;
-    /// Open the contract state. Only one instance can be opened at the same
-    /// time.
-    fn open(_: Self::ContractStateData) -> Self;
-
-    /// Get the current size of contract state.
-    fn size(&self) -> u32;
-
-    /// Truncate the state to the given size. If the given size is more than the
-    /// current state size this operation does nothing. The new position is at
-    /// most at the end of the stream.
-    fn truncate(&mut self, new_size: u32);
-
-    /// Make sure that the memory size is at least that many bytes in size.
-    /// Returns true iff this was successful. The new bytes are initialized as
-    /// 0.
-    fn reserve(&mut self, len: u32) -> bool;
-}
-
 /// A type that can serve as the contract state entry type.
 pub trait HasContractStateEntry
 where

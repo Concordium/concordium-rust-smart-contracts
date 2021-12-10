@@ -556,19 +556,6 @@ pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
 #[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
 pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
 
-/// Contract state for testing, mimicking the operations the scheduler allows,
-/// including the limit on the size of the maximum size of the contract state.
-pub struct ContractStateTest<T> {
-    pub cursor: Cursor<T>,
-}
-
-/// A borrowed instantiation of `ContractStateTest`.
-pub type ContractStateTestBorrowed<'a> = ContractStateTest<&'a mut Vec<u8>>;
-
-/// An owned variant that can be more convenient for testing since the type
-/// itself owns the data.
-pub type ContractStateTestOwned = ContractStateTest<Vec<u8>>;
-
 #[derive(Debug, PartialEq, Eq)]
 /// An error that is raised when operating with `Seek`, `Write`, or `Read` trait
 /// methods of the `ContractStateTest` type.
@@ -583,124 +570,12 @@ pub enum ContractStateError {
     Default,
 }
 
-impl<T: convert::AsRef<[u8]>> Read for ContractStateTest<T> {
-    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
-}
-
-impl<T: convert::AsMut<Vec<u8>>> Write for ContractStateTest<T> {
-    type Err = ContractStateError;
-
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
-        // The chain automatically resizes the state up until MAX_CONTRACT_STATE_SIZE.
-        let end = cmp::min(MAX_CONTRACT_STATE_SIZE as usize, self.cursor.offset + buf.len());
-        if self.cursor.data.as_mut().len() < end {
-            self.cursor.data.as_mut().resize(end as usize, 0u8);
-        }
-        let data = &mut self.cursor.data.as_mut()[self.cursor.offset..];
-        let to_write = cmp::min(data.len(), buf.len());
-        data[..to_write].copy_from_slice(&buf[..to_write]);
-        self.cursor.offset += to_write;
-        Ok(to_write)
-    }
-}
-
-impl<T: AsMut<Vec<u8>> + AsMut<[u8]> + AsRef<[u8]>> HasContractState<ContractStateError>
-    for ContractStateTest<T>
-{
-    type ContractStateData = T;
-
-    fn open(data: Self::ContractStateData) -> Self {
-        Self {
-            cursor: Cursor::new(data),
-        }
-    }
-
-    fn size(&self) -> u32 { self.cursor.data.as_ref().len() as u32 }
-
-    fn truncate(&mut self, new_size: u32) {
-        if self.size() > new_size {
-            let new_size = new_size as usize;
-            let data: &mut Vec<u8> = self.cursor.data.as_mut();
-            data.truncate(new_size);
-            if self.cursor.offset > new_size {
-                self.cursor.offset = new_size
-            }
-        }
-    }
-
-    fn reserve(&mut self, len: u32) -> bool {
-        if len <= constants::MAX_CONTRACT_STATE_SIZE {
-            if self.size() < len {
-                let data: &mut Vec<u8> = self.cursor.data.as_mut();
-                data.resize(len as usize, 0u8);
-            }
-            true
-        } else {
-            false
-        }
-    }
-}
-
 impl Default for ContractStateError {
     fn default() -> Self { Self::Default }
 }
 
 impl From<num::TryFromIntError> for ContractStateError {
     fn from(_: num::TryFromIntError) -> Self { ContractStateError::Overflow }
-}
-
-impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
-    type Err = ContractStateError;
-
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
-        use ContractStateError::*;
-        match pos {
-            SeekFrom::Start(x) => {
-                // We can set the position to just after the end of the current length.
-                let new_offset = x.try_into()?;
-                if new_offset <= self.cursor.data.as_ref().len() {
-                    self.cursor.offset = new_offset;
-                    Ok(x)
-                } else {
-                    Err(Offset)
-                }
-            }
-            SeekFrom::End(x) => {
-                // cannot seek beyond end, nor before beginning
-                if x <= 0 {
-                    let end: u32 = self.cursor.data.as_ref().len().try_into()?;
-                    let minus_x = x.checked_abs().ok_or(Overflow)?;
-                    if let Some(new_pos) = end.checked_sub(minus_x.try_into()?) {
-                        self.cursor.offset = new_pos.try_into()?;
-                        Ok(u64::from(new_pos))
-                    } else {
-                        Err(Offset)
-                    }
-                } else {
-                    Err(Offset)
-                }
-            }
-            SeekFrom::Current(x) => match x {
-                0 => Ok(self.cursor.offset.try_into()?),
-                x if x > 0 => {
-                    let x = x.try_into()?;
-                    let new_pos = self.cursor.offset.checked_add(x).ok_or(Overflow)?;
-                    if new_pos <= self.cursor.data.as_ref().len() {
-                        self.cursor.offset = new_pos;
-                        new_pos.try_into().map_err(Self::Err::from)
-                    } else {
-                        Err(Offset)
-                    }
-                }
-                x => {
-                    let x = (-x).try_into()?;
-                    let new_pos = self.cursor.offset.checked_sub(x).ok_or(Overflow)?;
-                    self.cursor.offset = new_pos;
-                    new_pos.try_into().map_err(Self::Err::from)
-                }
-            },
-        }
-    }
 }
 
 // TODO: Replace the Vec with a generic T.
@@ -711,7 +586,7 @@ pub struct StateEntryTest {
 }
 
 impl StateEntryTest {
-    pub fn new(data: Rc<RefCell<Vec<u8>>>, state_entry_id: StateEntryId) -> Self {
+    pub fn open(data: Rc<RefCell<Vec<u8>>>, state_entry_id: StateEntryId) -> Self {
         Self {
             cursor: Cursor::new(data),
             state_entry_id,
@@ -893,14 +768,17 @@ impl Seek for StateEntryTest {
 
 #[cfg(test)]
 mod test {
+    use std::{cell::RefCell, rc::Rc};
+
     use concordium_contracts_common::{
         to_bytes, Deserial, ParseError, Read, Seek, SeekFrom, Write,
     };
 
-    use super::{ContractStateLLTest, ContractStateTest};
+    use super::ContractStateLLTest;
     use crate::{
-        constants, traits::HasContractState, ContractStateHL, EntryRaw, HasContractStateHL,
-        HasContractStateLL, HasStateMap, StateMap, UnwrapAbort,
+        constants, test_infrastructure::StateEntryTest, ContractStateHL, EntryRaw,
+        HasContractStateEntry, HasContractStateHL, HasContractStateLL, HasStateMap, StateMap,
+        UnwrapAbort,
     };
 
     #[test]
@@ -908,8 +786,8 @@ mod test {
     // classes on the ContractStateTest structure and check that they behave as
     // specified.
     fn test_contract_state() {
-        let data = vec![1; 100];
-        let mut state = ContractStateTest::open(data);
+        let data = Rc::new(RefCell::new(vec![1; 100]));
+        let mut state = StateEntryTest::open(data, 0);
         assert_eq!(state.seek(SeekFrom::Start(100)), Ok(100), "Seeking to the end failed.");
         assert_eq!(
             state.seek(SeekFrom::Current(0)),
@@ -946,7 +824,7 @@ mod test {
         assert_eq!(state.read(&mut buf), Ok(0), "Reading from the end should read 0 bytes.");
         assert_eq!(state.seek(SeekFrom::End(-20)), Ok(102));
         assert_eq!(state.read(&mut buf), Ok(20), "Reading from offset 80 should read 20 bytes.");
-        assert_eq!(&buf[0..20], &state.cursor.data[80..100], "Incorrect data was read.");
+        assert_eq!(&buf[0..20], &state.cursor.data.borrow()[80..100], "Incorrect data was read.");
         assert_eq!(
             state.cursor.offset, 122,
             "After reading the offset is in the correct position."
@@ -972,16 +850,16 @@ mod test {
             "Writing at the end after truncation should do nothing."
         );
         assert_eq!(
-            state.cursor.data.len(),
+            state.cursor.data.as_ref().borrow().len(),
             constants::MAX_CONTRACT_STATE_SIZE as usize,
             "State size should not increase beyond max."
-        )
+        );
     }
 
     #[test]
     fn test_contract_state_write() {
-        let data = vec![0u8; 10];
-        let mut state = ContractStateTest::open(data);
+        let data = Rc::new(RefCell::new(vec![0u8; 10]));
+        let mut state = StateEntryTest::open(data, 0);
         assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
         assert_eq!(
             state.write(&2u64.to_le_bytes()),
@@ -990,7 +868,7 @@ mod test {
         );
         assert_eq!(state.cursor.offset, 16, "Pos should be at the end.");
         assert_eq!(
-            state.cursor.data,
+            *state.cursor.data.as_ref().borrow(),
             vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
             "Correct data was written."
         );

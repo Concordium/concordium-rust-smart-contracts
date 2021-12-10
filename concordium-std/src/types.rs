@@ -3,12 +3,6 @@ use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{HasContractStateEntry, HasContractStateLL};
 
-/// A type representing the constract state bytes.
-#[derive(Default)]
-pub struct ContractState {
-    pub(crate) current_position: u32,
-}
-
 #[derive(Debug)]
 pub struct ContractStateHL<S> {
     pub(crate) state_ll: Rc<RefCell<S>>,
