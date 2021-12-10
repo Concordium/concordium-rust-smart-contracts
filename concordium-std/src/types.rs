@@ -221,11 +221,16 @@ macro_rules! claim {
 /// reports an error. Used only in testing.
 #[macro_export]
 macro_rules! claim_eq {
-    ($left:expr, $right:expr) => {
-        $crate::claim!($left == $right, "left and right are not equal\nleft: {:?}\nright: {:?}", $left, $right)
-    };
-    ($left:expr, $right:expr,) => {
-        $crate::claim_eq!($left, $right)
+    ($left:expr, $right:expr $(,)?) => {
+        // Use match to ensure that the values are only evaluated once,
+        // and to ensure that type inference works correctly when printing.
+        match (&$left, &$right) {
+            (left_val, right_val) => {
+                if !(*left_val == *right_val) {
+                    $crate::fail!("left and right are not equal\nleft: {:?}\nright: {:?}\n", left_val, right_val);
+                }
+            }
+        }
     };
     ($left:expr, $right:expr, $($arg:tt),+) => {
         $crate::claim!($left == $right, $($arg),+)
@@ -237,11 +242,16 @@ macro_rules! claim_eq {
 /// Used only in testing.
 #[macro_export]
 macro_rules! claim_ne {
-    ($left:expr, $right:expr) => {
-        $crate::claim!($left != $right)
-    };
-    ($left:expr, $right:expr,) => {
-        $crate::claim!($left != $right)
+    ($left:expr, $right:expr $(,)?) => {
+        // Use match to ensure that the values are only evaluated once,
+        // and to ensure that type inference works correctly when printing.
+        match (&$left, &$right) {
+            (left_val, right_val) => {
+                if *left_val == *right_val {
+                    $crate::fail!("left and right are equal\nleft: {:?}\nright: {:?}\n", left_val, right_val);
+                }
+            }
+        }
     };
     ($left:expr, $right:expr, $($arg:tt),+) => {
         $crate::claim!($left != $right, $($arg),+)
