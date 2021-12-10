@@ -574,7 +574,18 @@ where
     pub fn get(self) -> V { self.value }
 
     // If we had Stored<V> then we wouldn't need this.
-    pub fn modify<F, E>(&mut self, f: F) -> Result<(), E>
+    pub fn modify<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut V), {
+        f(&mut self.value);
+        // Rewind state entry. Cannot fail.
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        self.value.serial(&mut self.state_entry).unwrap_abort(); // Writing to
+                                                                 // state cannot
+                                                                 // fail.
+    }
+
+    pub fn try_modify<F, E>(&mut self, f: F) -> Result<(), E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         f(&mut self.value)?;
@@ -597,14 +608,25 @@ where
         }
     }
 
-    // TODO: Add non-result version for non-nested maps.
-    pub fn and_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, StateEntryType>, E>
+    /// Try to modify the entry using the given function.
+    /// Useful when dealing with nested StateMaps.
+    pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, StateEntryType>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         if let Entry::Occupied(ref mut occ) = self {
-            occ.modify(f)?;
+            occ.try_modify(f)?;
         }
         Ok(self)
+    }
+
+    /// Modify the entry using the given function.
+    pub fn and_modify<F>(mut self, f: F) -> Entry<K, V, StateEntryType>
+    where
+        F: FnOnce(&mut V), {
+        if let Entry::Occupied(ref mut occ) = self {
+            occ.modify(f);
+        }
+        self
     }
 }
 

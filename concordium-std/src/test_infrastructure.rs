@@ -897,7 +897,7 @@ mod test {
         to_bytes, Deserial, ParseError, Read, Seek, SeekFrom, Write,
     };
 
-    use super::{trie::StateTrie, ContractStateLLTest, ContractStateTest};
+    use super::{ContractStateLLTest, ContractStateTest};
     use crate::{
         constants, traits::HasContractState, ContractStateHL, EntryRaw, HasContractStateHL,
         HasContractStateLL, HasStateMap, StateMap, UnwrapAbort,
