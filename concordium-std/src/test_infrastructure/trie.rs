@@ -71,7 +71,13 @@ impl StateTrie {
         self.nodes.delete_prefix(&Self::to_indexes(prefix), exact)
     }
 
-    pub fn iter(&self, prefix: &[u8]) -> Iter { Iter::new(&self, prefix) }
+    pub fn iter(&self, prefix: &[u8]) -> Iter {
+        let index_prefix = StateTrie::to_indexes(prefix);
+        match self.nodes.lookup_node(&index_prefix) {
+            Some(root_of_iter) => Iter::new(self, index_prefix, root_of_iter),
+            None => Iter::empty(),
+        }
+    }
 
     fn to_indexes(key: &[u8]) -> Vec<Index> {
         let mut indexes = Vec::new();
@@ -86,29 +92,58 @@ impl StateTrie {
 }
 
 #[derive(Debug)]
-pub struct Iter<'a> {
-    node_iter: Option<NodeIter>,
-    trie:      &'a StateTrie,
+pub struct Iter {
+    queue: Option<VecDeque<StateEntryTest>>,
 }
 
-impl<'a> Iter<'a> {
-    fn new(trie: &'a StateTrie, prefix: &[u8]) -> Self {
-        let index_prefix = StateTrie::to_indexes(prefix);
+impl Iter {
+    fn empty() -> Self {
         Self {
-            node_iter: trie.nodes.iter(&index_prefix),
-            trie,
+            queue: None,
+        }
+    }
+
+    fn new(trie: &StateTrie, mut root_index: Vec<Index>, root_of_iter: &Node) -> Self {
+        let mut queue = VecDeque::new();
+
+        fn build_queue(
+            trie: &StateTrie,
+            queue: &mut VecDeque<StateEntryTest>,
+            indexes: &mut Vec<Index>,
+            node: &Node,
+        ) {
+            for idx in 0..4 {
+                if let Some(child) = &node.children[idx] {
+                    // Push current index.
+                    indexes.push(idx);
+
+                    if let Some(entry) = &child.entry {
+                        let state_entry =
+                            trie.construct_state_entry_test(indexes.clone(), Rc::clone(entry));
+                        queue.push_back(state_entry);
+                    }
+                    build_queue(trie, queue, indexes, &child);
+
+                    // Pop current index again.
+                    indexes.pop();
+                }
+            }
+        }
+
+        build_queue(trie, &mut queue, &mut root_index, root_of_iter);
+
+        Self {
+            queue: Some(queue),
         }
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl Iterator for Iter {
     type Item = StateEntryTest;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.node_iter {
-            Some(ref mut node_iter) => node_iter.next().and_then(|(indexes, data)| {
-                Some(self.trie.construct_state_entry_test(indexes, data))
-            }),
+        match self.queue {
+            Some(ref mut queue) => queue.pop_front(),
             None => None,
         }
     }
@@ -116,6 +151,7 @@ impl<'a> Iterator for Iter<'a> {
 
 #[derive(Debug)]
 struct Node {
+    // TODO: rename to data
     entry:    Option<Rc<RefCell<Vec<u8>>>>,
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
 }
@@ -197,57 +233,8 @@ impl Node {
         }
     }
 
-    fn iter(&self, prefix: &[Index]) -> Option<NodeIter> {
-        self.lookup_node(prefix)
-            .and_then(|iter_root_node| Some(NodeIter::new(prefix, iter_root_node)))
-    }
-
     // A node is considered empty when it has no data and no children.
     fn is_empty(&self) -> bool { self.entry.is_none() && self.children.iter().all(|x| x.is_none()) }
-}
-
-#[derive(Debug)]
-struct NodeIter {
-    queue: VecDeque<(Vec<Index>, Rc<RefCell<Vec<u8>>>)>,
-}
-
-impl NodeIter {
-    fn new(root_index: &[Index], root_of_iter: &Node) -> Self {
-        let mut queue = VecDeque::new();
-
-        fn build_queue(
-            queue: &mut VecDeque<(Vec<Index>, Rc<RefCell<Vec<u8>>>)>,
-            indexes: &mut Vec<Index>,
-            node: &Node,
-        ) {
-            for idx in 0..4 {
-                if let Some(child) = &node.children[idx] {
-                    // Push current index.
-                    indexes.push(idx);
-
-                    if let Some(entry) = &child.entry {
-                        queue.push_back((indexes.clone(), Rc::clone(entry)));
-                    }
-                    build_queue(queue, indexes, &child);
-
-                    // Pop current index again.
-                    indexes.pop();
-                }
-            }
-        }
-
-        build_queue(&mut queue, &mut root_index.to_vec(), root_of_iter);
-
-        Self {
-            queue,
-        }
-    }
-}
-
-impl Iterator for NodeIter {
-    type Item = (Vec<Index>, Rc<RefCell<Vec<u8>>>);
-
-    fn next(&mut self) -> Option<Self::Item> { self.queue.pop_front() }
 }
 
 #[cfg(test)]

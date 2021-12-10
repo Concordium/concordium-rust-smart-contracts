@@ -727,7 +727,7 @@ pub struct ContractStateLLTest {
 impl HasContractStateLL for ContractStateLLTest {
     type ContractStateData = StateTrie;
     type EntryType = StateEntryTest;
-    type IterType = ContractStateIter<Self::EntryType>;
+    type IterType = trie::Iter;
 
     fn open(trie: Self::ContractStateData) -> Self {
         Self {
@@ -751,9 +751,7 @@ impl HasContractStateLL for ContractStateLLTest {
         self.trie.delete_prefix(prefix, exact)
     }
 
-    fn iterator(&self, _prefix: &[u8]) -> Self::IterType {
-        todo!() // TODO: Iterator
-    }
+    fn iterator(&self, prefix: &[u8]) -> Self::IterType { self.trie.iter(prefix) }
 }
 
 impl ContractStateLLTest {
