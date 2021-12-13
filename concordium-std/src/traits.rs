@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, Entry, EntryRaw, StateEntryId, StateMap, StateSet};
+use crate::{types::LogError, EntryRaw, StateEntryId, StateMap, StateSet};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -173,28 +173,6 @@ pub trait HasContractStateHL {
         key: K,
     ) -> Option<ParseResult<V>>;
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V);
-}
-
-pub trait HasStateMap<K, V>
-where
-    K: Serialize,
-    V: Serial + DeserialStateCtx<Self::ContractStateLLType>, {
-    type ContractStateLLType: HasContractStateLL;
-    fn open<P: Serial>(
-        contract_state_ll: Rc<RefCell<Self::ContractStateLLType>>,
-        prefix: P,
-    ) -> Self;
-
-    fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>>;
-
-    fn get(&self, key: K) -> Option<ParseResult<V>>;
-
-    fn entry(
-        &mut self,
-        key: K,
-    ) -> ParseResult<Entry<K, V, <Self::ContractStateLLType as HasContractStateLL>::EntryType>>;
-
-    fn is_empty(&self) -> bool;
 }
 
 /// Objects which can serve as loggers.

@@ -634,15 +634,13 @@ impl Iterator for ContractStateIter {
     }
 }
 
-impl<K, V, S> HasStateMap<K, V> for StateMap<K, V, S>
+impl<K, V, S> StateMap<K, V, S>
 where
     S: HasContractStateLL,
     K: Serialize,
     V: Serial + DeserialStateCtx<S>,
 {
-    type ContractStateLLType = S;
-
-    fn open<P: Serial>(state_ll: Rc<RefCell<Self::ContractStateLLType>>, prefix: P) -> Self {
+    pub fn open<P: Serial>(state_ll: Rc<RefCell<S>>, prefix: P) -> Self {
         Self {
             _marker_key: PhantomData,
             _marker_value: PhantomData,
@@ -651,7 +649,7 @@ where
         }
     }
 
-    fn get(&self, key: K) -> Option<ParseResult<V>> {
+    pub fn get(&self, key: K) -> Option<ParseResult<V>> {
         let k = self.key_with_map_prefix(&key);
         self.state_ll
             .borrow()
@@ -659,7 +657,7 @@ where
             .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
     }
 
-    fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
         let key_bytes = self.key_with_map_prefix(&key);
         let value_bytes = to_bytes(&value);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
@@ -675,11 +673,7 @@ where
         }
     }
 
-    fn entry(
-        &mut self,
-        key: K,
-    ) -> ParseResult<Entry<K, V, <Self::ContractStateLLType as HasContractStateLL>::EntryType>>
-    {
+    pub fn entry(&mut self, key: K) -> ParseResult<Entry<K, V, S::EntryType>> {
         let key_bytes = self.key_with_map_prefix(&key);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
             EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(key, vac.state_entry))),
@@ -690,21 +684,14 @@ where
         }
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         if let Some(_) = self.state_ll.borrow().iterator(&self.prefix).next() {
             false
         } else {
             true
         }
     }
-}
 
-impl<K, V, S> StateMap<K, V, S>
-where
-    K: Serialize,
-    V: Serial,
-    S: HasContractStateLL,
-{
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
         key_with_prefix.append(&mut to_bytes(key));
