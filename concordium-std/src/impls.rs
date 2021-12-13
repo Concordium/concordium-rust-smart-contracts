@@ -705,7 +705,7 @@ where
     V: Serial,
     S: HasContractStateLL,
 {
-    pub(crate) fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
+    fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
         key_with_prefix.append(&mut to_bytes(key));
         key_with_prefix
@@ -743,7 +743,7 @@ where
         let key_bytes = self.key_with_set_prefix(&value);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&[99]);
+                let _ = vac.insert(&[]);
                 true
             }
             EntryRaw::Occupied(_) => false,
@@ -759,13 +759,19 @@ where
     /// the set.
     pub fn remove(&mut self, value: &T) -> bool {
         let key_bytes = self.key_with_set_prefix(&value);
-        match self.state_ll.borrow_mut().entry(&key_bytes) {
-            EntryRaw::Vacant(_) => false,
-            EntryRaw::Occupied(occ) => self.state_ll.borrow_mut().delete_entry(occ.get()),
+        let entry_opt = match self.state_ll.borrow_mut().entry(&key_bytes) {
+            EntryRaw::Vacant(_) => None,
+            EntryRaw::Occupied(occ) => Some(occ.get()),
+        };
+        if let Some(entry) = entry_opt {
+            self.state_ll.borrow_mut().delete_entry(entry);
+            true
+        } else {
+            false
         }
     }
 
-    pub(crate) fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
+    fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
         key_with_prefix.append(&mut to_bytes(key));
         key_with_prefix

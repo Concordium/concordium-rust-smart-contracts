@@ -932,4 +932,43 @@ mod test {
             Some(Ok(value))
         );
     }
+
+    #[test]
+    fn high_level_stateset() {
+        let my_set_key = "my_set";
+        let mut state: ContractStateHL<ContractStateLLTest> =
+            HasContractStateHL::open(ContractStateLLTest::new());
+
+        let mut set = state.new_set::<u8>();
+        assert_eq!(set.insert(99), true);
+        assert_eq!(set.insert(1), true);
+        assert_eq!(set.insert(1), false);
+        assert_eq!(set.insert(2), true);
+        assert_eq!(set.remove(&2), true);
+        state.insert(my_set_key, set);
+
+        assert_eq!(
+            state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&99),
+            true
+        );
+        assert_eq!(
+            state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
+            false
+        );
+    }
+
+    #[test]
+    fn high_level_nested_stateset() {
+        let inner_set_key = 0u8;
+        let value = 255u8;
+        let mut state: ContractStateHL<ContractStateLLTest> =
+            HasContractStateHL::open(ContractStateLLTest::new());
+        let mut outer_map = state.new_map::<u8, StateSet<u8, _>>();
+        let mut inner_set = state.new_set::<u8>();
+
+        inner_set.insert(value);
+        outer_map.insert(inner_set_key, inner_set);
+
+        assert_eq!(outer_map.get(inner_set_key).unwrap().unwrap().contains(&value), true);
+    }
 }
