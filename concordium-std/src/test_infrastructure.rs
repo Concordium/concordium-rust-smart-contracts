@@ -946,7 +946,7 @@ mod test {
             HasContractStateHL::open(ContractStateLLTest::new());
 
         let mut set = state.new_set::<u8>();
-        assert_eq!(set.insert(99), true);
+        assert_eq!(set.insert(0), true);
         assert_eq!(set.insert(1), true);
         assert_eq!(set.insert(1), false);
         assert_eq!(set.insert(2), true);
@@ -954,13 +954,18 @@ mod test {
         state.insert(my_set_key, set);
 
         assert_eq!(
-            state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&99),
+            state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),
             true
         );
         assert_eq!(
             state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
             false
         );
+
+        let mut iter = state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter();
+        assert_eq!(iter.next(), Some(Ok(0)));
+        assert_eq!(iter.next(), Some(Ok(1)));
+        assert_eq!(iter.next(), None);
     }
 
     #[test]

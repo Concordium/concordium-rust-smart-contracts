@@ -145,8 +145,8 @@ impl HasContractStateEntry for StateEntry {
 
     fn get_key(&self) -> Vec<u8> {
         let key_len = unsafe { get_entry_key_length(self.state_entry_id) };
-        let key = Vec::with_capacity(key_len as usize);
-        let key_ptr = key.as_ptr();
+        let mut key = Vec::with_capacity(key_len as usize);
+        let key_ptr = key.as_mut_ptr();
         unsafe { load_entry_key(self.state_entry_id, key_ptr, key_len, 0) };
         key
     }
@@ -774,6 +774,15 @@ where
         key_with_prefix.append(&mut to_bytes(key));
         key_with_prefix
     }
+
+    pub fn iter(&self) -> StateSetIter<T, S> {
+        let state_iter = self.state_ll.borrow().iterator(&self.prefix);
+        StateSetIter {
+            state_iter,
+            state_ll: Rc::clone(&self.state_ll),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<T, S> Serial for StateSet<T, S>
@@ -783,6 +792,26 @@ where
 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         serial_vector_no_length(&self.prefix, out)
+    }
+}
+
+impl<T, S> Iterator for StateSetIter<T, S>
+where
+    T: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    type Item = ParseResult<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.state_iter.next().and_then(|entry| {
+            let key = entry.get_key();
+            let mut key_cursor = Cursor {
+                data:   key,
+                offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
+            };
+            let res = T::deserial_state_ctx(&self.state_ll, &mut key_cursor);
+            Some(res)
+        })
     }
 }
 

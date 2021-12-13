@@ -17,12 +17,20 @@ where
     pub(crate) state_ll:      Rc<RefCell<S>>,
 }
 
+#[derive(Debug)]
 pub struct StateSet<T, S>
 where
     S: HasContractStateLL, {
     pub(crate) _marker:  PhantomData<T>,
     pub(crate) prefix:   StateMapPrefix,
     pub(crate) state_ll: Rc<RefCell<S>>,
+}
+
+#[derive(Debug)]
+pub struct StateSetIter<T, S: HasContractStateLL> {
+    pub(crate) state_iter: S::IterType,
+    pub(crate) state_ll:   Rc<RefCell<S>>,
+    pub(crate) _marker:    PhantomData<T>,
 }
 
 #[derive(Debug)]

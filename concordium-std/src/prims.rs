@@ -88,7 +88,7 @@ extern "C" {
     /// length ... length of the data to read
     /// offset ... where to start reading the entry key
     /// Returns how many bytes were read.
-    pub(crate) fn load_entry_key(entry: u32, start: *const u8, length: u32, offset: u32) -> u32;
+    pub(crate) fn load_entry_key(entry: u32, start: *mut u8, length: u32, offset: u32) -> u32;
 
     // Operations on the entry.
     // entry ... entry id returned by iterator or entry
