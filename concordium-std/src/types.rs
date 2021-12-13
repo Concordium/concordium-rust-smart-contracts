@@ -18,6 +18,14 @@ where
 }
 
 #[derive(Debug)]
+pub struct StateMapIter<K, V, S: HasContractStateLL> {
+    pub(crate) state_iter:    S::IterType,
+    pub(crate) state_ll:      Rc<RefCell<S>>,
+    pub(crate) _marker_key:   PhantomData<K>,
+    pub(crate) _marker_value: PhantomData<V>,
+}
+
+#[derive(Debug)]
 pub struct StateSet<T, S>
 where
     S: HasContractStateLL, {

@@ -703,10 +703,45 @@ where
         }
     }
 
+    pub fn iter(&self) -> StateMapIter<K, V, S> {
+        let state_iter = self.state_ll.borrow().iterator(&self.prefix);
+        StateMapIter {
+            state_iter,
+            state_ll: Rc::clone(&self.state_ll),
+            _marker_key: PhantomData,
+            _marker_value: PhantomData,
+        }
+    }
+
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
         key_with_prefix.append(&mut to_bytes(key));
         key_with_prefix
+    }
+}
+
+impl<K, V, S> Iterator for StateMapIter<K, V, S>
+where
+    K: Serialize,
+    V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    type Item = ParseResult<(K, V)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.state_iter.next().and_then(|mut entry| {
+            let key = entry.get_key();
+            let mut key_cursor = Cursor {
+                data:   key,
+                offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
+            };
+
+            let res = K::deserial(&mut key_cursor).and_then(|the_key| {
+                V::deserial_state_ctx(&self.state_ll, &mut entry)
+                    .and_then(|the_value| Ok((the_key, the_value)))
+            });
+            Some(res)
+        })
     }
 }
 

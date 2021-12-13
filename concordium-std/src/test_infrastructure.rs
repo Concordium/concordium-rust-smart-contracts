@@ -915,8 +915,17 @@ mod test {
         state.insert(my_map_key, map_to_insert);
 
         let mut my_map: StateMap<String, String, _> = state.get(my_map_key).unwrap_abort()?;
-        my_map.insert("hello".to_string(), "world".to_string());
-        assert_eq!(my_map.get("hello".to_string()), Some(Ok("world".to_string())));
+        my_map.insert("abc".to_string(), "hello, world".to_string());
+        my_map.insert("def".to_string(), "hallo, weld".to_string());
+        my_map.insert("ghi".to_string(), "hej, verden".to_string());
+        assert_eq!(my_map.get("abc".to_string()), Some(Ok("hello, world".to_string())));
+
+        let mut iter = my_map.iter();
+        assert_eq!(iter.next(), Some(Ok(("abc".to_string(), "hello, world".to_string()))));
+        assert_eq!(iter.next(), Some(Ok(("def".to_string(), "hallo, weld".to_string()))));
+        assert_eq!(iter.next(), Some(Ok(("ghi".to_string(), "hej, verden".to_string()))));
+        assert_eq!(iter.next(), None);
+
         Ok(())
     }
 
