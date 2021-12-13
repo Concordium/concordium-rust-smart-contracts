@@ -31,7 +31,7 @@ impl StateTrie {
     pub fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
         let indexes = Self::to_indexes(key);
         match self.nodes.lookup(&indexes) {
-            Some(data) => Some(self.construct_state_entry_test(indexes, data)),
+            Some(data) => Some(self.construct_state_entry_test(indexes, data, key.to_vec())),
             None => None,
         }
     }
@@ -42,6 +42,7 @@ impl StateTrie {
         &self,
         indexes: Vec<Index>,
         data: Rc<RefCell<Vec<u8>>>,
+        key: Vec<u8>,
     ) -> StateEntryTest {
         // Get the current next_entry_id
         let state_entry_id: u32 = self.next_entry_id.get();
@@ -50,13 +51,13 @@ impl StateTrie {
         self.entry_map.borrow_mut().insert(state_entry_id, indexes);
         self.next_entry_id.set(state_entry_id + 1);
 
-        StateEntryTest::open(data, state_entry_id)
+        StateEntryTest::open(data, key, state_entry_id)
     }
 
     pub fn create(&mut self, key: &[u8]) -> StateEntryTest {
         let indexes = Self::to_indexes(key);
         let data = self.nodes.create(&indexes);
-        self.construct_state_entry_test(indexes, data)
+        self.construct_state_entry_test(indexes, data, key.to_vec())
     }
 
     pub fn delete_entry(&mut self, entry: StateEntryTest) -> bool {
@@ -89,6 +90,16 @@ impl StateTrie {
         }
         indexes
     }
+
+    /// The inverse of `to_indexes`.
+    fn from_indexes(indexes: &[Index]) -> Vec<u8> {
+        let mut key = Vec::new();
+        for chunk in indexes.chunks(4) {
+            let n = (chunk[0] << 6 | chunk[1] << 4 | chunk[2] << 2 | chunk[3]) as u8;
+            key.push(n);
+        }
+        key
+    }
 }
 
 #[derive(Debug)]
@@ -118,8 +129,11 @@ impl Iter {
                     indexes.push(idx);
 
                     if let Some(data) = &child.data {
-                        let state_entry =
-                            trie.construct_state_entry_test(indexes.clone(), Rc::clone(data));
+                        let state_entry = trie.construct_state_entry_test(
+                            indexes.clone(),
+                            Rc::clone(data),
+                            StateTrie::from_indexes(&indexes),
+                        );
                         queue.push_back(state_entry);
                     }
                     build_queue(trie, queue, indexes, &child);
@@ -336,5 +350,17 @@ mod tests {
         let mut new_trie = trie.iter(b"ab");
         assert_eq!(u8::deserial(&mut new_trie.next().unwrap_abort()), Ok(2));
         assert_eq!(new_trie.next(), None);
+    }
+
+    #[test]
+    fn index_conversion() {
+        let expected_key1 = [1, 2, 3, 4, 5, 6, 7];
+        let expected_key2 = [92, 255, 23, 5];
+        let index1 = StateTrie::to_indexes(&expected_key1);
+        let index2 = StateTrie::to_indexes(&expected_key2);
+        let actual_key1 = StateTrie::from_indexes(&index1);
+        let actual_key2 = StateTrie::from_indexes(&index2);
+        assert_eq!(expected_key1, &actual_key1[..]);
+        assert_eq!(expected_key2, &actual_key2[..]);
     }
 }

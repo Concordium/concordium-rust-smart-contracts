@@ -112,9 +112,10 @@ where
     Self: Write<Err = Self::Error>,
     Self: Seek<Err = Self::Error>, {
     type StateEntryData;
+    type StateEntryKey;
     type Error: Default;
 
-    fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self;
+    fn open(_: Self::StateEntryData, _: Self::StateEntryKey, entry_id: StateEntryId) -> Self;
 
     /// Get the current size of the entry.
     fn size(&self) -> u32;
@@ -128,6 +129,8 @@ where
     /// Returns true iff this was successful. The new bytes are initialized as
     /// 0.
     fn reserve(&mut self, len: u32) -> bool;
+
+    fn get_key(&self) -> Vec<u8>;
 }
 
 pub trait HasContractStateLL {

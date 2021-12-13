@@ -582,13 +582,15 @@ impl From<num::TryFromIntError> for ContractStateError {
 #[derive(Debug, PartialEq)]
 pub struct StateEntryTest {
     pub(crate) cursor:         Cursor<Rc<RefCell<Vec<u8>>>>,
+    pub(crate) key:            Vec<u8>,
     pub(crate) state_entry_id: StateEntryId,
 }
 
 impl StateEntryTest {
-    pub fn open(data: Rc<RefCell<Vec<u8>>>, state_entry_id: StateEntryId) -> Self {
+    pub fn open(data: Rc<RefCell<Vec<u8>>>, key: Vec<u8>, state_entry_id: StateEntryId) -> Self {
         Self {
             cursor: Cursor::new(data),
+            key,
             state_entry_id,
         }
     }
@@ -640,11 +642,13 @@ impl ContractStateLLTest {
 impl HasContractStateEntry for StateEntryTest {
     type Error = ContractStateError;
     type StateEntryData = Rc<RefCell<Vec<u8>>>;
+    type StateEntryKey = Vec<u8>;
 
-    fn open(data: Self::StateEntryData, entry_id: StateEntryId) -> Self {
+    fn open(data: Self::StateEntryData, key: Self::StateEntryKey, entry_id: StateEntryId) -> Self {
         Self {
-            cursor:         Cursor::new(data),
+            cursor: Cursor::new(data),
             state_entry_id: entry_id,
+            key,
         }
     }
 
@@ -673,6 +677,8 @@ impl HasContractStateEntry for StateEntryTest {
             false
         }
     }
+
+    fn get_key(&self) -> Vec<u8> { self.key.clone() }
 }
 
 impl Read for StateEntryTest {
@@ -787,7 +793,7 @@ mod test {
     // specified.
     fn test_contract_state() {
         let data = Rc::new(RefCell::new(vec![1; 100]));
-        let mut state = StateEntryTest::open(data, 0);
+        let mut state = StateEntryTest::open(data, Vec::new(), 0);
         assert_eq!(state.seek(SeekFrom::Start(100)), Ok(100), "Seeking to the end failed.");
         assert_eq!(
             state.seek(SeekFrom::Current(0)),
@@ -859,7 +865,7 @@ mod test {
     #[test]
     fn test_contract_state_write() {
         let data = Rc::new(RefCell::new(vec![0u8; 10]));
-        let mut state = StateEntryTest::open(data, 0);
+        let mut state = StateEntryTest::open(data, Vec::new(), 0);
         assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
         assert_eq!(
             state.write(&2u64.to_le_bytes()),

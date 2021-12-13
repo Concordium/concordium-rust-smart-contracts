@@ -114,8 +114,11 @@ impl StateEntry {
 impl HasContractStateEntry for StateEntry {
     type Error = ();
     type StateEntryData = ();
+    type StateEntryKey = ();
 
-    fn open(_: Self::StateEntryData, entry_id: StateEntryId) -> Self { Self::open(entry_id) }
+    fn open(_: Self::StateEntryData, _: Self::StateEntryKey, entry_id: StateEntryId) -> Self {
+        Self::open(entry_id)
+    }
 
     #[inline(always)]
     fn size(&self) -> u32 { unsafe { entry_state_size(self.state_entry_id) } }
@@ -138,6 +141,14 @@ impl HasContractStateEntry for StateEntry {
         } else {
             true
         }
+    }
+
+    fn get_key(&self) -> Vec<u8> {
+        let key_len = unsafe { get_entry_key_length(self.state_entry_id) };
+        let key = Vec::with_capacity(key_len as usize);
+        let key_ptr = key.as_ptr();
+        unsafe { load_entry_key(self.state_entry_id, key_ptr, key_len, 0) };
+        key
     }
 }
 
