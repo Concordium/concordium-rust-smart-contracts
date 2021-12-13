@@ -79,6 +79,17 @@ extern "C" {
     /// new changes.
     pub(crate) fn next(iterator: u32) -> i64;
 
+    /// Get the length of the entry's key.
+    pub(crate) fn get_entry_key_length(entry: u32) -> u32;
+
+    /// Read the entry's key.
+    /// entry ... entry id returned by iterator or entry
+    /// start ... where to write in Wasm memory
+    /// length ... length of the data to read
+    /// offset ... where to start reading the entry key
+    /// Returns how many bytes were read.
+    pub(crate) fn load_entry_key(entry: u32, start: *const u8, length: u32, offset: u32) -> u32;
+
     // Operations on the entry.
     // entry ... entry id returned by iterator or entry
     // start ... where to write in Wasm memory
@@ -241,6 +252,19 @@ mod host_dummy_functions {
     }
     #[no_mangle]
     pub(crate) fn next(_iterator: u32) -> i64 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn get_entry_key_length(_entry: u32) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn load_entry_key(
+        _entry: u32,
+        _start: *const u8,
+        _length: u32,
+        _offset: u32,
+    ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
