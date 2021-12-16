@@ -42,6 +42,16 @@ pub struct StateSetIter<T, S: HasContractStateLL> {
 }
 
 #[derive(Debug)]
+pub enum Persisted<T, S> {
+    New(T),
+    Loaded {
+        value:    Option<T>, // Only used for get()
+        prefix:   Vec<u8>,
+        state_ll: Rc<RefCell<S>>,
+    },
+}
+
+#[derive(Debug)]
 pub struct ContractStateLL;
 
 pub struct ContractStateIter {

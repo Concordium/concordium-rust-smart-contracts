@@ -1,6 +1,7 @@
 use crate::{
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
+    fail,
     hash::Hash,
     mem, num, prims,
     prims::*,
@@ -841,6 +842,116 @@ where
         }
     }
 }
+
+impl<T, S> Persisted<T, S>
+where
+    T: Serial + DeserialStateCtx<S> + std::fmt::Debug,
+    S: HasContractStateLL,
+{
+    pub fn new(value: T) -> Self { Self::New(value) }
+
+    pub fn from_state(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> Self {
+        Self::Loaded {
+            value: None,
+            prefix: prefix.to_vec(),
+            state_ll,
+        }
+    }
+
+    pub fn get(&mut self) -> Option<ParseResult<&T>> {
+        match self {
+            Persisted::New(value) => Some(Ok(value)),
+            Persisted::Loaded {
+                value,
+                prefix,
+                state_ll,
+            } => match state_ll.borrow_mut().entry(&prefix) {
+                EntryRaw::Vacant(_) => None,
+                EntryRaw::Occupied(mut occ) => {
+                    match T::deserial_state_ctx(&state_ll, occ.get_mut()) {
+                        Ok(val) => {
+                            *value = Some(val);
+                            match value {
+                                Some(ref val) => Some(Ok(&val)),
+                                None => fail!("Can never happen"),
+                            }
+                        }
+                        Err(_) => Some(Err(ParseError::default())),
+                    }
+                }
+            },
+        }
+    }
+
+    pub fn set(&mut self, new_val: T) {
+        match self {
+            Persisted::New(ref mut old_val) => {
+                *old_val = new_val;
+            }
+            Persisted::Loaded {
+                value: _,
+                prefix,
+                state_ll,
+            } => match state_ll.borrow_mut().entry(&prefix) {
+                EntryRaw::Vacant(vac) => {
+                    let _ = vac.insert(&to_bytes(&new_val));
+                }
+                EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&new_val)),
+            },
+        }
+    }
+
+    pub fn update<F>(&mut self, f: F) -> Option<ParseResult<()>>
+    where
+        F: FnOnce(&mut T), {
+        match self {
+            Persisted::New(ref mut old_val) => {
+                f(old_val);
+                Some(Ok(()))
+            }
+            Persisted::Loaded {
+                value: _,
+                prefix,
+                state_ll,
+            } => {
+                match state_ll.borrow_mut().entry(&prefix) {
+                    EntryRaw::Vacant(_) => return None, // old value does not exist
+                    EntryRaw::Occupied(mut occ) => {
+                        let mut old_value = match T::deserial_state_ctx(&state_ll, occ.get_mut()) {
+                            Ok(val) => val,
+                            Err(_) => return Some(Err(ParseError::default())),
+                        };
+                        f(&mut old_value);
+                        occ.insert(&to_bytes(&old_value));
+                        Some(Ok(()))
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<T, S> Persistable<S> for Persisted<T, S>
+where
+    T: Serial + DeserialStateCtx<S> + std::fmt::Debug,
+    S: HasContractStateLL,
+{
+    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
+        match self {
+            Persisted::New(val) => val.store(prefix, state_ll),
+            Persisted::Loaded {
+                value: _,
+                prefix: _,
+                state_ll: _,
+            } => (), // Nothing to do, already stored!
+        }
+    }
+
+    fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self> {
+        Ok(Persisted::from_state(prefix, state_ll))
+    }
+}
+
 impl<T, S> Serial for StateSet<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
