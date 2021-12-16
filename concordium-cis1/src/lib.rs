@@ -50,7 +50,7 @@ pub type Sha256 = [u8; 32];
 /// The location of the metadata and an optional hash of the content.
 // Note: For the serialization to be derived according to the CIS1
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, Clone)]
 pub struct MetadataUrl {
     /// The URL following the specification RFC1738.
     #[concordium(size_length = 2)]
