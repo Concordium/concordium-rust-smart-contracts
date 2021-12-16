@@ -483,9 +483,13 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 use concordium_std::{trap, ExternContext, InitContextExtern, ContractStateHL, HasContractStateHL};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state = ContractStateHL::open(ContractStateLL::open(()));
-                match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
-                    Ok(()) => 0,
+                let state_ll = Rc::new(RefCell::new(ContractStateLL::open(())));
+                let mut allocator = ContractStateHL::open(Rc::clone(&state_ll));
+                match #fn_name(&ctx, #(#fn_optional_args, )* &mut allocator) {
+                    Ok(state) => {
+                        state.store(&[], state_ll);
+                        0
+                    },
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
                         if code < 0 {
@@ -686,7 +690,8 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             }
         }
     } else {
-        required_args.push("state: &mut impl HasContractStateHL");
+        required_args.push("state: &mut impl Persistable");
+        required_args.push("allocator: &mut impl HasContractStateHL");
 
         quote! {
             #[export_name = #wasm_export_fn_name]
@@ -694,20 +699,25 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, ContractStateHL, HasContractStateHL, Logger, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut state = ContractStateHL::open(ContractStateLL::open(()));
-                let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
-                match res {
-                    Ok(act) => {
-                        act.tag() as i32
-                    }
-                    Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
-                        if code < 0 {
-                            code
-                        } else {
-                            trap() // precondition violation
+                let state_ll = Rc::new(RefCell::new(ContractStateLL::open(())));
+                let mut allocator = ContractStateHL::open(Rc::clone(&state_ll));
+                if let Ok(mut state) = Persistable::load(&[], state_ll) {
+                    let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state, &mut allocator);
+                    match res {
+                        Ok(act) => {
+                            act.tag() as i32
+                        }
+                        Err(reject) => {
+                            let code = Reject::from(reject).error_code.get();
+                            if code < 0 {
+                                code
+                            } else {
+                                trap() // precondition violation
+                            }
                         }
                     }
+                } else {
+                    trap() // Could not fully read state.
                 }
             }
         }

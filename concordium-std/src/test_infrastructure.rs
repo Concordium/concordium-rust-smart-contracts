@@ -884,7 +884,7 @@ mod test {
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::new());
+            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
         state.insert(0, expected_value);
         let actual_value: u64 = state.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
@@ -909,7 +909,7 @@ mod test {
     fn high_level_statemap() -> Result<(), ParseError> {
         let my_map_key = "my_map";
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::new());
+            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
 
         let map_to_insert = state.new_map::<String, String>();
         state.insert(my_map_key, map_to_insert);
@@ -935,7 +935,7 @@ mod test {
         let key_to_value = 77u8;
         let value = 255u8;
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::new());
+            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
         let mut outer_map = state.new_map::<u8, StateMap<u8, u8, _>>();
         let mut inner_map = state.new_map::<u8, u8>();
 
@@ -952,7 +952,7 @@ mod test {
     fn high_level_stateset() {
         let my_set_key = "my_set";
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::new());
+            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
 
         let mut set = state.new_set::<u8>();
         assert_eq!(set.insert(0), true);
@@ -982,7 +982,7 @@ mod test {
         let inner_set_key = 0u8;
         let value = 255u8;
         let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(ContractStateLLTest::new());
+            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
         let mut outer_map = state.new_map::<u8, StateSet<u8, _>>();
         let mut inner_set = state.new_set::<u8>();
 

@@ -164,7 +164,7 @@ pub trait HasContractStateLL {
 
 pub trait HasContractStateHL {
     type ContractStateLLType: HasContractStateLL;
-    fn open(state_ll: Self::ContractStateLLType) -> Self;
+    fn open(state_ll: Rc<RefCell<Self::ContractStateLLType>>) -> Self;
     fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
         &mut self,
     ) -> StateMap<K, V, Self::ContractStateLLType>;
@@ -176,6 +176,16 @@ pub trait HasContractStateHL {
         key: K,
     ) -> Option<ParseResult<V>>;
     fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V);
+}
+
+pub trait Persistable<S>
+where
+    Self: Sized, {
+    // TODO: Should this return something?
+    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>);
+
+    // TODO: Option<ParseResult<_>> ?
+    fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self>;
 }
 
 /// Objects which can serve as loggers.

@@ -499,9 +499,9 @@ const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
 impl<S: HasContractStateLL> HasContractStateHL for ContractStateHL<S> {
     type ContractStateLLType = S;
 
-    fn open(state_ll: Self::ContractStateLLType) -> Self {
+    fn open(state_ll: Rc<RefCell<Self::ContractStateLLType>>) -> Self {
         Self {
-            state_ll: Rc::new(RefCell::new(state_ll)),
+            state_ll,
         }
     }
 
@@ -820,6 +820,27 @@ where
     }
 }
 
+impl<T, S> Persistable<S> for T
+where
+    T: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
+        match state_ll.borrow_mut().entry(prefix) {
+            EntryRaw::Vacant(vac) => {
+                let _ = vac.insert(&to_bytes(&self));
+            }
+            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&self)),
+        }
+    }
+
+    fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self> {
+        match state_ll.borrow().lookup(prefix) {
+            Some(mut entry) => Self::deserial_state_ctx(&state_ll, &mut entry),
+            None => Err(ParseError::default()),
+        }
+    }
+}
 impl<T, S> Serial for StateSet<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
