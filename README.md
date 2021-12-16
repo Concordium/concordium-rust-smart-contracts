@@ -18,7 +18,7 @@ with low-level details of how the interaction with the chain works.
 The [examples](./examples) directory contains some smart contracts that are used
 to test the standard library.
 
-Contracts are not meant for production, they are used to illustrate how to use
+These contracts are not meant for production, they are used to illustrate how to use
 the standard library and the tooling Concordium provides. There is no claim that
 the logic of the contract is reasonable, or safe.
 
