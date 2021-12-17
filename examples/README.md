@@ -23,3 +23,6 @@ The list of contracts is as follows
   containing NFTs.
 - [cis1-wccd](./cis1-wccd) An example implementation of the CIS-1 Concordium Token Standard
   containing a single fungible token which is a wrapped CCD.
+- [cis1-single-nft](./cis1-single-nft) An example implementation of the CIS-1 Concordium Token Standard
+  specialized to contain a single non-fungible token per contract instance.
+- [listing-cis1](./listing-cis1) An example implementation of a contract for listing CIS-1 tokens. It is specialized only to work with the above NFT contract `cis1-single-nft`.
