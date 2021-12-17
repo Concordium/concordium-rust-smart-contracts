@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::types::LogError;
+use crate::{ReturnValue, types::LogError};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -128,6 +128,43 @@ where
     fn reserve(&mut self, len: u32) -> bool;
 }
 
+/// FIXME: Have two error types, one for transfers, one for calls.
+/// FIXME: Consider adding #[non_exhaustive]
+#[repr(i32)]
+pub enum InvokeError {
+    /// Amount that was to be transferred is not available to the sender.
+    AmountTooLarge,
+    /// Account that is to be transferred to does not exist.
+    MissingAccount,
+    /// Contract that is to be transferred to does not exist.
+    MissingContract,
+    /// Sending a message to the V0 contract failed.
+    MessageFailed,
+    /// Contract that was called rejected with the given reason.
+    LogicReject {
+        reason: i32,
+        return_value: ReturnValue,
+    },
+    /// Execution of a contract call triggered a runtime error.
+    Trap,
+    /// Unrecognized error. Reser
+    Unknown,
+}
+
+pub type InvokeResult<A> = Result<A, InvokeError>;
+
+/// A type that can serve as the host and supports invoking operations.
+pub trait HasOperations {
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> InvokeResult<crate::ReturnValue>;
+}
+
 /// Objects which can serve as loggers.
 ///
 /// Logging functionality can be used by smart contracts to record events that
@@ -151,34 +188,6 @@ pub trait HasLogger {
         }
         self.log_raw(&out)
     }
-}
-
-/// An object that can serve to construct actions.
-///
-/// The actions that a smart contract can produce as a
-/// result of its execution. These actions form a tree and are executed by
-/// the scheduler in the predefined order.
-pub trait HasActions {
-    /// Default accept action.
-    fn accept() -> Self;
-
-    /// Send a given amount to an account.
-    fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self;
-
-    /// Send a message to a contract.
-    fn send_raw(
-        ca: &ContractAddress,
-        receive_name: ReceiveName,
-        amount: Amount,
-        parameter: &[u8],
-    ) -> Self;
-
-    /// If the execution of the first action succeeds, run the second action
-    /// as well.
-    fn and_then(self, then: Self) -> Self;
-
-    /// If the execution of the first action fails, try the second.
-    fn or_else(self, el: Self) -> Self;
 }
 
 /// Add optimized unwrap behaviour that aborts the process instead of

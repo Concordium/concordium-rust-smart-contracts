@@ -2,7 +2,7 @@ use crate::{
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
     hash::Hash,
-    mem, num, prims,
+    mem, num,
     prims::*,
     traits::*,
     types::*,
@@ -99,6 +99,25 @@ impl From<NotPayableError> for Reject {
         Self {
             error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) },
         }
+    }
+}
+
+impl Write for ReturnValue {
+    type Err = ();
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
+        let len: u32 = {
+            match buf.len().try_into() {
+                Ok(v) => v,
+                _ => return Err(()),
+            }
+        };
+        if self.current_position.checked_add(len).is_none() {
+            return Err(());
+        }
+        let num_bytes = unsafe { write_output(buf.as_ptr(), len, self.current_position) };
+        self.current_position += num_bytes; // safe because of check above that len + pos is small enough
+        Ok(num_bytes as usize)
     }
 }
 
@@ -271,7 +290,7 @@ impl HasContractState<()> for ContractState {
 }
 
 /// # Trait implementations for Parameter
-impl Read for Parameter {
+impl Read for ExternParameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -280,15 +299,37 @@ impl Read for Parameter {
             }
         };
         let num_read =
-            unsafe { get_parameter_section(buf.as_mut_ptr(), len, self.current_position) };
-        self.current_position += num_read;
+            unsafe { get_parameter_section(0, buf.as_mut_ptr(), len, self.current_position) };
+        self.current_position += num_read as u32; // parameter 0 always exists, so this is safe.
         Ok(num_read as usize)
     }
 }
 
-impl HasParameter for Parameter {
+impl HasParameter for ExternParameter {
     #[inline(always)]
-    fn size(&self) -> u32 { unsafe { get_parameter_size() } }
+    // parameter 0 always exists so this is correct
+    fn size(&self) -> u32 { unsafe { get_parameter_size(0) as u32 } }
+}
+
+/// # Trait implementations ReturnValue
+impl Read for ReturnValue {
+    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
+        let len: u32 = {
+            match buf.len().try_into() {
+                Ok(v) => v,
+                _ => return Err(ParseError::default()),
+            }
+        };
+        let num_read = unsafe {
+            get_parameter_section(self.i.into(), buf.as_mut_ptr(), len, self.current_position)
+        };
+        if num_read >= 0 {
+            self.current_position += num_read as u32;
+            Ok(num_read as usize)
+        } else {
+            Err(ParseError::default())
+        }
+    }
 }
 
 /// # Trait implementations for the chain metadata.
@@ -398,7 +439,7 @@ impl ExactSizeIterator for PoliciesIterator {
 
 impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     type MetadataType = ChainMetaExtern;
-    type ParamType = Parameter;
+    type ParamType = ExternParameter;
     type PolicyIteratorType = PoliciesIterator;
     type PolicyType = Policy<AttributesCursor>;
 
@@ -419,9 +460,99 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 
     #[inline(always)]
     fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
+        ExternParameter {
             current_position: 0,
         }
+    }
+}
+
+const INVOKE_TRANSFER_TAG: u32 = 0;
+const INVOKE_CALL_TAG: u32 = 1;
+
+/// TODO: Make consistent with errors returned by the scheduler.
+fn parse_response_code(code: u64) -> InvokeResult<NonZeroU32> {
+    if code & !0xffff_ff00_0000_0000 == 0 {
+        // this means success
+        let rv = (code >> 32) as u32;
+        if rv > 0 {
+            Ok(unsafe { NonZeroU32::new_unchecked(rv) })
+        } else {
+            crate::trap() // host precondition violation.
+        }
+    } else {
+        match 0x0000_00ff_0000_0000 & code >> 32 {
+            0x00 =>
+            // response with logic error and return value.
+            {
+                let reason = (0x0000_0000_ffff_ffff & code) as u32 as i32;
+                if reason == 0 {
+                    crate::trap()
+                } else {
+                    let rv = (code >> 32) as u32;
+                    if rv > 0 {
+                        Err(InvokeError::LogicReject {
+                            reason,
+                            return_value: ReturnValue {
+                                i:                unsafe { NonZeroU32::new_unchecked(rv) },
+                                current_position: 0,
+                            },
+                        })
+                    } else {
+                        crate::trap() // host precondition violation.
+                    }
+                }
+            }
+            0x01 => Err(InvokeError::AmountTooLarge),
+            0x02 => Err(InvokeError::MissingAccount),
+            0x03 => Err(InvokeError::MissingContract),
+            0x04 => Err(InvokeError::MessageFailed),
+            0x05 => Err(InvokeError::Trap),
+            _ => Err(InvokeError::Unknown), // FIXME: This should be trap as well.
+        }
+    }
+}
+
+impl HasOperations for ExternOperations {
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
+        let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
+        let data = unsafe {
+            (bytes.as_mut_ptr() as *mut u8).copy_from_nonoverlapping(
+                receiver.as_ref() as *const [u8; ACCOUNT_ADDRESS_SIZE] as *const u8,
+                ACCOUNT_ADDRESS_SIZE,
+            );
+            (bytes.as_mut_ptr() as *mut u8).add(ACCOUNT_ADDRESS_SIZE).copy_from_nonoverlapping(
+                &amount.micro_ccd.to_le_bytes() as *const [u8; 8] as *const u8,
+                8,
+            );
+            bytes.assume_init()
+        };
+        let response = unsafe {
+            invoke(INVOKE_TRANSFER_TAG, data.as_ptr(), (ACCOUNT_ADDRESS_SIZE + 8) as u32)
+        };
+        parse_response_code(response).map(|_| ())
+    }
+
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> InvokeResult<crate::ReturnValue> {
+        let mut data =
+            Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
+        let mut cursor = Cursor::new(&mut data);
+        to.serial(&mut cursor).unwrap_abort();
+        parameter.serial(&mut cursor).unwrap_abort();
+        method.serial(&mut cursor).unwrap_abort();
+        amount.serial(&mut cursor).unwrap_abort();
+        let len = data.len();
+        let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
+        let i = parse_response_code(response)?;
+        Ok(ReturnValue {
+            i,
+            current_position: 0,
+        })
     }
 }
 
@@ -537,65 +668,6 @@ impl HasLogger for Logger {
     }
 }
 
-/// #Implementation of actions.
-/// These actions are implemented by direct calls to host functions.
-impl HasActions for Action {
-    #[inline(always)]
-    fn accept() -> Self {
-        Action {
-            _private: unsafe { accept() },
-        }
-    }
-
-    #[inline(always)]
-    fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self {
-        let res = unsafe { simple_transfer(acc.0.as_ptr(), amount.micro_ccd) };
-        Action {
-            _private: res,
-        }
-    }
-
-    #[inline(always)]
-    fn send_raw(
-        ca: &ContractAddress,
-        receive_name: ReceiveName,
-        amount: Amount,
-        parameter: &[u8],
-    ) -> Self {
-        let receive_bytes = receive_name.get_chain_name().as_bytes();
-        let res = unsafe {
-            prims::send(
-                ca.index,
-                ca.subindex,
-                receive_bytes.as_ptr(),
-                receive_bytes.len() as u32,
-                amount.micro_ccd,
-                parameter.as_ptr(),
-                parameter.len() as u32,
-            )
-        };
-        Action {
-            _private: res,
-        }
-    }
-
-    #[inline(always)]
-    fn and_then(self, then: Self) -> Self {
-        let res = unsafe { combine_and(self._private, then._private) };
-        Action {
-            _private: res,
-        }
-    }
-
-    #[inline(always)]
-    fn or_else(self, el: Self) -> Self {
-        let res = unsafe { combine_or(self._private, el._private) };
-        Action {
-            _private: res,
-        }
-    }
-}
-
 /// Allocates a Vec of bytes prepended with its length as a `u32` into memory,
 /// and prevents them from being dropped. Returns the pointer.
 /// Used to pass bytes from a Wasm module to its host.
@@ -610,22 +682,6 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     #[cfg(not(feature = "std"))]
     core::mem::forget(bytes);
     ptr
-}
-
-/// Wrapper for
-/// [HasActions::send_raw](./trait.HasActions.html#tymethod.send_raw), which
-/// automatically serializes the parameter. Note that if the parameter is
-/// already a byte array or convertible to a byte array without allocations it
-/// is preferrable to use [send_raw](./trait.HasActions.html#tymethod.send_raw).
-/// It is more efficient and avoids memory allocations.
-pub fn send<A: HasActions, P: Serial>(
-    ca: &ContractAddress,
-    receive_name: ReceiveName,
-    amount: Amount,
-    parameter: &P,
-) -> A {
-    let param_bytes = to_bytes(parameter);
-    A::send_raw(ca, receive_name, amount, &param_bytes)
 }
 
 impl<A, E> UnwrapAbort for Result<A, E> {
@@ -644,6 +700,7 @@ impl<A, E> UnwrapAbort for Result<A, E> {
 use core::fmt;
 #[cfg(feature = "std")]
 use std::fmt;
+use std::num::NonZeroU32;
 
 impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     type Unwrap = A;

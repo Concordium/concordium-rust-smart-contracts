@@ -1,5 +1,5 @@
 //! The test infrastructure module provides alternative implementations of
-//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, `HasActions`, and
+//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, and
 //! `HasContractState` traits intended for testing.
 //!
 //! They allow writing unit tests directly in contract modules with little to no
@@ -482,45 +482,6 @@ pub enum ActionsTree {
         left:  Box<ActionsTree>,
         right: Box<ActionsTree>,
     },
-}
-
-impl HasActions for ActionsTree {
-    fn accept() -> Self { ActionsTree::Accept }
-
-    fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self {
-        ActionsTree::SimpleTransfer {
-            to: *acc,
-            amount,
-        }
-    }
-
-    fn send_raw(
-        ca: &ContractAddress,
-        receive_name: ReceiveName,
-        amount: Amount,
-        parameter: &[u8],
-    ) -> Self {
-        ActionsTree::Send {
-            to: *ca,
-            receive_name: receive_name.to_owned(),
-            amount,
-            parameter: parameter.to_vec(),
-        }
-    }
-
-    fn and_then(self, then: Self) -> Self {
-        ActionsTree::AndThen {
-            left:  Box::new(self),
-            right: Box::new(then),
-        }
-    }
-
-    fn or_else(self, el: Self) -> Self {
-        ActionsTree::OrElse {
-            left:  Box::new(self),
-            right: Box::new(el),
-        }
-    }
 }
 
 /// Reports back an error to the host when compiled to wasm

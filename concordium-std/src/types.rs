@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 /// A type representing the constract state bytes.
 #[derive(Default)]
 pub struct ContractState {
@@ -6,7 +8,16 @@ pub struct ContractState {
 
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.
-pub struct Parameter {
+/// Its trait implementations are backed by host functions.
+pub struct ExternParameter {
+    pub(crate) current_position: u32,
+}
+
+
+/// A type representing the return value of contract calls.
+pub struct ReturnValue {
+    /// The index of the return value
+    pub(crate) i: NonZeroU32,
     pub(crate) current_position: u32,
 }
 
@@ -41,22 +52,6 @@ pub enum LogError {
 /// init or receive function that is not marked as `payable`.
 #[derive(Clone, Copy, Debug)]
 pub struct NotPayableError;
-
-/// Actions that can be produced at the end of a contract execution. This
-/// type is deliberately not cloneable so that we can enforce that
-/// `and_then` and `or_else` can only be used when more than one event is
-/// created.
-///
-/// This type is marked as `must_use` since functions that produce
-/// values of the type are effectful.
-#[must_use]
-pub struct Action {
-    pub(crate) _private: u32,
-}
-
-impl Action {
-    pub fn tag(&self) -> u32 { self._private }
-}
 
 /// An error message, signalling rejection of a smart contract invocation.
 /// The client will see the error code as a reject reason; if a schema is
@@ -308,6 +303,11 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ) -> Result<State, MyCustomError> { ... }
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
+
+/// Operations based on host functions.
+#[derive(Default)]
+#[doc(hidden)]
+pub struct ExternOperations;
 
 /// Context backed by host functions.
 #[derive(Default)]
