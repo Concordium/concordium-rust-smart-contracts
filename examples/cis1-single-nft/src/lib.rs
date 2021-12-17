@@ -118,7 +118,7 @@ impl State {
 
     /// Update the state with a transfer of some token.
     /// Results in an error if the token ID does not exist in the state or if
-    /// the from address have insufficient tokens to do the transfer.
+    /// the from address has insufficient tokens to do the transfer.
     fn transfer(
         &mut self,
         _token_id: &ContractTokenId,
