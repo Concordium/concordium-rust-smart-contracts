@@ -654,7 +654,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
     // strings are displayed as the expected arguments.
-    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+    let mut required_args = vec!["ctx: &impl HasReceiveContext", "ops: &impl HasOperations"];
 
     let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
         &receive_attributes.optional,
@@ -670,11 +670,13 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
+                let mut ops = ExternOperations;
                 let mut state = ContractState::open(());
-                let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
+                let res: Result<ReturnValue, _> = #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state);
                 match res {
-                    Ok(act) => {
-                        act.tag() as i32
+                    Ok(rv) => {
+                        u32::from(rv.get_i()) as i32
+                        // act.tag() as i32
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
@@ -696,18 +698,20 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, ContractState, Logger, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
+                let mut ops = ExternOperations;
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
+                    let res: Result<ReturnValue, _> = #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state);
                     match res {
-                        Ok(act) => {
+                        Ok(rv) => {
                             let res = state_bytes
                                 .seek(SeekFrom::Start(0))
                                 .and_then(|_| state.serial(&mut state_bytes));
                             if res.is_err() {
                                 trap() // could not serialize state.
                             } else {
-                                act.tag() as i32
+                                u32::from(rv.get_i()) as i32
+                                // act.tag() as i32
                             }
                         }
                         Err(reject) => {

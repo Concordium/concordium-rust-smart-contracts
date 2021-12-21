@@ -102,6 +102,10 @@ impl From<NotPayableError> for Reject {
     }
 }
 
+impl ReturnValue {
+    pub fn get_i(&self) -> NonZeroU32 { self.i }
+}
+
 impl Write for ReturnValue {
     type Err = ();
 
@@ -553,6 +557,14 @@ impl HasOperations for ExternOperations {
             i,
             current_position: 0,
         })
+    }
+
+    // TODO: Return the correct `i`.
+    fn success(&self) -> crate::ReturnValue {
+        ReturnValue {
+            i:                unsafe { NonZeroU32::new_unchecked(1) },
+            current_position: 0,
+        }
     }
 }
 
