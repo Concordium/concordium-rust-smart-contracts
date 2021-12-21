@@ -49,7 +49,7 @@
 //!     }
 //! }
 //! ```
-use crate::{constants::MAX_CONTRACT_STATE_SIZE, *};
+use crate::{constants::MAX_CONTRACT_STATE_SIZE, ReturnValue, *};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -58,6 +58,7 @@ use convert::TryInto;
 use core::{cmp, num};
 #[cfg(feature = "std")]
 use std::{boxed::Box, cmp, num};
+use std::{cell::RefCell, collections::HashMap, num::NonZeroU32, rc::Rc};
 
 /// Placeholder for the context chain meta data.
 /// All the fields are optionally set and the getting an unset field will result
@@ -653,6 +654,64 @@ impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
                 }
             },
         }
+    }
+}
+
+type Handler<State> =
+    Box<dyn FnMut(Parameter, Amount, Rc<RefCell<State>>, ReturnValue) -> InvokeResult<ReturnValue>>;
+
+pub struct ExternOperationsTest<State> {
+    mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    pub state:   Rc<RefCell<State>>,
+}
+
+impl<State> HasOperations for ExternOperationsTest<State> {
+    fn invoke_transfer(&mut self, _receiver: &AccountAddress, _amount: Amount) -> InvokeResult<()> {
+        todo!()
+    }
+
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> InvokeResult<ReturnValue> {
+        let success = self.success();
+        let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
+            Some(handler) => handler,
+            None => fail!(
+                "Mocking has not been set up for invoking contract {} with method {}.",
+                to,
+                method
+            ),
+        };
+        handler(parameter, amount, Rc::clone(&self.state), success)
+    }
+
+    fn success(&self) -> ReturnValue {
+        ReturnValue {
+            i:                unsafe { NonZeroU32::new_unchecked(1) },
+            current_position: 0,
+        }
+    }
+}
+
+impl<State> ExternOperationsTest<State> {
+    pub fn new(state: Rc<RefCell<State>>) -> Self {
+        Self {
+            mocking_fns: HashMap::new(),
+            state,
+        }
+    }
+
+    pub fn setup_mock_invocation(
+        &mut self,
+        to: ContractAddress,
+        method: OwnedEntrypointName,
+        handler: Handler<State>,
+    ) {
+        self.mocking_fns.insert((to, method), handler);
     }
 }
 
