@@ -154,10 +154,11 @@ pub enum InvokeError {
 pub type InvokeResult<A> = Result<A, InvokeError>;
 
 /// A type that can serve as the host and supports invoking operations.
-pub trait HasOperations {
+pub trait HasOperations<State> {
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
     fn invoke_contract(
         &mut self,
+        _: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,

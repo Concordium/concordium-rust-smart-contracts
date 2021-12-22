@@ -516,7 +516,7 @@ fn parse_response_code(code: u64) -> InvokeResult<NonZeroU32> {
     }
 }
 
-impl HasOperations for ExternOperations {
+impl<State> HasOperations<State> for ExternOperations {
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
         let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
         let data = unsafe {
@@ -538,6 +538,7 @@ impl HasOperations for ExternOperations {
 
     fn invoke_contract(
         &mut self,
+        _: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,

@@ -58,7 +58,7 @@ use convert::TryInto;
 use core::{cmp, num};
 #[cfg(feature = "std")]
 use std::{boxed::Box, cmp, num};
-use std::{cell::RefCell, collections::HashMap, num::NonZeroU32, rc::Rc};
+use std::{collections::HashMap, num::NonZeroU32};
 
 /// Placeholder for the context chain meta data.
 /// All the fields are optionally set and the getting an unset field will result
@@ -657,21 +657,23 @@ impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
     }
 }
 
+pub type MockFn<T> = Box<T>;
+
 type Handler<State> =
-    Box<dyn FnMut(Parameter, Amount, Rc<RefCell<State>>, ReturnValue) -> InvokeResult<ReturnValue>>;
+    MockFn<dyn FnMut(Parameter, Amount, &mut State, ReturnValue) -> InvokeResult<ReturnValue>>;
 
 pub struct ExternOperationsTest<State> {
     mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
-    pub state:   Rc<RefCell<State>>,
 }
 
-impl<State> HasOperations for ExternOperationsTest<State> {
+impl<State> HasOperations<State> for ExternOperationsTest<State> {
     fn invoke_transfer(&mut self, _receiver: &AccountAddress, _amount: Amount) -> InvokeResult<()> {
         todo!()
     }
 
     fn invoke_contract(
         &mut self,
+        state: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
@@ -681,12 +683,12 @@ impl<State> HasOperations for ExternOperationsTest<State> {
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
-                "Mocking has not been set up for invoking contract {} with method {}.",
+                "Mocking has not been set up for invoking contract {} with method '{}'.",
                 to,
                 method
             ),
         };
-        handler(parameter, amount, Rc::clone(&self.state), success)
+        handler(parameter, amount, state, success)
     }
 
     fn success(&self) -> ReturnValue {
@@ -698,10 +700,9 @@ impl<State> HasOperations for ExternOperationsTest<State> {
 }
 
 impl<State> ExternOperationsTest<State> {
-    pub fn new(state: Rc<RefCell<State>>) -> Self {
+    pub fn empty() -> Self {
         Self {
             mocking_fns: HashMap::new(),
-            state,
         }
     }
 
