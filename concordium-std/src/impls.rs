@@ -470,15 +470,11 @@ const INVOKE_TRANSFER_TAG: u32 = 0;
 const INVOKE_CALL_TAG: u32 = 1;
 
 /// TODO: Make consistent with errors returned by the scheduler.
-fn parse_response_code(code: u64) -> InvokeResult<NonZeroU32> {
+fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
         let rv = (code >> 32) as u32;
-        if rv > 0 {
-            Ok(unsafe { NonZeroU32::new_unchecked(rv) })
-        } else {
-            crate::trap() // host precondition violation.
-        }
+        Ok(NonZeroU32::new(rv))
     } else {
         match 0x0000_00ff_0000_0000 & code >> 32 {
             0x00 =>
@@ -538,7 +534,8 @@ impl HasOperations for ExternOperations {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<crate::ReturnValue> {
+    ) -> InvokeResult<Option<crate::ReturnValue>> {
+        // calling V0 contracts returns None
         let mut data =
             Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
         let mut cursor = Cursor::new(&mut data);
@@ -548,11 +545,14 @@ impl HasOperations for ExternOperations {
         amount.serial(&mut cursor).unwrap_abort();
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
-        let i = parse_response_code(response)?;
-        Ok(ReturnValue {
-            i,
-            current_position: 0,
-        })
+        if let Some(i) = parse_response_code(response)? {
+            Ok(Some(ReturnValue {
+                i,
+                current_position: 0,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
