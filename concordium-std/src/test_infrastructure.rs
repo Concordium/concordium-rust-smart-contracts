@@ -663,7 +663,8 @@ type Handler<State> =
     MockFn<dyn FnMut(Parameter, Amount, &mut State, ReturnValue) -> InvokeResult<ReturnValue>>;
 
 pub struct ExternOperationsTest<State> {
-    mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    mocking_fns:    HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    return_value_i: NonZeroU32,
 }
 
 impl<State> HasOperations<State> for ExternOperationsTest<State> {
@@ -680,6 +681,8 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
         amount: Amount,
     ) -> InvokeResult<ReturnValue> {
         let success = self.success();
+        // TODO: Should `i` be updated when the handler returns `Err(_)`?
+        self.increment_return_value_i();
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
@@ -693,7 +696,7 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
 
     fn success(&self) -> ReturnValue {
         ReturnValue {
-            i:                unsafe { NonZeroU32::new_unchecked(1) },
+            i:                self.return_value_i,
             current_position: 0,
         }
     }
@@ -702,7 +705,8 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
 impl<State> ExternOperationsTest<State> {
     pub fn empty() -> Self {
         Self {
-            mocking_fns: HashMap::new(),
+            mocking_fns:    HashMap::new(),
+            return_value_i: NonZeroU32::new(1).unwrap_abort(),
         }
     }
 
@@ -713,6 +717,10 @@ impl<State> ExternOperationsTest<State> {
         handler: Handler<State>,
     ) {
         self.mocking_fns.insert((to, method), handler);
+    }
+
+    fn increment_return_value_i(&mut self) {
+        self.return_value_i = NonZeroU32::new(self.return_value_i.get() + 1).unwrap_abort();
     }
 }
 
