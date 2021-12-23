@@ -285,14 +285,17 @@ jobs:
           - x86_64-unknown-linux-gnu
 
         crates:
-          - examples/two-step-transfer/Cargo.toml
+          - examples/auction/Cargo.toml
+          - examples/cis1-multi/Cargo.toml
+          - examples/cis1-nft/Cargo.toml
+          - examples/cis1-single-nft/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
+          - examples/erc721/Cargo.toml
+          - examples/listing-cis1/Cargo.toml
+          - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
-          - examples/auction/Cargo.toml
-          - examples/erc721/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
+          - examples/two-step-transfer/Cargo.toml
 
     steps:
       - name: Checkout sources
