@@ -95,18 +95,19 @@ enum FinalizeError {
 
 /// Init function that creates a new auction
 #[init(contract = "auction", parameter = "InitParameter")]
-fn auction_init(ctx: &impl HasInitContext) -> InitResult<State> {
+fn auction_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
-    Ok(fresh_state(parameter.item, parameter.expiry))
+    Ok(((), fresh_state(parameter.item, parameter.expiry)))
 }
 
 /// Receive function in which accounts can bid before the auction end time
 #[receive(contract = "auction", name = "bid", payable)]
-fn auction_bid<A: HasActions>(
+fn auction_bid(
     ctx: &impl HasReceiveContext,
     amount: Amount,
     state: &mut State,
-) -> Result<A, BidError> {
+    _ops: &mut impl HasOperations,
+) -> Result<(), BidError> {
     ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionFinalized);
 
     let slot_time = ctx.metadata().slot_time();
@@ -126,16 +127,17 @@ fn auction_bid<A: HasActions>(
     );
     state.highest_bid = *bid_to_update;
 
-    Ok(A::accept())
+    Ok(())
 }
 
 /// Receive function used to finalize the auction, returning all bids to their
 /// senders, except for the winning bid
 #[receive(contract = "auction", name = "finalize")]
-fn auction_finalize<A: HasActions>(
+fn auction_finalize(
     ctx: &impl HasReceiveContext,
     state: &mut State,
-) -> Result<A, FinalizeError> {
+    ops: &mut impl HasOperations,
+) -> Result<(), FinalizeError> {
     ensure!(state.auction_state == AuctionState::NotSoldYet, FinalizeError::AuctionFinalized);
 
     let slot_time = ctx.metadata().slot_time();
@@ -145,14 +147,18 @@ fn auction_finalize<A: HasActions>(
 
     let balance = ctx.self_balance();
     if balance == Amount::zero() {
-        Ok(A::accept())
+        Ok(())
     } else {
-        let mut return_action = A::simple_transfer(&owner, state.highest_bid);
+        if ops.invoke_transfer(&owner, state.highest_bid).is_err() {
+            bail!(FinalizeError::BidMapError);
+        }
         let mut remaining_bid = None;
         // Return bids that are smaller than highest
         for (addr, &amnt) in state.bids.iter() {
             if amnt < state.highest_bid {
-                return_action = return_action.and_then(A::simple_transfer(addr, amnt));
+                if ops.invoke_transfer(addr, amnt).is_err() {
+                    bail!(FinalizeError::BidMapError);
+                }
             } else {
                 ensure!(remaining_bid.is_none(), FinalizeError::BidMapError);
                 state.auction_state = AuctionState::Sold(*addr);
@@ -163,7 +169,7 @@ fn auction_finalize<A: HasActions>(
         match remaining_bid {
             Some((_, amount)) => {
                 ensure!(amount == state.highest_bid, FinalizeError::BidMapError);
-                Ok(return_action)
+                Ok(())
             }
             None => bail!(FinalizeError::BidMapError),
         }

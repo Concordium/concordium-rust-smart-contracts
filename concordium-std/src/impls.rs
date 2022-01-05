@@ -312,7 +312,7 @@ impl HasParameter for ExternParameter {
 }
 
 /// # Trait implementations ReturnValue
-impl Read for ReturnValue {
+impl Read for CallResponse {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -488,7 +488,7 @@ fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
                     if rv > 0 {
                         Err(InvokeError::LogicReject {
                             reason,
-                            return_value: ReturnValue {
+                            return_value: CallResponse {
                                 i:                unsafe { NonZeroU32::new_unchecked(rv) },
                                 current_position: 0,
                             },
@@ -534,7 +534,7 @@ impl HasOperations for ExternOperations {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<crate::ReturnValue>> {
+    ) -> InvokeResult<Option<crate::CallResponse>> {
         // calling V0 contracts returns None
         let mut data =
             Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
@@ -546,7 +546,7 @@ impl HasOperations for ExternOperations {
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         if let Some(i) = parse_response_code(response)? {
-            Ok(Some(ReturnValue {
+            Ok(Some(CallResponse {
                 i,
                 current_position: 0,
             }))

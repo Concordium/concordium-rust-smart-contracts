@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, ReturnValue};
+use crate::{types::LogError, CallResponse};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -143,7 +143,7 @@ pub enum InvokeError {
     /// Contract that was called rejected with the given reason.
     LogicReject {
         reason:       i32,
-        return_value: ReturnValue,
+        return_value: CallResponse,
     },
     /// Execution of a contract call triggered a runtime error.
     Trap,
@@ -162,7 +162,7 @@ pub trait HasOperations {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<crate::ReturnValue>>;
+    ) -> InvokeResult<Option<crate::CallResponse>>;
 }
 
 /// Objects which can serve as loggers.

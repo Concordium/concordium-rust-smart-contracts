@@ -478,11 +478,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState, ReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 match #fn_name(&ctx, #(#fn_optional_args),*) {
-                    Ok(state) => {
+                    Ok((rv, state)) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not initialize contract.
+                        }
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
                             trap() // Could not initialize contract.
@@ -664,17 +667,22 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     let mut out = if receive_attributes.optional.low_level {
         required_args.push("state: &mut ContractState");
+        required_args.push("ops: &mut impl HasOperations");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
+                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext, ExternOperations};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state = ContractState::open(());
-                let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
+                let res = #fn_name(&ctx, #(#fn_optional_args, )* &mut state, &mut ExternOperations);
                 match res {
-                    Ok(act) => {
-                        act.tag() as i32
+                    Ok(rv) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // could not write return value
+                        } else {
+                            0i32
+                        }
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
@@ -689,25 +697,30 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         }
     } else {
         required_args.push("state: &mut MyState");
+        required_args.push("ops: &mut impl HasOperations");
 
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, trap};
+                use concordium_std::{SeekFrom, ContractState, Logger, ExternOperations, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
+                    let res = #fn_name(&ctx, #(#fn_optional_args, )* &mut state, &mut ExternOperations);
                     match res {
-                        Ok(act) => {
+                        Ok(rv) => {
                             let res = state_bytes
                                 .seek(SeekFrom::Start(0))
                                 .and_then(|_| state.serial(&mut state_bytes));
                             if res.is_err() {
                                 trap() // could not serialize state.
                             } else {
-                                act.tag() as i32
+                                if rv.serial(&mut ReturnValue::open()).is_err() {
+                                    trap() // could not write return value
+                                } else {
+                                    0i32
+                                }
                             }
                         }
                         Err(reject) => {
