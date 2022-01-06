@@ -8,11 +8,11 @@ pub struct State {
 
 #[init(contract = "fib")]
 #[inline(always)]
-fn contract_init(_ctx: &impl HasInitContext<()>) -> InitResult<State> {
+fn contract_init(_ctx: &impl HasInitContext) -> InitResult<((), State)> {
     let state = State {
         result: 0,
     };
-    Ok(state)
+    Ok(((), state))
 }
 
 // 4
@@ -32,15 +32,15 @@ fn contract_init(_ctx: &impl HasInitContext<()>) -> InitResult<State> {
 #[inline(always)]
 #[receive(contract = "fib", name = "receive")]
 fn contract_receive(
-    ctx: &impl HasReceiveContext<()>,
+    ctx: &impl HasReceiveContext,
     ops: &mut impl HasOperations<State>,
     state: &mut State,
-) -> ReceiveResult<ReturnValue> {
+) -> ReceiveResult<u64> {
     // Try to get the parameter (64bit unsigned integer).
     let n: u64 = ctx.parameter_cursor().get()?;
     if n <= 1 {
         state.result += 1;
-        Ok(ops.success())
+        Ok(state.result)
     } else {
         let self_address = ctx.self_address();
         ops.invoke_contract(
@@ -59,7 +59,8 @@ fn contract_receive(
             Amount::zero(),
         )
         .unwrap_abort();
-        Ok(ops.success())
+
+        Ok(state.result)
     }
 }
 
@@ -69,13 +70,12 @@ fn contract_receive(
 #[receive(contract = "fib", name = "receive_calc_fib", payable)]
 fn contract_receive_calc_fib(
     _ctx: &impl HasReceiveContext<()>,
-    ops: &mut impl HasOperations<State>,
+    _ops: &mut impl HasOperations<State>,
     amount: Amount,
     state: &mut State,
-) -> ReceiveResult<ReturnValue> {
+) -> ReceiveResult<()> {
     state.result = fib(amount.micro_ccd);
-
-    Ok(ops.success())
+    Ok(())
 }
 
 // Recursively and naively calculate the nth Fibonacci number.
@@ -125,7 +125,7 @@ mod tests {
         ops.setup_mock_invocation(
             contract_address,
             OwnedEntrypointName::new(String::from("receive")).unwrap_abort(),
-            MockFn::new(|parameter, _amount, state, success| {
+            MockFn::new(|parameter, _amount, state| {
                 let n: u64 = match from_bytes(parameter.0) {
                     Ok(n) => n,
                     Err(_) => return Err(InvokeError::Trap),
@@ -135,7 +135,7 @@ mod tests {
                     2 => state.result += 2,
                     _ => return Err(InvokeError::Trap),
                 }
-                Ok(success)
+                Ok(state.result)
             }),
         );
 

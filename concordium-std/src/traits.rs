@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, ReturnValue};
+use crate::{types::LogError, CallResponse};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -17,6 +17,19 @@ use concordium_contracts_common::*;
 /// methods of this trait.
 pub trait HasParameter: Read {
     /// Get the size of the parameter to the method.
+    fn size(&self) -> u32;
+}
+
+/// Objects which can access call responses from contract invocations.
+///
+/// This trait has a Read supertrait which means that structured call responses
+/// can be directly deserialized by using `.get()` function from the `Get`
+/// trait.
+///
+/// The reuse of `Read` methods is the reason for the slightly strange choice of
+/// methods of this trait.
+pub trait HasCallResponse: Read {
+    /// Get the size of the call response to the contract invocation.
     fn size(&self) -> u32;
 }
 
@@ -129,7 +142,7 @@ where
 }
 
 /// FIXME: Have two error types, one for transfers, one for calls.
-/// FIXME: Consider adding #[non_exhaustive]
+/// FIXME: Consider adding `#[non_exhaustive]`.
 #[repr(i32)]
 pub enum InvokeError {
     /// Amount that was to be transferred is not available to the sender.
@@ -143,7 +156,7 @@ pub enum InvokeError {
     /// Contract that was called rejected with the given reason.
     LogicReject {
         reason:       i32,
-        return_value: ReturnValue,
+        return_value: CallResponse,
     },
     /// Execution of a contract call triggered a runtime error.
     Trap,
@@ -155,16 +168,17 @@ pub type InvokeResult<A> = Result<A, InvokeError>;
 
 /// A type that can serve as the host and supports invoking operations.
 pub trait HasOperations<State> {
+    type CallResponseType: HasCallResponse;
+
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
     fn invoke_contract(
         &mut self,
-        _: &mut State,
+        state: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<crate::ReturnValue>;
-    fn success(&self) -> crate::ReturnValue;
+    ) -> InvokeResult<Self::CallResponseType>;
 }
 
 /// Objects which can serve as loggers.

@@ -102,10 +102,6 @@ impl From<NotPayableError> for Reject {
     }
 }
 
-impl ReturnValue {
-    pub fn get_i(&self) -> NonZeroU32 { self.i }
-}
-
 impl Write for ReturnValue {
     type Err = ();
 
@@ -122,6 +118,15 @@ impl Write for ReturnValue {
         let num_bytes = unsafe { write_output(buf.as_ptr(), len, self.current_position) };
         self.current_position += num_bytes; // safe because of check above that len + pos is small enough
         Ok(num_bytes as usize)
+    }
+}
+
+impl ReturnValue {
+    #[inline(always)]
+    pub fn open() -> Self {
+        Self {
+            current_position: 0,
+        }
     }
 }
 
@@ -316,7 +321,7 @@ impl HasParameter for ExternParameter {
 }
 
 /// # Trait implementations ReturnValue
-impl Read for ReturnValue {
+impl Read for CallResponse {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -334,6 +339,10 @@ impl Read for ReturnValue {
             Err(ParseError::default())
         }
     }
+}
+
+impl HasCallResponse for CallResponse {
+    fn size(&self) -> u32 { unsafe { get_parameter_size(self.i.get()) as u32 } }
 }
 
 /// # Trait implementations for the chain metadata.
@@ -496,7 +505,7 @@ fn parse_response_code(code: u64) -> InvokeResult<NonZeroU32> {
                     if rv > 0 {
                         Err(InvokeError::LogicReject {
                             reason,
-                            return_value: ReturnValue {
+                            return_value: CallResponse {
                                 i:                unsafe { NonZeroU32::new_unchecked(rv) },
                                 current_position: 0,
                             },
@@ -517,6 +526,8 @@ fn parse_response_code(code: u64) -> InvokeResult<NonZeroU32> {
 }
 
 impl<State> HasOperations<State> for ExternOperations {
+    type CallResponseType = CallResponse;
+
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
         let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
         let data = unsafe {
@@ -543,7 +554,7 @@ impl<State> HasOperations<State> for ExternOperations {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<crate::ReturnValue> {
+    ) -> InvokeResult<Self::CallResponseType> {
         let mut data =
             Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
         let mut cursor = Cursor::new(&mut data);
@@ -554,18 +565,10 @@ impl<State> HasOperations<State> for ExternOperations {
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         let i = parse_response_code(response)?;
-        Ok(ReturnValue {
+        Ok(CallResponse {
             i,
             current_position: 0,
         })
-    }
-
-    // TODO: Return the correct `i`.
-    fn success(&self) -> crate::ReturnValue {
-        ReturnValue {
-            i:                unsafe { NonZeroU32::new_unchecked(1) },
-            current_position: 0,
-        }
     }
 }
 

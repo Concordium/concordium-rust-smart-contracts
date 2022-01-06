@@ -49,16 +49,16 @@
 //!     }
 //! }
 //! ```
-use crate::{constants::MAX_CONTRACT_STATE_SIZE, ReturnValue, *};
+use crate::{constants::MAX_CONTRACT_STATE_SIZE, *};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
 use convert::TryInto;
 #[cfg(not(feature = "std"))]
 use core::{cmp, num};
+use std::collections::HashMap;
 #[cfg(feature = "std")]
 use std::{boxed::Box, cmp, num};
-use std::{collections::HashMap, num::NonZeroU32};
 
 /// Placeholder for the context chain meta data.
 /// All the fields are optionally set and the getting an unset field will result
@@ -657,17 +657,47 @@ impl<T: AsRef<[u8]>> Seek for ContractStateTest<T> {
     }
 }
 
+impl HasCallResponse for Cursor<Vec<u8>> {
+    fn size(&self) -> u32 { self.data.len() as u32 }
+}
+
+// pub struct MockFn<State> {
+//     handler:
+//         Box<dyn FnMut(Parameter, Amount, &mut State, &mut Cursor<Vec<u8>>) ->
+// InvokeResult<()>>, }
+
+// impl<State> MockFn<State> {
+//     pub fn new<R, H>(mut f: Box<H>) -> Self
+//     where
+//         R: Serial,
+//         H: FnMut(Parameter, Amount, &mut State) -> InvokeResult<R>, {
+//         Self {
+//             handler: Box::new(
+//                 |parameter: Parameter,
+//                  amount: Amount,
+//                  state: &mut State,
+//                  output: &mut Cursor<Vec<u8>>| {
+//                     let return_value = f(parameter, amount, state)?;
+//                     return_value.serial(output).map_err(|_|
+// InvokeError::Trap);                     Ok(())
+//                 },
+//             ),
+//         }
+//     }
+// }
+
 pub type MockFn<T> = Box<T>;
 
-type Handler<State> =
-    MockFn<dyn FnMut(Parameter, Amount, &mut State, ReturnValue) -> InvokeResult<ReturnValue>>;
+// TODO: make this handle any serializable output.
+type Handler<State> = MockFn<dyn FnMut(Parameter, Amount, &mut State) -> InvokeResult<u64>>;
 
 pub struct ExternOperationsTest<State> {
-    mocking_fns:    HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
-    return_value_i: NonZeroU32,
+    mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
 }
 
 impl<State> HasOperations<State> for ExternOperationsTest<State> {
+    type CallResponseType = Cursor<Vec<u8>>;
+
     fn invoke_transfer(&mut self, _receiver: &AccountAddress, _amount: Amount) -> InvokeResult<()> {
         todo!()
     }
@@ -679,25 +709,24 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<ReturnValue> {
-        let success = self.success();
-        // TODO: Should `i` be updated when the handler returns `Err(_)`?
-        self.increment_return_value_i();
+    ) -> InvokeResult<Self::CallResponseType> {
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
-                "Mocking has not been set up for invoking contract {} with method '{}'.",
+                "Mocking has not been set up for invoking contract {} with method
+        '{}'.",
                 to,
                 method
             ),
         };
-        handler(parameter, amount, state, success)
-    }
+        let mut output = Vec::new();
 
-    fn success(&self) -> ReturnValue {
-        ReturnValue {
-            i:                self.return_value_i,
-            current_position: 0,
+        match handler(parameter, amount, state) {
+            Ok(rv) => match rv.serial(&mut output) {
+                Ok(_) => Ok(Cursor::new(output)),
+                Err(_) => Err(InvokeError::Trap), // Serialization failed.
+            },
+            Err(err) => Err(err), // Handler returned error.
         }
     }
 }
@@ -705,8 +734,7 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
 impl<State> ExternOperationsTest<State> {
     pub fn empty() -> Self {
         Self {
-            mocking_fns:    HashMap::new(),
-            return_value_i: NonZeroU32::new(1).unwrap_abort(),
+            mocking_fns: HashMap::new(),
         }
     }
 
@@ -717,10 +745,6 @@ impl<State> ExternOperationsTest<State> {
         handler: Handler<State>,
     ) {
         self.mocking_fns.insert((to, method), handler);
-    }
-
-    fn increment_return_value_i(&mut self) {
-        self.return_value_i = NonZeroU32::new(self.return_value_i.get() + 1).unwrap_abort();
     }
 }
 

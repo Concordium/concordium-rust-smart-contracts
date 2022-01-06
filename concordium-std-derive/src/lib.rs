@@ -462,7 +462,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
-                    Ok(()) => 0,
+                    Ok(rv) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value (initialization fails).
+                        }
+                        0
+                    },
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
                         if code < 0 {
@@ -482,7 +487,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 match #fn_name(&ctx, #(#fn_optional_args),*) {
-                    Ok(state) => {
+                    Ok((rv, state)) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value (initialization fails).
+                        }
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
                             trap() // Could not initialize contract.
@@ -672,11 +680,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut ops = ExternOperations;
                 let mut state = ContractState::open(());
-                let res: Result<ReturnValue, _> = #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state);
-                match res {
+                match #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state) {
                     Ok(rv) => {
-                        u32::from(rv.get_i()) as i32
-                        // act.tag() as i32
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value.
+                        }
+                        0
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
@@ -701,18 +710,16 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 let mut ops = ExternOperations;
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res: Result<ReturnValue, _> = #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state);
-                    match res {
+                    match #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state) {
                         Ok(rv) => {
                             let res = state_bytes
                                 .seek(SeekFrom::Start(0))
-                                .and_then(|_| state.serial(&mut state_bytes));
+                                .and_then(|_| state.serial(&mut state_bytes))
+                                .and(rv.serial(&mut ReturnValue::open()));
                             if res.is_err() {
-                                trap() // could not serialize state.
-                            } else {
-                                u32::from(rv.get_i()) as i32
-                                // act.tag() as i32
+                                trap() // Could not serialize state or return value.
                             }
+                            0
                         }
                         Err(reject) => {
                             let code = Reject::from(reject).error_code.get();
