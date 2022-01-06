@@ -473,7 +473,7 @@ const INVOKE_CALL_TAG: u32 = 1;
 fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
-        let rv = (code >> 32) as u32;
+        let rv = (code >> 40) as u32;
         Ok(NonZeroU32::new(rv))
     } else {
         match 0x0000_00ff_0000_0000 & code >> 32 {
@@ -484,7 +484,7 @@ fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
                 if reason == 0 {
                     crate::trap()
                 } else {
-                    let rv = (code >> 32) as u32;
+                    let rv = (code >> 40) as u32;
                     if rv > 0 {
                         Err(InvokeError::LogicReject {
                             reason,
