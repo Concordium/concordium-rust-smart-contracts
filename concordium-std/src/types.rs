@@ -16,7 +16,7 @@ pub struct ExternParameter {
 /// A type representing the return value of contract calls.
 /// This is when a contract calls another contract, it may get a return value.
 pub struct CallResponse {
-    /// The index of the return value
+    /// The index of the call response.
     pub(crate) i:                NonZeroU32,
     pub(crate) current_position: u32,
 }
@@ -24,15 +24,6 @@ pub struct CallResponse {
 /// A type representing the return value of contract init or receive method.
 pub struct ReturnValue {
     pub(crate) current_position: u32,
-}
-
-impl ReturnValue {
-    #[inline(always)]
-    pub fn open() -> Self {
-        Self {
-            current_position: 0,
-        }
-    }
 }
 
 /// A type representing the attributes, lazily acquired from the host.

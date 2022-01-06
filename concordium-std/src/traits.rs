@@ -20,6 +20,19 @@ pub trait HasParameter: Read {
     fn size(&self) -> u32;
 }
 
+/// Objects which can access call responses from contract invocations.
+///
+/// This trait has a Read supertrait which means that structured call responses
+/// can be directly deserialized by using `.get()` function from the `Get`
+/// trait.
+///
+/// The reuse of `Read` methods is the reason for the slightly strange choice of
+/// methods of this trait.
+pub trait HasCallResponse: Read {
+    /// Get the size of the call response to the contract invocation.
+    fn size(&self) -> u32;
+}
+
 /// Objects which can access chain metadata.
 pub trait HasChainMetadata {
     /// Get time in milliseconds at the beginning of this block.
@@ -129,7 +142,7 @@ where
 }
 
 /// FIXME: Have two error types, one for transfers, one for calls.
-/// FIXME: Consider adding #[non_exhaustive]
+/// FIXME: Consider adding `#[non_exhaustive]`.
 #[repr(i32)]
 pub enum InvokeError {
     /// Amount that was to be transferred is not available to the sender.
@@ -154,15 +167,18 @@ pub enum InvokeError {
 pub type InvokeResult<A> = Result<A, InvokeError>;
 
 /// A type that can serve as the host and supports invoking operations.
-pub trait HasOperations {
+pub trait HasOperations<State> {
+    type CallResponseType: HasCallResponse;
+
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
     fn invoke_contract(
         &mut self,
+        state: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<crate::CallResponse>>;
+    ) -> InvokeResult<Option<Self::CallResponseType>>;
 }
 
 /// Objects which can serve as loggers.

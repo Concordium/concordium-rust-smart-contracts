@@ -121,6 +121,15 @@ impl Write for ReturnValue {
     }
 }
 
+impl ReturnValue {
+    #[inline(always)]
+    pub fn open() -> Self {
+        Self {
+            current_position: 0,
+        }
+    }
+}
+
 /// # Contract state trait implementations.
 impl Seek for ContractState {
     type Err = ();
@@ -332,6 +341,10 @@ impl Read for CallResponse {
     }
 }
 
+impl HasCallResponse for CallResponse {
+    fn size(&self) -> u32 { unsafe { get_parameter_size(self.i.get()) as u32 } }
+}
+
 /// # Trait implementations for the chain metadata.
 impl HasChainMetadata for ChainMetaExtern {
     #[inline(always)]
@@ -508,7 +521,9 @@ fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
     }
 }
 
-impl HasOperations for ExternOperations {
+impl<State> HasOperations<State> for ExternOperations {
+    type CallResponseType = CallResponse;
+
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
         let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
         let data = unsafe {
@@ -530,11 +545,12 @@ impl HasOperations for ExternOperations {
 
     fn invoke_contract(
         &mut self,
+        _: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<crate::CallResponse>> {
+    ) -> InvokeResult<Option<Self::CallResponseType>> {
         // calling V0 contracts returns None
         let mut data =
             Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);

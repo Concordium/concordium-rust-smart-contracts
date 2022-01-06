@@ -462,7 +462,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
-                    Ok(()) => 0,
+                    Ok(rv) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value (initialization fails).
+                        }
+                        0
+                    },
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
                         if code < 0 {
@@ -484,7 +489,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 match #fn_name(&ctx, #(#fn_optional_args),*) {
                     Ok((rv, state)) => {
                         if rv.serial(&mut ReturnValue::open()).is_err() {
-                            trap() // Could not initialize contract.
+                            trap() // Could not serialize the return value (initialization fails).
                         }
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
@@ -657,7 +662,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
     // strings are displayed as the expected arguments.
-    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+    let mut required_args = vec!["ctx: &impl HasReceiveContext", "ops: &impl HasOperations"];
 
     let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
         &receive_attributes.optional,
@@ -667,7 +672,6 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     let mut out = if receive_attributes.optional.low_level {
         required_args.push("state: &mut ContractState");
-        required_args.push("ops: &mut impl HasOperations");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
@@ -675,14 +679,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state = ContractState::open(());
-                let res = #fn_name(&ctx, #(#fn_optional_args, )* &mut state, &mut ExternOperations);
-                match res {
+                match #fn_name(&ctx, &mut ExternOperations, #(#fn_optional_args, )* &mut state) {
                     Ok(rv) => {
                         if rv.serial(&mut ReturnValue::open()).is_err() {
-                            trap() // could not write return value
-                        } else {
-                            0i32
+                            trap() // Could not serialize the return value.
                         }
+                        0i32
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
@@ -697,7 +699,6 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         }
     } else {
         required_args.push("state: &mut MyState");
-        required_args.push("ops: &mut impl HasOperations");
 
         quote! {
             #[export_name = #wasm_export_fn_name]
@@ -705,23 +706,19 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, ContractState, Logger, ExternOperations, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
+                let mut ops = ExternOperations;
                 let mut state_bytes = ContractState::open(());
                 if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res = #fn_name(&ctx, #(#fn_optional_args, )* &mut state, &mut ExternOperations);
-                    match res {
+                    match #fn_name(&ctx, &mut ops, #(#fn_optional_args, )* &mut state) {
                         Ok(rv) => {
                             let res = state_bytes
                                 .seek(SeekFrom::Start(0))
-                                .and_then(|_| state.serial(&mut state_bytes));
+                                .and_then(|_| state.serial(&mut state_bytes))
+                                .and_then(|_| rv.serial(&mut ReturnValue::open()));
                             if res.is_err() {
-                                trap() // could not serialize state.
-                            } else {
-                                if rv.serial(&mut ReturnValue::open()).is_err() {
-                                    trap() // could not write return value
-                                } else {
-                                    0i32
-                                }
+                                trap() // Could not serialize state or return value.
                             }
+                            0
                         }
                         Err(reject) => {
                             let code = Reject::from(reject).error_code.get();
