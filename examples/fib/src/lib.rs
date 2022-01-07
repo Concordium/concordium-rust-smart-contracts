@@ -19,17 +19,18 @@ fn contract_init(_ctx: &impl HasInitContext<()>) -> InitResult<((), State)> {
 // Add the the nth Fibonacci number F(n) to this contract's state.
 // This is achieved by recursively calling the contract itself.
 #[inline(always)]
-#[receive(contract = "fib", name = "receive", low_level)]
+#[receive(contract = "fib", name = "receive")]
 fn contract_receive(
     ctx: &impl HasReceiveContext<()>,
-    ops: &mut impl HasOperations<ContractState>,
-    state: &mut ContractState,
+    ops: &mut impl HasOperations<State>,
+    state: &mut State,
 ) -> ReceiveResult<u64> {
     // Try to get the parameter (64bit unsigned integer).
     let n: u64 = ctx.parameter_cursor().get()?;
     if n <= 1 {
-        state.seek(SeekFrom::Start(0))?;
-        1u64.serial(state)?;
+        *state = State {
+            result: 1,
+        };
         Ok(1)
     } else {
         let self_address = ctx.self_address();
@@ -44,8 +45,7 @@ fn contract_receive(
             )
             .unwrap_abort()
             .unwrap_abort();
-        state.seek(SeekFrom::Start(0))?;
-        let cv2: u64 = state.get()?;
+        let cv2 = state.result;
         let n2: u64 = n2.get().unwrap_abort();
         ensure_eq!(cv2, n2);
 
@@ -60,12 +60,10 @@ fn contract_receive(
             )
             .unwrap_abort()
             .unwrap_abort();
-        state.seek(SeekFrom::Start(0))?;
-        let cv1: u64 = state.get()?;
+        let cv1 = state.result;
         let n1: u64 = n1.get().unwrap_abort();
         ensure_eq!(cv1, n1);
-        state.seek(SeekFrom::Start(0))?;
-        (cv1 + cv2).serial(state)?;
+        state.result = cv1 + cv2;
         Ok(cv1 + cv2)
     }
 }
@@ -86,10 +84,22 @@ mod tests {
     use super::*;
     use test_infrastructure::*;
 
+    // Compute the n-th fibonacci number.
+    fn fib(n: u64) -> u64 {
+        let mut n1 = 1;
+        let mut n2 = 1;
+        for _ in 2..=n {
+            let t = n1;
+            n1 = n2;
+            n2 += t;
+        }
+        n2
+    }
+
     #[concordium_test]
     fn receive_works() {
         let mut ctx = ReceiveContextTest::empty();
-        let parameter_bytes = to_bytes(&4u64);
+        let parameter_bytes = to_bytes(&10u64);
         let contract_address = ContractAddress {
             index:    0,
             subindex: 0,
@@ -110,18 +120,13 @@ mod tests {
                     Ok(n) => n,
                     Err(_) => return Err(InvokeError::Trap),
                 };
-                match n {
-                    3 => state.result += 3,
-                    2 => state.result += 2,
-                    _ => return Err(InvokeError::Trap),
-                }
+                state.result = fib(n);
                 Ok(state.result)
             }),
         );
-        // TODO
-        // contract_receive(&ctx, &mut ops, &mut state).expect_report("Calling receive
-        // failed.");
-
-        assert_eq!(state.result, 5);
+        let res =
+            contract_receive(&ctx, &mut ops, &mut state).expect_report("Calling receive failed.");
+        assert_eq!(res, fib(10));
+        assert_eq!(state.result, fib(10));
     }
 }

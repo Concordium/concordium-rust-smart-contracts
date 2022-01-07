@@ -521,7 +521,7 @@ fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
     }
 }
 
-impl<State> HasOperations<State> for ExternOperations {
+impl<State: Deserial> HasOperations<State> for ExternOperations {
     type CallResponseType = CallResponse;
 
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
@@ -545,7 +545,7 @@ impl<State> HasOperations<State> for ExternOperations {
 
     fn invoke_contract(
         &mut self,
-        _: &mut State,
+        state: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
@@ -562,6 +562,13 @@ impl<State> HasOperations<State> for ExternOperations {
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         if let Some(i) = parse_response_code(response)? {
+            // The state of the contract might have changed as a result of the call.
+            // So we refresh it.
+            if let Ok(new_state) = (&mut ContractState::open(())).get() {
+                *state = new_state;
+            } else {
+                return Err(InvokeError::Unknown);
+            }
             Ok(Some(CallResponse {
                 i,
                 current_position: 0,
