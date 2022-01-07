@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased changes
+
+## concordium-std-derive 2.0.0 (2022-01-05)
+
 - Update references to token to match token name (CCD).
 
 ## concordium-std-derive 1.0.0 (2021-10-05)
