@@ -661,35 +661,34 @@ impl HasCallResponse for Cursor<Vec<u8>> {
     fn size(&self) -> u32 { self.data.len() as u32 }
 }
 
-// pub struct MockFn<State> {
-//     handler:
-//         Box<dyn FnMut(Parameter, Amount, &mut State, &mut Cursor<Vec<u8>>) ->
-// InvokeResult<()>>, }
-
-// impl<State> MockFn<State> {
-//     pub fn new<R, H>(mut f: Box<H>) -> Self
-//     where
-//         R: Serial,
-//         H: FnMut(Parameter, Amount, &mut State) -> InvokeResult<R>, {
-//         Self {
-//             handler: Box::new(
-//                 |parameter: Parameter,
-//                  amount: Amount,
-//                  state: &mut State,
-//                  output: &mut Cursor<Vec<u8>>| {
-//                     let return_value = f(parameter, amount, state)?;
-//                     return_value.serial(output).map_err(|_|
-// InvokeError::Trap);                     Ok(())
-//                 },
-//             ),
-//         }
-//     }
-// }
+pub struct Handler<State> {
+    mock_fn: MockFn<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<()>>,
+}
 
 pub type MockFn<T> = Box<T>;
 
-// TODO: make this handle any serializable output.
-type Handler<State> = MockFn<dyn FnMut(Parameter, Amount, &mut State) -> InvokeResult<u64>>;
+// A MockFn that returns a value.
+type MockFnReturn<Value, State> =
+    MockFn<dyn FnMut(Parameter, Amount, &mut State) -> InvokeResult<Value>>;
+
+impl<State: 'static> Handler<State> {
+    // TODO: Remove the need for boxing the closure, so you can call
+    // Handler::new(|parameter, amount, ...| {...}).
+    pub fn new<R: 'static>(mut mock_fn_return: MockFnReturn<R, State>) -> Self
+    where
+        R: Serial, {
+        let mock_fn = MockFn::new(
+            move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
+                let return_value = mock_fn_return(parameter, amount, state)?;
+                return_value.serial(output).map_err(|_| InvokeError::Trap)
+            },
+        );
+
+        Self {
+            mock_fn,
+        }
+    }
+}
 
 pub struct ExternOperationsTest<State> {
     mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
@@ -713,21 +712,14 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
-                "Mocking has not been set up for invoking contract {:?} with method
-        '{}'.",
+                "Mocking has not been set up for invoking contract {:?} with
+        method '{}'.",
                 to,
                 method
             ),
         };
         let mut output = Vec::new();
-
-        match handler(parameter, amount, state) {
-            Ok(rv) => match rv.serial(&mut output) {
-                Ok(_) => Ok(Some(Cursor::new(output))),
-                Err(_) => Err(InvokeError::Trap), // Serialization failed.
-            },
-            Err(err) => Err(err), // Handler returned error.
-        }
+        (handler.mock_fn)(parameter, amount, state, &mut output).and(Ok(Some(Cursor::new(output))))
     }
 }
 

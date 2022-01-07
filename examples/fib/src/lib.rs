@@ -115,14 +115,14 @@ mod tests {
         ops.setup_mock_invocation(
             contract_address,
             OwnedEntrypointName::new(String::from("receive")).unwrap_abort(),
-            MockFn::new(|parameter, _amount, state| {
+            Handler::new(MockFn::new(|parameter, _amount, state| {
                 let n: u64 = match from_bytes(parameter.0) {
                     Ok(n) => n,
                     Err(_) => return Err(InvokeError::Trap),
                 };
                 state.result = fib(n);
                 Ok(state.result)
-            }),
+            })),
         );
         let res =
             contract_receive(&ctx, &mut ops, &mut state).expect_report("Calling receive failed.");
