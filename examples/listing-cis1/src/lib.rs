@@ -83,7 +83,7 @@ impl State {
     /// Remove a listing and fails with UnknownToken, if token is not listed.
     /// Returns the listing price and owner if successful.
     fn unlist(&mut self, token: &Token) -> ContractResult<(AccountAddress, Amount)> {
-        self.listings.remove(token).ok_or(CustomContractError::UnknownToken.into())
+        self.listings.remove(token).ok_or_else(|| CustomContractError::UnknownToken.into())
     }
 }
 
@@ -180,7 +180,7 @@ fn contract_buy<A: HasActions>(
     let transfer = Transfer {
         token_id: token.id,
         amount:   1,
-        from:     Address::Account(owner.clone()),
+        from:     Address::Account(owner),
         to:       Receiver::Account(sender),
         data:     AdditionalData::empty(),
     };
