@@ -692,13 +692,23 @@ impl<State: 'static> Handler<State> {
 
 pub struct ExternOperationsTest<State> {
     mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    transfers:   Vec<(AccountAddress, Amount)>,
+    balance:     Amount,
 }
 
 impl<State> HasOperations<State> for ExternOperationsTest<State> {
     type CallResponseType = Cursor<Vec<u8>>;
 
-    fn invoke_transfer(&mut self, _receiver: &AccountAddress, _amount: Amount) -> InvokeResult<()> {
-        todo!()
+    // TODO: It should also be possible to set it up, so a particular account does
+    // not exist. Perhaps the default should be that no accounts exist?
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
+        if self.balance >= amount {
+            self.balance -= amount;
+            self.transfers.push((receiver.clone(), amount));
+            Ok(())
+        } else {
+            Err(InvokeError::AmountTooLarge)
+        }
     }
 
     fn invoke_contract(
@@ -727,6 +737,8 @@ impl<State> ExternOperationsTest<State> {
     pub fn empty() -> Self {
         Self {
             mocking_fns: HashMap::new(),
+            transfers:   Vec::new(),
+            balance:     Amount::zero(),
         }
     }
 
@@ -737,6 +749,15 @@ impl<State> ExternOperationsTest<State> {
         handler: Handler<State>,
     ) {
         self.mocking_fns.insert((to, method), handler);
+    }
+
+    // TODO: This should be set together with ctx.self_balance.
+    pub fn set_balance(&mut self, amount: Amount) { self.balance = amount; }
+
+    // TODO: It could return the number of such transfers that occurred. Perhaps the
+    // transfers field could be public?
+    pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
+        self.transfers.contains(&(receiver.clone(), amount))
     }
 }
 
