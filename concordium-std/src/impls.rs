@@ -482,12 +482,16 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 const INVOKE_TRANSFER_TAG: u32 = 0;
 const INVOKE_CALL_TAG: u32 = 1;
 
-/// TODO: Make consistent with errors returned by the scheduler.
-fn parse_response_code(code: u64) -> InvokeResult<Option<NonZeroU32>> {
+fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
         let rv = (code >> 40) as u32;
-        Ok(NonZeroU32::new(rv))
+        let tag = 0b1000_0000_0000_0000_0000_0000u32;
+        if tag & rv != 0 {
+            Ok((true, NonZeroU32::new(rv & !tag)))
+        } else {
+            Ok((false, NonZeroU32::new(rv)))
+        }
     } else {
         match 0x0000_00ff_0000_0000 & code >> 32 {
             0x00 =>
@@ -561,14 +565,17 @@ impl<State: Deserial> HasOperations<State> for ExternOperations {
         amount.serial(&mut cursor).unwrap_abort();
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
-        if let Some(i) = parse_response_code(response)? {
-            // The state of the contract might have changed as a result of the call.
+        let (state_modified, res) = parse_response_code(response)?;
+        if state_modified {
+            // The state of the contract changed as a result of the call.
             // So we refresh it.
             if let Ok(new_state) = (&mut ContractState::open(())).get() {
                 *state = new_state;
             } else {
                 return Err(InvokeError::Unknown);
             }
+        }
+        if let Some(i) = res {
             Ok(Some(CallResponse {
                 i,
                 current_position: 0,
