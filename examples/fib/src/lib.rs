@@ -44,6 +44,7 @@ fn contract_receive(
                 Amount::zero(),
             )
             .unwrap_abort()
+            .1
             .unwrap_abort();
         let cv2 = state.result;
         let n2: u64 = n2.get().unwrap_abort();
@@ -59,6 +60,7 @@ fn contract_receive(
                 Amount::zero(),
             )
             .unwrap_abort()
+            .1
             .unwrap_abort();
         let cv1 = state.result;
         let n1: u64 = n1.get().unwrap_abort();
@@ -114,14 +116,14 @@ mod tests {
 
         ops.setup_mock_invocation(
             contract_address,
-            OwnedEntrypointName::new(String::from("receive")).unwrap_abort(),
+            OwnedEntrypointName::new_unchecked("receive".into()),
             Handler::new(MockFn::new(|parameter, _amount, state| {
                 let n: u64 = match from_bytes(parameter.0) {
                     Ok(n) => n,
                     Err(_) => return Err(InvokeError::Trap),
                 };
                 state.result = fib(n);
-                Ok(state.result)
+                Ok((true, state.result))
             })),
         );
         let res =

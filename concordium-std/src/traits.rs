@@ -178,7 +178,7 @@ pub trait HasOperations<State> {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<Self::CallResponseType>>;
+    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)>;
 }
 
 /// Objects which can serve as loggers.

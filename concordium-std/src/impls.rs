@@ -554,7 +554,7 @@ impl<State: Deserial> HasOperations<State> for ExternOperations {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<Self::CallResponseType>> {
+    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)> {
         // calling V0 contracts returns None
         let mut data =
             Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
@@ -576,12 +576,15 @@ impl<State: Deserial> HasOperations<State> for ExternOperations {
             }
         }
         if let Some(i) = res {
-            Ok(Some(CallResponse {
-                i,
-                current_position: 0,
-            }))
+            Ok((
+                state_modified,
+                Some(CallResponse {
+                    i,
+                    current_position: 0,
+                }),
+            ))
         } else {
-            Ok(None)
+            Ok((state_modified, None))
         }
     }
 }
