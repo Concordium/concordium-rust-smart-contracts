@@ -49,6 +49,9 @@ struct OptionalArguments {
     /// Which type, if any, is the parameter type of the contract.
     /// This is used when generating schemas.
     pub(crate) parameter:     Option<syn::LitStr>,
+    /// Which type, if any, is the return value of the contract.
+    /// This is used when generating schemas.
+    pub(crate) return_value:  Option<syn::LitStr>,
 }
 
 /// Attributes that can be attached to the initialization method.
@@ -210,6 +213,7 @@ fn parse_attributes<'a>(iter: impl IntoIterator<Item = &'a Meta>) -> syn::Result
 // Supported attributes for the init methods.
 
 const INIT_ATTRIBUTE_PARAMETER: &str = "parameter";
+const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const INIT_ATTRIBUTE_CONTRACT: &str = "contract";
 const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
@@ -228,6 +232,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             )
         })?;
     let parameter: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_PARAMETER);
+    let return_value: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_RETURN_VALUE);
     let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
@@ -242,6 +247,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             enable_logger,
             low_level,
             parameter,
+            return_value,
         },
     })
 }
@@ -249,6 +255,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
 // Supported attributes for the receive methods.
 
 const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
+const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
 const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
@@ -263,6 +270,8 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let contract = attributes.extract_value(RECEIVE_ATTRIBUTE_CONTRACT);
     let name = attributes.extract_value(RECEIVE_ATTRIBUTE_NAME);
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
+    let return_value: Option<syn::LitStr> =
+        attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
     let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
@@ -279,6 +288,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 enable_logger,
                 low_level,
                 parameter,
+                return_value,
             },
         }),
         (Some(_), None) => Err(syn::Error::new(
@@ -385,6 +395,21 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// #[init(contract = "my_contract", parameter = "MyParam")]
 /// ```
+///
+/// ## `return_value="<ReturnValue>"`: Generate schema for return value
+/// To make schema generation to include the return value for this function, add
+/// the attribute `return_value` and set it equal to a string literal containing
+/// the name of the type used for the return value. The return value type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyReturnValue { ... }
+///
+/// #[init(contract = "my_contract", return_value = "MyReturnValue")]
+/// ```
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(init_worker(attr, item))
@@ -490,10 +515,13 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         ));
     }
 
-    // Embed schema if 'parameter' attribute is set
+    // Embed a schema for the parameter and return value if the corresponding
+    // attribute is set.
     let parameter_option = init_attributes.optional.parameter.map(|a| a.value());
+    let return_value_option = init_attributes.optional.return_value.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
+        return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     ));
@@ -716,10 +744,13 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         ));
     }
 
-    // Embed schema if 'parameter' attribute is set
+    // Embed a schema for the parameter and return value if the corresponding
+    // attribute is set.
     let parameter_option = receive_attributes.optional.parameter.map(|a| a.value());
+    let return_value_option = receive_attributes.optional.return_value.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
+        return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     ));
@@ -764,30 +795,58 @@ fn contract_function_optional_args_tokens(
 #[cfg(feature = "build-schema")]
 fn contract_function_schema_tokens(
     parameter_option: Option<String>,
+    return_value_option: Option<String>,
     rust_name: syn::Ident,
     wasm_name: String,
 ) -> proc_macro2::TokenStream {
-    match parameter_option {
-        Some(parameter_ty) => {
+    let construct_schema_bytes = match (parameter_option, return_value_option) {
+        (Some(parameter_ty), Some(return_value_ty)) => {
             let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
-            let schema_name = format!("concordium_schema_function_{}", wasm_name);
-            let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
-            quote! {
-                #[export_name = #schema_name]
-                pub extern "C" fn #schema_ident() -> *mut u8 {
-                    let schema = <#parameter_ident as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema);
-                    concordium_std::put_in_memory(&schema_bytes)
-                }
+            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            Some(quote! {
+                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
+                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::FunctionSchema::Both { parameter, return_value });
+            })
+        }
+        (Some(parameter_ty), None) => {
+            let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
+            Some(quote! {
+                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::FunctionSchema::Parameter(parameter));
+            })
+        }
+        (None, Some(return_value_ty)) => {
+            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            Some(quote! {
+                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::FunctionSchema::ReturnValue(return_value));
+            })
+        }
+        _ => None,
+    };
+
+    // Only produce the schema function if the parameter or return_value attribute
+    // was set.
+    if let Some(construct_schema_bytes) = construct_schema_bytes {
+        let schema_name = format!("concordium_schema_function_{}", wasm_name);
+        let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
+        quote! {
+            #[export_name = #schema_name]
+            pub extern "C" fn #schema_ident() -> *mut u8 {
+                #construct_schema_bytes
+                concordium_std::put_in_memory(&schema_bytes)
             }
         }
-        None => proc_macro2::TokenStream::new(),
+    } else {
+        proc_macro2::TokenStream::new()
     }
 }
 
 #[cfg(not(feature = "build-schema"))]
 fn contract_function_schema_tokens(
     _parameter_option: Option<String>,
+    _return_value_option: Option<String>,
     _rust_name: syn::Ident,
     _wasm_name: String,
 ) -> proc_macro2::TokenStream {

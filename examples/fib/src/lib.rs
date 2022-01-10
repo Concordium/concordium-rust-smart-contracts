@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
-#[contract_state(contract = "fib")]
 #[derive(Serialize, SchemaType)]
 pub struct State {
     result: u64,
@@ -19,7 +18,7 @@ fn contract_init(_ctx: &impl HasInitContext<()>) -> InitResult<((), State)> {
 // Add the the nth Fibonacci number F(n) to this contract's state.
 // This is achieved by recursively calling the contract itself.
 #[inline(always)]
-#[receive(contract = "fib", name = "receive")]
+#[receive(contract = "fib", name = "receive", parameter = "u64", return_value = "u64")]
 fn contract_receive(
     ctx: &impl HasReceiveContext<()>,
     ops: &mut impl HasOperations<State>,
@@ -70,7 +69,7 @@ fn contract_receive(
 
 /// Retrieve the value of the state.
 #[inline(always)]
-#[receive(contract = "fib", name = "view")]
+#[receive(contract = "fib", name = "view", return_value = "u64")]
 fn contract_view(
     _ctx: &impl HasReceiveContext<()>,
     _ops: &mut impl HasOperations<State>,
