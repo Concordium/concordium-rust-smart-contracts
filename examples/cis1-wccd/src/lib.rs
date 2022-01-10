@@ -376,7 +376,7 @@ fn contract_transfer<A: HasActions>(
 ) -> ContractResult<A> {
     let mut cursor = ctx.parameter_cursor();
     // Parse the number of transfers.
-    let transfers_length: u8 = cursor.get()?;
+    let transfers_length: u16 = cursor.get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 

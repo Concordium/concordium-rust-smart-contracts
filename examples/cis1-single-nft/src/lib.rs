@@ -280,7 +280,7 @@ fn contract_update_operator<A: HasActions>(
     for param in params {
         // Update the operator in the state.
         match param.update {
-            OperatorUpdate::Add => state.add_operator(sender.clone(), param.operator.clone()),
+            OperatorUpdate::Add => state.add_operator(sender, param.operator),
             OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
         }
 

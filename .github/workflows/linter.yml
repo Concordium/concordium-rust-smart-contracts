@@ -19,15 +19,17 @@ jobs:
         crates:
           - concordium-std/Cargo.toml
           - concordium-std-derive/Cargo.toml
-          - examples/two-step-transfer/Cargo.toml
+          - examples/auction/Cargo.toml
+          - examples/cis1-multi/Cargo.toml
+          - examples/cis1-nft/Cargo.toml
+          - examples/cis1-single-nft/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
+          - examples/erc721/Cargo.toml
+          - examples/listing-cis1/Cargo.toml
+          - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
-          - examples/auction/Cargo.toml
-          - examples/erc721/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
-          - examples/memo/Cargo.toml
+          - examples/two-step-transfer/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -209,14 +211,17 @@ jobs:
           - wasm32-unknown-unknown
 
         crates:
-          - examples/two-step-transfer/Cargo.toml
+          - examples/auction/Cargo.toml
+          - examples/cis1-multi/Cargo.toml
+          - examples/cis1-nft/Cargo.toml
+          - examples/cis1-single-nft/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
+          - examples/erc721/Cargo.toml
+          - examples/listing-cis1/Cargo.toml
+          - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
-          - examples/auction/Cargo.toml
-          - examples/erc721/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
+          - examples/two-step-transfer/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -274,3 +279,46 @@ jobs:
           command: test
           # only run the library tests, no doc tests
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} --lib
+
+  test-examples:
+    name: Test examples
+    runs-on: ubuntu-latest
+    needs: [rustfmt, clippy-schema]
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+
+        crates:
+          - examples/auction/Cargo.toml
+          - examples/cis1-multi/Cargo.toml
+          - examples/cis1-nft/Cargo.toml
+          - examples/cis1-single-nft/Cargo.toml
+          - examples/cis1-wccd/Cargo.toml
+          - examples/erc721/Cargo.toml
+          - examples/listing-cis1/Cargo.toml
+          - examples/memo/Cargo.toml
+          - examples/piggy-bank/part1/Cargo.toml
+          - examples/piggy-bank/part2/Cargo.toml
+          - examples/two-step-transfer/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.53
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          # only run the library tests, no doc tests
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --lib
