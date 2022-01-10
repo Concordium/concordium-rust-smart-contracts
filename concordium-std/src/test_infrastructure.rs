@@ -662,14 +662,16 @@ impl HasCallResponse for Cursor<Vec<u8>> {
 }
 
 pub struct Handler<State> {
-    mock_fn: MockFn<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<()>>,
+    /// A mock function. The return value indicates whether the state was
+    /// updated or not.
+    mock_fn: MockFn<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
 }
 
 pub type MockFn<T> = Box<T>;
 
 // A MockFn that returns a value.
 type MockFnReturn<Value, State> =
-    MockFn<dyn FnMut(Parameter, Amount, &mut State) -> InvokeResult<Value>>;
+    MockFn<dyn FnMut(Parameter, Amount, &mut State) -> InvokeResult<(bool, Value)>>;
 
 impl<State: 'static> Handler<State> {
     // TODO: Remove the need for boxing the closure, so you can call
@@ -679,8 +681,9 @@ impl<State: 'static> Handler<State> {
         R: Serial, {
         let mock_fn = MockFn::new(
             move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
-                let return_value = mock_fn_return(parameter, amount, state)?;
-                return_value.serial(output).map_err(|_| InvokeError::Trap)
+                let (modified, return_value) = mock_fn_return(parameter, amount, state)?;
+                return_value.serial(output).map_err(|_| InvokeError::Trap)?;
+                Ok(modified)
             },
         );
 
@@ -718,7 +721,7 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<Option<Self::CallResponseType>> {
+    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)> {
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
@@ -729,7 +732,8 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
             ),
         };
         let mut output = Vec::new();
-        (handler.mock_fn)(parameter, amount, state, &mut output).and(Ok(Some(Cursor::new(output))))
+        (handler.mock_fn)(parameter, amount, state, &mut output)
+            .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))))
     }
 }
 
