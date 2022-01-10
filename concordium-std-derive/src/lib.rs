@@ -207,37 +207,6 @@ fn parse_attributes<'a>(iter: impl IntoIterator<Item = &'a Meta>) -> syn::Result
     }
 }
 
-#[cfg(feature = "build-schema")]
-/// Attributes applicable to the `contract_state` annotation.
-struct ContractStateAttributes {
-    /// Name of the contract the contract state applies to.
-    pub(crate) contract: syn::LitStr,
-}
-
-#[cfg(feature = "build-schema")]
-// Attribute names for the contract_state macro.
-const CONTRACT_STATE_ATTRIBUTE_CONTRACT: &str = "contract";
-
-#[cfg(feature = "build-schema")]
-/// Parse nested attributes to the `contract_state` attribute.
-fn parse_contract_state_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
-    attrs: I,
-) -> syn::Result<ContractStateAttributes> {
-    let mut attributes = parse_attributes(attrs)?;
-    let contract =
-        attributes.extract_value(CONTRACT_STATE_ATTRIBUTE_CONTRACT).ok_or_else(|| {
-            syn::Error::new(
-                Span::call_site(),
-                "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
-                 example, #[contract_state(contract = \"my-contract\")]",
-            )
-        })?;
-    attributes.report_all_attributes()?;
-    Ok(ContractStateAttributes {
-        contract,
-    })
-}
-
 // Supported attributes for the init methods.
 
 const INIT_ATTRIBUTE_PARAMETER: &str = "parameter";
@@ -1300,69 +1269,6 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     let mut tokens = impl_deserial(&ast)?;
     tokens.extend(impl_serial(&ast)?);
     Ok(tokens)
-}
-
-/// Marks a type as the contract state. Currently only used for generating the
-/// schema of the contract state. If the feature `build-schema` is not enabled
-/// this has no effect.
-///
-///
-/// # Example
-/// ```ignore
-/// #[contract_state(contract = "my_contract")]
-/// #[derive(SchemaType)]
-/// struct MyContractState {
-///      ...
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
-    unwrap_or_report(contract_state_worker(attr, item))
-}
-
-#[cfg(feature = "build-schema")]
-fn contract_state_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let mut out = proc_macro2::TokenStream::new();
-
-    let data_ident = if let Ok(ast) = syn::parse::<syn::ItemStruct>(item.clone()) {
-        ast.to_tokens(&mut out);
-        ast.ident
-    } else if let Ok(ast) = syn::parse::<syn::ItemEnum>(item.clone()) {
-        ast.to_tokens(&mut out);
-        ast.ident
-    } else if let Ok(ast) = syn::parse::<syn::ItemType>(item.clone()) {
-        ast.to_tokens(&mut out);
-        ast.ident
-    } else {
-        return Err(syn::Error::new_spanned(
-            proc_macro2::TokenStream::from(item),
-            "#[contract_state] only supports structs, enums and type aliases.",
-        ));
-    };
-
-    let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
-
-    let contract_state_attributes = parse_contract_state_attributes(&attrs)?;
-    let contract_name = contract_state_attributes.contract;
-    let wasm_schema_name = format!("concordium_schema_state_{}", contract_name.value());
-    let rust_schema_name = format_ident!("concordium_schema_state_{}", data_ident);
-
-    let generate_schema_tokens = quote! {
-        #[allow(non_snake_case)]
-        #[export_name = #wasm_schema_name]
-        pub extern "C" fn #rust_schema_name() -> *mut u8 {
-            let schema = <#data_ident as concordium_std::schema::SchemaType>::get_type();
-            let schema_bytes = concordium_std::to_bytes(&schema);
-            concordium_std::put_in_memory(&schema_bytes)
-        }
-    };
-    generate_schema_tokens.to_tokens(&mut out);
-    Ok(out.into())
-}
-
-#[cfg(not(feature = "build-schema"))]
-fn contract_state_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    Ok(item)
 }
 
 /// Derive the `SchemaType` trait for a type.
