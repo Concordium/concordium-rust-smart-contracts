@@ -483,10 +483,10 @@ const INVOKE_TRANSFER_TAG: u32 = 0;
 const INVOKE_CALL_TAG: u32 = 1;
 
 fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
-    if code & !0x7fff_ff00_0000_0000 == 0 {
+    if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
         let rv = (code >> 40) as u32;
-        let tag = 0b1000_0000_0000_0000_0000_0000u32;
+        let tag = 0x80_0000u32;
         if tag & rv != 0 {
             Ok((true, NonZeroU32::new(rv & !tag)))
         } else {
@@ -525,7 +525,7 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
     }
 }
 
-impl<State: Deserial> HasOperations<State> for ExternOperations {
+impl<State: Deserial + Serial> HasOperations<State> for ExternOperations {
     type CallResponseType = CallResponse;
 
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
@@ -563,6 +563,9 @@ impl<State: Deserial> HasOperations<State> for ExternOperations {
         parameter.serial(&mut cursor).unwrap_abort();
         method.serial(&mut cursor).unwrap_abort();
         amount.serial(&mut cursor).unwrap_abort();
+        // serialize state since it might have been modified
+        // FIXME: Only do this if needed.
+        state.serial(&mut ContractState::open(())).unwrap_abort();
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         let (state_modified, res) = parse_response_code(response)?;

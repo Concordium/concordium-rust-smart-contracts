@@ -27,9 +27,7 @@ fn contract_receive(
     // Try to get the parameter (64bit unsigned integer).
     let n: u64 = ctx.parameter_cursor().get()?;
     if n <= 1 {
-        *state = State {
-            result: 1,
-        };
+        state.result = 1;
         Ok(1)
     } else {
         let self_address = ctx.self_address();
