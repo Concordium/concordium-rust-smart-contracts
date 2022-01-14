@@ -140,7 +140,7 @@ struct UnlistParams {
 /// - Not send by the contract owner.
 /// - it fails to parse the parameter.
 /// - Any of the tokens are not listed.
-#[receive(contract = "listing-CIS1-singleNFT", name = "unlist", parameter = "Token")]
+#[receive(contract = "listing-CIS1-singleNFT", name = "unlist", parameter = "UnlistParams")]
 fn contract_unlist<A: HasActions>(
     ctx: &impl HasReceiveContext,
     state: &mut State,
