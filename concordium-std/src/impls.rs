@@ -518,8 +518,9 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
             0x01 => Err(InvokeError::AmountTooLarge),
             0x02 => Err(InvokeError::MissingAccount),
             0x03 => Err(InvokeError::MissingContract),
-            0x04 => Err(InvokeError::MessageFailed),
-            0x05 => Err(InvokeError::Trap),
+            0x04 => Err(InvokeError::MissingEntrypoint),
+            0x05 => Err(InvokeError::MessageFailed),
+            0x06 => Err(InvokeError::Trap),
             _ => Err(InvokeError::Unknown), // FIXME: This should be trap as well.
         }
     }

@@ -151,6 +151,9 @@ pub enum InvokeError {
     MissingAccount,
     /// Contract that is to be transferred to does not exist.
     MissingContract,
+    /// The contract to be invoked exists, but the entrypoint that was named
+    /// does not.
+    MissingEntrypoint,
     /// Sending a message to the V0 contract failed.
     MessageFailed,
     /// Contract that was called rejected with the given reason.
