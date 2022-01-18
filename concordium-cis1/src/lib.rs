@@ -733,7 +733,7 @@ pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 2)] pub Vec<T
 
 impl<T: IsTokenId> schema::SchemaType for TransferParams<T> {
     fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(Transfer::<T>::get_type()))
+        schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T>::get_type()))
     }
 }
 
