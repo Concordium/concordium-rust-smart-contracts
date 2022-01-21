@@ -144,6 +144,7 @@ where
 /// FIXME: Have two error types, one for transfers, one for calls.
 /// FIXME: Consider adding `#[non_exhaustive]`.
 #[repr(i32)]
+#[derive(Debug)]
 pub enum InvokeError {
     /// Amount that was to be transferred is not available to the sender.
     AmountTooLarge,

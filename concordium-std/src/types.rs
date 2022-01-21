@@ -15,6 +15,7 @@ pub struct ExternParameter {
 
 /// A type representing the return value of contract calls.
 /// This is when a contract calls another contract, it may get a return value.
+#[derive(Debug)]
 pub struct CallResponse {
     /// The index of the call response.
     pub(crate) i:                NonZeroU32,
