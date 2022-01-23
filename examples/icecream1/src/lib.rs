@@ -14,7 +14,7 @@ enum Weather {
 
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
-    let weather_service = ctx.parameter_cursor().get()?; // Weather service address.
+    let weather_service: ContractAddress = ctx.parameter_cursor().get()?; // Weather service address.
     let return_value = ();
     Ok((return_value, State {
         weather_service,
@@ -25,7 +25,7 @@ fn contract_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
 fn contract_buy_icecream(
     ctx: &impl HasReceiveContext,
     ops: &mut impl HasOperations<State>,
-    _amount: Amount, // Contract accepts money sent to it.
+    amount: Amount,
     state: &mut State,
 ) -> ReceiveResult<()> {
     let weather = ops
@@ -41,14 +41,15 @@ fn contract_buy_icecream(
         .unwrap_abort()
         .get()?;
 
-    let icecream_vendor_addr = ctx.parameter_cursor().get()?;
+    let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
 
     match weather {
-        Weather::Rainy => ops
-            .invoke_transfer(&ctx.owner(), ctx.self_balance())
-            .expect("Returning CCD to owner failed."),
+        Weather::Rainy => {
+            ops.invoke_transfer(&ctx.owner(), amount).expect("Returning CCD to owner failed.")
+            // Could just abort here.
+        }
         Weather::Sunny => ops
-            .invoke_transfer(&icecream_vendor_addr, ctx.self_balance())
+            .invoke_transfer(&icecream_vendor, amount)
             .expect("Sending CCD to icecream vendor failed."),
     }
     Ok(())
@@ -62,7 +63,7 @@ fn weather_init(ctx: &impl HasInitContext) -> InitResult<((), Weather)> {
     Ok((return_value, ctx.parameter_cursor().get()?))
 }
 
-#[receive(contract = "weather", name = "get", parameter = "OwnedReceiveName")]
+#[receive(contract = "weather", name = "get", return_value = "Weather")]
 fn weather_get(
     _ctx: &impl HasReceiveContext,
     _ops: &mut impl HasOperations<Weather>,
@@ -94,11 +95,11 @@ mod tests {
         index:    0,
         subindex: 1,
     };
-    const WEATHER_SERVICE_ADDR: ContractAddress = ContractAddress {
+    const WEATHER_SERVICE: ContractAddress = ContractAddress {
         index:    1,
         subindex: 0,
     };
-    const ICECREAM_VENDOR_ADDR: AccountAddress = AccountAddress([1; 32]);
+    const ICECREAM_VENDOR: AccountAddress = AccountAddress([1; 32]);
     const ICECREAM_PRICE: Amount = Amount {
         micro_ccd: 6000000, // 6 CCD
     };
@@ -110,15 +111,14 @@ mod tests {
         let mut ops = ExternOperationsTest::<State>::empty();
 
         // Set up context
-        let parameter = to_bytes(&ICECREAM_VENDOR_ADDR);
+        let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(OWNER_ADDR);
         ctx.set_self_address(SELF_ADDR);
         ctx.set_parameter(&parameter);
-        ctx.set_self_balance(ICECREAM_PRICE);
         ops.set_balance(ICECREAM_PRICE);
 
         let mut state = State {
-            weather_service: WEATHER_SERVICE_ADDR,
+            weather_service: WEATHER_SERVICE,
         };
 
         // Set up mock invocation
@@ -133,7 +133,7 @@ mod tests {
             .expect_report("Calling buy_icecream failed.");
 
         // Assert
-        assert!(ops.transfer_occurred(&ICECREAM_VENDOR_ADDR, ICECREAM_PRICE));
+        assert!(ops.transfer_occurred(&ICECREAM_VENDOR, ICECREAM_PRICE));
     }
 
     #[concordium_test]
@@ -143,15 +143,14 @@ mod tests {
         let mut ops = ExternOperationsTest::<State>::empty();
 
         // Set up context
-        let parameter = to_bytes(&ICECREAM_VENDOR_ADDR);
+        let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(OWNER_ADDR);
         ctx.set_self_address(SELF_ADDR);
         ctx.set_parameter(&parameter);
-        ctx.set_self_balance(ICECREAM_PRICE);
         ops.set_balance(ICECREAM_PRICE);
 
         let mut state = State {
-            weather_service: WEATHER_SERVICE_ADDR,
+            weather_service: WEATHER_SERVICE,
         };
 
         // Set up mock invocation
