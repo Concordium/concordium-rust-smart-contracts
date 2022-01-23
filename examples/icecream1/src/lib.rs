@@ -1,32 +1,37 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
-type WeatherOracle = ContractAddress; // Weather oracle
+#[derive(Serialize, SchemaType, Clone)]
+struct State {
+    weather_service: ContractAddress,
+}
 
 #[derive(Serialize, SchemaType, Clone)]
 enum Weather {
-    Raining,
+    Rainy,
     Sunny,
 }
 
 #[init(contract = "icecream", parameter = "ContractAddress")]
-fn contract_init(ctx: &impl HasInitContext) -> InitResult<((), WeatherOracle)> {
-    let weather_oracle = ctx.parameter_cursor().get()?;
+fn contract_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
+    let weather_service = ctx.parameter_cursor().get()?; // Weather service address.
     let return_value = ();
-    Ok((return_value, weather_oracle))
+    Ok((return_value, State {
+        weather_service,
+    }))
 }
 
 #[receive(contract = "icecream", name = "buy_icecream", parameter = "AccountAddress", payable)]
 fn contract_buy_icecream(
     ctx: &impl HasReceiveContext,
-    ops: &mut impl HasOperations<WeatherOracle>,
-    _amount: Amount, // Contract accepts the money.
-    weather_oracle: &mut WeatherOracle,
+    ops: &mut impl HasOperations<State>,
+    _amount: Amount, // Contract accepts money sent to it.
+    state: &mut State,
 ) -> ReceiveResult<()> {
     let weather = ops
         .invoke_contract(
-            weather_oracle,
-            &weather_oracle.clone(),
+            state,
+            &state.weather_service.clone(),
             Parameter(&[]),
             EntrypointName::new_unchecked("get"),
             Amount::zero(),
@@ -36,15 +41,15 @@ fn contract_buy_icecream(
         .unwrap_abort()
         .get()?;
 
-    let icecream_vendor = ctx.parameter_cursor().get()?;
+    let icecream_vendor_addr = ctx.parameter_cursor().get()?;
 
     match weather {
-        Weather::Raining => ops
+        Weather::Rainy => ops
             .invoke_transfer(&ctx.owner(), ctx.self_balance())
-            .expect_report("Returning CCD to owner failed."),
+            .expect("Returning CCD to owner failed."),
         Weather::Sunny => ops
-            .invoke_transfer(&icecream_vendor, ctx.self_balance())
-            .expect_report("Sending CCD to icecream vendor failed."),
+            .invoke_transfer(&icecream_vendor_addr, ctx.self_balance())
+            .expect("Sending CCD to icecream vendor failed."),
     }
     Ok(())
 }
@@ -75,4 +80,92 @@ fn weather_set(
     assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     *weather = ctx.parameter_cursor().get()?;
     Ok(())
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[concordium_cfg_test]
+mod tests {
+    use super::*;
+    use test_infrastructure::*;
+
+    const OWNER_ADDR: AccountAddress = AccountAddress([0; 32]);
+    const SELF_ADDR: ContractAddress = ContractAddress {
+        index:    0,
+        subindex: 1,
+    };
+    const WEATHER_SERVICE_ADDR: ContractAddress = ContractAddress {
+        index:    1,
+        subindex: 0,
+    };
+    const ICECREAM_VENDOR_ADDR: AccountAddress = AccountAddress([1; 32]);
+    const ICECREAM_PRICE: Amount = Amount {
+        micro_ccd: 6000000, // 6 CCD
+    };
+
+    #[concordium_test]
+    fn test_sunny_days() {
+        // Arrange
+        let mut ctx = ReceiveContextTest::empty();
+        let mut ops = ExternOperationsTest::<State>::empty();
+
+        // Set up context
+        let parameter = to_bytes(&ICECREAM_VENDOR_ADDR);
+        ctx.set_owner(OWNER_ADDR);
+        ctx.set_self_address(SELF_ADDR);
+        ctx.set_parameter(&parameter);
+        ctx.set_self_balance(ICECREAM_PRICE);
+        ops.set_balance(ICECREAM_PRICE);
+
+        let mut state = State {
+            weather_service: WEATHER_SERVICE_ADDR,
+        };
+
+        // Set up mock invocation
+        ops.setup_mock_invocation(
+            state.weather_service,
+            OwnedEntrypointName::new_unchecked("get".into()),
+            Handler::new(MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Sunny)))),
+        );
+
+        // Act
+        contract_buy_icecream(&ctx, &mut ops, ICECREAM_PRICE, &mut state)
+            .expect_report("Calling buy_icecream failed.");
+
+        // Assert
+        assert!(ops.transfer_occurred(&ICECREAM_VENDOR_ADDR, ICECREAM_PRICE));
+    }
+
+    #[concordium_test]
+    fn test_rainy_days() {
+        // Arrange
+        let mut ctx = ReceiveContextTest::empty();
+        let mut ops = ExternOperationsTest::<State>::empty();
+
+        // Set up context
+        let parameter = to_bytes(&ICECREAM_VENDOR_ADDR);
+        ctx.set_owner(OWNER_ADDR);
+        ctx.set_self_address(SELF_ADDR);
+        ctx.set_parameter(&parameter);
+        ctx.set_self_balance(ICECREAM_PRICE);
+        ops.set_balance(ICECREAM_PRICE);
+
+        let mut state = State {
+            weather_service: WEATHER_SERVICE_ADDR,
+        };
+
+        // Set up mock invocation
+        ops.setup_mock_invocation(
+            state.weather_service,
+            OwnedEntrypointName::new_unchecked("get".into()),
+            Handler::new(MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Rainy)))),
+        );
+
+        // Act
+        contract_buy_icecream(&ctx, &mut ops, ICECREAM_PRICE, &mut state)
+            .expect_report("Calling buy_icecream failed.");
+
+        // Assert
+        assert!(ops.transfer_occurred(&OWNER_ADDR, ICECREAM_PRICE));
+    }
 }
