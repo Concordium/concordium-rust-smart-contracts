@@ -4,8 +4,8 @@ use concordium_std::*;
 #[contract_state(contract = "icecream")]
 #[derive(Serialize, SchemaType)]
 struct State {
-    weather_oracle: ContractAddress,
-    current_state:  StateMachine,
+    weather_service: ContractAddress,
+    current_state:   StateMachine,
 }
 
 #[derive(Serialize, SchemaType)]
@@ -19,16 +19,16 @@ enum StateMachine {
 #[contract_state(contract = "weather")]
 #[derive(Serialize, SchemaType)]
 enum Weather {
-    Raining,
+    Rainy,
     Sunny,
 }
 
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
-    let weather_oracle = ctx.parameter_cursor().get()?;
+    let weather_service = ctx.parameter_cursor().get()?;
     let current_state = StateMachine::ReadyToBuy;
     Ok(State {
-        weather_oracle,
+        weather_service,
         current_state,
     })
 }
@@ -46,7 +46,7 @@ fn contract_buy_icecream<A: HasActions>(
                 icecream_vendor,
             };
             Ok(send(
-                &state.weather_oracle,
+                &state.weather_service,
                 ReceiveName::new_unchecked("weather.get"),
                 Amount::zero(),
                 &ReceiveName::new_unchecked("icecream.receive_weather"), // The callback function
@@ -70,7 +70,7 @@ fn contract_receive_weather<A: HasActions>(
         StateMachine::WaitingForWeather {
             icecream_vendor,
         } => match ctx.parameter_cursor().get()? {
-            Weather::Raining => Ok(A::simple_transfer(&ctx.owner(), ctx.self_balance())), /* Return money to owner. Not the right weather for icecream. */
+            Weather::Rainy => Ok(A::simple_transfer(&ctx.owner(), ctx.self_balance())), /* Return money to owner. Not the right weather for icecream. */
             Weather::Sunny => Ok(A::simple_transfer(&icecream_vendor, ctx.self_balance())), /* Buy the icecream!! */
         },
     }
