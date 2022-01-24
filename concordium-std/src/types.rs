@@ -310,10 +310,12 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
-/// Operations based on host functions.
+/// Operations based on host functions, TODO: update.
 #[derive(Default)]
 #[doc(hidden)]
-pub struct ExternOperations;
+pub struct ExternOperationsAndState<State> {
+    pub state: State,
+}
 
 /// Context backed by host functions.
 #[derive(Default)]

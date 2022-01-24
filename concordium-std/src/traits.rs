@@ -107,8 +107,6 @@ pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
     fn invoker(&self) -> AccountAddress;
     /// The address of the contract being invoked.
     fn self_address(&self) -> ContractAddress;
-    /// Balance on the contract before the call was made.
-    fn self_balance(&self) -> Amount;
     /// The immediate sender of the message. In general different from the
     /// invoker.
     fn sender(&self) -> Address;
@@ -169,6 +167,21 @@ pub enum InvokeError {
 }
 
 pub type InvokeResult<A> = Result<A, InvokeError>;
+
+pub trait HasOperationsAndState<State> {
+    type CallResponseType: HasCallResponse;
+
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)>;
+    fn state(&mut self) -> &mut State;
+    fn self_balance(&self) -> Amount;
+}
 
 /// A type that can serve as the host and supports invoking operations.
 pub trait HasOperations<State> {

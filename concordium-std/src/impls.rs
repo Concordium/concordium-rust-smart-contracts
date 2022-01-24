@@ -526,7 +526,7 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
     }
 }
 
-impl<State: Deserial + Serial> HasOperations<State> for ExternOperations {
+impl<State: Deserial + Serial> HasOperationsAndState<State> for ExternOperationsAndState<State> {
     type CallResponseType = CallResponse;
 
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
@@ -550,7 +550,6 @@ impl<State: Deserial + Serial> HasOperations<State> for ExternOperations {
 
     fn invoke_contract(
         &mut self,
-        state: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
@@ -566,7 +565,7 @@ impl<State: Deserial + Serial> HasOperations<State> for ExternOperations {
         amount.serial(&mut cursor).unwrap_abort();
         // serialize state since it might have been modified
         // FIXME: Only do this if needed.
-        state.serial(&mut ContractState::open(())).unwrap_abort();
+        self.state.serial(&mut ContractState::open(())).unwrap_abort();
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         let (state_modified, res) = parse_response_code(response)?;
@@ -574,7 +573,7 @@ impl<State: Deserial + Serial> HasOperations<State> for ExternOperations {
             // The state of the contract changed as a result of the call.
             // So we refresh it.
             if let Ok(new_state) = (&mut ContractState::open(())).get() {
-                *state = new_state;
+                self.state = new_state;
             } else {
                 return Err(InvokeError::Unknown);
             }
@@ -590,6 +589,13 @@ impl<State: Deserial + Serial> HasOperations<State> for ExternOperations {
         } else {
             Ok((state_modified, None))
         }
+    }
+
+    fn state(&mut self) -> &mut State { &mut self.state }
+
+    #[inline(always)]
+    fn self_balance(&self) -> Amount {
+        Amount::from_micro_ccd(unsafe { get_receive_self_balance() })
     }
 }
 
@@ -642,11 +648,6 @@ impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
             Ok(v) => v,
             Err(_) => crate::trap(),
         }
-    }
-
-    #[inline(always)]
-    fn self_balance(&self) -> Amount {
-        Amount::from_micro_ccd(unsafe { get_receive_self_balance() })
     }
 
     #[inline(always)]

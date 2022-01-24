@@ -425,8 +425,6 @@ impl<'a> HasReceiveContext for ReceiveContextTest<'a> {
         unwrap_ctx_field(self.custom.self_address, "self_address")
     }
 
-    fn self_balance(&self) -> Amount { unwrap_ctx_field(self.custom.self_balance, "self_balance") }
-
     fn sender(&self) -> Address { unwrap_ctx_field(self.custom.sender, "sender") }
 
     fn owner(&self) -> AccountAddress { unwrap_ctx_field(self.custom.owner, "owner") }
