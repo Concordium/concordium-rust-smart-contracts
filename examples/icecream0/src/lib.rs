@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
 #[contract_state(contract = "icecream")]
@@ -105,4 +104,97 @@ fn weather_set<A: HasActions>(
     assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     *state = ctx.parameter_cursor().get()?;
     Ok(A::accept())
+}
+
+#[concordium_cfg_test]
+mod tests {
+    use super::*;
+    use test_infrastructure::*;
+
+    const OWNER_ADDR: AccountAddress = AccountAddress([0; 32]);
+    const ICECREAM_ADDR: ContractAddress = ContractAddress {
+        index:    0,
+        subindex: 1,
+    };
+    const WEATHER_SERVICE: ContractAddress = ContractAddress {
+        index:    1,
+        subindex: 0,
+    };
+    const ICECREAM_VENDOR: AccountAddress = AccountAddress([1; 32]);
+    const ICECREAM_PRICE: Amount = Amount {
+        micro_gtu: 6000000, // 6 CCD
+    };
+
+    #[concordium_test]
+    fn test_sunny_days() {
+        let mut ready_to_buy_ctx = ReceiveContextTest::empty();
+
+        let parameter = to_bytes(&ICECREAM_VENDOR);
+        ready_to_buy_ctx.set_owner(OWNER_ADDR);
+        ready_to_buy_ctx.set_self_address(ICECREAM_ADDR);
+        ready_to_buy_ctx.set_parameter(&parameter);
+
+        let mut ready_to_buy_state = State {
+            weather_service: WEATHER_SERVICE,
+            current_state:   StateMachine::ReadyToBuy,
+        };
+
+        let ready_to_buy_action: ActionsTree =
+            contract_buy_icecream(&ready_to_buy_ctx, ICECREAM_PRICE, &mut ready_to_buy_state)
+                .expect_report("Calling buy_icecream failed.");
+
+        match ready_to_buy_action {
+            ActionsTree::Send {
+                to: _,
+                receive_name: _,
+                amount: _,
+                parameter,
+            } => {
+                let mut weather_ctx = ReceiveContextTest::empty();
+                weather_ctx.set_parameter(&parameter); // The callback function.
+                weather_ctx.set_sender(Address::Contract(ICECREAM_ADDR));
+                let weather_action = weather_get(&weather_ctx, &mut Weather::Sunny)
+                    .expect_report("Calling get failed.");
+
+                match weather_action {
+                    ActionsTree::Send {
+                        to: _,
+                        receive_name: _,
+                        amount: _,
+                        parameter,
+                    } => {
+                        let mut waiting_for_weather_ctx = ReceiveContextTest::empty();
+                        waiting_for_weather_ctx.set_parameter(&parameter); // The actual weather!
+                        waiting_for_weather_ctx.set_self_balance(ICECREAM_PRICE);
+                        let mut waiting_for_weather_state = State {
+                            weather_service: WEATHER_SERVICE,
+                            current_state:   StateMachine::WaitingForWeather {
+                                icecream_vendor: ICECREAM_VENDOR,
+                            },
+                        };
+                        let final_action = contract_receive_weather(
+                            &waiting_for_weather_ctx,
+                            &mut waiting_for_weather_state,
+                        )
+                        .expect_report("Calling receive_weather failed");
+                        match final_action {
+                            ActionsTree::SimpleTransfer {
+                                to,
+                                amount,
+                            } => assert_eq!((ICECREAM_VENDOR, ICECREAM_PRICE), (to, amount)),
+                            _ => {
+                                assert!(false, "receive weather did not produce a Transfer action");
+                            }
+                        }
+                    }
+                    _ => {
+                        assert!(false, "weather get did not produce a Send action");
+                    }
+                }
+            }
+            _ => {
+                assert!(false, "ready_to_buy did not produce a Send action");
+            }
+        }
+    }
 }
