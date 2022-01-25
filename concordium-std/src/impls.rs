@@ -493,7 +493,7 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
             Ok((false, NonZeroU32::new(rv)))
         }
     } else {
-        match 0x0000_00ff_0000_0000 & code >> 32 {
+        match (0x0000_00ff_0000_0000 & code) >> 32 {
             0x00 =>
             // response with logic error and return value.
             {
