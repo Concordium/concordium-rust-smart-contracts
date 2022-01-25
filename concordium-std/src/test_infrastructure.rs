@@ -692,20 +692,30 @@ impl<State: 'static> Handler<State> {
 }
 
 pub struct HostTest<State> {
-    mocking_fns:  HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
-    transfers:    Vec<(AccountAddress, Amount)>,
-    self_balance: Amount,
-    state:        State,
+    mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    transfers:        Vec<(AccountAddress, Amount)>,
+    contract_balance: Amount,
+    state:            State,
+    missing_accounts: Vec<AccountAddress>,
 }
 
 impl<State> HasHost<State> for HostTest<State> {
     type CallResponseType = Cursor<Vec<u8>>;
 
-    // TODO: It should also be possible to set it up, so a particular account does
-    // not exist. Perhaps the default should be that no accounts exist?
+    /// Perform a transfer to the given account if the contract has sufficient
+    /// balance. Use `make_account_missing` to test out transfers to
+    /// accounts not on chain.
+    ///
+    /// Possible errors:
+    ///   - `InvokeError::AmountTooLarge`: Contract has insufficient funds.
+    ///   - `InvokeError::MissingAccount`: Attempted transfer to an account set
+    ///     a missing with `make_account_missing`.
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
-        if self.self_balance >= amount {
-            self.self_balance -= amount;
+        if self.missing_accounts.contains(receiver) {
+            return Err(InvokeError::MissingAccount);
+        }
+        if self.contract_balance >= amount {
+            self.contract_balance -= amount;
             self.transfers.push((receiver.clone(), amount));
             Ok(())
         } else {
@@ -713,6 +723,7 @@ impl<State> HasHost<State> for HostTest<State> {
         }
     }
 
+    /// Invoke a contract.
     fn invoke_contract(
         &mut self,
         to: &ContractAddress,
@@ -729,14 +740,21 @@ impl<State> HasHost<State> for HostTest<State> {
                 method
             ),
         };
+        if self.contract_balance <= amount {
+            return Err(InvokeError::AmountTooLarge);
+        }
         let mut output = Vec::new();
-        (handler.mock_fn)(parameter, amount, &mut self.state, &mut output)
-            .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))))
+        let res = (handler.mock_fn)(parameter, amount, &mut self.state, &mut output)
+            .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))));
+        if res.is_ok() {
+            self.contract_balance -= amount;
+        }
+        res
     }
 
     fn state(&mut self) -> &mut State { &mut self.state }
 
-    fn self_balance(&self) -> Amount { self.self_balance }
+    fn self_balance(&self) -> Amount { self.contract_balance }
 }
 
 impl<State> HostTest<State> {
@@ -745,8 +763,9 @@ impl<State> HostTest<State> {
             mocking_fns: HashMap::new(),
             transfers: Vec::new(),
             // TODO: Wrap in Option, similar to ctx?
-            self_balance: Amount::zero(),
+            contract_balance: Amount::zero(),
             state,
+            missing_accounts: Vec::new(),
         }
     }
 
@@ -759,13 +778,34 @@ impl<State> HostTest<State> {
         self.mocking_fns.insert((to, method), handler);
     }
 
-    // TODO: This should be set together with ctx.self_balance.
-    pub fn set_balance(&mut self, amount: Amount) { self.self_balance = amount; }
+    pub fn set_balance(&mut self, amount: Amount) { self.contract_balance = amount; }
 
-    // TODO: It could return the number of such transfers that occurred. Perhaps the
-    // transfers field could be public?
+    /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
         self.transfers.contains(&(receiver.clone(), amount))
+    }
+
+    /// Get a list of all transfers that has occurred.
+    pub fn get_transfers(&self) -> &[(AccountAddress, Amount)] { &self.transfers }
+
+    /// Get a list of all transfers to a specific account.
+    pub fn get_transfers_to(&self, account: AccountAddress) -> Vec<Amount> {
+        self.transfers
+            .iter()
+            .filter_map(|(acc, amount)| {
+                if *acc == account {
+                    Some(*amount)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Set an account to be missing. Any transfers to this account will result
+    /// in an `InvokeError::MissingAccount` error.
+    pub fn make_account_missing(&mut self, account: AccountAddress) {
+        self.missing_accounts.push(account);
     }
 }
 
