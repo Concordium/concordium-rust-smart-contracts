@@ -526,7 +526,7 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
     }
 }
 
-impl<State: Deserial + Serial> HasOperationsAndState<State> for ExternOperationsAndState<State> {
+impl<State: Deserial + Serial> HasHost<State> for Host<State> {
     type CallResponseType = CallResponse;
 
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {

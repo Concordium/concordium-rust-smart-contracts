@@ -691,20 +691,21 @@ impl<State: 'static> Handler<State> {
     }
 }
 
-pub struct ExternOperationsTest<State> {
-    mocking_fns: HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
-    transfers:   Vec<(AccountAddress, Amount)>,
-    balance:     Amount,
+pub struct HostTest<State> {
+    mocking_fns:  HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    transfers:    Vec<(AccountAddress, Amount)>,
+    self_balance: Amount,
+    state:        State,
 }
 
-impl<State> HasOperations<State> for ExternOperationsTest<State> {
+impl<State> HasHost<State> for HostTest<State> {
     type CallResponseType = Cursor<Vec<u8>>;
 
     // TODO: It should also be possible to set it up, so a particular account does
     // not exist. Perhaps the default should be that no accounts exist?
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
-        if self.balance >= amount {
-            self.balance -= amount;
+        if self.self_balance >= amount {
+            self.self_balance -= amount;
             self.transfers.push((receiver.clone(), amount));
             Ok(())
         } else {
@@ -714,7 +715,6 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
 
     fn invoke_contract(
         &mut self,
-        state: &mut State,
         to: &ContractAddress,
         parameter: Parameter,
         method: EntrypointName,
@@ -730,17 +730,23 @@ impl<State> HasOperations<State> for ExternOperationsTest<State> {
             ),
         };
         let mut output = Vec::new();
-        (handler.mock_fn)(parameter, amount, state, &mut output)
+        (handler.mock_fn)(parameter, amount, &mut self.state, &mut output)
             .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))))
     }
+
+    fn state(&mut self) -> &mut State { &mut self.state }
+
+    fn self_balance(&self) -> Amount { self.self_balance }
 }
 
-impl<State> ExternOperationsTest<State> {
-    pub fn empty() -> Self {
+impl<State> HostTest<State> {
+    pub fn new(state: State) -> Self {
         Self {
             mocking_fns: HashMap::new(),
-            transfers:   Vec::new(),
-            balance:     Amount::zero(),
+            transfers: Vec::new(),
+            // TODO: Wrap in Option, similar to ctx?
+            self_balance: Amount::zero(),
+            state,
         }
     }
 
@@ -754,7 +760,7 @@ impl<State> ExternOperationsTest<State> {
     }
 
     // TODO: This should be set together with ctx.self_balance.
-    pub fn set_balance(&mut self, amount: Amount) { self.balance = amount; }
+    pub fn set_balance(&mut self, amount: Amount) { self.self_balance = amount; }
 
     // TODO: It could return the number of such transfers that occurred. Perhaps the
     // transfers field could be public?

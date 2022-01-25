@@ -168,7 +168,9 @@ pub enum InvokeError {
 
 pub type InvokeResult<A> = Result<A, InvokeError>;
 
-pub trait HasOperationsAndState<State> {
+/// A type that can serve as the host.
+/// It supports invoking operations, accessing state and self_balance.
+pub trait HasHost<State> {
     type CallResponseType: HasCallResponse;
 
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
@@ -181,21 +183,6 @@ pub trait HasOperationsAndState<State> {
     ) -> InvokeResult<(bool, Option<Self::CallResponseType>)>;
     fn state(&mut self) -> &mut State;
     fn self_balance(&self) -> Amount;
-}
-
-/// A type that can serve as the host and supports invoking operations.
-pub trait HasOperations<State> {
-    type CallResponseType: HasCallResponse;
-
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
-    fn invoke_contract(
-        &mut self,
-        state: &mut State,
-        to: &ContractAddress,
-        parameter: Parameter,
-        method: EntrypointName,
-        amount: Amount,
-    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)>;
 }
 
 /// Objects which can serve as loggers.

@@ -8,7 +8,7 @@ pub struct State {
 
 #[init(contract = "fib")]
 #[inline(always)]
-fn contract_init(_ctx: &impl HasInitContext<()>) -> InitResult<((), State)> {
+fn contract_init(_ctx: &impl HasInitContext) -> InitResult<((), State)> {
     let state = State {
         result: 0,
     };
@@ -20,21 +20,19 @@ fn contract_init(_ctx: &impl HasInitContext<()>) -> InitResult<((), State)> {
 #[inline(always)]
 #[receive(contract = "fib", name = "receive", parameter = "u64", return_value = "u64")]
 fn contract_receive(
-    ctx: &impl HasReceiveContext<()>,
-    ops: &mut impl HasOperations<State>,
-    state: &mut State,
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State>,
 ) -> ReceiveResult<u64> {
     // Try to get the parameter (64bit unsigned integer).
     let n: u64 = ctx.parameter_cursor().get()?;
     if n <= 1 {
-        state.result = 1;
+        host.state().result = 1;
         Ok(1)
     } else {
         let self_address = ctx.self_address();
         let p2 = (n - 2).to_le_bytes();
-        let mut n2 = ops
+        let mut n2 = host
             .invoke_contract(
-                state,
                 &self_address,
                 Parameter(&p2),
                 EntrypointName::new_unchecked("receive"),
@@ -43,14 +41,13 @@ fn contract_receive(
             .unwrap_abort()
             .1
             .unwrap_abort();
-        let cv2 = state.result;
+        let cv2 = host.state().result;
         let n2: u64 = n2.get().unwrap_abort();
         ensure_eq!(cv2, n2);
 
         let p1 = (n - 1).to_le_bytes();
-        let mut n1 = ops
+        let mut n1 = host
             .invoke_contract(
-                state,
                 &self_address,
                 Parameter(&p1),
                 EntrypointName::new_unchecked("receive"),
@@ -59,10 +56,10 @@ fn contract_receive(
             .unwrap_abort()
             .1
             .unwrap_abort();
-        let cv1 = state.result;
+        let cv1 = host.state().result;
         let n1: u64 = n1.get().unwrap_abort();
         ensure_eq!(cv1, n1);
-        state.result = cv1 + cv2;
+        host.state().result = cv1 + cv2;
         Ok(cv1 + cv2)
     }
 }
@@ -71,11 +68,10 @@ fn contract_receive(
 #[inline(always)]
 #[receive(contract = "fib", name = "view", return_value = "u64")]
 fn contract_view(
-    _ctx: &impl HasReceiveContext<()>,
-    _ops: &mut impl HasOperations<State>,
-    state: &mut State,
+    _ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State>,
 ) -> ReceiveResult<u64> {
-    Ok(state.result)
+    Ok(host.state().result)
 }
 
 #[concordium_cfg_test]
@@ -106,12 +102,11 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_self_address(contract_address.clone());
 
-        let mut state = State {
+        let mut host = HostTest::new(State {
             result: 0,
-        };
-        let mut ops = ExternOperationsTest::<State>::empty();
+        });
 
-        ops.setup_mock_invocation(
+        host.setup_mock_invocation(
             contract_address,
             OwnedEntrypointName::new_unchecked("receive".into()),
             Handler::new(MockFn::new(|parameter, _amount, state| {
@@ -123,9 +118,8 @@ mod tests {
                 Ok((true, state.result))
             })),
         );
-        let res =
-            contract_receive(&ctx, &mut ops, &mut state).expect_report("Calling receive failed.");
+        let res = contract_receive(&ctx, &mut host).expect_report("Calling receive failed.");
         assert_eq!(res, fib(10));
-        assert_eq!(state.result, fib(10));
+        assert_eq!(host.state().result, fib(10));
     }
 }

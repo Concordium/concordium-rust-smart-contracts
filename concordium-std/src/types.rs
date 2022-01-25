@@ -313,7 +313,7 @@ pub type InitResult<S> = Result<S, Reject>;
 /// Operations based on host functions, TODO: update.
 #[derive(Default)]
 #[doc(hidden)]
-pub struct ExternOperationsAndState<State> {
+pub struct Host<State> {
     pub state: State,
 }
 
