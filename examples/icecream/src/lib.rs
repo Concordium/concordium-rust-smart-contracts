@@ -66,6 +66,8 @@ fn contract_buy_icecream(
     amount: Amount,
 ) -> ReceiveResult<()> {
     let weather_service = host.state().weather_service.clone();
+    let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
+
     let weather = host
         .invoke_contract(
             &weather_service,
@@ -77,8 +79,6 @@ fn contract_buy_icecream(
         .1
         .unwrap_abort()
         .get()?;
-
-    let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
 
     match weather {
         Weather::Rainy => {
