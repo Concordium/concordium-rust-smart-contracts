@@ -740,7 +740,7 @@ impl<State> HasHost<State> for HostTest<State> {
                 method
             ),
         };
-        if self.contract_balance <= amount {
+        if self.contract_balance < amount {
             return Err(InvokeError::AmountTooLarge);
         }
         let mut output = Vec::new();
