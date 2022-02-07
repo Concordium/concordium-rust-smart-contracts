@@ -172,7 +172,7 @@ mod tests {
         host.setup_mock_invocation(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
-            Handler::new(MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Sunny)))),
+            MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Sunny))),
         );
 
         // Act
@@ -205,7 +205,7 @@ mod tests {
         host.setup_mock_invocation(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
-            Handler::new(MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Rainy)))),
+            MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Rainy))),
         );
 
         // Act
@@ -239,7 +239,7 @@ mod tests {
         host.setup_mock_invocation(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
-            Handler::new(MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Sunny)))),
+            MockFn::new(|_parameter, _amount, _state| Ok((false, Weather::Sunny))),
         );
 
         // Act + Assert (should panic)
@@ -262,9 +262,9 @@ mod tests {
         host.setup_mock_invocation(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
-            Handler::new::<Weather>(MockFn::new(|_parameter, _amount, _state| {
+            MockFn::new(|_parameter, _amount, _state| -> InvokeResult<(bool, Weather)> {
                 Err(InvokeError::MissingContract)
-            })),
+            }),
         );
 
         // Act + Assert (should panic)

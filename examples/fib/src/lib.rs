@@ -109,14 +109,14 @@ mod tests {
         host.setup_mock_invocation(
             contract_address,
             OwnedEntrypointName::new_unchecked("receive".into()),
-            Handler::new(MockFn::new(|parameter, _amount, state| {
+            MockFn::new(|parameter, _amount, state: &mut State| {
                 let n: u64 = match from_bytes(parameter.0) {
                     Ok(n) => n,
                     Err(_) => return Err(InvokeError::Trap),
                 };
                 state.result = fib(n);
                 Ok((true, state.result))
-            })),
+            }),
         );
         let res = contract_receive(&ctx, &mut host).expect_report("Calling receive failed.");
         assert_eq!(res, fib(10));

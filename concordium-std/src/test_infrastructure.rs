@@ -653,27 +653,23 @@ impl HasCallResponse for Cursor<Vec<u8>> {
     fn size(&self) -> u32 { self.data.len() as u32 }
 }
 
-pub struct Handler<State> {
+pub struct MockFn<State> {
     /// A mock function. The return value indicates whether the state was
     /// updated or not.
-    mock_fn: MockFn<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
+    mock_fn: Box<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
 }
 
-pub type MockFn<T> = Box<T>;
-
-// A MockFn that returns a value.
-type MockFnReturn<Value, State> =
-    MockFn<dyn FnMut(Parameter, Amount, &mut State) -> InvokeResult<(bool, Value)>>;
-
-impl<State: 'static> Handler<State> {
-    // TODO: Remove the need for boxing the closure, so you can call
-    // Handler::new(|parameter, amount, ...| {...}).
-    pub fn new<R: 'static>(mut mock_fn_return: MockFnReturn<R, State>) -> Self
+impl<State: 'static> MockFn<State> {
+    pub fn new<R, F>(mock_fn_return: F) -> Self
     where
-        R: Serial, {
-        let mock_fn = MockFn::new(
+        R: Serial + 'static,
+        F: FnMut(Parameter, Amount, &mut State) -> InvokeResult<(bool, R)> + 'static, {
+        // Put it on the heap, so it will live long enough.
+        let mut boxed_mock_fn_return = Box::new(mock_fn_return);
+
+        let mock_fn = Box::new(
             move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
-                let (modified, return_value) = mock_fn_return(parameter, amount, state)?;
+                let (modified, return_value) = boxed_mock_fn_return(parameter, amount, state)?;
                 return_value.serial(output).map_err(|_| InvokeError::Trap)?;
                 Ok(modified)
             },
@@ -686,7 +682,7 @@ impl<State: 'static> Handler<State> {
 }
 
 pub struct HostTest<State> {
-    mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
+    mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
     transfers:        Vec<(AccountAddress, Amount)>,
     contract_balance: Option<Amount>,
     state:            State,
@@ -788,7 +784,7 @@ impl<State> HostTest<State> {
         &mut self,
         to: ContractAddress,
         method: OwnedEntrypointName,
-        handler: Handler<State>,
+        handler: MockFn<State>,
     ) {
         self.mocking_fns.insert((to, method), handler);
     }
