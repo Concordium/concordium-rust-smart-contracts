@@ -656,10 +656,14 @@ impl HasCallResponse for Cursor<Vec<u8>> {
 pub struct MockFn<State> {
     /// A mock function. The return value indicates whether the state was
     /// updated or not.
+    /// TODO: The Host should figure out whether the state has been altered or
+    /// not. I.e. the bool should not be returned in the closure.
     mock_fn: Box<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
 }
 
-impl<State: 'static> MockFn<State> {
+impl<State> MockFn<State> {
+    /// Create a mock function which has access to the parameter, amount, and
+    /// state.
     pub fn new<R, F>(mock_fn_return: F) -> Self
     where
         R: Serial + 'static,
@@ -675,6 +679,30 @@ impl<State: 'static> MockFn<State> {
             },
         );
 
+        Self {
+            mock_fn,
+        }
+    }
+
+    /// Create a simple mock function that returns `Ok` with the same
+    /// value every time.
+    pub fn returning_ok<R>(return_value: R) -> Self
+    where
+        R: Serial + 'static + Clone, {
+        Self::new(move |_parameter, _amount, _state| -> InvokeResult<(bool, R)> {
+            Ok((false, return_value.clone()))
+        })
+    }
+
+    /// Create a simple mock function that returns `Err` with same error every
+    /// time.
+    pub fn returning_err(error: InvokeError) -> Self {
+        let mock_fn = Box::new(
+            move |_parameter: Parameter,
+                  _amount: Amount,
+                  _state: &mut State,
+                  _output: &mut Vec<u8>| { Err(error.clone()) },
+        );
         Self {
             mock_fn,
         }
@@ -794,7 +822,7 @@ impl<State> HostTest<State> {
     /// amount you wish to invoke it with.
     ///
     /// Example:
-    /// ```
+    /// ```ignore
     /// ...
     /// host.set_balance(Amount::from_ccd(10));
     /// contract_receive(&ctx,
