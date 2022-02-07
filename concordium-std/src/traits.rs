@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, CallResponse};
+use crate::{types::LogError, InvokeResult};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -138,35 +138,6 @@ where
     /// 0.
     fn reserve(&mut self, len: u32) -> bool;
 }
-
-/// FIXME: Have two error types, one for transfers, one for calls.
-/// FIXME: Consider adding `#[non_exhaustive]`.
-#[repr(i32)]
-#[derive(Debug)]
-pub enum InvokeError {
-    /// Amount that was to be transferred is not available to the sender.
-    AmountTooLarge,
-    /// Account that is to be transferred to does not exist.
-    MissingAccount,
-    /// Contract that is to be transferred to does not exist.
-    MissingContract,
-    /// The contract to be invoked exists, but the entrypoint that was named
-    /// does not.
-    MissingEntrypoint,
-    /// Sending a message to the V0 contract failed.
-    MessageFailed,
-    /// Contract that was called rejected with the given reason.
-    LogicReject {
-        reason:       i32,
-        return_value: CallResponse,
-    },
-    /// Execution of a contract call triggered a runtime error.
-    Trap,
-    /// Unrecognized error. Reser
-    Unknown,
-}
-
-pub type InvokeResult<A> = Result<A, InvokeError>;
 
 /// A type that can serve as the host.
 /// It supports invoking operations, accessing state and self_balance.
