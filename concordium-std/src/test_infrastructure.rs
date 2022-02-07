@@ -734,7 +734,9 @@ impl<State> HasHost<State> for HostTest<State> {
                 method
             ),
         };
-        if *unwrap_contract_balance(&mut self.contract_balance) < amount {
+        // Check if the contract has sufficient balance.
+        // Do not try to unwrap the balance if amount is zero.
+        if amount.micro_ccd > 0 && *unwrap_contract_balance(&mut self.contract_balance) < amount {
             return Err(InvokeError::AmountTooLarge);
         }
         let mut output = Vec::new();
