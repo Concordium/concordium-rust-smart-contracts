@@ -253,7 +253,6 @@ pub type ReceiveContextTest<'a> = ContextTest<'a, ReceiveOnlyDataTest>;
 pub struct ReceiveOnlyDataTest {
     pub(crate) invoker:      Option<AccountAddress>,
     pub(crate) self_address: Option<ContractAddress>,
-    pub(crate) self_balance: Option<Amount>,
     pub(crate) sender:       Option<Address>,
     pub(crate) owner:        Option<AccountAddress>,
 }
@@ -335,11 +334,6 @@ impl<'a> ReceiveContextTest<'a> {
         self
     }
 
-    pub fn set_self_balance(&mut self, value: Amount) -> &mut Self {
-        self.custom.self_balance = Some(value);
-        self
-    }
-
     pub fn set_sender(&mut self, value: Address) -> &mut Self {
         self.custom.sender = Some(value);
         self
@@ -356,7 +350,7 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> A {
     match opt {
         Some(v) => v,
         None => fail!(
-            "Unset field on test context '{}', make sure to set all the field necessary for the \
+            "Unset field on test context '{}', make sure to set all the fields necessary for the \
              contract",
             name
         ),
@@ -694,7 +688,7 @@ impl<State: 'static> Handler<State> {
 pub struct HostTest<State> {
     mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), Handler<State>>,
     transfers:        Vec<(AccountAddress, Amount)>,
-    contract_balance: Amount,
+    contract_balance: Option<Amount>,
     state:            State,
     missing_accounts: Vec<AccountAddress>,
 }
@@ -714,8 +708,9 @@ impl<State> HasHost<State> for HostTest<State> {
         if self.missing_accounts.contains(receiver) {
             return Err(InvokeError::MissingAccount);
         }
-        if self.contract_balance >= amount {
-            self.contract_balance -= amount;
+        let contract_balance = unwrap_contract_balance(&mut self.contract_balance);
+        if *contract_balance >= amount {
+            *contract_balance -= amount;
             self.transfers.push((receiver.clone(), amount));
             Ok(())
         } else {
@@ -734,27 +729,46 @@ impl<State> HasHost<State> for HostTest<State> {
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
-                "Mocking has not been set up for invoking contract {:?} with
-        method '{}'.",
+                "Mocking has not been set up for invoking contract {:?} with method '{}'.",
                 to,
                 method
             ),
         };
-        if self.contract_balance < amount {
+        if *unwrap_contract_balance(&mut self.contract_balance) < amount {
             return Err(InvokeError::AmountTooLarge);
         }
         let mut output = Vec::new();
         let res = (handler.mock_fn)(parameter, amount, &mut self.state, &mut output)
             .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))));
-        if res.is_ok() {
-            self.contract_balance -= amount;
+        if res.is_ok() && amount.micro_ccd > 0 {
+            *unwrap_contract_balance(&mut self.contract_balance) -= amount;
         }
         res
     }
 
     fn state(&mut self) -> &mut State { &mut self.state }
 
-    fn self_balance(&self) -> Amount { self.contract_balance }
+    fn self_balance(&self) -> Amount {
+        match self.contract_balance {
+            Some(amount) => amount,
+            None => fail!(
+                "Unset contract balance on the test host. Make sure to use `set_balance` if your \
+                 contract uses the balance."
+            ),
+        }
+    }
+}
+
+/// Helper function for unwrapping the contract balance.
+/// Fails with a descriptive error message on `None`.
+fn unwrap_contract_balance(balance: &mut Option<Amount>) -> &mut Amount {
+    match balance {
+        Some(ref mut amount) => amount,
+        None => fail!(
+            "Unset contract balance on the test host. Make sure to use `set_balance` if your \
+             contract uses the balance."
+        ),
+    }
 }
 
 impl<State> HostTest<State> {
@@ -762,8 +776,7 @@ impl<State> HostTest<State> {
         Self {
             mocking_fns: HashMap::new(),
             transfers: Vec::new(),
-            // TODO: Wrap in Option, similar to ctx?
-            contract_balance: Amount::zero(),
+            contract_balance: None,
             state,
             missing_accounts: Vec::new(),
         }
@@ -778,7 +791,25 @@ impl<State> HostTest<State> {
         self.mocking_fns.insert((to, method), handler);
     }
 
-    pub fn set_balance(&mut self, amount: Amount) { self.contract_balance = amount; }
+    /// Set the contract balance.
+    /// NB: This should be the sum of the contract's initial balance and the
+    /// amount you wish to invoke it with.
+    ///
+    /// Example:
+    /// ```
+    /// ...
+    /// host.set_balance(Amount::from_ccd(10));
+    /// contract_receive(&ctx,
+    ///                  &mut host,
+    ///                  // This amount is _not_ added to the balance of the contract,
+    ///                  // so calling host.self_balance will return `10` initially.
+    ///                  // This differs from when you run a contract on the node,
+    ///                  // where the amount automatically is added to the existing
+    ///                  // balance of the contract.
+    ///                  Amount::from_ccd(5)
+    ///                  );
+    /// ```
+    pub fn set_balance(&mut self, amount: Amount) { self.contract_balance = Some(amount); }
 
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
