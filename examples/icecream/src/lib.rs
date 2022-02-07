@@ -1,41 +1,41 @@
+//! # A smart contract for buying icecream safely
+//!
+//! This contract solves a very realistic problem related to icecream.
+//! Imagine you want to purchase icecream from a vendor, and that you hate
+//! eating icecream when it's raining. This contract solves the problem by
+//! acting as a middleman which only allows your transfer to the icecream vendor
+//! to go through if the sun is shining.
+//!
+//! The icecream contract relies on a weather service contract to determine the
+//! weather. Both contracts are included in this module.
+//!
+//!
+//! ## The Icecream Contract
+//!
+//! The contract is initialised with a contract address to the weather service
+//! contract.
+//!
+//! Its primary function is `buy_icecream`, which works as follows:
+//!  - It is called with an `AccountAddress` of the icecream vendor and the
+//!    icecream price as amount.
+//!  - It queries the `Weather` from the weather_service contract.
+//!  - If it's `Weather::Sunny`, the transfer goes through to the icecream
+//!    vendor.
+//!  - Otherwise, the amount is returned to invoker.
+//!
+//! It also has a `replace_weather_service` function, in which the owner can
+//! replace the weather service.
+//!
+//!
+//! ## The Weather Service Contract
+//!
+//! The contract is initialised with the `Weather`.
+//!
+//! It has `get` and `set` receive functions, which either return or set the
+//! weather. Only the owner can update the weather.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
-
-/// # Implementation of a smart contract for buying icecream, but only if it's
-/// sunny.
-///
-/// The icecream contract relies on a weather service contract to determine the
-/// weather. Both contracts are included in this module.
-///
-/// ## The Icecream Contract
-///
-/// This contract solves the very realistic problem related to icecream.
-/// Imagine you want to purchase icecream from a vendor, and that you hate
-/// eating icecream when it's raining. This contract solves the problem by
-/// acting as a middleman which only allows your transfer to the icecream vendor
-/// to go through if the sun is shining.
-///
-/// The contract is initialised with a contract address to the weather service
-/// contract.
-///
-/// Its primary function is `buy_icecream`, which works as follows:
-///  - It is called with an `AccountAddress` of the icecream vendor and the
-///    icecream price as amount.
-///  - It queries the `Weather` from the weather_service contract.
-///  - If its `Weather::Sunny`, the transfer goes through to the icecream
-///    vendor.
-///  - Otherwise, the amount is returned to invoker.
-///
-/// It also has a `replace_weather_service` function, in which the owner can
-/// replace the weather service.
-///
-///
-/// ## The Weather Service Contract
-///
-/// The contract is initialised with the `Weather`.
-///
-/// It has `get` and `set` receive functions, which either return or set the
-/// weather. Only the owner can update the weather.
 
 #[derive(Serialize, SchemaType, Clone)]
 struct State {
@@ -75,9 +75,9 @@ fn contract_buy_icecream(
             EntrypointName::new_unchecked("get"),
             Amount::zero(),
         )
-        .unwrap_abort()
+        .expect_report("Invoking weather contract failed.")
         .1
-        .unwrap_abort()
+        .expect_report("Invocation did not return a value.")
         .get()?;
 
     match weather {
@@ -88,7 +88,7 @@ fn contract_buy_icecream(
         }
         Weather::Sunny => host
             .invoke_transfer(&icecream_vendor, amount)
-            .expect("Sending CCD to the icecream vendor failed."),
+            .expect_report("Sending CCD to the icecream vendor failed."),
     }
     Ok(())
 }
@@ -143,10 +143,6 @@ mod tests {
     use test_infrastructure::*;
 
     const INVOKER_ADDR: AccountAddress = AccountAddress([0; 32]);
-    const SELF_ADDR: ContractAddress = ContractAddress {
-        index:    0,
-        subindex: 1,
-    };
     const WEATHER_SERVICE: ContractAddress = ContractAddress {
         index:    1,
         subindex: 0,
@@ -169,7 +165,6 @@ mod tests {
         let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
-        ctx.set_self_address(SELF_ADDR);
         ctx.set_parameter(&parameter);
         host.set_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
 
@@ -203,7 +198,6 @@ mod tests {
         let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
-        ctx.set_self_address(SELF_ADDR);
         ctx.set_parameter(&parameter);
         host.set_balance(ICECREAM_PRICE);
 
@@ -234,7 +228,6 @@ mod tests {
         let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
-        ctx.set_self_address(SELF_ADDR);
         ctx.set_parameter(&parameter);
         host.set_balance(ICECREAM_PRICE);
 
@@ -251,5 +244,31 @@ mod tests {
 
         // Act + Assert (should panic)
         contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE).unwrap();
+    }
+
+    #[concordium_test]
+    #[should_panic(expected = "Invoking weather contract failed.: MissingContract")]
+    fn test_missing_weather_service() {
+        // Arrange
+        let mut ctx = ReceiveContextTest::empty();
+        let mut host = HostTest::new(STATE);
+
+        // Set up context
+        let parameter = to_bytes(&ICECREAM_VENDOR);
+        ctx.set_owner(INVOKER_ADDR);
+        ctx.set_parameter(&parameter);
+
+        // Set up mock invocation
+        host.setup_mock_invocation(
+            WEATHER_SERVICE,
+            OwnedEntrypointName::new_unchecked("get".into()),
+            Handler::new::<Weather>(MockFn::new(|_parameter, _amount, _state| {
+                Err(InvokeError::MissingContract)
+            })),
+        );
+
+        // Act + Assert (should panic)
+        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
+            .expect_report("Calling buy_icecream failed.");
     }
 }
