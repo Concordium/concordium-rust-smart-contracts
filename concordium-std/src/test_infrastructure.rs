@@ -656,9 +656,7 @@ impl HasCallResponse for Cursor<Vec<u8>> {
 pub struct MockFn<State> {
     /// A mock function. The return value indicates whether the state was
     /// updated or not.
-    /// TODO: The Host should figure out whether the state has been altered or
-    /// not. I.e. the bool should not be returned in the closure.
-    mock_fn: Box<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
+    mock_fn: Box<dyn Fn(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
 }
 
 impl<State> MockFn<State> {
@@ -666,11 +664,13 @@ impl<State> MockFn<State> {
     /// state.
     pub fn new<R, F>(mock_fn_return: F) -> Self
     where
-        R: Serial + 'static,
-        F: FnMut(Parameter, Amount, &mut State) -> InvokeResult<(bool, R)> + 'static, {
+        R: Serial,
+        F: Fn(Parameter, Amount, &mut State) -> InvokeResult<(bool, R)> + 'static, {
         // Put it on the heap, so it will live long enough.
-        let mut boxed_mock_fn_return = Box::new(mock_fn_return);
+        let boxed_mock_fn_return = Box::new(mock_fn_return);
 
+        // TODO: Ideally, the Host should figure out whether the state has been altered
+        // or not. I.e. the bool should not be returned in the closure.
         let mock_fn = Box::new(
             move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
                 let (modified, return_value) = boxed_mock_fn_return(parameter, amount, state)?;
@@ -750,7 +750,7 @@ impl<State> HasHost<State> for HostTest<State> {
         method: EntrypointName,
         amount: Amount,
     ) -> InvokeResult<(bool, Option<Self::CallResponseType>)> {
-        let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
+        let handler = match self.mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
