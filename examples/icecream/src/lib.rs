@@ -51,7 +51,7 @@ enum Weather {
 /// Initialise the contract with the contract address of the weather service.
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
-    let weather_service: ContractAddress = ctx.parameter_cursor().get()?; // Weather service address.
+    let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     let return_value = ();
     Ok((return_value, State {
         weather_service,
@@ -100,7 +100,7 @@ fn contract_replace_weather_service(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State>,
 ) -> ReceiveResult<()> {
-    assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can replace the weather service.
+    assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     host.state().weather_service = new_weather_service;
     Ok(())

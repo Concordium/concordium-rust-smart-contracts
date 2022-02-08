@@ -655,7 +655,7 @@ impl HasCallResponse for Cursor<Vec<u8>> {
 
 pub struct MockFn<State> {
     /// A mock function. The return value indicates whether the state was
-    /// updated or not.
+    /// modified or not.
     mock_fn: Box<dyn Fn(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
 }
 
@@ -670,7 +670,7 @@ impl<State> MockFn<State> {
         let boxed_mock_fn_return = Box::new(mock_fn_return);
 
         // TODO: Ideally, the Host should figure out whether the state has been altered
-        // or not. I.e. the bool should not be returned in the closure.
+        // or not. I.e. the bool should not be returned in the `mock_fn_return` closure.
         let mock_fn = Box::new(
             move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
                 let (modified, return_value) = boxed_mock_fn_return(parameter, amount, state)?;

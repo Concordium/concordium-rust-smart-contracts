@@ -24,7 +24,7 @@ extern "C" {
     pub(crate) fn write_output(start: *const u8, length: u32, offset: u32) -> u32;
     /// Get the size of the `i`-th parameter to the call. 0-th parameter is
     /// always the original parameter that the method was invoked with,
-    /// calling invoke adds additional parameters to the stack. Returns `-1`
+    /// invoking a contract adds additional parameters to the stack. Returns `-1`
     /// if the given parameter does not exist.
     pub(crate) fn get_parameter_size(i: u32) -> i32;
     /// Write a section of the `i`-th parameter to the given location. Return
@@ -51,7 +51,7 @@ extern "C" {
     /// Modify the contract state, and return how many bytes were written
     pub(crate) fn write_state(start: *const u8, length: u32, offset: u32) -> u32;
     /// Resize state to the new value (truncate if new size is smaller). Return
-    /// 0 if this was unsuccesful (new state too big), or 1 if successful.
+    /// 0 if this was unsuccessful (new state too big), or 1 if successful.
     pub(crate) fn resize_state(new_size: u32) -> u32;
     /// Get the current state size in bytes.
     pub(crate) fn state_size() -> u32;

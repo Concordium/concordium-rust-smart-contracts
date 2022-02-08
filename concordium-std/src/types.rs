@@ -36,7 +36,7 @@ pub enum InvokeError {
     AmountTooLarge,
     /// Account that is to be transferred to does not exist.
     MissingAccount,
-    /// Contract that is to be transferred to does not exist.
+    /// Contract that is to be invoked does not exist.
     MissingContract,
     /// The contract to be invoked exists, but the entrypoint that was named
     /// does not.

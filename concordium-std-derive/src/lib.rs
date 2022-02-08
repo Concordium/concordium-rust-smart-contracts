@@ -659,7 +659,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
     // strings are displayed as the expected arguments.
-    let mut required_args = vec!["ctx: &impl HasReceiveContext", "host: &impl HasHost"];
+    let mut required_args = vec!["ctx: &impl HasReceiveContext", "host: &mut impl HasHost"];
 
     let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
         &receive_attributes.optional,
@@ -668,21 +668,19 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     );
 
     let mut out = if receive_attributes.optional.low_level {
-        // required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
                 use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext, Host};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut state = ContractState::open(());
-                let mut host = Host { state: ContractState::Open(()) };
+                let mut host = Host { state: ContractState::open(()) };
                 match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
                     Ok(rv) => {
                         if rv.serial(&mut ReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value.
                         }
-                        0i32
+                        0
                     }
                     Err(reject) => {
                         let code = Reject::from(reject).error_code.get();
