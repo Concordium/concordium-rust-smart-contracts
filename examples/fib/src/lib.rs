@@ -30,11 +30,10 @@ fn contract_receive(
         Ok(1)
     } else {
         let self_address = ctx.self_address();
-        let p2 = (n - 2).to_le_bytes();
         let mut n2 = host
             .invoke_contract(
                 &self_address,
-                Parameter(&p2),
+                OwnedParameter::new(&(n - 2)).as_parameter(),
                 EntrypointName::new_unchecked("receive"),
                 Amount::zero(),
             )
@@ -45,11 +44,10 @@ fn contract_receive(
         let n2: u64 = n2.get().unwrap_abort();
         ensure_eq!(cv2, n2);
 
-        let p1 = (n - 1).to_le_bytes();
         let mut n1 = host
             .invoke_contract(
                 &self_address,
-                Parameter(&p1),
+                OwnedParameter::new(&(n - 1)).as_parameter(),
                 EntrypointName::new_unchecked("receive"),
                 Amount::zero(),
             )
