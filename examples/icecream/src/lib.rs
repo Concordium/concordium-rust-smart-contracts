@@ -169,7 +169,7 @@ mod tests {
         host.set_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
 
         // Set up a mock invocation for the weather service.
-        host.setup_mock_invocation(
+        host.setup_mock_entrypoint(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
             MockFn::returning_ok(Weather::Sunny),
@@ -202,7 +202,7 @@ mod tests {
         host.set_balance(ICECREAM_PRICE);
 
         // Set up mock invocation
-        host.setup_mock_invocation(
+        host.setup_mock_entrypoint(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
             MockFn::returning_ok(Weather::Rainy),
@@ -236,7 +236,7 @@ mod tests {
         host.make_account_missing(ICECREAM_VENDOR);
 
         // Set up mock invocation
-        host.setup_mock_invocation(
+        host.setup_mock_entrypoint(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
             MockFn::returning_ok(Weather::Sunny),
@@ -259,7 +259,7 @@ mod tests {
         ctx.set_parameter(&parameter);
 
         // Set up mock invocation
-        host.setup_mock_invocation(
+        host.setup_mock_entrypoint(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
             MockFn::returning_err(InvokeError::MissingContract),

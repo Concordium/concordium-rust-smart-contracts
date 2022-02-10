@@ -482,6 +482,19 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 const INVOKE_TRANSFER_TAG: u32 = 0;
 const INVOKE_CALL_TAG: u32 = 1;
 
+/// Decode the the response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+/// - every failure has all bits of the first 3 bytes set
+/// - in case of failure
+///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
+///     reason from the contract
+///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
 fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success

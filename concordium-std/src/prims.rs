@@ -12,7 +12,14 @@ extern "C" {
     ///   - 1 for call to a contract
     /// - `start`, pointer to the start of the invoke payload
     /// - `length`, length of the payload
-    /// The return value positive is ... TODO.
+    /// The response is encoded as follows.
+    /// - success is encoded as 0
+    /// - every failure has all bits of the first 3 bytes set
+    /// - in case of failure
+    ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
+    ///     reason from the contract
+    ///   - otherwise only the 4th byte is used, and encodes the enviroment
+    ///     failure.
     pub(crate) fn invoke(tag: u32, start: *const u8, length: u32) -> u64;
     /// Write to the return value of the contract. The parameters are
     ///
@@ -24,8 +31,8 @@ extern "C" {
     pub(crate) fn write_output(start: *const u8, length: u32, offset: u32) -> u32;
     /// Get the size of the `i`-th parameter to the call. 0-th parameter is
     /// always the original parameter that the method was invoked with,
-    /// invoking a contract adds additional parameters to the stack. Returns `-1`
-    /// if the given parameter does not exist.
+    /// invoking a contract adds additional parameters to the stack. Returns
+    /// `-1` if the given parameter does not exist.
     pub(crate) fn get_parameter_size(i: u32) -> i32;
     /// Write a section of the `i`-th parameter to the given location. Return
     /// the number of bytes written or `-1` if the parameter does not exist.

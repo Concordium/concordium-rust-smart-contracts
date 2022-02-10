@@ -1,6 +1,6 @@
 //! The test infrastructure module provides alternative implementations of
-//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, and
-//! `HasContractState` traits intended for testing.
+//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, `HasContractState`,
+//! and `HasHost` traits intended for testing.
 //!
 //! They allow writing unit tests directly in contract modules with little to no
 //! external tooling, depending on what is required.
@@ -653,11 +653,11 @@ impl HasCallResponse for Cursor<Vec<u8>> {
     fn size(&self) -> u32 { self.data.len() as u32 }
 }
 
-pub struct MockFn<State> {
-    /// A mock function. The return value indicates whether the state was
-    /// modified or not.
-    mock_fn: Box<dyn Fn(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
-}
+/// Holds a function used for mocking invocations of contracts with
+/// `invoke_contract`.
+pub struct MockFn<State>(
+    Box<dyn Fn(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
+);
 
 impl<State> MockFn<State> {
     /// Create a mock function which has access to the parameter, amount, and
@@ -678,10 +678,7 @@ impl<State> MockFn<State> {
                 Ok(modified)
             },
         );
-
-        Self {
-            mock_fn,
-        }
+        Self(mock_fn)
     }
 
     /// Create a simple mock function that returns `Ok` with the same
@@ -703,12 +700,12 @@ impl<State> MockFn<State> {
                   _state: &mut State,
                   _output: &mut Vec<u8>| { Err(error.clone()) },
         );
-        Self {
-            mock_fn,
-        }
+        Self(mock_fn)
     }
 }
 
+/// A Host implementation used for testing.
+/// Exposes a number of helper functions for mocking host behavior.
 pub struct HostTest<State> {
     mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
     transfers:        Vec<(AccountAddress, Amount)>,
@@ -721,13 +718,20 @@ impl<State> HasHost<State> for HostTest<State> {
     type CallResponseType = Cursor<Vec<u8>>;
 
     /// Perform a transfer to the given account if the contract has sufficient
-    /// balance. Use `make_account_missing` to test out transfers to
-    /// accounts not on chain.
+    /// balance.
+    ///
+    /// By default, all accounts are assumed to exist, and transfers to them
+    /// will succeed (provided sufficient balance).
+    /// Use `make_account_missing` to test out transfers to accounts not on
+    /// chain.
+    ///
+    /// NB: The contract balance must be set with `set_balance`, even when
+    /// trying to send 0 CCD.
     ///
     /// Possible errors:
     ///   - `InvokeError::AmountTooLarge`: Contract has insufficient funds.
     ///   - `InvokeError::MissingAccount`: Attempted transfer to an account set
-    ///     a missing with `make_account_missing`.
+    ///     as missing with `make_account_missing`.
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
         if self.missing_accounts.contains(receiver) {
             return Err(InvokeError::MissingAccount);
@@ -742,7 +746,12 @@ impl<State> HasHost<State> for HostTest<State> {
         }
     }
 
-    /// Invoke a contract.
+    /// Invoke a contract entrypoint.
+    ///
+    /// This uses the mock entrypoints that you set up with
+    /// `setup_mock_entrypoint`.
+    ///
+    /// Will panic if a mock hasn't been set up for the given entrypoint.
     fn invoke_contract(
         &mut self,
         to: &ContractAddress,
@@ -759,22 +768,35 @@ impl<State> HasHost<State> for HostTest<State> {
             ),
         };
         // Check if the contract has sufficient balance.
-        // Do not try to unwrap the balance if amount is zero.
+        // Do not try to unwrap the balance if amount is zero. This differs
+        // from the `invoke_transfer` behavior, due to the assumption that transfers of
+        // 0 CCD are rare, but contract calls with 0 CCD are not.
         if amount.micro_ccd > 0 && *unwrap_contract_balance(&mut self.contract_balance) < amount {
             return Err(InvokeError::AmountTooLarge);
         }
         let mut output = Vec::new();
-        let res = (handler.mock_fn)(parameter, amount, &mut self.state, &mut output)
+
+        // Invoke the handler.
+        // The return value is written to `output`, which we then provide access to
+        // through a `Cursor`.
+        let res = (handler.0)(parameter, amount, &mut self.state, &mut output)
             .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))));
+
+        // Update the contract balance if the invocation succeeded.
         if res.is_ok() && amount.micro_ccd > 0 {
             *unwrap_contract_balance(&mut self.contract_balance) -= amount;
         }
         res
     }
 
+    /// Get the contract state.
     fn state(&mut self) -> &mut State { &mut self.state }
 
+    /// Get the contract balance.
+    /// This must be set manually with `set_balance`.
     fn self_balance(&self) -> Amount {
+        // This doesn't use `unwrap_contract_balance`, because this function only has an
+        // immutable reference to self.
         match self.contract_balance {
             Some(amount) => amount,
             None => fail!(
@@ -798,6 +820,7 @@ fn unwrap_contract_balance(balance: &mut Option<Amount>) -> &mut Amount {
 }
 
 impl<State> HostTest<State> {
+    /// Create a new test host.
     pub fn new(state: State) -> Self {
         Self {
             mocking_fns: HashMap::new(),
@@ -808,7 +831,11 @@ impl<State> HostTest<State> {
         }
     }
 
-    pub fn setup_mock_invocation(
+    /// Set up a mock entrypoint for handling calls to `invoke_contract`.
+    ///
+    /// If you set up multiple handlers for the same entrypoint (to, method),
+    /// then the latest handler will be used.
+    pub fn setup_mock_entrypoint(
         &mut self,
         to: ContractAddress,
         method: OwnedEntrypointName,
@@ -828,7 +855,7 @@ impl<State> HostTest<State> {
     /// contract_receive(&ctx,
     ///                  &mut host,
     ///                  // This amount is _not_ added to the balance of the contract,
-    ///                  // so calling host.self_balance will return `10` initially.
+    ///                  // so calling `host.self_balance()` will return `10` initially.
     ///                  // This differs from when you run a contract on the node,
     ///                  // where the amount automatically is added to the existing
     ///                  // balance of the contract.
@@ -861,6 +888,8 @@ impl<State> HostTest<State> {
 
     /// Set an account to be missing. Any transfers to this account will result
     /// in an `InvokeError::MissingAccount` error.
+    ///
+    /// This differs from the default, where all accounts are assumed to exist.
     pub fn make_account_missing(&mut self, account: AccountAddress) {
         self.missing_accounts.push(account);
     }

@@ -140,11 +140,16 @@ where
 }
 
 /// A type that can serve as the host.
-/// It supports invoking operations, accessing state and self_balance.
+/// It supports invoking operations, accessing state, and self_balance.
 pub trait HasHost<State> {
     type CallResponseType: HasCallResponse;
 
+    /// Perform a transfer to the given account if the contract has sufficient
+    /// balance.
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
+
+    /// Invoke a given method of a contract with the amount and parameter
+    /// provided.
     fn invoke_contract(
         &mut self,
         to: &ContractAddress,
@@ -152,7 +157,11 @@ pub trait HasHost<State> {
         method: EntrypointName,
         amount: Amount,
     ) -> InvokeResult<(bool, Option<Self::CallResponseType>)>;
+
+    /// Get the contract state.
     fn state(&mut self) -> &mut State;
+
+    /// Get the contract balance.
     fn self_balance(&self) -> Amount;
 }
 

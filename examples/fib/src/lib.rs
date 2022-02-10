@@ -106,7 +106,7 @@ mod tests {
             result: 0,
         });
 
-        host.setup_mock_invocation(
+        host.setup_mock_entrypoint(
             contract_address,
             OwnedEntrypointName::new_unchecked("receive".into()),
             MockFn::new(|parameter, _amount, state: &mut State| {
