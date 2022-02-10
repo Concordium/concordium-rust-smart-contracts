@@ -11,17 +11,17 @@
 //! ```rust
 //! // Some contract
 //! #[init(contract = "noop")]
-//! fn contract_init<I: HasInitContext, L: HasLogger>(
-//!     ctx: &I,
+//! fn contract_init(
+//!     ctx: &impl HasInitContext,
 //! ) -> InitResult<State> { ... }
 //!
 //! #[receive(contract = "noop", name = "receive", payable, enable_logger)]
-//! fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
-//!     ctx: &R,
+//! fn contract_receive(
+//!     ctx: &impl HasReceiveContext,
 //!     amount: Amount,
-//!     logger: &mut L,
-//!     state: &mut State,
-//! ) -> ReceiveResult<A> { ... }
+//!     logger: &mut impl HasLogger,
+//!     host: &mut HasHost<State>,
+//! ) -> ReceiveResult<MyReturnValue> { ... }
 //!
 //! #[cfg(test)]
 //! mod tests {
@@ -40,10 +40,16 @@
 //!     #[test]
 //!     fn test_receive() {
 //!         let mut ctx = ReceiveContextTest::empty();
+//!         let mut host = HostTest::new(State::new());
 //!         ctx.set_owner(AccountAddress([0u8; 32]));
 //!         ...
 //!         let mut logger = LogRecorder::init();
-//!         let result: ReceiveResult<ActionsTree> = contract_receive(&ctx, 0, &mut logger, state);
+//!         host.setup_mock_entrypoint(
+//!             ContractAddress{index: 0, subindex: 0},
+//!             OwnedEntrypointName::new_unchecked("get".into()),
+//!             MockFn::returning_ok(MyReturnValue::new()));
+//!         let result: ReceiveResult<MyReturnValue> = contract_receive(&ctx, &mut host,
+//!                    Amount::zero(), &mut logger);
 //!         claim!(...)
 //!         ...
 //!     }
@@ -662,6 +668,13 @@ pub struct MockFn<State>(
 impl<State> MockFn<State> {
     /// Create a mock function which has access to the parameter, amount, and
     /// state.
+    ///
+    /// The function should return a pair (state_modified, return_value), where
+    /// state_modified should be set to `true`, if the function modifies the
+    /// state parameter.
+    ///
+    /// See also `returning_ok` and `returning_err` for when you need simple
+    /// mocks.
     pub fn new<R, F>(mock_fn_return: F) -> Self
     where
         R: Serial,
