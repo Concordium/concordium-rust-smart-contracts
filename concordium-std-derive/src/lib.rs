@@ -803,21 +803,21 @@ fn contract_function_schema_tokens(
             Some(quote! {
                 let parameter = <#parameter_ident as schema::SchemaType>::get_type();
                 let return_value = <#return_value_ident as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::FunctionSchema::Both { parameter, return_value });
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::Both { parameter, return_value });
             })
         }
         (Some(parameter_ty), None) => {
             let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
             Some(quote! {
                 let parameter = <#parameter_ident as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::FunctionSchema::Parameter(parameter));
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::Parameter(parameter));
             })
         }
         (None, Some(return_value_ty)) => {
             let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
             Some(quote! {
                 let return_value = <#return_value_ident as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::FunctionSchema::ReturnValue(return_value));
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
             })
         }
         _ => None,
