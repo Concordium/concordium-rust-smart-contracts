@@ -14,19 +14,13 @@ use mem::MaybeUninit;
 
 impl convert::From<()> for Reject {
     #[inline(always)]
-    fn from(_: ()) -> Self {
-        Reject {
-            error_code: unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) },
-        }
-    }
+    fn from(_: ()) -> Self { unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) }.into() }
 }
 
 impl convert::From<ParseError> for Reject {
     #[inline(always)]
     fn from(_: ParseError) -> Self {
-        Reject {
-            error_code: unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 2) },
-        }
+        unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 2) }.into()
     }
 }
 
@@ -34,12 +28,11 @@ impl convert::From<ParseError> for Reject {
 impl From<LogError> for Reject {
     #[inline(always)]
     fn from(le: LogError) -> Self {
-        let error_code = match le {
-            LogError::Full => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 3) },
-            LogError::Malformed => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 4) },
-        };
-        Self {
-            error_code,
+        match le {
+            LogError::Full => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 3) }.into(),
+            LogError::Malformed => {
+                unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 4) }.into()
+            }
         }
     }
 }
@@ -50,22 +43,19 @@ impl From<LogError> for Reject {
 /// InvalidCharacters to i32::MIN + 10.
 impl From<NewContractNameError> for Reject {
     fn from(nre: NewContractNameError) -> Self {
-        let error_code = match nre {
+        match nre {
             NewContractNameError::MissingInitPrefix => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 5)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 5).into()
             },
             NewContractNameError::TooLong => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 6)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 6).into()
             },
             NewContractNameError::ContainsDot => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 9)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 9).into()
             },
             NewContractNameError::InvalidCharacters => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 10)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 10).into()
             },
-        };
-        Self {
-            error_code,
         }
     }
 }
@@ -75,19 +65,16 @@ impl From<NewContractNameError> for Reject {
 /// InvalidCharacters to i32::MIN + 11.
 impl From<NewReceiveNameError> for Reject {
     fn from(nre: NewReceiveNameError) -> Self {
-        let error_code = match nre {
+        match nre {
             NewReceiveNameError::MissingDotSeparator => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 7)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 7).into()
             },
             NewReceiveNameError::TooLong => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 8)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 8).into()
             },
             NewReceiveNameError::InvalidCharacters => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 11)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 11).into()
             },
-        };
-        Self {
-            error_code,
         }
     }
 }
@@ -96,9 +83,7 @@ impl From<NewReceiveNameError> for Reject {
 impl From<NotPayableError> for Reject {
     #[inline(always)]
     fn from(_: NotPayableError) -> Self {
-        Self {
-            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) },
-        }
+        unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) }.into()
     }
 }
 

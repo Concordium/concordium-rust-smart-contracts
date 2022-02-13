@@ -463,8 +463,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         0
                     },
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
+                        let reject = Reject::from(reject);
+                        let code = reject.error_code.get();
                         if code < 0 {
+                            if let Some(rv) = reject.return_value {
+                                if ReturnValue::open().write_all(&rv).is_err() {
+                                    trap() // Could not serialize the return value.
+                                }
+                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -492,8 +498,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         0
                     }
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
+                        let reject = Reject::from(reject);
+                        let code = reject.error_code.get();
                         if code < 0 {
+                            if let Some(rv) = reject.return_value {
+                                if ReturnValue::open().write_all(&rv).is_err() {
+                                    trap() // Could not serialize the return value.
+                                }
+                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -683,8 +695,14 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         0
                     }
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
+                        let reject = Reject::from(reject);
+                        let code = reject.error_code.get();
                         if code < 0 {
+                            if let Some(rv) = reject.return_value {
+                                if ReturnValue::open().write_all(&rv).is_err() {
+                                    trap() // Could not serialize the return value.
+                                }
+                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -715,8 +733,14 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                             0
                         }
                         Err(reject) => {
-                            let code = Reject::from(reject).error_code.get();
+                            let reject = Reject::from(reject);
+                            let code = reject.error_code.get();
                             if code < 0 {
+                                if let Some(rv) = reject.return_value {
+                                    if ReturnValue::open().write_all(&rv).is_err() {
+                                        trap() // Could not serialize the return value.
+                                    }
+                                }
                                 code
                             } else {
                                 trap() // precondition violation
@@ -1513,7 +1537,10 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         impl From<#enum_ident> for Reject {
             #[inline(always)]
             fn from(e: #enum_ident) -> Self {
-                Reject { error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) } }
+                Reject {
+                    error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) },
+                    payload: None
+                }
             }
         }
 

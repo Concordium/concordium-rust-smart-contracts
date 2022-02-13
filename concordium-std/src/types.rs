@@ -120,9 +120,19 @@ pub struct NotPayableError;
 /// provided, the error message corresponding to the error code will be
 /// displayed. The valid range for an error code is from i32::MIN to  -1.
 #[derive(Eq, PartialEq, Debug)]
-#[repr(transparent)]
 pub struct Reject {
-    pub error_code: crate::num::NonZeroI32,
+    pub error_code:   crate::num::NonZeroI32,
+    pub return_value: Option<Vec<u8>>,
+}
+
+impl From<crate::num::NonZeroI32> for Reject {
+    #[inline(always)]
+    fn from(error_code: crate::num::NonZeroI32) -> Self {
+        Self {
+            error_code,
+            return_value: None,
+        }
+    }
 }
 
 /// Default error is i32::MIN.
@@ -130,7 +140,8 @@ impl Default for Reject {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+            error_code:   unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+            return_value: None,
         }
     }
 }
@@ -142,6 +153,7 @@ impl Reject {
             let error_code = unsafe { crate::num::NonZeroI32::new_unchecked(x) };
             Some(Reject {
                 error_code,
+                return_value: None,
             })
         } else {
             None
