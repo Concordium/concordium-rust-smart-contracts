@@ -33,7 +33,7 @@ fn contract_receive(
         let mut n2 = host
             .invoke_contract(
                 &self_address,
-                OwnedParameter::new(&(n - 2)).as_parameter(),
+                Parameter(&(n - 2).to_le_bytes()[..]),
                 EntrypointName::new_unchecked("receive"),
                 Amount::zero(),
             )
@@ -43,11 +43,10 @@ fn contract_receive(
         let cv2 = host.state().result;
         let n2: u64 = n2.get().unwrap_abort();
         ensure_eq!(cv2, n2);
-
         let mut n1 = host
             .invoke_contract(
                 &self_address,
-                OwnedParameter::new(&(n - 1)).as_parameter(),
+                Parameter(&(n - 1).to_le_bytes()[..]),
                 EntrypointName::new_unchecked("receive"),
                 Amount::zero(),
             )
@@ -110,7 +109,7 @@ mod tests {
             MockFn::new(|parameter, _amount, state: &mut State| {
                 let n: u64 = match from_bytes(parameter.0) {
                     Ok(n) => n,
-                    Err(_) => return Err(InvokeError::Trap),
+                    Err(_) => return Err(CallContractError::Trap),
                 };
                 state.result = fib(n);
                 Ok((true, state.result))

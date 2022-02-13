@@ -62,7 +62,7 @@ use alloc::boxed::Box;
 use convert::TryInto;
 #[cfg(not(feature = "std"))]
 use core::{cmp, num};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 #[cfg(feature = "std")]
 use std::{boxed::Box, cmp, num};
 
@@ -661,8 +661,11 @@ impl HasCallResponse for Cursor<Vec<u8>> {
 
 /// Holds a function used for mocking invocations of contracts with
 /// `invoke_contract`.
+/// The provided closure may mutate its environment, for example to keep track
+/// of how many times the function was called during testing. This is the reason
+/// for `FnMut` bound.
 pub struct MockFn<State>(
-    Box<dyn Fn(Parameter, Amount, &mut State, &mut Vec<u8>) -> InvokeResult<bool>>,
+    Box<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> CallContractResult<bool>>,
 );
 
 impl<State> MockFn<State> {
@@ -675,19 +678,17 @@ impl<State> MockFn<State> {
     ///
     /// See also `returning_ok` and `returning_err` for when you need simple
     /// mocks.
-    pub fn new<R, F>(mock_fn_return: F) -> Self
+    pub fn new<R, F>(mut mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: Fn(Parameter, Amount, &mut State) -> InvokeResult<(bool, R)> + 'static, {
-        // Put it on the heap, so it will live long enough.
-        let boxed_mock_fn_return = Box::new(mock_fn_return);
-
+        F: FnMut(Parameter, Amount, &mut State) -> CallContractResult<(bool, R)> + 'static, {
         // TODO: Ideally, the Host should figure out whether the state has been altered
         // or not. I.e. the bool should not be returned in the `mock_fn_return` closure.
         let mock_fn = Box::new(
             move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
-                let (modified, return_value) = boxed_mock_fn_return(parameter, amount, state)?;
-                return_value.serial(output).map_err(|_| InvokeError::Trap)?;
+                // let f = boxed_mock_fn_return;
+                let (modified, return_value) = mock_fn_return(parameter, amount, state)?;
+                return_value.serial(output).map_err(|_| CallContractError::Trap)?;
                 Ok(modified)
             },
         );
@@ -699,14 +700,14 @@ impl<State> MockFn<State> {
     pub fn returning_ok<R>(return_value: R) -> Self
     where
         R: Serial + 'static + Clone, {
-        Self::new(move |_parameter, _amount, _state| -> InvokeResult<(bool, R)> {
+        Self::new(move |_parameter, _amount, _state| -> CallContractResult<(bool, R)> {
             Ok((false, return_value.clone()))
         })
     }
 
     /// Create a simple mock function that returns `Err` with same error every
     /// time.
-    pub fn returning_err(error: InvokeError) -> Self {
+    pub fn returning_err(error: CallContractError) -> Self {
         let mock_fn = Box::new(
             move |_parameter: Parameter,
                   _amount: Amount,
@@ -720,15 +721,21 @@ impl<State> MockFn<State> {
 /// A Host implementation used for testing.
 /// Exposes a number of helper functions for mocking host behavior.
 pub struct HostTest<State> {
+    /// Functions that mock responses to calls.
     mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
+    /// Transfers the contract has made during its execution.
     transfers:        Vec<(AccountAddress, Amount)>,
+    /// The contract balance. This is updated during execution based on contract
+    /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: Option<Amount>,
+    /// State of the instance.
     state:            State,
-    missing_accounts: Vec<AccountAddress>,
+    /// List of accounts that will cause a contract invocation to fail.
+    missing_accounts: BTreeSet<AccountAddress>,
 }
 
 impl<State> HasHost<State> for HostTest<State> {
-    type CallResponseType = Cursor<Vec<u8>>;
+    type ReturnValueType = Cursor<Vec<u8>>;
 
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
@@ -738,41 +745,41 @@ impl<State> HasHost<State> for HostTest<State> {
     /// Use `make_account_missing` to test out transfers to accounts not on
     /// chain.
     ///
-    /// NB: The contract balance must be set with `set_balance`, even when
-    /// trying to send 0 CCD.
-    ///
     /// Possible errors:
-    ///   - `InvokeError::AmountTooLarge`: Contract has insufficient funds.
-    ///   - `InvokeError::MissingAccount`: Attempted transfer to an account set
-    ///     as missing with `make_account_missing`.
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
+    ///   - [TransferError::AmountTooLarge]: Contract has insufficient funds.
+    ///   - [TransferError::MissingAccount]: Attempted transfer to an account
+    ///     set as missing with `make_account_missing`.
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
         if self.missing_accounts.contains(receiver) {
-            return Err(InvokeError::MissingAccount);
+            return Err(TransferError::MissingAccount);
         }
-        let contract_balance = unwrap_contract_balance(&mut self.contract_balance);
-        if *contract_balance >= amount {
-            *contract_balance -= amount;
-            self.transfers.push((receiver.clone(), amount));
-            Ok(())
+        if amount.micro_ccd > 0 {
+            let contract_balance = unwrap_contract_balance(&mut self.contract_balance);
+            if *contract_balance >= amount {
+                *contract_balance -= amount;
+                self.transfers.push((*receiver, amount));
+                Ok(())
+            } else {
+                Err(TransferError::AmountTooLarge)
+            }
         } else {
-            Err(InvokeError::AmountTooLarge)
+            Ok(())
         }
     }
 
     /// Invoke a contract entrypoint.
     ///
-    /// This uses the mock entrypoints that you set up with
-    /// `setup_mock_entrypoint`.
-    ///
-    /// Will panic if a mock hasn't been set up for the given entrypoint.
-    fn invoke_contract(
-        &mut self,
-        to: &ContractAddress,
-        parameter: Parameter,
-        method: EntrypointName,
+    /// This uses the mock entrypoints set up with
+    /// `setup_mock_entrypoint`. The method will [fail] with a panic
+    /// if no responses were set for the given contract address and method.
+    fn invoke_contract<'a, 'b>(
+        &'a mut self,
+        to: &'b ContractAddress,
+        parameter: Parameter<'b>,
+        method: EntrypointName<'b>,
         amount: Amount,
-    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)> {
-        let handler = match self.mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
+    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
+        let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
@@ -781,11 +788,9 @@ impl<State> HasHost<State> for HostTest<State> {
             ),
         };
         // Check if the contract has sufficient balance.
-        // Do not try to unwrap the balance if amount is zero. This differs
-        // from the `invoke_transfer` behavior, due to the assumption that transfers of
-        // 0 CCD are rare, but contract calls with 0 CCD are not.
+        // Do not try to unwrap the balance if amount is zero.
         if amount.micro_ccd > 0 && *unwrap_contract_balance(&mut self.contract_balance) < amount {
-            return Err(InvokeError::AmountTooLarge);
+            return Err(CallContractError::AmountTooLarge);
         }
         let mut output = Vec::new();
 
@@ -793,7 +798,7 @@ impl<State> HasHost<State> for HostTest<State> {
         // The return value is written to `output`, which we then provide access to
         // through a `Cursor`.
         let res = (handler.0)(parameter, amount, &mut self.state, &mut output)
-            .and_then(|state_modified| Ok((state_modified, Some(Cursor::new(output)))));
+            .map(|state_modified| (state_modified, Some(Cursor::new(output))));
 
         // Update the contract balance if the invocation succeeded.
         if res.is_ok() && amount.micro_ccd > 0 {
@@ -840,7 +845,7 @@ impl<State> HostTest<State> {
             transfers: Vec::new(),
             contract_balance: None,
             state,
-            missing_accounts: Vec::new(),
+            missing_accounts: BTreeSet::new(),
         }
     }
 
@@ -879,7 +884,7 @@ impl<State> HostTest<State> {
 
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
-        self.transfers.contains(&(receiver.clone(), amount))
+        self.transfers.contains(&(*receiver, amount))
     }
 
     /// Get a list of all transfers that has occurred.
@@ -900,11 +905,11 @@ impl<State> HostTest<State> {
     }
 
     /// Set an account to be missing. Any transfers to this account will result
-    /// in an `InvokeError::MissingAccount` error.
+    /// in an [TransferError::MissingAccount] error.
     ///
     /// This differs from the default, where all accounts are assumed to exist.
     pub fn make_account_missing(&mut self, account: AccountAddress) {
-        self.missing_accounts.push(account);
+        self.missing_accounts.insert(account);
     }
 }
 

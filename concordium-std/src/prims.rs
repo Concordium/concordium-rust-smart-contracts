@@ -12,14 +12,24 @@ extern "C" {
     ///   - 1 for call to a contract
     /// - `start`, pointer to the start of the invoke payload
     /// - `length`, length of the payload
-    /// The response is encoded as follows.
-    /// - success is encoded as 0
-    /// - every failure has all bits of the first 3 bytes set
-    /// - in case of failure
-    ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
-    ///     reason from the contract
-    ///   - otherwise only the 4th byte is used, and encodes the enviroment
-    ///     failure.
+    /// - if the last 5 bytes are 0 then the call succeeded. In this case the
+    ///   first bit of the response indicates whether our own state has changed
+    ///   (1) or not (0) the remaining 23 bits are the index of the return value
+    ///   that can be used in a call to `get_parameter_section` and
+    ///   `get_parameter_size`.
+    /// - otherwise
+    ///   - if the fourth byte is 0 the call failed because of a logic error and
+    ///     there is a return value. Bits 1..24 of the response are the index of
+    ///     the return value. Bits 32..64 are to be interpreted in two's
+    ///     complement and will be a negative number indicating the error code.
+    ///   - otherwise only the fourth byte is set.
+    ///   - if it is 1 then call failed due to transfer of non-existent amount
+    ///   - if it is 2 then the account to transfer to did not exist
+    ///   - if it is 3 then the contract to invoke did not exist
+    ///   - if it is 4 then the entrypoint did not exist
+    ///   - if it is 5 then sending a message to V0 contract failed.
+    ///   - if it is 6 then invoking a contract failed with a runtime error
+    ///   - no other values are possible
     pub(crate) fn invoke(tag: u32, start: *const u8, length: u32) -> u64;
     /// Write to the return value of the contract. The parameters are
     ///

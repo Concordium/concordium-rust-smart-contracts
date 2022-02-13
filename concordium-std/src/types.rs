@@ -15,7 +15,7 @@ pub struct ExternParameter {
 
 /// A type representing the return value of contract calls.
 /// This is when a contract calls another contract, it may get a return value.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CallResponse {
     /// The index of the call response.
     pub(crate) i:                NonZeroU32,
@@ -27,14 +27,15 @@ pub struct ReturnValue {
     pub(crate) current_position: u32,
 }
 
-/// FIXME: Have two error types, one for transfers, one for calls.
-/// FIXME: Consider adding `#[non_exhaustive]`.
 #[repr(i32)]
-#[derive(Debug, Clone)]
-pub enum InvokeError {
+#[derive(Debug, Clone, Copy)]
+/// Errors that may occur when invoking a contract entrypoint.
+pub enum CallContractError {
     /// Amount that was to be transferred is not available to the sender.
     AmountTooLarge,
-    /// Account that is to be transferred to does not exist.
+    /// Owner account of the smart contract that is being invoked does not
+    /// exist. This variant should in principle not happen, but is here for
+    /// completeness.
     MissingAccount,
     /// Contract that is to be invoked does not exist.
     MissingContract,
@@ -50,11 +51,24 @@ pub enum InvokeError {
     },
     /// Execution of a contract call triggered a runtime error.
     Trap,
-    /// Unrecognized error. Reser
-    Unknown,
 }
 
-pub type InvokeResult<A> = Result<A, InvokeError>;
+#[repr(i32)]
+#[derive(Debug, Clone)]
+/// Errors that may occur when transferring CCD to an account.
+pub enum TransferError {
+    /// Amount that was to be transferred is not available to the sender.
+    AmountTooLarge,
+    /// Account that is to be transferred to does not exist.
+    MissingAccount,
+}
+
+/// A wrapper around [Result] that fixes the error variant to
+/// [CallContractError].
+pub type CallContractResult<A> = Result<A, CallContractError>;
+
+/// A wrapper around [Result] that fixes the error variant to [TransferError].
+pub type TransferResult<A> = Result<A, TransferError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Default)]
@@ -339,10 +353,10 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
-/// Operations based on host functions, TODO: update.
+/// Operations backed by host functions.
 #[derive(Default)]
 #[doc(hidden)]
-pub struct Host<State> {
+pub struct ExternHost<State> {
     pub state: State,
 }
 

@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::{types::LogError, InvokeResult};
+use crate::{types::LogError, CallContractResult, TransferResult};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -142,21 +142,27 @@ where
 /// A type that can serve as the host.
 /// It supports invoking operations, accessing state, and self_balance.
 pub trait HasHost<State> {
-    type CallResponseType: HasCallResponse;
+    /// The type of return values this host provides. This is the raw return
+    /// value. The intention is that it will be deserialized by the
+    /// consumer, via the [Read] implementation.
+    type ReturnValueType: HasCallResponse;
 
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()>;
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()>;
 
     /// Invoke a given method of a contract with the amount and parameter
-    /// provided.
-    fn invoke_contract(
-        &mut self,
-        to: &ContractAddress,
-        parameter: Parameter,
-        method: EntrypointName,
+    /// provided. If invocation succeeds then the return value is a pair of
+    /// a boolean which indicates whether the state of the contract has changed
+    /// or not, and a possible return value. The return value is present if and
+    /// only if a V1 contract was invoked.
+    fn invoke_contract<'a, 'b>(
+        &'a mut self,
+        to: &'b ContractAddress,
+        parameter: Parameter<'b>,
+        method: EntrypointName<'b>,
         amount: Amount,
-    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)>;
+    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)>;
 
     /// Get the contract state.
     fn state(&mut self) -> &mut State;

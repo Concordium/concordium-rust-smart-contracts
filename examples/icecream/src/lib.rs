@@ -262,7 +262,7 @@ mod tests {
         host.setup_mock_entrypoint(
             WEATHER_SERVICE,
             OwnedEntrypointName::new_unchecked("get".into()),
-            MockFn::returning_err(InvokeError::MissingContract),
+            MockFn::returning_err(CallContractError::MissingContract),
         );
 
         // Act + Assert (should panic)

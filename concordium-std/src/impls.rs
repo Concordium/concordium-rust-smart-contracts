@@ -102,6 +102,9 @@ impl From<NotPayableError> for Reject {
     }
 }
 
+/// Return values are intended to be produced by writing to the [ReturnValue]
+/// buffer, either in a high-level interface via serialization, or in a
+/// low-level interface by manually using the [Write] trait's interface.
 impl Write for ReturnValue {
     type Err = ();
 
@@ -123,6 +126,11 @@ impl Write for ReturnValue {
 
 impl ReturnValue {
     #[inline(always)]
+    /// Create a return value cursor that starts at the beginning.
+    /// Note that there is a single return value per contract invocation, so
+    /// multiple calls to open will give access to writing the same return
+    /// value. Thus this function should only be used once per contract
+    /// invocation.
     pub fn open() -> Self {
         Self {
             current_position: 0,
@@ -320,7 +328,8 @@ impl HasParameter for ExternParameter {
     fn size(&self) -> u32 { unsafe { get_parameter_size(0) as u32 } }
 }
 
-/// # Trait implementations ReturnValue
+/// The read implementation uses host functions to read chunks of return value
+/// on demand.
 impl Read for CallResponse {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
@@ -341,6 +350,9 @@ impl Read for CallResponse {
     }
 }
 
+/// CallResponse can only be constured in this crate. As a result whenever it is
+/// constructed it will point to a valid parameter, which means that
+/// `get_parameter_size` will always return a non-negative value.
 impl HasCallResponse for CallResponse {
     fn size(&self) -> u32 { unsafe { get_parameter_size(self.i.get()) as u32 } }
 }
@@ -479,7 +491,9 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     }
 }
 
+/// Tag of the transfer operation expected by the host. See [prims::invoke].
 const INVOKE_TRANSFER_TAG: u32 = 0;
+/// Tag of the transfer operation expected by the host. See [prims::invoke].
 const INVOKE_CALL_TAG: u32 = 1;
 
 /// Decode the the response code.
@@ -495,7 +509,35 @@ const INVOKE_CALL_TAG: u32 = 1;
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
 ///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
-fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
+fn parse_transfer_response_code(code: u64) -> TransferResult<()> {
+    if code & !0xffff_ff00_0000_0000 == 0 {
+        // success
+        // assume response from host conforms to spec, just return success.
+        Ok(())
+    } else {
+        // failure.
+        match (0x0000_00ff_0000_0000 & code) >> 32 {
+            0x01 => Err(TransferError::AmountTooLarge),
+            0x02 => Err(TransferError::MissingAccount),
+            _ => crate::trap(), // host precondition violation
+        }
+    }
+}
+
+/// Decode the the response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+/// - every failure has all bits of the first 3 bytes set
+/// - in case of failure
+///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
+///     reason from the contract
+///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+fn parse_call_response_code(code: u64) -> CallContractResult<(bool, Option<NonZeroU32>)> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
         let rv = (code >> 40) as u32;
@@ -516,7 +558,7 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
                 } else {
                     let rv = (code >> 40) as u32;
                     if rv > 0 {
-                        Err(InvokeError::LogicReject {
+                        Err(CallContractError::LogicReject {
                             reason,
                             return_value: CallResponse {
                                 i:                unsafe { NonZeroU32::new_unchecked(rv) },
@@ -528,21 +570,21 @@ fn parse_response_code(code: u64) -> InvokeResult<(bool, Option<NonZeroU32>)> {
                     }
                 }
             }
-            0x01 => Err(InvokeError::AmountTooLarge),
-            0x02 => Err(InvokeError::MissingAccount),
-            0x03 => Err(InvokeError::MissingContract),
-            0x04 => Err(InvokeError::MissingEntrypoint),
-            0x05 => Err(InvokeError::MessageFailed),
-            0x06 => Err(InvokeError::Trap),
-            _ => Err(InvokeError::Unknown), // FIXME: This should be trap as well.
+            0x01 => Err(CallContractError::AmountTooLarge),
+            0x02 => Err(CallContractError::MissingAccount),
+            0x03 => Err(CallContractError::MissingContract),
+            0x04 => Err(CallContractError::MissingEntrypoint),
+            0x05 => Err(CallContractError::MessageFailed),
+            0x06 => Err(CallContractError::Trap),
+            _ => crate::trap(), // host precondition violation
         }
     }
 }
 
-impl<State: Deserial + Serial> HasHost<State> for Host<State> {
-    type CallResponseType = CallResponse;
+impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
+    type ReturnValueType = CallResponse;
 
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> InvokeResult<()> {
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
         let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
         let data = unsafe {
             (bytes.as_mut_ptr() as *mut u8).copy_from_nonoverlapping(
@@ -558,7 +600,7 @@ impl<State: Deserial + Serial> HasHost<State> for Host<State> {
         let response = unsafe {
             invoke(INVOKE_TRANSFER_TAG, data.as_ptr(), (ACCOUNT_ADDRESS_SIZE + 8) as u32)
         };
-        parse_response_code(response).map(|_| ())
+        parse_transfer_response_code(response)
     }
 
     fn invoke_contract(
@@ -567,8 +609,7 @@ impl<State: Deserial + Serial> HasHost<State> for Host<State> {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> InvokeResult<(bool, Option<Self::CallResponseType>)> {
-        // calling V0 contracts returns None
+    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
         let mut data =
             Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
         let mut cursor = Cursor::new(&mut data);
@@ -577,18 +618,20 @@ impl<State: Deserial + Serial> HasHost<State> for Host<State> {
         method.serial(&mut cursor).unwrap_abort();
         amount.serial(&mut cursor).unwrap_abort();
         // serialize state since it might have been modified
-        // FIXME: Only do this if needed.
+        // FIXME: Only do this if needed. This will mean to add a parameter to
+        // invoke_contract where the user can opt-out of doing this. But this
+        // will in any case change with V1 state, so this can be postponed.
         self.state.serial(&mut ContractState::open(())).unwrap_abort();
         let len = data.len();
         let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
-        let (state_modified, res) = parse_response_code(response)?;
+        let (state_modified, res) = parse_call_response_code(response)?;
         if state_modified {
             // The state of the contract changed as a result of the call.
             // So we refresh it.
             if let Ok(new_state) = (&mut ContractState::open(())).get() {
                 self.state = new_state;
             } else {
-                return Err(InvokeError::Unknown);
+                crate::trap() // FIXME: With new state this needs to be revised.
             }
         }
         if let Some(i) = res {
