@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use crate::num::NonZeroU32;
 
 /// A type representing the constract state bytes.
 #[derive(Default)]

@@ -57,12 +57,12 @@
 //! ```
 use crate::{constants::MAX_CONTRACT_STATE_SIZE, *};
 
+use crate::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
 use convert::TryInto;
 #[cfg(not(feature = "std"))]
 use core::{cmp, num};
-use std::collections::{BTreeSet, HashMap};
 #[cfg(feature = "std")]
 use std::{boxed::Box, cmp, num};
 
@@ -773,7 +773,7 @@ impl<State> MockFn<State> {
 /// Exposes a number of helper functions for mocking host behavior.
 pub struct HostTest<State> {
     /// Functions that mock responses to calls.
-    mocking_fns:      HashMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
+    mocking_fns:      BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
     /// Transfers the contract has made during its execution.
     transfers:        Vec<(AccountAddress, Amount)>,
     /// The contract balance. This is updated during execution based on contract
@@ -890,7 +890,7 @@ impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
         Self {
-            mocking_fns: HashMap::new(),
+            mocking_fns: BTreeMap::new(),
             transfers: Vec::new(),
             contract_balance: None,
             state,

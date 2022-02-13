@@ -831,11 +831,7 @@ impl<A, E> UnwrapAbort for Result<A, E> {
     }
 }
 
-#[cfg(not(feature = "std"))]
-use core::fmt;
-#[cfg(feature = "std")]
-use std::fmt;
-use std::num::NonZeroU32;
+use crate::{fmt, num::NonZeroU32};
 
 impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     type Unwrap = A;
