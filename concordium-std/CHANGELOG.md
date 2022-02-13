@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased changes
+
+## concordium-std 2.0.0 (2022-01-05)
+
 - Update references to token to match token name (CCD).
 - Improve `claim_eq` and `claim_ne` macros such that:
   - Arguments are only evaluated once.
