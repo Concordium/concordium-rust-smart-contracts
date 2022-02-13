@@ -509,7 +509,7 @@ const INVOKE_CALL_TAG: u32 = 1;
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
 ///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
-fn parse_transfer_response_code(code: u64) -> TransferResult<()> {
+fn parse_transfer_response_code(code: u64) -> TransferResult {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // success
         // assume response from host conforms to spec, just return success.
@@ -537,15 +537,15 @@ fn parse_transfer_response_code(code: u64) -> TransferResult<()> {
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
 ///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
-fn parse_call_response_code(code: u64) -> CallContractResult<(bool, Option<NonZeroU32>)> {
+fn parse_call_response_code(code: u64) -> CallContractResult<CallResponse> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
         let rv = (code >> 40) as u32;
         let tag = 0x80_0000u32;
         if tag & rv != 0 {
-            Ok((true, NonZeroU32::new(rv & !tag)))
+            Ok((true, NonZeroU32::new(rv & !tag).map(CallResponse::new)))
         } else {
-            Ok((false, NonZeroU32::new(rv)))
+            Ok((false, NonZeroU32::new(rv).map(CallResponse::new)))
         }
     } else {
         match (0x0000_00ff_0000_0000 & code) >> 32 {
@@ -560,10 +560,9 @@ fn parse_call_response_code(code: u64) -> CallContractResult<(bool, Option<NonZe
                     if rv > 0 {
                         Err(CallContractError::LogicReject {
                             reason,
-                            return_value: CallResponse {
-                                i:                unsafe { NonZeroU32::new_unchecked(rv) },
-                                current_position: 0,
-                            },
+                            return_value: CallResponse::new(unsafe {
+                                NonZeroU32::new_unchecked(rv)
+                            }),
                         })
                     } else {
                         crate::trap() // host precondition violation.
@@ -583,7 +582,7 @@ fn parse_call_response_code(code: u64) -> CallContractResult<(bool, Option<NonZe
 
 /// Helper factoring out the common behaviour of invoke_transfer for the two
 /// extern hosts below.
-fn invoke_transfer_worker(receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
+fn invoke_transfer_worker(receiver: &AccountAddress, amount: Amount) -> TransferResult {
     let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
     let data = unsafe {
         (bytes.as_mut_ptr() as *mut u8).copy_from_nonoverlapping(
@@ -620,7 +619,7 @@ fn invoke_contract_construct_parameter(
 impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
     type ReturnValueType = CallResponse;
 
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
     }
 
@@ -630,7 +629,7 @@ impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
+    ) -> CallContractResult<Self::ReturnValueType> {
         let data = invoke_contract_construct_parameter(to, parameter, method, amount);
         // serialize state since it might have been modified
         // FIXME: Only do this if needed. This will mean to add a parameter to
@@ -649,17 +648,7 @@ impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
                 crate::trap() // FIXME: With new state this needs to be revised.
             }
         }
-        if let Some(i) = res {
-            Ok((
-                state_modified,
-                Some(CallResponse {
-                    i,
-                    current_position: 0,
-                }),
-            ))
-        } else {
-            Ok((state_modified, None))
-        }
+        Ok((state_modified, res))
     }
 
     fn state(&mut self) -> &mut State { &mut self.state }
@@ -673,7 +662,7 @@ impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
 impl HasHost<ContractState> for ExternLowLevelHost {
     type ReturnValueType = CallResponse;
 
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
     }
 
@@ -683,7 +672,7 @@ impl HasHost<ContractState> for ExternLowLevelHost {
         parameter: Parameter,
         method: EntrypointName,
         amount: Amount,
-    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
+    ) -> CallContractResult<Self::ReturnValueType> {
         let data = invoke_contract_construct_parameter(to, parameter, method, amount);
         // in contrast to the high-level interface, here the state is modified lazily by
         // reading and writing to it. hence it is already updated so there is no
@@ -695,17 +684,7 @@ impl HasHost<ContractState> for ExternLowLevelHost {
         if state_modified {
             self.state.current_position = 0;
         }
-        if let Some(i) = res {
-            Ok((
-                state_modified,
-                Some(CallResponse {
-                    i,
-                    current_position: 0,
-                }),
-            ))
-        } else {
-            Ok((state_modified, None))
-        }
+        Ok((state_modified, res))
     }
 
     #[inline(always)]

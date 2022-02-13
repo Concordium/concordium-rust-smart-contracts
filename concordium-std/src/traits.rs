@@ -145,11 +145,14 @@ pub trait HasHost<State> {
     /// The type of return values this host provides. This is the raw return
     /// value. The intention is that it will be deserialized by the
     /// consumer, via the [Read] implementation.
-    type ReturnValueType: HasCallResponse;
+    ///
+    /// The Debug requirement exists so that consumers of this trait may use
+    /// methods like [ExpectReport::expect_report].
+    type ReturnValueType: HasCallResponse + crate::fmt::Debug;
 
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()>;
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult;
 
     /// Invoke a given method of a contract with the amount and parameter
     /// provided. If invocation succeeds then the return value is a pair of
@@ -162,7 +165,7 @@ pub trait HasHost<State> {
         parameter: Parameter<'b>,
         method: EntrypointName<'b>,
         amount: Amount,
-    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)>;
+    ) -> CallContractResult<Self::ReturnValueType>;
 
     /// Get the contract state.
     fn state(&mut self) -> &mut State;

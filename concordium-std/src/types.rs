@@ -22,6 +22,18 @@ pub struct CallResponse {
     pub(crate) current_position: u32,
 }
 
+impl CallResponse {
+    #[inline(always)]
+    /// Construct a new call response with the given index,
+    /// and starting position set to 0.
+    pub(crate) fn new(i: NonZeroU32) -> Self {
+        Self {
+            i,
+            current_position: 0,
+        }
+    }
+}
+
 /// A type representing the return value of contract init or receive method.
 pub struct ReturnValue {
     pub(crate) current_position: u32,
@@ -30,7 +42,7 @@ pub struct ReturnValue {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
 /// Errors that may occur when invoking a contract entrypoint.
-pub enum CallContractError {
+pub enum CallContractError<ReturnValueType> {
     /// Amount that was to be transferred is not available to the sender.
     AmountTooLarge,
     /// Owner account of the smart contract that is being invoked does not
@@ -47,7 +59,7 @@ pub enum CallContractError {
     /// Contract that was called rejected with the given reason.
     LogicReject {
         reason:       i32,
-        return_value: CallResponse,
+        return_value: ReturnValueType,
     },
     /// Execution of a contract call triggered a runtime error.
     Trap,
@@ -65,10 +77,11 @@ pub enum TransferError {
 
 /// A wrapper around [Result] that fixes the error variant to
 /// [CallContractError].
-pub type CallContractResult<A> = Result<A, CallContractError>;
+pub type CallContractResult<A> = Result<(bool, Option<A>), CallContractError<A>>;
 
-/// A wrapper around [Result] that fixes the error variant to [TransferError].
-pub type TransferResult<A> = Result<A, TransferError>;
+/// A wrapper around [Result] that fixes the error variant to [TransferError]
+/// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
+pub type TransferResult = Result<(), TransferError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Default)]

@@ -664,9 +664,20 @@ impl HasCallResponse for Cursor<Vec<u8>> {
 /// The provided closure may mutate its environment, for example to keep track
 /// of how many times the function was called during testing. This is the reason
 /// for `FnMut` bound.
-pub struct MockFn<State>(
-    Box<dyn FnMut(Parameter, Amount, &mut State, &mut Vec<u8>) -> CallContractResult<bool>>,
-);
+pub struct MockFn<State> {
+    f: TestMockFn<State>,
+}
+
+/// The handler for a specific entrypoint. This is a boxed closure for good
+/// ergonomics. It does however mean that in practice only closures which don't
+/// capture any references may be put into it. This does prevent some example
+/// uses, or at least forces them to use awkward patterns. In particular, a test
+/// example where the closure would keep track of whether it is called or not
+/// via incrementing a local variable is not going to be possible to express.
+///
+/// This might be improved in the future.
+type TestMockFn<State> =
+    Box<dyn FnMut(Parameter, Amount, &mut State) -> CallContractResult<Cursor<Vec<u8>>>>;
 
 impl<State> MockFn<State> {
     /// Create a mock function which has access to the parameter, amount, and
@@ -681,40 +692,80 @@ impl<State> MockFn<State> {
     pub fn new<R, F>(mut mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(Parameter, Amount, &mut State) -> CallContractResult<(bool, R)> + 'static, {
+        F: FnMut(Parameter, Amount, &mut State) -> CallContractResult<R> + 'static, {
         // TODO: Ideally, the Host should figure out whether the state has been altered
         // or not. I.e. the bool should not be returned in the `mock_fn_return` closure.
-        let mock_fn = Box::new(
-            move |parameter: Parameter, amount: Amount, state: &mut State, output: &mut Vec<u8>| {
-                // let f = boxed_mock_fn_return;
-                let (modified, return_value) = mock_fn_return(parameter, amount, state)?;
-                return_value.serial(output).map_err(|_| CallContractError::Trap)?;
-                Ok(modified)
-            },
-        );
-        Self(mock_fn)
+        let mock_fn = Box::new(move |parameter: Parameter, amount: Amount, state: &mut State| {
+            match mock_fn_return(parameter, amount, state) {
+                Ok((modified, return_value)) => {
+                    if let Some(return_value) = return_value {
+                        Ok((modified, Some(Cursor::new(to_bytes(&return_value)))))
+                    } else {
+                        Ok((modified, None))
+                    }
+                }
+                Err(e) => match e {
+                    CallContractError::AmountTooLarge => Err(CallContractError::AmountTooLarge),
+                    CallContractError::MissingAccount => Err(CallContractError::MissingAccount),
+                    CallContractError::MissingContract => Err(CallContractError::MissingContract),
+                    CallContractError::MissingEntrypoint => {
+                        Err(CallContractError::MissingEntrypoint)
+                    }
+                    CallContractError::MessageFailed => Err(CallContractError::MessageFailed),
+                    CallContractError::LogicReject {
+                        reason,
+                        return_value,
+                    } => Err(CallContractError::LogicReject {
+                        reason,
+                        return_value: Cursor::new(to_bytes(&return_value)),
+                    }),
+                    CallContractError::Trap => Err(CallContractError::Trap),
+                },
+            }
+        });
+        Self {
+            f: mock_fn,
+        }
+    }
+
+    /// A helper that assumes that a V1 contract is invoked. This means that the
+    /// return value will **always** be present in case of success.
+    pub fn new_v1<R, F>(mut mock_fn_return: F) -> Self
+    where
+        R: Serial,
+        F: FnMut(Parameter, Amount, &mut State) -> Result<(bool, R), CallContractError<R>>
+            + 'static, {
+        Self::new(move |p, a, s| mock_fn_return(p, a, s).map(|(modified, rv)| (modified, Some(rv))))
+    }
+
+    /// A helper that assumes that a V0 contract is invoked. This means that the
+    /// return value will **never** be present in case of success, and hence
+    /// does not have to be provided by the caller.
+    pub fn new_v0<R, F>(mut mock_fn_return: F) -> Self
+    where
+        R: Serial,
+        F: FnMut(Parameter, Amount, &mut State) -> Result<bool, CallContractError<R>> + 'static,
+    {
+        Self::new(move |p, a, s| mock_fn_return(p, a, s).map(|modified| (modified, None)))
     }
 
     /// Create a simple mock function that returns `Ok` with the same
-    /// value every time.
-    pub fn returning_ok<R>(return_value: R) -> Self
-    where
-        R: Serial + 'static + Clone, {
-        Self::new(move |_parameter, _amount, _state| -> CallContractResult<(bool, R)> {
-            Ok((false, return_value.clone()))
+    /// value every time, and signals the state is not changed.
+    pub fn returning_ok<R: Clone + Serial + 'static>(return_value: R) -> Self {
+        Self::new(move |_parameter, _amount, _state| -> CallContractResult<R> {
+            Ok((false, Some(return_value.clone())))
         })
     }
 
     /// Create a simple mock function that returns `Err` with same error every
     /// time.
-    pub fn returning_err(error: CallContractError) -> Self {
-        let mock_fn = Box::new(
+    pub fn returning_err<R: Clone + Serial + 'static>(error: CallContractError<R>) -> Self {
+        Self::new(
             move |_parameter: Parameter,
                   _amount: Amount,
-                  _state: &mut State,
-                  _output: &mut Vec<u8>| { Err(error.clone()) },
-        );
-        Self(mock_fn)
+                  _state: &mut State|
+                  -> CallContractResult<R> { Err(error.clone()) },
+        )
     }
 }
 
@@ -749,7 +800,7 @@ impl<State> HasHost<State> for HostTest<State> {
     ///   - [TransferError::AmountTooLarge]: Contract has insufficient funds.
     ///   - [TransferError::MissingAccount]: Attempted transfer to an account
     ///     set as missing with `make_account_missing`.
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         if self.missing_accounts.contains(receiver) {
             return Err(TransferError::MissingAccount);
         }
@@ -778,7 +829,7 @@ impl<State> HasHost<State> for HostTest<State> {
         parameter: Parameter<'b>,
         method: EntrypointName<'b>,
         amount: Amount,
-    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
+    ) -> CallContractResult<Self::ReturnValueType> {
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
@@ -792,13 +843,11 @@ impl<State> HasHost<State> for HostTest<State> {
         if amount.micro_ccd > 0 && *unwrap_contract_balance(&mut self.contract_balance) < amount {
             return Err(CallContractError::AmountTooLarge);
         }
-        let mut output = Vec::new();
 
         // Invoke the handler.
         // The return value is written to `output`, which we then provide access to
         // through a `Cursor`.
-        let res = (handler.0)(parameter, amount, &mut self.state, &mut output)
-            .map(|state_modified| (state_modified, Some(Cursor::new(output))));
+        let res = (handler.f)(parameter, amount, &mut self.state);
 
         // Update the contract balance if the invocation succeeded.
         if res.is_ok() && amount.micro_ccd > 0 {
