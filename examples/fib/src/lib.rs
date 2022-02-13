@@ -61,6 +61,62 @@ fn contract_receive(
     }
 }
 
+// Add the the nth Fibonacci number F(n) to this contract's state.
+// This is achieved by recursively calling the contract itself. This is a
+// low-level variant of the entrypoint above.
+#[inline(always)]
+#[receive(
+    contract = "fib",
+    name = "receive_ll",
+    parameter = "u64",
+    return_value = "u64",
+    low_level
+)]
+fn contract_receive_ll<S: HasContractState>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<S>,
+) -> ReceiveResult<u64> {
+    // Try to get the parameter (64bit unsigned integer).
+    let n: u64 = ctx.parameter_cursor().get()?;
+    if n <= 1 {
+        host.state().write_u64(1).unwrap_abort();
+        Ok(1)
+    } else {
+        let self_address = ctx.self_address();
+        let mut n2 = host
+            .invoke_contract(
+                &self_address,
+                Parameter(&(n - 2).to_le_bytes()[..]),
+                EntrypointName::new_unchecked("receive"),
+                Amount::zero(),
+            )
+            .unwrap_abort()
+            .1
+            .unwrap_abort();
+        let cv2 = host.state().read_u64().unwrap_abort();
+        let n2: u64 = n2.get().unwrap_abort();
+        ensure_eq!(cv2, n2);
+        let mut n1 = host
+            .invoke_contract(
+                &self_address,
+                Parameter(&(n - 1).to_le_bytes()[..]),
+                EntrypointName::new_unchecked("receive"),
+                Amount::zero(),
+            )
+            .unwrap_abort()
+            .1
+            .unwrap_abort();
+        // state cursor has been reset to 0
+        let cv1 = host.state().read_u64().unwrap_abort();
+        let n1: u64 = n1.get().unwrap_abort();
+        ensure_eq!(cv1, n1);
+        let state = host.state();
+        state.seek(SeekFrom::Start(0)).unwrap_abort();
+        state.write_u64(cv1 + cv2).unwrap_abort();
+        Ok(cv1 + cv2)
+    }
+}
+
 /// Retrieve the value of the state.
 #[inline(always)]
 #[receive(contract = "fib", name = "view", return_value = "u64")]

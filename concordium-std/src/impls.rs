@@ -581,26 +581,47 @@ fn parse_call_response_code(code: u64) -> CallContractResult<(bool, Option<NonZe
     }
 }
 
+/// Helper factoring out the common behaviour of invoke_transfer for the two
+/// extern hosts below.
+fn invoke_transfer_worker(receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
+    let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
+    let data = unsafe {
+        (bytes.as_mut_ptr() as *mut u8).copy_from_nonoverlapping(
+            receiver.as_ref() as *const [u8; ACCOUNT_ADDRESS_SIZE] as *const u8,
+            ACCOUNT_ADDRESS_SIZE,
+        );
+        (bytes.as_mut_ptr() as *mut u8).add(ACCOUNT_ADDRESS_SIZE).copy_from_nonoverlapping(
+            &amount.micro_ccd.to_le_bytes() as *const [u8; 8] as *const u8,
+            8,
+        );
+        bytes.assume_init()
+    };
+    let response =
+        unsafe { invoke(INVOKE_TRANSFER_TAG, data.as_ptr(), (ACCOUNT_ADDRESS_SIZE + 8) as u32) };
+    parse_transfer_response_code(response)
+}
+
+/// A helper that constructs the parameter to invoke_contract.
+fn invoke_contract_construct_parameter(
+    to: &ContractAddress,
+    parameter: Parameter,
+    method: EntrypointName,
+    amount: Amount,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
+    let mut cursor = Cursor::new(&mut data);
+    to.serial(&mut cursor).unwrap_abort();
+    parameter.serial(&mut cursor).unwrap_abort();
+    method.serial(&mut cursor).unwrap_abort();
+    amount.serial(&mut cursor).unwrap_abort();
+    data
+}
+
 impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
     type ReturnValueType = CallResponse;
 
     fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
-        let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
-        let data = unsafe {
-            (bytes.as_mut_ptr() as *mut u8).copy_from_nonoverlapping(
-                receiver.as_ref() as *const [u8; ACCOUNT_ADDRESS_SIZE] as *const u8,
-                ACCOUNT_ADDRESS_SIZE,
-            );
-            (bytes.as_mut_ptr() as *mut u8).add(ACCOUNT_ADDRESS_SIZE).copy_from_nonoverlapping(
-                &amount.micro_ccd.to_le_bytes() as *const [u8; 8] as *const u8,
-                8,
-            );
-            bytes.assume_init()
-        };
-        let response = unsafe {
-            invoke(INVOKE_TRANSFER_TAG, data.as_ptr(), (ACCOUNT_ADDRESS_SIZE + 8) as u32)
-        };
-        parse_transfer_response_code(response)
+        invoke_transfer_worker(receiver, amount)
     }
 
     fn invoke_contract(
@@ -610,13 +631,7 @@ impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
         method: EntrypointName,
         amount: Amount,
     ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
-        let mut data =
-            Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
-        let mut cursor = Cursor::new(&mut data);
-        to.serial(&mut cursor).unwrap_abort();
-        parameter.serial(&mut cursor).unwrap_abort();
-        method.serial(&mut cursor).unwrap_abort();
-        amount.serial(&mut cursor).unwrap_abort();
+        let data = invoke_contract_construct_parameter(to, parameter, method, amount);
         // serialize state since it might have been modified
         // FIXME: Only do this if needed. This will mean to add a parameter to
         // invoke_contract where the user can opt-out of doing this. But this
@@ -648,6 +663,53 @@ impl<State: Deserial + Serial> HasHost<State> for ExternHost<State> {
     }
 
     fn state(&mut self) -> &mut State { &mut self.state }
+
+    #[inline(always)]
+    fn self_balance(&self) -> Amount {
+        Amount::from_micro_ccd(unsafe { get_receive_self_balance() })
+    }
+}
+
+impl HasHost<ContractState> for ExternLowLevelHost {
+    type ReturnValueType = CallResponse;
+
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult<()> {
+        invoke_transfer_worker(receiver, amount)
+    }
+
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> CallContractResult<(bool, Option<Self::ReturnValueType>)> {
+        let data = invoke_contract_construct_parameter(to, parameter, method, amount);
+        // in contrast to the high-level interface, here the state is modified lazily by
+        // reading and writing to it. hence it is already updated so there is no
+        // need to do anything special before calling
+        let len = data.len();
+        let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
+        let (state_modified, res) = parse_call_response_code(response)?;
+        // if the state is modified we reset the cursor to 0 to maintain its validity.
+        if state_modified {
+            self.state.current_position = 0;
+        }
+        if let Some(i) = res {
+            Ok((
+                state_modified,
+                Some(CallResponse {
+                    i,
+                    current_position: 0,
+                }),
+            ))
+        } else {
+            Ok((state_modified, None))
+        }
+    }
+
+    #[inline(always)]
+    fn state(&mut self) -> &mut ContractState { &mut self.state }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {

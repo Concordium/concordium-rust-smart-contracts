@@ -353,11 +353,17 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
-/// Operations backed by host functions.
-#[derive(Default)]
+/// Operations backed by host functions for the high-level interface.
 #[doc(hidden)]
 pub struct ExternHost<State> {
     pub state: State,
+}
+
+/// Operations backed by host functions for the low-level interface.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct ExternLowLevelHost {
+    pub(crate) state: ContractState,
 }
 
 /// Context backed by host functions.

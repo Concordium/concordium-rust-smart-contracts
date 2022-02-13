@@ -447,7 +447,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     );
 
     let mut out = if init_attributes.optional.low_level {
-        required_args.push("state: &mut ContractState");
+        required_args.push("state: &mut impl HasContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
@@ -671,10 +671,10 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext, ExternHost};
+                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext, ExternLowLevelHost};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut host = ExternHost { state: ContractState::open(()) };
+                let mut host = ExternLowLevelHost::default();
                 match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
                     Ok(rv) => {
                         if rv.serial(&mut ReturnValue::open()).is_err() {
