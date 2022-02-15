@@ -678,7 +678,7 @@ type TestMockFn<State> = Box<
 >;
 
 impl<State> MockFn<State> {
-    /// Create a mock function which has access to the `parameter`, `amount`,
+    /// Create a mock function which has access to `parameter`, `amount`,
     /// `balance`, and `state`.
     ///
     /// `parameter` and `amount` correspond to the values used in
@@ -689,7 +689,9 @@ impl<State> MockFn<State> {
     ///
     /// The function should return a pair (state_modified, return_value), where
     /// state_modified should be set to `true`, if the function modifies the
-    /// state parameter.
+    /// state parameter. It should modify the `balance` and `state` in way
+    /// desired in the test, or in a way that the called contract is
+    /// intended to behave.
     ///
     /// See also `returning_ok` and `returning_err` for when you need simple
     /// mocks.
