@@ -1,4 +1,4 @@
-## Standard library for writing smart contracts for the Concordium blockchain.
+# Standard library for writing smart contracts for the Concordium blockchain
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
 
@@ -31,3 +31,30 @@ The repository has
 as a submodule, and testing and builds are set-up to use the submodule version.
 When changes are made in `concordium-contracts-common` they should be propagated
 to this repository.
+
+## Contributing
+
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/Concordium/.github/blob/main/.github/CODE_OF_CONDUCT.md)
+
+This repository's CI automatically checks formatting and common problems in rust.
+Changes to any of the packages must be such that
+
+- ```cargo clippy --all``` produces no warnings
+- ```rustfmt``` makes no changes.
+
+Everything in this repository should build with stable rust at the moment (at least version 1.44 and up), however the fmt tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
+
+```
+ cargo +nightly-2019-11-13 fmt
+```
+
+(the exact version used by the CI can be found in [.github/workflows/linter.yml](.github/workflows/linter.yml) file).
+You will need to have a recent enough nightly version installed, which can be done via
+
+```
+rustup toolchain install nightly-2019-11-13
+```
+
+or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.
+
+In order to contribute you should make a merge request and not push directly to master.
