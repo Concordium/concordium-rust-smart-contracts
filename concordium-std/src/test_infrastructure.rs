@@ -659,11 +659,8 @@ impl HasCallResponse for Cursor<Vec<u8>> {
     fn size(&self) -> u32 { self.data.len() as u32 }
 }
 
-/// Holds a function used for mocking invocations of contracts with
+/// Holds a [TestMockFn] function used for mocking invocations of contracts with
 /// `invoke_contract`.
-/// The provided closure may mutate its environment, for example to keep track
-/// of how many times the function was called during testing. This is the reason
-/// for `FnMut` bound.
 pub struct MockFn<State> {
     f: TestMockFn<State>,
 }
