@@ -676,12 +676,19 @@ pub struct MockFn<State> {
 /// via incrementing a local variable is not going to be possible to express.
 ///
 /// This might be improved in the future.
-type TestMockFn<State> =
-    Box<dyn FnMut(Parameter, Amount, &mut State) -> CallContractResult<Cursor<Vec<u8>>>>;
+type TestMockFn<State> = Box<
+    dyn FnMut(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<Cursor<Vec<u8>>>,
+>;
 
 impl<State> MockFn<State> {
-    /// Create a mock function which has access to the parameter, amount, and
-    /// state.
+    /// Create a mock function which has access to the `parameter`, `amount`,
+    /// `balance`, and `state`.
+    ///
+    /// `parameter` and `amount` correspond to the values used in
+    /// `invoke_contract(.., parameter, .., amount)`.
+    /// `balance` and `state` correspond to the values from the contract you are
+    /// testing. They are used to simulate calls to the contract itself,
+    /// which can change the balance and state of the contract.
     ///
     /// The function should return a pair (state_modified, return_value), where
     /// state_modified should be set to `true`, if the function modifies the
@@ -692,37 +699,40 @@ impl<State> MockFn<State> {
     pub fn new<R, F>(mut mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(Parameter, Amount, &mut State) -> CallContractResult<R> + 'static, {
-        // TODO: Ideally, the Host should figure out whether the state has been altered
-        // or not. I.e. the bool should not be returned in the `mock_fn_return` closure.
-        let mock_fn = Box::new(move |parameter: Parameter, amount: Amount, state: &mut State| {
-            match mock_fn_return(parameter, amount, state) {
-                Ok((modified, return_value)) => {
-                    if let Some(return_value) = return_value {
-                        Ok((modified, Some(Cursor::new(to_bytes(&return_value)))))
-                    } else {
-                        Ok((modified, None))
+        F: FnMut(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<R> + 'static,
+    {
+        let mock_fn = Box::new(
+            move |parameter: Parameter, amount: Amount, balance: &mut Amount, state: &mut State| {
+                match mock_fn_return(parameter, amount, balance, state) {
+                    Ok((modified, return_value)) => {
+                        if let Some(return_value) = return_value {
+                            Ok((modified, Some(Cursor::new(to_bytes(&return_value)))))
+                        } else {
+                            Ok((modified, None))
+                        }
                     }
+                    Err(e) => match e {
+                        CallContractError::AmountTooLarge => Err(CallContractError::AmountTooLarge),
+                        CallContractError::MissingAccount => Err(CallContractError::MissingAccount),
+                        CallContractError::MissingContract => {
+                            Err(CallContractError::MissingContract)
+                        }
+                        CallContractError::MissingEntrypoint => {
+                            Err(CallContractError::MissingEntrypoint)
+                        }
+                        CallContractError::MessageFailed => Err(CallContractError::MessageFailed),
+                        CallContractError::LogicReject {
+                            reason,
+                            return_value,
+                        } => Err(CallContractError::LogicReject {
+                            reason,
+                            return_value: Cursor::new(to_bytes(&return_value)),
+                        }),
+                        CallContractError::Trap => Err(CallContractError::Trap),
+                    },
                 }
-                Err(e) => match e {
-                    CallContractError::AmountTooLarge => Err(CallContractError::AmountTooLarge),
-                    CallContractError::MissingAccount => Err(CallContractError::MissingAccount),
-                    CallContractError::MissingContract => Err(CallContractError::MissingContract),
-                    CallContractError::MissingEntrypoint => {
-                        Err(CallContractError::MissingEntrypoint)
-                    }
-                    CallContractError::MessageFailed => Err(CallContractError::MessageFailed),
-                    CallContractError::LogicReject {
-                        reason,
-                        return_value,
-                    } => Err(CallContractError::LogicReject {
-                        reason,
-                        return_value: Cursor::new(to_bytes(&return_value)),
-                    }),
-                    CallContractError::Trap => Err(CallContractError::Trap),
-                },
-            }
-        });
+            },
+        );
         Self {
             f: mock_fn,
         }
@@ -733,9 +743,16 @@ impl<State> MockFn<State> {
     pub fn new_v1<R, F>(mut mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(Parameter, Amount, &mut State) -> Result<(bool, R), CallContractError<R>>
+        F: FnMut(
+                Parameter,
+                Amount,
+                &mut Amount,
+                &mut State,
+            ) -> Result<(bool, R), CallContractError<R>>
             + 'static, {
-        Self::new(move |p, a, s| mock_fn_return(p, a, s).map(|(modified, rv)| (modified, Some(rv))))
+        Self::new(move |p, a, b, s| {
+            mock_fn_return(p, a, b, s).map(|(modified, rv)| (modified, Some(rv)))
+        })
     }
 
     /// A helper that assumes that a V0 contract is invoked. This means that the
@@ -744,15 +761,15 @@ impl<State> MockFn<State> {
     pub fn new_v0<R, F>(mut mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(Parameter, Amount, &mut State) -> Result<bool, CallContractError<R>> + 'static,
-    {
-        Self::new(move |p, a, s| mock_fn_return(p, a, s).map(|modified| (modified, None)))
+        F: FnMut(Parameter, Amount, &mut Amount, &mut State) -> Result<bool, CallContractError<R>>
+            + 'static, {
+        Self::new(move |p, a, b, s| mock_fn_return(p, a, b, s).map(|modified| (modified, None)))
     }
 
     /// Create a simple mock function that returns `Ok` with the same
     /// value every time, and signals the state is not changed.
     pub fn returning_ok<R: Clone + Serial + 'static>(return_value: R) -> Self {
-        Self::new(move |_parameter, _amount, _state| -> CallContractResult<R> {
+        Self::new(move |_parameter, _amount, _balance, _state| -> CallContractResult<R> {
             Ok((false, Some(return_value.clone())))
         })
     }
@@ -763,6 +780,7 @@ impl<State> MockFn<State> {
         Self::new(
             move |_parameter: Parameter,
                   _amount: Amount,
+                  _balance: &mut Amount,
                   _state: &mut State|
                   -> CallContractResult<R> { Err(error.clone()) },
         )
@@ -778,7 +796,7 @@ pub struct HostTest<State> {
     transfers:        Vec<(AccountAddress, Amount)>,
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
-    contract_balance: Option<Amount>,
+    contract_balance: Amount,
     /// State of the instance.
     state:            State,
     /// List of accounts that will cause a contract invocation to fail.
@@ -805,9 +823,8 @@ impl<State> HasHost<State> for HostTest<State> {
             return Err(TransferError::MissingAccount);
         }
         if amount.micro_ccd > 0 {
-            let contract_balance = unwrap_contract_balance(&mut self.contract_balance);
-            if *contract_balance >= amount {
-                *contract_balance -= amount;
+            if self.contract_balance >= amount {
+                self.contract_balance -= amount;
                 self.transfers.push((*receiver, amount));
                 Ok(())
             } else {
@@ -839,19 +856,16 @@ impl<State> HasHost<State> for HostTest<State> {
             ),
         };
         // Check if the contract has sufficient balance.
-        // Do not try to unwrap the balance if amount is zero.
-        if amount.micro_ccd > 0 && *unwrap_contract_balance(&mut self.contract_balance) < amount {
+        if amount.micro_ccd > 0 && self.contract_balance < amount {
             return Err(CallContractError::AmountTooLarge);
         }
 
         // Invoke the handler.
-        // The return value is written to `output`, which we then provide access to
-        // through a `Cursor`.
-        let res = (handler.f)(parameter, amount, &mut self.state);
+        let res = (handler.f)(parameter, amount, &mut self.contract_balance, &mut self.state);
 
         // Update the contract balance if the invocation succeeded.
         if res.is_ok() && amount.micro_ccd > 0 {
-            *unwrap_contract_balance(&mut self.contract_balance) -= amount;
+            self.contract_balance -= amount;
         }
         res
     }
@@ -860,30 +874,8 @@ impl<State> HasHost<State> for HostTest<State> {
     fn state(&mut self) -> &mut State { &mut self.state }
 
     /// Get the contract balance.
-    /// This must be set manually with `set_balance`.
-    fn self_balance(&self) -> Amount {
-        // This doesn't use `unwrap_contract_balance`, because this function only has an
-        // immutable reference to self.
-        match self.contract_balance {
-            Some(amount) => amount,
-            None => fail!(
-                "Unset contract balance on the test host. Make sure to use `set_balance` if your \
-                 contract uses the balance."
-            ),
-        }
-    }
-}
-
-/// Helper function for unwrapping the contract balance.
-/// Fails with a descriptive error message on `None`.
-fn unwrap_contract_balance(balance: &mut Option<Amount>) -> &mut Amount {
-    match balance {
-        Some(ref mut amount) => amount,
-        None => fail!(
-            "Unset contract balance on the test host. Make sure to use `set_balance` if your \
-             contract uses the balance."
-        ),
-    }
+    /// This can be set with `set_balance` and defaults to 0.
+    fn self_balance(&self) -> Amount { self.contract_balance }
 }
 
 impl<State> HostTest<State> {
@@ -892,7 +884,7 @@ impl<State> HostTest<State> {
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: Vec::new(),
-            contract_balance: None,
+            contract_balance: Amount::zero(),
             state,
             missing_accounts: BTreeSet::new(),
         }
@@ -929,7 +921,7 @@ impl<State> HostTest<State> {
     ///                  Amount::from_ccd(5)
     ///                  );
     /// ```
-    pub fn set_balance(&mut self, amount: Amount) { self.contract_balance = Some(amount); }
+    pub fn set_balance(&mut self, amount: Amount) { self.contract_balance = amount; }
 
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {

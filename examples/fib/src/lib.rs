@@ -162,7 +162,7 @@ mod tests {
         host.setup_mock_entrypoint(
             contract_address,
             OwnedEntrypointName::new_unchecked("receive".into()),
-            MockFn::new_v1(|parameter, _amount, state: &mut State| {
+            MockFn::new_v1(|parameter, _amount, _balance, state: &mut State| {
                 let n: u64 = match from_bytes(parameter.0) {
                     Ok(n) => n,
                     Err(_) => return Err(CallContractError::Trap),
