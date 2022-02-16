@@ -3,15 +3,15 @@ use core::fmt::Debug;
 
 /// # Implementation of an auction smart contract
 ///
-/// To bid, participants send GTU using the bid function.
+/// To bid, participants send CCD using the bid function.
 /// The participant with the highest bid wins the auction.
 /// Bids are to be placed before the auction end. After that, bids are refused.
 /// Only bids that exceed the highest bid are accepted.
 /// Bids are placed incrementally, i.e., an account's bid is considered
 /// to be the **sum** of all bids.
 ///
-/// Example: if Alice first bid 1 GTU and then bid 2 GTU, her total
-/// bid is 3 GTU. The bidding will only go through if 3 GTU is higher than
+/// Example: if Alice first bid 1 CCD and then bid 2 CCD, her total
+/// bid is 3 CCD. The bidding will only go through if 3 CCD is higher than
 /// the currently highest bid.
 ///
 /// After the auction end, any account can finalize the auction.
@@ -95,18 +95,19 @@ enum FinalizeError {
 
 /// Init function that creates a new auction
 #[init(contract = "auction", parameter = "InitParameter")]
-fn auction_init(ctx: &impl HasInitContext) -> InitResult<State> {
+fn auction_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
-    Ok(fresh_state(parameter.item, parameter.expiry))
+    Ok(((), fresh_state(parameter.item, parameter.expiry)))
 }
 
 /// Receive function in which accounts can bid before the auction end time
 #[receive(contract = "auction", name = "bid", payable)]
-fn auction_bid<A: HasActions>(
+fn auction_bid(
     ctx: &impl HasReceiveContext,
     amount: Amount,
     state: &mut State,
-) -> Result<A, BidError> {
+    _ops: &mut impl HasOperations,
+) -> Result<(), BidError> {
     ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionFinalized);
 
     let slot_time = ctx.metadata().slot_time();
@@ -126,16 +127,17 @@ fn auction_bid<A: HasActions>(
     );
     state.highest_bid = *bid_to_update;
 
-    Ok(A::accept())
+    Ok(())
 }
 
 /// Receive function used to finalize the auction, returning all bids to their
 /// senders, except for the winning bid
 #[receive(contract = "auction", name = "finalize")]
-fn auction_finalize<A: HasActions>(
+fn auction_finalize(
     ctx: &impl HasReceiveContext,
     state: &mut State,
-) -> Result<A, FinalizeError> {
+    ops: &mut impl HasOperations,
+) -> Result<(), FinalizeError> {
     ensure!(state.auction_state == AuctionState::NotSoldYet, FinalizeError::AuctionFinalized);
 
     let slot_time = ctx.metadata().slot_time();
@@ -145,14 +147,18 @@ fn auction_finalize<A: HasActions>(
 
     let balance = ctx.self_balance();
     if balance == Amount::zero() {
-        Ok(A::accept())
+        Ok(())
     } else {
-        let mut return_action = A::simple_transfer(&owner, state.highest_bid);
+        if ops.invoke_transfer(&owner, state.highest_bid).is_err() {
+            bail!(FinalizeError::BidMapError);
+        }
         let mut remaining_bid = None;
         // Return bids that are smaller than highest
         for (addr, &amnt) in state.bids.iter() {
             if amnt < state.highest_bid {
-                return_action = return_action.and_then(A::simple_transfer(addr, amnt));
+                if ops.invoke_transfer(addr, amnt).is_err() {
+                    bail!(FinalizeError::BidMapError);
+                }
             } else {
                 ensure!(remaining_bid.is_none(), FinalizeError::BidMapError);
                 state.auction_state = AuctionState::Sold(*addr);
@@ -163,7 +169,7 @@ fn auction_finalize<A: HasActions>(
         match remaining_bid {
             Some((_, amount)) => {
                 ensure!(amount == state.highest_bid, FinalizeError::BidMapError);
-                Ok(return_action)
+                Ok(())
             }
             None => bail!(FinalizeError::BidMapError),
         }
@@ -255,10 +261,10 @@ mod tests {
     #[test]
     /// Test a sequence of bids and finalizations:
     /// 0. Auction is initialized.
-    /// 1. Alice successfully bids 0.1 GTU.
-    /// 2. Alice successfully bids another 0.1 GTU, highest bid becomes 0.2 GTU
-    /// (the sum of her two bids). 3. Bob successfully bids 0.3 GTU, highest
-    /// bid becomes 0.3 GTU. 4. Someone tries to finalize the auction before
+    /// 1. Alice successfully bids 0.1 CCD.
+    /// 2. Alice successfully bids another 0.1 CCD, highest bid becomes 0.2 CCD
+    /// (the sum of her two bids). 3. Bob successfully bids 0.3 CCD, highest
+    /// bid becomes 0.3 CCD. 4. Someone tries to finalize the auction before
     /// its end time. Attempt fails. 5. Dave successfully finalizes the
     /// auction after its end time.    Alice gets her money back, while
     /// Carol (the owner of the contract) collects the highest bid amount.
@@ -267,9 +273,9 @@ mod tests {
         let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
         let ctx0 = parametrized_init_ctx(&parameter_bytes);
 
-        let amount = Amount::from_micro_gtu(100);
-        let winning_amount = Amount::from_micro_gtu(300);
-        let big_amount = Amount::from_micro_gtu(500);
+        let amount = Amount::from_micro_ccd(100);
+        let winning_amount = Amount::from_micro_ccd(300);
+        let big_amount = Amount::from_micro_ccd(500);
 
         let mut bid_map = BTreeMap::new();
 
@@ -361,7 +367,7 @@ mod tests {
         let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
         let ctx0 = parametrized_init_ctx(&parameter_bytes);
 
-        let amount = Amount::from_micro_gtu(100);
+        let amount = Amount::from_micro_ccd(100);
 
         let mut bid_map = BTreeMap::new();
 
@@ -382,7 +388,7 @@ mod tests {
     }
 
     #[test]
-    /// Bids for 0 GTU should be rejected.
+    /// Bids for 0 CCD should be rejected.
     fn test_auction_bid_zero() {
         let ctx1 = new_account_ctx().1;
         let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());

@@ -1,7 +1,7 @@
 //! Piggy bank smart contract.
 //!
-//! Allows anyone to insert GTU, but only the owner can "smash" it and
-//! retrieve the GTU. Prevents more GTU to be inserted after being smashed.
+//! Allows anyone to insert CCD, but only the owner can "smash" it and
+//! retrieve the CCD. Prevents more CCD to be inserted after being smashed.
 //!
 //! This smart contract module is developed as part of a upcoming tutorial on
 //! developing smart contracts.
@@ -20,9 +20,9 @@ use concordium_std::*;
 /// The state of the piggy bank
 #[derive(Debug, Serialize, PartialEq, Eq)]
 enum PiggyBankState {
-    /// Alive and well, allows for GTU to be inserted.
+    /// Alive and well, allows for CCD to be inserted.
     Intact,
-    /// The piggy bank has been emptied, preventing further GTU to be inserted.
+    /// The piggy bank has been emptied, preventing further CCD to be inserted.
     Smashed,
 }
 
@@ -33,7 +33,7 @@ fn piggy_init(_ctx: &impl HasInitContext) -> InitResult<PiggyBankState> {
     Ok(PiggyBankState::Intact)
 }
 
-/// Insert some GTU into a piggy bank, allowed by anyone.
+/// Insert some CCD into a piggy bank, allowed by anyone.
 #[receive(contract = "PiggyBank", name = "insert", payable)]
 fn piggy_insert<A: HasActions>(
     _ctx: &impl HasReceiveContext,
@@ -42,7 +42,7 @@ fn piggy_insert<A: HasActions>(
 ) -> ReceiveResult<A> {
     // Ensure the piggy bank has not been smashed already.
     ensure!(*state == PiggyBankState::Intact);
-    // Just accept since the GTU balance is managed by the chain.
+    // Just accept since the CCD balance is managed by the chain.
     Ok(A::accept())
 }
 
@@ -52,7 +52,7 @@ enum SmashError {
     AlreadySmashed,
 }
 
-/// Smash a piggy bank retrieving the GTU, only allowed by the owner.
+/// Smash a piggy bank retrieving the CCD, only allowed by the owner.
 #[receive(contract = "PiggyBank", name = "smash")]
 fn piggy_smash<A: HasActions>(
     ctx: &impl HasReceiveContext,
@@ -108,14 +108,14 @@ mod tests {
     fn test_insert_intact() {
         // Setup
         let ctx = ReceiveContextTest::empty();
-        let amount = Amount::from_micro_gtu(100);
+        let amount = Amount::from_micro_ccd(100);
         let mut state = PiggyBankState::Intact;
 
         // Trigger the insert
         let actions_result: ReceiveResult<ActionsTree> = piggy_insert(&ctx, amount, &mut state);
 
         // Inspect the result
-        let actions = actions_result.expect_report("Inserting GTU results in error.");
+        let actions = actions_result.expect_report("Inserting CCD results in error.");
 
         claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
         claim_eq!(state, PiggyBankState::Intact, "Piggy bank state should still be intact.");
@@ -125,7 +125,7 @@ mod tests {
     fn test_insert_smashed() {
         // Setup
         let ctx = ReceiveContextTest::empty();
-        let amount = Amount::from_micro_gtu(100);
+        let amount = Amount::from_micro_ccd(100);
         let mut state = PiggyBankState::Smashed;
 
         // Trigger the insert
@@ -144,7 +144,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_gtu(100);
+        let balance = Amount::from_micro_ccd(100);
         ctx.set_self_balance(balance);
 
         let mut state = PiggyBankState::Intact;
@@ -153,7 +153,7 @@ mod tests {
         let actions_result: Result<ActionsTree, _> = piggy_smash(&ctx, &mut state);
 
         // Inspect the result
-        let actions = actions_result.expect_report("Inserting GTU results in error.");
+        let actions = actions_result.expect_report("Inserting CCD results in error.");
         claim_eq!(actions, ActionsTree::simple_transfer(&owner, balance));
         claim_eq!(state, PiggyBankState::Smashed);
     }
@@ -167,7 +167,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(AccountAddress([1u8; 32]));
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_gtu(100);
+        let balance = Amount::from_micro_ccd(100);
         ctx.set_self_balance(balance);
 
         let mut state = PiggyBankState::Intact;
@@ -187,7 +187,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_gtu(100);
+        let balance = Amount::from_micro_ccd(100);
         ctx.set_self_balance(balance);
 
         let mut state = PiggyBankState::Smashed;

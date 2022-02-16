@@ -1,7 +1,7 @@
 /*!
- * A contract that acts like an account (can send, store and accept GTU),
- * but requires n > 1 ordained accounts to agree to the sending of GTU
- * before it is accepted. This is useful for storing GTU where the security
+ * A contract that acts like an account (can send, store and accept CCD),
+ * but requires n > 1 ordained accounts to agree to the sending of CCD
+ * before it is accepted. This is useful for storing CCD where the security
  * of just one account isn’t considered high enough.
  *
  * Transfer requests time out if not agreed to within the contract's
@@ -303,7 +303,7 @@ mod tests {
         let mut ctx = InitContextTest::empty();
         ctx.set_parameter(&parameter_bytes);
 
-        let amount = Amount::from_micro_gtu(0);
+        let amount = Amount::from_micro_ccd(0);
         // call the init function
         let out = contract_init(&ctx, amount);
 
@@ -342,7 +342,7 @@ mod tests {
         let target_account = AccountAddress([3u8; 32]);
 
         let request_id = 0;
-        let transfer_amount = Amount::from_micro_gtu(50);
+        let transfer_amount = Amount::from_micro_ccd(50);
         // Create Request with id 0, to transfer 50 to target_account
         let parameter = Message::RequestTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
@@ -351,7 +351,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account1));
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
-        ctx.set_self_balance(Amount::from_micro_gtu(0));
+        ctx.set_self_balance(Amount::from_micro_ccd(0));
 
         // Setup state
         let mut account_holders = BTreeSet::new();
@@ -369,7 +369,7 @@ mod tests {
             requests: BTreeMap::new(),
         };
 
-        let receive_amount = Amount::from_micro_gtu(100);
+        let receive_amount = Amount::from_micro_ccd(100);
         // Execution
         let res: Result<ActionsTree, _> =
             contract_receive_message(&ctx, receive_amount, &mut state);
@@ -383,7 +383,7 @@ mod tests {
         claim_eq!(state.requests.len(), 1, "Contract receive did not create transfer request");
         claim_eq!(
             sum_reserved_balance(&state),
-            Amount::from_micro_gtu(50),
+            Amount::from_micro_ccd(50),
             "Contract receive did not reserve requested amount"
         );
         let request = state.requests.get(&request_id).unwrap();
@@ -403,7 +403,7 @@ mod tests {
         let target_account = AccountAddress([3u8; 32]);
 
         let request_id = 0;
-        let transfer_amount = Amount::from_micro_gtu(50);
+        let transfer_amount = Amount::from_micro_ccd(50);
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
@@ -438,7 +438,7 @@ mod tests {
             requests,
         };
 
-        let receive_amount = Amount::from_micro_gtu(75);
+        let receive_amount = Amount::from_micro_ccd(75);
 
         // Execution
         let res: Result<ActionsTree, _> =
@@ -462,7 +462,7 @@ mod tests {
         );
         claim_eq!(
             sum_reserved_balance(&state),
-            Amount::from_micro_gtu(50),
+            Amount::from_micro_ccd(50),
             "Contract receive did not reserve the requested amount"
         );
         let request = state.requests.get(&request_id).unwrap();
@@ -484,7 +484,7 @@ mod tests {
         let target_account = AccountAddress([3u8; 32]);
 
         let request_id = 0;
-        let transfer_amount = Amount::from_micro_gtu(50);
+        let transfer_amount = Amount::from_micro_ccd(50);
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
@@ -519,7 +519,7 @@ mod tests {
             requests,
         };
 
-        let receive_amount = Amount::from_micro_gtu(100);
+        let receive_amount = Amount::from_micro_ccd(100);
 
         // Execution
         let res: Result<ActionsTree, _> =
@@ -532,13 +532,13 @@ mod tests {
         };
         claim_eq!(
             actions,
-            ActionsTree::simple_transfer(&target_account, Amount::from_micro_gtu(50)),
+            ActionsTree::simple_transfer(&target_account, Amount::from_micro_ccd(50)),
             "Supporting the transfer did not result in the right transfer"
         );
         claim_eq!(state.requests.len(), 0, "The request should be removed");
         claim_eq!(
             sum_reserved_balance(&state),
-            Amount::from_micro_gtu(0),
+            Amount::from_micro_ccd(0),
             "The transfer should be subtracted from the reserved balance"
         );
     }

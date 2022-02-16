@@ -97,15 +97,15 @@ where
 fn init<S: HasContractStateLL>(
     _ctx: &impl HasInitContext,
     allocator: &mut ContractStateHL<S>,
-) -> InitResult<State<S>> {
-    Ok(State {
+) -> InitResult<((), State<S>)> {
+    Ok(((), State {
         token_state:    allocator.new_map(),
         another_struct: AnotherStruct {
             a_set: allocator.new_set(),
         },
         total_tokens:   0,
         total_tokens_p: Persisted::new(0),
-    })
+    }))
 }
 
 #[derive(Serialize, SchemaType)]
@@ -116,15 +116,15 @@ struct MintParams {
 }
 
 #[receive(contract = "storable-contract", name = "mint", parameter = "MintParams")]
-fn receive_mint<A: HasActions, S: HasContractStateLL>(
+fn receive_mint<S: HasContractStateLL>(
     ctx: &impl HasReceiveContext,
-    state: &mut State<S>,
+    host: &mut impl HasHost<State<S>>,
     allocator: &mut ContractStateHL<S>,
-) -> ReceiveResult<A> {
+) -> ReceiveResult<()> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
     // Just overwrite existing.
-    state
+    host.state()
         .token_state
         .entry(params.owner)?
         .and_try_modify::<_, Reject>(|owner_map| {
@@ -142,20 +142,20 @@ fn receive_mint<A: HasActions, S: HasContractStateLL>(
             owner_map
         });
 
-    state.another_struct.a_set.insert(42);
+    host.state().another_struct.a_set.insert(42);
 
     // TODO: This won't be persisted
-    state.total_tokens += params.token_count as u64;
+    host.state().total_tokens += params.token_count as u64;
 
     // But this should be.
     // state.total_tokens_lsc.set(params.token_count as u64);
-    state
+    host.state()
         .total_tokens_p
         .update(|old_count| *old_count += params.token_count as u64)
         .unwrap_abort()
         .unwrap_abort();
 
-    Ok(A::accept())
+    Ok(())
 }
 
 #[concordium_cfg_test]
@@ -190,19 +190,18 @@ mod tests {
         let mut allocator = ContractStateHL::open(Rc::clone(&state_ll));
 
         // Set up initial state contents via init.
-        let state_to_store =
+        let (_rv, state_to_store) =
             init(&InitContextTest::empty(), &mut allocator).expect_report("Init failed");
         state_to_store.store(&[], Rc::clone(&state_ll));
 
         // Then load the state, as it happens when calling receive.
-        let mut state_for_rcv =
+        let state_for_rcv =
             State::load(&[], Rc::clone(&state_ll)).expect_report("Could not load all of state.");
 
+        let mut host = HostTest::new(state_for_rcv);
+
         // Invoke receive.
-        claim_eq!(
-            receive_mint(&ctx, &mut state_for_rcv, &mut allocator),
-            Ok(ActionsTree::accept())
-        );
+        claim!(receive_mint(&ctx, &mut host, &mut allocator).is_ok());
 
         // Reload the state to ensure that it was actually persisted (and not just
         // altered in memory).

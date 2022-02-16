@@ -1,10 +1,14 @@
 use crate::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
-    fail,
+    fail, fmt,
     hash::Hash,
-    mem, num, prims,
+    marker::PhantomData,
+    mem, num,
+    num::NonZeroU32,
     prims::*,
+    rc::Rc,
     traits::*,
     types::*,
     vec::Vec,
@@ -15,19 +19,13 @@ use mem::MaybeUninit;
 
 impl convert::From<()> for Reject {
     #[inline(always)]
-    fn from(_: ()) -> Self {
-        Reject {
-            error_code: unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) },
-        }
-    }
+    fn from(_: ()) -> Self { unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) }.into() }
 }
 
 impl convert::From<ParseError> for Reject {
     #[inline(always)]
     fn from(_: ParseError) -> Self {
-        Reject {
-            error_code: unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 2) },
-        }
+        unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 2) }.into()
     }
 }
 
@@ -35,12 +33,11 @@ impl convert::From<ParseError> for Reject {
 impl From<LogError> for Reject {
     #[inline(always)]
     fn from(le: LogError) -> Self {
-        let error_code = match le {
-            LogError::Full => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 3) },
-            LogError::Malformed => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 4) },
-        };
-        Self {
-            error_code,
+        match le {
+            LogError::Full => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 3) }.into(),
+            LogError::Malformed => {
+                unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 4) }.into()
+            }
         }
     }
 }
@@ -51,22 +48,19 @@ impl From<LogError> for Reject {
 /// InvalidCharacters to i32::MIN + 10.
 impl From<NewContractNameError> for Reject {
     fn from(nre: NewContractNameError) -> Self {
-        let error_code = match nre {
+        match nre {
             NewContractNameError::MissingInitPrefix => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 5)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 5).into()
             },
             NewContractNameError::TooLong => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 6)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 6).into()
             },
             NewContractNameError::ContainsDot => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 9)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 9).into()
             },
             NewContractNameError::InvalidCharacters => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 10)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 10).into()
             },
-        };
-        Self {
-            error_code,
         }
     }
 }
@@ -76,19 +70,16 @@ impl From<NewContractNameError> for Reject {
 /// InvalidCharacters to i32::MIN + 11.
 impl From<NewReceiveNameError> for Reject {
     fn from(nre: NewReceiveNameError) -> Self {
-        let error_code = match nre {
+        match nre {
             NewReceiveNameError::MissingDotSeparator => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 7)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 7).into()
             },
             NewReceiveNameError::TooLong => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 8)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 8).into()
             },
             NewReceiveNameError::InvalidCharacters => unsafe {
-                crate::num::NonZeroI32::new_unchecked(i32::MIN + 11)
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 11).into()
             },
-        };
-        Self {
-            error_code,
         }
     }
 }
@@ -97,8 +88,42 @@ impl From<NewReceiveNameError> for Reject {
 impl From<NotPayableError> for Reject {
     #[inline(always)]
     fn from(_: NotPayableError) -> Self {
+        unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) }.into()
+    }
+}
+
+/// Return values are intended to be produced by writing to the [ReturnValue]
+/// buffer, either in a high-level interface via serialization, or in a
+/// low-level interface by manually using the [Write] trait's interface.
+impl Write for ReturnValue {
+    type Err = ();
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
+        let len: u32 = {
+            match buf.len().try_into() {
+                Ok(v) => v,
+                _ => return Err(()),
+            }
+        };
+        if self.current_position.checked_add(len).is_none() {
+            return Err(());
+        }
+        let num_bytes = unsafe { write_output(buf.as_ptr(), len, self.current_position) };
+        self.current_position += num_bytes; // safe because of check above that len + pos is small enough
+        Ok(num_bytes as usize)
+    }
+}
+
+impl ReturnValue {
+    #[inline(always)]
+    /// Create a return value cursor that starts at the beginning.
+    /// Note that there is a single return value per contract invocation, so
+    /// multiple calls to open will give access to writing the same return
+    /// value. Thus this function should only be used once per contract
+    /// invocation.
+    pub fn open() -> Self {
         Self {
-            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) },
+            current_position: 0,
         }
     }
 }
@@ -845,7 +870,7 @@ where
 
 impl<T, S> Persisted<T, S>
 where
-    T: Serial + DeserialStateCtx<S> + std::fmt::Debug,
+    T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
     pub fn new(value: T) -> Self { Self::New(value) }
@@ -933,7 +958,7 @@ where
 
 impl<T, S> Persistable<S> for Persisted<T, S>
 where
-    T: Serial + DeserialStateCtx<S> + std::fmt::Debug,
+    T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
     fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
@@ -983,7 +1008,7 @@ where
 }
 
 /// # Trait implementations for Parameter
-impl Read for Parameter {
+impl Read for ExternParameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -992,15 +1017,45 @@ impl Read for Parameter {
             }
         };
         let num_read =
-            unsafe { get_parameter_section(buf.as_mut_ptr(), len, self.current_position) };
-        self.current_position += num_read;
+            unsafe { get_parameter_section(0, buf.as_mut_ptr(), len, self.current_position) };
+        self.current_position += num_read as u32; // parameter 0 always exists, so this is safe.
         Ok(num_read as usize)
     }
 }
 
-impl HasParameter for Parameter {
+impl HasParameter for ExternParameter {
     #[inline(always)]
-    fn size(&self) -> u32 { unsafe { get_parameter_size() } }
+    // parameter 0 always exists so this is correct
+    fn size(&self) -> u32 { unsafe { get_parameter_size(0) as u32 } }
+}
+
+/// The read implementation uses host functions to read chunks of return value
+/// on demand.
+impl Read for CallResponse {
+    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
+        let len: u32 = {
+            match buf.len().try_into() {
+                Ok(v) => v,
+                _ => return Err(ParseError::default()),
+            }
+        };
+        let num_read = unsafe {
+            get_parameter_section(self.i.into(), buf.as_mut_ptr(), len, self.current_position)
+        };
+        if num_read >= 0 {
+            self.current_position += num_read as u32;
+            Ok(num_read as usize)
+        } else {
+            Err(ParseError::default())
+        }
+    }
+}
+
+/// CallResponse can only be constured in this crate. As a result whenever it is
+/// constructed it will point to a valid parameter, which means that
+/// `get_parameter_size` will always return a non-negative value.
+impl HasCallResponse for CallResponse {
+    fn size(&self) -> u32 { unsafe { get_parameter_size(self.i.get()) as u32 } }
 }
 
 /// # Trait implementations for the chain metadata.
@@ -1110,7 +1165,7 @@ impl ExactSizeIterator for PoliciesIterator {
 
 impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     type MetadataType = ChainMetaExtern;
-    type ParamType = Parameter;
+    type ParamType = ExternParameter;
     type PolicyIteratorType = PoliciesIterator;
     type PolicyType = Policy<AttributesCursor>;
 
@@ -1131,9 +1186,208 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 
     #[inline(always)]
     fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
+        ExternParameter {
             current_position: 0,
         }
+    }
+}
+
+/// Tag of the transfer operation expected by the host. See [prims::invoke].
+const INVOKE_TRANSFER_TAG: u32 = 0;
+/// Tag of the transfer operation expected by the host. See [prims::invoke].
+const INVOKE_CALL_TAG: u32 = 1;
+
+/// Decode the the response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+/// - every failure has all bits of the first 3 bytes set
+/// - in case of failure
+///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
+///     reason from the contract
+///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+fn parse_transfer_response_code(code: u64) -> TransferResult {
+    if code & !0xffff_ff00_0000_0000 == 0 {
+        // success
+        // assume response from host conforms to spec, just return success.
+        Ok(())
+    } else {
+        // failure.
+        match (0x0000_00ff_0000_0000 & code) >> 32 {
+            0x01 => Err(TransferError::AmountTooLarge),
+            0x02 => Err(TransferError::MissingAccount),
+            _ => crate::trap(), // host precondition violation
+        }
+    }
+}
+
+/// Decode the the response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+/// - every failure has all bits of the first 3 bytes set
+/// - in case of failure
+///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
+///     reason from the contract
+///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+fn parse_call_response_code(code: u64) -> CallContractResult<CallResponse> {
+    if code & !0xffff_ff00_0000_0000 == 0 {
+        // this means success
+        let rv = (code >> 40) as u32;
+        let tag = 0x80_0000u32;
+        if tag & rv != 0 {
+            Ok((true, NonZeroU32::new(rv & !tag).map(CallResponse::new)))
+        } else {
+            Ok((false, NonZeroU32::new(rv).map(CallResponse::new)))
+        }
+    } else {
+        match (0x0000_00ff_0000_0000 & code) >> 32 {
+            0x00 =>
+            // response with logic error and return value.
+            {
+                let reason = (0x0000_0000_ffff_ffff & code) as u32 as i32;
+                if reason == 0 {
+                    crate::trap()
+                } else {
+                    let rv = (code >> 40) as u32;
+                    if rv > 0 {
+                        Err(CallContractError::LogicReject {
+                            reason,
+                            return_value: CallResponse::new(unsafe {
+                                NonZeroU32::new_unchecked(rv)
+                            }),
+                        })
+                    } else {
+                        crate::trap() // host precondition violation.
+                    }
+                }
+            }
+            0x01 => Err(CallContractError::AmountTooLarge),
+            0x02 => Err(CallContractError::MissingAccount),
+            0x03 => Err(CallContractError::MissingContract),
+            0x04 => Err(CallContractError::MissingEntrypoint),
+            0x05 => Err(CallContractError::MessageFailed),
+            0x06 => Err(CallContractError::Trap),
+            _ => crate::trap(), // host precondition violation
+        }
+    }
+}
+
+/// Helper factoring out the common behaviour of invoke_transfer for the two
+/// extern hosts below.
+fn invoke_transfer_worker(receiver: &AccountAddress, amount: Amount) -> TransferResult {
+    let mut bytes: MaybeUninit<[u8; ACCOUNT_ADDRESS_SIZE + 8]> = MaybeUninit::uninit();
+    let data = unsafe {
+        (bytes.as_mut_ptr() as *mut u8).copy_from_nonoverlapping(
+            receiver.as_ref() as *const [u8; ACCOUNT_ADDRESS_SIZE] as *const u8,
+            ACCOUNT_ADDRESS_SIZE,
+        );
+        (bytes.as_mut_ptr() as *mut u8).add(ACCOUNT_ADDRESS_SIZE).copy_from_nonoverlapping(
+            &amount.micro_ccd.to_le_bytes() as *const [u8; 8] as *const u8,
+            8,
+        );
+        bytes.assume_init()
+    };
+    let response =
+        unsafe { invoke(INVOKE_TRANSFER_TAG, data.as_ptr(), (ACCOUNT_ADDRESS_SIZE + 8) as u32) };
+    parse_transfer_response_code(response)
+}
+
+/// A helper that constructs the parameter to invoke_contract.
+fn invoke_contract_construct_parameter(
+    to: &ContractAddress,
+    parameter: Parameter,
+    method: EntrypointName,
+    amount: Amount,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
+    let mut cursor = Cursor::new(&mut data);
+    to.serial(&mut cursor).unwrap_abort();
+    parameter.serial(&mut cursor).unwrap_abort();
+    method.serial(&mut cursor).unwrap_abort();
+    amount.serial(&mut cursor).unwrap_abort();
+    data
+}
+
+impl<State, StateLL> HasHost<State> for ExternHost<State, StateLL>
+where
+    State: Persistable<StateLL>,
+    StateLL: HasContractStateLL,
+{
+    type ReturnValueType = CallResponse;
+
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
+        invoke_transfer_worker(receiver, amount)
+    }
+
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> CallContractResult<Self::ReturnValueType> {
+        let data = invoke_contract_construct_parameter(to, parameter, method, amount);
+        let len = data.len();
+        let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
+        let (state_modified, res) = parse_call_response_code(response)?;
+        if state_modified {
+            // The state of the contract changed as a result of the call.
+            // So we refresh it.
+            if let Ok(new_state) = State::load(&[], Rc::clone(&self.state_ll)) {
+                self.state = new_state;
+            } else {
+                crate::trap() // FIXME: With new state this needs to be revised.
+            }
+        }
+        Ok((state_modified, res))
+    }
+
+    fn state(&mut self) -> &mut State { &mut self.state }
+
+    #[inline(always)]
+    fn self_balance(&self) -> Amount {
+        Amount::from_micro_ccd(unsafe { get_receive_self_balance() })
+    }
+}
+
+impl HasHost<ContractStateLL> for ExternLowLevelHost {
+    type ReturnValueType = CallResponse;
+
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
+        invoke_transfer_worker(receiver, amount)
+    }
+
+    fn invoke_contract(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> CallContractResult<Self::ReturnValueType> {
+        let data = invoke_contract_construct_parameter(to, parameter, method, amount);
+        let len = data.len();
+        let response = unsafe { invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
+        // TODO: Figure out if we need to do anything special here.
+        // Old entries are invalidated by the host, so no cursors should need to be
+        // reset.
+        parse_call_response_code(response)
+    }
+
+    #[inline(always)]
+    fn state(&mut self) -> &mut ContractStateLL { &mut self.state }
+
+    #[inline(always)]
+    fn self_balance(&self) -> Amount {
+        Amount::from_micro_ccd(unsafe { get_receive_self_balance() })
     }
 }
 
@@ -1186,11 +1440,6 @@ impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
             Ok(v) => v,
             Err(_) => crate::trap(),
         }
-    }
-
-    #[inline(always)]
-    fn self_balance(&self) -> Amount {
-        Amount::from_micro_gtu(unsafe { get_receive_self_balance() })
     }
 
     #[inline(always)]
@@ -1249,65 +1498,6 @@ impl HasLogger for Logger {
     }
 }
 
-/// #Implementation of actions.
-/// These actions are implemented by direct calls to host functions.
-impl HasActions for Action {
-    #[inline(always)]
-    fn accept() -> Self {
-        Action {
-            _private: unsafe { accept() },
-        }
-    }
-
-    #[inline(always)]
-    fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self {
-        let res = unsafe { simple_transfer(acc.0.as_ptr(), amount.micro_gtu) };
-        Action {
-            _private: res,
-        }
-    }
-
-    #[inline(always)]
-    fn send_raw(
-        ca: &ContractAddress,
-        receive_name: ReceiveName,
-        amount: Amount,
-        parameter: &[u8],
-    ) -> Self {
-        let receive_bytes = receive_name.get_chain_name().as_bytes();
-        let res = unsafe {
-            prims::send(
-                ca.index,
-                ca.subindex,
-                receive_bytes.as_ptr(),
-                receive_bytes.len() as u32,
-                amount.micro_gtu,
-                parameter.as_ptr(),
-                parameter.len() as u32,
-            )
-        };
-        Action {
-            _private: res,
-        }
-    }
-
-    #[inline(always)]
-    fn and_then(self, then: Self) -> Self {
-        let res = unsafe { combine_and(self._private, then._private) };
-        Action {
-            _private: res,
-        }
-    }
-
-    #[inline(always)]
-    fn or_else(self, el: Self) -> Self {
-        let res = unsafe { combine_or(self._private, el._private) };
-        Action {
-            _private: res,
-        }
-    }
-}
-
 /// Allocates a Vec of bytes prepended with its length as a `u32` into memory,
 /// and prevents them from being dropped. Returns the pointer.
 /// Used to pass bytes from a Wasm module to its host.
@@ -1324,22 +1514,6 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     ptr
 }
 
-/// Wrapper for
-/// [HasActions::send_raw](./trait.HasActions.html#tymethod.send_raw), which
-/// automatically serializes the parameter. Note that if the parameter is
-/// already a byte array or convertible to a byte array without allocations it
-/// is preferrable to use [send_raw](./trait.HasActions.html#tymethod.send_raw).
-/// It is more efficient and avoids memory allocations.
-pub fn send<A: HasActions, P: Serial>(
-    ca: &ContractAddress,
-    receive_name: ReceiveName,
-    amount: Amount,
-    parameter: &P,
-) -> A {
-    let param_bytes = to_bytes(parameter);
-    A::send_raw(ca, receive_name, amount, &param_bytes)
-}
-
 impl<A, E> UnwrapAbort for Result<A, E> {
     type Unwrap = A;
 
@@ -1351,12 +1525,6 @@ impl<A, E> UnwrapAbort for Result<A, E> {
         }
     }
 }
-
-#[cfg(not(feature = "std"))]
-use core::fmt;
-#[cfg(feature = "std")]
-use std::fmt;
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 impl<A, E: fmt::Debug> ExpectReport for Result<A, E> {
     type Unwrap = A;

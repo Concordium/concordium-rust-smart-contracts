@@ -1,5 +1,5 @@
 [package]
-name = "cis1_wgtu"
+name = "listing-cis1"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
@@ -17,5 +17,5 @@ concordium-cis1 = {path = "../../concordium-cis1", default-features = false}
 crate-type=["cdylib", "rlib"]
 
 [profile.release]
-opt-level = "s"
 codegen-units = 1
+opt-level = "s"
