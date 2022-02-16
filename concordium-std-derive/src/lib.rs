@@ -49,6 +49,9 @@ struct OptionalArguments {
     /// Which type, if any, is the parameter type of the contract.
     /// This is used when generating schemas.
     pub(crate) parameter:     Option<syn::LitStr>,
+    /// Which type, if any, is the return value of the contract.
+    /// This is used when generating schemas.
+    pub(crate) return_value:  Option<syn::LitStr>,
 }
 
 /// Attributes that can be attached to the initialization method.
@@ -207,40 +210,10 @@ fn parse_attributes<'a>(iter: impl IntoIterator<Item = &'a Meta>) -> syn::Result
     }
 }
 
-#[cfg(feature = "build-schema")]
-/// Attributes applicable to the `contract_state` annotation.
-struct ContractStateAttributes {
-    /// Name of the contract the contract state applies to.
-    pub(crate) contract: syn::LitStr,
-}
-
-#[cfg(feature = "build-schema")]
-// Attribute names for the contract_state macro.
-const CONTRACT_STATE_ATTRIBUTE_CONTRACT: &str = "contract";
-
-#[cfg(feature = "build-schema")]
-/// Parse nested attributes to the `contract_state` attribute.
-fn parse_contract_state_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
-    attrs: I,
-) -> syn::Result<ContractStateAttributes> {
-    let mut attributes = parse_attributes(attrs)?;
-    let contract =
-        attributes.extract_value(CONTRACT_STATE_ATTRIBUTE_CONTRACT).ok_or_else(|| {
-            syn::Error::new(
-                Span::call_site(),
-                "A name for the contract must be provided, using the 'contract' attribute.\n\nFor \
-                 example, #[contract_state(contract = \"my-contract\")]",
-            )
-        })?;
-    attributes.report_all_attributes()?;
-    Ok(ContractStateAttributes {
-        contract,
-    })
-}
-
 // Supported attributes for the init methods.
 
 const INIT_ATTRIBUTE_PARAMETER: &str = "parameter";
+const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const INIT_ATTRIBUTE_CONTRACT: &str = "contract";
 const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
@@ -259,6 +232,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             )
         })?;
     let parameter: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_PARAMETER);
+    let return_value: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_RETURN_VALUE);
     let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
@@ -273,6 +247,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             enable_logger,
             low_level,
             parameter,
+            return_value,
         },
     })
 }
@@ -280,6 +255,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
 // Supported attributes for the receive methods.
 
 const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
+const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
 const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
@@ -294,6 +270,8 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let contract = attributes.extract_value(RECEIVE_ATTRIBUTE_CONTRACT);
     let name = attributes.extract_value(RECEIVE_ATTRIBUTE_NAME);
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
+    let return_value: Option<syn::LitStr> =
+        attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
     let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
@@ -310,6 +288,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 enable_logger,
                 low_level,
                 parameter,
+                return_value,
             },
         }),
         (Some(_), None) => Err(syn::Error::new(
@@ -416,6 +395,21 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// #[init(contract = "my_contract", parameter = "MyParam")]
 /// ```
+///
+/// ## `return_value="<ReturnValue>"`: Generate schema for return value
+/// To make schema generation to include the return value for this function, add
+/// the attribute `return_value` and set it equal to a string literal containing
+/// the name of the type used for the return value. The return value type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyReturnValue { ... }
+///
+/// #[init(contract = "my_contract", return_value = "MyReturnValue")]
+/// ```
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(init_worker(attr, item))
@@ -453,7 +447,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     );
 
     let mut out = if init_attributes.optional.low_level {
-        required_args.push("state: &mut ContractState");
+        required_args.push("state: &mut impl HasContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
@@ -462,10 +456,21 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = ContractState::open(());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
-                    Ok(()) => 0,
+                    Ok(rv) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value (initialization fails).
+                        }
+                        0
+                    },
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
+                        let reject = Reject::from(reject);
+                        let code = reject.error_code.get();
                         if code < 0 {
+                            if let Some(rv) = reject.return_value {
+                                if ReturnValue::open().write_all(&rv).is_err() {
+                                    trap() // Could not serialize the return value.
+                                }
+                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -478,11 +483,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState, ReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 match #fn_name(&ctx, #(#fn_optional_args),*) {
-                    Ok(state) => {
+                    Ok((rv, state)) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value (initialization fails).
+                        }
                         let mut state_bytes = ContractState::open(());
                         if state.serial(&mut state_bytes).is_err() {
                             trap() // Could not initialize contract.
@@ -490,8 +498,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         0
                     }
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
+                        let reject = Reject::from(reject);
+                        let code = reject.error_code.get();
                         if code < 0 {
+                            if let Some(rv) = reject.return_value {
+                                if ReturnValue::open().write_all(&rv).is_err() {
+                                    trap() // Could not serialize the return value.
+                                }
+                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -513,10 +527,13 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         ));
     }
 
-    // Embed schema if 'parameter' attribute is set
+    // Embed a schema for the parameter and return value if the corresponding
+    // attribute is set.
     let parameter_option = init_attributes.optional.parameter.map(|a| a.value());
+    let return_value_option = init_attributes.optional.return_value.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
+        return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     ));
@@ -654,7 +671,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
     // strings are displayed as the expected arguments.
-    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+    let mut required_args = vec!["ctx: &impl HasReceiveContext", "host: &mut impl HasHost"];
 
     let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
         &receive_attributes.optional,
@@ -663,22 +680,29 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     );
 
     let mut out = if receive_attributes.optional.low_level {
-        required_args.push("state: &mut ContractState");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext};
+                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext, ExternLowLevelHost};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut state = ContractState::open(());
-                let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
-                match res {
-                    Ok(act) => {
-                        act.tag() as i32
+                let mut host = ExternLowLevelHost::default();
+                match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
+                    Ok(rv) => {
+                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                            trap() // Could not serialize the return value.
+                        }
+                        0
                     }
                     Err(reject) => {
-                        let code = Reject::from(reject).error_code.get();
+                        let reject = Reject::from(reject);
+                        let code = reject.error_code.get();
                         if code < 0 {
+                            if let Some(rv) = reject.return_value {
+                                if ReturnValue::open().write_all(&rv).is_err() {
+                                    trap() // Could not serialize the return value.
+                                }
+                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -688,31 +712,35 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             }
         }
     } else {
-        required_args.push("state: &mut MyState");
-
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, trap};
+                use concordium_std::{SeekFrom, ContractState, Logger, ExternHost, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let mut state_bytes = ContractState::open(());
-                if let Ok(mut state) = (&mut state_bytes).get() {
-                    let res: Result<Action, _> = #fn_name(&ctx, #(#fn_optional_args, )* &mut state);
-                    match res {
-                        Ok(act) => {
+                if let Ok(state) = (&mut state_bytes).get() {
+                    let mut host = ExternHost { state };
+                    match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
+                        Ok(rv) => {
                             let res = state_bytes
                                 .seek(SeekFrom::Start(0))
-                                .and_then(|_| state.serial(&mut state_bytes));
+                                .and_then(|_| host.state().serial(&mut state_bytes))
+                                .and_then(|_| rv.serial(&mut ReturnValue::open()));
                             if res.is_err() {
-                                trap() // could not serialize state.
-                            } else {
-                                act.tag() as i32
+                                trap() // Could not serialize state or return value.
                             }
+                            0
                         }
                         Err(reject) => {
-                            let code = Reject::from(reject).error_code.get();
+                            let reject = Reject::from(reject);
+                            let code = reject.error_code.get();
                             if code < 0 {
+                                if let Some(rv) = reject.return_value {
+                                    if ReturnValue::open().write_all(&rv).is_err() {
+                                        trap() // Could not serialize the return value.
+                                    }
+                                }
                                 code
                             } else {
                                 trap() // precondition violation
@@ -737,10 +765,13 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         ));
     }
 
-    // Embed schema if 'parameter' attribute is set
+    // Embed a schema for the parameter and return value if the corresponding
+    // attribute is set.
     let parameter_option = receive_attributes.optional.parameter.map(|a| a.value());
+    let return_value_option = receive_attributes.optional.return_value.map(|a| a.value());
     out.extend(contract_function_schema_tokens(
         parameter_option,
+        return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     ));
@@ -785,30 +816,58 @@ fn contract_function_optional_args_tokens(
 #[cfg(feature = "build-schema")]
 fn contract_function_schema_tokens(
     parameter_option: Option<String>,
+    return_value_option: Option<String>,
     rust_name: syn::Ident,
     wasm_name: String,
 ) -> proc_macro2::TokenStream {
-    match parameter_option {
-        Some(parameter_ty) => {
+    let construct_schema_bytes = match (parameter_option, return_value_option) {
+        (Some(parameter_ty), Some(return_value_ty)) => {
             let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
-            let schema_name = format!("concordium_schema_function_{}", wasm_name);
-            let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
-            quote! {
-                #[export_name = #schema_name]
-                pub extern "C" fn #schema_ident() -> *mut u8 {
-                    let schema = <#parameter_ident as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema);
-                    concordium_std::put_in_memory(&schema_bytes)
-                }
+            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            Some(quote! {
+                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
+                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::Both { parameter, return_value });
+            })
+        }
+        (Some(parameter_ty), None) => {
+            let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
+            Some(quote! {
+                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::Parameter(parameter));
+            })
+        }
+        (None, Some(return_value_ty)) => {
+            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            Some(quote! {
+                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
+            })
+        }
+        _ => None,
+    };
+
+    // Only produce the schema function if the parameter or return_value attribute
+    // was set.
+    if let Some(construct_schema_bytes) = construct_schema_bytes {
+        let schema_name = format!("concordium_schema_function_{}", wasm_name);
+        let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
+        quote! {
+            #[export_name = #schema_name]
+            pub extern "C" fn #schema_ident() -> *mut u8 {
+                #construct_schema_bytes
+                concordium_std::put_in_memory(&schema_bytes)
             }
         }
-        None => proc_macro2::TokenStream::new(),
+    } else {
+        proc_macro2::TokenStream::new()
     }
 }
 
 #[cfg(not(feature = "build-schema"))]
 fn contract_function_schema_tokens(
     _parameter_option: Option<String>,
+    _return_value_option: Option<String>,
     _rust_name: syn::Ident,
     _wasm_name: String,
 ) -> proc_macro2::TokenStream {
@@ -1292,69 +1351,6 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     Ok(tokens)
 }
 
-/// Marks a type as the contract state. Currently only used for generating the
-/// schema of the contract state. If the feature `build-schema` is not enabled
-/// this has no effect.
-///
-///
-/// # Example
-/// ```ignore
-/// #[contract_state(contract = "my_contract")]
-/// #[derive(SchemaType)]
-/// struct MyContractState {
-///      ...
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn contract_state(attr: TokenStream, item: TokenStream) -> TokenStream {
-    unwrap_or_report(contract_state_worker(attr, item))
-}
-
-#[cfg(feature = "build-schema")]
-fn contract_state_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let mut out = proc_macro2::TokenStream::new();
-
-    let data_ident = if let Ok(ast) = syn::parse::<syn::ItemStruct>(item.clone()) {
-        ast.to_tokens(&mut out);
-        ast.ident
-    } else if let Ok(ast) = syn::parse::<syn::ItemEnum>(item.clone()) {
-        ast.to_tokens(&mut out);
-        ast.ident
-    } else if let Ok(ast) = syn::parse::<syn::ItemType>(item.clone()) {
-        ast.to_tokens(&mut out);
-        ast.ident
-    } else {
-        return Err(syn::Error::new_spanned(
-            proc_macro2::TokenStream::from(item),
-            "#[contract_state] only supports structs, enums and type aliases.",
-        ));
-    };
-
-    let attrs = Punctuated::<Meta, Token![,]>::parse_terminated.parse(attr)?;
-
-    let contract_state_attributes = parse_contract_state_attributes(&attrs)?;
-    let contract_name = contract_state_attributes.contract;
-    let wasm_schema_name = format!("concordium_schema_state_{}", contract_name.value());
-    let rust_schema_name = format_ident!("concordium_schema_state_{}", data_ident);
-
-    let generate_schema_tokens = quote! {
-        #[allow(non_snake_case)]
-        #[export_name = #wasm_schema_name]
-        pub extern "C" fn #rust_schema_name() -> *mut u8 {
-            let schema = <#data_ident as concordium_std::schema::SchemaType>::get_type();
-            let schema_bytes = concordium_std::to_bytes(&schema);
-            concordium_std::put_in_memory(&schema_bytes)
-        }
-    };
-    generate_schema_tokens.to_tokens(&mut out);
-    Ok(out.into())
-}
-
-#[cfg(not(feature = "build-schema"))]
-fn contract_state_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    Ok(item)
-}
-
 /// Derive the `SchemaType` trait for a type.
 /// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
 /// not produce any code.
@@ -1484,7 +1480,8 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Note that at the moment, we can only derive fieldless enums.
+/// Note that at the moment, we can only derive fieldless enums and the return
+/// value is always [`None`][std::option::Option::None].
 ///
 /// The conversion will map the first variant to error code -1, second to -2,
 /// etc.
@@ -1541,7 +1538,10 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         impl From<#enum_ident> for Reject {
             #[inline(always)]
             fn from(e: #enum_ident) -> Self {
-                Reject { error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) } }
+                Reject {
+                    error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) },
+                    return_value: None
+                }
             }
         }
 

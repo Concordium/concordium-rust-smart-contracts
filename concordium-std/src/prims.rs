@@ -5,48 +5,72 @@
 /// the scheduler with relevant primitives.
 #[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
 extern "C" {
-    pub(crate) fn accept() -> u32;
-    // Basic action to send tokens to an account.
-    pub(crate) fn simple_transfer(addr_bytes: *const u8, amount: u64) -> u32;
-    // Send a message to a smart contract.
-    pub(crate) fn send(
-        addr_index: u64,
-        addr_subindex: u64,
-        receive_name: *const u8,
-        receive_name_len: u32,
-        amount: u64,
-        parameter: *const u8,
-        parameter_len: u32,
-    ) -> u32;
-    // Combine two actions using normal sequencing. This is using the stack of
-    // actions already produced.
-    pub(crate) fn combine_and(l: u32, r: u32) -> u32;
-    // Combine two actions using or. This is using the stack of actions already
-    // produced.
-    pub(crate) fn combine_or(l: u32, r: u32) -> u32;
-    // Get the size of the parameter to the method (either init or receive).
-    pub(crate) fn get_parameter_size() -> u32;
-    // Write a section of the parameter to the given location. Return the number
-    // of bytes written. The location is assumed to contain enough memory to
-    // write the requested length into.
-    pub(crate) fn get_parameter_section(param_bytes: *mut u8, length: u32, offset: u32) -> u32;
-    // Write a section of the policy to the given location. Return the number
-    // of bytes written. The location is assumed to contain enough memory to
-    // write the requested length into.
+    /// Invoke a host instruction. The arguments are
+    ///
+    /// - `tag`, which instruction to invoke
+    ///   - 0 for transfer to account
+    ///   - 1 for call to a contract
+    /// - `start`, pointer to the start of the invoke payload
+    /// - `length`, length of the payload
+    /// - if the last 5 bytes are 0 then the call succeeded. In this case the
+    ///   first bit of the response indicates whether our own state has changed
+    ///   (1) or not (0) the remaining 23 bits are the index of the return value
+    ///   that can be used in a call to `get_parameter_section` and
+    ///   `get_parameter_size`.
+    /// - otherwise
+    ///   - if the fourth byte is 0 the call failed because of a logic error and
+    ///     there is a return value. Bits 1..24 of the response are the index of
+    ///     the return value. Bits 32..64 are to be interpreted in two's
+    ///     complement and will be a negative number indicating the error code.
+    ///   - otherwise only the fourth byte is set.
+    ///   - if it is 1 then call failed due to transfer of non-existent amount
+    ///   - if it is 2 then the account to transfer to did not exist
+    ///   - if it is 3 then the contract to invoke did not exist
+    ///   - if it is 4 then the entrypoint did not exist
+    ///   - if it is 5 then sending a message to V0 contract failed.
+    ///   - if it is 6 then invoking a contract failed with a runtime error
+    ///   - no other values are possible
+    pub(crate) fn invoke(tag: u32, start: *const u8, length: u32) -> u64;
+    /// Write to the return value of the contract. The parameters are
+    ///
+    /// - `start` the pointer to the location in memory where the data resides
+    /// - `length` the size of data (in bytes)
+    /// - `offset` where in the return value to write the data
+    ///
+    /// The return value indicates how many bytes were written.
+    pub(crate) fn write_output(start: *const u8, length: u32, offset: u32) -> u32;
+    /// Get the size of the `i`-th parameter to the call. 0-th parameter is
+    /// always the original parameter that the method was invoked with,
+    /// invoking a contract adds additional parameters to the stack. Returns
+    /// `-1` if the given parameter does not exist.
+    pub(crate) fn get_parameter_size(i: u32) -> i32;
+    /// Write a section of the `i`-th parameter to the given location. Return
+    /// the number of bytes written or `-1` if the parameter does not exist.
+    /// The location is assumed to contain enough memory to
+    /// write the requested length into.
+    pub(crate) fn get_parameter_section(
+        i: u32,
+        param_bytes: *mut u8,
+        length: u32,
+        offset: u32,
+    ) -> i32;
+    /// Write a section of the policy to the given location. Return the number
+    /// of bytes written. The location is assumed to contain enough memory to
+    /// write the requested length into.
     pub(crate) fn get_policy_section(policy_bytes: *mut u8, length: u32, offset: u32) -> u32;
-    // Add a log item. Return values are
-    // - -1 if logging failed due to the message being too long
-    // - 0 if the log is already full
-    // - 1 if data was successfully logged.
+    /// Add a log item. Return values are
+    /// - -1 if logging failed due to the message being too long
+    /// - 0 if the log is already full
+    /// - 1 if data was successfully logged.
     pub(crate) fn log_event(start: *const u8, length: u32) -> i32;
-    // returns how many bytes were read.
+    /// returns how many bytes were read.
     pub(crate) fn load_state(start: *mut u8, length: u32, offset: u32) -> u32;
-    // returns how many bytes were written
+    /// Modify the contract state, and return how many bytes were written
     pub(crate) fn write_state(start: *const u8, length: u32, offset: u32) -> u32;
-    // Resize state to the new value (truncate if new size is smaller). Return 0 if
-    // this was unsuccesful (new state too big), or 1 if successful.
-    pub(crate) fn resize_state(new_size: u32) -> u32; // returns 0 or 1.
-                                                      // get current state size in bytes.
+    /// Resize state to the new value (truncate if new size is smaller). Return
+    /// 0 if this was unsuccessful (new state too big), or 1 if successful.
+    pub(crate) fn resize_state(new_size: u32) -> u32;
+    /// Get the current state size in bytes.
     pub(crate) fn state_size() -> u32;
 
     // Getter for the init context.
@@ -86,39 +110,20 @@ extern "C" {
 #[cfg(not(target_arch = "wasm32"))]
 mod host_dummy_functions {
     #[no_mangle]
-    pub(crate) extern "C" fn accept() -> u32 {
+    fn invoke(_tag: u32, _start: *const u8, _length: u32) -> i64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn simple_transfer(_addr_bytes: *const u8, _amount: u64) -> u32 {
+    fn write_output(_start: *const u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn send(
-        _addr_index: u64,
-        _addr_subindex: u64,
-        _receive_name: *const u8,
-        _receive_name_len: u32,
-        _amount: u64,
-        _parameter: *const u8,
-        _parameter_len: u32,
-    ) -> u32 {
-        panic!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn combine_and(_l: u32, _r: u32) -> u32 {
+    extern "C" fn get_parameter_size(_i: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn combine_or(_l: u32, _r: u32) -> u32 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn get_parameter_size() -> u32 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn get_parameter_section(
+    extern "C" fn get_parameter_section(
+        _i: u32,
         _param_bytes: *mut u8,
         _length: u32,
         _offset: u32,
@@ -126,59 +131,51 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_policy_section(
-        _policy_bytes: *mut u8,
-        _length: u32,
-        _offset: u32,
-    ) -> u32 {
+    extern "C" fn get_policy_section(_policy_bytes: *mut u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn log_event(_start: *const u8, _length: u32) {
+    extern "C" fn log_event(_start: *const u8, _length: u32) {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn load_state(_start: *mut u8, _length: u32, _offset: u32) -> u32 {
+    extern "C" fn load_state(_start: *mut u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn write_state(_start: *const u8, _length: u32, _offset: u32) -> u32 {
+    extern "C" fn write_state(_start: *const u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn resize_state(_new_size: u32) -> u32 {
+    extern "C" fn resize_state(_new_size: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn state_size() -> u32 {
+    extern "C" fn state_size() -> u32 { unimplemented!("Dummy function! Not to be executed") }
+    #[no_mangle]
+    extern "C" fn get_init_origin(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_init_origin(_start: *mut u8) {
+    extern "C" fn get_receive_invoker(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_receive_invoker(_start: *mut u8) {
+    extern "C" fn get_receive_self_address(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_receive_self_address(_start: *mut u8) {
+    extern "C" fn get_receive_self_balance() -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_receive_self_balance() -> u64 {
+    extern "C" fn get_receive_sender(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_receive_sender(_start: *mut u8) {
+    extern "C" fn get_receive_owner(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) extern "C" fn get_receive_owner(_start: *mut u8) {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) extern "C" fn get_slot_time() -> u64 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
+    extern "C" fn get_slot_time() -> u64 { unimplemented!("Dummy function! Not to be executed") }
 }

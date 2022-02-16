@@ -8,6 +8,15 @@
 - Improve `claim_eq` and `claim_ne` macros such that:
   - Arguments are only evaluated once.
   - Type inference works as you would expect.
+- Remove support for v0 smart contracts and add support for v1:
+  - Replace message passing with synchronous calls:
+    - Remove the `Action` type.
+    - Add `HasHost`, which has (synchronous) functions for making
+      transfers, `invoke_transfer`, and calling other contracts, `invoke_contract`.
+  - Enable arbitary, serializable, return values for contract functions.
+  - Overhaul test infrastructure to support v1 contracts:
+    - Add ability to mock contract invocations.
+    - Add a number of helper functions and types to ease testing.
 
 ## concordium-std 1.0.0 (2021-10-05)
 

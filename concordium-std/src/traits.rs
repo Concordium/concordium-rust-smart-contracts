@@ -5,7 +5,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::types::LogError;
+use crate::{types::LogError, CallContractResult, TransferResult};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -17,6 +17,19 @@ use concordium_contracts_common::*;
 /// methods of this trait.
 pub trait HasParameter: Read {
     /// Get the size of the parameter to the method.
+    fn size(&self) -> u32;
+}
+
+/// Objects which can access call responses from contract invocations.
+///
+/// This trait has a Read supertrait which means that structured call responses
+/// can be directly deserialized by using `.get()` function from the `Get`
+/// trait.
+///
+/// The reuse of `Read` methods is the reason for the slightly strange choice of
+/// methods of this trait.
+pub trait HasCallResponse: Read {
+    /// Get the size of the call response to the contract invocation.
     fn size(&self) -> u32;
 }
 
@@ -94,8 +107,6 @@ pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
     fn invoker(&self) -> AccountAddress;
     /// The address of the contract being invoked.
     fn self_address(&self) -> ContractAddress;
-    /// Balance on the contract before the call was made.
-    fn self_balance(&self) -> Amount;
     /// The immediate sender of the message. In general different from the
     /// invoker.
     fn sender(&self) -> Address;
@@ -128,6 +139,41 @@ where
     fn reserve(&mut self, len: u32) -> bool;
 }
 
+/// A type that can serve as the host.
+/// It supports invoking operations, accessing state, and self_balance.
+pub trait HasHost<State> {
+    /// The type of return values this host provides. This is the raw return
+    /// value. The intention is that it will be deserialized by the
+    /// consumer, via the [Read] implementation.
+    ///
+    /// The Debug requirement exists so that consumers of this trait may use
+    /// methods like [ExpectReport::expect_report].
+    type ReturnValueType: HasCallResponse + crate::fmt::Debug;
+
+    /// Perform a transfer to the given account if the contract has sufficient
+    /// balance.
+    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult;
+
+    /// Invoke a given method of a contract with the amount and parameter
+    /// provided. If invocation succeeds then the return value is a pair of
+    /// a boolean which indicates whether the state of the contract has changed
+    /// or not, and a possible return value. The return value is present if and
+    /// only if a V1 contract was invoked.
+    fn invoke_contract<'a, 'b>(
+        &'a mut self,
+        to: &'b ContractAddress,
+        parameter: Parameter<'b>,
+        method: EntrypointName<'b>,
+        amount: Amount,
+    ) -> CallContractResult<Self::ReturnValueType>;
+
+    /// Get the contract state.
+    fn state(&mut self) -> &mut State;
+
+    /// Get the contract balance.
+    fn self_balance(&self) -> Amount;
+}
+
 /// Objects which can serve as loggers.
 ///
 /// Logging functionality can be used by smart contracts to record events that
@@ -151,34 +197,6 @@ pub trait HasLogger {
         }
         self.log_raw(&out)
     }
-}
-
-/// An object that can serve to construct actions.
-///
-/// The actions that a smart contract can produce as a
-/// result of its execution. These actions form a tree and are executed by
-/// the scheduler in the predefined order.
-pub trait HasActions {
-    /// Default accept action.
-    fn accept() -> Self;
-
-    /// Send a given amount to an account.
-    fn simple_transfer(acc: &AccountAddress, amount: Amount) -> Self;
-
-    /// Send a message to a contract.
-    fn send_raw(
-        ca: &ContractAddress,
-        receive_name: ReceiveName,
-        amount: Amount,
-        parameter: &[u8],
-    ) -> Self;
-
-    /// If the execution of the first action succeeds, run the second action
-    /// as well.
-    fn and_then(self, then: Self) -> Self;
-
-    /// If the execution of the first action fails, try the second.
-    fn or_else(self, el: Self) -> Self;
 }
 
 /// Add optimized unwrap behaviour that aborts the process instead of

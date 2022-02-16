@@ -206,13 +206,13 @@ pub use alloc::{
 };
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use core::{convert, hash, marker, mem, num, result::*};
+pub use core::{convert, fmt, hash, marker, mem, num, result::*};
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
-pub use std::{convert, hash, marker, mem, num, string::String, vec::Vec};
+pub use std::{convert, fmt, hash, marker, mem, num, string::String, vec::Vec};
 
 pub mod collections {
     #[cfg(not(feature = "std"))]

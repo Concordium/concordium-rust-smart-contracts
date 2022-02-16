@@ -1,3 +1,5 @@
+use crate::num::NonZeroU32;
+
 /// A type representing the constract state bytes.
 #[derive(Default)]
 pub struct ContractState {
@@ -6,9 +8,80 @@ pub struct ContractState {
 
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.
-pub struct Parameter {
+/// Its trait implementations are backed by host functions.
+pub struct ExternParameter {
     pub(crate) current_position: u32,
 }
+
+/// A type representing the return value of contract calls.
+/// This is when a contract calls another contract, it may get a return value.
+#[derive(Debug, Clone, Copy)]
+pub struct CallResponse {
+    /// The index of the call response.
+    pub(crate) i:                NonZeroU32,
+    pub(crate) current_position: u32,
+}
+
+impl CallResponse {
+    #[inline(always)]
+    /// Construct a new call response with the given index,
+    /// and starting position set to 0.
+    pub(crate) fn new(i: NonZeroU32) -> Self {
+        Self {
+            i,
+            current_position: 0,
+        }
+    }
+}
+
+/// A type representing the return value of contract init or receive method.
+pub struct ReturnValue {
+    pub(crate) current_position: u32,
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy)]
+/// Errors that may occur when invoking a contract entrypoint.
+pub enum CallContractError<ReturnValueType> {
+    /// Amount that was to be transferred is not available to the sender.
+    AmountTooLarge,
+    /// Owner account of the smart contract that is being invoked does not
+    /// exist. This variant should in principle not happen, but is here for
+    /// completeness.
+    MissingAccount,
+    /// Contract that is to be invoked does not exist.
+    MissingContract,
+    /// The contract to be invoked exists, but the entrypoint that was named
+    /// does not.
+    MissingEntrypoint,
+    /// Sending a message to the V0 contract failed.
+    MessageFailed,
+    /// Contract that was called rejected with the given reason.
+    LogicReject {
+        reason:       i32,
+        return_value: ReturnValueType,
+    },
+    /// Execution of a contract call triggered a runtime error.
+    Trap,
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone)]
+/// Errors that may occur when transferring CCD to an account.
+pub enum TransferError {
+    /// Amount that was to be transferred is not available to the sender.
+    AmountTooLarge,
+    /// Account that is to be transferred to does not exist.
+    MissingAccount,
+}
+
+/// A wrapper around [Result] that fixes the error variant to
+/// [CallContractError].
+pub type CallContractResult<A> = Result<(bool, Option<A>), CallContractError<A>>;
+
+/// A wrapper around [Result] that fixes the error variant to [TransferError]
+/// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
+pub type TransferResult = Result<(), TransferError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Default)]
@@ -42,30 +115,25 @@ pub enum LogError {
 #[derive(Clone, Copy, Debug)]
 pub struct NotPayableError;
 
-/// Actions that can be produced at the end of a contract execution. This
-/// type is deliberately not cloneable so that we can enforce that
-/// `and_then` and `or_else` can only be used when more than one event is
-/// created.
-///
-/// This type is marked as `must_use` since functions that produce
-/// values of the type are effectful.
-#[must_use]
-pub struct Action {
-    pub(crate) _private: u32,
-}
-
-impl Action {
-    pub fn tag(&self) -> u32 { self._private }
-}
-
 /// An error message, signalling rejection of a smart contract invocation.
 /// The client will see the error code as a reject reason; if a schema is
 /// provided, the error message corresponding to the error code will be
-/// displayed. The valid range for an error code is from i32::MIN to  -1.
+/// displayed. The valid range for an error code is from i32::MIN to -1.
+/// A return value can also be provided.
 #[derive(Eq, PartialEq, Debug)]
-#[repr(transparent)]
 pub struct Reject {
-    pub error_code: crate::num::NonZeroI32,
+    pub error_code:   crate::num::NonZeroI32,
+    pub return_value: Option<Vec<u8>>,
+}
+
+impl From<crate::num::NonZeroI32> for Reject {
+    #[inline(always)]
+    fn from(error_code: crate::num::NonZeroI32) -> Self {
+        Self {
+            error_code,
+            return_value: None,
+        }
+    }
 }
 
 /// Default error is i32::MIN.
@@ -73,7 +141,8 @@ impl Default for Reject {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+            error_code:   unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+            return_value: None,
         }
     }
 }
@@ -85,6 +154,7 @@ impl Reject {
             let error_code = unsafe { crate::num::NonZeroI32::new_unchecked(x) };
             Some(Reject {
                 error_code,
+                return_value: None,
             })
         } else {
             None
@@ -308,6 +378,19 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ) -> Result<State, MyCustomError> { ... }
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
+
+/// Operations backed by host functions for the high-level interface.
+#[doc(hidden)]
+pub struct ExternHost<State> {
+    pub state: State,
+}
+
+/// Operations backed by host functions for the low-level interface.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct ExternLowLevelHost {
+    pub(crate) state: ContractState,
+}
 
 /// Context backed by host functions.
 #[derive(Default)]
