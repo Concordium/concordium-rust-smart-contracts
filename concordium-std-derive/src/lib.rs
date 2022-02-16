@@ -1480,7 +1480,8 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Note that at the moment, we can only derive fieldless enums.
+/// Note that at the moment, we can only derive fieldless enums and the return
+/// value is always [`None`][std::option::Option::None].
 ///
 /// The conversion will map the first variant to error code -1, second to -2,
 /// etc.
@@ -1539,7 +1540,7 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
             fn from(e: #enum_ident) -> Self {
                 Reject {
                     error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) },
-                    payload: None
+                    return_value: None
                 }
             }
         }

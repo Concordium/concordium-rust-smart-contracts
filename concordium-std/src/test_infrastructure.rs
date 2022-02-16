@@ -659,7 +659,7 @@ impl HasCallResponse for Cursor<Vec<u8>> {
     fn size(&self) -> u32 { self.data.len() as u32 }
 }
 
-/// Holds a [TestMockFn] function used for mocking invocations of contracts with
+/// Holds a function used for mocking invocations of contracts with
 /// `invoke_contract`.
 pub struct MockFn<State> {
     f: TestMockFn<State>,

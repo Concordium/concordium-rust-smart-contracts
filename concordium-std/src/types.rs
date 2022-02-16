@@ -118,7 +118,8 @@ pub struct NotPayableError;
 /// An error message, signalling rejection of a smart contract invocation.
 /// The client will see the error code as a reject reason; if a schema is
 /// provided, the error message corresponding to the error code will be
-/// displayed. The valid range for an error code is from i32::MIN to  -1.
+/// displayed. The valid range for an error code is from i32::MIN to -1.
+/// A return value can also be provided.
 #[derive(Eq, PartialEq, Debug)]
 pub struct Reject {
     pub error_code:   crate::num::NonZeroI32,
