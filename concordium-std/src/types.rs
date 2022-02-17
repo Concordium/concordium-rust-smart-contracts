@@ -2,11 +2,6 @@ use crate::{num::NonZeroU32, HasContractStateEntry, HasContractStateLL};
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 #[derive(Debug)]
-pub struct ContractStateHL<S> {
-    pub(crate) state_ll: Rc<RefCell<S>>,
-}
-
-#[derive(Debug)]
 pub struct StateMap<K, V, S>
 where
     S: HasContractStateLL, {
@@ -478,16 +473,22 @@ pub type InitResult<S> = Result<S, Reject>;
 
 /// Operations backed by host functions for the high-level interface.
 #[doc(hidden)]
-pub struct ExternHost<State, StateLL> {
-    pub state:    State,
-    pub state_ll: Rc<RefCell<StateLL>>,
+pub struct ExternHost<State> {
+    pub state:     State,
+    pub allocator: Allocator<ContractStateLL>,
+}
+
+#[derive(Default)]
+pub struct Allocator<StateLL> {
+    pub(crate) state_ll: Rc<RefCell<StateLL>>,
 }
 
 /// Operations backed by host functions for the low-level interface.
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state: ContractStateLL,
+    pub(crate) state:     ContractStateLL,
+    pub(crate) allocator: Allocator<ContractStateLL>,
 }
 
 /// Context backed by host functions.

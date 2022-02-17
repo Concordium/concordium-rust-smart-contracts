@@ -96,7 +96,7 @@ where
 #[init(contract = "storable-contract")]
 fn init<S: HasContractStateLL>(
     _ctx: &impl HasInitContext,
-    allocator: &mut ContractStateHL<S>,
+    allocator: &mut Allocator<S>,
 ) -> InitResult<((), State<S>)> {
     Ok(((), State {
         token_state:    allocator.new_map(),
@@ -118,8 +118,7 @@ struct MintParams {
 #[receive(contract = "storable-contract", name = "mint", parameter = "MintParams")]
 fn receive_mint<S: HasContractStateLL>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>>,
-    allocator: &mut ContractStateHL<S>,
+    host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
 ) -> ReceiveResult<()> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
@@ -137,7 +136,7 @@ fn receive_mint<S: HasContractStateLL>(
             Ok(())
         })?
         .or_insert({
-            let mut owner_map = allocator.new_map();
+            let mut owner_map = host.allocator().new_map();
             let _old_value = owner_map.insert(params.token_id, params.token_count);
             owner_map
         });
@@ -168,7 +167,7 @@ mod tests {
         let ctx = InitContextTest::empty();
 
         let state_ll = Rc::new(RefCell::new(ContractStateLLTest::new()));
-        let mut allocator = ContractStateHL::open(Rc::clone(&state_ll));
+        let mut allocator = Allocator::open(Rc::clone(&state_ll));
 
         let _state = init(&ctx, &mut allocator).expect_report("Init failed");
     }
@@ -187,7 +186,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let state_ll = Rc::new(RefCell::new(ContractStateLLTest::new()));
-        let mut allocator = ContractStateHL::open(Rc::clone(&state_ll));
+        let mut allocator = Allocator::open(Rc::clone(&state_ll));
 
         // Set up initial state contents via init.
         let (_rv, state_to_store) =
@@ -198,10 +197,10 @@ mod tests {
         let state_for_rcv =
             State::load(&[], Rc::clone(&state_ll)).expect_report("Could not load all of state.");
 
-        let mut host = HostTest::new(state_for_rcv);
+        let mut host = HostTest::new_with_allocator(state_for_rcv, allocator);
 
         // Invoke receive.
-        claim!(receive_mint(&ctx, &mut host, &mut allocator).is_ok());
+        claim!(receive_mint(&ctx, &mut host).is_ok());
 
         // Reload the state to ensure that it was actually persisted (and not just
         // altered in memory).

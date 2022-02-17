@@ -873,6 +873,8 @@ pub struct HostTest<State> {
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: Amount,
+    /// Allocator for the state.
+    allocator:        Allocator<ContractStateLLTest>,
     /// State of the instance.
     state:            State,
     /// List of accounts that will cause a contract invocation to fail.
@@ -880,6 +882,7 @@ pub struct HostTest<State> {
 }
 
 impl<State> HasHost<State> for HostTest<State> {
+    type ContractStateLLType = ContractStateLLTest;
     type ReturnValueType = Cursor<Vec<u8>>;
 
     /// Perform a transfer to the given account if the contract has sufficient
@@ -952,15 +955,27 @@ impl<State> HasHost<State> for HostTest<State> {
     /// Get the contract balance.
     /// This can be set with `set_balance` and defaults to 0.
     fn self_balance(&self) -> Amount { self.contract_balance }
+
+    fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType> { &mut self.allocator }
 }
 
 impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
+        HostTest::new_with_allocator(state, Allocator {
+            state_ll: Rc::new(RefCell::new(ContractStateLLTest::open(StateTrie::new()))),
+        })
+    }
+
+    /// Create a new test host with an existing allocator.
+    /// This can be useful when a single test function invokes both init and
+    /// receive.
+    pub fn new_with_allocator(state: State, allocator: Allocator<ContractStateLLTest>) -> Self {
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: Vec::new(),
             contract_balance: Amount::zero(),
+            allocator,
             state,
             missing_accounts: BTreeSet::new(),
         }
@@ -1040,9 +1055,8 @@ mod test {
 
     use super::ContractStateLLTest;
     use crate::{
-        constants, test_infrastructure::StateEntryTest, ContractStateHL, EntryRaw,
-        HasContractStateEntry, HasContractStateHL, HasContractStateLL, StateMap, StateSet,
-        UnwrapAbort,
+        constants, test_infrastructure::StateEntryTest, Allocator, EntryRaw, HasContractStateEntry,
+        HasContractStateLL, StateMap, StateSet, UnwrapAbort,
     };
 
     #[test]
@@ -1141,10 +1155,9 @@ mod test {
     #[test]
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
-        let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
-        state.insert(0, expected_value);
-        let actual_value: u64 = state.get(0).expect("Not found").expect("Not a valid u64");
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        allocator.insert(0, expected_value);
+        let actual_value: u64 = allocator.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
     }
 
@@ -1166,13 +1179,12 @@ mod test {
     #[test]
     fn high_level_statemap() -> Result<(), ParseError> {
         let my_map_key = "my_map";
-        let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
 
-        let map_to_insert = state.new_map::<String, String>();
-        state.insert(my_map_key, map_to_insert);
+        let map_to_insert = allocator.new_map::<String, String>();
+        allocator.insert(my_map_key, map_to_insert);
 
-        let mut my_map: StateMap<String, String, _> = state.get(my_map_key).unwrap_abort()?;
+        let mut my_map: StateMap<String, String, _> = allocator.get(my_map_key).unwrap_abort()?;
         my_map.insert("abc".to_string(), "hello, world".to_string());
         my_map.insert("def".to_string(), "hallo, weld".to_string());
         my_map.insert("ghi".to_string(), "hej, verden".to_string());
@@ -1192,10 +1204,9 @@ mod test {
         let inner_map_key = 0u8;
         let key_to_value = 77u8;
         let value = 255u8;
-        let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
-        let mut outer_map = state.new_map::<u8, StateMap<u8, u8, _>>();
-        let mut inner_map = state.new_map::<u8, u8>();
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut outer_map = allocator.new_map::<u8, StateMap<u8, u8, _>>();
+        let mut inner_map = allocator.new_map::<u8, u8>();
 
         inner_map.insert(key_to_value, value);
         outer_map.insert(inner_map_key, inner_map);
@@ -1209,27 +1220,26 @@ mod test {
     #[test]
     fn high_level_stateset() {
         let my_set_key = "my_set";
-        let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
 
-        let mut set = state.new_set::<u8>();
+        let mut set = allocator.new_set::<u8>();
         assert_eq!(set.insert(0), true);
         assert_eq!(set.insert(1), true);
         assert_eq!(set.insert(1), false);
         assert_eq!(set.insert(2), true);
         assert_eq!(set.remove(&2), true);
-        state.insert(my_set_key, set);
+        allocator.insert(my_set_key, set);
 
         assert_eq!(
-            state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),
+            allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),
             true
         );
         assert_eq!(
-            state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
+            allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
             false
         );
 
-        let mut iter = state.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter();
+        let mut iter = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter();
         assert_eq!(iter.next(), Some(Ok(0)));
         assert_eq!(iter.next(), Some(Ok(1)));
         assert_eq!(iter.next(), None);
@@ -1239,10 +1249,9 @@ mod test {
     fn high_level_nested_stateset() {
         let inner_set_key = 0u8;
         let value = 255u8;
-        let mut state: ContractStateHL<ContractStateLLTest> =
-            HasContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
-        let mut outer_map = state.new_map::<u8, StateSet<u8, _>>();
-        let mut inner_set = state.new_set::<u8>();
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut outer_map = allocator.new_map::<u8, StateSet<u8, _>>();
+        let mut inner_set = allocator.new_set::<u8>();
 
         inner_set.insert(value);
         outer_map.insert(inner_set_key, inner_set);

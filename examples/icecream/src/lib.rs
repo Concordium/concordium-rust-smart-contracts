@@ -53,7 +53,7 @@ enum Weather {
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init<S: HasContractStateLL>(
     ctx: &impl HasInitContext,
-    _allocator: &mut ContractStateHL<S>,
+    _allocator: &mut Allocator<S>,
 ) -> InitResult<((), State<S>)> {
     let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     let return_value = ();
@@ -67,9 +67,8 @@ fn contract_init<S: HasContractStateLL>(
 #[receive(contract = "icecream", name = "buy_icecream", parameter = "AccountAddress", payable)]
 fn contract_buy_icecream<S: HasContractStateLL>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>>,
+    host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
     amount: Amount,
-    _allocator: &mut ContractStateHL<S>,
 ) -> ReceiveResult<()> {
     let weather_service = host
         .state()
@@ -110,8 +109,7 @@ fn contract_buy_icecream<S: HasContractStateLL>(
 #[receive(contract = "icecream", name = "replace_weather_service", parameter = "ContractAddress")]
 fn contract_replace_weather_service<S: HasContractStateLL>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>>,
-    _allocator: &mut ContractStateHL<S>,
+    host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
@@ -128,7 +126,7 @@ fn contract_replace_weather_service<S: HasContractStateLL>(
 #[init(contract = "weather", parameter = "Weather")]
 fn weather_init<S: HasContractStateLL>(
     ctx: &impl HasInitContext,
-    _allocator: &mut ContractStateHL<S>,
+    _allocator: &mut Allocator<S>,
 ) -> InitResult<((), Persisted<Weather, S>)> {
     let return_value = ();
     let weather = ctx.parameter_cursor().get()?;
@@ -140,8 +138,7 @@ fn weather_init<S: HasContractStateLL>(
 #[receive(contract = "weather", name = "get", return_value = "Weather")]
 fn weather_get<S: HasContractStateLL>(
     _ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>>,
-    _allocator: &mut ContractStateHL<S>,
+    host: &mut impl HasHost<Persisted<Weather, S>, ContractStateLLType = S>,
 ) -> ReceiveResult<Weather> {
     Ok(host
         .state()
@@ -155,8 +152,7 @@ fn weather_get<S: HasContractStateLL>(
 #[receive(contract = "weather", name = "set", parameter = "Weather")]
 fn weather_set<S: HasContractStateLL>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>>,
-    _allocator: &mut ContractStateHL<S>,
+    host: &mut impl HasHost<Persisted<Weather, S>, ContractStateLLType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can update the weather.
     host.state().set(ctx.parameter_cursor().get()?);
@@ -168,7 +164,6 @@ fn weather_set<S: HasContractStateLL>(
 #[concordium_cfg_test]
 mod tests {
     use super::*;
-    use concordium_std::{cell::RefCell, rc::Rc};
     use test_infrastructure::*;
 
     const INVOKER_ADDR: AccountAddress = AccountAddress([0; 32]);
@@ -205,13 +200,8 @@ mod tests {
         );
 
         // Act
-        contract_buy_icecream(
-            &ctx,
-            &mut host,
-            ICECREAM_PRICE,
-            &mut ContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new()))),
-        )
-        .expect_report("Calling buy_icecream failed.");
+        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
+            .expect_report("Calling buy_icecream failed.");
 
         // Assert
         assert!(host.transfer_occurred(&ICECREAM_VENDOR, ICECREAM_PRICE));
@@ -246,13 +236,8 @@ mod tests {
         );
 
         // Act
-        contract_buy_icecream(
-            &ctx,
-            &mut host,
-            ICECREAM_PRICE,
-            &mut ContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new()))),
-        )
-        .expect_report("Calling buy_icecream failed.");
+        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
+            .expect_report("Calling buy_icecream failed.");
 
         // Assert
         assert!(host.transfer_occurred(&INVOKER_ADDR, ICECREAM_PRICE));
@@ -288,13 +273,7 @@ mod tests {
         );
 
         // Act + Assert (should panic)
-        contract_buy_icecream(
-            &ctx,
-            &mut host,
-            ICECREAM_PRICE,
-            &mut ContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new()))),
-        )
-        .unwrap();
+        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE).unwrap();
     }
 
     #[concordium_test]
@@ -320,12 +299,7 @@ mod tests {
         );
 
         // Act + Assert (should panic)
-        contract_buy_icecream(
-            &ctx,
-            &mut host,
-            ICECREAM_PRICE,
-            &mut ContractStateHL::open(Rc::new(RefCell::new(ContractStateLLTest::new()))),
-        )
-        .expect_report("Calling buy_icecream failed.");
+        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
+            .expect_report("Calling buy_icecream failed.");
     }
 }

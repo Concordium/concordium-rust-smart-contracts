@@ -8,7 +8,7 @@ use std::{cell::RefCell, rc::Rc};
 use alloc::vec::Vec;
 
 use crate::{
-    types::LogError, CallContractResult, EntryRaw, StateEntryId, StateMap, StateSet, TransferResult,
+    types::LogError, Allocator, CallContractResult, EntryRaw, StateEntryId, TransferResult,
 };
 use concordium_contracts_common::*;
 
@@ -175,22 +175,6 @@ pub trait HasContractStateLL {
     fn iterator(&self, prefix: &[u8]) -> Self::IterType;
 }
 
-pub trait HasContractStateHL {
-    type ContractStateLLType: HasContractStateLL;
-    fn open(state_ll: Rc<RefCell<Self::ContractStateLLType>>) -> Self;
-    fn new_map<K: Serialize, V: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
-        &mut self,
-    ) -> StateMap<K, V, Self::ContractStateLLType>;
-    fn new_set<T: Serial + DeserialStateCtx<Self::ContractStateLLType>>(
-        &mut self,
-    ) -> StateSet<T, Self::ContractStateLLType>;
-    fn get<K: Serial, V: DeserialStateCtx<Self::ContractStateLLType>>(
-        &self,
-        key: K,
-    ) -> Option<ParseResult<V>>;
-    fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V);
-}
-
 pub trait Persistable<S>
 where
     Self: Sized, {
@@ -204,6 +188,8 @@ where
 /// A type that can serve as the host.
 /// It supports invoking operations, accessing state, and self_balance.
 pub trait HasHost<State> {
+    type ContractStateLLType: HasContractStateLL;
+
     /// The type of return values this host provides. This is the raw return
     /// value. The intention is that it will be deserialized by the
     /// consumer, via the [Read] implementation.
@@ -231,6 +217,9 @@ pub trait HasHost<State> {
 
     /// Get the contract state.
     fn state(&mut self) -> &mut State;
+
+    /// Get the allocator for the contract state.
+    fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType>;
 
     /// Get the contract balance.
     fn self_balance(&self) -> Amount;
