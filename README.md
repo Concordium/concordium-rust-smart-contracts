@@ -42,19 +42,18 @@ Changes to any of the packages must be such that
 - ```cargo clippy --all``` produces no warnings
 - ```rustfmt``` makes no changes.
 
-Everything in this repository should build with stable rust at the moment (at least version 1.44 and up), however the fmt tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
-
+Everything in this repository should build with rust version 1.53 (it should work with 1.51 and up, but we do not test regularly) however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
 ```
- cargo +nightly-2019-11-13 fmt
+cargo +nightly-2021-06-09 fmt
 ```
 
 (the exact version used by the CI can be found in [.github/workflows/linter.yml](.github/workflows/linter.yml) file).
 You will need to have a recent enough nightly version installed, which can be done via
 
 ```
-rustup toolchain install nightly-2019-11-13
+rustup toolchain install nightly-2021-06-09
 ```
 
 or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.
 
-In order to contribute you should make a merge request and not push directly to master.
+In order to contribute you should make a pull request and ask two people familiar with the code to do a review.
