@@ -760,9 +760,24 @@ where
         }
     }
 
+    /// Returns `true` if the set contains no elements.
+    pub fn is_empty(&self) -> bool {
+        if let Some(_) = self.state_ll.borrow().iterator(&self.prefix).next() {
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Returns `true` if the set contains a value.
     pub fn contains(&self, value: &T) -> bool {
         let key_bytes = self.key_with_set_prefix(&value);
         self.state_ll.borrow().lookup(&key_bytes).is_some()
+    }
+
+    /// Clears the set, removing all values.
+    pub fn clear(&mut self) {
+        let _ = self.state_ll.borrow_mut().delete_prefix(&self.prefix, false);
     }
 
     /// Removes a value from the set. Returns whether the value was present in
@@ -781,12 +796,6 @@ where
         }
     }
 
-    fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
-        let mut key_with_prefix = self.prefix.clone();
-        key_with_prefix.append(&mut to_bytes(key));
-        key_with_prefix
-    }
-
     pub fn iter(&self) -> StateSetIter<T, S> {
         let state_iter = self.state_ll.borrow().iterator(&self.prefix);
         StateSetIter {
@@ -794,6 +803,12 @@ where
             state_ll: Rc::clone(&self.state_ll),
             _marker: PhantomData,
         }
+    }
+
+    fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
+        let mut key_with_prefix = self.prefix.clone();
+        key_with_prefix.append(&mut to_bytes(key));
+        key_with_prefix
     }
 }
 

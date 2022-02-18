@@ -1278,7 +1278,28 @@ mod test {
         inner_set.insert(value);
         outer_map.insert(inner_set_key, inner_set);
 
-        assert_eq!(outer_map.get(&inner_set_key).unwrap().unwrap().contains(&value), true);
+        assert!(outer_map.get(&inner_set_key).unwrap().unwrap().contains(&value));
+    }
+
+    #[test]
+    fn stateset_insert_remove() {
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut set = allocator.new_set();
+        let _ = set.insert(42);
+        assert!(set.contains(&42));
+        set.remove(&42);
+        assert!(!set.contains(&42));
+    }
+
+    #[test]
+    fn stateset_clear() {
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut set = allocator.new_set();
+        let _ = set.insert(1);
+        let _ = set.insert(2);
+        let _ = set.insert(3);
+        set.clear();
+        assert!(set.is_empty());
     }
 
     #[test]
