@@ -1258,4 +1258,12 @@ mod test {
 
         assert_eq!(outer_map.get(inner_set_key).unwrap().unwrap().contains(&value), true);
     }
+
+    #[test]
+    fn allocate_and_get_statebox() {
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let boxed_value = String::from("I'm boxed");
+        let statebox = allocator.new_box(boxed_value.clone());
+        assert_eq!(statebox.get_copy().unwrap().unwrap(), boxed_value);
+    }
 }

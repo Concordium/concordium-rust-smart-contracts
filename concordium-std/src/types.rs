@@ -7,7 +7,7 @@ where
     S: HasContractStateLL, {
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
-    pub(crate) prefix:        StateMapPrefix,
+    pub(crate) prefix:        StateItemPrefix,
     pub(crate) state_ll:      Rc<RefCell<S>>,
 }
 
@@ -24,7 +24,7 @@ pub struct StateSet<T, S>
 where
     S: HasContractStateLL, {
     pub(crate) _marker:  PhantomData<T>,
-    pub(crate) prefix:   StateMapPrefix,
+    pub(crate) prefix:   StateItemPrefix,
     pub(crate) state_ll: Rc<RefCell<S>>,
 }
 
@@ -36,13 +36,10 @@ pub struct StateSetIter<T, S: HasContractStateLL> {
 }
 
 #[derive(Debug)]
-pub enum Persisted<T, S> {
-    New(T),
-    Loaded {
-        value:    Option<T>, // Only used for get()
-        prefix:   Vec<u8>,
-        state_ll: Rc<RefCell<S>>,
-    },
+pub struct StateBox<T, S: std::fmt::Debug> {
+    pub(crate) prefix:   StateItemPrefix,
+    pub(crate) state_ll: Rc<RefCell<S>>,
+    pub(crate) _marker:  PhantomData<T>,
 }
 
 #[derive(Debug, Default)]
@@ -54,7 +51,7 @@ pub struct ContractStateIter {
 
 pub type StateEntryId = u32;
 pub type StateIteratorId = u32;
-pub type StateMapPrefix = Vec<u8>;
+pub type StateItemPrefix = Vec<u8>;
 
 #[derive(Default)]
 pub struct StateEntry {

@@ -2,7 +2,7 @@ use crate::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
-    fail, fmt,
+    fmt,
     hash::Hash,
     marker::PhantomData,
     mem, num,
@@ -784,112 +784,85 @@ where
     }
 }
 
-impl<T, S> Persisted<T, S>
+impl<T, S> StateBox<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    S: HasContractStateLL + std::fmt::Debug,
 {
-    pub fn new(value: T) -> Self { Self::New(value) }
+    /// Inserts the value in the state and returns Self.
+    pub(crate) fn new<P: Serial>(value: T, state_ll: Rc<RefCell<S>>, prefix: P) -> Self {
+        let prefix_bytes = to_bytes(&prefix);
+        let value_bytes = to_bytes(&value);
 
-    pub fn from_state(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> Self {
-        Self::Loaded {
-            value: None,
-            prefix: prefix.to_vec(),
+        // Insert the value into state.
+        match state_ll.borrow_mut().entry(&prefix_bytes) {
+            EntryRaw::Vacant(vac) => {
+                let _ = vac.insert(&value_bytes);
+            }
+            EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
+        };
+
+        Self {
+            _marker: PhantomData,
+            prefix: prefix_bytes,
             state_ll,
         }
     }
 
-    pub fn get(&mut self) -> Option<ParseResult<&T>> {
-        match self {
-            Persisted::New(value) => Some(Ok(value)),
-            Persisted::Loaded {
-                value,
-                prefix,
-                state_ll,
-            } => match state_ll.borrow_mut().entry(&prefix) {
-                EntryRaw::Vacant(_) => None,
-                EntryRaw::Occupied(mut occ) => {
-                    match T::deserial_state_ctx(&state_ll, occ.get_mut()) {
-                        Ok(val) => {
-                            *value = Some(val);
-                            match value {
-                                Some(ref val) => Some(Ok(&val)),
-                                None => fail!("Can never happen"),
-                            }
-                        }
-                        Err(_) => Some(Err(ParseError::default())),
-                    }
-                }
-            },
-        }
-    }
-
-    pub fn set(&mut self, new_val: T) {
-        match self {
-            Persisted::New(ref mut old_val) => {
-                *old_val = new_val;
+    /// Get a copy of the value.
+    // StateBox does not hold the actual value, so it we cannot give out a
+    // reference. to it. This design choice allows users to create arbitrary
+    // nested data structures, such as linked lists. Similar to what is possible
+    // with `Box`.
+    pub fn get_copy(&self) -> Option<ParseResult<T>> {
+        match self.state_ll.borrow_mut().entry(&self.prefix) {
+            EntryRaw::Vacant(_) => None,
+            EntryRaw::Occupied(mut occ) => {
+                Some(T::deserial_state_ctx(&self.state_ll, occ.get_mut()))
             }
-            Persisted::Loaded {
-                value: _,
-                prefix,
-                state_ll,
-            } => match state_ll.borrow_mut().entry(&prefix) {
-                EntryRaw::Vacant(vac) => {
-                    let _ = vac.insert(&to_bytes(&new_val));
-                }
-                EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&new_val)),
-            },
         }
     }
 
+    /// Set the value. Overwrites the existing one (if present).
+    pub fn set(&mut self, new_val: T) {
+        match self.state_ll.borrow_mut().entry(&self.prefix) {
+            EntryRaw::Vacant(vac) => {
+                let _ = vac.insert(&to_bytes(&new_val));
+            }
+            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&new_val)),
+        }
+    }
+
+    /// Update the existing value with the given function.
+    /// Returns None if the existing value was not present.
+    /// Returns Some(Err(..)) if an existing value exists, but it cannot be
+    /// parsed as `T`.
+    //  TODO: Return error instead of option?
     pub fn update<F>(&mut self, f: F) -> Option<ParseResult<()>>
     where
         F: FnOnce(&mut T), {
-        match self {
-            Persisted::New(ref mut old_val) => {
-                f(old_val);
+        match self.state_ll.borrow_mut().entry(&self.prefix) {
+            EntryRaw::Vacant(_) => return None, // old value does not exist
+            EntryRaw::Occupied(mut occ) => {
+                let mut old_value = match T::deserial_state_ctx(&self.state_ll, occ.get_mut()) {
+                    Ok(val) => val,
+                    Err(_) => return Some(Err(ParseError::default())),
+                };
+                f(&mut old_value);
+                occ.insert(&to_bytes(&old_value));
                 Some(Ok(()))
-            }
-            Persisted::Loaded {
-                value: _,
-                prefix,
-                state_ll,
-            } => {
-                match state_ll.borrow_mut().entry(&prefix) {
-                    EntryRaw::Vacant(_) => return None, // old value does not exist
-                    EntryRaw::Occupied(mut occ) => {
-                        let mut old_value = match T::deserial_state_ctx(&state_ll, occ.get_mut()) {
-                            Ok(val) => val,
-                            Err(_) => return Some(Err(ParseError::default())),
-                        };
-                        f(&mut old_value);
-                        occ.insert(&to_bytes(&old_value));
-                        Some(Ok(()))
-                    }
-                }
             }
         }
     }
 }
 
-impl<T, S> Persistable<S> for Persisted<T, S>
+impl<T, S> Serial for StateBox<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    S: HasContractStateLL + std::fmt::Debug,
 {
-    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
-        match self {
-            Persisted::New(val) => val.store(prefix, state_ll),
-            Persisted::Loaded {
-                value: _,
-                prefix: _,
-                state_ll: _,
-            } => (), // Nothing to do, already stored!
-        }
-    }
-
-    fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self> {
-        Ok(Persisted::from_state(prefix, state_ll))
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        serial_vector_no_length(&self.prefix, out)
     }
 }
 
@@ -1235,7 +1208,7 @@ fn invoke_contract_construct_parameter(
 
 impl<StateLL> Allocator<StateLL>
 where
-    StateLL: HasContractStateLL,
+    StateLL: HasContractStateLL + std::fmt::Debug,
 {
     pub fn open(state_ll: Rc<RefCell<StateLL>>) -> Self {
         Self {
@@ -1246,13 +1219,21 @@ where
     pub fn new_map<K: Serialize, V: Serial + DeserialStateCtx<StateLL>>(
         &mut self,
     ) -> StateMap<K, V, StateLL> {
-        let map_prefix = self.get_and_update_collection_prefix();
-        StateMap::open(Rc::clone(&self.state_ll), map_prefix)
+        let prefix = self.get_and_update_item_prefix();
+        StateMap::open(Rc::clone(&self.state_ll), prefix)
     }
 
     pub fn new_set<T: Serial + DeserialStateCtx<StateLL>>(&mut self) -> StateSet<T, StateLL> {
-        let set_prefix = self.get_and_update_collection_prefix();
-        StateSet::open(Rc::clone(&self.state_ll), set_prefix)
+        let prefix = self.get_and_update_item_prefix();
+        StateSet::open(Rc::clone(&self.state_ll), prefix)
+    }
+
+    pub fn new_box<T: Serial + DeserialStateCtx<StateLL>>(
+        &mut self,
+        value: T,
+    ) -> StateBox<T, StateLL> {
+        let prefix = self.get_and_update_item_prefix();
+        StateBox::new(value, Rc::clone(&self.state_ll), prefix)
     }
 
     /// Some(Err(_)) means that something exists in the state with that key, but
@@ -1283,7 +1264,7 @@ where
         key_with_map_prefix
     }
 
-    fn get_and_update_collection_prefix(&self) -> u64 {
+    fn get_and_update_item_prefix(&self) -> u64 {
         // Get the next prefix or insert and use the initial one.
         let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
         let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
@@ -1765,5 +1746,22 @@ where
 {
     fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
         source.read_u64().and_then(|set_prefix| Ok(StateSet::open(Rc::clone(state), set_prefix)))
+    }
+}
+
+impl<T, S> DeserialStateCtx<S> for StateBox<T, S>
+where
+    S: HasContractStateLL + std::fmt::Debug,
+    T: Serial + DeserialStateCtx<S>,
+{
+    fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
+        let mut prefix = [0u8; 8];
+        source.read_exact(&mut prefix).and_then(|_| {
+            Ok(StateBox {
+                state_ll: Rc::clone(state),
+                prefix:   prefix.to_vec(),
+                _marker:  PhantomData,
+            })
+        })
     }
 }
