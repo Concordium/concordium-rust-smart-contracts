@@ -602,7 +602,10 @@ where
         }
     }
 
-    pub fn get(&self, key: K) -> Option<ParseResult<V>> {
+    /// Try to get the value with the given key.
+    /// Returns `Some(Err(..))` if the item found could not be deserialized to
+    /// `V`.
+    pub fn get(&self, key: &K) -> Option<ParseResult<V>> {
         let k = self.key_with_map_prefix(&key);
         self.state_ll
             .borrow()
@@ -610,6 +613,9 @@ where
             .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
     }
 
+    /// Inserts the value with the given key.
+    /// If the position was occupied it will try to deserialize it as `V` and
+    /// return the old value.
     pub fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
         let key_bytes = self.key_with_map_prefix(&key);
         let value_bytes = to_bytes(&value);
@@ -626,6 +632,11 @@ where
         }
     }
 
+    /// Get an entry for the given key.
+    /// Returns Err(..) if the entry is occupied by something that isn't of type
+    /// `V`.
+    // TODO: Should functions on StateMap assume that ParseResults won't occur? (as
+    // long as you only use high level API).
     pub fn entry(&mut self, key: K) -> ParseResult<Entry<K, V, S::EntryType>> {
         let key_bytes = self.key_with_map_prefix(&key);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
@@ -637,6 +648,7 @@ where
         }
     }
 
+    /// Returns `true` if the map contains no elements.
     pub fn is_empty(&self) -> bool {
         if let Some(_) = self.state_ll.borrow().iterator(&self.prefix).next() {
             false
@@ -645,6 +657,8 @@ where
         }
     }
 
+    /// Gets an iterator over the entries of the map, sorted by key.
+    /// TODO: Explain structural locking.
     pub fn iter(&self) -> StateMapIter<K, V, S> {
         let state_iter = self.state_ll.borrow().iterator(&self.prefix);
         StateMapIter {
@@ -652,6 +666,27 @@ where
             state_ll: Rc::clone(&self.state_ll),
             _marker_key: PhantomData,
             _marker_value: PhantomData,
+        }
+    }
+
+    /// Clears the map, removing all key-value pairs.
+    pub fn clear(&mut self) {
+        let _ = self.state_ll.borrow_mut().delete_prefix(&self.prefix, false);
+    }
+
+    /// Remove a key from the map, returning the value at the key if the key was
+    /// previously in the map. Returns Some(Err(..)) if the existing value
+    /// could not be deserialized as `V`.
+    pub fn remove(&mut self, key: &K) -> Option<ParseResult<V>> {
+        let key_bytes = self.key_with_map_prefix(key);
+        let entry_raw = self.state_ll.borrow_mut().entry(&key_bytes);
+        match entry_raw {
+            EntryRaw::Vacant(_) => None,
+            EntryRaw::Occupied(mut occ) => {
+                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut());
+                let _existed = self.state_ll.borrow_mut().delete_entry(occ.state_entry);
+                Some(old_value)
+            }
         }
     }
 

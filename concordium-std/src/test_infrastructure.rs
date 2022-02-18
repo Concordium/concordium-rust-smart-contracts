@@ -1188,7 +1188,7 @@ mod test {
         my_map.insert("abc".to_string(), "hello, world".to_string());
         my_map.insert("def".to_string(), "hallo, weld".to_string());
         my_map.insert("ghi".to_string(), "hej, verden".to_string());
-        assert_eq!(my_map.get("abc".to_string()), Some(Ok("hello, world".to_string())));
+        assert_eq!(my_map.get(&"abc".into()), Some(Ok("hello, world".to_string())));
 
         let mut iter = my_map.iter();
         assert_eq!(iter.next(), Some(Ok(("abc".to_string(), "hello, world".to_string()))));
@@ -1197,6 +1197,28 @@ mod test {
         assert_eq!(iter.next(), None);
 
         Ok(())
+    }
+
+    #[test]
+    fn statemap_insert_remove() {
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut map = allocator.new_map();
+        let value = String::from("hello");
+        let _ = map.insert(42, value.clone());
+        assert_eq!(map.get(&42), Some(Ok(value)));
+        map.remove(&42);
+        assert_eq!(map.get(&42), None);
+    }
+
+    #[test]
+    fn statemap_clear() {
+        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut map = allocator.new_map();
+        let _ = map.insert(1, 2);
+        let _ = map.insert(2, 3);
+        let _ = map.insert(3, 4);
+        map.clear();
+        assert!(map.is_empty());
     }
 
     #[test]
@@ -1212,7 +1234,7 @@ mod test {
         outer_map.insert(inner_map_key, inner_map);
 
         assert_eq!(
-            outer_map.get(inner_map_key).unwrap().unwrap().get(key_to_value),
+            outer_map.get(&inner_map_key).unwrap().unwrap().get(&key_to_value),
             Some(Ok(value))
         );
     }
@@ -1256,7 +1278,7 @@ mod test {
         inner_set.insert(value);
         outer_map.insert(inner_set_key, inner_set);
 
-        assert_eq!(outer_map.get(inner_set_key).unwrap().unwrap().contains(&value), true);
+        assert_eq!(outer_map.get(&inner_set_key).unwrap().unwrap().contains(&value), true);
     }
 
     #[test]
