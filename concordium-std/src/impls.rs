@@ -514,6 +514,7 @@ where
 }
 
 const NEXT_COLLECTION_PREFIX_KEY: u64 = 0;
+#[cfg(test)]
 const GENERIC_MAP_PREFIX: u64 = 1;
 const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
 
@@ -1262,34 +1263,6 @@ where
         StateBox::new(value, Rc::clone(&self.state_ll), prefix)
     }
 
-    /// Some(Err(_)) means that something exists in the state with that key, but
-    /// it isn't of type `V`.
-    pub fn get<K: Serial, V: DeserialStateCtx<StateLL>>(&self, key: K) -> Option<ParseResult<V>> {
-        let key_with_map_prefix = Self::prepend_generic_map_key(key);
-
-        self.state_ll
-            .borrow_mut()
-            .lookup(&key_with_map_prefix)
-            .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
-    }
-
-    pub fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) {
-        let key_with_map_prefix = Self::prepend_generic_map_key(key);
-        let value_bytes = to_bytes(&value);
-        match self.state_ll.borrow_mut().entry(&key_with_map_prefix) {
-            EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&value_bytes);
-            }
-            EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
-        }
-    }
-
-    fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
-        let mut key_with_map_prefix = to_bytes(&GENERIC_MAP_PREFIX);
-        key_with_map_prefix.append(&mut to_bytes(&key));
-        key_with_map_prefix
-    }
-
     fn get_and_update_item_prefix(&self) -> u64 {
         // Get the next prefix or insert and use the initial one.
         let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
@@ -1309,6 +1282,44 @@ where
         next_collection_prefix_entry.write_u64(collection_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
 
         collection_prefix
+    }
+}
+
+#[cfg(test)]
+/// Some helper methods that are used for internal tests.
+impl<StateLL> Allocator<StateLL>
+where
+    StateLL: HasContractStateLL + std::fmt::Debug,
+{
+    /// Some(Err(_)) means that something exists in the state with that key, but
+    /// it isn't of type `V`.
+    pub(crate) fn get<K: Serial, V: DeserialStateCtx<StateLL>>(
+        &self,
+        key: K,
+    ) -> Option<ParseResult<V>> {
+        let key_with_map_prefix = Self::prepend_generic_map_key(key);
+
+        self.state_ll
+            .borrow_mut()
+            .lookup(&key_with_map_prefix)
+            .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
+    }
+
+    pub(crate) fn insert<K: Serial, V: Serial>(&mut self, key: K, value: V) {
+        let key_with_map_prefix = Self::prepend_generic_map_key(key);
+        let value_bytes = to_bytes(&value);
+        match self.state_ll.borrow_mut().entry(&key_with_map_prefix) {
+            EntryRaw::Vacant(vac) => {
+                let _ = vac.insert(&value_bytes);
+            }
+            EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
+        }
+    }
+
+    fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
+        let mut key_with_map_prefix = to_bytes(&GENERIC_MAP_PREFIX);
+        key_with_map_prefix.append(&mut to_bytes(&key));
+        key_with_map_prefix
     }
 }
 
