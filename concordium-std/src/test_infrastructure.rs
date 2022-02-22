@@ -1188,12 +1188,12 @@ mod test {
         my_map.insert("abc".to_string(), "hello, world".to_string());
         my_map.insert("def".to_string(), "hallo, weld".to_string());
         my_map.insert("ghi".to_string(), "hej, verden".to_string());
-        assert_eq!(my_map.get("abc".to_string()), Some(Ok("hello, world".to_string())));
+        assert_eq!(my_map.get("abc".to_string()), Some("hello, world".to_string()));
 
         let mut iter = my_map.iter();
-        assert_eq!(iter.next(), Some(Ok(("abc".to_string(), "hello, world".to_string()))));
-        assert_eq!(iter.next(), Some(Ok(("def".to_string(), "hallo, weld".to_string()))));
-        assert_eq!(iter.next(), Some(Ok(("ghi".to_string(), "hej, verden".to_string()))));
+        assert_eq!(iter.next(), Some(("abc".to_string(), "hello, world".to_string())));
+        assert_eq!(iter.next(), Some(("def".to_string(), "hallo, weld".to_string())));
+        assert_eq!(iter.next(), Some(("ghi".to_string(), "hej, verden".to_string())));
         assert_eq!(iter.next(), None);
 
         Ok(())
@@ -1211,10 +1211,7 @@ mod test {
         inner_map.insert(key_to_value, value);
         outer_map.insert(inner_map_key, inner_map);
 
-        assert_eq!(
-            outer_map.get(inner_map_key).unwrap().unwrap().get(key_to_value),
-            Some(Ok(value))
-        );
+        assert_eq!(outer_map.get(inner_map_key).unwrap().get(key_to_value), Some(value));
     }
 
     #[test]
@@ -1240,8 +1237,8 @@ mod test {
         );
 
         let mut iter = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter();
-        assert_eq!(iter.next(), Some(Ok(0)));
-        assert_eq!(iter.next(), Some(Ok(1)));
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
         assert_eq!(iter.next(), None);
     }
 
@@ -1256,7 +1253,7 @@ mod test {
         inner_set.insert(value);
         outer_map.insert(inner_set_key, inner_set);
 
-        assert_eq!(outer_map.get(inner_set_key).unwrap().unwrap().contains(&value), true);
+        assert_eq!(outer_map.get(inner_set_key).unwrap().contains(&value), true);
     }
 
     #[test]
@@ -1264,6 +1261,6 @@ mod test {
         let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
         let boxed_value = String::from("I'm boxed");
         let statebox = allocator.new_box(boxed_value.clone());
-        assert_eq!(statebox.get_copy().unwrap().unwrap(), boxed_value);
+        assert_eq!(statebox.get_copy(), boxed_value);
     }
 }

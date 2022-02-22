@@ -125,16 +125,15 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
     // Just overwrite existing.
     host.state()
         .token_state
-        .entry(params.owner)?
-        .and_try_modify::<_, Reject>(|owner_map| {
+        .entry(params.owner)
+        .and_modify(|owner_map| {
             owner_map
-                .entry(params.token_id)?
+                .entry(params.token_id)
                 .and_modify(|current_count| {
                     *current_count += params.token_count;
                 })
                 .or_insert(params.token_count);
-            Ok(())
-        })?
+        })
         .or_insert({
             let mut owner_map = host.allocator().new_map();
             let _old_value = owner_map.insert(params.token_id, params.token_count);
@@ -143,15 +142,11 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
 
     host.state().another_struct.a_set.insert(42);
 
-    // TODO: This won't be persisted
+    // This won't be persisted. The change only occurs in memory.
     host.state().total_tokens += params.token_count as u64;
 
     // But this should be.
-    host.state()
-        .boxed_total_tokens
-        .update(|old_count| *old_count += params.token_count as u64)
-        .unwrap()
-        .unwrap();
+    host.state().boxed_total_tokens.update(|old_count| *old_count += params.token_count as u64);
 
     Ok(())
 }
@@ -209,16 +204,16 @@ mod tests {
 
         // Token count should be 100.
         assert_eq!(
-            state_reloaded.token_state.get(owner).unwrap().unwrap().get(token_id),
-            Some(Ok(expected_token_count))
+            state_reloaded.token_state.get(owner).unwrap().get(token_id),
+            Some(expected_token_count)
         );
 
         let mut a_set_iter = state_reloaded.another_struct.a_set.iter();
-        assert_eq!(a_set_iter.next(), Some(Ok(42)));
+        assert_eq!(a_set_iter.next(), Some(42));
         assert_eq!(a_set_iter.next(), None);
 
         assert_eq!(state_reloaded.total_tokens, 0); // The bare u64 is not persisted.
                                                     // But the Boxed u64 is:
-        assert_eq!(state_reloaded.boxed_total_tokens.get_copy(), Some(Ok(100)));
+        assert_eq!(state_reloaded.boxed_total_tokens.get_copy(), 100);
     }
 }

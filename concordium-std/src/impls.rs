@@ -2,7 +2,7 @@ use crate::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
-    fmt,
+    fail, fmt,
     hash::Hash,
     marker::PhantomData,
     mem, num,
@@ -478,7 +478,8 @@ where
     }
 
     /// Try to modify the entry using the given function.
-    /// Useful when dealing with nested StateMaps.
+    /// TODO: This might not be needed now that the high-level API unwraps the
+    /// potential results.
     pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, StateEntryType>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
@@ -602,15 +603,16 @@ where
         }
     }
 
-    pub fn get(&self, key: K) -> Option<ParseResult<V>> {
+    pub fn get(&self, key: K) -> Option<V> {
         let k = self.key_with_map_prefix(&key);
-        self.state_ll
-            .borrow()
-            .lookup(&k)
-            .and_then(|mut entry| Some(V::deserial_state_ctx(&self.state_ll, &mut entry)))
+        self.state_ll.borrow().lookup(&k).and_then(|mut entry| {
+            Some(V::deserial_state_ctx(&self.state_ll, &mut entry).expect_report(
+                "Deserial failed. State has been incorrectly altered using the low-level API.",
+            ))
+        })
     }
 
-    pub fn insert(&mut self, key: K, value: V) -> Option<ParseResult<V>> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(&key);
         let value_bytes = to_bytes(&value);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
@@ -619,20 +621,24 @@ where
                 None
             }
             EntryRaw::Occupied(mut occ) => {
-                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut());
+                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).expect_report(
+                    "Deserial failed. State has been incorrectly altered using the low-level API.",
+                );
                 occ.insert(&value_bytes);
                 Some(old_value)
             }
         }
     }
 
-    pub fn entry(&mut self, key: K) -> ParseResult<Entry<K, V, S::EntryType>> {
+    pub fn entry(&mut self, key: K) -> Entry<K, V, S::EntryType> {
         let key_bytes = self.key_with_map_prefix(&key);
         match self.state_ll.borrow_mut().entry(&key_bytes) {
-            EntryRaw::Vacant(vac) => Ok(Entry::Vacant(VacantEntry::new(key, vac.state_entry))),
+            EntryRaw::Vacant(vac) => Entry::Vacant(VacantEntry::new(key, vac.state_entry)),
             EntryRaw::Occupied(mut occ) => {
-                let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut())?;
-                Ok(Entry::Occupied(OccupiedEntry::new(key, value, occ.state_entry)))
+                let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).expect_report(
+                    "Deserial failed. State has been incorrectly altered using the low-level API.",
+                );
+                Entry::Occupied(OccupiedEntry::new(key, value, occ.state_entry))
             }
         }
     }
@@ -668,7 +674,7 @@ where
     V: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
-    type Item = ParseResult<(K, V)>;
+    type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.state_iter.next().and_then(|mut entry| {
@@ -677,12 +683,15 @@ where
                 data:   key,
                 offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
             };
-
-            let res = K::deserial(&mut key_cursor).and_then(|the_key| {
-                V::deserial_state_ctx(&self.state_ll, &mut entry)
-                    .and_then(|the_value| Ok((the_key, the_value)))
-            });
-            Some(res)
+            let k = K::deserial(&mut key_cursor).expect_report(
+                "Deserializing key failed. State has been incorrectly altered using the low-level \
+                 API.",
+            );
+            let v = V::deserial_state_ctx(&self.state_ll, &mut entry).expect_report(
+                "Deserializing value failed. State has been incorrectly altered using the \
+                 low-level API.",
+            );
+            Some((k, v))
         })
     }
 }
@@ -799,7 +808,7 @@ where
             EntryRaw::Vacant(vac) => {
                 let _ = vac.insert(&value_bytes);
             }
-            EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
+            EntryRaw::Occupied(_) => fail!("Internal error. Allocator gave out occupied prefix."),
         };
 
         Self {
@@ -814,43 +823,58 @@ where
     // reference. to it. This design choice allows users to create arbitrary
     // nested data structures, such as linked lists. Similar to what is possible
     // with `Box`.
-    pub fn get_copy(&self) -> Option<ParseResult<T>> {
+    pub fn get_copy(&self) -> T {
         match self.state_ll.borrow_mut().entry(&self.prefix) {
-            EntryRaw::Vacant(_) => None,
-            EntryRaw::Occupied(mut occ) => {
-                Some(T::deserial_state_ctx(&self.state_ll, occ.get_mut()))
+            EntryRaw::Vacant(_) => {
+                fail!(
+                    "Get failed: Entry is vacant. State has been incorrectly altered using the \
+                     low-level API."
+                )
             }
+            EntryRaw::Occupied(mut occ) => T::deserial_state_ctx(&self.state_ll, occ.get_mut())
+                .expect_report(
+                    "Deserial failed. State has been incorrectly altered using the low-level API.",
+                ),
         }
     }
 
-    /// Set the value. Overwrites the existing one (if present).
+    /// Set the value. Overwrites the existing one.
     pub fn set(&mut self, new_val: T) {
         match self.state_ll.borrow_mut().entry(&self.prefix) {
-            EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&to_bytes(&new_val));
+            // Technically, we do not need to fail in this case, we can just insert, but it should
+            // /never/ happen.
+            EntryRaw::Vacant(_) => {
+                fail!(
+                    "Set failed: Entry is vacant. State has been incorrectly altered using the \
+                     low-level API."
+                )
             }
             EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&new_val)),
         }
     }
 
     /// Update the existing value with the given function.
-    /// Returns None if the existing value was not present.
-    /// Returns Some(Err(..)) if an existing value exists, but it cannot be
-    /// parsed as `T`.
-    //  TODO: Return error instead of option?
-    pub fn update<F>(&mut self, f: F) -> Option<ParseResult<()>>
+    pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut T), {
         match self.state_ll.borrow_mut().entry(&self.prefix) {
-            EntryRaw::Vacant(_) => return None, // old value does not exist
+            EntryRaw::Vacant(_) => {
+                fail!(
+                    "Update failed: Entry is vacant. State has been incorrectly altered using the \
+                     low-level API."
+                )
+            }
             EntryRaw::Occupied(mut occ) => {
-                let mut old_value = match T::deserial_state_ctx(&self.state_ll, occ.get_mut()) {
-                    Ok(val) => val,
-                    Err(_) => return Some(Err(ParseError::default())),
-                };
-                f(&mut old_value);
-                occ.insert(&to_bytes(&old_value));
-                Some(Ok(()))
+                let mut value = T::deserial_state_ctx(&self.state_ll, occ.get_mut()).expect_report(
+                    "Update failed: could not deserialize. State has been incorrectly altered \
+                     using the low-level API.",
+                );
+                // Mutate the value (perhaps only in memory, depends on the type).
+                f(&mut value);
+                // Store the value. TODO: If `T` is a StateBox/Set/Map, then it is only
+                // necessary to insert if the whole item has been replaced via the assignment
+                // operator.
+                occ.insert(&to_bytes(&value));
             }
         }
     }
@@ -881,7 +905,7 @@ where
     T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
-    type Item = ParseResult<T>;
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.state_iter.next().and_then(|entry| {
@@ -890,7 +914,9 @@ where
                 data:   key,
                 offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
             };
-            let res = T::deserial_state_ctx(&self.state_ll, &mut key_cursor);
+            let res = T::deserial_state_ctx(&self.state_ll, &mut key_cursor).expect_report(
+                "Deserial failed. State has been incorrectly altered using the low-level API.",
+            );
             Some(res)
         })
     }
