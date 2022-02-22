@@ -64,78 +64,103 @@ extern "C" {
     /// - 1 if data was successfully logged.
     pub(crate) fn log_event(start: *const u8, length: u32) -> i32;
 
-    /// Create an entry with the given key and return its entry id.
-    /// - vacant => Allocates an empty state entry and returns its id.
-    /// - Occupied by entry `e` => Allocates an empty state entry and returns
-    ///   its entry id `e'`, where `e' != e`. Entry `e` is eventually
-    ///   deallocated.
-    pub(crate) fn create(key_start: *const u8, key_length: u32) -> u32;
+    /// Lookup an entry with the given key. The return value is either
+    /// u64::MAX if the entry at the given key does not exist, or else
+    /// the first bit of the result is 0, and the remaining bits
+    /// are an entry identifier that may be used in subsequent calls.
+    pub(crate) fn state_lookup_entry(key_start: *const u8, key_length: u32) -> u64;
 
-    /// Lookup an entry.
-    /// Returns -1 if the entry does not exist.
-    /// Otherwise it returns an entry id as a u32.
-    pub(crate) fn lookup(key_start: *const u8, key_length: u32) -> i64;
+    /// Create an empty entry with the given key. The return value is either u64::MAX if
+    /// creating the entry failed because of an iterator lock on the part of the
+    /// tree, or else the first bit is 0, and the remaining bits are an entry identifier
+    /// that maybe used in subsequent calls.
+    pub(crate) fn state_create_entry(key_start: *const u8, key_length: u32) -> u64;
 
-    /// Delete the entry. Returns whether the entry was or not.
-    /// 1 => did exists
-    /// 0 => did not exist
-    pub(crate) fn delete_entry(entry: u32) -> u32;
+    /// Delete the entry. Returns either
+    /// - u32::MAX if the entry did not exist
+    /// - 1 if the entry was deleted as a result of this call.
+    pub(crate) fn state_delete_entry(entry: u64) -> u32;
 
-    /// This might or might not be necessary.
-    /// If exact is set then only delete the specifi key, otherwise the entire
-    /// subtree. It seems useful to have the ability to delete the entire
-    /// tree
-    /// 1 => deleted something
-    /// 0 => didn't delete anything
-    /// TODO: could also say how much was deleted (number of entries).
-    pub(crate) fn delete_prefix(key_start: *const u8, key_length: u32, exact: u32) -> u32;
+    /// Delete a prefix in the tree, that is, delete all parts of the tree that have
+    /// the given key as prefix. Returns
+    /// - 0 if the tree was locked and thus deletion failed.
+    /// - 1 if the tree **was not locked**, but the key points to an empty part of the tree
+    /// - 2 if a part of the tree was successfully deleted
+    pub(crate) fn state_delete_prefix(key_start: *const u8, key_length: u32) -> u32;
 
-    /// Iteration. Returns an iterator.
-    pub(crate) fn iterator(prefix_start: *const u8, prefix_length: u32) -> u32;
+    /// Construct an iterator over a part of the tree. This **locks the part of the
+    /// tree that has the given prefix**. Locking means that no deletions or
+    /// insertions of entries may occur in that subtree.
+    /// Returns
+    /// - all 1 bits if too many iterators already exist with this key
+    /// - all but second bit set to 1 if there is no value in the state with the given key
+    /// - otherwise the first bit is 0, and the remaining bits are the iterator identifier
+    /// that may be used in subsequent calls to advance it, or to get its key.
+    pub(crate) fn state_iterate_prefix(prefix_start: *const u8, prefix_length: u32) -> u64;
 
-    /// Returns the entry with the key that is the successor of the current key
-    /// subject to prefix restrictions.
-    /// If the iterator is empty, -1 is returned.
-    ///
-    /// This will be a snapshot. If you mutate, it will mutate the original
-    /// tree, but the snapshot and its entries will remain the same.
-    /// Getting a new iterator subsequently will get you a snapshot with your
-    /// new changes.
-    pub(crate) fn next(iterator: u32) -> i64;
+    /// Return the next entry along the iterator, and advance the iterator.
+    /// The return value is
+    /// - u64::MAX if the iterator does not exist (it was deleted, or the ID is invalid)
+    /// - all but the second bit set to 1 if no more entries are left, the iterator
+    /// is exhausted. All further calls will yield the same until the iterator is
+    /// deleted.
+    /// - otherwise the first bit is 0, and the remaining bits encode an entry
+    ///   identifier that can be passed to any of the entry methods.
+    pub(crate) fn state_iterator_next(iterator: u64) -> u64;
 
-    /// Get the length of the entry's key.
-    pub(crate) fn get_entry_key_length(entry: u32) -> u32;
+    /// Delete the iterator, unlocking the subtree. Returns
+    /// - u64::MAX if the iterator does not exist.
+    /// - 0 if the iterator was already deleted
+    /// - 1 if the iterator was successfully deleted as a result of this call.
+    pub(crate) fn state_iterator_delete(iterator: u64) -> u32;
 
-    /// Read the entry's key.
-    /// entry ... entry id returned by iterator or entry
-    /// start ... where to write in Wasm memory
-    /// length ... length of the data to read
-    /// offset ... where to start reading the entry key
-    /// Returns how many bytes were read.
-    pub(crate) fn load_entry_key(entry: u32, start: *mut u8, length: u32, offset: u32) -> u32;
+    /// Get the length of the key that the iterator is currently pointing at.
+    /// Returns
+    /// - u32::MAX if the iterator does not exist
+    /// - otherwise the length of the key in bytes.
+    pub(crate) fn state_iterator_key_size(iterator: u64) -> u32;
+
+    /// Read a section of the key the iterator is currently pointing at. Returns either
+    /// - u32::MAX if the iterator has already been deleted
+    /// - the amount of data that was copied. This will never be more than the supplied length.
+    pub(crate) fn state_iterator_key_read(iterator: u64, start: *mut u8, length: u32, offset: u32) -> u32;
 
     // Operations on the entry.
-    // entry ... entry id returned by iterator or entry
-    // start ... where to write in Wasm memory
-    // length ... length of the data to read
-    // offset ... where to start reading in the entry
-    // returns how many bytes were read.
-    pub(crate) fn load_entry_state(entry: u32, start: *mut u8, length: u32, offset: u32) -> u32;
 
-    // entry ... entry id returned by iterator or find
-    // start ... where to read in Wasm memory
-    // length ... length of the data to write
-    // offset ... where to start writing in the entry
-    // returns how many bytes were written (this might be removed since we might not
-    // have a limit on value size)
-    pub(crate) fn write_entry_state(entry: u32, start: *const u8, length: u32, offset: u32) -> u32;
+    /// Read a part of the entry. The arguments are
+    /// entry ... entry id returned by state_iterator_next or state_create_entry
+    /// start ... where to write in Wasm memory
+    /// length ... length of the data to read
+    /// offset ... where to start reading in the entry
+    /// The return value is
+    /// - u32::MAX if the entry does not exist (has been invalidated, or never
+    /// existed). In this case no data is written.
+    /// - amount of data that was read. This is never more than length.
+    pub(crate) fn state_entry_read(entry: u64, start: *mut u8, length: u32, offset: u32) -> u32;
 
-    // Resize entry size to the new value (truncate if new size is smaller). Return
-    // 0 if this was unsuccesful (new state too big), or 1 if successful.
-    pub(crate) fn resize_entry_state(entry: u32, new_size: u32) -> u32; // returns 0 or 1.
+    /// Write a part of the entry. The arguments are
+    /// entry ... entry id returned by state_iterator_next or state_create_entry
+    /// start ... where to read from Wasm memory
+    /// length ... length of the data to read
+    /// offset ... where to start writing in the entry
+    /// The return value is
+    /// - u32::MAX if the entry does not exist (has been invalidated, or never
+    /// existed). In this case no data is written.
+    /// - amount of data that was written. This is never more than length.
+    pub(crate) fn state_entry_write(entry: u64, start: *const u8, length: u32, offset: u32) -> u32;
 
-    // get current entry size in bytes.
-    pub(crate) fn entry_state_size(entry: u32) -> u32;
+    /// Return the current size of the entry in bytes.
+    /// The return value is either
+    /// - u32::MAX if the entry does not exist (has been invalidated, or never
+    /// existed). In this case no data is written.
+    /// - or the size of the entry.
+    pub(crate) fn state_entry_size(entry: u64) -> u32;
+
+    /// Resize the entry to the given size. Returns
+    /// - u32::MAX if the entry has already been invalidated
+    /// - 0 if the attempt was unsuccessful because new_size exceeds maximum entry size
+    /// - 1 if the entry was successfully resized.
+    pub(crate) fn state_entry_resize(entry: u64, new_size: u32) -> u32;
 
     // Getter for the init context.
     /// Address of the sender, 32 bytes
@@ -203,74 +228,66 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn entry(_key_start: *const u8, _key_length: u32) -> u32 {
+    pub(crate) fn state_lookup_entry(_key_start: *const u8, _key_length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn lookup(_key_start: *const u8, _key_length: u32) -> i64 {
+    pub(crate) fn state_create_entry(_key_start: *const u8, _key_length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn vacant(_entry: u32) -> u32 {
+    pub(crate) fn state_delete_entry(_entry: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn create(_entry: u32, _capacity: u32) -> u32 {
+    pub(crate) fn state_delete_prefix(_key_start: *const u8, _key_length: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn delete_entry(_entry: u32) -> u32 {
+    pub(crate) fn state_iterate_prefix(_prefix_start: *const u8, _prefix_length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn delete_prefix(_prefix_start: *const u8, _prefix_length: u32) -> u32 {
+    pub(crate) fn state_iterator_next(_iterator: u64) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn iterator(_prefix_start: *const u8, _prefix_length: u32) -> u32 {
+    pub(crate) fn state_iterator_key_size(_iterator: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn next(_iterator: u32) -> i64 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) fn get_entry_key_length(_entry: u32) -> u32 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) fn load_entry_key(
-        _entry: u32,
-        _start: *const u8,
-        _length: u32,
-        _offset: u32,
-    ) -> u32 {
-        unimplemented!("Dummy function! Not to be executed")
-    }
-    #[no_mangle]
-    pub(crate) fn load_entry_state(
-        _entry: i64,
+    pub(crate) fn state_iterator_key_read(
+        _iterator: u64,
         _start: *mut u8,
         _length: u32,
-        _offset: u32,
+        _offset: u32
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn write_entry_state(
-        _entry: i64,
+    pub(crate) fn state_entry_read(
+        _entry: u64,
+        _start: *mut u8,
+        _length: u32,
+        _offset: u32
+    ) -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn state_entry_write(
+        _entry: u64,
         _start: *const u8,
         _length: u32,
-        _offset: u32,
+        _offset: u32
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn resize_entry_state(_entry: i64, _new_size: u32) -> u32 {
+    pub(crate) fn state_entry_resize(_entry: u64, _new_size: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    pub(crate) fn entry_state_size(_entry: i64) -> u32 {
+    pub(crate) fn state_entry_size(_entry: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]

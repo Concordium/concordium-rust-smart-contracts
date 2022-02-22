@@ -514,3 +514,21 @@ pub(crate) mod sealed {
     impl ContextType for InitContextExtern {}
     impl ContextType for ReceiveContextExtern {}
 }
+
+#[derive(Debug)]
+pub enum ContractStateError {
+    /// The subtree is locked.
+    SubtreeLocked,
+    /// The entry does not exist.
+    EntryNotFound,
+    /// The parameter does not exist.
+    ParameterNotFound,
+    /// The specified size is too big.
+    SizeTooLarge,
+    /// Overflow error.
+    Overflow,
+    /// The iterator limit for a prefix has been reached.
+    IteratorLimitForPrefixExceeded,
+    /// The operation is not allowed.
+    NotAllowed,
+}

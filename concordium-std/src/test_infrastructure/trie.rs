@@ -1,10 +1,10 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap, VecDeque},
-    rc::Rc,
+    collections::{HashMap, VecDeque, BTreeMap},
+    rc::Rc, cmp::min,
 };
 
-use crate::StateEntryId;
+use crate::{ContractStateError, StateEntryId, HasContractStateEntry};
 
 use super::StateEntryTest;
 
@@ -17,6 +17,16 @@ pub struct StateTrie {
     nodes:         Node,
     next_entry_id: Cell<StateEntryId>,
     entry_map:     RefCell<HashMap<StateEntryId, Vec<Index>>>,
+    iterators:     RefCell<BTreeMap<Vec<usize>, Iter>>,
+}
+
+/// Default constructor for a new state trie.
+/// 
+/// Added after clippy warning.
+impl Default for StateTrie {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StateTrie {
@@ -25,14 +35,7 @@ impl StateTrie {
             nodes:         Node::new(),
             next_entry_id: Cell::new(0),
             entry_map:     RefCell::new(HashMap::new()),
-        }
-    }
-
-    pub fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
-        let indexes = Self::to_indexes(key);
-        match self.nodes.lookup(&indexes) {
-            Some(data) => Some(self.construct_state_entry_test(indexes, data, key.to_vec())),
-            None => None,
+            iterators:     Default::default(),
         }
     }
 
@@ -45,7 +48,7 @@ impl StateTrie {
         key: Vec<u8>,
     ) -> StateEntryTest {
         // Get the current next_entry_id
-        let state_entry_id: u32 = self.next_entry_id.get();
+        let state_entry_id = self.next_entry_id.get();
 
         // Add the id and indexes to the map and increment the next_entry_id
         self.entry_map.borrow_mut().insert(state_entry_id, indexes);
@@ -54,30 +57,8 @@ impl StateTrie {
         StateEntryTest::open(data, key, state_entry_id)
     }
 
-    pub fn create(&mut self, key: &[u8]) -> StateEntryTest {
-        let indexes = Self::to_indexes(key);
-        let data = self.nodes.create(&indexes);
-        self.construct_state_entry_test(indexes, data, key.to_vec())
-    }
-
-    pub fn delete_entry(&mut self, entry: StateEntryTest) -> bool {
-        match self.entry_map.borrow_mut().remove(&entry.state_entry_id) {
-            Some(indexes) => self.nodes.delete_data(&indexes),
-            None => false, /* Entry did not exist. Only happens when entry was deleted using
-                            * delete_prefix. */
-        }
-    }
-
-    pub fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool {
-        self.nodes.delete_prefix(&Self::to_indexes(prefix), exact)
-    }
-
-    pub fn iter(&self, prefix: &[u8]) -> Iter {
-        let index_prefix = StateTrie::to_indexes(prefix);
-        match self.nodes.lookup_node(&index_prefix) {
-            Some(root_of_iter) => Iter::new(self, index_prefix, root_of_iter),
-            None => Iter::empty(),
-        }
+    pub fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
+        self.nodes.delete_prefix(&Self::to_indexes(prefix), false)
     }
 
     fn to_indexes(key: &[u8]) -> Vec<Index> {
@@ -100,20 +81,77 @@ impl StateTrie {
         }
         key
     }
-}
+    /// Returns true if the subtree corresponding to the given key is
+    /// already locked by an existing iterator, false otherwise.
+    fn is_locked(&self, prefix: &[usize]) -> bool {
+        self.iterators.borrow().keys().any(|p| {
+            let shortest = min(p.len(), prefix.len());
+            p[..shortest] == prefix[..shortest]
+        })
+    }
 
-#[derive(Debug)]
-pub struct Iter {
-    queue: Option<VecDeque<StateEntryTest>>,
-}
+    pub fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, ContractStateError> {
+        let indexes = Self::to_indexes(key);
+        if self.is_locked(&indexes) {
+            return Err(ContractStateError::SubtreeLocked);
+        }
+        let data = self.nodes.create(&indexes);
+        let entry = self.construct_state_entry_test(indexes, data, key.to_vec());
+        Ok(entry)
+    }
 
-impl Iter {
-    fn empty() -> Self {
-        Self {
-            queue: None,
+    pub fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
+        let indexes = Self::to_indexes(key);
+        self
+            .nodes
+            .lookup(&indexes)
+            .map(|data| self.construct_state_entry_test(indexes, data, key.to_vec()))
+    }
+
+    pub fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), ContractStateError> {
+        let indexes = Self::to_indexes(&entry.get_key().expect("key must exist"));
+        if self.is_locked(&indexes) {
+            return Err(ContractStateError::SubtreeLocked);
+        }
+        match self.entry_map.borrow_mut().remove(&entry.state_entry_id) {
+            Some(indexes) => self.nodes.delete_data(&indexes),
+            None => Err(ContractStateError::EntryNotFound), /* Entry did not exist. Only happens when entry was deleted using
+                            * delete_prefix. */
         }
     }
 
+    pub fn iterator(&self, prefix: &[u8]) -> Result<Iter, ContractStateError> {
+        let index_prefix = StateTrie::to_indexes(prefix);
+        if let Some(iter) = self.iterators.borrow().get(&index_prefix) {
+            if iter.clone_count() <= u16::MAX as usize {
+                return Ok(iter.clone());
+            }
+            return Err(ContractStateError::IteratorLimitForPrefixExceeded);
+        }
+        let node = self.nodes.lookup_node(&index_prefix).ok_or(ContractStateError::EntryNotFound)?;
+        let iter = Iter::new(self, index_prefix.clone(), node);
+        self.iterators.borrow_mut().insert(index_prefix, iter.clone());
+        Ok(iter)
+    }
+
+    pub fn delete_iterator(&mut self, iterator: Iter) -> bool {
+        if iterator.clone_count() > 2 {
+            println!("clone count = {}", iterator.clone_count());
+            return true;
+        }
+        println!("2");
+        let initial_count = self.iterators.borrow().len();
+        self.iterators.borrow_mut().retain(|_, iter| iter != &iterator);
+        initial_count != self.iterators.borrow().len()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Iter {
+    queue: Rc<RefCell<VecDeque<StateEntryTest>>>,
+}
+
+impl Iter {
     fn new(trie: &StateTrie, mut root_index: Vec<Index>, root_of_iter: &Node) -> Self {
         let mut queue = VecDeque::new();
 
@@ -132,11 +170,11 @@ impl Iter {
                         let state_entry = trie.construct_state_entry_test(
                             indexes.clone(),
                             Rc::clone(data),
-                            StateTrie::from_indexes(&indexes),
+                            StateTrie::from_indexes(indexes),
                         );
                         queue.push_back(state_entry);
                     }
-                    build_queue(trie, queue, indexes, &child);
+                    build_queue(trie, queue, indexes, child);
 
                     // Pop current index again.
                     indexes.pop();
@@ -147,8 +185,12 @@ impl Iter {
         build_queue(trie, &mut queue, &mut root_index, root_of_iter);
 
         Self {
-            queue: Some(queue),
+            queue: Rc::new(RefCell::new(queue)),
         }
+    }
+
+    fn clone_count(&self) -> usize {
+        Rc::strong_count(&self.queue)
     }
 }
 
@@ -156,10 +198,7 @@ impl Iterator for Iter {
     type Item = StateEntryTest;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.queue {
-            Some(ref mut queue) => queue.pop_front(),
-            None => None,
-        }
+        self.queue.borrow_mut().pop_front()
     }
 }
 
@@ -181,10 +220,7 @@ impl Node {
     /// Returns `None` iff the node doesn't exist, or, if the node exists, but
     /// has not data.
     fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<Vec<u8>>>> {
-        self.lookup_node(indexes).and_then(|node| match &node.data {
-            Some(data) => Some(Rc::clone(&data)),
-            None => None,
-        })
+        self.lookup_node(indexes).and_then(|node| node.data.as_ref().map(Rc::clone))
     }
 
     /// Tries to find the node with the given index.
@@ -194,7 +230,7 @@ impl Node {
             Some(idx) => {
                 self.children[*idx].as_ref().and_then(|node| node.lookup_node(&indexes[1..]))
             }
-            None => Some(&self),
+            None => Some(self),
         }
     }
 
@@ -212,9 +248,9 @@ impl Node {
         }
     }
 
-    fn delete_data(&mut self, indexes: &[Index]) -> bool { self.delete_prefix(indexes, true) }
+    fn delete_data(&mut self, indexes: &[Index]) -> Result<(), ContractStateError> { self.delete_prefix(indexes, true) }
 
-    fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> bool {
+    fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> Result<(), ContractStateError> {
         match prefix.first() {
             Some(idx) => match &mut self.children[*idx] {
                 Some(child) => {
@@ -224,13 +260,13 @@ impl Node {
                     }
                     something_was_deleted
                 }
-                None => false, // No such prefix or entry exists.
+                None => Err(ContractStateError::EntryNotFound), // No such prefix or entry exists.
             },
             None => {
                 // If `exact` and we found a non-leaf node, then do nothing and return false.
                 if exact && self.data.is_none() {
                     // Make no changes and return false.
-                    return false;
+                    return Ok(());
                 }
 
                 // If not `exact` delete the children, as we are deleting the whole prefix.
@@ -241,7 +277,7 @@ impl Node {
                 }
 
                 self.data = None;
-                true
+                Ok(())
             }
         }
     }
@@ -253,8 +289,15 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use concordium_contracts_common::{to_bytes, Deserial, Write};
+    use crate::{test_infrastructure::{trie::StateTrie, StateEntryTest}, UnwrapAbort};
 
-    use crate::{test_infrastructure::trie::StateTrie, UnwrapAbort};
+    fn create_entry(trie: &mut StateTrie, key: &[u8]) -> StateEntryTest {
+        trie.create_entry(key).expect("Failed to create entry")
+    }
+
+    fn delete_entry(trie: &mut StateTrie, entry: StateEntryTest) {
+        trie.delete_entry(entry).expect("Failed to delete entry")
+    }
 
     #[test]
     fn insert_get_test() {
@@ -262,7 +305,7 @@ mod tests {
         let key = [0, 1, 2];
         let mut trie = StateTrie::new();
 
-        trie.create(&key).write_all(&to_bytes(&expected_value)).expect("Writing to state failed.");
+        create_entry(&mut trie, &key).write_all(&to_bytes(&expected_value)).expect("Writing to state failed.");
 
         let mut entry = trie.lookup(&key).expect("Entry not found");
         let actual_value = String::deserial(&mut entry).unwrap();
@@ -274,14 +317,14 @@ mod tests {
         let key1 = [0];
         let key2 = [0, 0]; // A leaf, which is the child of the key1 node.
         let mut trie = StateTrie::new();
-        trie.create(&key1);
-        trie.create(&key2);
+        create_entry(&mut trie, &key1);
+        create_entry(&mut trie, &key2);
 
         // Both entries exist in the tree.
         let entry1 = trie.lookup(&key1).expect("entry1 not found");
         assert!(trie.lookup(&key2).is_some());
 
-        trie.delete_entry(entry1); // Delete the data in the parent node.
+        delete_entry(&mut trie, entry1); // Delete the data in the parent node.
         assert!(trie.lookup(&key1).is_none());
         assert!(trie.lookup(&key2).is_some()); // The child should still exist.
     }
@@ -293,11 +336,11 @@ mod tests {
         let key3 = [0, 0, 0];
 
         let mut trie = StateTrie::new();
-        trie.create(&key1);
-        trie.create(&key2);
-        trie.create(&key3);
+        create_entry(&mut trie, &key1);
+        create_entry(&mut trie, &key2);
+        create_entry(&mut trie, &key3);
 
-        assert_eq!(trie.delete_prefix(&key2, false), true);
+        assert_eq!(trie.delete_prefix(&key2).is_ok(), true);
 
         assert!(trie.lookup(&key1).is_some());
         assert!(trie.lookup(&key2).is_none());
@@ -308,10 +351,10 @@ mod tests {
     fn double_create_overwrites_data() {
         let key = [];
         let mut trie = StateTrie::new();
-        trie.create(&key).write_all(&to_bytes(&"hello")).expect("Writing to state failed");
+        create_entry(&mut trie, &key).write_all(&to_bytes(&"hello")).expect("Writing to state failed");
 
         // Creating again overwrites the old data.
-        let res = String::deserial(&mut trie.create(&key));
+        let res = String::deserial(&mut create_entry(&mut trie, &key));
 
         assert!(res.is_err())
     }
@@ -320,13 +363,13 @@ mod tests {
     fn iterator_test() {
         let mut trie = StateTrie::new();
 
-        trie.create(b"a").write_u8(42).unwrap_abort();
-        trie.create(b"ab").write_u8(43).unwrap_abort();
-        let mut entry_abd = trie.create(b"abd");
-        let mut entry_abdf = trie.create(b"abdf");
-        let mut entry_abdg = trie.create(b"abdg");
-        let mut entry_abe = trie.create(b"abe");
-        trie.create(b"ac").write_u8(44).unwrap_abort();
+        create_entry(&mut trie, b"a").write_u8(42).unwrap_abort();
+        create_entry(&mut trie, b"ab").write_u8(43).unwrap_abort();
+        let mut entry_abd = create_entry(&mut trie, b"abd");
+        let mut entry_abdf = create_entry(&mut trie, b"abdf");
+        let mut entry_abdg = create_entry(&mut trie, b"abdg");
+        let mut entry_abe = create_entry(&mut trie, b"abe");
+        create_entry(&mut trie, b"ac").write_u8(44).unwrap_abort();
 
         entry_abd.write_u8(0).unwrap_abort();
         entry_abdf.write_u8(1).unwrap_abort();
@@ -334,7 +377,7 @@ mod tests {
         entry_abe.write_u8(3).unwrap_abort();
 
         // Get an iterator of the trie.
-        let mut iter = trie.iter(b"ab");
+        let mut iter = trie.iterator(b"ab").unwrap();
         assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(0));
         assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(1));
         assert_eq!(u8::deserial(&mut iter.next().unwrap_abort()), Ok(2));
@@ -342,12 +385,13 @@ mod tests {
         assert_eq!(iter.next(), None);
 
         // Delete some entries.
-        trie.delete_entry(entry_abd);
-        trie.delete_entry(entry_abdf);
-        trie.delete_entry(entry_abe);
+        assert!(trie.delete_iterator(iter));
+        assert!(trie.delete_entry(entry_abd).is_ok());
+        delete_entry(&mut trie, entry_abdf);
+        delete_entry(&mut trie, entry_abe);
 
         // Only "abdg" is left.
-        let mut new_trie = trie.iter(b"ab");
+        let mut new_trie = trie.iterator(b"ab").unwrap();
         assert_eq!(u8::deserial(&mut new_trie.next().unwrap_abort()), Ok(2));
         assert_eq!(new_trie.next(), None);
     }

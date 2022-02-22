@@ -55,7 +55,7 @@
 //!     }
 //! }
 //! ```
-use crate::{constants::MAX_CONTRACT_STATE_SIZE, *};
+use crate::*;
 
 use crate::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
@@ -64,9 +64,9 @@ use convert::TryInto;
 #[cfg(not(feature = "std"))]
 use core::{cmp, num};
 #[cfg(feature = "std")]
-use std::{boxed::Box, cmp, num};
+use std::{boxed::Box, num};
 use std::{
-    cell::{RefCell, RefMut},
+    cell::{RefCell},
     rc::Rc,
 };
 
@@ -96,7 +96,7 @@ pub struct TestPolicy {
     /// Current position in the vector of policies. Used to implement
     /// `next_item`.
     position: usize,
-    policy:   OwnedPolicy,
+    policy: OwnedPolicy,
 }
 
 impl TestPolicy {
@@ -143,7 +143,7 @@ pub struct ContextTest<'a, C> {
 
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
-/// ```
+/// ```rust
 /// let mut ctx = InitContextTest::empty();
 /// ctx.set_init_origin(AccountAddress([0u8; 32]));
 /// ```
@@ -153,12 +153,12 @@ pub struct ContextTest<'a, C> {
 ///
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
-/// ```
+/// ```rust
 /// let mut ctx = InitContextTest::empty();
 /// ctx.set_metadata_slot_time(1609459200);
 /// ```
 /// or
-/// ```
+/// ```rust
 /// let mut ctx = InitContextTest::empty();
 /// ctx.metadata_mut().set_slot_time(1609459200);
 /// ```
@@ -209,7 +209,7 @@ pub struct InitOnlyDataTest {
 ///
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
-/// ```
+/// ```rust
 /// let owner = AccountAddress([0u8; 32]);
 /// let mut ctx = ReceiveContextTest::empty();
 /// ctx.set_owner(owner);
@@ -221,12 +221,12 @@ pub struct InitOnlyDataTest {
 ///
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
-/// ```
+/// ```rust
 /// let mut ctx = ReceiveContextTest::empty();
 /// ctx.set_metadata_slot_time(1609459200);
 /// ```
 /// or
-/// ```
+/// ```rust
 /// let mut ctx = ReceiveContextTest::empty();
 /// ctx.metadata_mut().set_slot_time(1609459200);
 /// ```
@@ -519,7 +519,7 @@ pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {
 #[derive(Debug, PartialEq, Eq)]
 /// An error that is raised when operating with `Seek`, `Write`, or `Read` trait
 /// methods of the `ContractStateTest` type.
-pub enum ContractStateError {
+pub enum ContractStateTestError {
     /// The computation of the new offset would result in an overflow.
     Overflow,
     /// An error occurred when writing to the contract state.
@@ -530,12 +530,12 @@ pub enum ContractStateError {
     Default,
 }
 
-impl Default for ContractStateError {
+impl Default for ContractStateTestError {
     fn default() -> Self { Self::Default }
 }
 
-impl From<num::TryFromIntError> for ContractStateError {
-    fn from(_: num::TryFromIntError) -> Self { ContractStateError::Overflow }
+impl From<num::TryFromIntError> for ContractStateTestError {
+    fn from(_: num::TryFromIntError) -> Self { ContractStateTestError::Overflow }
 }
 
 // TODO: Replace the Vec with a generic T.
@@ -572,23 +572,31 @@ impl HasContractStateLL for ContractStateLLTest {
         }
     }
 
-    fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType> {
-        if let Some(state_entry) = self.trie.lookup(key) {
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError> {
+        let entry = if let Some(state_entry) = self.trie.lookup(key) {
             EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
         } else {
-            EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create(key)))
-        }
+            EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create_entry(key)?))
+        };
+        Ok(entry)
     }
 
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.lookup(key) }
 
-    fn delete_entry(&mut self, entry: Self::EntryType) -> bool { self.trie.delete_entry(entry) }
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> { self.trie.delete_entry(entry) }
 
-    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool {
-        self.trie.delete_prefix(prefix, exact)
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
+        self.trie.delete_prefix(prefix)
     }
 
-    fn iterator(&self, prefix: &[u8]) -> Self::IterType { self.trie.iter(prefix) }
+    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError> { self.trie.iterator(prefix) }
+
+    fn delete_iterator(
+        &mut self,
+        iter: Self::IterType,
+    ) -> Result<bool, ContractStateError> {
+        Ok(self.trie.delete_iterator(iter))
+    }
 }
 
 impl ContractStateLLTest {
@@ -599,8 +607,14 @@ impl ContractStateLLTest {
     }
 }
 
+impl Default for ContractStateLLTest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HasContractStateEntry for StateEntryTest {
-    type Error = ContractStateError;
+    type Error = ContractStateTestError;
     type StateEntryData = Rc<RefCell<Vec<u8>>>;
     type StateEntryKey = Vec<u8>;
 
@@ -612,82 +626,71 @@ impl HasContractStateEntry for StateEntryTest {
         }
     }
 
-    fn size(&self) -> u32 { self.cursor.data.borrow().len() as u32 }
+    fn size(&self) -> Result<u32, Self::Error> { Ok(self.cursor.data.borrow().len() as u32) }
 
-    fn truncate(&mut self, new_size: u32) {
-        if self.size() > new_size {
-            let new_size = new_size as usize;
-            let data: &mut Vec<u8> = &mut self.cursor.data.as_ref().borrow_mut();
-            data.truncate(new_size);
-            if self.cursor.offset > new_size {
-                self.cursor.offset = new_size
-            }
-        }
+    fn get_key(&self) -> Result<Vec<u8>, Self::Error> { Ok(self.key.clone()) }
+
+    fn get_position(&self) -> u32 {
+        self.cursor.offset as u32
     }
 
-    fn reserve(&mut self, len: u32) -> bool {
-        // TODO: Max still needed?
-        if len <= constants::MAX_CONTRACT_STATE_SIZE {
-            if self.size() < len {
-                let data: &mut Vec<u8> = &mut self.cursor.data.as_ref().borrow_mut();
-                data.resize(len as usize, 0u8);
-            }
-            true
-        } else {
-            false
-        }
+    fn set_position(&mut self, pos: u32) {
+        self.cursor.offset = pos as usize
     }
 
-    fn get_key(&self) -> Vec<u8> { self.key.clone() }
+    fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
+        self.cursor.data.borrow_mut().resize(new_size as usize, 0);
+        Ok(())
+    }
 }
 
 impl Read for StateEntryTest {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
-        let mut len = self.cursor.data.borrow().len() - self.cursor.offset;
-        if len > buf.len() {
-            len = buf.len();
-        }
-        if len > 0 {
-            buf[0..len].copy_from_slice(
-                &self.cursor.data.borrow()[self.cursor.offset..self.cursor.offset + len],
-            );
-            self.cursor.offset += len;
-            Ok(len)
-        } else {
-            Ok(0)
-        }
+        // Create a temporary cursor to read from the data.
+        let data = self.cursor.data.take();
+        let mut cursor = Cursor {
+            data,
+            offset: self.cursor.offset,
+        };
+        // Read data
+        let len = cursor.read(buf)?;
+        // Restore the cursor
+        self.cursor.data.replace(cursor.data);
+        self.cursor.offset += len;
+        Ok(len)
     }
 }
 
 impl Write for StateEntryTest {
-    type Err = ContractStateError;
+    type Err = ContractStateTestError;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
-        // The chain automatically resizes the state up until MAX_CONTRACT_STATE_SIZE.
-        // TODO: Still the case?
-        let end = cmp::min(MAX_CONTRACT_STATE_SIZE as usize, self.cursor.offset + buf.len());
-        if self.cursor.data.borrow().len() < end {
-            let mut data: RefMut<Vec<u8>> = self.cursor.data.as_ref().borrow_mut();
-            data.resize(end as usize, 0u8);
-        }
-        let data = &mut self.cursor.data.as_ref().borrow_mut()[self.cursor.offset..];
-        let to_write = cmp::min(data.len(), buf.len());
-        data[..to_write].copy_from_slice(&buf[..to_write]);
-        self.cursor.offset += to_write;
-        Ok(to_write)
+        // Create a temporary cursor to write the data to.
+        let mut data = self.cursor.data.take();
+        let mut cursor = Cursor {
+            data: &mut data,
+            offset: self.cursor.offset,
+        };
+        // Write data
+        let len = cursor.write(buf).map_err(|_| ContractStateTestError::Write)?;
+        // Restore the cursor
+        self.cursor.data.replace(data);
+        self.cursor.offset += len;
+        Ok(len)
     }
 }
 
 impl Seek for StateEntryTest {
-    type Err = ContractStateError;
+    type Err = ContractStateTestError;
 
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
-        use ContractStateError::*;
+        use self::ContractStateTestError::*;
+        let len = self.cursor.data.borrow().len();
         match pos {
             SeekFrom::Start(x) => {
                 // We can set the position to just after the end of the current length.
                 let new_offset = x.try_into()?;
-                if new_offset <= self.cursor.data.borrow().len() {
+                if new_offset <= len {
                     self.cursor.offset = new_offset;
                     Ok(x)
                 } else {
@@ -697,7 +700,7 @@ impl Seek for StateEntryTest {
             SeekFrom::End(x) => {
                 // cannot seek beyond end, nor before beginning
                 if x <= 0 {
-                    let end: u32 = self.cursor.data.borrow().len().try_into()?;
+                    let end: u32 = len.try_into()?;
                     let minus_x = x.checked_abs().ok_or(Overflow)?;
                     if let Some(new_pos) = end.checked_sub(minus_x.try_into()?) {
                         self.cursor.offset = new_pos.try_into()?;
@@ -714,7 +717,7 @@ impl Seek for StateEntryTest {
                 x if x > 0 => {
                     let x = x.try_into()?;
                     let new_pos = self.cursor.offset.checked_add(x).ok_or(Overflow)?;
-                    if new_pos <= self.cursor.data.borrow().len() {
+                    if new_pos <= len {
                         self.cursor.offset = new_pos;
                         new_pos.try_into().map_err(Self::Err::from)
                     } else {
@@ -1048,6 +1051,8 @@ impl<State> HostTest<State> {
 #[cfg(test)]
 mod test {
     use std::{cell::RefCell, rc::Rc};
+    /// Maximum size of the contract state in bytes.
+    const CONTRACT_STATE_SIZE: u32 = 16384;
 
     use concordium_contracts_common::{
         to_bytes, Deserial, ParseError, Read, Seek, SeekFrom, Write,
@@ -1055,9 +1060,13 @@ mod test {
 
     use super::ContractStateLLTest;
     use crate::{
-        constants, test_infrastructure::StateEntryTest, Allocator, EntryRaw, HasContractStateEntry,
+        test_infrastructure::StateEntryTest, Allocator, EntryRaw, HasContractStateEntry,
         HasContractStateLL, StateMap, StateSet, UnwrapAbort,
     };
+
+    fn get_entry(state: &mut ContractStateLLTest, key: &[u8]) -> EntryRaw<StateEntryTest> {
+        state.entry(key).expect("Failed to get entry")
+    }
 
     #[test]
     // Perform a number of operations from Seek, Read, Write and HasContractState
@@ -1107,30 +1116,26 @@ mod test {
             state.cursor.offset, 122,
             "After reading the offset is in the correct position."
         );
-        assert!(state.reserve(222), "Could not increase state to 222.");
-        assert!(
-            !state.reserve(constants::MAX_CONTRACT_STATE_SIZE + 1),
-            "State should not be resizable beyond max limit."
-        );
+        assert!(state.reserve(222).is_ok(), "Could not increase state to 222.");
         assert_eq!(state.write(&[2; 100]), Ok(100), "Should have written 100 bytes.");
         assert_eq!(state.cursor.offset, 222, "After writing the offset should be 200.");
-        state.truncate(50);
+        state.truncate(50).expect("Could not truncate state to 50.");
         assert_eq!(state.cursor.offset, 50, "After truncation the state should be 50.");
-        assert!(state.reserve(constants::MAX_CONTRACT_STATE_SIZE), "Could not increase state MAX.");
+        assert!(state.reserve(CONTRACT_STATE_SIZE).is_ok(), "Could not increase state MAX.");
         assert_eq!(
             state.seek(SeekFrom::End(0)),
-            Ok(u64::from(constants::MAX_CONTRACT_STATE_SIZE)),
+            Ok(u64::from(CONTRACT_STATE_SIZE)),
             "State should be full now."
         );
         assert_eq!(
             state.write(&[1; 1000]),
-            Ok(0),
-            "Writing at the end after truncation should do nothing."
+            Ok(1000),
+            "Writing at the end after truncation should succeed."
         );
         assert_eq!(
             state.cursor.data.as_ref().borrow().len(),
-            constants::MAX_CONTRACT_STATE_SIZE as usize,
-            "State size should not increase beyond max."
+            CONTRACT_STATE_SIZE as usize + 1000,
+            "State size should increase with write."
         );
     }
 
@@ -1166,9 +1171,9 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(&42u64);
         let mut state = ContractStateLLTest::new();
-        state.entry(&key).or_insert(&to_bytes(&expected_value));
+        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
 
-        match state.entry(&key) {
+        match get_entry(&mut state, &key) {
             EntryRaw::Vacant(_) => assert!(false),
             EntryRaw::Occupied(occ) => {
                 assert_eq!(u64::deserial(&mut occ.get()), Ok(expected_value))
@@ -1190,7 +1195,7 @@ mod test {
         my_map.insert("ghi".to_string(), "hej, verden".to_string());
         assert_eq!(my_map.get("abc".to_string()), Some("hello, world".to_string()));
 
-        let mut iter = my_map.iter();
+        let mut iter = my_map.iter().expect("Failed to get iterator");
         assert_eq!(iter.next(), Some(("abc".to_string(), "hello, world".to_string())));
         assert_eq!(iter.next(), Some(("def".to_string(), "hallo, weld".to_string())));
         assert_eq!(iter.next(), Some(("ghi".to_string(), "hej, verden".to_string())));
@@ -1236,7 +1241,7 @@ mod test {
             false
         );
 
-        let mut iter = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter();
+        let mut iter = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter().expect("Failed to get iterator");
         assert_eq!(iter.next(), Some(0));
         assert_eq!(iter.next(), Some(1));
         assert_eq!(iter.next(), None);
@@ -1262,5 +1267,79 @@ mod test {
         let boxed_value = String::from("I'm boxed");
         let statebox = allocator.new_box(boxed_value.clone());
         assert_eq!(statebox.get_copy(), boxed_value);
+    }
+
+    #[test]
+    fn there_should_be_an_upper_limit_for_iterators_of_a_key() {
+        let expected_value: u64 = 123123123;
+        let key1 = vec![1, 2, 3, 4, 5, 6];
+        let mut state = ContractStateLLTest::new();
+        get_entry(&mut state, &key1).or_insert(&to_bytes(&expected_value));
+        let mut iters = vec![];
+        for _ in 0..u16::MAX {
+            let iter = state.iterator(&key1).unwrap();
+            iters.push(iter);
+        }
+        assert!(state.iterator(&key1).is_err(), "Creating more than u16::MAX iterators should fail");
+    }
+
+    #[test]
+    fn a_new_entry_can_not_be_created_under_a_locked_subtree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"ab");
+        let sub_key = to_bytes(b"abc");
+        let mut state = ContractStateLLTest::new();
+        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        assert!(state.iterator(&key).is_ok(), "Iterator should be present");
+        let entry = state.entry(&sub_key);
+        assert!(
+            entry.is_err(),
+            "Should not be able to create an entry under a locked subtree"
+        );
+    }
+
+    #[test]
+    fn a_new_entry_can_be_created_under_a_different_subtree_in_same_super_tree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"abcd");
+        let key2 = to_bytes(b"abe");
+        let mut state = ContractStateLLTest::new();
+        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        assert!(state.iterator(&key).is_ok(), "Iterator should be present");
+        let entry = state.entry(&key2);
+        assert!(
+            entry.is_ok(),
+            "Failed to create a new entry under a different subtree"
+        );
+    }
+
+    #[test]
+    fn an_existing_entry_can_not_be_deleted_under_a_locked_subtree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"ab");
+        let sub_key = to_bytes(b"abc");
+        let mut state = ContractStateLLTest::new();
+        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        let sub_entry = get_entry(&mut state, &sub_key).or_insert(&to_bytes(&expected_value));
+        assert!(state.iterator(&key).is_ok(), "Iterator should be present");
+        assert!(
+            state.delete_entry(sub_entry).is_err(),
+            "Should not be able to create an entry under a locked subtree"
+        );
+    }
+
+    #[test]
+    fn an_existing_entry_can_be_deleted_from_a_different_subtree_in_same_super_tree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"abcd");
+        let key2 = to_bytes(b"abe");
+        let mut state = ContractStateLLTest::new();
+        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        let entry2 = get_entry(&mut state, &key2).or_insert(&to_bytes(&expected_value));
+        assert!(state.iterator(&key).is_ok(), "Iterator should be present");
+        assert!(
+            state.delete_entry(entry2).is_ok(),
+            "Failed to create a new entry under a different subtree"
+        );
     }
 }

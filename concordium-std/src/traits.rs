@@ -3,12 +3,10 @@
 //! contract invocations.
 
 use std::{cell::RefCell, rc::Rc};
-
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-
 use crate::{
-    types::LogError, Allocator, CallContractResult, EntryRaw, StateEntryId, TransferResult,
+    types::ContractStateError, types::LogError, Allocator, CallContractResult, EntryRaw, StateEntryId, TransferResult,
 };
 use concordium_contracts_common::*;
 
@@ -131,19 +129,43 @@ where
     fn open(_: Self::StateEntryData, _: Self::StateEntryKey, entry_id: StateEntryId) -> Self;
 
     /// Get the current size of the entry.
-    fn size(&self) -> u32;
+    fn size(&self) -> Result<u32, Self::Error>;
 
     /// Truncate the entry to the given size. If the given size is more than the
     /// current size this operation does nothing. The new position is at
     /// most at the end of the stream.
-    fn truncate(&mut self, new_size: u32);
+    fn truncate(&mut self, new_size: u32) -> Result<(), Self::Error> {
+        if self.size()? > new_size {
+            self.resize(new_size)?;
+            if self.get_position() > new_size {
+                self.set_position(new_size);
+            }
+        }
+        Ok(())
+    }
 
     /// Make sure that the memory size is at least that many bytes in size.
     /// Returns true iff this was successful. The new bytes are initialized as
     /// 0.
-    fn reserve(&mut self, len: u32) -> bool;
+    fn reserve(&mut self, len: u32) -> Result<(), Self::Error> {
+        if self.size()? < len {
+            self.resize(len)
+        } else {
+            Ok(())
+        }
+    }
 
-    fn get_key(&self) -> Vec<u8>;
+    /// Return the key of the entry.
+    fn get_key(&self) -> Result<Vec<u8>, Self::Error>;
+
+    /// Return the current position in the entry data.
+    fn get_position(&self) -> u32;
+
+    /// Set the current position in the entry data.
+    fn set_position(&mut self, pos: u32);
+
+    /// Resize the entry to the given size.
+    fn resize(&mut self, new_size: u32) -> Result<(), Self::Error>;
 }
 
 pub trait HasContractStateLL {
@@ -156,23 +178,42 @@ pub trait HasContractStateLL {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Get an entry in the state.
-    fn entry(&mut self, key: &[u8]) -> EntryRaw<Self::EntryType>;
+    fn entry(
+        &mut self,
+        key: &[u8],
+    ) -> Result<EntryRaw<Self::EntryType>, ContractStateError>;
 
     /// Lookup an entry in the state.
-    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
+    fn lookup(
+        &self,
+        key: &[u8],
+    ) -> Option<Self::EntryType>;
 
     /// Delete an entry.
     /// Returns whether the entry actually existed.
     /// The only way this will return false is if the entry was deleted via
     /// `delete_prefix`.
-    fn delete_entry(&mut self, entry: Self::EntryType) -> bool;
+    fn delete_entry(
+        &mut self,
+        entry: Self::EntryType,
+    ) -> Result<(), ContractStateError>;
 
-    /// If exact is set, delete the specific key. Otherwise, delete the entire
-    /// subtree. Returns whether the entry or subtree existed.
-    fn delete_prefix(&mut self, prefix: &[u8], exact: bool) -> bool;
+    /// Delete the entire subtree.
+    /// Returns whether the entry or subtree existed.
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError>;
 
     /// Get an iterator over a map in the state.
-    fn iterator(&self, prefix: &[u8]) -> Self::IterType;
+    fn iterator(
+        &self,
+        prefix: &[u8],
+    ) -> Result<Self::IterType, ContractStateError>;
+
+    /// Delete an iterator.
+    /// Returns true if the iterator existed, false otherwise.
+    fn delete_iterator(
+        &mut self,
+        iter: Self::IterType,
+    ) -> Result<bool, ContractStateError>;
 }
 
 pub trait Persistable<S>
