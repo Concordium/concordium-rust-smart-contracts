@@ -2,7 +2,7 @@ use crate::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
-    fail, fmt,
+    fmt,
     hash::Hash,
     marker::PhantomData,
     mem, num,
@@ -796,21 +796,15 @@ where
 
 impl<T, S> StateBox<T, S>
 where
-    T: Serial + DeserialStateCtx<S>,
+    T: Persistable<S>,
     S: HasContractStateLL + std::fmt::Debug,
 {
     /// Inserts the value in the state and returns Self.
     pub(crate) fn new<P: Serial>(value: T, state_ll: Rc<RefCell<S>>, prefix: P) -> Self {
         let prefix_bytes = to_bytes(&prefix);
-        let value_bytes = to_bytes(&value);
 
         // Insert the value into state.
-        match state_ll.borrow_mut().entry(&prefix_bytes) {
-            EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&value_bytes);
-            }
-            EntryRaw::Occupied(_) => fail!("Internal error. Allocator gave out occupied prefix."),
-        };
+        value.store(&prefix_bytes, Rc::clone(&state_ll));
 
         Self {
             _marker: PhantomData,
@@ -825,59 +819,29 @@ where
     // nested data structures, such as linked lists. Similar to what is possible
     // with `Box`.
     pub fn get_copy(&self) -> T {
-        match self.state_ll.borrow_mut().entry(&self.prefix) {
-            EntryRaw::Vacant(_) => {
-                fail!(
-                    "Get failed: Entry is vacant. State has been incorrectly altered using the \
-                     low-level API."
-                )
-            }
-            EntryRaw::Occupied(mut occ) => T::deserial_state_ctx(&self.state_ll, occ.get_mut())
-                .expect_report(
-                    "Deserial failed. State has been incorrectly altered using the low-level API.",
-                ),
-        }
+        T::load(&self.prefix, Rc::clone(&self.state_ll)).expect_report(
+            "Get failed. State has been incorrectly altered using the low-level API.",
+        )
     }
 
     /// Set the value. Overwrites the existing one.
-    pub fn set(&mut self, new_val: T) {
-        match self.state_ll.borrow_mut().entry(&self.prefix) {
-            // Technically, we do not need to fail in this case, we can just insert, but it should
-            // /never/ happen.
-            EntryRaw::Vacant(_) => {
-                fail!(
-                    "Set failed: Entry is vacant. State has been incorrectly altered using the \
-                     low-level API."
-                )
-            }
-            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&new_val)),
-        }
-    }
+    pub fn set(&mut self, new_val: T) { new_val.store(&self.prefix, Rc::clone(&self.state_ll)); }
 
     /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut T), {
-        match self.state_ll.borrow_mut().entry(&self.prefix) {
-            EntryRaw::Vacant(_) => {
-                fail!(
-                    "Update failed: Entry is vacant. State has been incorrectly altered using the \
-                     low-level API."
-                )
-            }
-            EntryRaw::Occupied(mut occ) => {
-                let mut value = T::deserial_state_ctx(&self.state_ll, occ.get_mut()).expect_report(
-                    "Update failed: could not deserialize. State has been incorrectly altered \
-                     using the low-level API.",
-                );
-                // Mutate the value (perhaps only in memory, depends on the type).
-                f(&mut value);
-                // Store the value. TODO: If `T` is a StateBox/Set/Map, then it is only
-                // necessary to insert if the whole item has been replaced via the assignment
-                // operator.
-                occ.insert(&to_bytes(&value));
-            }
-        }
+        let mut value = T::load(&self.prefix, Rc::clone(&self.state_ll)).expect_report(
+            "Update failed: could not load existing value. State has been incorrectly altered \
+             using the low-level API.",
+        );
+
+        // Mutate the value (perhaps only in memory, depends on the type).
+        f(&mut value);
+        // Store the value. TODO: If `T` is a StateBox/Set/Map, then it is only
+        // necessary to insert if the whole item has been replaced via the assignment
+        // operator.
+        value.store(&self.prefix, Rc::clone(&self.state_ll))
     }
 }
 
