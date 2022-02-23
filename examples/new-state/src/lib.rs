@@ -208,7 +208,7 @@ mod tests {
             Some(expected_token_count)
         );
 
-        let mut a_set_iter = state_reloaded.another_struct.a_set.iter();
+        let mut a_set_iter = state_reloaded.another_struct.a_set.iter().expect("Failed to get iterator");
         assert_eq!(a_set_iter.next(), Some(42));
         assert_eq!(a_set_iter.next(), None);
 
