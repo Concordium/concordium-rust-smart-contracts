@@ -138,7 +138,7 @@ impl StateEntry {
 
     /// Returns the key length or an error if the iterator is not found.
     fn get_key_length(&self) -> Result<u32, ()> {
-        let key_len = unsafe { prims::state_iterator_key_size(self.state_entry_id as u64) };
+        let key_len = unsafe { prims::state_iterator_key_size(self.state_entry_id) };
         match key_len {
             u32::MAX => Err(()),
             n => Ok(n),
@@ -149,7 +149,7 @@ impl StateEntry {
     fn load_key(&self, key_len: u32) -> Result<Vec<u8>, ContractStateError> {
         let mut key = Vec::with_capacity(key_len as usize);
         let key_ptr = key.as_mut_ptr();
-        let res = unsafe { prims::state_iterator_key_read(self.state_entry_id as u64, key_ptr, key_len, 0) };
+        let res = unsafe { prims::state_iterator_key_read(self.state_entry_id, key_ptr, key_len, 0) };
         match res {
             u32::MAX => Err(ContractStateError::EntryNotFound),
             _ => Ok(key),
@@ -159,7 +159,7 @@ impl StateEntry {
     fn state_entry_read(&mut self, buf: &mut [u8]) -> Result<u32, ContractStateError> {
         let len = buf.len().try_into().map_err(|_| ContractStateError::SizeTooLarge)?;
         let num_read =
-            unsafe { prims::state_entry_read(self.state_entry_id as u64, buf.as_mut_ptr(), len, self.current_position) };
+            unsafe { prims::state_entry_read(self.state_entry_id, buf.as_mut_ptr(), len, self.current_position) };
         match num_read {
             u32::MAX => Err(ContractStateError::EntryNotFound),
             _ => Ok(num_read)
@@ -172,7 +172,7 @@ impl StateEntry {
             return Err(ContractStateError::SizeTooLarge);
         }
         let res = unsafe {
-            prims::state_entry_write(self.state_entry_id as u64, buf.as_ptr(), len, self.current_position)
+            prims::state_entry_write(self.state_entry_id, buf.as_ptr(), len, self.current_position)
         };
         match res {
             u32::MAX => Err(ContractStateError::EntryNotFound),
@@ -181,7 +181,7 @@ impl StateEntry {
     }
 
     fn state_entry_size(&self) -> Result<u32, ContractStateError> {
-        let res = unsafe { prims::state_entry_size(self.state_entry_id as u64) };
+        let res = unsafe { prims::state_entry_size(self.state_entry_id) };
         match res {
             u32::MAX => Err(ContractStateError::EntryNotFound),
             _ => Ok(res),
@@ -217,7 +217,7 @@ impl HasContractStateEntry for StateEntry {
     }
 
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
-        let res = unsafe { prims::state_entry_resize(self.state_entry_id as u64, new_size) };
+        let res = unsafe { prims::state_entry_resize(self.state_entry_id, new_size) };
         match res {
             1 => Ok(()),
             0 => Err(()),
@@ -500,7 +500,6 @@ trait HasFunctionsAPIWrapper {
         match entry_id {
             u64::MAX => Err(ContractStateError::SubtreeLocked),
             _ => {
-                let entry_id = entry_id.try_into().unwrap_abort();
                 Ok(StateEntry::open(entry_id))
             }
         }
@@ -555,15 +554,14 @@ impl HasContractStateLL for ContractStateLL
         if res == u64::MAX {
             None
         } else {
-            let id = res.try_into().unwrap_abort();
-            Some(StateEntry::open(id))
+            Some(StateEntry::open(res))
         }
     }
 
     /// Delete the entry. Returns true if the entry was occupied and false
     /// otherwise.
     fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> {
-        let res = unsafe { prims::state_delete_entry(entry.state_entry_id as u64) };
+        let res = unsafe { prims::state_delete_entry(entry.state_entry_id) };
         match res {
             u32::MAX => Err(ContractStateError::EntryNotFound),
             1 => Ok(()),
@@ -572,8 +570,8 @@ impl HasContractStateLL for ContractStateLL
     }
 
     /// If exact, delete the specific key, otherwise delete the subtree.
-    /// Returns true if entry/subtree was occupied and false otherwise
-    /// (including if the key was too long or empty).
+    /// Returns Ok(()) if entry/subtree was occupied Err(ContractStateError) otherwise
+    /// (including if the subtree is locked or the entry not found).
     fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
         let res = unsafe { prims::state_delete_prefix(prefix.as_ptr(), prefix.len() as u32) };
         match res {
@@ -598,16 +596,15 @@ impl HasContractStateLL for ContractStateLL
         if iterator_id | 1u64.rotate_right(2) == all_ones {
             return Err(ContractStateError::EntryNotFound);
         }
-        let iterator_id = iterator_id.try_into().map_err(|_| ContractStateError::SizeTooLarge)?;
         Ok(ContractStateIter {
             iterator_id,
         })
     }
 
     fn delete_iterator(&mut self, iter: ContractStateIter) -> Result<bool, ContractStateError> {
-        let res = unsafe { prims::state_iterator_delete(iter.iterator_id as u64) };
+        let res = unsafe { prims::state_iterator_delete(iter.iterator_id) };
         match res {
-            u32::MAX => Err(ContractStateError::EntryNotFound),
+            u32::MAX => Err(ContractStateError::IteratorNotFound),
             0 => Ok(false),
             1 => Ok(true),
             _ => unreachable!(),
@@ -618,14 +615,13 @@ impl HasContractStateLL for ContractStateLL
 impl ContractStateIter {
 
     fn state_iterator_next(&mut self) -> Result<Option<StateEntry>, ContractStateError> {
-        let res = unsafe { prims::state_iterator_next(self.iterator_id as u64) };
+        let res = unsafe { prims::state_iterator_next(self.iterator_id) };
         // If the msb is 0 then the iterator is invalid or there is no next entry.
         match res {
-            u64::MAX => Err(ContractStateError::EntryNotFound),
+            u64::MAX => Err(ContractStateError::IteratorNotFound),
             _ if res | 1u64.rotate_right(2) == u64::MAX => Ok(None),
             _ => {
-                let id = res.try_into().map_err(|_| ContractStateError::SizeTooLarge)?;
-                Ok(Some(StateEntry::open(id)))
+                Ok(Some(StateEntry::open(res)))
             },
         }
     }

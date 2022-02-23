@@ -49,8 +49,8 @@ pub struct ContractStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
 
-pub type StateEntryId = u32;
-pub type StateIteratorId = u32;
+pub type StateEntryId = u64;
+pub type StateIteratorId = u64;
 pub type StateItemPrefix = Vec<u8>;
 
 #[derive(Default)]
@@ -521,6 +521,8 @@ pub enum ContractStateError {
     SubtreeLocked,
     /// The entry does not exist.
     EntryNotFound,
+    /// The iterator does not exist.
+    IteratorNotFound,
     /// The parameter does not exist.
     ParameterNotFound,
     /// The specified size is too big.

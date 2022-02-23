@@ -128,7 +128,7 @@ impl StateTrie {
             }
             return Err(ContractStateError::IteratorLimitForPrefixExceeded);
         }
-        let node = self.nodes.lookup_node(&index_prefix).ok_or(ContractStateError::EntryNotFound)?;
+        let node = self.nodes.lookup_node(&index_prefix).ok_or(ContractStateError::IteratorNotFound)?;
         let iter = Iter::new(self, index_prefix.clone(), node);
         self.iterators.borrow_mut().insert(index_prefix, iter.clone());
         Ok(iter)
