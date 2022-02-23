@@ -58,7 +58,11 @@ impl StateTrie {
     }
 
     pub fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
-        self.nodes.delete_prefix(&Self::to_indexes(prefix), false)
+        let indexes = Self::to_indexes(prefix);
+        if self.is_locked(&indexes) {
+            return Err(ContractStateError::SubtreeLocked);
+        }
+        self.nodes.delete_prefix(&indexes, false)
     }
 
     fn to_indexes(key: &[u8]) -> Vec<Index> {
@@ -136,10 +140,8 @@ impl StateTrie {
 
     pub fn delete_iterator(&mut self, iterator: Iter) -> bool {
         if iterator.clone_count() > 2 {
-            println!("clone count = {}", iterator.clone_count());
             return true;
         }
-        println!("2");
         let initial_count = self.iterators.borrow().len();
         self.iterators.borrow_mut().retain(|_, iter| iter != &iterator);
         initial_count != self.iterators.borrow().len()
