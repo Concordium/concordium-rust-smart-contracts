@@ -616,7 +616,6 @@ impl ContractStateIter {
 
     fn state_iterator_next(&mut self) -> Result<Option<StateEntry>, ContractStateError> {
         let res = unsafe { prims::state_iterator_next(self.iterator_id) };
-        // If the msb is 0 then the iterator is invalid or there is no next entry.
         match res {
             u64::MAX => Err(ContractStateError::IteratorNotFound),
             _ if res | 1u64.rotate_right(2) == u64::MAX => Ok(None),
@@ -691,8 +690,8 @@ where
     }
 
     pub fn is_empty(&self) -> bool {
-        let iterator = self.state_ll.borrow().iterator(&self.prefix);
-        iterator.is_err() || iterator.unwrap().next().is_none()
+        let mut iterator = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
+        iterator.next().is_none()
     }
 
     pub fn iter(&self) -> Result<StateMapIter<K, V, S>, ContractStateError> {
