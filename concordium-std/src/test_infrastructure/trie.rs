@@ -1,10 +1,11 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap, VecDeque, BTreeMap},
-    rc::Rc, cmp::min,
+    cmp::min,
+    collections::{BTreeMap, HashMap, VecDeque},
+    rc::Rc,
 };
 
-use crate::{ContractStateError, StateEntryId, HasContractStateEntry};
+use crate::{ContractStateError, HasContractStateEntry, StateEntryId};
 
 use super::StateEntryTest;
 
@@ -21,12 +22,10 @@ pub struct StateTrie {
 }
 
 /// Default constructor for a new state trie.
-/// 
+///
 /// Added after clippy warning.
 impl Default for StateTrie {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl StateTrie {
@@ -85,6 +84,7 @@ impl StateTrie {
         }
         key
     }
+
     /// Returns true if the subtree corresponding to the given key is
     /// already locked by an existing iterator, false otherwise.
     fn is_locked(&self, prefix: &[usize]) -> bool {
@@ -106,8 +106,7 @@ impl StateTrie {
 
     pub fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
         let indexes = Self::to_indexes(key);
-        self
-            .nodes
+        self.nodes
             .lookup(&indexes)
             .map(|data| self.construct_state_entry_test(indexes, data, key.to_vec()))
     }
@@ -119,8 +118,9 @@ impl StateTrie {
         }
         match self.entry_map.borrow_mut().remove(&entry.state_entry_id) {
             Some(indexes) => self.nodes.delete_data(&indexes),
-            None => Err(ContractStateError::EntryNotFound), /* Entry did not exist. Only happens when entry was deleted using
-                            * delete_prefix. */
+            None => Err(ContractStateError::EntryNotFound), /* Entry did not exist. Only happens
+                                                             * when entry was deleted using
+                                                             * delete_prefix. */
         }
     }
 
@@ -132,7 +132,8 @@ impl StateTrie {
             }
             return Err(ContractStateError::IteratorLimitForPrefixExceeded);
         }
-        let node = self.nodes.lookup_node(&index_prefix).ok_or(ContractStateError::IteratorNotFound)?;
+        let node =
+            self.nodes.lookup_node(&index_prefix).ok_or(ContractStateError::IteratorNotFound)?;
         let iter = Iter::new(self, index_prefix.clone(), node);
         self.iterators.borrow_mut().insert(index_prefix, iter.clone());
         Ok(iter)
@@ -191,17 +192,13 @@ impl Iter {
         }
     }
 
-    fn clone_count(&self) -> usize {
-        Rc::strong_count(&self.queue)
-    }
+    fn clone_count(&self) -> usize { Rc::strong_count(&self.queue) }
 }
 
 impl Iterator for Iter {
     type Item = StateEntryTest;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.queue.borrow_mut().pop_front()
-    }
+    fn next(&mut self) -> Option<Self::Item> { self.queue.borrow_mut().pop_front() }
 }
 
 #[derive(Debug)]
@@ -250,7 +247,9 @@ impl Node {
         }
     }
 
-    fn delete_data(&mut self, indexes: &[Index]) -> Result<(), ContractStateError> { self.delete_prefix(indexes, true) }
+    fn delete_data(&mut self, indexes: &[Index]) -> Result<(), ContractStateError> {
+        self.delete_prefix(indexes, true)
+    }
 
     fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> Result<(), ContractStateError> {
         match prefix.first() {
@@ -290,8 +289,11 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        test_infrastructure::{trie::StateTrie, StateEntryTest},
+        UnwrapAbort,
+    };
     use concordium_contracts_common::{to_bytes, Deserial, Write};
-    use crate::{test_infrastructure::{trie::StateTrie, StateEntryTest}, UnwrapAbort};
 
     fn create_entry(trie: &mut StateTrie, key: &[u8]) -> StateEntryTest {
         trie.create_entry(key).expect("Failed to create entry")
@@ -307,7 +309,9 @@ mod tests {
         let key = [0, 1, 2];
         let mut trie = StateTrie::new();
 
-        create_entry(&mut trie, &key).write_all(&to_bytes(&expected_value)).expect("Writing to state failed.");
+        create_entry(&mut trie, &key)
+            .write_all(&to_bytes(&expected_value))
+            .expect("Writing to state failed.");
 
         let mut entry = trie.lookup(&key).expect("Entry not found");
         let actual_value = String::deserial(&mut entry).unwrap();
@@ -353,7 +357,9 @@ mod tests {
     fn double_create_overwrites_data() {
         let key = [];
         let mut trie = StateTrie::new();
-        create_entry(&mut trie, &key).write_all(&to_bytes(&"hello")).expect("Writing to state failed");
+        create_entry(&mut trie, &key)
+            .write_all(&to_bytes(&"hello"))
+            .expect("Writing to state failed");
 
         // Creating again overwrites the old data.
         let res = String::deserial(&mut create_entry(&mut trie, &key));

@@ -2,13 +2,14 @@
 //! This allows setting-up mock objects for testing individual
 //! contract invocations.
 
-use std::{cell::RefCell, rc::Rc};
+use crate::{
+    types::{ContractStateError, LogError},
+    Allocator, CallContractResult, EntryRaw, StateEntryId, TransferResult,
+};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-use crate::{
-    types::ContractStateError, types::LogError, Allocator, CallContractResult, EntryRaw, StateEntryId, TransferResult,
-};
 use concordium_contracts_common::*;
+use std::{cell::RefCell, rc::Rc};
 
 /// Objects which can access parameters to contracts.
 ///
@@ -156,6 +157,7 @@ where
     }
 
     /// Return the key of the entry.
+    // TODO: Should not return a Vec. User should provide a buffer.
     fn get_key(&self) -> Result<Vec<u8>, Self::Error>;
 
     /// Return the current position in the entry data.
@@ -178,42 +180,27 @@ pub trait HasContractStateLL {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Get an entry in the state.
-    fn entry(
-        &mut self,
-        key: &[u8],
-    ) -> Result<EntryRaw<Self::EntryType>, ContractStateError>;
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError>;
 
     /// Lookup an entry in the state.
-    fn lookup(
-        &self,
-        key: &[u8],
-    ) -> Option<Self::EntryType>;
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
 
     /// Delete an entry.
     /// Returns whether the entry actually existed.
     /// The only way this will return false is if the entry was deleted via
     /// `delete_prefix`.
-    fn delete_entry(
-        &mut self,
-        entry: Self::EntryType,
-    ) -> Result<(), ContractStateError>;
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError>;
 
     /// Delete the entire subtree.
     /// Returns whether the entry or subtree existed.
     fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError>;
 
     /// Get an iterator over a map in the state.
-    fn iterator(
-        &self,
-        prefix: &[u8],
-    ) -> Result<Self::IterType, ContractStateError>;
+    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError>;
 
     /// Delete an iterator.
     /// Returns true if the iterator existed, false otherwise.
-    fn delete_iterator(
-        &mut self,
-        iter: Self::IterType,
-    ) -> Result<bool, ContractStateError>;
+    fn delete_iterator(&mut self, iter: Self::IterType) -> Result<bool, ContractStateError>;
 }
 
 pub trait Persistable<S>

@@ -65,10 +65,7 @@ use convert::TryInto;
 use core::{cmp, num};
 #[cfg(feature = "std")]
 use std::{boxed::Box, num};
-use std::{
-    cell::{RefCell},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use self::trie::StateTrie;
 
@@ -96,7 +93,7 @@ pub struct TestPolicy {
     /// Current position in the vector of policies. Used to implement
     /// `next_item`.
     position: usize,
-    policy: OwnedPolicy,
+    policy:   OwnedPolicy,
 }
 
 impl TestPolicy {
@@ -583,18 +580,19 @@ impl HasContractStateLL for ContractStateLLTest {
 
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.lookup(key) }
 
-    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> { self.trie.delete_entry(entry) }
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> {
+        self.trie.delete_entry(entry)
+    }
 
     fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
         self.trie.delete_prefix(prefix)
     }
 
-    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError> { self.trie.iterator(prefix) }
+    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError> {
+        self.trie.iterator(prefix)
+    }
 
-    fn delete_iterator(
-        &mut self,
-        iter: Self::IterType,
-    ) -> Result<bool, ContractStateError> {
+    fn delete_iterator(&mut self, iter: Self::IterType) -> Result<bool, ContractStateError> {
         Ok(self.trie.delete_iterator(iter))
     }
 }
@@ -608,9 +606,7 @@ impl ContractStateLLTest {
 }
 
 impl Default for ContractStateLLTest {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl HasContractStateEntry for StateEntryTest {
@@ -630,13 +626,9 @@ impl HasContractStateEntry for StateEntryTest {
 
     fn get_key(&self) -> Result<Vec<u8>, Self::Error> { Ok(self.key.clone()) }
 
-    fn get_position(&self) -> u32 {
-        self.cursor.offset as u32
-    }
+    fn get_position(&self) -> u32 { self.cursor.offset as u32 }
 
-    fn set_position(&mut self, pos: u32) {
-        self.cursor.offset = pos as usize
-    }
+    fn set_position(&mut self, pos: u32) { self.cursor.offset = pos as usize }
 
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
         self.cursor.data.borrow_mut().resize(new_size as usize, 0);
@@ -668,7 +660,7 @@ impl Write for StateEntryTest {
         // Create a temporary cursor to write the data to.
         let mut data = self.cursor.data.take();
         let mut cursor = Cursor {
-            data: &mut data,
+            data:   &mut data,
             offset: self.cursor.offset,
         };
         // Write data
@@ -1241,7 +1233,12 @@ mod test {
             false
         );
 
-        let mut iter = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().iter().expect("Failed to get iterator");
+        let mut iter = allocator
+            .get::<_, StateSet<u8, _>>(my_set_key)
+            .unwrap()
+            .unwrap()
+            .iter()
+            .expect("Failed to get iterator");
         assert_eq!(iter.next(), Some(0));
         assert_eq!(iter.next(), Some(1));
         assert_eq!(iter.next(), None);
@@ -1280,7 +1277,10 @@ mod test {
             let iter = state.iterator(&key1).unwrap();
             iters.push(iter);
         }
-        assert!(state.iterator(&key1).is_err(), "Creating more than u16::MAX iterators should fail");
+        assert!(
+            state.iterator(&key1).is_err(),
+            "Creating more than u16::MAX iterators should fail"
+        );
     }
 
     #[test]
@@ -1292,10 +1292,7 @@ mod test {
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.entry(&sub_key);
-        assert!(
-            entry.is_err(),
-            "Should not be able to create an entry under a locked subtree"
-        );
+        assert!(entry.is_err(), "Should not be able to create an entry under a locked subtree");
     }
 
     #[test]
@@ -1307,10 +1304,7 @@ mod test {
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.entry(&key2);
-        assert!(
-            entry.is_ok(),
-            "Failed to create a new entry under a different subtree"
-        );
+        assert!(entry.is_ok(), "Failed to create a new entry under a different subtree");
     }
 
     #[test]
