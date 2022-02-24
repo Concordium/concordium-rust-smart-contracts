@@ -49,8 +49,8 @@ pub struct ContractStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
 
-pub type StateEntryId = u32;
-pub type StateIteratorId = u32;
+pub type StateEntryId = u64;
+pub type StateIteratorId = u64;
 pub type StateItemPrefix = Vec<u8>;
 
 #[derive(Default)]
@@ -513,4 +513,24 @@ pub(crate) mod sealed {
     pub trait ContextType {}
     impl ContextType for InitContextExtern {}
     impl ContextType for ReceiveContextExtern {}
+}
+
+#[derive(Debug)]
+pub enum ContractStateError {
+    /// The subtree is locked.
+    SubtreeLocked,
+    /// The entry does not exist.
+    EntryNotFound,
+    /// The iterator does not exist.
+    IteratorNotFound,
+    /// The parameter does not exist.
+    ParameterNotFound,
+    /// The specified size is too big.
+    SizeTooLarge,
+    /// The iterator limit for a prefix has been reached.
+    IteratorLimitForPrefixExceeded,
+    /// The iterator has already been deleted.
+    IteratorAlreadyDeleted,
+    /// No nodes exist with the given prefix.
+    SubtreeWithPrefixNotFound,
 }
