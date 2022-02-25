@@ -1,5 +1,5 @@
-use super::StateEntryTest;
-use crate::{ContractStateError, StateEntryId};
+use super::{StateEntryData, StateEntryTest};
+use crate::{ContractStateError, StateEntryId, UnwrapAbort};
 use std::{
     cell::{Cell, RefCell},
     cmp::min,
@@ -39,7 +39,7 @@ impl StateTrie {
     fn construct_state_entry_test(
         &self,
         indexes: Vec<Index>,
-        data: Rc<RefCell<Vec<u8>>>,
+        data: Rc<RefCell<StateEntryData>>,
         key: Vec<u8>,
     ) -> StateEntryTest {
         // Get the current next_entry_id
@@ -57,6 +57,21 @@ impl StateTrie {
         if self.is_locked(&indexes) {
             return Err(ContractStateError::SubtreeLocked);
         }
+
+        // Unwrapping is safe, because the subtree isn't locked.
+        let iterator = self.iterator(prefix).unwrap_abort();
+
+        // Invalidate all the data in the deleted entries such that reading and writing
+        // them will fail.
+        // This uses the queue iter because Iterator is not implemented for &Iter and we
+        // need to delete the iterator afterwards.
+        for entry in iterator.queue.iter() {
+            *entry.cursor.data.borrow_mut() = StateEntryData::EntryDeleted;
+        }
+
+        // TODO: This won't be needed if delete_iterator is called in drop().
+        self.delete_iterator(iterator);
+
         self.nodes.delete_prefix(&indexes, false)
     }
 
@@ -162,6 +177,7 @@ impl StateTrie {
     }
 }
 
+// TODO: Call delete_iterator on drop.
 #[derive(Debug)]
 pub struct Iter {
     // Only used when deleting the iterator.
@@ -218,7 +234,7 @@ impl Iterator for Iter {
 
 #[derive(Debug)]
 struct Node {
-    data:     Option<Rc<RefCell<Vec<u8>>>>,
+    data:     Option<Rc<RefCell<StateEntryData>>>,
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
 }
 
@@ -232,7 +248,9 @@ impl Node {
 
     /// Tries to find the data in a node with the given index.
     /// Returns `None` if the node doesn't exist or if it doesn't have any data.
-    fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<Vec<u8>>>> {
+    /// Note: If `Some` is returned, it will _always_ be a
+    /// `StateEntryData::EntryExists(..)`.
+    fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<StateEntryData>>> {
         self.lookup_node(indexes).and_then(|node| node.data.as_ref().map(Rc::clone))
     }
 
@@ -247,13 +265,15 @@ impl Node {
         }
     }
 
-    fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<Vec<u8>>> {
+    /// Create a new entry.
+    /// It will always return `StateEntryData::EntryExists(..)`.
+    fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<StateEntryData>> {
         match indexes.first() {
             Some(idx) => {
                 self.children[*idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
             }
             None => {
-                let new_data = Rc::new(RefCell::new(Vec::new()));
+                let new_data = Rc::new(RefCell::new(StateEntryData::new()));
                 let new_data_clone = Rc::clone(&new_data);
                 self.data = Some(new_data);
                 new_data_clone
@@ -437,24 +457,42 @@ mod tests {
         assert_eq!(expected_key2, &actual_key2[..]);
     }
 
-    // TODO: Make this work
-    // #[test]
-    // fn write_to_deleted_entry_should_fail() {
-    //     let mut trie = StateTrie::new();
-    //     let mut entry = create_entry(&mut trie, b"ab");
-    //     assert!(entry.write_u8(1).is_ok());
-    //     trie.delete_prefix(&[]).unwrap();
-    //     assert!(entry.write_u8(1).is_err());
-    // }
+    #[test]
+    fn write_to_deleted_entry_should_fail() {
+        let mut trie = StateTrie::new();
+        let mut entry = create_entry(&mut trie, b"ab");
+        assert!(entry.write_u8(1).is_ok());
+        trie.delete_prefix(&[]).unwrap();
+        assert!(entry.write_u8(1).is_err());
+    }
 
-    // TODO: Make this work
-    // #[test]
-    // fn read_from_deleted_entry_should_fail() {
-    //     let mut trie = StateTrie::new();
-    //     let mut entry = create_entry(&mut trie, b"ab");
-    //     assert!(entry.write_u8(1).is_ok());
-    //     trie.delete_prefix(&[]).unwrap();
-    //     entry.seek(SeekFrom::Start(0)).unwrap();
-    //     assert!(entry.read_u8().is_err());
-    // }
+    #[test]
+    fn seek_on_deleted_entry_should_fail() {
+        let mut trie = StateTrie::new();
+        let mut entry = create_entry(&mut trie, b"ab");
+        assert!(entry.write_u8(1).is_ok());
+        trie.delete_prefix(&[]).unwrap();
+        assert!(entry.seek(SeekFrom::Start(0)).is_err());
+    }
+
+    #[test]
+    fn read_from_deleted_entry_should_fail() {
+        let mut trie = StateTrie::new();
+        let mut entry = create_entry(&mut trie, b"ab");
+        assert!(entry.write_u8(1).is_ok());
+        trie.delete_prefix(&[]).unwrap();
+        // Manually reset offset, since Seek will also fail.
+        entry.cursor.offset = 0;
+        assert!(entry.read_u8().is_err());
+    }
+
+    #[test]
+    fn read_from_deleted_aliased_entry_should_fail() {
+        let mut trie = StateTrie::new();
+        let mut entry = create_entry(&mut trie, b"ab");
+        let mut alias_entry = create_entry(&mut trie, b"ab");
+        assert!(entry.write_u8(1).is_ok());
+        trie.delete_prefix(&[]).unwrap();
+        assert!(alias_entry.read_u8().is_err());
+    }
 }

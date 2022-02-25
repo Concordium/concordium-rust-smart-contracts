@@ -514,8 +514,8 @@ pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
 pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
 
 #[derive(Debug, PartialEq, Eq)]
-/// An error that is raised when operating with `Seek`, `Write`, or `Read` trait
-/// methods of the `ContractStateTest` type.
+/// An error that is raised when operating with `Seek`, `Write`, `Read`, or
+/// `HasContractStateEntry` trait methods of the `ContractStateTest` type.
 pub enum ContractStateTestError {
     /// The computation of the new offset would result in an overflow.
     Overflow,
@@ -525,6 +525,8 @@ pub enum ContractStateTestError {
     Offset,
     /// Some other error occurred.
     Default,
+    /// The entry has been deleted (via delete_prefix).
+    EntryDeleted,
 }
 
 impl Default for ContractStateTestError {
@@ -535,16 +537,60 @@ impl From<num::TryFromIntError> for ContractStateTestError {
     fn from(_: num::TryFromIntError) -> Self { ContractStateTestError::Overflow }
 }
 
-// TODO: Replace the Vec with a generic T.
+impl From<ContractStateTestError> for ParseError {
+    fn from(_: ContractStateTestError) -> Self { ParseError::default() }
+}
+
+// TODO: Replace the Vec<u8> with a AsRef<&[u8]>.
+#[derive(Debug)]
+pub enum StateEntryData {
+    EntryDeleted,
+    EntryExists(Vec<u8>),
+}
+
+impl StateEntryData {
+    /// Create a new StateEntryData::EntryExists with the data given.
+    pub(crate) fn new_from(data: Vec<u8>) -> Self { Self::EntryExists(data) }
+
+    /// Create a new StateEntryData::EntryExists with a new Vec.
+    pub(crate) fn new() -> Self { Self::EntryExists(Vec::new()) }
+
+    /// Tries to get the actual data. Returns an error if the entry has been
+    /// deleted.
+    pub(crate) fn data(&self) -> Result<&[u8], ContractStateTestError> {
+        match self {
+            StateEntryData::EntryDeleted => Err(ContractStateTestError::EntryDeleted),
+            StateEntryData::EntryExists(v) => Ok(v),
+        }
+    }
+
+    /// Tries to get the actual data as mutable. Returns an error if the entry
+    /// has been deleted.
+    pub(crate) fn data_mut(&mut self) -> Result<&mut Vec<u8>, ContractStateTestError> {
+        match self {
+            StateEntryData::EntryDeleted => Err(ContractStateTestError::EntryDeleted),
+            StateEntryData::EntryExists(v) => Ok(v),
+        }
+    }
+}
+
+impl From<Vec<u8>> for StateEntryData {
+    fn from(data: Vec<u8>) -> Self { Self::new_from(data) }
+}
+
 #[derive(Debug)]
 pub struct StateEntryTest {
-    pub(crate) cursor:         Cursor<Rc<RefCell<Vec<u8>>>>,
+    pub(crate) cursor:         Cursor<Rc<RefCell<StateEntryData>>>,
     pub(crate) key:            Vec<u8>,
     pub(crate) state_entry_id: StateEntryId,
 }
 
 impl StateEntryTest {
-    pub fn open(data: Rc<RefCell<Vec<u8>>>, key: Vec<u8>, state_entry_id: StateEntryId) -> Self {
+    pub fn open(
+        data: Rc<RefCell<StateEntryData>>,
+        key: Vec<u8>,
+        state_entry_id: StateEntryId,
+    ) -> Self {
         Self {
             cursor: Cursor::new(data),
             key,
@@ -609,7 +655,7 @@ impl Default for ContractStateLLTest {
 
 impl HasContractStateEntry for StateEntryTest {
     type Error = ContractStateTestError;
-    type StateEntryData = Rc<RefCell<Vec<u8>>>;
+    type StateEntryData = Rc<RefCell<StateEntryData>>;
     type StateEntryKey = Vec<u8>;
 
     fn open(data: Self::StateEntryData, key: Self::StateEntryKey, entry_id: StateEntryId) -> Self {
@@ -620,8 +666,14 @@ impl HasContractStateEntry for StateEntryTest {
         }
     }
 
-    fn size(&self) -> Result<u32, Self::Error> { Ok(self.cursor.data.borrow().len() as u32) }
+    /// Get the size of the data in the entry.
+    /// Returns an error if the entry has been deleted with delete_prefix.
+    fn size(&self) -> Result<u32, Self::Error> {
+        Ok(self.cursor.data.borrow().data()?.len() as u32)
+    }
 
+    /// Truncate the entry.
+    /// Returns an error if the entry has been deleted with delete_prefix.
     fn truncate(&mut self, new_size: u32) -> Result<(), Self::Error> {
         let cur_size = self.size()?;
         if cur_size > new_size {
@@ -632,9 +684,11 @@ impl HasContractStateEntry for StateEntryTest {
 
     fn get_key(&self) -> Result<Vec<u8>, Self::Error> { Ok(self.key.clone()) }
 
+    /// Resize the entry.
+    /// Returns an error if the entry has been deleted with delete_prefix.
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
         let new_size = new_size as usize;
-        self.cursor.data.borrow_mut().resize(new_size, 0);
+        self.cursor.data.borrow_mut().data_mut()?.resize(new_size, 0);
         if self.cursor.offset > new_size {
             self.cursor.offset = new_size;
         }
@@ -643,15 +697,14 @@ impl HasContractStateEntry for StateEntryTest {
 }
 
 impl Read for StateEntryTest {
-    // TODO: This should fail if the entry has been deleted with delete_prefix.
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
-        let mut len = self.cursor.data.borrow().len() - self.cursor.offset;
+        let mut len = self.cursor.data.borrow().data()?.len() - self.cursor.offset;
         if len > buf.len() {
             len = buf.len();
         }
         if len > 0 {
             buf[0..len].copy_from_slice(
-                &self.cursor.data.borrow()[self.cursor.offset..self.cursor.offset + len],
+                &self.cursor.data.borrow().data()?[self.cursor.offset..self.cursor.offset + len],
             );
             self.cursor.offset += len;
             Ok(len)
@@ -664,13 +717,13 @@ impl Read for StateEntryTest {
 impl Write for StateEntryTest {
     type Err = ContractStateTestError;
 
-    // TODO: This should fail if the entry has been deleted with delete_prefix.
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
         let end = self.cursor.offset + buf.len();
-        if self.cursor.data.borrow().len() < end {
+        if self.cursor.data.borrow().data()?.len() < end {
             self.resize(end.try_into()?)?;
         }
-        let data = &mut self.cursor.data.as_ref().borrow_mut()[self.cursor.offset..];
+        let mut cursor_data = self.cursor.data.as_ref().borrow_mut();
+        let data = &mut cursor_data.data_mut()?[self.cursor.offset..];
         let to_write = cmp::min(data.len(), buf.len());
         data[..to_write].copy_from_slice(&buf[..to_write]);
         self.cursor.offset += to_write;
@@ -681,10 +734,13 @@ impl Write for StateEntryTest {
 impl Seek for StateEntryTest {
     type Err = ContractStateTestError;
 
+    // TODO: This does _not_ match the semantics of Seek for StateEntry.
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
         use self::ContractStateTestError::*;
-        let len = self.cursor.data.borrow().len();
+        // This will fail immediately, if the entry has been deleted.
+        let len = self.cursor.data.borrow().data()?.len();
         match pos {
+            // TODO: Should this allow seeking beyond the end (allowed in std::io::SeekFrom)?
             SeekFrom::Start(x) => {
                 // We can set the position to just after the end of the current length.
                 let new_offset = x.try_into()?;
@@ -710,6 +766,7 @@ impl Seek for StateEntryTest {
                     Err(Offset)
                 }
             }
+            // TODO: Should this allow seeking beyond the end (allowed in std::io::SeekFrom)?
             SeekFrom::Current(x) => match x {
                 0 => Ok(self.cursor.offset.try_into()?),
                 x if x > 0 => {
@@ -1068,7 +1125,7 @@ mod test {
     // classes on the ContractStateTest structure and check that they behave as
     // specified.
     fn test_contract_state() {
-        let data = Rc::new(RefCell::new(vec![1; 100]));
+        let data = Rc::new(RefCell::new(vec![1; 100].into()));
         let mut state = StateEntryTest::open(data, Vec::new(), 0);
         assert_eq!(state.seek(SeekFrom::Start(100)), Ok(100), "Seeking to the end failed.");
         assert_eq!(
@@ -1106,7 +1163,11 @@ mod test {
         assert_eq!(state.read(&mut buf), Ok(0), "Reading from the end should read 0 bytes.");
         assert_eq!(state.seek(SeekFrom::End(-20)), Ok(102));
         assert_eq!(state.read(&mut buf), Ok(20), "Reading from offset 80 should read 20 bytes.");
-        assert_eq!(&buf[0..20], &state.cursor.data.borrow()[80..100], "Incorrect data was read.");
+        assert_eq!(
+            &buf[0..20],
+            &state.cursor.data.borrow().data().expect("Entry was deleted")[80..100],
+            "Incorrect data was read."
+        );
         assert_eq!(
             state.cursor.offset, 122,
             "After reading the offset is in the correct position."
@@ -1125,7 +1186,7 @@ mod test {
 
     #[test]
     fn test_contract_state_write() {
-        let data = Rc::new(RefCell::new(vec![0u8; 10]));
+        let data = Rc::new(RefCell::new(vec![0u8; 10].into()));
         let mut state = StateEntryTest::open(data, Vec::new(), 0);
         assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
         assert_eq!(
@@ -1135,7 +1196,7 @@ mod test {
         );
         assert_eq!(state.cursor.offset, 16, "Pos should be at the end.");
         assert_eq!(
-            *state.cursor.data.as_ref().borrow(),
+            *state.cursor.data.as_ref().borrow().data().expect("Entry was deleted"),
             vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
             "Correct data was written."
         );
