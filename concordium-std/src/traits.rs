@@ -4,7 +4,7 @@
 
 use crate::{
     types::{ContractStateError, LogError},
-    Allocator, CallContractResult, EntryRaw, StateEntryId, TransferResult,
+    Allocator, CallContractResult, EntryRaw, TransferResult,
 };
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -127,8 +127,6 @@ where
     type StateEntryKey;
     type Error: Default;
 
-    fn open(_: Self::StateEntryData, _: Self::StateEntryKey, entry_id: StateEntryId) -> Self;
-
     /// Get the current size of the entry.
     /// Returns an error if the entry does not exist.
     fn size(&self) -> Result<u32, Self::Error>;
@@ -151,9 +149,8 @@ where
         }
     }
 
-    /// Return the key of the entry.
-    // TODO: Should not return a Vec. User should provide a buffer.
-    fn get_key(&self) -> Result<Vec<u8>, Self::Error>;
+    /// Get a reference to the entry's key.
+    fn get_key(&self) -> &[u8];
 
     /// Resize the entry to the given size.
     /// Returns an error if the entry does not exist.

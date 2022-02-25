@@ -658,14 +658,6 @@ impl HasContractStateEntry for StateEntryTest {
     type StateEntryData = Rc<RefCell<StateEntryData>>;
     type StateEntryKey = Vec<u8>;
 
-    fn open(data: Self::StateEntryData, key: Self::StateEntryKey, entry_id: StateEntryId) -> Self {
-        Self {
-            cursor: Cursor::new(data),
-            state_entry_id: entry_id,
-            key,
-        }
-    }
-
     /// Get the size of the data in the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
     fn size(&self) -> Result<u32, Self::Error> {
@@ -682,7 +674,8 @@ impl HasContractStateEntry for StateEntryTest {
         Ok(())
     }
 
-    fn get_key(&self) -> Result<Vec<u8>, Self::Error> { Ok(self.key.clone()) }
+    /// Get a reference to the key.
+    fn get_key(&self) -> &[u8] { &self.key }
 
     /// Resize the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.

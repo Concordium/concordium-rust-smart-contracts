@@ -63,15 +63,15 @@ impl StateTrie {
 
         // Invalidate all the data in the deleted entries such that reading and writing
         // them will fail.
-        // This uses the queue iter because Iterator is not implemented for &Iter and we
-        // need to delete the iterator afterwards.
+        // Invalidating is necessary because the data is kept alive in any entries given
+        // out due to the Rc. This uses the queue iter because Iterator isn't
+        // implemented for &Iter and we need to delete the iterator afterwards.
         for entry in iterator.queue.iter() {
             *entry.cursor.data.borrow_mut() = StateEntryData::EntryDeleted;
         }
-
-        // TODO: This won't be needed if delete_iterator is called in drop().
         self.delete_iterator(iterator);
 
+        // Delete the nodes in the tree.
         self.nodes.delete_prefix(&indexes, false)
     }
 
@@ -177,7 +177,6 @@ impl StateTrie {
     }
 }
 
-// TODO: Call delete_iterator on drop.
 #[derive(Debug)]
 pub struct Iter {
     // Only used when deleting the iterator.

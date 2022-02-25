@@ -56,6 +56,7 @@ pub type StateItemPrefix = Vec<u8>;
 #[derive(Default)]
 pub struct StateEntry {
     pub(crate) state_entry_id:   StateEntryId,
+    pub(crate) key:              Vec<u8>,
     pub(crate) current_position: u32,
 }
 

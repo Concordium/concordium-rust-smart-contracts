@@ -129,10 +129,10 @@ impl ReturnValue {
 }
 
 impl StateEntry {
-    // TODO: Should also get a key.
-    pub(crate) fn open(state_entry_id: StateEntryId) -> Self {
+    pub(crate) fn open(state_entry_id: StateEntryId, key: Vec<u8>) -> Self {
         Self {
             state_entry_id,
+            key,
             current_position: 0,
         }
     }
@@ -143,10 +143,6 @@ impl HasContractStateEntry for StateEntry {
     // TODO: Should this use another error type?
     type StateEntryData = ();
     type StateEntryKey = ();
-
-    fn open(_: Self::StateEntryData, _: Self::StateEntryKey, entry_id: StateEntryId) -> Self {
-        Self::open(entry_id)
-    }
 
     #[inline(always)]
     fn size(&self) -> Result<u32, Self::Error> {
@@ -165,7 +161,7 @@ impl HasContractStateEntry for StateEntry {
         Ok(())
     }
 
-    fn get_key(&self) -> Result<Vec<u8>, ()> { todo!("StateEntry should have a key field") }
+    fn get_key(&self) -> &[u8] { &self.key }
 
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
         let res = unsafe { prims::state_entry_resize(self.state_entry_id, new_size) };
@@ -559,11 +555,11 @@ impl HasContractStateLL for ContractStateLL {
             if entry_id == u64::MAX {
                 return Err(ContractStateError::SubtreeLocked);
             }
-            Ok(EntryRaw::Vacant(VacantEntryRaw::new(StateEntry::open(entry_id))))
+            Ok(EntryRaw::Vacant(VacantEntryRaw::new(StateEntry::open(entry_id, key.to_vec()))))
         } else {
             // Lookup returned an entry.
             let entry_id = res;
-            Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id))))
+            Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id, key.to_vec()))))
         }
     }
 
@@ -574,7 +570,7 @@ impl HasContractStateLL for ContractStateLL {
         if entry_id == u64::MAX {
             None
         } else {
-            Some(StateEntry::open(entry_id))
+            Some(StateEntry::open(entry_id, key.to_vec()))
         }
     }
 
@@ -636,7 +632,17 @@ impl Iterator for ContractStateIter {
             // [HasContractStateLL::delete_iterator].
             u64::MAX => crate::fail!(),
             _ if res | 1u64.rotate_right(2) == u64::MAX => None,
-            _ => Some(StateEntry::open(res)),
+            _ => {
+                // This will always return a valid size, because the iterator is guaranteed to
+                // exist.
+                let key_size = unsafe { prims::state_iterator_key_size(self.iterator_id) };
+                let mut key = Vec::with_capacity(key_size as usize);
+                // The key will always be read, because the iterator is guaranteed to exist.
+                unsafe {
+                    prims::state_iterator_key_read(self.iterator_id, key.as_mut_ptr(), key_size, 0)
+                };
+                Some(StateEntry::open(res, key))
+            }
         }
     }
 }
@@ -758,8 +764,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.state_iter.next().and_then(|mut entry| {
-            // TODO: Make this safe.
-            let key = entry.get_key().unwrap_abort();
+            let key = entry.get_key();
             let mut key_cursor = Cursor {
                 data:   key,
                 offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
@@ -969,8 +974,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.state_iter.next().and_then(|entry| {
-            // TODO: Make this safe.
-            let key = entry.get_key().unwrap_abort();
+            let key = entry.get_key();
             let mut key_cursor = Cursor {
                 data:   key,
                 offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
