@@ -12,9 +12,9 @@ where
 }
 
 #[derive(Debug)]
-pub struct StateMapIter<K, V, S: HasContractStateLL> {
-    pub(crate) state_iter:    S::IterType,
-    pub(crate) state_ll:      Rc<RefCell<S>>,
+pub struct StateMapIter<'a, K, V> {
+    pub(crate) state_iter:    ContractStateIter,
+    pub(crate) state_map:     &'a StateMap<K, V, ContractStateLL>,
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
 }
@@ -29,9 +29,9 @@ where
 }
 
 #[derive(Debug)]
-pub struct StateSetIter<T, S: HasContractStateLL> {
-    pub(crate) state_iter: S::IterType,
-    pub(crate) state_ll:   Rc<RefCell<S>>,
+pub struct StateSetIter<'a, T> {
+    pub(crate) state_iter: ContractStateIter,
+    pub(crate) state_set:  &'a StateSet<T, ContractStateLL>,
     pub(crate) _marker:    PhantomData<T>,
 }
 
@@ -45,6 +45,7 @@ pub struct StateBox<T, S: std::fmt::Debug> {
 #[derive(Debug, Default)]
 pub struct ContractStateLL;
 
+#[derive(Debug)]
 pub struct ContractStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }

@@ -615,7 +615,19 @@ impl HasContractStateLL for ContractStateLL {
         // the iterator.
         // These conditions rule out the two types of errors that the prims
         // call can return, iterator not found and iterator already deleted.
+        // The iterator can also be deleted with `delete_iterator_by_id`, but that is
+        // only called when a [StateMapIter] or [StateSetIter] is dropped (which
+        // also drops the [ContractStateIter]). Again ruling out the already
+        // deleted error.
         unsafe { prims::state_iterator_delete(iter.iterator_id) };
+    }
+}
+
+impl ContractStateLL {
+    /// Delete an iterator by prefix. Should *only* be called by the drop method
+    /// for [StateMapIter] or [StateSetIter].
+    fn delete_iterator_by_id(&mut self, iterator_id: u64) {
+        unsafe { prims::state_iterator_delete(iterator_id) };
     }
 }
 
@@ -677,7 +689,7 @@ where
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(&key);
         let value_bytes = to_bytes(&value);
-        // TODO: Unwrapping is safe once iter() is.
+        // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_ll.borrow_mut().entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(vac) => {
                 let _ = vac.insert(&value_bytes);
@@ -696,7 +708,7 @@ where
     /// Get an entry for the given key.
     pub fn entry(&mut self, key: K) -> Entry<K, V, S::EntryType> {
         let key_bytes = self.key_with_map_prefix(&key);
-        // TODO: Unwrapping is safe once iter() is.
+        // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_ll.borrow_mut().entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(vac) => Entry::Vacant(VacantEntry::new(key, vac.state_entry)),
             EntryRaw::Occupied(mut occ) => {
@@ -711,22 +723,9 @@ where
     /// Returns `true` if the map contains no elements.
     pub fn is_empty(&self) -> bool { self.state_ll.borrow().lookup(&self.prefix).is_none() }
 
-    /// Gets an iterator over the entries of the map, sorted by key.
-    /// TODO: Explain structural locking.
-    pub fn iter(&self) -> StateMapIter<K, V, S> {
-        // TODO: Use lifetimes to ensure that you cannot get two iters on same statemap;
-        let state_iter = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
-        StateMapIter {
-            state_iter,
-            state_ll: Rc::clone(&self.state_ll),
-            _marker_key: PhantomData,
-            _marker_value: PhantomData,
-        }
-    }
-
     /// Clears the map, removing all key-value pairs.
     pub fn clear(&mut self) {
-        // TODO: Safe once iter() is.
+        // Unwrapping is safe because iter() holds a reference to the stateset.
         self.state_ll.borrow_mut().delete_prefix(&self.prefix).unwrap_abort()
     }
 
@@ -735,7 +734,7 @@ where
     /// could not be deserialized as `V`.
     pub fn remove(&mut self, key: &K) -> Option<ParseResult<V>> {
         let key_bytes = self.key_with_map_prefix(key);
-        // TODO: Unwrapping is safe once iter() is.
+        // Unwrapping is safe because iter() holds a reference to the stateset.
         let entry_raw = self.state_ll.borrow_mut().entry(&key_bytes).unwrap_abort();
         match entry_raw {
             EntryRaw::Vacant(_) => None,
@@ -754,11 +753,34 @@ where
     }
 }
 
-impl<K, V, S> Iterator for StateMapIter<K, V, S>
+impl<K, V> StateMap<K, V, ContractStateLL>
 where
     K: Serialize,
-    V: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    V: Serial + DeserialStateCtx<ContractStateLL>,
+{
+    /// Gets an iterator over the entries of the map, sorted by key.
+    pub fn iter(&self) -> StateMapIter<K, V> {
+        let state_iter = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
+        StateMapIter {
+            state_iter,
+            state_map: self,
+            _marker_key: PhantomData,
+            _marker_value: PhantomData,
+        }
+    }
+}
+
+impl<'a, K, V> Drop for StateMapIter<'a, K, V> {
+    fn drop(&mut self) {
+        // Delete the iterator to unlock the subtree.
+        self.state_map.state_ll.borrow_mut().delete_iterator_by_id(self.state_iter.iterator_id);
+    }
+}
+
+impl<'a, K, V> Iterator for StateMapIter<'a, K, V>
+where
+    K: Serialize,
+    V: Serial + DeserialStateCtx<ContractStateLL>,
 {
     type Item = (K, V);
 
@@ -769,14 +791,9 @@ where
                 data:   key,
                 offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
             };
-            let k = K::deserial(&mut key_cursor).expect_report(
-                "Deserializing key failed. State has been incorrectly altered using the low-level \
-                 API.",
-            );
-            let v = V::deserial_state_ctx(&self.state_ll, &mut entry).expect_report(
-                "Deserializing value failed. State has been incorrectly altered using the \
-                 low-level API.",
-            );
+            // Unwrapping is safe when only using the high-level API.
+            let k = K::deserial(&mut key_cursor).unwrap_abort();
+            let v = V::deserial_state_ctx(&self.state_map.state_ll, &mut entry).unwrap_abort();
             Some((k, v))
         })
     }
@@ -811,7 +828,7 @@ where
     /// `false`.
     pub fn insert(&mut self, value: T) -> bool {
         let key_bytes = self.key_with_set_prefix(&value);
-        // TODO: Unwrapping is safe once iter() is.
+        // Unwrapping is safe, because iter() keeps a reference to the statemap.
         match self.state_ll.borrow_mut().entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(vac) => {
                 let _ = vac.insert(&[]);
@@ -832,7 +849,7 @@ where
 
     /// Clears the set, removing all values.
     pub fn clear(&mut self) {
-        // TODO: Unwrapping is safe once iter() is.
+        // Unwrapping is safe, because iter() keeps a reference to the statemap.
         self.state_ll.borrow_mut().delete_prefix(&self.prefix).unwrap_abort()
     }
 
@@ -840,13 +857,13 @@ where
     /// the set.
     pub fn remove(&mut self, value: &T) -> bool {
         let key_bytes = self.key_with_set_prefix(value);
-        // TODO: Unwrapping is safe once iter() is.
+        // Unwrapping is safe, because iter() keeps a reference to the statemap.
         let entry_opt = match self.state_ll.borrow_mut().entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(_) => None,
             EntryRaw::Occupied(occ) => Some(occ.get()),
         };
         if let Some(entry) = entry_opt {
-            // TODO: Unwrapping is safe once iter() is.
+            // Unwrapping is safe, because iter() keeps a reference to the statemap.
             self.state_ll.borrow_mut().delete_entry(entry).unwrap_abort();
             true
         } else {
@@ -854,20 +871,24 @@ where
         }
     }
 
-    pub fn iter(&self) -> StateSetIter<T, S> {
-        // TODO: Use lifetimes to ensure that only one iter can exist at a time.
-        let state_iter = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
-        StateSetIter {
-            state_iter,
-            state_ll: Rc::clone(&self.state_ll),
-            _marker: PhantomData,
-        }
-    }
-
     fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
         key_with_prefix.append(&mut to_bytes(key));
         key_with_prefix
+    }
+}
+
+impl<T> StateSet<T, ContractStateLL>
+where
+    T: Serial + DeserialStateCtx<ContractStateLL>,
+{
+    pub fn iter(&self) -> StateSetIter<T> {
+        let state_iter = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
+        StateSetIter {
+            state_iter,
+            state_set: self,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -965,10 +986,16 @@ where
     }
 }
 
-impl<T, S> Iterator for StateSetIter<T, S>
+impl<'a, T> Drop for StateSetIter<'a, T> {
+    fn drop(&mut self) {
+        // Delete the iterator to unlock the subtree.
+        self.state_set.state_ll.borrow_mut().delete_iterator_by_id(self.state_iter.iterator_id);
+    }
+}
+
+impl<'a, T> Iterator for StateSetIter<'a, T>
 where
-    T: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    T: Serial + DeserialStateCtx<ContractStateLL>,
 {
     type Item = T;
 
@@ -979,9 +1006,9 @@ where
                 data:   key,
                 offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
             };
-            let res = T::deserial_state_ctx(&self.state_ll, &mut key_cursor).expect_report(
-                "Deserial failed. State has been incorrectly altered using the low-level API.",
-            );
+            // Unwrapping is safe when only using the high-level API.
+            let res =
+                T::deserial_state_ctx(&self.state_set.state_ll, &mut key_cursor).unwrap_abort();
             Some(res)
         })
     }

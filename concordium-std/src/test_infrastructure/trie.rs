@@ -9,7 +9,7 @@ use std::{
 
 const BRANCHING_FACTOR: usize = 4;
 
-type Index = usize;
+pub(crate) type Index = usize;
 
 #[derive(Debug)]
 pub struct StateTrie {
@@ -162,8 +162,14 @@ impl StateTrie {
     }
 
     pub fn delete_iterator(&mut self, iterator: Iter) {
+        self.delete_iterator_by_prefix(&iterator.prefix);
+    }
+
+    /// Delete the iterator by prefix.
+    /// Cannot be made pub as that can violate the preconditions.
+    pub(crate) fn delete_iterator_by_prefix(&mut self, iterator_prefix: &[Index]) {
         // Decrement the counter for iterators alive.
-        match self.iterator_counts.borrow_mut().entry(iterator.prefix) {
+        match self.iterator_counts.borrow_mut().entry(iterator_prefix.to_vec()) {
             btree_map::Entry::Vacant(_) => crate::fail!(), // Internal error: Should never happen.
             btree_map::Entry::Occupied(mut occ) => {
                 if *occ.get() == 1 {
@@ -180,8 +186,8 @@ impl StateTrie {
 #[derive(Debug)]
 pub struct Iter {
     // Only used when deleting the iterator.
-    prefix: Vec<Index>,
-    queue:  VecDeque<StateEntryTest>,
+    pub(crate) prefix: Vec<Index>,
+    queue:             VecDeque<StateEntryTest>,
 }
 
 impl Iter {
