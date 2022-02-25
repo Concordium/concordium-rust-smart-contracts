@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(u8::deserial(&mut iter.next().unwrap()), Ok(1));
         assert_eq!(u8::deserial(&mut iter.next().unwrap()), Ok(2));
         assert_eq!(u8::deserial(&mut iter.next().unwrap()), Ok(3));
-        assert_eq!(iter.next(), None);
+        assert!(iter.next().is_none());
 
         // Delete some entries.
         trie.delete_iterator(iter);
@@ -422,7 +422,7 @@ mod tests {
         // Only "abdg" is left.
         let mut new_trie = trie.iterator(b"ab").unwrap();
         assert_eq!(u8::deserial(&mut new_trie.next().unwrap()), Ok(2));
-        assert_eq!(new_trie.next(), None);
+        assert!(new_trie.next().is_none());
     }
 
     #[test]

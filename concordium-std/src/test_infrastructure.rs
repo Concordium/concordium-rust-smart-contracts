@@ -536,7 +536,7 @@ impl From<num::TryFromIntError> for ContractStateTestError {
 }
 
 // TODO: Replace the Vec with a generic T.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct StateEntryTest {
     pub(crate) cursor:         Cursor<Rc<RefCell<Vec<u8>>>>,
     pub(crate) key:            Vec<u8>,
