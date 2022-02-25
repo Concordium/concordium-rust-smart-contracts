@@ -1,10 +1,8 @@
-use crate::{num::NonZeroU32, HasContractStateEntry, HasContractStateLL};
+use crate::num::NonZeroU32;
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 #[derive(Debug)]
-pub struct StateMap<K, V, S>
-where
-    S: HasContractStateLL, {
+pub struct StateMap<K, V, S> {
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
     pub(crate) prefix:        StateItemPrefix,
@@ -20,9 +18,7 @@ pub struct StateMapIter<'a, K, V> {
 }
 
 #[derive(Debug)]
-pub struct StateSet<T, S>
-where
-    S: HasContractStateLL, {
+pub struct StateSet<T, S> {
     pub(crate) _marker:  PhantomData<T>,
     pub(crate) prefix:   StateItemPrefix,
     pub(crate) state_ll: Rc<RefCell<S>>,
@@ -61,21 +57,15 @@ pub struct StateEntry {
     pub(crate) current_position: u32,
 }
 
-pub struct VacantEntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry, {
+pub struct VacantEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
 
-pub struct OccupiedEntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry, {
+pub struct OccupiedEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
 
-pub enum EntryRaw<StateEntryType>
-where
-    StateEntryType: HasContractStateEntry, {
+pub enum EntryRaw<StateEntryType> {
     Vacant(VacantEntryRaw<StateEntryType>),
     Occupied(OccupiedEntryRaw<StateEntryType>),
 }
