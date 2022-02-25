@@ -678,9 +678,8 @@ where
     pub fn get(&self, key: &K) -> Option<V> {
         let k = self.key_with_map_prefix(&key);
         self.state_ll.borrow().lookup(&k).map(|mut entry| {
-            V::deserial_state_ctx(&self.state_ll, &mut entry).expect_report(
-                "Deserial failed. State has been incorrectly altered using the low-level API.",
-            )
+            // Unwrapping is safe when using only the high-level API.
+            V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort()
         })
     }
 
@@ -696,9 +695,8 @@ where
                 None
             }
             EntryRaw::Occupied(mut occ) => {
-                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).expect_report(
-                    "Deserial failed. State has been incorrectly altered using the low-level API.",
-                );
+                // Unwrapping is safe when using only the high-level API.
+                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).unwrap_abort();
                 occ.insert(&value_bytes);
                 Some(old_value)
             }
@@ -712,9 +710,8 @@ where
         match self.state_ll.borrow_mut().entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(vac) => Entry::Vacant(VacantEntry::new(key, vac.state_entry)),
             EntryRaw::Occupied(mut occ) => {
-                let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).expect_report(
-                    "Deserial failed. State has been incorrectly altered using the low-level API.",
-                );
+                // Unwrapping is safe when using only the high-level API.
+                let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).unwrap_abort();
                 Entry::Occupied(OccupiedEntry::new(key, value, occ.state_entry))
             }
         }
@@ -940,9 +937,8 @@ where
     // nested data structures, such as linked lists. Similar to what is possible
     // with `Box`.
     pub fn get_copy(&self) -> T {
-        T::load(&self.prefix, Rc::clone(&self.state_ll)).expect_report(
-            "Get failed. State has been incorrectly altered using the low-level API.",
-        )
+        // Unwrapping is safe when using only the high-level API.
+        T::load(&self.prefix, Rc::clone(&self.state_ll)).unwrap_abort()
     }
 
     /// Set the value. Overwrites the existing one.
@@ -952,10 +948,8 @@ where
     pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut T), {
-        let mut value = T::load(&self.prefix, Rc::clone(&self.state_ll)).expect_report(
-            "Update failed: could not load existing value. State has been incorrectly altered \
-             using the low-level API.",
-        );
+        // Unwrapping is safe when using only the high-level API.
+        let mut value = T::load(&self.prefix, Rc::clone(&self.state_ll)).unwrap_abort();
 
         // Mutate the value (perhaps only in memory, depends on the type).
         f(&mut value);
@@ -1373,9 +1367,7 @@ where
             self.state_ll.borrow_mut().entry(&entry_key).unwrap_abort().or_insert(&default_prefix);
 
         // Get the next collection prefix
-        let collection_prefix = next_collection_prefix_entry
-            .read_u64()
-            .expect_report("next_collection_prefix is not a valid u64.");
+        let collection_prefix = next_collection_prefix_entry.read_u64().unwrap_abort(); // Unwrapping is safe if only using the high-level API.
 
         // Rewind state entry position. Cannot fail.
         next_collection_prefix_entry.seek(SeekFrom::Start(0)).unwrap_abort();
