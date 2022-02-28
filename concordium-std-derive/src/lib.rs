@@ -511,7 +511,9 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                             trap() // Could not serialize the return value (initialization fails).
                         }
                         // Store the state.
-                        state.store(&[], state_ll);
+                        let mut root_entry = state_ll.borrow_mut().create(&[]).unwrap_abort();
+                        state.serial(&mut root_entry).unwrap_abort();
+                        // Return success
                         0
                     },
                     Err(reject) => {
@@ -734,8 +736,13 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             }
         }
     } else {
-        let (host_ref, store_state_if_mutable) = if receive_attributes.mutable {
-            (quote!(&mut host), quote!(host.state().store(&[], Rc::clone(&state_ll));))
+        let (host_ref, save_state_if_mutable) = if receive_attributes.mutable {
+            (quote!(&mut host), quote! {
+                root_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+                host.state().serial(&mut root_entry).unwrap_abort();
+                let new_state_size = root_entry.size().unwrap_abort();
+                root_entry.truncate(new_state_size).unwrap_abort();
+            })
         } else {
             (quote!(&host), quote!())
         };
@@ -748,14 +755,15 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let state_ll = Rc::new(RefCell::new(ContractStateLL::open(())));
                 let mut allocator = Allocator::open(Rc::clone(&state_ll));
-                if let Ok(state) = Persistable::load(&[], Rc::clone(&state_ll)) {
+                let mut root_entry = state_ll.borrow().lookup(&[]).unwrap_abort();
+                if let Ok(state) = DeserialStateCtx::deserial_state_ctx(&state_ll, &mut root_entry) {
                     let mut host = ExternHost { state, allocator };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
                         Ok(rv) => {
                             if rv.serial(&mut ReturnValue::open()).is_err() {
                                 trap() // Could not serialize return value.
                             }
-                            #store_state_if_mutable
+                            #save_state_if_mutable
                             0
                         }
                         Err(reject) => {

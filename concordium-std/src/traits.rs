@@ -167,7 +167,12 @@ pub trait HasContractStateLL {
     fn open(_: Self::ContractStateData) -> Self;
 
     /// Get an entry in the state.
+    /// Returns an error if it is part of a locked subtree.
     fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError>;
+
+    /// Create a new entry in the state.
+    /// Returns an error if it is part of a locked subtree.
+    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError>;
 
     /// Lookup an entry in the state.
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
@@ -189,16 +194,6 @@ pub trait HasContractStateLL {
 
     /// Delete an iterator.
     fn delete_iterator(&mut self, iter: Self::IterType);
-}
-
-pub trait Persistable<S>
-where
-    Self: Sized, {
-    // TODO: Should this return something?
-    fn store(&self, prefix: &[u8], state_ll: Rc<RefCell<S>>);
-
-    // TODO: Option<ParseResult<_>> ?
-    fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self>;
 }
 
 /// A type that can serve as the host.

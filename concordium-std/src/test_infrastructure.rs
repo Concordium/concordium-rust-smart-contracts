@@ -615,11 +615,15 @@ impl HasContractStateLL for ContractStateLLTest {
         }
     }
 
+    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError> {
+        self.trie.create_entry(key)
+    }
+
     fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError> {
         let entry = if let Some(state_entry) = self.trie.lookup(key) {
             EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
         } else {
-            EntryRaw::Vacant(VacantEntryRaw::new(self.trie.create_entry(key)?))
+            EntryRaw::Vacant(VacantEntryRaw::new(self.create(key)?))
         };
         Ok(entry)
     }

@@ -32,7 +32,7 @@ pub struct StateSetIter<'a, T> {
 }
 
 #[derive(Debug)]
-pub struct StateBox<T, S: std::fmt::Debug> {
+pub struct StateBox<T, S> {
     pub(crate) prefix:   StateItemPrefix,
     pub(crate) state_ll: Rc<RefCell<S>>,
     pub(crate) _marker:  PhantomData<T>,

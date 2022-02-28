@@ -551,16 +551,23 @@ impl HasContractStateLL for ContractStateLL {
 
         if res == u64::MAX {
             // No entry exists. Create one.
-            let entry_id = unsafe { prims::state_create_entry(key_start, key_len) };
-            if entry_id == u64::MAX {
-                return Err(ContractStateError::SubtreeLocked);
-            }
-            Ok(EntryRaw::Vacant(VacantEntryRaw::new(StateEntry::open(entry_id, key.to_vec()))))
+            let state_entry = self.create(key)?;
+            Ok(EntryRaw::Vacant(VacantEntryRaw::new(state_entry)))
         } else {
             // Lookup returned an entry.
             let entry_id = res;
             Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(StateEntry::open(entry_id, key.to_vec()))))
         }
+    }
+
+    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError> {
+        let key_start = key.as_ptr();
+        let key_len = key.len() as u32; // Wasm usize == 32bit.
+        let entry_id = unsafe { prims::state_create_entry(key_start, key_len) };
+        if entry_id == u64::MAX {
+            return Err(ContractStateError::SubtreeLocked);
+        }
+        Ok(StateEntry::open(entry_id, key.to_vec()))
     }
 
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> {
@@ -796,12 +803,7 @@ where
     }
 }
 
-impl<K, V, S> Serial for StateMap<K, V, S>
-where
-    K: Serialize,
-    V: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
-{
+impl<K, V, S> Serial for StateMap<K, V, S> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         serial_vector_no_length(&self.prefix, out)
     }
@@ -889,40 +891,19 @@ where
     }
 }
 
-impl<T, S> Persistable<S> for T
+impl<T, S> StateBox<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
-{
-    fn store(&self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
-        // TODO: Figure out if this is safe.
-        match state_ll.borrow_mut().entry(prefix).unwrap_abort() {
-            EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&to_bytes(self));
-            }
-            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(self)),
-        }
-    }
-
-    fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self> {
-        match state_ll.borrow().lookup(prefix) {
-            Some(mut entry) => Self::deserial_state_ctx(&state_ll, &mut entry),
-            None => Err(ParseError::default()),
-        }
-    }
-}
-
-impl<T, S> StateBox<T, S>
-where
-    T: Persistable<S>,
-    S: HasContractStateLL + std::fmt::Debug,
 {
     /// Inserts the value in the state and returns Self.
     pub(crate) fn new<P: Serial>(value: T, state_ll: Rc<RefCell<S>>, prefix: P) -> Self {
         let prefix_bytes = to_bytes(&prefix);
 
         // Insert the value into state.
-        value.store(&prefix_bytes, Rc::clone(&state_ll));
+        // Both unwraps are safe when using only the high-level API.
+        let mut state_entry = state_ll.borrow_mut().create(&prefix_bytes).unwrap_abort();
+        value.serial(&mut state_entry).unwrap_abort();
 
         Self {
             _marker: PhantomData,
@@ -936,45 +917,43 @@ where
     // reference. to it. This design choice allows users to create arbitrary
     // nested data structures, such as linked lists. Similar to what is possible
     // with `Box`.
-    pub fn get_copy(&self) -> T {
-        // Unwrapping is safe when using only the high-level API.
-        T::load(&self.prefix, Rc::clone(&self.state_ll)).unwrap_abort()
-    }
+    pub fn get_copy(&self) -> T { self.read_value() }
 
     /// Set the value. Overwrites the existing one.
-    pub fn set(&mut self, new_val: T) { new_val.store(&self.prefix, Rc::clone(&self.state_ll)); }
+    pub fn set(&mut self, new_val: T) { self.write_value(new_val); }
 
     /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut T), {
         // Unwrapping is safe when using only the high-level API.
-        let mut value = T::load(&self.prefix, Rc::clone(&self.state_ll)).unwrap_abort();
+        let mut value = self.read_value();
 
         // Mutate the value (perhaps only in memory, depends on the type).
         f(&mut value);
-        // Store the value. TODO: If `T` is a StateBox/Set/Map, then it is only
-        // necessary to insert if the whole item has been replaced via the assignment
-        // operator.
-        value.store(&self.prefix, Rc::clone(&self.state_ll))
+
+        self.write_value(value)
+    }
+
+    fn write_value(&self, value: T) {
+        // Both unwraps are safe when using only the high-level API.
+        let mut state_entry = self.state_ll.borrow().lookup(&self.prefix).unwrap_abort();
+        value.serial(&mut state_entry).unwrap_abort()
+    }
+
+    fn read_value(&self) -> T {
+        let mut state_entry = self.state_ll.borrow().lookup(&self.prefix).unwrap_abort();
+        T::deserial_state_ctx(&self.state_ll, &mut state_entry).unwrap_abort()
     }
 }
 
-impl<T, S> Serial for StateBox<T, S>
-where
-    T: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL + std::fmt::Debug,
-{
+impl<T, S> Serial for StateBox<T, S> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         serial_vector_no_length(&self.prefix, out)
     }
 }
 
-impl<T, S> Serial for StateSet<T, S>
-where
-    T: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
-{
+impl<T, S> Serial for StateSet<T, S> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         serial_vector_no_length(&self.prefix, out)
     }
@@ -1424,7 +1403,7 @@ where
 
 impl<State> HasHost<State> for ExternHost<State>
 where
-    State: Persistable<ContractStateLL>,
+    State: DeserialStateCtx<ContractStateLL>,
 {
     type ContractStateLLType = ContractStateLL;
     type ReturnValueType = CallResponse;
@@ -1447,7 +1426,10 @@ where
         if state_modified {
             // The state of the contract changed as a result of the call.
             // So we refresh it.
-            if let Ok(new_state) = State::load(&[], Rc::clone(&self.allocator.state_ll)) {
+            if let Ok(new_state) = State::deserial_state_ctx(
+                &self.allocator.state_ll,
+                &mut self.allocator.state_ll.borrow_mut().lookup(&[]).unwrap_abort(),
+            ) {
                 self.state = new_state;
             } else {
                 crate::trap() // FIXME: With new state this needs to be revised.
@@ -1892,7 +1874,7 @@ where
 
 impl<T, S> DeserialStateCtx<S> for StateBox<T, S>
 where
-    S: HasContractStateLL + std::fmt::Debug,
+    S: HasContractStateLL,
     T: Serial + DeserialStateCtx<S>,
 {
     fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self> {
