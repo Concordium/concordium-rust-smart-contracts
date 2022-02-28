@@ -9,7 +9,6 @@ use crate::{
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 use concordium_contracts_common::*;
-use std::{cell::RefCell, rc::Rc};
 
 /// Objects which can access parameters to contracts.
 ///
@@ -157,7 +156,7 @@ where
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error>;
 }
 
-pub trait HasContractStateLL {
+pub trait HasContractStateLL: Clone {
     type ContractStateData;
     type EntryType: HasContractStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
@@ -345,5 +344,5 @@ pub trait DeserialCtx: Sized {
 pub trait DeserialStateCtx<S>: Sized
 where
     S: HasContractStateLL, {
-    fn deserial_state_ctx<R: Read>(state: &Rc<RefCell<S>>, source: &mut R) -> ParseResult<Self>;
+    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
 }

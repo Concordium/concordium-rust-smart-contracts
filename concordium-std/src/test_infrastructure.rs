@@ -65,7 +65,7 @@ use convert::TryInto;
 use core::{cmp, num};
 #[cfg(feature = "std")]
 use std::{boxed::Box, num};
-use std::{cell::RefCell, cmp, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, cmp, rc::Rc};
 
 use self::trie::StateTrie;
 
@@ -599,9 +599,9 @@ impl StateEntryTest {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContractStateLLTest {
-    trie: StateTrie,
+    trie: Rc<RefCell<StateTrie>>,
 }
 
 impl HasContractStateLL for ContractStateLLTest {
@@ -609,156 +609,49 @@ impl HasContractStateLL for ContractStateLLTest {
     type EntryType = StateEntryTest;
     type IterType = trie::Iter;
 
-    fn open(trie: Self::ContractStateData) -> Self {
+    fn open(trie: StateTrie) -> Self {
         Self {
-            trie,
+            trie: Rc::new(RefCell::new(trie)),
         }
     }
 
     fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError> {
-        self.trie.create_entry(key)
+        self.trie.borrow_mut().create_entry(key)
     }
 
     fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError> {
-        let entry = if let Some(state_entry) = self.trie.lookup(key) {
-            EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry))
-        } else {
-            EntryRaw::Vacant(VacantEntryRaw::new(self.create(key)?))
+        if let Some(state_entry) = self.trie.borrow_mut().lookup(key) {
+            return Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry)));
         };
-        Ok(entry)
+        Ok(EntryRaw::Vacant(VacantEntryRaw::new(self.create(key)?)))
     }
 
-    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.lookup(key) }
+    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.borrow().lookup(key) }
 
     fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> {
-        self.trie.delete_entry(entry)
+        self.trie.borrow_mut().delete_entry(entry)
     }
 
     fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
-        self.trie.delete_prefix(prefix)
+        self.trie.borrow_mut().delete_prefix(prefix)
     }
 
     fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError> {
-        self.trie.iterator(prefix)
+        self.trie.borrow().iterator(prefix)
     }
 
-    fn delete_iterator(&mut self, iter: Self::IterType) { self.trie.delete_iterator(iter); }
+    fn delete_iterator(&mut self, iter: Self::IterType) { self.trie.borrow_mut().delete_iterator(iter); }
 }
 
-#[derive(Debug)]
-pub struct StateMapIterTest<'a, K, V> {
-    pub(crate) state_iter:    trie::Iter,
-    pub(crate) state_map:     &'a StateMap<K, V, ContractStateLLTest>,
-    pub(crate) _marker_key:   PhantomData<K>,
-    pub(crate) _marker_value: PhantomData<V>,
-}
+pub type StateMapIterTest<'a, K, V> = StateMapIter<'a, K, V, ContractStateLLTest>;
 
-impl<'a, K, V> Drop for StateMapIterTest<'a, K, V> {
-    fn drop(&mut self) {
-        // Delete the iterator to unlock the subtree.
-        self.state_map.state_ll.borrow_mut().delete_iterator_by_prefix(&self.state_iter.prefix);
-    }
-}
-
-impl<'a, K, V> Iterator for StateMapIterTest<'a, K, V>
-where
-    K: Serialize,
-    V: Serial + DeserialStateCtx<ContractStateLLTest>,
-{
-    type Item = (K, V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.state_iter.next().and_then(|mut entry| {
-            let key = entry.get_key();
-            let mut key_cursor = Cursor {
-                data:   key,
-                offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
-            };
-            // Unwrapping is safe when only using the high-level API.
-            let k = K::deserial(&mut key_cursor).unwrap_abort();
-            let v = V::deserial_state_ctx(&self.state_map.state_ll, &mut entry).unwrap_abort();
-            Some((k, v))
-        })
-    }
-}
-
-impl<K, V> StateMap<K, V, ContractStateLLTest>
-where
-    K: Serialize,
-    V: Serial + DeserialStateCtx<ContractStateLLTest>,
-{
-    /// Gets an iterator over the entries of the map, sorted by key.
-    pub fn iter(&self) -> StateMapIterTest<K, V> {
-        let state_iter = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
-        StateMapIterTest {
-            state_iter,
-            state_map: self,
-            _marker_key: PhantomData,
-            _marker_value: PhantomData,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct StateSetIterTest<'a, T> {
-    pub(crate) state_iter: trie::Iter,
-    pub(crate) state_set:  &'a StateSet<T, ContractStateLLTest>,
-    pub(crate) _marker:    PhantomData<T>,
-}
-
-impl<'a, T> Drop for StateSetIterTest<'a, T> {
-    fn drop(&mut self) {
-        // Delete the iterator to unlock the subtree.
-        self.state_set.state_ll.borrow_mut().delete_iterator_by_prefix(&self.state_iter.prefix);
-    }
-}
-
-impl<'a, T> Iterator for StateSetIterTest<'a, T>
-where
-    T: Serial + DeserialStateCtx<ContractStateLLTest>,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.state_iter.next().and_then(|entry| {
-            let key = entry.get_key();
-            let mut key_cursor = Cursor {
-                data:   key,
-                offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
-            };
-            // Unwrapping is safe when only using the high-level API.
-            let res =
-                T::deserial_state_ctx(&self.state_set.state_ll, &mut key_cursor).unwrap_abort();
-            Some(res)
-        })
-    }
-}
-
-impl<T> StateSet<T, ContractStateLLTest>
-where
-    T: Serial + DeserialStateCtx<ContractStateLLTest>,
-{
-    pub fn iter(&self) -> StateSetIterTest<T> {
-        let state_iter = self.state_ll.borrow().iterator(&self.prefix).unwrap_abort();
-        StateSetIterTest {
-            state_iter,
-            state_set: self,
-            _marker: PhantomData,
-        }
-    }
-}
+pub type StateSetIterTest<'a, T> = StateSetIter<'a, T, ContractStateLLTest>;
 
 impl ContractStateLLTest {
     pub fn new() -> Self {
         Self {
-            trie: StateTrie::new(),
+            trie: Rc::new(RefCell::new(StateTrie::new())),
         }
-    }
-
-    /// Delete an iterator by prefix. Should *only* be called by the drop method
-    /// for [StateMapIter] or [StateSetIter].
-    fn delete_iterator_by_prefix(&mut self, iterator_prefix: &[trie::Index]) {
-        self.trie.delete_iterator_by_prefix(iterator_prefix);
     }
 }
 
@@ -1135,7 +1028,7 @@ impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
         HostTest::new_with_allocator(state, Allocator {
-            state_ll: Rc::new(RefCell::new(ContractStateLLTest::open(StateTrie::new()))),
+            state_ll: ContractStateLLTest::open(StateTrie::new()),
         })
     }
 
@@ -1322,7 +1215,7 @@ mod test {
     #[test]
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         allocator.insert(0, expected_value).expect("Insert failed");
         let actual_value: u64 = allocator.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
@@ -1346,7 +1239,7 @@ mod test {
     #[test]
     fn high_level_statemap() -> Result<(), ParseError> {
         let my_map_key = "my_map";
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
 
         let map_to_insert = allocator.new_map::<String, String>();
         allocator.insert(my_map_key, map_to_insert).expect("Insert failed");
@@ -1368,7 +1261,7 @@ mod test {
 
     #[test]
     fn statemap_insert_remove() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut map = allocator.new_map();
         let value = String::from("hello");
         let _ = map.insert(42, value.clone());
@@ -1379,7 +1272,7 @@ mod test {
 
     #[test]
     fn statemap_clear() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut map = allocator.new_map();
         let _ = map.insert(1, 2);
         let _ = map.insert(2, 3);
@@ -1393,7 +1286,7 @@ mod test {
         let inner_map_key = 0u8;
         let key_to_value = 77u8;
         let value = 255u8;
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut outer_map = allocator.new_map::<u8, StateMap<u8, u8, _>>();
         let mut inner_map = allocator.new_map::<u8, u8>();
 
@@ -1405,7 +1298,7 @@ mod test {
 
     #[test]
     fn statemap_iterator_unlocks_tree_once_dropped() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut map = allocator.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
@@ -1419,7 +1312,7 @@ mod test {
     #[test]
     fn high_level_stateset() {
         let my_set_key = "my_set";
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
 
         let mut set = allocator.new_set::<u8>();
         assert_eq!(set.insert(0), true);
@@ -1449,7 +1342,7 @@ mod test {
     fn high_level_nested_stateset() {
         let inner_set_key = 0u8;
         let value = 255u8;
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut outer_map = allocator.new_map::<u8, StateSet<u8, _>>();
         let mut inner_set = allocator.new_set::<u8>();
 
@@ -1461,7 +1354,7 @@ mod test {
 
     #[test]
     fn stateset_insert_remove() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut set = allocator.new_set();
         let _ = set.insert(42);
         assert!(set.contains(&42));
@@ -1471,7 +1364,7 @@ mod test {
 
     #[test]
     fn stateset_clear() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut set = allocator.new_set();
         let _ = set.insert(1);
         let _ = set.insert(2);
@@ -1482,7 +1375,7 @@ mod test {
 
     #[test]
     fn stateset_iterator_unlocks_tree_once_dropped() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut set = allocator.new_set();
         set.insert(0u8);
         set.insert(1);
@@ -1495,7 +1388,7 @@ mod test {
 
     #[test]
     fn allocate_and_get_statebox() {
-        let mut allocator = Allocator::open(Rc::new(RefCell::new(ContractStateLLTest::new())));
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
         let boxed_value = String::from("I'm boxed");
         let statebox = allocator.new_box(boxed_value.clone());
         assert_eq!(statebox.get_copy(), boxed_value);

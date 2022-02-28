@@ -1,47 +1,53 @@
-use crate::num::NonZeroU32;
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+use crate::{marker::PhantomData, num::NonZeroU32, HasContractStateLL};
 
 #[derive(Debug)]
 pub struct StateMap<K, V, S> {
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
     pub(crate) prefix:        StateItemPrefix,
-    pub(crate) state_ll:      Rc<RefCell<S>>,
+    pub(crate) state_ll:      S,
 }
 
 #[derive(Debug)]
-pub struct StateMapIter<'a, K, V> {
-    pub(crate) state_iter:    ContractStateIter,
-    pub(crate) state_map:     &'a StateMap<K, V, ContractStateLL>,
-    pub(crate) _marker_key:   PhantomData<K>,
-    pub(crate) _marker_value: PhantomData<V>,
+pub struct StateMapIter<'a, K, V, S: HasContractStateLL> {
+    pub(crate) state_iter:       Option<S::IterType>,
+    pub(crate) state_ll:         S,
+    pub(crate) _lifetime_marker: PhantomData<&'a ()>,
+    pub(crate) _marker_key:      PhantomData<K>,
+    pub(crate) _marker_value:    PhantomData<V>,
 }
 
 #[derive(Debug)]
 pub struct StateSet<T, S> {
     pub(crate) _marker:  PhantomData<T>,
     pub(crate) prefix:   StateItemPrefix,
-    pub(crate) state_ll: Rc<RefCell<S>>,
+    pub(crate) state_ll: S,
 }
 
-#[derive(Debug)]
-pub struct StateSetIter<'a, T> {
-    pub(crate) state_iter: ContractStateIter,
-    pub(crate) state_set:  &'a StateSet<T, ContractStateLL>,
+pub(crate) struct StateSetIterInner<T, S: HasContractStateLL> {
+    pub(crate) state_iter: Option<S::IterType>,
+    pub(crate) state_ll:   S,
     pub(crate) _marker:    PhantomData<T>,
+}
+
+/// An iterator over the values of the set.
+pub struct StateSetIter<'a, T, S: HasContractStateLL> {
+    pub(crate) inner:            StateSetIterInner<T, S>,
+    pub(crate) _marker_lifetime: PhantomData<&'a ()>,
 }
 
 #[derive(Debug)]
 pub struct StateBox<T, S> {
     pub(crate) prefix:   StateItemPrefix,
-    pub(crate) state_ll: Rc<RefCell<S>>,
+    pub(crate) state_ll: S,
     pub(crate) _marker:  PhantomData<T>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ContractStateLL;
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct ContractStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
@@ -57,10 +63,12 @@ pub struct StateEntry {
     pub(crate) current_position: u32,
 }
 
+#[repr(transparent)]
 pub struct VacantEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
 
+#[repr(transparent)]
 pub struct OccupiedEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
@@ -469,7 +477,7 @@ pub struct ExternHost<State> {
 
 #[derive(Default)]
 pub struct Allocator<StateLL> {
-    pub(crate) state_ll: Rc<RefCell<StateLL>>,
+    pub(crate) state_ll: StateLL,
 }
 
 /// Operations backed by host functions for the low-level interface.

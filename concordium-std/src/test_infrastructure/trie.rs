@@ -24,6 +24,25 @@ impl Default for StateTrie {
     fn default() -> Self { Self::new() }
 }
 
+fn to_indexes(key: &[u8]) -> Vec<Index> {
+    let mut indexes = Vec::new();
+    for byte in key {
+        indexes.push(((byte & 0b_11_11_00_00) >> 4) as Index);
+        indexes.push((byte & 0b_00_00_11_11) as Index);
+    }
+    indexes
+}
+
+/// The inverse of `to_indexes`.
+fn from_indexes(indexes: &[Index]) -> Vec<u8> {
+    let mut key = Vec::new();
+    for chunk in indexes.chunks(2) {
+        let n = (chunk[0] << 4 | chunk[1]) as u8;
+        key.push(n);
+    }
+    key
+}
+
 impl StateTrie {
     pub fn new() -> Self {
         Self {
@@ -53,7 +72,7 @@ impl StateTrie {
     }
 
     pub fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
-        let indexes = Self::to_indexes(prefix);
+        let indexes = to_indexes(prefix);
         if self.is_locked(&indexes) {
             return Err(ContractStateError::SubtreeLocked);
         }
@@ -75,25 +94,6 @@ impl StateTrie {
         self.nodes.delete_prefix(&indexes, false)
     }
 
-    fn to_indexes(key: &[u8]) -> Vec<Index> {
-        let mut indexes = Vec::new();
-        for byte in key {
-            indexes.push(((byte & 0b_11_11_00_00) >> 4) as Index);
-            indexes.push((byte & 0b_00_00_11_11) as Index);
-        }
-        indexes
-    }
-
-    /// The inverse of `to_indexes`.
-    fn from_indexes(indexes: &[Index]) -> Vec<u8> {
-        let mut key = Vec::new();
-        for chunk in indexes.chunks(2) {
-            let n = (chunk[0] << 4 | chunk[1]) as u8;
-            key.push(n);
-        }
-        key
-    }
-
     /// Returns true if the subtree corresponding to the given key is
     /// already locked by an existing iterator, false otherwise.
     fn is_locked(&self, prefix: &[usize]) -> bool {
@@ -104,7 +104,7 @@ impl StateTrie {
     }
 
     pub fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, ContractStateError> {
-        let indexes = Self::to_indexes(key);
+        let indexes = to_indexes(key);
         if self.is_locked(&indexes) {
             return Err(ContractStateError::SubtreeLocked);
         }
@@ -114,14 +114,14 @@ impl StateTrie {
     }
 
     pub fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
-        let indexes = Self::to_indexes(key);
+        let indexes = to_indexes(key);
         self.nodes
             .lookup(&indexes)
             .map(|data| self.construct_state_entry_test(indexes, data, key.to_vec()))
     }
 
     pub fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), ContractStateError> {
-        let indexes = Self::to_indexes(&entry.key);
+        let indexes = to_indexes(&entry.key);
         if self.is_locked(&indexes) {
             return Err(ContractStateError::SubtreeLocked);
         }
@@ -134,7 +134,7 @@ impl StateTrie {
     }
 
     pub fn iterator(&self, prefix: &[u8]) -> Result<Iter, ContractStateError> {
-        let index_prefix = StateTrie::to_indexes(prefix);
+        let index_prefix = to_indexes(prefix);
 
         // Try to find the root_node for the prefix.
         let node = self
@@ -208,7 +208,7 @@ impl Iter {
                         let state_entry = trie.construct_state_entry_test(
                             indexes.clone(),
                             Rc::clone(data),
-                            StateTrie::from_indexes(indexes),
+                            from_indexes(indexes),
                         );
                         queue.push_back(state_entry);
                     }
@@ -223,8 +223,8 @@ impl Iter {
         build_queue(trie, &mut queue, &mut root_index, root_of_iter);
 
         Self {
-            queue,
             prefix,
+            queue,
         }
     }
 }
@@ -452,10 +452,10 @@ mod tests {
     fn index_conversion() {
         let expected_key1 = [1, 2, 3, 4, 5, 6, 7];
         let expected_key2 = [92, 255, 23, 5];
-        let index1 = StateTrie::to_indexes(&expected_key1);
-        let index2 = StateTrie::to_indexes(&expected_key2);
-        let actual_key1 = StateTrie::from_indexes(&index1);
-        let actual_key2 = StateTrie::from_indexes(&index2);
+        let index1 = super::to_indexes(&expected_key1);
+        let index2 = super::to_indexes(&expected_key2);
+        let actual_key1 = super::from_indexes(&index1);
+        let actual_key2 = super::from_indexes(&index2);
         assert_eq!(expected_key1, &actual_key1[..]);
         assert_eq!(expected_key2, &actual_key2[..]);
     }
