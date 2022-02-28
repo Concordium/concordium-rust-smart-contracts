@@ -584,8 +584,9 @@ impl HasContractStateLL for ContractStateLL {
     fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> {
         let res = unsafe { prims::state_delete_entry(entry.state_entry_id) };
         match res {
-            u32::MAX => Err(ContractStateError::EntryNotFound),
-            1 => Ok(()),
+            0 => Err(ContractStateError::SubtreeLocked),
+            1 => Err(ContractStateError::EntryNotFound),
+            2 => Ok(()),
             _ => crate::fail!(), // Cannot happen.
         }
     }

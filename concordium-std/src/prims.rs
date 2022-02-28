@@ -70,40 +70,46 @@ extern "C" {
     /// are an entry identifier that may be used in subsequent calls.
     pub(crate) fn state_lookup_entry(key_start: *const u8, key_length: u32) -> u64;
 
-    /// Create an empty entry with the given key. The return value is either u64::MAX if
-    /// creating the entry failed because of an iterator lock on the part of the
-    /// tree, or else the first bit is 0, and the remaining bits are an entry identifier
-    /// that maybe used in subsequent calls.
+    /// Create an empty entry with the given key. The return value is either
+    /// u64::MAX if creating the entry failed because of an iterator lock on
+    /// the part of the tree, or else the first bit is 0, and the remaining
+    /// bits are an entry identifier that maybe used in subsequent calls.
     pub(crate) fn state_create_entry(key_start: *const u8, key_length: u32) -> u64;
 
-    /// Delete the entry. Returns either
-    /// - u32::MAX if the entry did not exist
-    /// - 1 if the entry was deleted as a result of this call.
+    /// Delete the entry. Returns one of
+    /// - 0 if the part of the tree this entry was in is locked
+    /// - 1 if the entry did not exist
+    /// - 2 if the entry was deleted as a result of this call.
     pub(crate) fn state_delete_entry(entry: u64) -> u32;
 
-    /// Delete a prefix in the tree, that is, delete all parts of the tree that have
-    /// the given key as prefix. Returns
+    /// Delete a prefix in the tree, that is, delete all parts of the tree that
+    /// have the given key as prefix. Returns
     /// - 0 if the tree was locked and thus deletion failed.
-    /// - 1 if the tree **was not locked**, but the key points to an empty part of the tree
+    /// - 1 if the tree **was not locked**, but the key points to an empty part
+    ///   of the tree
     /// - 2 if a part of the tree was successfully deleted
     pub(crate) fn state_delete_prefix(key_start: *const u8, key_length: u32) -> u32;
 
-    /// Construct an iterator over a part of the tree. This **locks the part of the
-    /// tree that has the given prefix**. Locking means that no deletions or
-    /// insertions of entries may occur in that subtree.
+    /// Construct an iterator over a part of the tree. This **locks the part of
+    /// the tree that has the given prefix**. Locking means that no
+    /// deletions or insertions of entries may occur in that subtree.
     /// Returns
     /// - all 1 bits if too many iterators already exist with this key
-    /// - all but second bit set to 1 if there is no value in the state with the given key
-    /// - otherwise the first bit is 0, and the remaining bits are the iterator identifier
+    /// - all but second bit set to 1 if there is no value in the state with the
+    ///   given key
+    /// - otherwise the first bit is 0, and the remaining bits are the iterator
+    ///   identifier
     /// that may be used in subsequent calls to advance it, or to get its key.
     pub(crate) fn state_iterate_prefix(prefix_start: *const u8, prefix_length: u32) -> u64;
 
     /// Return the next entry along the iterator, and advance the iterator.
     /// The return value is
-    /// - u64::MAX if the iterator does not exist (it was deleted, or the ID is invalid)
-    /// - all but the second bit set to 1 if no more entries are left, the iterator
-    /// is exhausted. All further calls will yield the same until the iterator is
-    /// deleted.
+    /// - u64::MAX if the iterator does not exist (it was deleted, or the ID is
+    ///   invalid)
+    /// - all but the second bit set to 1 if no more entries are left, the
+    ///   iterator
+    /// is exhausted. All further calls will yield the same until the iterator
+    /// is deleted.
     /// - otherwise the first bit is 0, and the remaining bits encode an entry
     ///   identifier that can be passed to any of the entry methods.
     pub(crate) fn state_iterator_next(iterator: u64) -> u64;
@@ -120,10 +126,17 @@ extern "C" {
     /// - otherwise the length of the key in bytes.
     pub(crate) fn state_iterator_key_size(iterator: u64) -> u32;
 
-    /// Read a section of the key the iterator is currently pointing at. Returns either
+    /// Read a section of the key the iterator is currently pointing at. Returns
+    /// either
     /// - u32::MAX if the iterator has already been deleted
-    /// - the amount of data that was copied. This will never be more than the supplied length.
-    pub(crate) fn state_iterator_key_read(iterator: u64, start: *mut u8, length: u32, offset: u32) -> u32;
+    /// - the amount of data that was copied. This will never be more than the
+    ///   supplied length.
+    pub(crate) fn state_iterator_key_read(
+        iterator: u64,
+        start: *mut u8,
+        length: u32,
+        offset: u32,
+    ) -> u32;
 
     // Operations on the entry.
 
@@ -158,7 +171,8 @@ extern "C" {
 
     /// Resize the entry to the given size. Returns
     /// - u32::MAX if the entry has already been invalidated
-    /// - 0 if the attempt was unsuccessful because new_size exceeds maximum entry size
+    /// - 0 if the attempt was unsuccessful because new_size exceeds maximum
+    ///   entry size
     /// - 1 if the entry was successfully resized.
     pub(crate) fn state_entry_resize(entry: u64, new_size: u32) -> u32;
 
@@ -260,7 +274,7 @@ mod host_dummy_functions {
         _iterator: u64,
         _start: *mut u8,
         _length: u32,
-        _offset: u32
+        _offset: u32,
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
@@ -269,7 +283,7 @@ mod host_dummy_functions {
         _entry: u64,
         _start: *mut u8,
         _length: u32,
-        _offset: u32
+        _offset: u32,
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
@@ -278,7 +292,7 @@ mod host_dummy_functions {
         _entry: u64,
         _start: *const u8,
         _length: u32,
-        _offset: u32
+        _offset: u32,
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
