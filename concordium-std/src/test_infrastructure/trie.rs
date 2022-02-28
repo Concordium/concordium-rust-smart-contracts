@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
 };
 
-const BRANCHING_FACTOR: usize = 4;
+const BRANCHING_FACTOR: usize = 16;
 
 pub(crate) type Index = usize;
 
@@ -78,10 +78,8 @@ impl StateTrie {
     fn to_indexes(key: &[u8]) -> Vec<Index> {
         let mut indexes = Vec::new();
         for byte in key {
-            indexes.push(((byte & 0b_11_00_00_00) >> 6) as Index);
-            indexes.push(((byte & 0b_00_11_00_00) >> 4) as Index);
-            indexes.push(((byte & 0b_00_00_11_00) >> 2) as Index);
-            indexes.push((byte & 0b_00_00_00_11) as Index);
+            indexes.push(((byte & 0b_11_11_00_00) >> 4) as Index);
+            indexes.push((byte & 0b_00_00_11_11) as Index);
         }
         indexes
     }
@@ -89,8 +87,8 @@ impl StateTrie {
     /// The inverse of `to_indexes`.
     fn from_indexes(indexes: &[Index]) -> Vec<u8> {
         let mut key = Vec::new();
-        for chunk in indexes.chunks(4) {
-            let n = (chunk[0] << 6 | chunk[1] << 4 | chunk[2] << 2 | chunk[3]) as u8;
+        for chunk in indexes.chunks(2) {
+            let n = (chunk[0] << 4 | chunk[1]) as u8;
             key.push(n);
         }
         key
@@ -201,7 +199,7 @@ impl Iter {
             indexes: &mut Vec<Index>,
             node: &Node,
         ) {
-            for idx in 0..4 {
+            for idx in 0..BRANCHING_FACTOR {
                 if let Some(child) = &node.children[idx] {
                     // Push current index.
                     indexes.push(idx);
