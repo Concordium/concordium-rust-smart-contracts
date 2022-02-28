@@ -1029,10 +1029,10 @@ pub struct HostTest<State> {
     /// Functions that mock responses to calls.
     mocking_fns:      BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
     /// Transfers the contract has made during its execution.
-    transfers:        Vec<(AccountAddress, Amount)>,
+    transfers:        RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
-    contract_balance: Amount,
+    contract_balance: RefCell<Amount>,
     /// Allocator for the state.
     allocator:        Allocator<ContractStateLLTest>,
     /// State of the instance.
@@ -1057,14 +1057,14 @@ impl<State> HasHost<State> for HostTest<State> {
     ///   - [TransferError::AmountTooLarge]: Contract has insufficient funds.
     ///   - [TransferError::MissingAccount]: Attempted transfer to an account
     ///     set as missing with `make_account_missing`.
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
+    fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         if self.missing_accounts.contains(receiver) {
             return Err(TransferError::MissingAccount);
         }
         if amount.micro_ccd > 0 {
-            if self.contract_balance >= amount {
-                self.contract_balance -= amount;
-                self.transfers.push((*receiver, amount));
+            if *self.contract_balance.borrow() >= amount {
+                *self.contract_balance.borrow_mut() -= amount;
+                self.transfers.borrow_mut().push((*receiver, amount));
                 Ok(())
             } else {
                 Err(TransferError::AmountTooLarge)
@@ -1095,26 +1095,34 @@ impl<State> HasHost<State> for HostTest<State> {
             ),
         };
         // Check if the contract has sufficient balance.
-        if amount.micro_ccd > 0 && self.contract_balance < amount {
+        if amount.micro_ccd > 0 && *self.contract_balance.borrow() < amount {
             return Err(CallContractError::AmountTooLarge);
         }
 
         // Invoke the handler.
-        let res = (handler.f)(parameter, amount, &mut self.contract_balance, &mut self.state);
+        let res = (handler.f)(
+            parameter,
+            amount,
+            &mut self.contract_balance.borrow_mut(),
+            &mut self.state,
+        );
 
         // Update the contract balance if the invocation succeeded.
         if res.is_ok() && amount.micro_ccd > 0 {
-            self.contract_balance -= amount;
+            *self.contract_balance.borrow_mut() -= amount;
         }
         res
     }
 
-    /// Get the contract state.
-    fn state(&mut self) -> &mut State { &mut self.state }
+    /// Get an immutable reference to the contract state.
+    fn state(&self) -> &State { &self.state }
+
+    /// Get a mutable reference to the contract state.
+    fn state_mut(&mut self) -> &mut State { &mut self.state }
 
     /// Get the contract balance.
     /// This can be set with `set_balance` and defaults to 0.
-    fn self_balance(&self) -> Amount { self.contract_balance }
+    fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
     fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType> { &mut self.allocator }
 }
@@ -1133,8 +1141,8 @@ impl<State> HostTest<State> {
     pub fn new_with_allocator(state: State, allocator: Allocator<ContractStateLLTest>) -> Self {
         Self {
             mocking_fns: BTreeMap::new(),
-            transfers: Vec::new(),
-            contract_balance: Amount::zero(),
+            transfers: RefCell::new(Vec::new()),
+            contract_balance: RefCell::new(Amount::zero()),
             allocator,
             state,
             missing_accounts: BTreeSet::new(),
@@ -1172,19 +1180,22 @@ impl<State> HostTest<State> {
     ///                  Amount::from_ccd(5)
     ///                  );
     /// ```
-    pub fn set_balance(&mut self, amount: Amount) { self.contract_balance = amount; }
+    pub fn set_balance(&mut self, amount: Amount) { *self.contract_balance.borrow_mut() = amount; }
 
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
-        self.transfers.contains(&(*receiver, amount))
+        self.transfers.borrow().contains(&(*receiver, amount))
     }
 
     /// Get a list of all transfers that has occurred.
-    pub fn get_transfers(&self) -> &[(AccountAddress, Amount)] { &self.transfers }
+    pub fn get_transfers(&self) -> Vec<(AccountAddress, Amount)> {
+        self.transfers.borrow().to_vec()
+    }
 
     /// Get a list of all transfers to a specific account.
     pub fn get_transfers_to(&self, account: AccountAddress) -> Vec<Amount> {
         self.transfers
+            .borrow()
             .iter()
             .filter_map(|(acc, amount)| {
                 if *acc == account {

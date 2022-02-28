@@ -68,6 +68,9 @@ struct ReceiveAttributes {
     /// Name of the method.
     pub(crate) name:     syn::LitStr,
     pub(crate) optional: OptionalArguments,
+    /// If enabled, the function has access to a mutable state, which will also
+    /// be stored after the function returns.
+    pub(crate) mutable:  bool,
 }
 
 #[derive(Default)]
@@ -261,6 +264,7 @@ const RECEIVE_ATTRIBUTE_NAME: &str = "name";
 const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
 const RECEIVE_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const RECEIVE_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
+const RECEIVE_ATTRIBUTE_MUTABLE: &str = "mutable";
 
 fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
@@ -275,6 +279,16 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
+    let mutable = attributes.extract_flag(RECEIVE_ATTRIBUTE_MUTABLE);
+
+    if mutable && low_level {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            "The attributes 'mutable' and 'low_level' are incompatible and should not be used on \
+             the same method.",
+        ));
+    }
+
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
@@ -290,6 +304,8 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 parameter,
                 return_value,
             },
+            mutable, /* TODO: This is also optional, but does not belong in OptionalArguments, as
+                      * it doesn't apply to init methods. */
         }),
         (Some(_), None) => Err(syn::Error::new(
             Span::call_site(),
@@ -672,7 +688,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
     // strings are displayed as the expected arguments.
-    let mut required_args = vec!["ctx: &impl HasReceiveContext", "host: &mut impl HasHost"];
+    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+    if receive_attributes.mutable {
+        required_args.push("host: &mut impl HasHost");
+    } else {
+        required_args.push("host: &impl HasHost");
+    }
 
     let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
         &receive_attributes.optional,
@@ -713,6 +734,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             }
         }
     } else {
+        let (host_ref, store_state_if_mutable) = if receive_attributes.mutable {
+            (quote!(&mut host), quote!(host.state().store(&[], Rc::clone(&state_ll));))
+        } else {
+            (quote!(&host), quote!())
+        };
+
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
@@ -723,11 +750,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 let mut allocator = Allocator::open(Rc::clone(&state_ll));
                 if let Ok(state) = Persistable::load(&[], Rc::clone(&state_ll)) {
                     let mut host = ExternHost { state, allocator };
-                    match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
+                    match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
                         Ok(rv) => {
                             if rv.serial(&mut ReturnValue::open()).is_err() {
                                 trap() // Could not serialize return value.
                             }
+                            #store_state_if_mutable
                             0
                         }
                         Err(reject) => {

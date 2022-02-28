@@ -195,7 +195,7 @@ pub trait Persistable<S>
 where
     Self: Sized, {
     // TODO: Should this return something?
-    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>);
+    fn store(&self, prefix: &[u8], state_ll: Rc<RefCell<S>>);
 
     // TODO: Option<ParseResult<_>> ?
     fn load(prefix: &[u8], state_ll: Rc<RefCell<S>>) -> ParseResult<Self>;
@@ -216,7 +216,7 @@ pub trait HasHost<State> {
 
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult;
+    fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult;
 
     /// Invoke a given method of a contract with the amount and parameter
     /// provided. If invocation succeeds then the return value is a pair of
@@ -231,8 +231,11 @@ pub trait HasHost<State> {
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType>;
 
-    /// Get the contract state.
-    fn state(&mut self) -> &mut State;
+    /// Get an immutable refernce to the contract state.
+    fn state(&self) -> &State;
+
+    /// Get a mutable reference to the contract state.
+    fn state_mut(&mut self) -> &mut State;
 
     /// Get the allocator for the contract state.
     fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType>;

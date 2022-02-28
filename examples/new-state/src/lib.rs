@@ -27,7 +27,7 @@ impl<S> Persistable<S> for AnotherStruct<S>
 where
     S: HasContractStateLL + std::fmt::Debug,
 {
-    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
+    fn store(&self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
         let mut owned_prefix = prefix.to_vec();
         owned_prefix.push(0);
         self.a_set.store(&owned_prefix, state_ll)
@@ -46,7 +46,7 @@ impl<S> Persistable<S> for State<S>
 where
     S: HasContractStateLL + std::fmt::Debug,
 {
-    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
+    fn store(&self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
         let mut owned_prefix = prefix.to_vec();
 
         owned_prefix.push(0);
@@ -115,7 +115,7 @@ struct MintParams {
     token_count: TokenCount,
 }
 
-#[receive(contract = "storable-contract", name = "mint", parameter = "MintParams")]
+#[receive(contract = "storable-contract", name = "mint", parameter = "MintParams", mutable)]
 fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
@@ -123,7 +123,7 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
     let params: MintParams = ctx.parameter_cursor().get()?;
 
     // Just overwrite existing.
-    host.state()
+    host.state_mut()
         .token_state
         .entry(params.owner)
         .and_modify(|owner_map| {
@@ -140,15 +140,23 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
             owner_map
         });
 
-    host.state().another_struct.a_set.insert(42);
+    host.state_mut().another_struct.a_set.insert(42);
 
     // This won't be persisted. The change only occurs in memory.
-    host.state().total_tokens += params.token_count as u64;
+    host.state_mut().total_tokens += params.token_count as u64;
 
     // But this should be.
-    host.state().boxed_total_tokens.update(|old_count| *old_count += params.token_count as u64);
+    host.state_mut().boxed_total_tokens.update(|old_count| *old_count += params.token_count as u64);
 
     Ok(())
+}
+
+#[receive(contract = "storable-contract", name = "readonly")]
+fn receive_readonly<S: HasContractStateLL + std::fmt::Debug>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, ContractStateLLType = S>,
+) -> ReceiveResult<u64> {
+    Ok(host.state().boxed_total_tokens.get_copy())
 }
 
 #[concordium_cfg_test]
@@ -208,8 +216,7 @@ mod tests {
             Some(expected_token_count)
         );
 
-        let mut a_set_iter =
-            state_reloaded.another_struct.a_set.iter().expect_report("Failed to get iterator");
+        let mut a_set_iter = state_reloaded.another_struct.a_set.iter();
         assert_eq!(a_set_iter.next(), Some(42));
         assert_eq!(a_set_iter.next(), None);
 

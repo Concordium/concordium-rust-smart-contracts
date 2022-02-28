@@ -894,13 +894,13 @@ where
     T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
-    fn store(self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
+    fn store(&self, prefix: &[u8], state_ll: Rc<RefCell<S>>) {
         // TODO: Figure out if this is safe.
         match state_ll.borrow_mut().entry(prefix).unwrap_abort() {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&to_bytes(&self));
+                let _ = vac.insert(&to_bytes(self));
             }
-            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&self)),
+            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(self)),
         }
     }
 
@@ -1429,7 +1429,7 @@ where
     type ContractStateLLType = ContractStateLL;
     type ReturnValueType = CallResponse;
 
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
+    fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
     }
 
@@ -1456,7 +1456,9 @@ where
         Ok((state_modified, res))
     }
 
-    fn state(&mut self) -> &mut State { &mut self.state }
+    fn state(&self) -> &State { &self.state }
+
+    fn state_mut(&mut self) -> &mut State { &mut self.state }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
@@ -1470,7 +1472,7 @@ impl HasHost<ContractStateLL> for ExternLowLevelHost {
     type ContractStateLLType = ContractStateLL;
     type ReturnValueType = CallResponse;
 
-    fn invoke_transfer(&mut self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
+    fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
     }
 
@@ -1491,7 +1493,10 @@ impl HasHost<ContractStateLL> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn state(&mut self) -> &mut ContractStateLL { &mut self.state }
+    fn state(&self) -> &ContractStateLL { &self.state }
+
+    #[inline(always)]
+    fn state_mut(&mut self) -> &mut ContractStateLL { &mut self.state }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
