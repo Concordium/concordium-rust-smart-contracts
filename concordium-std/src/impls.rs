@@ -715,7 +715,8 @@ where
     // Note: This does not use free() because free consumes self.
     pub fn clear(&mut self) {
         // Free all values pointed at by the statemap. This is necessary if `V` is a
-        // StateBox/StateMap/StateSet.
+        // StateBox/StateMap.
+        // TODO: Ideally, only free when `V` _is_ a statetype.
         for (_, value) in self.iter() {
             value.free()
         }
@@ -728,9 +729,9 @@ where
     /// Remove a key from the map, returning the value at the key if the key was
     /// previously in the map.
     ///
-    /// *Caution*: If `V` is a [StateBox] or [StateMap], then it is important to
-    /// call `Freeable::free` on the value returned when you're finished with
-    /// it. Otherwise, it will remain the contract state.
+    /// *Caution*: If `V` is a [StateBox], [StateMap], then it is
+    /// important to call `Freeable::free` on the value returned when you're
+    /// finished with it. Otherwise, it will remain the contract state.
     pub fn remove_and_get(&mut self, key: &K) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
@@ -821,17 +822,9 @@ impl<K, V, S> Serial for StateMap<K, V, S> {
 
 impl<T, S> StateSet<T, S>
 where
-    T: Serial + DeserialStateCtx<S>,
+    T: Serialize,
     S: HasContractStateLL,
 {
-    pub(crate) fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
-        Self {
-            _marker: PhantomData,
-            prefix: to_bytes(&prefix),
-            state_ll,
-        }
-    }
-
     /// Adds a value to the set.
     /// If the set did not have this value, `true` is returned. Otherwise,
     /// `false`.
@@ -857,8 +850,16 @@ where
     }
 
     /// Clears the set, removing all values.
+    /// This also includes values pointed at, if `V`, for example, is a
+    /// [StateBox].
+    // Note: This does not use free() because free consumes self.
     pub fn clear(&mut self) {
-        // Unwrapping is safe, because iter() keeps a reference to the statemap.
+        // Free all values in the stateset. This is necessary if `T` is a
+        // StateBox/StateMap.
+        for value in self.iter() {
+            value.free()
+        }
+        // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
     }
 
@@ -866,17 +867,15 @@ where
     /// the set.
     pub fn remove(&mut self, value: &T) -> bool {
         let key_bytes = self.key_with_set_prefix(value);
-        // Unwrapping is safe, because iter() keeps a reference to the statemap.
-        let entry_opt = match self.state_ll.entry(&key_bytes).unwrap_abort() {
-            EntryRaw::Vacant(_) => None,
-            EntryRaw::Occupied(occ) => Some(occ.get()),
-        };
-        if let Some(entry) = entry_opt {
-            // Unwrapping is safe, because iter() keeps a reference to the statemap.
-            self.state_ll.delete_entry(entry).unwrap_abort();
-            true
-        } else {
-            false
+
+        // Unwrapping is safe, because iter() keeps a reference to the stateset.
+        match self.state_ll.entry(&key_bytes).unwrap_abort() {
+            EntryRaw::Vacant(_) => false,
+            EntryRaw::Occupied(occ) => {
+                // Unwrapping is safe, because iter() keeps a reference to the stateset.
+                self.state_ll.delete_entry(occ.get()).unwrap_abort();
+                true
+            }
         }
     }
 
@@ -887,10 +886,15 @@ where
     }
 }
 
-impl<T, S: HasContractStateLL> StateSet<T, S>
-where
-    T: Serial + DeserialStateCtx<S>,
-{
+impl<T, S: HasContractStateLL> StateSet<T, S> {
+    pub(crate) fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
+        Self {
+            _marker: PhantomData,
+            prefix: to_bytes(&prefix),
+            state_ll,
+        }
+    }
+
     pub fn iter(&self) -> StateSetIter<T, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
         StateSetIter {
@@ -985,7 +989,7 @@ impl<'a, T, S: HasContractStateLL> Drop for StateSetIterInner<T, S> {
 
 impl<'a, T, S: HasContractStateLL> Iterator for StateSetIter<'a, T, S>
 where
-    T: Serial + DeserialStateCtx<S>,
+    T: DeserialStateCtx<S>,
 {
     type Item = T;
 
@@ -993,7 +997,7 @@ where
     fn next(&mut self) -> Option<Self::Item> { self.inner.next() }
 }
 
-impl<S: HasContractStateLL, T: Serial + DeserialStateCtx<S>> StateSetIterInner<T, S> {
+impl<S: HasContractStateLL, T: DeserialStateCtx<S>> StateSetIterInner<T, S> {
     fn next(&mut self) -> Option<T> {
         let entry = self.state_iter.as_mut()?.next()?;
         let key = entry.get_key();
@@ -1929,6 +1933,9 @@ where
     S: HasContractStateLL,
 {
     fn free(mut self) {
+        // Statesets cannot contain state types (e.g. StateBox), so there is nothing to
+        // free, apart from the set itself.
+
         // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
     }
@@ -1942,7 +1949,7 @@ where
 {
     fn free(mut self) {
         // Free all values pointed at by the statemap. This is necessary if `V` is a
-        // StateBox/StateMap/StateSet.
+        // StateBox/StateMap.
         for (_, value) in self.iter() {
             value.free()
         }
