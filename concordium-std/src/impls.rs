@@ -712,7 +712,7 @@ where
     /// Clears the map, removing all key-value pairs.
     /// This also includes values pointed at, if `V`, for example, is a
     /// [StateBox].
-    // TODO: This does not use free() because free consumes self.
+    // Note: This does not use free() because free consumes self.
     pub fn clear(&mut self) {
         // Free all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap/StateSet.
@@ -720,27 +720,35 @@ where
             value.free()
         }
 
-        // Then delete the mapitself.
+        // Then delete the map itself.
         // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort();
     }
 
     /// Remove a key from the map, returning the value at the key if the key was
-    /// previously in the map. Returns Some(Err(..)) if the existing value
-    /// could not be deserialized as `V`.
-    pub fn remove(&mut self, key: &K) -> Option<ParseResult<V>> {
+    /// previously in the map.
+    ///
+    /// *Caution*: If `V` is a [StateBox] or [StateMap], then it is important to
+    /// call `Freeable::free` on the value returned when you're finished with
+    /// it. Otherwise, it will remain the contract state.
+    pub fn remove_and_get(&mut self, key: &K) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
         let entry_raw = self.state_ll.entry(&key_bytes).unwrap_abort();
         match entry_raw {
             EntryRaw::Vacant(_) => None,
             EntryRaw::Occupied(mut occ) => {
-                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut());
+                // Unwrapping safe in high-level API.
+                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).unwrap_abort();
                 let _existed = self.state_ll.delete_entry(occ.state_entry);
                 Some(old_value)
             }
         }
     }
+
+    /// Remove a key from the map.
+    /// This also frees the value.
+    pub fn remove(&mut self, key: &K) { self.remove_and_get(key).map(|v| v.free()); }
 
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
