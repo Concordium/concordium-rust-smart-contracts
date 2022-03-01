@@ -640,7 +640,9 @@ impl HasContractStateLL for ContractStateLLTest {
         self.trie.borrow().iterator(prefix)
     }
 
-    fn delete_iterator(&mut self, iter: Self::IterType) { self.trie.borrow_mut().delete_iterator(iter); }
+    fn delete_iterator(&mut self, iter: Self::IterType) {
+        self.trie.borrow_mut().delete_iterator(iter);
+    }
 }
 
 pub type StateMapIterTest<'a, K, V> = StateMapIter<'a, K, V, ContractStateLLTest>;
@@ -1304,7 +1306,11 @@ mod test {
         map.insert(1u8, 2u8);
         {
             let _iter = map.iter();
-            // map.insert(2u8, 3u8); // Gives compile error (as it should).
+            // Uncommenting these two lines (and making iter mutable) should
+            // give a compile error:
+            //
+            // map.insert(2u8, 3u8);
+            // let n = iter.next();
         } // iter is dropped here, unlocking the subtree.
         map.insert(2u8, 3u8);
     }
@@ -1381,7 +1387,11 @@ mod test {
         set.insert(1);
         {
             let _iter = set.iter();
-            // set.insert(2); // Gives compile error (as it should).
+            // Uncommenting these two lines (and making iter mutable) should
+            // give a compile error:
+            //
+            // set.insert(2);
+            // let n = iter.next();
         } // iter is dropped here, unlocking the subtree.
         set.insert(2);
     }
