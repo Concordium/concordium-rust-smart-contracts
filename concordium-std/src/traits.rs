@@ -238,6 +238,15 @@ pub trait HasHost<State> {
     fn self_balance(&self) -> Amount;
 }
 
+/// A type that can be freed in the state.
+/// For simple types, such as `u8` and `String`, the `free` methods is a no-op.
+/// But for [crate::StateBox], [crate::StateMap], [crate::StateSet], `free`
+/// makes sure to the delete _all_ the necessary data.
+pub trait Freeable {
+    /// Delete all items that this type owns in the state.
+    fn free(self);
+}
+
 /// Objects which can serve as loggers.
 ///
 /// Logging functionality can be used by smart contracts to record events that

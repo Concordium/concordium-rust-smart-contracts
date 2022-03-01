@@ -1119,7 +1119,7 @@ impl<State> HostTest<State> {
 mod test {
     use super::ContractStateLLTest;
     use crate::{
-        test_infrastructure::StateEntryTest, Allocator, EntryRaw, HasContractStateEntry,
+        test_infrastructure::StateEntryTest, Allocator, EntryRaw, Freeable, HasContractStateEntry,
         HasContractStateLL, StateMap, StateSet, UnwrapAbort,
     };
     use concordium_contracts_common::{
@@ -1473,5 +1473,53 @@ mod test {
             state.delete_entry(entry2).is_ok(),
             "Failed to create a new entry under a different subtree"
         );
+    }
+
+    #[test]
+    fn freeing_nested_stateboxes_works() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let inner_box = allocator.new_box(99u8);
+        let middle_box = allocator.new_box(inner_box);
+        let outer_box = allocator.new_box(middle_box);
+        outer_box.free();
+        let iter = allocator.state_ll.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the allocator's next_item_prefix node.
+        assert!(iter.skip(1).next().is_none());
+    }
+
+    #[test]
+    fn clearing_statemap_with_stateboxes_works() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let box1 = allocator.new_box(1u8);
+        let box2 = allocator.new_box(2u8);
+        let box3 = allocator.new_box(3u8);
+        let mut map = allocator.new_map();
+        map.insert(1u8, box1);
+        map.insert(2u8, box2);
+        map.insert(3u8, box3);
+        map.clear();
+        let iter = allocator.state_ll.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the allocator's next_item_prefix node.
+        assert!(iter.skip(1).next().is_none());
+    }
+
+    #[test]
+    fn clearing_nested_statemaps_works() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut inner_map_1 = allocator.new_map();
+        inner_map_1.insert(1u8, 2u8);
+        inner_map_1.insert(2u8, 3u8);
+        inner_map_1.insert(3u8, 4u8);
+        let mut inner_map_2 = allocator.new_map();
+        inner_map_2.insert(11u8, 12u8);
+        inner_map_2.insert(12u8, 13u8);
+        inner_map_2.insert(13u8, 14u8);
+        let mut outer_map = allocator.new_map();
+        outer_map.insert(0u8, inner_map_1);
+        outer_map.insert(1u8, inner_map_2);
+        outer_map.clear();
+        let iter = allocator.state_ll.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the allocator's next_item_prefix node.
+        assert!(iter.skip(1).next().is_none());
     }
 }

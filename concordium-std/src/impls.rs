@@ -661,17 +661,8 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasContractStateLL,
     K: Serialize,
-    V: Serial + DeserialStateCtx<S>,
+    V: Serial + DeserialStateCtx<S> + Freeable,
 {
-    pub fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
-        Self {
-            _marker_key: PhantomData,
-            _marker_value: PhantomData,
-            prefix: to_bytes(&prefix),
-            state_ll,
-        }
-    }
-
     /// Try to get the value with the given key.
     pub fn get(&self, key: &K) -> Option<V> {
         let k = self.key_with_map_prefix(&key);
@@ -719,9 +710,19 @@ where
     pub fn is_empty(&self) -> bool { self.state_ll.lookup(&self.prefix).is_none() }
 
     /// Clears the map, removing all key-value pairs.
+    /// This also includes values pointed at, if `V`, for example, is a
+    /// [StateBox].
+    // TODO: This does not use free() because free consumes self.
     pub fn clear(&mut self) {
-        // Unwrapping is safe because iter() holds a reference to the stateset.
-        self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
+        // Free all values pointed at by the statemap. This is necessary if `V` is a
+        // StateBox/StateMap/StateSet.
+        for (_, value) in self.iter() {
+            value.free()
+        }
+
+        // Then delete the mapitself.
+        // Unwrapping is safe when only using the high-level API.
+        self.state_ll.delete_prefix(&self.prefix).unwrap_abort();
     }
 
     /// Remove a key from the map, returning the value at the key if the key was
@@ -748,11 +749,28 @@ where
     }
 }
 
-impl<K, V, S: HasContractStateLL> StateMap<K, V, S>
+impl<'a, K, V, S: HasContractStateLL> Drop for StateMapIter<'a, K, V, S> {
+    fn drop(&mut self) {
+        // Delete the iterator to unlock the subtree.
+        if let Some(valid) = self.state_iter.take() {
+            self.state_ll.delete_iterator(valid);
+        }
+    }
+}
+
+impl<K, V, S> StateMap<K, V, S>
 where
-    K: Serialize,
-    V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
 {
+    pub fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
+        Self {
+            _marker_key: PhantomData,
+            _marker_value: PhantomData,
+            prefix: to_bytes(&prefix),
+            state_ll,
+        }
+    }
+
     /// Gets an iterator over the entries of the map, sorted by key.
     pub fn iter(&self) -> StateMapIter<K, V, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
@@ -766,19 +784,10 @@ where
     }
 }
 
-impl<'a, K, V, S: HasContractStateLL> Drop for StateMapIter<'a, K, V, S> {
-    fn drop(&mut self) {
-        // Delete the iterator to unlock the subtree.
-        if let Some(valid) = self.state_iter.take() {
-            self.state_ll.delete_iterator(valid);
-        }
-    }
-}
-
 impl<'a, K, V, S: HasContractStateLL> Iterator for StateMapIter<'a, K, V, S>
 where
-    K: Serialize,
-    V: Serial + DeserialStateCtx<S>,
+    K: Deserial,
+    V: DeserialStateCtx<S>,
 {
     type Item = (K, V);
 
@@ -1319,9 +1328,7 @@ where
         }
     }
 
-    pub fn new_map<K: Serialize, V: Serial + DeserialStateCtx<StateLL>>(
-        &mut self,
-    ) -> StateMap<K, V, StateLL> {
+    pub fn new_map<K: Serialize, V>(&mut self) -> StateMap<K, V, StateLL> {
         let prefix = self.get_and_update_item_prefix();
         StateMap::open(self.state_ll.clone(), prefix)
     }
@@ -1856,8 +1863,6 @@ impl<D: Deserial, S: HasContractStateLL> DeserialStateCtx<S> for D {
 impl<K, V, S> DeserialStateCtx<S> for StateMap<K, V, S>
 where
     S: HasContractStateLL,
-    K: Serialize,
-    V: Serial + DeserialStateCtx<S>,
 {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         source.read_u64().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
@@ -1887,5 +1892,55 @@ where
             prefix:   prefix.to_vec(),
             _marker:  PhantomData,
         })
+    }
+}
+
+impl<T: Serialize> Freeable for T {
+    fn free(self) {} // Types that are Serialize have nothing to free!
+}
+
+impl<T, S> Freeable for StateBox<T, S>
+where
+    T: Serial + DeserialStateCtx<S> + Freeable,
+    S: HasContractStateLL,
+{
+    fn free(mut self) {
+        // Get and delete the inner value's additional data.
+        let value = self.get_copy();
+        value.free();
+
+        // Delete the box node itself.
+        // Unwrapping is safe when only using the high-level API.
+        let entry = self.state_ll.lookup(&self.prefix).unwrap_abort();
+        self.state_ll.delete_entry(entry).unwrap_abort();
+    }
+}
+
+impl<T, S> Freeable for StateSet<T, S>
+where
+    S: HasContractStateLL,
+{
+    fn free(mut self) {
+        // Unwrapping is safe when only using the high-level API.
+        self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
+    }
+}
+
+impl<K, V, S> Freeable for StateMap<K, V, S>
+where
+    S: HasContractStateLL,
+    K: Deserial,
+    V: DeserialStateCtx<S> + Freeable,
+{
+    fn free(mut self) {
+        // Free all values pointed at by the statemap. This is necessary if `V` is a
+        // StateBox/StateMap/StateSet.
+        for (_, value) in self.iter() {
+            value.free()
+        }
+
+        // Then delete the mapitself.
+        // Unwrapping is safe when only using the high-level API.
+        self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
     }
 }
