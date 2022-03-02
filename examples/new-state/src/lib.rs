@@ -120,7 +120,7 @@ fn receive_readonly<S: HasContractStateLL + std::fmt::Debug>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, ContractStateLLType = S>,
 ) -> ReceiveResult<u64> {
-    Ok(host.state().boxed_total_tokens.get_copy())
+    Ok(*host.state().boxed_total_tokens.get())
 }
 
 #[concordium_cfg_test]
@@ -197,6 +197,6 @@ mod tests {
         assert_eq!(a_set_iter.next(), None);
 
         assert_eq!(state_reloaded.total_tokens, 100);
-        assert_eq!(state_reloaded.boxed_total_tokens.get_copy(), 100);
+        assert_eq!(*state_reloaded.boxed_total_tokens.get(), 100);
     }
 }

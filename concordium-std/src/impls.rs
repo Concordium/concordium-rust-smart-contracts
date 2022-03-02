@@ -1,4 +1,5 @@
 use crate::{
+    cell::{Ref, RefCell, RefMut},
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
     fmt,
@@ -923,44 +924,55 @@ where
         value.serial(&mut state_entry).unwrap_abort();
 
         Self {
-            _marker: PhantomData,
             prefix: prefix_bytes,
             state_ll,
+            lazy_value: RefCell::new(Some(value)),
         }
     }
 
-    /// Get a copy of the value.
-    // StateBox does not hold the actual value, so it we cannot give out a
-    // reference. to it. This design choice allows users to create arbitrary
-    // nested data structures, such as linked lists. Similar to what is possible
-    // with `Box`.
-    pub fn get_copy(&self) -> T { self.read_value() }
+    /// Get a reference to the value.
+    // TODO: Figure out if we can implement Deref that uses this method.
+    pub fn get(&self) -> Ref<'_, T> {
+        self.ensure_cached();
+        // Unwrapping is safe because the value is cached.
+        Ref::map(self.lazy_value.borrow(), |t| t.as_ref().unwrap_abort())
+    }
 
     /// Set the value. Overwrites the existing one.
-    pub fn set(&mut self, new_val: T) { self.write_value(new_val); }
+    pub fn set(&mut self, new_val: T) {
+        self.store_value(&new_val);
+        *self.lazy_value.borrow_mut() = Some(new_val);
+    }
 
     /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut T), {
-        // Unwrapping is safe when using only the high-level API.
-        let mut value = self.read_value();
+        self.ensure_cached();
+        let mut value = RefMut::map(self.lazy_value.borrow_mut(), |t| t.as_mut().unwrap_abort());
 
         // Mutate the value (perhaps only in memory, depends on the type).
         f(&mut value);
 
-        self.write_value(value)
+        // Store the value in the state.
+        self.store_value(&value)
     }
 
-    fn write_value(&self, value: T) {
+    /// Stores the value in the state.
+    fn store_value(&self, value: &T) {
         // Both unwraps are safe when using only the high-level API.
         let mut state_entry = self.state_ll.lookup(&self.prefix).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort()
     }
 
-    fn read_value(&self) -> T {
-        let mut state_entry = self.state_ll.lookup(&self.prefix).unwrap_abort();
-        T::deserial_state_ctx(&self.state_ll, &mut state_entry).unwrap_abort()
+    /// If the value isn't cached, it loads the value from the state and sets
+    /// the lazy_value field.
+    fn ensure_cached(&self) {
+        if self.lazy_value.borrow_mut().is_none() {
+            let mut state_entry = self.state_ll.lookup(&self.prefix).unwrap_abort();
+            let value = T::deserial_state_ctx(&self.state_ll, &mut state_entry).unwrap_abort();
+            *self.lazy_value.borrow_mut() = Some(value);
+        }
     }
 }
 
@@ -1900,9 +1912,9 @@ where
         let mut prefix = [0u8; 8];
         source.read_exact(&mut prefix)?;
         Ok(StateBox {
-            state_ll: state.clone(),
-            prefix:   prefix.to_vec(),
-            _marker:  PhantomData,
+            state_ll:   state.clone(),
+            prefix:     prefix.to_vec(),
+            lazy_value: RefCell::new(None),
         })
     }
 }
@@ -1917,14 +1929,17 @@ where
     S: HasContractStateLL,
 {
     fn free(mut self) {
-        // Get and delete the inner value's additional data.
-        let value = self.get_copy();
-        value.free();
+        // Make sure the actual value is cached, so we can free it.
+        self.ensure_cached();
 
         // Delete the box node itself.
         // Unwrapping is safe when only using the high-level API.
         let entry = self.state_ll.lookup(&self.prefix).unwrap_abort();
         self.state_ll.delete_entry(entry).unwrap_abort();
+
+        // Then delete the lazy value.
+        // Unwrapping the option is safe, because we ensured the value is cached.
+        self.lazy_value.into_inner().unwrap_abort().free();
     }
 }
 

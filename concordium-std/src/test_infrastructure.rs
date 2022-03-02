@@ -1401,7 +1401,7 @@ mod test {
         let mut allocator = Allocator::open(ContractStateLLTest::new());
         let boxed_value = String::from("I'm boxed");
         let statebox = allocator.new_box(boxed_value.clone());
-        assert_eq!(statebox.get_copy(), boxed_value);
+        assert_eq!(*statebox.get(), boxed_value);
     }
 
     #[test]

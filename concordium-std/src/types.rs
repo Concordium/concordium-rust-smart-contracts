@@ -1,4 +1,4 @@
-use crate::{marker::PhantomData, num::NonZeroU32, HasContractStateLL};
+use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasContractStateLL};
 
 #[derive(Debug)]
 pub struct StateMap<K, V, S> {
@@ -38,9 +38,9 @@ pub struct StateSetIter<'a, T, S: HasContractStateLL> {
 
 #[derive(Debug)]
 pub struct StateBox<T, S> {
-    pub(crate) prefix:   StateItemPrefix,
-    pub(crate) state_ll: S,
-    pub(crate) _marker:  PhantomData<T>,
+    pub(crate) prefix:     StateItemPrefix,
+    pub(crate) state_ll:   S,
+    pub(crate) lazy_value: RefCell<Option<T>>,
 }
 
 #[derive(Debug, Clone, Default)]
