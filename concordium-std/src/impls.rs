@@ -782,7 +782,7 @@ where
         }
     }
 
-    fn iter(&self) -> StateMapIter<'_, K, V, S> {
+    pub fn iter(&self) -> StateMapIter<'_, K, V, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
         StateMapIter {
             state_iter:       Some(state_iter),

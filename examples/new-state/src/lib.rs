@@ -193,8 +193,8 @@ mod tests {
         );
 
         let mut a_set_iter = state_reloaded.another_struct.a_set.iter();
-        assert_eq!(a_set_iter.next(), Some(42));
-        assert_eq!(a_set_iter.next(), None);
+        assert_eq!(*a_set_iter.next().expect("Should exist"), 42);
+        assert!(a_set_iter.next().is_none());
 
         assert_eq!(state_reloaded.total_tokens, 100);
         assert_eq!(*state_reloaded.boxed_total_tokens.get(), 100);

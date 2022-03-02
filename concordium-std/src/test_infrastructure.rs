@@ -1119,13 +1119,10 @@ impl<State> HostTest<State> {
 mod test {
     use super::ContractStateLLTest;
     use crate::{
-        test_infrastructure::StateEntryTest, Allocator, EntryRaw, Freeable, HasContractStateEntry,
-        HasContractStateLL, StateMap, StateSet, UnwrapAbort,
+        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Allocator, EntryRaw, Freeable,
+        HasContractStateEntry, HasContractStateLL, StateMap, StateSet,
     };
-    use concordium_contracts_common::{
-        to_bytes, Deserial, ParseError, Read, Seek, SeekFrom, Write,
-    };
-    use std::{cell::RefCell, rc::Rc};
+    use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     /// Get an entry and unwrap the result.
     fn get_entry(state: &mut ContractStateLLTest, key: &[u8]) -> EntryRaw<StateEntryTest> {
@@ -1239,26 +1236,33 @@ mod test {
     }
 
     #[test]
-    fn high_level_statemap() -> Result<(), ParseError> {
+    fn high_level_statemap() {
         let my_map_key = "my_map";
         let mut allocator = Allocator::open(ContractStateLLTest::new());
 
         let map_to_insert = allocator.new_map::<String, String>();
         allocator.insert(my_map_key, map_to_insert).expect("Insert failed");
 
-        let mut my_map: StateMap<String, String, _> = allocator.get(my_map_key).unwrap_abort()?;
+        let mut my_map: StateMap<String, String, _> = allocator
+            .get(my_map_key)
+            .expect("Could not get statemap")
+            .expect("Deserializing statemap failed");
         my_map.insert("abc".to_string(), "hello, world".to_string());
-        my_map.insert("def".to_string(), "hallo, weld".to_string());
+        my_map.insert("def".to_string(), "hallo, Weld".to_string());
         my_map.insert("ghi".to_string(), "hej, verden".to_string());
-        assert_eq!(my_map.get(&"abc".to_string()), Some("hello, world".to_string()));
+        assert_eq!(*my_map.get(&"abc".to_string()).unwrap(), "hello, world".to_string());
 
         let mut iter = my_map.iter();
-        assert_eq!(iter.next(), Some(("abc".to_string(), "hello, world".to_string())));
-        assert_eq!(iter.next(), Some(("def".to_string(), "hallo, weld".to_string())));
-        assert_eq!(iter.next(), Some(("ghi".to_string(), "hej, verden".to_string())));
-        assert_eq!(iter.next(), None);
-
-        Ok(())
+        let (k1, v1) = iter.next().unwrap();
+        assert_eq!(*k1, "abc".to_string());
+        assert_eq!(*v1, "hello, world".to_string());
+        let (k2, v2) = iter.next().unwrap();
+        assert_eq!(*k2, "def".to_string());
+        assert_eq!(*v2, "hallo, Weld".to_string());
+        let (k3, v3) = iter.next().unwrap();
+        assert_eq!(*k3, "ghi".to_string());
+        assert_eq!(*v3, "hej, verden".to_string());
+        assert!(iter.next().is_none());
     }
 
     #[test]
@@ -1267,9 +1271,9 @@ mod test {
         let mut map = allocator.new_map();
         let value = String::from("hello");
         let _ = map.insert(42, value.clone());
-        assert_eq!(map.get(&42), Some(value));
+        assert_eq!(*map.get(&42).unwrap(), value);
         map.remove(&42);
-        assert_eq!(map.get(&42), None);
+        assert!(map.get(&42).is_none());
     }
 
     #[test]
@@ -1295,7 +1299,7 @@ mod test {
         inner_map.insert(key_to_value, value);
         outer_map.insert(inner_map_key, inner_map);
 
-        assert_eq!(outer_map.get(&inner_map_key).unwrap().get(&key_to_value), Some(value));
+        assert_eq!(*outer_map.get(&inner_map_key).unwrap().get(&key_to_value).unwrap(), value);
     }
 
     #[test]
@@ -1339,9 +1343,9 @@ mod test {
 
         let set = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap();
         let mut iter = set.iter();
-        assert_eq!(iter.next(), Some(0));
-        assert_eq!(iter.next(), Some(1));
-        assert_eq!(iter.next(), None);
+        assert_eq!(*iter.next().unwrap(), 0);
+        assert_eq!(*iter.next().unwrap(), 1);
+        assert!(iter.next().is_none());
     }
 
     #[test]
