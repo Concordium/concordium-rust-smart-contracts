@@ -3,7 +3,7 @@
 //! contract invocations.
 
 use crate::{
-    types::{ContractStateError, LogError},
+    types::{LogError, StateError},
     Allocator, CallContractResult, EntryRaw, TransferResult,
 };
 #[cfg(not(feature = "std"))]
@@ -117,7 +117,7 @@ pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
 }
 
 /// A type that can serve as the contract state entry type.
-pub trait HasContractStateEntry
+pub trait HasStateEntry
 where
     Self: Read,
     Self: Write<Err = Self::Error>,
@@ -156,22 +156,22 @@ where
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error>;
 }
 
-pub trait HasContractStateLL: Clone {
-    type ContractStateData;
-    type EntryType: HasContractStateEntry;
+pub trait HasState: Clone {
+    type StateData;
+    type EntryType: HasStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
 
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
-    fn open(_: Self::ContractStateData) -> Self;
+    fn open(_: Self::StateData) -> Self;
 
     /// Get an entry in the state.
     /// Returns an error if it is part of a locked subtree.
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError>;
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError>;
 
     /// Create a new entry in the state.
     /// Returns an error if it is part of a locked subtree.
-    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError>;
+    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError>;
 
     /// Lookup an entry in the state.
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
@@ -179,17 +179,17 @@ pub trait HasContractStateLL: Clone {
     /// Delete an entry.
     /// Returns an error if the entry did not exist, or if it is part of a
     /// locked subtree.
-    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError>;
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError>;
 
     /// Delete the entire subtree.
     /// Returns an error if no nodes with that prefix exists, or if it is part
     /// of a locked subtree.
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError>;
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError>;
 
     /// Get an iterator over a map in the state.
     /// Returns an error if the number of active iterators fro the same prefix
     /// exceeds [u16::MAX].
-    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError>;
+    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError>;
 
     /// Delete an iterator.
     fn delete_iterator(&mut self, iter: Self::IterType);
@@ -198,7 +198,7 @@ pub trait HasContractStateLL: Clone {
 /// A type that can serve as the host.
 /// It supports invoking operations, accessing state, and self_balance.
 pub trait HasHost<State> {
-    type ContractStateLLType: HasContractStateLL;
+    type StateType: HasState;
 
     /// The type of return values this host provides. This is the raw return
     /// value. The intention is that it will be deserialized by the
@@ -232,7 +232,7 @@ pub trait HasHost<State> {
     fn state_mut(&mut self) -> &mut State;
 
     /// Get the allocator for the contract state.
-    fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType>;
+    fn allocator(&mut self) -> &mut Allocator<Self::StateType>;
 
     /// Get the contract balance.
     fn self_balance(&self) -> Amount;
@@ -352,6 +352,6 @@ pub trait DeserialCtx: Sized {
 
 pub trait DeserialStateCtx<S>: Sized
 where
-    S: HasContractStateLL, {
+    S: HasState, {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
 }

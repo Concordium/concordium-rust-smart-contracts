@@ -1,5 +1,5 @@
 use super::{StateEntryData, StateEntryTest};
-use crate::{ContractStateError, StateEntryId, UnwrapAbort};
+use crate::{StateEntryId, StateError, UnwrapAbort};
 use std::{
     cell::{Cell, RefCell},
     cmp::min,
@@ -71,10 +71,10 @@ impl StateTrie {
         StateEntryTest::open(data, key, state_entry_id)
     }
 
-    pub fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
+    pub fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
         let indexes = to_indexes(prefix);
         if self.is_locked(&indexes) {
-            return Err(ContractStateError::SubtreeLocked);
+            return Err(StateError::SubtreeLocked);
         }
 
         // Unwrapping is safe, because the subtree isn't locked.
@@ -103,10 +103,10 @@ impl StateTrie {
         })
     }
 
-    pub fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, ContractStateError> {
+    pub fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, StateError> {
         let indexes = to_indexes(key);
         if self.is_locked(&indexes) {
-            return Err(ContractStateError::SubtreeLocked);
+            return Err(StateError::SubtreeLocked);
         }
         let data = self.nodes.create(&indexes);
         let entry = self.construct_state_entry_test(indexes, data, key.to_vec());
@@ -120,27 +120,25 @@ impl StateTrie {
             .map(|data| self.construct_state_entry_test(indexes, data, key.to_vec()))
     }
 
-    pub fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), ContractStateError> {
+    pub fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), StateError> {
         let indexes = to_indexes(&entry.key);
         if self.is_locked(&indexes) {
-            return Err(ContractStateError::SubtreeLocked);
+            return Err(StateError::SubtreeLocked);
         }
         match self.entry_map.borrow_mut().remove(&entry.state_entry_id) {
             Some(indexes) => self.nodes.delete_data(&indexes),
-            None => Err(ContractStateError::EntryNotFound), /* Entry did not exist. Only happens
-                                                             * when entry was deleted using
-                                                             * delete_prefix. */
+            None => Err(StateError::EntryNotFound), /* Entry did not exist. Only happens
+                                                     * when entry was deleted using
+                                                     * delete_prefix. */
         }
     }
 
-    pub fn iterator(&self, prefix: &[u8]) -> Result<Iter, ContractStateError> {
+    pub fn iterator(&self, prefix: &[u8]) -> Result<Iter, StateError> {
         let index_prefix = to_indexes(prefix);
 
         // Try to find the root_node for the prefix.
-        let node = self
-            .nodes
-            .lookup_node(&index_prefix)
-            .ok_or(ContractStateError::SubtreeWithPrefixNotFound)?;
+        let node =
+            self.nodes.lookup_node(&index_prefix).ok_or(StateError::SubtreeWithPrefixNotFound)?;
 
         // Keep track of the number of iterators given out.
         match self.iterator_counts.borrow_mut().entry(index_prefix.clone()) {
@@ -149,7 +147,7 @@ impl StateTrie {
             }
             btree_map::Entry::Occupied(ref mut occ) => {
                 if *occ.get() >= u16::MAX {
-                    return Err(ContractStateError::IteratorLimitForPrefixExceeded);
+                    return Err(StateError::IteratorLimitForPrefixExceeded);
                 }
                 *occ.get_mut() += 1;
             }
@@ -284,13 +282,13 @@ impl Node {
         }
     }
 
-    fn delete_data(&mut self, indexes: &[Index]) -> Result<(), ContractStateError> {
+    fn delete_data(&mut self, indexes: &[Index]) -> Result<(), StateError> {
         self.delete_prefix(indexes, true)
     }
 
     /// Delete nodes with the given prefix. If `exact`, then it only deletes the
     /// data in the node with that specific key (prefix).
-    fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> Result<(), ContractStateError> {
+    fn delete_prefix(&mut self, prefix: &[Index], exact: bool) -> Result<(), StateError> {
         match prefix.first() {
             Some(idx) => match &mut self.children[*idx] {
                 Some(child) => {
@@ -302,9 +300,9 @@ impl Node {
                 }
                 None => {
                     if exact {
-                        Err(ContractStateError::EntryNotFound)
+                        Err(StateError::EntryNotFound)
                     } else {
-                        Err(ContractStateError::SubtreeWithPrefixNotFound)
+                        Err(StateError::SubtreeWithPrefixNotFound)
                     }
                 }
             },

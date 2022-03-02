@@ -1,4 +1,4 @@
-use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasContractStateLL};
+use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasState};
 
 #[derive(Debug)]
 pub struct StateMap<K, V, S> {
@@ -9,7 +9,7 @@ pub struct StateMap<K, V, S> {
 }
 
 #[derive(Debug)]
-pub struct StateMapIter<'a, K, V, S: HasContractStateLL> {
+pub struct StateMapIter<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
     pub(crate) _lifetime_marker: PhantomData<&'a ()>,
@@ -18,7 +18,7 @@ pub struct StateMapIter<'a, K, V, S: HasContractStateLL> {
 }
 
 #[derive(Debug)]
-pub struct StateMapIterMut<'a, K, V, S: HasContractStateLL> {
+pub struct StateMapIterMut<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
@@ -34,7 +34,7 @@ pub struct StateSet<T, S> {
 }
 
 /// An iterator over the values of the set.
-pub struct StateSetIter<'a, T, S: HasContractStateLL> {
+pub struct StateSetIter<'a, T, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
     pub(crate) _marker:          PhantomData<T>,
@@ -93,7 +93,7 @@ impl<'a, V, S> StateRefMut<'a, V, S> {
 
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]
-pub struct ContractStateLL;
+pub struct StateApi;
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -523,7 +523,7 @@ pub type InitResult<S> = Result<S, Reject>;
 #[doc(hidden)]
 pub struct ExternHost<State> {
     pub state:     State,
-    pub allocator: Allocator<ContractStateLL>,
+    pub allocator: Allocator<StateApi>,
 }
 
 #[derive(Default)]
@@ -535,8 +535,8 @@ pub struct Allocator<StateLL> {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state:     ContractStateLL,
-    pub(crate) allocator: Allocator<ContractStateLL>,
+    pub(crate) state:     StateApi,
+    pub(crate) allocator: Allocator<StateApi>,
 }
 
 /// Context backed by host functions.
@@ -567,7 +567,7 @@ pub(crate) mod sealed {
 }
 
 #[derive(Debug)]
-pub enum ContractStateError {
+pub enum StateError {
     /// The subtree is locked.
     SubtreeLocked,
     /// The entry does not exist.

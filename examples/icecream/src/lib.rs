@@ -51,7 +51,7 @@ enum Weather {
 
 /// Initialise the contract with the contract address of the weather service.
 #[init(contract = "icecream", parameter = "ContractAddress")]
-fn contract_init<S: HasContractStateLL>(
+fn contract_init<S: HasState>(
     ctx: &impl HasInitContext,
     _allocator: &mut Allocator<S>,
 ) -> InitResult<((), State<S>)> {
@@ -65,9 +65,9 @@ fn contract_init<S: HasContractStateLL>(
 
 /// Attempt purchasing icecream from the icecream vendor.
 #[receive(contract = "icecream", name = "buy_icecream", parameter = "AccountAddress", payable)]
-fn contract_buy_icecream<S: HasContractStateLL>(
+fn contract_buy_icecream<S: HasState>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
+    host: &mut impl HasHost<State<S>, StateType = S>,
     amount: Amount,
 ) -> ReceiveResult<()> {
     let weather_service = host
@@ -107,9 +107,9 @@ fn contract_buy_icecream<S: HasContractStateLL>(
 /// Replace the weather service with another.
 /// Only the owner of the contract can do so.
 #[receive(contract = "icecream", name = "replace_weather_service", parameter = "ContractAddress")]
-fn contract_replace_weather_service<S: HasContractStateLL>(
+fn contract_replace_weather_service<S: HasState>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
+    host: &mut impl HasHost<State<S>, StateType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
@@ -124,7 +124,7 @@ fn contract_replace_weather_service<S: HasContractStateLL>(
 
 /// Initialse the weather service with the weather.
 #[init(contract = "weather", parameter = "Weather")]
-fn weather_init<S: HasContractStateLL>(
+fn weather_init<S: HasState>(
     ctx: &impl HasInitContext,
     _allocator: &mut Allocator<S>,
 ) -> InitResult<((), Persisted<Weather, S>)> {
@@ -136,9 +136,9 @@ fn weather_init<S: HasContractStateLL>(
 
 /// Get the current weather.
 #[receive(contract = "weather", name = "get", return_value = "Weather")]
-fn weather_get<S: HasContractStateLL>(
+fn weather_get<S: HasState>(
     _ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>, ContractStateLLType = S>,
+    host: &mut impl HasHost<Persisted<Weather, S>, StateType = S>,
 ) -> ReceiveResult<Weather> {
     Ok(host
         .state()
@@ -150,9 +150,9 @@ fn weather_get<S: HasContractStateLL>(
 
 /// Update the weather.
 #[receive(contract = "weather", name = "set", parameter = "Weather")]
-fn weather_set<S: HasContractStateLL>(
+fn weather_set<S: HasState>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>, ContractStateLLType = S>,
+    host: &mut impl HasHost<Persisted<Weather, S>, StateType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can update the weather.
     host.state().set(ctx.parameter_cursor().get()?);

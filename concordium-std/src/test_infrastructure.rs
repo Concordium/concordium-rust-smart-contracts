@@ -1,5 +1,5 @@
 //! The test infrastructure module provides alternative implementations of
-//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, `HasContractState`,
+//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, `HasState`,
 //! and `HasHost` traits intended for testing.
 //!
 //! They allow writing unit tests directly in contract modules with little to no
@@ -515,8 +515,8 @@ pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {
 
 #[derive(Debug, PartialEq, Eq)]
 /// An error that is raised when operating with `Seek`, `Write`, `Read`, or
-/// `HasContractStateEntry` trait methods of the `ContractStateTest` type.
-pub enum ContractStateTestError {
+/// `HasStateEntry` trait methods of the `StateApiTest` type.
+pub enum StateTestError {
     /// The computation of the new offset would result in an overflow.
     Overflow,
     /// An error occurred when writing to the contract state.
@@ -529,16 +529,16 @@ pub enum ContractStateTestError {
     EntryDeleted,
 }
 
-impl Default for ContractStateTestError {
+impl Default for StateTestError {
     fn default() -> Self { Self::Default }
 }
 
-impl From<num::TryFromIntError> for ContractStateTestError {
-    fn from(_: num::TryFromIntError) -> Self { ContractStateTestError::Overflow }
+impl From<num::TryFromIntError> for StateTestError {
+    fn from(_: num::TryFromIntError) -> Self { StateTestError::Overflow }
 }
 
-impl From<ContractStateTestError> for ParseError {
-    fn from(_: ContractStateTestError) -> Self { ParseError::default() }
+impl From<StateTestError> for ParseError {
+    fn from(_: StateTestError) -> Self { ParseError::default() }
 }
 
 // TODO: Replace the Vec<u8> with a AsRef<&[u8]>.
@@ -557,18 +557,18 @@ impl StateEntryData {
 
     /// Tries to get the actual data. Returns an error if the entry has been
     /// deleted.
-    pub(crate) fn data(&self) -> Result<&[u8], ContractStateTestError> {
+    pub(crate) fn data(&self) -> Result<&[u8], StateTestError> {
         match self {
-            StateEntryData::EntryDeleted => Err(ContractStateTestError::EntryDeleted),
+            StateEntryData::EntryDeleted => Err(StateTestError::EntryDeleted),
             StateEntryData::EntryExists(v) => Ok(v),
         }
     }
 
     /// Tries to get the actual data as mutable. Returns an error if the entry
     /// has been deleted.
-    pub(crate) fn data_mut(&mut self) -> Result<&mut Vec<u8>, ContractStateTestError> {
+    pub(crate) fn data_mut(&mut self) -> Result<&mut Vec<u8>, StateTestError> {
         match self {
-            StateEntryData::EntryDeleted => Err(ContractStateTestError::EntryDeleted),
+            StateEntryData::EntryDeleted => Err(StateTestError::EntryDeleted),
             StateEntryData::EntryExists(v) => Ok(v),
         }
     }
@@ -600,14 +600,14 @@ impl StateEntryTest {
 }
 
 #[derive(Debug, Clone)]
-pub struct ContractStateLLTest {
+pub struct StateApiTest {
     trie: Rc<RefCell<StateTrie>>,
 }
 
-impl HasContractStateLL for ContractStateLLTest {
-    type ContractStateData = StateTrie;
+impl HasState for StateApiTest {
     type EntryType = StateEntryTest;
     type IterType = trie::Iter;
+    type StateData = StateTrie;
 
     fn open(trie: StateTrie) -> Self {
         Self {
@@ -615,11 +615,11 @@ impl HasContractStateLL for ContractStateLLTest {
         }
     }
 
-    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError> {
+    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError> {
         self.trie.borrow_mut().create_entry(key)
     }
 
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError> {
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
         if let Some(state_entry) = self.trie.borrow_mut().lookup(key) {
             return Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry)));
         };
@@ -628,15 +628,15 @@ impl HasContractStateLL for ContractStateLLTest {
 
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.borrow().lookup(key) }
 
-    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> {
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError> {
         self.trie.borrow_mut().delete_entry(entry)
     }
 
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
         self.trie.borrow_mut().delete_prefix(prefix)
     }
 
-    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, ContractStateError> {
+    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError> {
         self.trie.borrow().iterator(prefix)
     }
 
@@ -645,11 +645,11 @@ impl HasContractStateLL for ContractStateLLTest {
     }
 }
 
-pub type StateMapIterTest<'a, K, V> = StateMapIter<'a, K, V, ContractStateLLTest>;
+pub type StateMapIterTest<'a, K, V> = StateMapIter<'a, K, V, StateApiTest>;
 
-pub type StateSetIterTest<'a, T> = StateSetIter<'a, T, ContractStateLLTest>;
+pub type StateSetIterTest<'a, T> = StateSetIter<'a, T, StateApiTest>;
 
-impl ContractStateLLTest {
+impl StateApiTest {
     pub fn new() -> Self {
         Self {
             trie: Rc::new(RefCell::new(StateTrie::new())),
@@ -657,12 +657,12 @@ impl ContractStateLLTest {
     }
 }
 
-impl Default for ContractStateLLTest {
+impl Default for StateApiTest {
     fn default() -> Self { Self::new() }
 }
 
-impl HasContractStateEntry for StateEntryTest {
-    type Error = ContractStateTestError;
+impl HasStateEntry for StateEntryTest {
+    type Error = StateTestError;
     type StateEntryData = Rc<RefCell<StateEntryData>>;
     type StateEntryKey = Vec<u8>;
 
@@ -716,7 +716,7 @@ impl Read for StateEntryTest {
 }
 
 impl Write for StateEntryTest {
-    type Err = ContractStateTestError;
+    type Err = StateTestError;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
         let end = self.cursor.offset + buf.len();
@@ -733,11 +733,11 @@ impl Write for StateEntryTest {
 }
 
 impl Seek for StateEntryTest {
-    type Err = ContractStateTestError;
+    type Err = StateTestError;
 
     // TODO: This does _not_ match the semantics of Seek for StateEntry.
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
-        use self::ContractStateTestError::*;
+        use self::StateTestError::*;
         // This will fail immediately, if the entry has been deleted.
         let len = self.cursor.data.borrow().data()?.len();
         match pos {
@@ -933,7 +933,7 @@ pub struct HostTest<State> {
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: RefCell<Amount>,
     /// Allocator for the state.
-    allocator:        Allocator<ContractStateLLTest>,
+    allocator:        Allocator<StateApiTest>,
     /// State of the instance.
     state:            State,
     /// List of accounts that will cause a contract invocation to fail.
@@ -941,8 +941,8 @@ pub struct HostTest<State> {
 }
 
 impl<State> HasHost<State> for HostTest<State> {
-    type ContractStateLLType = ContractStateLLTest;
     type ReturnValueType = Cursor<Vec<u8>>;
+    type StateType = StateApiTest;
 
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
@@ -1023,21 +1023,21 @@ impl<State> HasHost<State> for HostTest<State> {
     /// This can be set with `set_balance` and defaults to 0.
     fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
-    fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType> { &mut self.allocator }
+    fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
 }
 
 impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
         HostTest::new_with_allocator(state, Allocator {
-            state_ll: ContractStateLLTest::open(StateTrie::new()),
+            state_ll: StateApiTest::open(StateTrie::new()),
         })
     }
 
     /// Create a new test host with an existing allocator.
     /// This can be useful when a single test function invokes both init and
     /// receive.
-    pub fn new_with_allocator(state: State, allocator: Allocator<ContractStateLLTest>) -> Self {
+    pub fn new_with_allocator(state: State, allocator: Allocator<StateApiTest>) -> Self {
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: RefCell::new(Vec::new()),
@@ -1117,21 +1117,21 @@ impl<State> HostTest<State> {
 
 #[cfg(test)]
 mod test {
-    use super::ContractStateLLTest;
+    use super::StateApiTest;
     use crate::{
         cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Allocator, EntryRaw, Freeable,
-        HasContractStateEntry, HasContractStateLL, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        HasState, HasStateEntry, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     /// Get an entry and unwrap the result.
-    fn get_entry(state: &mut ContractStateLLTest, key: &[u8]) -> EntryRaw<StateEntryTest> {
+    fn get_entry(state: &mut StateApiTest, key: &[u8]) -> EntryRaw<StateEntryTest> {
         state.entry(key).expect("Failed to get entry")
     }
 
     #[test]
-    // Perform a number of operations from Seek, Read, Write and HasContractState
-    // classes on the ContractStateTest structure and check that they behave as
+    // Perform a number of operations from Seek, Read, Write and HasState
+    // classes on the StateApiTest structure and check that they behave as
     // specified.
     fn test_contract_state() {
         let data = Rc::new(RefCell::new(vec![1; 100].into()));
@@ -1214,7 +1214,7 @@ mod test {
     #[test]
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         allocator.insert(0, expected_value).expect("Insert failed");
         let actual_value: u64 = allocator.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
@@ -1224,7 +1224,7 @@ mod test {
     fn low_level_entry() {
         let expected_value: u64 = 123123123;
         let key = to_bytes(&42u64);
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
 
         match get_entry(&mut state, &key) {
@@ -1238,7 +1238,7 @@ mod test {
     #[test]
     fn high_level_statemap() {
         let my_map_key = "my_map";
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
 
         let map_to_insert = allocator.new_map::<String, String>();
         allocator.insert(my_map_key, map_to_insert).expect("Insert failed");
@@ -1267,7 +1267,7 @@ mod test {
 
     #[test]
     fn statemap_insert_remove() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut map = allocator.new_map();
         let value = String::from("hello");
         let _ = map.insert(42, value.clone());
@@ -1278,7 +1278,7 @@ mod test {
 
     #[test]
     fn statemap_clear() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut map = allocator.new_map();
         let _ = map.insert(1, 2);
         let _ = map.insert(2, 3);
@@ -1292,7 +1292,7 @@ mod test {
         let inner_map_key = 0u8;
         let key_to_value = 77u8;
         let value = 255u8;
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut outer_map = allocator.new_map::<u8, StateMap<u8, u8, _>>();
         let mut inner_map = allocator.new_map::<u8, u8>();
 
@@ -1304,7 +1304,7 @@ mod test {
 
     #[test]
     fn statemap_iter_mut_works() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut map = allocator.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
@@ -1327,7 +1327,7 @@ mod test {
 
     #[test]
     fn iter_mut_works_on_nested_statemaps() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut outer_map = allocator.new_map();
         let mut inner_map = allocator.new_map();
         inner_map.insert(0u8, 1u8);
@@ -1360,7 +1360,7 @@ mod test {
 
     #[test]
     fn statemap_iterator_unlocks_tree_once_dropped() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut map = allocator.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
@@ -1378,7 +1378,7 @@ mod test {
     #[test]
     fn high_level_stateset() {
         let my_set_key = "my_set";
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
 
         let mut set = allocator.new_set::<u8>();
         assert_eq!(set.insert(0), true);
@@ -1408,7 +1408,7 @@ mod test {
     fn high_level_nested_stateset() {
         let inner_set_key = 0u8;
         let value = 255u8;
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut outer_map = allocator.new_map::<u8, StateSet<u8, _>>();
         let mut inner_set = allocator.new_set::<u8>();
 
@@ -1420,7 +1420,7 @@ mod test {
 
     #[test]
     fn stateset_insert_remove() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut set = allocator.new_set();
         let _ = set.insert(42);
         assert!(set.contains(&42));
@@ -1430,7 +1430,7 @@ mod test {
 
     #[test]
     fn stateset_clear() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut set = allocator.new_set();
         let _ = set.insert(1);
         let _ = set.insert(2);
@@ -1441,7 +1441,7 @@ mod test {
 
     #[test]
     fn stateset_iterator_unlocks_tree_once_dropped() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut set = allocator.new_set();
         set.insert(0u8);
         set.insert(1);
@@ -1458,7 +1458,7 @@ mod test {
 
     #[test]
     fn allocate_and_get_statebox() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let boxed_value = String::from("I'm boxed");
         let statebox = allocator.new_box(boxed_value.clone());
         assert_eq!(*statebox.get(), boxed_value);
@@ -1468,7 +1468,7 @@ mod test {
     fn there_should_be_an_upper_limit_for_iterators_of_a_key() {
         let expected_value: u64 = 123123123;
         let key1 = vec![1, 2, 3, 4, 5, 6];
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         get_entry(&mut state, &key1).or_insert(&to_bytes(&expected_value));
         let mut iters = vec![];
         for _ in 0..u16::MAX {
@@ -1486,7 +1486,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"ab");
         let sub_key = to_bytes(b"abc");
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.entry(&sub_key);
@@ -1498,7 +1498,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"abcd");
         let key2 = to_bytes(b"abe");
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.entry(&key2);
@@ -1510,7 +1510,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"ab");
         let sub_key = to_bytes(b"abc");
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         let sub_entry = get_entry(&mut state, &sub_key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
@@ -1525,7 +1525,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"abcd");
         let key2 = to_bytes(b"abe");
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         let entry2 = get_entry(&mut state, &key2).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
@@ -1537,7 +1537,7 @@ mod test {
 
     #[test]
     fn freeing_nested_stateboxes_works() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let inner_box = allocator.new_box(99u8);
         let middle_box = allocator.new_box(inner_box);
         let outer_box = allocator.new_box(middle_box);
@@ -1549,7 +1549,7 @@ mod test {
 
     #[test]
     fn clearing_statemap_with_stateboxes_works() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let box1 = allocator.new_box(1u8);
         let box2 = allocator.new_box(2u8);
         let box3 = allocator.new_box(3u8);
@@ -1565,7 +1565,7 @@ mod test {
 
     #[test]
     fn clearing_nested_statemaps_works() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut inner_map_1 = allocator.new_map();
         inner_map_1.insert(1u8, 2u8);
         inner_map_1.insert(2u8, 3u8);
@@ -1585,7 +1585,7 @@ mod test {
 
     #[test]
     fn multiple_entries_not_allowed() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut map = allocator.new_map();
         map.insert(0u8, 1u8);
         let e1 = map.entry(0u8);
@@ -1596,7 +1596,7 @@ mod test {
 
     #[test]
     fn occupied_entry_truncates_leftover_data() {
-        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut allocator = Allocator::open(StateApiTest::new());
         let mut map = allocator.new_map();
         map.insert(99u8, "A longer string that should be truncated".into());
         let a_short_string = "A short string".to_string();
@@ -1613,7 +1613,7 @@ mod test {
 
     #[test]
     fn occupied_entry_raw_truncates_leftover_data() {
-        let mut state = ContractStateLLTest::new();
+        let mut state = StateApiTest::new();
         state
             .entry(&[])
             .expect("Could not get entry")

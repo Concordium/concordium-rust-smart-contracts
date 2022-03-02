@@ -31,7 +31,7 @@ impl<S> Serial for AnotherStruct<S> {
 
 impl<S> DeserialStateCtx<S> for State<S>
 where
-    S: HasContractStateLL,
+    S: HasState,
 {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         let token_state = DeserialStateCtx::deserial_state_ctx(state, source)?;
@@ -49,7 +49,7 @@ where
 
 impl<S> DeserialStateCtx<S> for AnotherStruct<S>
 where
-    S: HasContractStateLL,
+    S: HasState,
 {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         Ok(Self {
@@ -59,7 +59,7 @@ where
 }
 
 #[init(contract = "storable-contract")]
-fn init<S: HasContractStateLL>(
+fn init<S: HasState>(
     _ctx: &impl HasInitContext,
     allocator: &mut Allocator<S>,
 ) -> InitResult<((), State<S>)> {
@@ -81,9 +81,9 @@ struct MintParams {
 }
 
 #[receive(contract = "storable-contract", name = "mint", parameter = "MintParams", mutable)]
-fn receive_mint<S: HasContractStateLL>(
+fn receive_mint<S: HasState>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
+    host: &mut impl HasHost<State<S>, StateType = S>,
 ) -> ReceiveResult<()> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
@@ -119,9 +119,9 @@ fn receive_mint<S: HasContractStateLL>(
 }
 
 #[receive(contract = "storable-contract", name = "readonly")]
-fn receive_readonly<S: HasContractStateLL>(
+fn receive_readonly<S: HasState>(
     _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, ContractStateLLType = S>,
+    host: &impl HasHost<State<S>, StateType = S>,
 ) -> ReceiveResult<u64> {
     Ok(*host.state().boxed_total_tokens.get())
 }
@@ -135,7 +135,7 @@ mod tests {
     fn test_init() {
         let ctx = InitContextTest::empty();
 
-        let state_ll = ContractStateLLTest::new();
+        let state_ll = StateApiTest::new();
         let mut allocator = Allocator::open(state_ll);
 
         let _state = init(&ctx, &mut allocator).expect("Init failed");
@@ -154,7 +154,7 @@ mod tests {
         });
         ctx.set_parameter(&parameter_bytes);
 
-        let mut state_ll = ContractStateLLTest::new();
+        let mut state_ll = StateApiTest::new();
         let mut allocator = Allocator::open(state_ll.clone());
 
         // TODO: These extra serial/deserial state steps are no longer necessary. But we

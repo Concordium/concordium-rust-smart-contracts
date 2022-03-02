@@ -137,7 +137,7 @@ impl StateEntry {
     }
 }
 
-impl HasContractStateEntry for StateEntry {
+impl HasStateEntry for StateEntry {
     type Error = ();
     // TODO: Should this use another error type?
     type StateEntryData = ();
@@ -354,7 +354,7 @@ impl Write for StateEntry {
 // The low-level entry type.
 impl<StateEntryType> VacantEntryRaw<StateEntryType>
 where
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn new(state_entry: StateEntryType) -> Self {
         Self {
@@ -372,7 +372,7 @@ where
 // The low-level entry type.
 impl<StateEntryType> OccupiedEntryRaw<StateEntryType>
 where
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn new(state_entry: StateEntryType) -> Self {
         Self {
@@ -398,7 +398,7 @@ where
 
 impl<StateEntryType> EntryRaw<StateEntryType>
 where
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn or_insert(self, default: &[u8]) -> StateEntryType {
         match self {
@@ -412,7 +412,7 @@ impl<'a, K, V, StateEntryType> VacantEntry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn new(key: K, state_entry: StateEntryType) -> Self {
         Self {
@@ -438,7 +438,7 @@ impl<'a, K, V, StateEntryType> OccupiedEntry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn new(key: K, value: V, state_entry: StateEntryType) -> Self {
         Self {
@@ -489,7 +489,7 @@ impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn or_insert(self, default: V) {
         if let Entry::Vacant(vac) = self {
@@ -524,7 +524,7 @@ impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial + Default,
-    StateEntryType: HasContractStateEntry,
+    StateEntryType: HasStateEntry,
 {
     pub fn or_default(self) {
         if let Entry::Vacant(vac) = self {
@@ -538,15 +538,15 @@ const NEXT_ITEM_PREFIX_KEY: u64 = 0;
 const GENERIC_MAP_PREFIX: u64 = 1;
 pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
 
-impl HasContractStateLL for ContractStateLL {
-    type ContractStateData = ();
+impl HasState for StateApi {
     type EntryType = StateEntry;
     type IterType = ContractStateIter;
+    type StateData = ();
 
     /// Open the contract state.
-    fn open(_: Self::ContractStateData) -> Self { ContractStateLL }
+    fn open(_: Self::StateData) -> Self { StateApi }
 
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, ContractStateError> {
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let res = unsafe { prims::state_lookup_entry(key_start, key_len) };
@@ -562,12 +562,12 @@ impl HasContractStateLL for ContractStateLL {
         }
     }
 
-    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, ContractStateError> {
+    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let entry_id = unsafe { prims::state_create_entry(key_start, key_len) };
         if entry_id == u64::MAX {
-            return Err(ContractStateError::SubtreeLocked);
+            return Err(StateError::SubtreeLocked);
         }
         Ok(StateEntry::open(entry_id, key.to_vec()))
     }
@@ -583,36 +583,36 @@ impl HasContractStateLL for ContractStateLL {
         }
     }
 
-    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), ContractStateError> {
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError> {
         let res = unsafe { prims::state_delete_entry(entry.state_entry_id) };
         match res {
-            0 => Err(ContractStateError::SubtreeLocked),
-            1 => Err(ContractStateError::EntryNotFound),
+            0 => Err(StateError::SubtreeLocked),
+            1 => Err(StateError::EntryNotFound),
             2 => Ok(()),
             _ => crate::fail!(), // Cannot happen.
         }
     }
 
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), ContractStateError> {
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
         let res = unsafe { prims::state_delete_prefix(prefix.as_ptr(), prefix.len() as u32) };
         match res {
-            0 => Err(ContractStateError::SubtreeLocked),
-            1 => Err(ContractStateError::EntryNotFound),
+            0 => Err(StateError::SubtreeLocked),
+            1 => Err(StateError::EntryNotFound),
             2 => Ok(()),
             _ => crate::fail!(), // Cannot happen.
         }
     }
 
-    fn iterator(&self, prefix: &[u8]) -> Result<ContractStateIter, ContractStateError> {
+    fn iterator(&self, prefix: &[u8]) -> Result<ContractStateIter, StateError> {
         let prefix_start = prefix.as_ptr();
         let prefix_len = prefix.len() as u32; // Wasm usize == 32bit.
         let iterator_id = unsafe { prims::state_iterate_prefix(prefix_start, prefix_len) };
         let all_ones = u64::MAX;
         if iterator_id == all_ones {
-            return Err(ContractStateError::IteratorLimitForPrefixExceeded);
+            return Err(StateError::IteratorLimitForPrefixExceeded);
         }
         if iterator_id | 1u64.rotate_right(2) == all_ones {
-            return Err(ContractStateError::EntryNotFound);
+            return Err(StateError::EntryNotFound);
         }
         Ok(ContractStateIter {
             iterator_id,
@@ -621,7 +621,7 @@ impl HasContractStateLL for ContractStateLL {
 
     fn delete_iterator(&mut self, iter: ContractStateIter) {
         // This call can never fail because the only way to get an `ContractStateIter`
-        // is through `ContractStateLL::iterator(..)`. And this call consumes
+        // is through `StateApi::iterator(..)`. And this call consumes
         // the iterator.
         // These conditions rule out the two types of errors that the prims
         // call can return, iterator not found and iterator already deleted.
@@ -642,8 +642,8 @@ impl Iterator for ContractStateIter {
             // This means that an iterator never existed or was deleted.
             // In both cases, it is not possible to call `next` on such an iterator with the current
             // API. The only way to get an iterator is through
-            // [HasContractStateLL::iterator] and the only way to delete it is through
-            // [HasContractStateLL::delete_iterator].
+            // [HasState::iterator] and the only way to delete it is through
+            // [HasState::delete_iterator].
             u64::MAX => crate::fail!(),
             _ if res | 1u64.rotate_right(2) == u64::MAX => None,
             _ => {
@@ -663,7 +663,7 @@ impl Iterator for ContractStateIter {
 
 impl<K, V, S> StateMap<K, V, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
     K: Serialize,
     V: Serial + DeserialStateCtx<S> + Freeable,
 {
@@ -763,7 +763,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasContractStateLL> Drop for StateMapIter<'a, K, V, S> {
+impl<'a, K, V, S: HasState> Drop for StateMapIter<'a, K, V, S> {
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
         if let Some(valid) = self.state_iter.take() {
@@ -774,7 +774,7 @@ impl<'a, K, V, S: HasContractStateLL> Drop for StateMapIter<'a, K, V, S> {
 
 impl<K, V, S> StateMap<K, V, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
 {
     pub fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
         Self {
@@ -808,7 +808,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasContractStateLL> Iterator for StateMapIter<'a, K, V, S>
+impl<'a, K, V, S: HasState> Iterator for StateMapIter<'a, K, V, S>
 where
     K: Deserial,
     V: DeserialStateCtx<S>,
@@ -829,7 +829,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasContractStateLL> Iterator for StateMapIterMut<'a, K, V, S>
+impl<'a, K, V, S: HasState> Iterator for StateMapIterMut<'a, K, V, S>
 where
     K: Deserial,
     V: DeserialStateCtx<S>,
@@ -853,7 +853,7 @@ where
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
     V: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    S: HasState,
 {
     pub fn get(&self) -> Ref<'_, V> { self.state_box.get() }
 
@@ -875,7 +875,7 @@ impl<K, V, S> Serial for StateMap<K, V, S> {
 impl<T, S> StateSet<T, S>
 where
     T: Serialize,
-    S: HasContractStateLL,
+    S: HasState,
 {
     /// Adds a value to the set.
     /// If the set did not have this value, `true` is returned. Otherwise,
@@ -938,7 +938,7 @@ where
     }
 }
 
-impl<T, S: HasContractStateLL> StateSet<T, S> {
+impl<T, S: HasState> StateSet<T, S> {
     pub(crate) fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
         Self {
             _marker: PhantomData,
@@ -972,7 +972,7 @@ impl<T, S> StateBox<T, S> {
 impl<T, S> StateBox<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
-    S: HasContractStateLL,
+    S: HasState,
 {
     /// Get a reference to the value.
     // TODO: Figure out if we can implement Deref that uses this method.
@@ -1033,7 +1033,7 @@ impl<T, S> Serial for StateSet<T, S> {
 }
 
 /// Unlock the part of the tree locked by the iterator.
-impl<'a, T, S: HasContractStateLL> Drop for StateSetIter<'a, T, S> {
+impl<'a, T, S: HasState> Drop for StateSetIter<'a, T, S> {
     #[inline]
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
@@ -1043,7 +1043,7 @@ impl<'a, T, S: HasContractStateLL> Drop for StateSetIter<'a, T, S> {
     }
 }
 
-impl<'a, T, S: HasContractStateLL> Iterator for StateSetIter<'a, T, S>
+impl<'a, T, S: HasState> Iterator for StateSetIter<'a, T, S>
 where
     T: DeserialStateCtx<S>,
 {
@@ -1384,7 +1384,7 @@ fn invoke_contract_construct_parameter(
 
 impl<StateLL> Allocator<StateLL>
 where
-    StateLL: HasContractStateLL,
+    StateLL: HasState,
 {
     pub fn open(state_ll: StateLL) -> Self {
         Self {
@@ -1442,7 +1442,7 @@ where
 /// Some helper methods that are used for internal tests.
 impl<StateLL> Allocator<StateLL>
 where
-    StateLL: HasContractStateLL,
+    StateLL: HasState,
 {
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
@@ -1461,7 +1461,7 @@ where
         &mut self,
         key: K,
         value: V,
-    ) -> Result<(), ContractStateError> {
+    ) -> Result<(), StateError> {
         let key_with_map_prefix = Self::prepend_generic_map_key(key);
         let value_bytes = to_bytes(&value);
         match self.state_ll.entry(&key_with_map_prefix)? {
@@ -1482,10 +1482,10 @@ where
 
 impl<State> HasHost<State> for ExternHost<State>
 where
-    State: DeserialStateCtx<ContractStateLL>,
+    State: DeserialStateCtx<StateApi>,
 {
-    type ContractStateLLType = ContractStateLL;
     type ReturnValueType = CallResponse;
+    type StateType = StateApi;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
@@ -1526,12 +1526,12 @@ where
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
-    fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType> { &mut self.allocator }
+    fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
 }
 
-impl HasHost<ContractStateLL> for ExternLowLevelHost {
-    type ContractStateLLType = ContractStateLL;
+impl HasHost<StateApi> for ExternLowLevelHost {
     type ReturnValueType = CallResponse;
+    type StateType = StateApi;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
@@ -1554,17 +1554,17 @@ impl HasHost<ContractStateLL> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn state(&self) -> &ContractStateLL { &self.state }
+    fn state(&self) -> &StateApi { &self.state }
 
     #[inline(always)]
-    fn state_mut(&mut self) -> &mut ContractStateLL { &mut self.state }
+    fn state_mut(&mut self) -> &mut StateApi { &mut self.state }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
-    fn allocator(&mut self) -> &mut Allocator<Self::ContractStateLLType> { &mut self.allocator }
+    fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
 }
 
 /// # Trait implementations for the init context
@@ -1924,7 +1924,7 @@ impl DeserialCtx for String {
 
 /// Blanket implementation for Deserial, which simply does not use the state
 /// argument.
-impl<D: Deserial, S: HasContractStateLL> DeserialStateCtx<S> for D {
+impl<D: Deserial, S: HasState> DeserialStateCtx<S> for D {
     fn deserial_state_ctx<R: Read>(_state: &S, source: &mut R) -> ParseResult<Self> {
         Self::deserial(source)
     }
@@ -1932,7 +1932,7 @@ impl<D: Deserial, S: HasContractStateLL> DeserialStateCtx<S> for D {
 
 impl<K, V, S> DeserialStateCtx<S> for StateMap<K, V, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
 {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         source.read_u64().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
@@ -1941,7 +1941,7 @@ where
 
 impl<T, S> DeserialStateCtx<S> for StateSet<T, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
     T: Serial + DeserialStateCtx<S>,
 {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
@@ -1951,7 +1951,7 @@ where
 
 impl<T, S> DeserialStateCtx<S> for StateBox<T, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
     T: Serial + DeserialStateCtx<S>,
 {
     fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
@@ -1973,7 +1973,7 @@ impl<T: Serialize> Freeable for T {
 impl<T, S> Freeable for StateBox<T, S>
 where
     T: Serial + DeserialStateCtx<S> + Freeable,
-    S: HasContractStateLL,
+    S: HasState,
 {
     fn free(mut self) {
         // Make sure the actual value is cached, so we can free it.
@@ -1992,7 +1992,7 @@ where
 
 impl<T, S> Freeable for StateSet<T, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
 {
     fn free(mut self) {
         // Statesets cannot contain state types (e.g. StateBox), so there is nothing to
@@ -2005,7 +2005,7 @@ where
 
 impl<K, V, S> Freeable for StateMap<K, V, S>
 where
-    S: HasContractStateLL,
+    S: HasState,
     K: Deserial,
     V: DeserialStateCtx<S> + Freeable,
 {
