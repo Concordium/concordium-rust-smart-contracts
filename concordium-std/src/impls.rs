@@ -792,6 +792,17 @@ where
             _marker_value:    PhantomData,
         }
     }
+
+    pub fn iter_mut(&mut self) -> StateMapIterMut<'_, K, V, S> {
+        let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
+        StateMapIterMut {
+            state_iter:       Some(state_iter),
+            state_ll:         self.state_ll.clone(),
+            _lifetime_marker: PhantomData,
+            _marker_key:      PhantomData,
+            _marker_value:    PhantomData,
+        }
+    }
 }
 
 impl<'a, K, V, S: HasContractStateLL> Iterator for StateMapIter<'a, K, V, S>
@@ -812,6 +823,43 @@ where
         let k = K::deserial(&mut key_cursor).unwrap_abort();
         let v = V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort();
         Some((StateRef::new(k), StateRef::new(v)))
+    }
+}
+
+impl<'a, K, V, S: HasContractStateLL> Iterator for StateMapIterMut<'a, K, V, S>
+where
+    K: Deserial,
+    V: DeserialStateCtx<S>,
+{
+    type Item = (StateRef<'a, K>, StateRefMut<'a, V, S>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut entry = self.state_iter.as_mut()?.next()?;
+        let key_bytes = entry.get_key().to_vec();
+        let mut key_cursor = Cursor {
+            data:   &key_bytes,
+            offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
+        };
+        // Unwrapping is safe when only using the high-level API.
+        let k = K::deserial(&mut key_cursor).unwrap_abort();
+        let v = V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort();
+        Some((StateRef::new(k), StateRefMut::new(v, &key_bytes, self.state_ll.clone())))
+    }
+}
+
+impl<'a, V, S> StateRefMut<'a, V, S>
+where
+    V: Serial + DeserialStateCtx<S>,
+    S: HasContractStateLL,
+{
+    pub fn get(&self) -> Ref<'_, V> { self.state_box.get() }
+
+    pub fn set(&mut self, new_val: V) { self.state_box.set(new_val) }
+
+    pub fn update<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut V), {
+        self.state_box.update(f);
     }
 }
 
@@ -907,27 +955,22 @@ impl<T, S: HasContractStateLL> StateSet<T, S> {
     }
 }
 
+impl<T, S> StateBox<T, S> {
+    /// Create a new statebox.
+    pub(crate) fn new(value: T, state_ll: S, prefix: StateItemPrefix) -> Self {
+        Self {
+            prefix,
+            state_ll,
+            lazy_value: RefCell::new(Some(value)),
+        }
+    }
+}
+
 impl<T, S> StateBox<T, S>
 where
     T: Serial + DeserialStateCtx<S>,
     S: HasContractStateLL,
 {
-    /// Inserts the value in the state and returns Self.
-    pub(crate) fn new<P: Serial>(value: T, mut state_ll: S, prefix: P) -> Self {
-        let prefix_bytes = to_bytes(&prefix);
-
-        // Insert the value into state.
-        // Both unwraps are safe when using only the high-level API.
-        let mut state_entry = state_ll.create(&prefix_bytes).unwrap_abort();
-        value.serial(&mut state_entry).unwrap_abort();
-
-        Self {
-            prefix: prefix_bytes,
-            state_ll,
-            lazy_value: RefCell::new(Some(value)),
-        }
-    }
-
     /// Get a reference to the value.
     // TODO: Figure out if we can implement Deref that uses this method.
     pub fn get(&self) -> Ref<'_, T> {
@@ -1361,7 +1404,13 @@ where
         value: T,
     ) -> StateBox<T, StateLL> {
         let prefix = self.get_and_update_item_prefix();
-        StateBox::new(value, self.state_ll.clone(), prefix)
+        let prefix_bytes = to_bytes(&prefix);
+
+        // Insert the value into the state
+        let mut state_entry = self.state_ll.create(&prefix_bytes).unwrap_abort();
+        value.serial(&mut state_entry).unwrap_abort();
+
+        StateBox::new(value, self.state_ll.clone(), prefix_bytes)
     }
 
     fn get_and_update_item_prefix(&mut self) -> u64 {

@@ -18,6 +18,15 @@ pub struct StateMapIter<'a, K, V, S: HasContractStateLL> {
 }
 
 #[derive(Debug)]
+pub struct StateMapIterMut<'a, K, V, S: HasContractStateLL> {
+    pub(crate) state_iter:       Option<S::IterType>,
+    pub(crate) state_ll:         S,
+    pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
+    pub(crate) _marker_key:      PhantomData<K>,
+    pub(crate) _marker_value:    PhantomData<V>,
+}
+
+#[derive(Debug)]
 pub struct StateSet<T, S> {
     pub(crate) _marker:  PhantomData<T>,
     pub(crate) prefix:   StateItemPrefix,
@@ -62,6 +71,24 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target { &self.value }
+}
+
+#[derive(Debug)]
+/// The [StateRefMut] behaves like the type `StateBox<V>` in the way that it can
+/// be accessed.
+pub struct StateRefMut<'a, V, S> {
+    pub(crate) state_box:        StateBox<V, S>,
+    pub(crate) _marker_lifetime: PhantomData<&'a mut ()>,
+}
+
+impl<'a, V, S> StateRefMut<'a, V, S> {
+    #[inline(always)]
+    pub(crate) fn new(value: V, key: &[u8], state_ll: S) -> Self {
+        Self {
+            state_box:        StateBox::new(value, state_ll, key.to_vec()),
+            _marker_lifetime: PhantomData,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

@@ -1303,6 +1303,62 @@ mod test {
     }
 
     #[test]
+    fn statemap_iter_mut_works() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut map = allocator.new_map();
+        map.insert(0u8, 1u8);
+        map.insert(1u8, 2u8);
+        map.insert(2u8, 3u8);
+        for (_, mut v) in map.iter_mut() {
+            v.update(|old_value| *old_value += 10);
+        }
+        let mut iter = map.iter();
+        let (k1, v1) = iter.next().unwrap();
+        assert_eq!(*k1, 0);
+        assert_eq!(*v1, 11);
+        let (k2, v2) = iter.next().unwrap();
+        assert_eq!(*k2, 1);
+        assert_eq!(*v2, 12);
+        let (k3, v3) = iter.next().unwrap();
+        assert_eq!(*k3, 2);
+        assert_eq!(*v3, 13);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn iter_mut_works_on_nested_statemaps() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut outer_map = allocator.new_map();
+        let mut inner_map = allocator.new_map();
+        inner_map.insert(0u8, 1u8);
+        inner_map.insert(1u8, 2u8);
+        outer_map.insert(99u8, inner_map);
+        for (_, mut v_map) in outer_map.iter_mut() {
+            v_map.update(|v_map| {
+                for (_, mut inner_v) in v_map.iter_mut() {
+                    inner_v.update(|inner_v| *inner_v += 10);
+                }
+            });
+        }
+
+        // Check the outer map.
+        let mut outer_iter = outer_map.iter();
+        let (inner_map_key, inner_map) = outer_iter.next().unwrap();
+        assert_eq!(*inner_map_key, 99);
+        assert!(outer_iter.next().is_none());
+
+        // Check the inner map.
+        let mut inner_iter = inner_map.iter();
+        let (k1, v1) = inner_iter.next().unwrap();
+        assert_eq!(*k1, 0);
+        assert_eq!(*v1, 11);
+        let (k2, v2) = inner_iter.next().unwrap();
+        assert_eq!(*k2, 1);
+        assert_eq!(*v2, 12);
+        assert!(inner_iter.next().is_none());
+    }
+
+    #[test]
     fn statemap_iterator_unlocks_tree_once_dropped() {
         let mut allocator = Allocator::open(ContractStateLLTest::new());
         let mut map = allocator.new_map();
