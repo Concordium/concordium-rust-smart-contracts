@@ -12,18 +12,14 @@ pub struct StateMap<K, V, S> {
 pub struct StateMapIter<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
-    pub(crate) _lifetime_marker: PhantomData<&'a ()>,
-    pub(crate) _marker_key:      PhantomData<K>,
-    pub(crate) _marker_value:    PhantomData<V>,
+    pub(crate) _lifetime_marker: PhantomData<&'a (K, V)>,
 }
 
 #[derive(Debug)]
 pub struct StateMapIterMut<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
-    pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
-    pub(crate) _marker_key:      PhantomData<K>,
-    pub(crate) _marker_value:    PhantomData<V>,
+    pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
 #[derive(Debug)]
@@ -37,8 +33,7 @@ pub struct StateSet<T, S> {
 pub struct StateSetIter<'a, T, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
-    pub(crate) _marker:          PhantomData<T>,
-    pub(crate) _marker_lifetime: PhantomData<&'a ()>,
+    pub(crate) _marker_lifetime: PhantomData<&'a T>,
 }
 
 #[derive(Debug)]
@@ -53,7 +48,7 @@ pub struct StateBox<T, S> {
 /// accessed.
 pub struct StateRef<'a, V> {
     pub(crate) value:            V,
-    pub(crate) _marker_lifetime: PhantomData<&'a ()>,
+    pub(crate) _marker_lifetime: PhantomData<&'a V>,
 }
 
 impl<'a, V> StateRef<'a, V> {
@@ -78,7 +73,7 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 /// be accessed.
 pub struct StateRefMut<'a, V, S> {
     pub(crate) state_box:        StateBox<V, S>,
-    pub(crate) _marker_lifetime: PhantomData<&'a mut ()>,
+    pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
 impl<'a, V, S> StateRefMut<'a, V, S> {
@@ -91,19 +86,17 @@ impl<'a, V, S> StateRefMut<'a, V, S> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-#[doc(hidden)]
-pub struct StateApi;
-
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct ContractStateIter {
+/// An iterator over a part of the state. Its implementation is supported by
+/// host calls.
+pub struct ContractStateIterExtern {
     pub(crate) iterator_id: StateIteratorId,
 }
 
-pub type StateEntryId = u64;
-pub type StateIteratorId = u64;
-pub type StateItemPrefix = Vec<u8>;
+pub(crate) type StateEntryId = u64;
+pub(crate) type StateIteratorId = u64;
+pub(crate) type StateItemPrefix = Vec<u8>;
 
 #[derive(Default)]
 pub struct StateEntry {
@@ -130,15 +123,14 @@ pub enum EntryRaw<StateEntryType> {
 pub struct VacantEntry<'a, K, V, StateEntryType> {
     pub(crate) key:              K,
     pub(crate) state_entry:      StateEntryType,
-    pub(crate) _marker_value:    PhantomData<V>,
-    pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
+    pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
 pub struct OccupiedEntry<'a, K, V, StateEntryType> {
     pub(crate) key:              K,
     pub(crate) value:            V,
     pub(crate) state_entry:      StateEntryType,
-    pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
+    pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
 pub enum Entry<'a, K, V, S> {
@@ -523,7 +515,7 @@ pub type InitResult<S> = Result<S, Reject>;
 #[doc(hidden)]
 pub struct ExternHost<State> {
     pub state:     State,
-    pub allocator: Allocator<StateApi>,
+    pub allocator: Allocator<StateApiExtern>,
 }
 
 #[derive(Default)]
@@ -531,12 +523,18 @@ pub struct Allocator<StateLL> {
     pub(crate) state_ll: StateLL,
 }
 
+#[derive(Debug, Clone, Default)]
+#[doc(hidden)]
+pub struct StateApiExtern {
+    pub(crate) private: (),
+}
+
 /// Operations backed by host functions for the low-level interface.
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state:     StateApi,
-    pub(crate) allocator: Allocator<StateApi>,
+    pub(crate) state:     StateApiExtern,
+    pub(crate) allocator: Allocator<StateApiExtern>,
 }
 
 /// Context backed by host functions.

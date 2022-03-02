@@ -418,7 +418,6 @@ where
         Self {
             key,
             state_entry,
-            _marker_value: PhantomData,
             _lifetime_marker: PhantomData,
         }
     }
@@ -538,13 +537,18 @@ const NEXT_ITEM_PREFIX_KEY: u64 = 0;
 const GENERIC_MAP_PREFIX: u64 = 1;
 pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
 
-impl HasState for StateApi {
+impl HasState for StateApiExtern {
     type EntryType = StateEntry;
-    type IterType = ContractStateIter;
+    type IterType = ContractStateIterExtern;
     type StateData = ();
 
     /// Open the contract state.
-    fn open(_: Self::StateData) -> Self { StateApi }
+    #[inline(always)]
+    fn open(private: Self::StateData) -> Self {
+        StateApiExtern {
+            private,
+        }
+    }
 
     fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
         let key_start = key.as_ptr();
@@ -603,7 +607,7 @@ impl HasState for StateApi {
         }
     }
 
-    fn iterator(&self, prefix: &[u8]) -> Result<ContractStateIter, StateError> {
+    fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError> {
         let prefix_start = prefix.as_ptr();
         let prefix_len = prefix.len() as u32; // Wasm usize == 32bit.
         let iterator_id = unsafe { prims::state_iterate_prefix(prefix_start, prefix_len) };
@@ -614,12 +618,12 @@ impl HasState for StateApi {
         if iterator_id | 1u64.rotate_right(2) == all_ones {
             return Err(StateError::EntryNotFound);
         }
-        Ok(ContractStateIter {
+        Ok(ContractStateIterExtern {
             iterator_id,
         })
     }
 
-    fn delete_iterator(&mut self, iter: ContractStateIter) {
+    fn delete_iterator(&mut self, iter: Self::IterType) {
         // This call can never fail because the only way to get an `ContractStateIter`
         // is through `StateApi::iterator(..)`. And this call consumes
         // the iterator.
@@ -633,7 +637,7 @@ impl HasState for StateApi {
     }
 }
 
-impl Iterator for ContractStateIter {
+impl Iterator for ContractStateIterExtern {
     type Item = StateEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -791,8 +795,6 @@ where
             state_iter:       Some(state_iter),
             state_ll:         self.state_ll.clone(),
             _lifetime_marker: PhantomData,
-            _marker_key:      PhantomData,
-            _marker_value:    PhantomData,
         }
     }
 
@@ -802,16 +804,14 @@ where
             state_iter:       Some(state_iter),
             state_ll:         self.state_ll.clone(),
             _lifetime_marker: PhantomData,
-            _marker_key:      PhantomData,
-            _marker_value:    PhantomData,
         }
     }
 }
 
 impl<'a, K, V, S: HasState> Iterator for StateMapIter<'a, K, V, S>
 where
-    K: Deserial,
-    V: DeserialStateCtx<S>,
+    K: Deserial + 'a,
+    V: DeserialStateCtx<S> + 'a,
 {
     type Item = (StateRef<'a, K>, StateRef<'a, V>);
 
@@ -831,8 +831,8 @@ where
 
 impl<'a, K, V, S: HasState> Iterator for StateMapIterMut<'a, K, V, S>
 where
-    K: Deserial,
-    V: DeserialStateCtx<S>,
+    K: Deserial + 'a,
+    V: DeserialStateCtx<S> + 'a,
 {
     type Item = (StateRef<'a, K>, StateRefMut<'a, V, S>);
 
@@ -952,7 +952,6 @@ impl<T, S: HasState> StateSet<T, S> {
         StateSetIter {
             state_iter:       Some(state_iter),
             state_ll:         self.state_ll.clone(),
-            _marker:          PhantomData,
             _marker_lifetime: PhantomData,
         }
     }
@@ -1482,10 +1481,10 @@ where
 
 impl<State> HasHost<State> for ExternHost<State>
 where
-    State: DeserialStateCtx<StateApi>,
+    State: DeserialStateCtx<StateApiExtern>,
 {
     type ReturnValueType = CallResponse;
-    type StateType = StateApi;
+    type StateType = StateApiExtern;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
@@ -1529,9 +1528,9 @@ where
     fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
 }
 
-impl HasHost<StateApi> for ExternLowLevelHost {
+impl HasHost<StateApiExtern> for ExternLowLevelHost {
     type ReturnValueType = CallResponse;
-    type StateType = StateApi;
+    type StateType = StateApiExtern;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
@@ -1554,10 +1553,10 @@ impl HasHost<StateApi> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn state(&self) -> &StateApi { &self.state }
+    fn state(&self) -> &StateApiExtern { &self.state }
 
     #[inline(always)]
-    fn state_mut(&mut self) -> &mut StateApi { &mut self.state }
+    fn state_mut(&mut self) -> &mut StateApiExtern { &mut self.state }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
