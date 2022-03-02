@@ -213,7 +213,7 @@ extern "C" {
 #[cfg(not(target_arch = "wasm32"))]
 mod host_dummy_functions {
     #[no_mangle]
-    fn invoke(_tag: u32, _start: *const u8, _length: u32) -> i64 {
+    fn invoke(_tag: u32, _start: *const u8, _length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
@@ -221,7 +221,7 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    extern "C" fn get_parameter_size(_i: u32) -> u32 {
+    extern "C" fn get_parameter_size(_i: u32) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
@@ -230,7 +230,7 @@ mod host_dummy_functions {
         _param_bytes: *mut u8,
         _length: u32,
         _offset: u32,
-    ) -> u32 {
+    ) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
@@ -238,7 +238,7 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
-    extern "C" fn log_event(_start: *const u8, _length: u32) {
+    extern "C" fn log_event(_start: *const u8, _length: u32) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
@@ -263,6 +263,10 @@ mod host_dummy_functions {
     }
     #[no_mangle]
     pub(crate) fn state_iterator_next(_iterator: u64) -> u64 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    pub(crate) fn state_iterator_delete(_iterator: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
