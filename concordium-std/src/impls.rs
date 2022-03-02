@@ -899,11 +899,9 @@ impl<T, S: HasContractStateLL> StateSet<T, S> {
     pub fn iter(&self) -> StateSetIter<T, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
         StateSetIter {
-            inner:            StateSetIterInner {
-                state_iter: Some(state_iter),
-                state_ll:   self.state_ll.clone(),
-                _marker:    PhantomData,
-            },
+            state_iter:       Some(state_iter),
+            state_ll:         self.state_ll.clone(),
+            _marker:          PhantomData,
             _marker_lifetime: PhantomData,
         }
     }
@@ -989,7 +987,7 @@ impl<T, S> Serial for StateSet<T, S> {
 }
 
 /// Unlock the part of the tree locked by the iterator.
-impl<'a, T, S: HasContractStateLL> Drop for StateSetIterInner<T, S> {
+impl<'a, T, S: HasContractStateLL> Drop for StateSetIter<'a, T, S> {
     #[inline]
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
@@ -1007,13 +1005,6 @@ where
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        let v = self.inner.next()?;
-        Some(StateRef::new(v))
-    }
-}
-
-impl<S: HasContractStateLL, T: DeserialStateCtx<S>> StateSetIterInner<T, S> {
-    fn next(&mut self) -> Option<T> {
         let entry = self.state_iter.as_mut()?.next()?;
         let key = entry.get_key();
         let mut key_cursor = Cursor {
@@ -1021,8 +1012,8 @@ impl<S: HasContractStateLL, T: DeserialStateCtx<S>> StateSetIterInner<T, S> {
             offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
-        let res = T::deserial_state_ctx(&self.state_ll, &mut key_cursor).unwrap_abort();
-        Some(res)
+        let t = T::deserial_state_ctx(&self.state_ll, &mut key_cursor).unwrap_abort();
+        Some(StateRef::new(t))
     }
 }
 

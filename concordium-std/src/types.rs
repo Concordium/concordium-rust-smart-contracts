@@ -24,15 +24,11 @@ pub struct StateSet<T, S> {
     pub(crate) state_ll: S,
 }
 
-pub(crate) struct StateSetIterInner<T, S: HasContractStateLL> {
-    pub(crate) state_iter: Option<S::IterType>,
-    pub(crate) state_ll:   S,
-    pub(crate) _marker:    PhantomData<T>,
-}
-
 /// An iterator over the values of the set.
 pub struct StateSetIter<'a, T, S: HasContractStateLL> {
-    pub(crate) inner:            StateSetIterInner<T, S>,
+    pub(crate) state_iter:       Option<S::IterType>,
+    pub(crate) state_ll:         S,
+    pub(crate) _marker:          PhantomData<T>,
     pub(crate) _marker_lifetime: PhantomData<&'a ()>,
 }
 
