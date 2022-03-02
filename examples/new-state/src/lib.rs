@@ -188,8 +188,8 @@ mod tests {
 
         // Token count should be 100.
         assert_eq!(
-            state_reloaded.token_state.get(&owner).unwrap().get(&token_id),
-            Some(expected_token_count)
+            *state_reloaded.token_state.get(&owner).unwrap().get(&token_id).unwrap(),
+            expected_token_count
         );
 
         let mut a_set_iter = state_reloaded.another_struct.a_set.iter();
