@@ -81,7 +81,7 @@ struct MintParams {
 }
 
 #[receive(contract = "storable-contract", name = "mint", parameter = "MintParams", mutable)]
-fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
+fn receive_mint<S: HasContractStateLL>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, ContractStateLLType = S>,
 ) -> ReceiveResult<()> {
@@ -119,7 +119,7 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
 }
 
 #[receive(contract = "storable-contract", name = "readonly")]
-fn receive_readonly<S: HasContractStateLL + std::fmt::Debug>(
+fn receive_readonly<S: HasContractStateLL>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, ContractStateLLType = S>,
 ) -> ReceiveResult<u64> {
