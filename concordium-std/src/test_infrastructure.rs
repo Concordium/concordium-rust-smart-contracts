@@ -1120,7 +1120,7 @@ mod test {
     use super::ContractStateLLTest;
     use crate::{
         cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Allocator, EntryRaw, Freeable,
-        HasContractStateEntry, HasContractStateLL, StateMap, StateSet,
+        HasContractStateEntry, HasContractStateLL, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
@@ -1592,5 +1592,42 @@ mod test {
         // Uncommenting this line should give a borrow-check error.
         // let e2 = map.entry(1u8);
         e1.and_modify(|v| *v += 1);
+    }
+
+    #[test]
+    fn occupied_entry_truncates_leftover_data() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut map = allocator.new_map();
+        map.insert(99u8, "A longer string that should be truncated".into());
+        let a_short_string = "A short string".to_string();
+        let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
+        map.entry(99u8).and_modify(|v| *v = a_short_string);
+        let actual_size = allocator
+            .state_ll
+            .lookup(&[INITIAL_NEXT_ITEM_PREFIX as u8, 0, 0, 0, 0, 0, 0, 0, 99])
+            .expect("Lookup failed")
+            .size()
+            .expect("Getting size failed");
+        assert_eq!(expected_size as u32, actual_size);
+    }
+
+    #[test]
+    fn occupied_entry_raw_truncates_leftover_data() {
+        let mut state = ContractStateLLTest::new();
+        state
+            .entry(&[])
+            .expect("Could not get entry")
+            .or_insert(&to_bytes(&"A longer string that should be truncated"));
+
+        let a_short_string = "A short string";
+        let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
+
+        match state.entry(&[]).expect("Could not get entry") {
+            EntryRaw::Vacant(_) => assert!(false, "Entry is vacant"),
+            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&a_short_string)),
+        }
+        let actual_size =
+            state.lookup(&[]).expect("Lookup failed").size().expect("Getting size failed");
+        assert_eq!(expected_size as u32, actual_size);
     }
 }

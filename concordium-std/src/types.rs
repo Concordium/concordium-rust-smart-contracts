@@ -92,6 +92,7 @@ impl<'a, V, S> StateRefMut<'a, V, S> {
 }
 
 #[derive(Debug, Clone, Default)]
+#[doc(hidden)]
 pub struct ContractStateLL;
 
 #[derive(Debug)]

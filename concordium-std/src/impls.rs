@@ -389,8 +389,10 @@ where
     pub fn insert(&mut self, value: &[u8]) {
         // Rewind state entry. Cannot fail.
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-        self.state_entry.write_all(value).unwrap_abort(); // Writing to state
-                                                          // cannot fail.
+        self.state_entry.write_all(value).unwrap_abort();
+
+        // Truncate any data leftover from previous value.
+        self.state_entry.truncate(value.len() as u32).unwrap_abort();
     }
 }
 
@@ -450,11 +452,8 @@ where
     pub fn key(&self) -> &K { &self.key }
 
     pub fn insert(mut self, value: V) {
-        // Rewind state entry. Cannot fail.
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-        value.serial(&mut self.state_entry).unwrap_abort(); // Writing to
-                                                            // state cannot
-                                                            // fail.
+        self.value = value;
+        self.store_value();
     }
 
     pub fn get_ref(&self) -> &V { &self.value }
@@ -464,21 +463,25 @@ where
     where
         F: FnOnce(&mut V), {
         f(&mut self.value);
-        // Rewind state entry. Cannot fail.
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-        self.value.serial(&mut self.state_entry).unwrap_abort(); // Writing to
-                                                                 // state cannot
-                                                                 // fail.
+        self.store_value();
     }
 
     pub fn try_modify<F, E>(&mut self, f: F) -> Result<(), E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         f(&mut self.value)?;
+        self.store_value();
+        Ok(())
+    }
+
+    fn store_value(&mut self) {
+        let value_bytes = to_bytes(&self.value);
         // Rewind state entry. Cannot fail.
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-        self.value.serial(&mut self.state_entry).unwrap_abort(); // Writing to state cannot fail.
-        Ok(())
+        self.state_entry.write(&value_bytes).unwrap_abort();
+
+        // Remove any additional data from prior value.
+        self.state_entry.truncate(value_bytes.len() as u32).unwrap_abort();
     }
 }
 
@@ -530,10 +533,10 @@ where
     }
 }
 
-const NEXT_COLLECTION_PREFIX_KEY: u64 = 0;
+const NEXT_ITEM_PREFIX_KEY: u64 = 0;
 #[cfg(test)]
 const GENERIC_MAP_PREFIX: u64 = 1;
-const INITIAL_NEXT_COLLECTION_PREFIX: u64 = 2;
+pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
 
 impl HasContractStateLL for ContractStateLL {
     type ContractStateData = ();
@@ -1415,8 +1418,8 @@ where
 
     fn get_and_update_item_prefix(&mut self) -> u64 {
         // Get the next prefix or insert and use the initial one.
-        let entry_key = to_bytes(&NEXT_COLLECTION_PREFIX_KEY);
-        let default_prefix = to_bytes(&INITIAL_NEXT_COLLECTION_PREFIX);
+        let entry_key = to_bytes(&NEXT_ITEM_PREFIX_KEY);
+        let default_prefix = to_bytes(&INITIAL_NEXT_ITEM_PREFIX);
         // Unwrapping is safe when using the high-level API because it is not possible
         // to get an iterator that locks this entry.
         let mut next_collection_prefix_entry =
