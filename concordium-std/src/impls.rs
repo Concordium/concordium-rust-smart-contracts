@@ -665,11 +665,11 @@ where
     V: Serial + DeserialStateCtx<S> + Freeable,
 {
     /// Try to get the value with the given key.
-    pub fn get(&self, key: &K) -> Option<V> {
+    pub fn get(&self, key: &K) -> Option<StateRef<V>> {
         let k = self.key_with_map_prefix(&key);
         self.state_ll.lookup(&k).map(|mut entry| {
             // Unwrapping is safe when using only the high-level API.
-            V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort()
+            StateRef::new(V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort())
         })
     }
 
@@ -719,7 +719,7 @@ where
         // StateBox/StateMap.
         // TODO: Ideally, only free when `V` _is_ a statetype.
         for (_, value) in self.iter() {
-            value.free()
+            value.value.free()
         }
 
         // Then delete the map itself.
@@ -732,7 +732,8 @@ where
     ///
     /// *Caution*: If `V` is a [StateBox], [StateMap], then it is
     /// important to call `Freeable::free` on the value returned when you're
-    /// finished with it. Otherwise, it will remain the contract state.
+    /// finished with it. Otherwise, it will remain in the contract state.
+    #[must_use]
     pub fn remove_and_get(&mut self, key: &K) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
@@ -781,8 +782,7 @@ where
         }
     }
 
-    /// Gets an iterator over the entries of the map, sorted by key.
-    pub fn iter(&self) -> StateMapIter<K, V, S> {
+    fn iter(&self) -> StateMapIter<'_, K, V, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
         StateMapIter {
             state_iter:       Some(state_iter),
@@ -799,7 +799,7 @@ where
     K: Deserial,
     V: DeserialStateCtx<S>,
 {
-    type Item = (K, V);
+    type Item = (StateRef<'a, K>, StateRef<'a, V>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut entry = self.state_iter.as_mut()?.next()?;
@@ -811,7 +811,7 @@ where
         // Unwrapping is safe when only using the high-level API.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
         let v = V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort();
-        Some((k, v))
+        Some((StateRef::new(k), StateRef::new(v)))
     }
 }
 
@@ -858,7 +858,7 @@ where
         // Free all values in the stateset. This is necessary if `T` is a
         // StateBox/StateMap.
         for value in self.iter() {
-            value.free()
+            value.value.free()
         }
         // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
@@ -1003,10 +1003,13 @@ impl<'a, T, S: HasContractStateLL> Iterator for StateSetIter<'a, T, S>
 where
     T: DeserialStateCtx<S>,
 {
-    type Item = T;
+    type Item = StateRef<'a, T>;
 
     #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> { self.inner.next() }
+    fn next(&mut self) -> Option<Self::Item> {
+        let v = self.inner.next()?;
+        Some(StateRef::new(v))
+    }
 }
 
 impl<S: HasContractStateLL, T: DeserialStateCtx<S>> StateSetIterInner<T, S> {
@@ -1920,6 +1923,7 @@ where
 }
 
 impl<T: Serialize> Freeable for T {
+    #[inline(always)]
     fn free(self) {} // Types that are Serialize have nothing to free!
 }
 
@@ -1966,10 +1970,10 @@ where
         // Free all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap.
         for (_, value) in self.iter() {
-            value.free()
+            value.value.free()
         }
 
-        // Then delete the mapitself.
+        // Then delete the map itself.
         // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
     }

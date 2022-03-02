@@ -43,6 +43,31 @@ pub struct StateBox<T, S> {
     pub(crate) lazy_value: RefCell<Option<T>>,
 }
 
+#[derive(Debug)]
+/// The [StateRef] behaves like the type `&'a V` in the way that it can be
+/// accessed.
+pub struct StateRef<'a, V> {
+    pub(crate) value:            V,
+    pub(crate) _marker_lifetime: PhantomData<&'a ()>,
+}
+
+impl<'a, V> StateRef<'a, V> {
+    #[inline(always)]
+    pub(crate) fn new(value: V) -> Self {
+        Self {
+            value,
+            _marker_lifetime: PhantomData,
+        }
+    }
+}
+
+impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
+    type Target = V;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target { &self.value }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ContractStateLL;
 
