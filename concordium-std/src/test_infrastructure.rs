@@ -1526,4 +1526,15 @@ mod test {
         // The only remaining node should be the allocator's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
+
+    #[test]
+    fn multiple_entries_not_allowed() {
+        let mut allocator = Allocator::open(ContractStateLLTest::new());
+        let mut map = allocator.new_map();
+        map.insert(0u8, 1u8);
+        let e1 = map.entry(0u8);
+        // Uncommenting this line should give a borrow-check error.
+        // let e2 = map.entry(1u8);
+        e1.and_modify(|v| *v += 1);
+    }
 }

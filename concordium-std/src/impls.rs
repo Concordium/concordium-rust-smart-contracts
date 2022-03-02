@@ -406,7 +406,7 @@ where
     }
 }
 
-impl<K, V, StateEntryType> VacantEntry<K, V, StateEntryType>
+impl<'a, K, V, StateEntryType> VacantEntry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
@@ -417,6 +417,7 @@ where
             key,
             state_entry,
             _marker_value: PhantomData,
+            _lifetime_marker: PhantomData,
         }
     }
 
@@ -431,7 +432,7 @@ where
     }
 }
 
-impl<K, V, StateEntryType> OccupiedEntry<K, V, StateEntryType>
+impl<'a, K, V, StateEntryType> OccupiedEntry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
@@ -442,6 +443,7 @@ where
             key,
             value,
             state_entry,
+            _lifetime_marker: PhantomData,
         }
     }
 
@@ -480,7 +482,7 @@ where
     }
 }
 
-impl<K, V, StateEntryType> Entry<K, V, StateEntryType>
+impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial,
@@ -495,7 +497,7 @@ where
     /// Try to modify the entry using the given function.
     /// TODO: This might not be needed now that the high-level API unwraps the
     /// potential results.
-    pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<K, V, StateEntryType>, E>
+    pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<'a, K, V, StateEntryType>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         if let Entry::Occupied(ref mut occ) = self {
@@ -505,7 +507,7 @@ where
     }
 
     /// Modify the entry using the given function.
-    pub fn and_modify<F>(mut self, f: F) -> Entry<K, V, StateEntryType>
+    pub fn and_modify<F>(mut self, f: F) -> Entry<'a, K, V, StateEntryType>
     where
         F: FnOnce(&mut V), {
         if let Entry::Occupied(ref mut occ) = self {
@@ -515,7 +517,7 @@ where
     }
 }
 
-impl<K, V, StateEntryType> Entry<K, V, StateEntryType>
+impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
 where
     K: Serial,
     V: Serial + Default,
@@ -692,7 +694,7 @@ where
     }
 
     /// Get an entry for the given key.
-    pub fn entry(&mut self, key: K) -> Entry<K, V, S::EntryType> {
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S::EntryType> {
         let key_bytes = self.key_with_map_prefix(&key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_ll.entry(&key_bytes).unwrap_abort() {

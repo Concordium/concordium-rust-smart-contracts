@@ -103,21 +103,23 @@ pub enum EntryRaw<StateEntryType> {
     Occupied(OccupiedEntryRaw<StateEntryType>),
 }
 
-pub struct VacantEntry<K, V, StateEntryType> {
-    pub(crate) key:           K,
-    pub(crate) state_entry:   StateEntryType,
-    pub(crate) _marker_value: PhantomData<V>,
+pub struct VacantEntry<'a, K, V, StateEntryType> {
+    pub(crate) key:              K,
+    pub(crate) state_entry:      StateEntryType,
+    pub(crate) _marker_value:    PhantomData<V>,
+    pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
 }
 
-pub struct OccupiedEntry<K, V, StateEntryType> {
-    pub(crate) key:         K,
-    pub(crate) value:       V,
-    pub(crate) state_entry: StateEntryType,
+pub struct OccupiedEntry<'a, K, V, StateEntryType> {
+    pub(crate) key:              K,
+    pub(crate) value:            V,
+    pub(crate) state_entry:      StateEntryType,
+    pub(crate) _lifetime_marker: PhantomData<&'a mut ()>,
 }
 
-pub enum Entry<K, V, S> {
-    Vacant(VacantEntry<K, V, S>),
-    Occupied(OccupiedEntry<K, V, S>),
+pub enum Entry<'a, K, V, S> {
+    Vacant(VacantEntry<'a, K, V, S>),
+    Occupied(OccupiedEntry<'a, K, V, S>),
 }
 
 #[derive(Default)]

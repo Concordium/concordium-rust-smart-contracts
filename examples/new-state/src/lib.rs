@@ -87,6 +87,10 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
 ) -> ReceiveResult<()> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
+    // TODO: Avoid allocating new map up front. Necessary because of lifetime
+    // restrictions on host.
+    let mut owner_map = host.allocator().new_map();
+
     host.state_mut()
         .token_state
         .entry(params.owner)
@@ -99,7 +103,6 @@ fn receive_mint<S: HasContractStateLL + std::fmt::Debug>(
                 .or_insert(params.token_count);
         })
         .or_insert({
-            let mut owner_map = host.allocator().new_map();
             let _old_value = owner_map.insert(params.token_id, params.token_count);
             owner_map
         });
