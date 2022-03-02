@@ -457,8 +457,6 @@ where
 
     pub fn get_ref(&self) -> &V { &self.value }
 
-    pub fn get(self) -> V { self.value }
-
     // If we had Stored<V> then we wouldn't need this.
     pub fn modify<F>(&mut self, f: F)
     where
