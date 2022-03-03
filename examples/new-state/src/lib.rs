@@ -4,56 +4,67 @@ use concordium_std::*;
 type TokenId = TokenIdU8;
 type TokenCount = u8;
 
-#[derive(SchemaType)]
+#[derive(SchemaType, Serial)]
 struct State<S> {
     token_state:        StateMap<Address, StateMap<TokenId, TokenCount, S>, S>,
     another_struct:     AnotherStruct<S>,
     total_tokens:       u64,
     boxed_total_tokens: StateBox<u64, S>,
+    maybe_box:          MaybeBox<S>,
 }
 
+#[derive(Serial)]
 struct AnotherStruct<S> {
     a_set: StateSet<u8, S>,
 }
 
-impl<S> Serial for State<S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        self.token_state.serial(out)?;
-        self.another_struct.serial(out)?;
-        self.total_tokens.serial(out)?;
-        self.boxed_total_tokens.serial(out)
-    }
+#[derive(Serial)]
+enum MaybeBox<S> {
+    NoBox,
+    WithBox(StateBox<String, S>),
 }
 
-impl<S> Serial for AnotherStruct<S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.a_set.serial(out) }
-}
-
-impl<S> DeserialStateCtx<S> for State<S>
+impl<S> DeserialWithState<S> for MaybeBox<S>
 where
     S: HasState,
 {
-    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        let token_state = DeserialStateCtx::deserial_state_ctx(state, source)?;
-        let another_struct = DeserialStateCtx::deserial_state_ctx(state, source)?;
-        let total_tokens = DeserialStateCtx::deserial_state_ctx(state, source)?;
-        let boxed_total_tokens = DeserialStateCtx::deserial_state_ctx(state, source)?;
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+        let tag = source.read_u8()?;
+        match tag {
+            0 => Ok(MaybeBox::NoBox),
+            1 => Ok(MaybeBox::WithBox(DeserialWithState::deserial_with_state(state, source)?)),
+            _ => Err(ParseError::default()),
+        }
+    }
+}
+
+impl<S> DeserialWithState<S> for State<S>
+where
+    S: HasState,
+{
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+        let token_state = DeserialWithState::deserial_with_state(state, source)?;
+        let another_struct = DeserialWithState::deserial_with_state(state, source)?;
+        let total_tokens = DeserialWithState::deserial_with_state(state, source)?;
+        let boxed_total_tokens = DeserialWithState::deserial_with_state(state, source)?;
+        let maybe_box = DeserialWithState::deserial_with_state(state, source)?;
         Ok(Self {
             token_state,
             another_struct,
             total_tokens,
             boxed_total_tokens,
+            maybe_box,
         })
     }
 }
 
-impl<S> DeserialStateCtx<S> for AnotherStruct<S>
+impl<S> DeserialWithState<S> for AnotherStruct<S>
 where
     S: HasState,
 {
-    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         Ok(Self {
-            a_set: DeserialStateCtx::deserial_state_ctx(state, source)?,
+            a_set: DeserialWithState::deserial_with_state(state, source)?,
         })
     }
 }
@@ -70,6 +81,7 @@ fn init<S: HasState>(
         },
         total_tokens:       0,
         boxed_total_tokens: allocator.new_box(0u64),
+        maybe_box:          MaybeBox::NoBox,
     }))
 }
 
@@ -108,6 +120,8 @@ fn receive_mint<S: HasState>(
         });
 
     host.state_mut().another_struct.a_set.insert(42);
+
+    host.state_mut().maybe_box = MaybeBox::WithBox(host.allocator().new_box("I'm boxed".into()));
 
     // This won't be persisted. The change only occurs in memory.
     host.state_mut().total_tokens += params.token_count as u64;
@@ -172,7 +186,7 @@ mod tests {
         // Then load the state, as it happens when calling receive.
         root_entry.seek(SeekFrom::Start(0)).expect("Seeking to start failed");
         let state_for_rcv =
-            State::deserial_state_ctx(&state_ll, &mut root_entry).expect("Could not read state");
+            State::deserial_with_state(&state_ll, &mut root_entry).expect("Could not read state");
 
         let mut host = HostTest::new_with_allocator(state_for_rcv, allocator);
 
@@ -186,7 +200,7 @@ mod tests {
         // Reload the state to ensure that it was actually persisted (and not just
         // altered in memory).
         root_entry.seek(SeekFrom::Start(0)).expect("Seeking to start failed");
-        let state_reloaded = State::deserial_state_ctx(&state_ll, &mut root_entry)
+        let state_reloaded = State::deserial_with_state(&state_ll, &mut root_entry)
             .expect("Could not load all of state.");
 
         // Token count should be 100.
@@ -201,5 +215,19 @@ mod tests {
 
         assert_eq!(state_reloaded.total_tokens, 100);
         assert_eq!(*state_reloaded.boxed_total_tokens.get(), 100);
+
+        assert_eq!(state_reloaded.maybe_box.get_contents(), Some("I'm boxed".into()))
+    }
+
+    impl<S> MaybeBox<S>
+    where
+        S: HasState,
+    {
+        fn get_contents(&self) -> Option<String> {
+            match self {
+                MaybeBox::NoBox => None,
+                MaybeBox::WithBox(the_box) => Some(the_box.get().clone()),
+            }
+        }
     }
 }

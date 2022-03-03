@@ -350,8 +350,8 @@ pub trait DeserialCtx: Sized {
     ) -> ParseResult<Self>;
 }
 
-pub trait DeserialStateCtx<S>: Sized
+pub trait DeserialWithState<S>: Sized
 where
     S: HasState, {
-    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
 }

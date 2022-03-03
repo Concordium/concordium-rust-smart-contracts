@@ -755,7 +755,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let state_ll = StateApiExtern::open(());
                 let mut root_entry = state_ll.lookup(&[]).unwrap_abort();
-                if let Ok(state) = DeserialStateCtx::deserial_state_ctx(&state_ll, &mut root_entry) {
+                if let Ok(state) = DeserialWithState::deserial_with_state(&state_ll, &mut root_entry) {
                     let mut allocator = Allocator::open(state_ll);
                     let mut host = ExternHost { state, allocator };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {

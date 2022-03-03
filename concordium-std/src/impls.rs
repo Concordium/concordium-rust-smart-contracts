@@ -669,14 +669,14 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasState,
     K: Serialize,
-    V: Serial + DeserialStateCtx<S> + Freeable,
+    V: Serial + DeserialWithState<S> + Freeable,
 {
     /// Try to get the value with the given key.
     pub fn get(&self, key: &K) -> Option<StateRef<V>> {
         let k = self.key_with_map_prefix(&key);
         self.state_ll.lookup(&k).map(|mut entry| {
             // Unwrapping is safe when using only the high-level API.
-            StateRef::new(V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort())
+            StateRef::new(V::deserial_with_state(&self.state_ll, &mut entry).unwrap_abort())
         })
     }
 
@@ -693,7 +693,8 @@ where
             }
             EntryRaw::Occupied(mut occ) => {
                 // Unwrapping is safe when using only the high-level API.
-                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).unwrap_abort();
+                let old_value =
+                    V::deserial_with_state(&self.state_ll, occ.get_mut()).unwrap_abort();
                 occ.insert(&value_bytes);
                 Some(old_value)
             }
@@ -708,7 +709,7 @@ where
             EntryRaw::Vacant(vac) => Entry::Vacant(VacantEntry::new(key, vac.state_entry)),
             EntryRaw::Occupied(mut occ) => {
                 // Unwrapping is safe when using only the high-level API.
-                let value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).unwrap_abort();
+                let value = V::deserial_with_state(&self.state_ll, occ.get_mut()).unwrap_abort();
                 Entry::Occupied(OccupiedEntry::new(key, value, occ.state_entry))
             }
         }
@@ -749,7 +750,8 @@ where
             EntryRaw::Vacant(_) => None,
             EntryRaw::Occupied(mut occ) => {
                 // Unwrapping safe in high-level API.
-                let old_value = V::deserial_state_ctx(&self.state_ll, occ.get_mut()).unwrap_abort();
+                let old_value =
+                    V::deserial_with_state(&self.state_ll, occ.get_mut()).unwrap_abort();
                 let _existed = self.state_ll.delete_entry(occ.state_entry);
                 Some(old_value)
             }
@@ -811,7 +813,7 @@ where
 impl<'a, K, V, S: HasState> Iterator for StateMapIter<'a, K, V, S>
 where
     K: Deserial + 'a,
-    V: DeserialStateCtx<S> + 'a,
+    V: DeserialWithState<S> + 'a,
 {
     type Item = (StateRef<'a, K>, StateRef<'a, V>);
 
@@ -824,7 +826,7 @@ where
         };
         // Unwrapping is safe when only using the high-level API.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
-        let v = V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort();
+        let v = V::deserial_with_state(&self.state_ll, &mut entry).unwrap_abort();
         Some((StateRef::new(k), StateRef::new(v)))
     }
 }
@@ -832,7 +834,7 @@ where
 impl<'a, K, V, S: HasState> Iterator for StateMapIterMut<'a, K, V, S>
 where
     K: Deserial + 'a,
-    V: DeserialStateCtx<S> + 'a,
+    V: DeserialWithState<S> + 'a,
 {
     type Item = (StateRef<'a, K>, StateRefMut<'a, V, S>);
 
@@ -845,14 +847,14 @@ where
         };
         // Unwrapping is safe when only using the high-level API.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
-        let v = V::deserial_state_ctx(&self.state_ll, &mut entry).unwrap_abort();
+        let v = V::deserial_with_state(&self.state_ll, &mut entry).unwrap_abort();
         Some((StateRef::new(k), StateRefMut::new(v, &key_bytes, self.state_ll.clone())))
     }
 }
 
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
-    V: Serial + DeserialStateCtx<S>,
+    V: Serial + DeserialWithState<S>,
     S: HasState,
 {
     pub fn get(&self) -> Ref<'_, V> { self.state_box.get() }
@@ -970,7 +972,7 @@ impl<T, S> StateBox<T, S> {
 
 impl<T, S> StateBox<T, S>
 where
-    T: Serial + DeserialStateCtx<S>,
+    T: Serial + DeserialWithState<S>,
     S: HasState,
 {
     /// Get a reference to the value.
@@ -1013,7 +1015,7 @@ where
     fn ensure_cached(&self) {
         if self.lazy_value.borrow_mut().is_none() {
             let mut state_entry = self.state_ll.lookup(&self.prefix).unwrap_abort();
-            let value = T::deserial_state_ctx(&self.state_ll, &mut state_entry).unwrap_abort();
+            let value = T::deserial_with_state(&self.state_ll, &mut state_entry).unwrap_abort();
             *self.lazy_value.borrow_mut() = Some(value);
         }
     }
@@ -1044,7 +1046,7 @@ impl<'a, T, S: HasState> Drop for StateSetIter<'a, T, S> {
 
 impl<'a, T, S: HasState> Iterator for StateSetIter<'a, T, S>
 where
-    T: DeserialStateCtx<S>,
+    T: DeserialWithState<S>,
 {
     type Item = StateRef<'a, T>;
 
@@ -1057,7 +1059,7 @@ where
             offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
-        let t = T::deserial_state_ctx(&self.state_ll, &mut key_cursor).unwrap_abort();
+        let t = T::deserial_with_state(&self.state_ll, &mut key_cursor).unwrap_abort();
         Some(StateRef::new(t))
     }
 }
@@ -1396,12 +1398,12 @@ where
         StateMap::open(self.state_ll.clone(), prefix)
     }
 
-    pub fn new_set<T: Serial + DeserialStateCtx<StateLL>>(&mut self) -> StateSet<T, StateLL> {
+    pub fn new_set<T: Serial + DeserialWithState<StateLL>>(&mut self) -> StateSet<T, StateLL> {
         let prefix = self.get_and_update_item_prefix();
         StateSet::open(self.state_ll.clone(), prefix)
     }
 
-    pub fn new_box<T: Serial + DeserialStateCtx<StateLL>>(
+    pub fn new_box<T: Serial + DeserialWithState<StateLL>>(
         &mut self,
         value: T,
     ) -> StateBox<T, StateLL> {
@@ -1445,7 +1447,7 @@ where
 {
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
-    pub(crate) fn get<K: Serial, V: DeserialStateCtx<StateLL>>(
+    pub(crate) fn get<K: Serial, V: DeserialWithState<StateLL>>(
         &self,
         key: K,
     ) -> Option<ParseResult<V>> {
@@ -1453,7 +1455,7 @@ where
 
         self.state_ll
             .lookup(&key_with_map_prefix)
-            .map(|mut entry| V::deserial_state_ctx(&self.state_ll, &mut entry))
+            .map(|mut entry| V::deserial_with_state(&self.state_ll, &mut entry))
     }
 
     pub(crate) fn insert<K: Serial, V: Serial>(
@@ -1481,7 +1483,7 @@ where
 
 impl<State> HasHost<State> for ExternHost<State>
 where
-    State: DeserialStateCtx<StateApiExtern>,
+    State: DeserialWithState<StateApiExtern>,
 {
     type ReturnValueType = CallResponse;
     type StateType = StateApiExtern;
@@ -1504,7 +1506,7 @@ where
         if state_modified {
             // The state of the contract changed as a result of the call.
             // So we refresh it.
-            if let Ok(new_state) = State::deserial_state_ctx(
+            if let Ok(new_state) = State::deserial_with_state(
                 &self.allocator.state_ll,
                 &mut self.allocator.state_ll.lookup(&[]).unwrap_abort(),
             ) {
@@ -1923,37 +1925,37 @@ impl DeserialCtx for String {
 
 /// Blanket implementation for Deserial, which simply does not use the state
 /// argument.
-impl<D: Deserial, S: HasState> DeserialStateCtx<S> for D {
-    fn deserial_state_ctx<R: Read>(_state: &S, source: &mut R) -> ParseResult<Self> {
+impl<D: Deserial, S: HasState> DeserialWithState<S> for D {
+    fn deserial_with_state<R: Read>(_state: &S, source: &mut R) -> ParseResult<Self> {
         Self::deserial(source)
     }
 }
 
-impl<K, V, S> DeserialStateCtx<S> for StateMap<K, V, S>
+impl<K, V, S> DeserialWithState<S> for StateMap<K, V, S>
 where
     S: HasState,
 {
-    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         source.read_u64().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
     }
 }
 
-impl<T, S> DeserialStateCtx<S> for StateSet<T, S>
+impl<T, S> DeserialWithState<S> for StateSet<T, S>
 where
     S: HasState,
-    T: Serial + DeserialStateCtx<S>,
+    T: Serial + DeserialWithState<S>,
 {
-    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         source.read_u64().map(|set_prefix| StateSet::open(state.clone(), set_prefix))
     }
 }
 
-impl<T, S> DeserialStateCtx<S> for StateBox<T, S>
+impl<T, S> DeserialWithState<S> for StateBox<T, S>
 where
     S: HasState,
-    T: Serial + DeserialStateCtx<S>,
+    T: Serial + DeserialWithState<S>,
 {
-    fn deserial_state_ctx<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         let mut prefix = [0u8; 8];
         source.read_exact(&mut prefix)?;
         Ok(StateBox {
@@ -1971,7 +1973,7 @@ impl<T: Serialize> Freeable for T {
 
 impl<T, S> Freeable for StateBox<T, S>
 where
-    T: Serial + DeserialStateCtx<S> + Freeable,
+    T: Serial + DeserialWithState<S> + Freeable,
     S: HasState,
 {
     fn free(mut self) {
@@ -2006,7 +2008,7 @@ impl<K, V, S> Freeable for StateMap<K, V, S>
 where
     S: HasState,
     K: Deserial,
-    V: DeserialStateCtx<S> + Freeable,
+    V: DeserialWithState<S> + Freeable,
 {
     fn free(mut self) {
         // Free all values pointed at by the statemap. This is necessary if `V` is a
