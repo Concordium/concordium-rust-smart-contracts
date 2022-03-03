@@ -467,10 +467,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, StateApi, HasState};
+                use concordium_std::{trap, ExternContext, InitContextExtern, StateApiExtern, HasState};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state = StateApi::open(());
+                let mut state = StateApiExtern::open(());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(rv) => {
                         if rv.serial(&mut ReturnValue::open()).is_err() {
@@ -503,7 +503,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 use concordium_std::{trap, ExternContext, InitContextExtern, Allocator, ReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state_ll = StateApi::open(());
+                let mut state_ll = StateApiExtern::open(());
                 let mut allocator = Allocator::open(state_ll.clone());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut allocator) {
                     Ok((rv, state)) => {
@@ -753,7 +753,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, Allocator, Logger, ExternHost, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let state_ll = StateApi::open(());
+                let state_ll = StateApiExtern::open(());
                 let mut root_entry = state_ll.lookup(&[]).unwrap_abort();
                 if let Ok(state) = DeserialStateCtx::deserial_state_ctx(&state_ll, &mut root_entry) {
                     let mut allocator = Allocator::open(state_ll);

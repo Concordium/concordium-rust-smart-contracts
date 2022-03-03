@@ -90,7 +90,7 @@ impl<'a, V, S> StateRefMut<'a, V, S> {
 #[repr(transparent)]
 /// An iterator over a part of the state. Its implementation is supported by
 /// host calls.
-pub struct ContractStateIterExtern {
+pub struct StateIterExtern {
     pub(crate) iterator_id: StateIteratorId,
 }
 

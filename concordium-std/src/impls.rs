@@ -539,7 +539,7 @@ pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
 
 impl HasState for StateApiExtern {
     type EntryType = StateEntry;
-    type IterType = ContractStateIterExtern;
+    type IterType = StateIterExtern;
     type StateData = ();
 
     /// Open the contract state.
@@ -618,26 +618,26 @@ impl HasState for StateApiExtern {
         if iterator_id | 1u64.rotate_right(2) == all_ones {
             return Err(StateError::EntryNotFound);
         }
-        Ok(ContractStateIterExtern {
+        Ok(StateIterExtern {
             iterator_id,
         })
     }
 
     fn delete_iterator(&mut self, iter: Self::IterType) {
-        // This call can never fail because the only way to get an `ContractStateIter`
+        // This call can never fail because the only way to get an `StateIterExtern`
         // is through `StateApi::iterator(..)`. And this call consumes
         // the iterator.
         // These conditions rule out the two types of errors that the prims
         // call can return, iterator not found and iterator already deleted.
         // The iterator can also be deleted with `delete_iterator_by_id`, but that is
         // only called when a [StateMapIter] or [StateSetIter] is dropped (which
-        // also drops the [ContractStateIter]). Again ruling out the already
+        // also drops the [StateIterExtern]). Again ruling out the already
         // deleted error.
         unsafe { prims::state_iterator_delete(iter.iterator_id) };
     }
 }
 
-impl Iterator for ContractStateIterExtern {
+impl Iterator for StateIterExtern {
     type Item = StateEntry;
 
     fn next(&mut self) -> Option<Self::Item> {

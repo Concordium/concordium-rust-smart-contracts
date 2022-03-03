@@ -72,7 +72,7 @@ fn contract_receive(
     return_value = "u64",
     low_level
 )]
-fn contract_receive_ll<S: HasContractState>(
+fn contract_receive_ll<S: HasState>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<S>,
 ) -> ReceiveResult<u64> {

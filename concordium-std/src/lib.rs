@@ -95,7 +95,7 @@
 //!   execution
 //! - [HasPolicy](./trait.HasPolicy.html) for accessing the policy of the
 //!   sender, either of the init or receive method
-//! - [HasContractState](./trait.HasContractState.html) for operations possible
+//! - [HasState](./trait.HasState.html) for operations possible
 //!   on the contract state.
 //!
 //! These are provided by traits to make testing easier. There are two main
