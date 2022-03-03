@@ -382,16 +382,16 @@ mod tests {
             "Bidding 2 should fail because bid amount must be higher than highest bid",
         );
     }
-    
+
     #[test]
     /// Bids for 0 CCD should be rejected.
     fn test_auction_bid_zero() {
         let ctx1 = new_account_ctx().1;
         let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
         let ctx = parametrized_init_ctx(&parameter_bytes);
-        
+
         let mut state = auction_init(&ctx).expect("Init results in error");
-        
+
         let res: Result<ActionsTree, _> = auction_bid(&ctx1, Amount::zero(), &mut state);
         expect_error(
             res,
@@ -399,21 +399,21 @@ mod tests {
             "Bidding zero should fail",
         );
     }
-    
+
     #[test]
     fn test_quickcheck() {
-        fn prop_test(amount: Amount){
+        fn prop_test(amount: Amount) {
             let (account1, ctx1) = new_account_ctx();
             let ctx2 = new_account_ctx().1;
-            
+
             let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
             let ctx0 = parametrized_init_ctx(&parameter_bytes);
-            
+
             let mut bid_map = BTreeMap::new();
-            
+
             // initializing auction
             let mut state = auction_init(&ctx0).expect("Init results in error");
-            
+
             if amount == Amount::zero() {
                 let res: Result<ActionsTree, _> = auction_bid(&ctx1, Amount::zero(), &mut state);
                 expect_error(
@@ -426,7 +426,7 @@ mod tests {
 
             // 1st bid: account1 bids amount1
             verify_bid(&mut state, account1, &ctx1, amount, &mut bid_map, amount);
-    
+
             // 2nd bid: account2 bids amount1
             // should fail because amount is equal to highest bid
             let res2: Result<ActionsTree, _> = auction_bid(&ctx2, amount, &mut state);

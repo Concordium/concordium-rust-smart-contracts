@@ -22,7 +22,6 @@ version = "2.0"
 path = "../concordium-contracts-common"
 version = "2.0"
 default-features = false
-features = ["qc"]
 
 [features]
 default = ["std"]
