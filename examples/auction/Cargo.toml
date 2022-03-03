@@ -13,3 +13,7 @@ concordium-std = {path = "../../concordium-std"}
 
 [lib]
 crate-type=["cdylib", "rlib"]
+
+[dev-dependencies]
+quickcheck = "1"
+quickcheck_macros = "1"

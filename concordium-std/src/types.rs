@@ -6,7 +6,7 @@ pub struct ContractState {
 
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.
-pub struct Parameter {
+pub struct ExternParameter {
     pub(crate) current_position: u32,
 }
 

@@ -271,7 +271,7 @@ impl HasContractState<()> for ContractState {
 }
 
 /// # Trait implementations for Parameter
-impl Read for Parameter {
+impl Read for ExternParameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -286,7 +286,7 @@ impl Read for Parameter {
     }
 }
 
-impl HasParameter for Parameter {
+impl HasParameter for ExternParameter {
     #[inline(always)]
     fn size(&self) -> u32 { unsafe { get_parameter_size() } }
 }
@@ -398,7 +398,7 @@ impl ExactSizeIterator for PoliciesIterator {
 
 impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     type MetadataType = ChainMetaExtern;
-    type ParamType = Parameter;
+    type ParamType = ExternParameter;
     type PolicyIteratorType = PoliciesIterator;
     type PolicyType = Policy<AttributesCursor>;
 
@@ -419,7 +419,7 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 
     #[inline(always)]
     fn parameter_cursor(&self) -> Self::ParamType {
-        Parameter {
+        ExternParameter {
             current_position: 0,
         }
     }
