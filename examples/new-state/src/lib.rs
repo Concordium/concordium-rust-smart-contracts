@@ -4,69 +4,29 @@ use concordium_std::*;
 type TokenId = TokenIdU8;
 type TokenCount = u8;
 
-#[derive(SchemaType, Serial)]
+#[derive(SchemaType, Serial, DeserialWithState)]
+#[concordium_derive(S)]
 struct State<S> {
     token_state:        StateMap<Address, StateMap<TokenId, TokenCount, S>, S>,
     another_struct:     AnotherStruct<S>,
     total_tokens:       u64,
     boxed_total_tokens: StateBox<u64, S>,
-    maybe_box:          MaybeBox<S>,
+    maybe_box:          MaybeBox<u64, S>,
+    #[concordium(size_length = 1)]
+    a_string:           String,
 }
 
-#[derive(Serial)]
+#[derive(Serial, DeserialWithState)]
+#[concordium_derive(S)]
 struct AnotherStruct<S> {
     a_set: StateSet<u8, S>,
 }
 
-#[derive(Serial)]
-enum MaybeBox<S> {
-    NoBox,
-    WithBox(StateBox<String, S>),
-}
-
-impl<S> DeserialWithState<S> for MaybeBox<S>
-where
-    S: HasState,
-{
-    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        let tag = source.read_u8()?;
-        match tag {
-            0 => Ok(MaybeBox::NoBox),
-            1 => Ok(MaybeBox::WithBox(DeserialWithState::deserial_with_state(state, source)?)),
-            _ => Err(ParseError::default()),
-        }
-    }
-}
-
-impl<S> DeserialWithState<S> for State<S>
-where
-    S: HasState,
-{
-    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        let token_state = DeserialWithState::deserial_with_state(state, source)?;
-        let another_struct = DeserialWithState::deserial_with_state(state, source)?;
-        let total_tokens = DeserialWithState::deserial_with_state(state, source)?;
-        let boxed_total_tokens = DeserialWithState::deserial_with_state(state, source)?;
-        let maybe_box = DeserialWithState::deserial_with_state(state, source)?;
-        Ok(Self {
-            token_state,
-            another_struct,
-            total_tokens,
-            boxed_total_tokens,
-            maybe_box,
-        })
-    }
-}
-
-impl<S> DeserialWithState<S> for AnotherStruct<S>
-where
-    S: HasState,
-{
-    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        Ok(Self {
-            a_set: DeserialWithState::deserial_with_state(state, source)?,
-        })
-    }
+#[derive(Serial, DeserialWithState)]
+#[concordium_derive(MBS)]
+enum MaybeBox<S: Serialize, MBS> {
+    NoBox(S),
+    WithBox(StateBox<String, MBS>),
 }
 
 #[init(contract = "storable-contract")]
@@ -81,7 +41,8 @@ fn init<S: HasState>(
         },
         total_tokens:       0,
         boxed_total_tokens: allocator.new_box(0u64),
-        maybe_box:          MaybeBox::NoBox,
+        maybe_box:          MaybeBox::NoBox(0),
+        a_string:           "hello".into(),
     }))
 }
 
@@ -216,16 +177,17 @@ mod tests {
         assert_eq!(state_reloaded.total_tokens, 100);
         assert_eq!(*state_reloaded.boxed_total_tokens.get(), 100);
 
-        assert_eq!(state_reloaded.maybe_box.get_contents(), Some("I'm boxed".into()))
+        assert_eq!(state_reloaded.maybe_box.get_box_contents(), Some("I'm boxed".into()))
     }
 
-    impl<S> MaybeBox<S>
+    impl<A, S> MaybeBox<A, S>
     where
         S: HasState,
+        A: Serialize,
     {
-        fn get_contents(&self) -> Option<String> {
+        fn get_box_contents(&self) -> Option<String> {
             match self {
-                MaybeBox::NoBox => None,
+                MaybeBox::NoBox(_) => None,
                 MaybeBox::WithBox(the_box) => Some(the_box.get().clone()),
             }
         }

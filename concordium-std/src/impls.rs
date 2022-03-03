@@ -1931,6 +1931,19 @@ impl<D: Deserial, S: HasState> DeserialWithState<S> for D {
     }
 }
 
+/// Blanket implementation for DeserialCtx, which simply does not use the state
+/// argument.
+impl<D: DeserialCtx, S: HasState> DeserialCtxWithState<S> for D {
+    fn deserial_ctx_with_state<R: Read>(
+        size_length: schema::SizeLength,
+        ensure_ordered: bool,
+        _state: &S,
+        source: &mut R,
+    ) -> ParseResult<Self> {
+        Self::deserial_ctx(size_length, ensure_ordered, source)
+    }
+}
+
 impl<K, V, S> DeserialWithState<S> for StateMap<K, V, S>
 where
     S: HasState,

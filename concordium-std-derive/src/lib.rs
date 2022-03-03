@@ -1385,6 +1385,193 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     Ok(tokens)
 }
 
+struct DeriveWithStateParameter(syn::Ident);
+impl syn::parse::Parse for DeriveWithStateParameter {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let content;
+        syn::parenthesized!(content in input);
+        Ok(DeriveWithStateParameter(content.parse()?))
+    }
+}
+
+/// Derive the DeserialWithState trait. See the documentation of
+/// `derive(Serial)` for details and limitations.
+///
+/// In addition to the attributes supported by `derive(Serial)`, this derivation
+/// macro supports the `ensure_ordered` attribute. If applied to a field the
+/// of type `BTreeMap` or `BTreeSet` deserialization will additionally ensure
+/// that the keys are in strictly increasing order. By default deserialization
+/// only ensures uniqueness.
+///
+/// # Example
+/// ``` ignore
+/// #[derive(DeserialWithState)]
+/// struct Foo<S> {
+///     bar: StateMap<u8, u8, S>,
+/// }
+/// ```
+#[proc_macro_derive(DeserialWithState, attributes(concordium_derive))]
+pub fn deserial_with_state_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input);
+    unwrap_or_report(impl_deserial_with_state(&ast))
+}
+
+fn impl_deserial_with_state_field(
+    f: &syn::Field,
+    ident: &syn::Ident,
+    source: &syn::Ident,
+    has_state_parameter: &syn::Ident,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
+    let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
+    let size_length = find_length_attribute(&f.attrs)?;
+    let has_ctx = ensure_ordered || size_length.is_some();
+    let ty = &f.ty;
+    if has_ctx {
+        // Default size length is u32, i.e. 4 bytes.
+        let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
+        Ok(quote! {
+            let #ident = <#ty as concordium_std::DeserialCtxWithState<#has_state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, state, #source)?;
+        })
+    } else {
+        Ok(quote! {
+            let #ident = <#ty as concordium_std::DeserialWithState<#has_state_parameter>>::deserial_with_state(state, #source)?;
+        })
+    }
+}
+
+fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let data_name = &ast.ident;
+
+    let span = ast.span();
+
+    let read_ident = format_ident!("__R", span = span);
+    let derive_attribute = ast
+        .attrs
+        .iter()
+        .filter(|a| a.path.segments.len() == 1 && a.path.segments[0].ident == "concordium_derive")
+        .nth(0)
+        .expect("concordium_derive attribute is required for deriving DeserialWithState.");
+    let has_state_parameter =
+        syn::parse2::<DeriveWithStateParameter>(derive_attribute.tokens.clone())
+            .expect("Invalid concordium_derive attribute!")
+            .0;
+
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    let where_predicates = where_clauses.map(|c| c.predicates.clone());
+
+    let source_ident = Ident::new("source", Span::call_site());
+
+    let body_tokens = match ast.data {
+        syn::Data::Struct(ref data) => {
+            let mut names = proc_macro2::TokenStream::new();
+            let mut field_tokens = proc_macro2::TokenStream::new();
+            let return_tokens = match data.fields {
+                syn::Fields::Named(_) => {
+                    for field in data.fields.iter() {
+                        let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                        field_tokens.extend(impl_deserial_with_state_field(
+                            field,
+                            &field_ident,
+                            &source_ident,
+                            &has_state_parameter,
+                        ));
+                        names.extend(quote!(#field_ident,))
+                    }
+                    quote!(Ok(#data_name{#names}))
+                }
+                syn::Fields::Unnamed(_) => {
+                    for (i, f) in data.fields.iter().enumerate() {
+                        let field_ident = format_ident!("x_{}", i);
+                        field_tokens.extend(impl_deserial_with_state_field(
+                            f,
+                            &field_ident,
+                            &source_ident,
+                            &has_state_parameter,
+                        ));
+                        names.extend(quote!(#field_ident,))
+                    }
+                    quote!(Ok(#data_name(#names)))
+                }
+                _ => quote!(Ok(#data_name{})),
+            };
+            quote! {
+                #field_tokens
+                #return_tokens
+            }
+        }
+        syn::Data::Enum(ref data) => {
+            let mut matches_tokens = proc_macro2::TokenStream::new();
+            let source = Ident::new("source", Span::call_site());
+            let size = if data.variants.len() <= 256 {
+                format_ident!("u8")
+            } else if data.variants.len() <= 256 * 256 {
+                format_ident!("u16")
+            } else {
+                return Err(syn::Error::new(
+                    ast.span(),
+                    "[derive(DeserialWithState)]: Too many variants. Maximum 65536 are supported.",
+                ));
+            };
+            for (i, variant) in data.variants.iter().enumerate() {
+                let (field_names, pattern) = match variant.fields {
+                    syn::Fields::Named(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .map(|field| field.ident.clone().unwrap())
+                            .collect();
+                        (field_names.clone(), quote! { {#(#field_names),*} })
+                    }
+                    syn::Fields::Unnamed(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| format_ident!("x_{}", i))
+                            .collect();
+                        (field_names.clone(), quote! { ( #(#field_names),* ) })
+                    }
+                    syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
+                };
+
+                let field_tokens: proc_macro2::TokenStream = field_names
+                    .iter()
+                    .zip(variant.fields.iter())
+                    .map(|(name, field)| {
+                        impl_deserial_with_state_field(field, name, &source, &has_state_parameter)
+                    })
+                    .collect::<syn::Result<proc_macro2::TokenStream>>()?;
+                let idx_lit = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
+                let variant_ident = &variant.ident;
+                matches_tokens.extend(quote! {
+                    #idx_lit => {
+                        #field_tokens
+                        Ok(#data_name::#variant_ident#pattern)
+                    },
+                })
+            }
+            quote! {
+                let idx = #size::deserial(#source)?;
+                match idx {
+                    #matches_tokens
+                    _ => Err(Default::default())
+                }
+            }
+        }
+        _ => unimplemented!("#[derive(DeserialWithState)] is not implemented for union."),
+    };
+    let gen = quote! {
+        #[automatically_derived]
+        impl #impl_generics DeserialWithState<#has_state_parameter> for #data_name #ty_generics where #has_state_parameter : HasState, #where_predicates {
+            fn deserial_with_state<#read_ident: Read>(state: &#has_state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
+                #body_tokens
+            }
+        }
+    };
+    Ok(gen.into())
+}
+
 /// Derive the `SchemaType` trait for a type.
 /// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
 /// not produce any code.

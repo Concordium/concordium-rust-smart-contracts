@@ -355,3 +355,14 @@ where
     S: HasState, {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
 }
+
+pub trait DeserialCtxWithState<S>: Sized
+where
+    S: HasState, {
+    fn deserial_ctx_with_state<R: Read>(
+        size_length: schema::SizeLength,
+        ensure_ordered: bool,
+        state: &S,
+        source: &mut R,
+    ) -> ParseResult<Self>;
+}
