@@ -1391,23 +1391,27 @@ impl<S> Allocator<S>
 where
     S: HasState,
 {
+    /// Open a new allocator.
     pub fn open(state: S) -> Self {
         Self {
             state,
         }
     }
 
-    pub fn new_map<K: Serialize, V>(&mut self) -> StateMap<K, V, S> {
+    /// Create a new [`StateMap`].
+    pub fn new_map<K, V>(&mut self) -> StateMap<K, V, S> {
         let prefix = self.get_and_update_item_prefix();
         StateMap::open(self.state.clone(), prefix)
     }
 
-    pub fn new_set<T: Serial + DeserialWithState<S>>(&mut self) -> StateSet<T, S> {
+    /// Create a new [`StateSet`].
+    pub fn new_set<T>(&mut self) -> StateSet<T, S> {
         let prefix = self.get_and_update_item_prefix();
         StateSet::open(self.state.clone(), prefix)
     }
 
-    pub fn new_box<T: Serial + DeserialWithState<S>>(&mut self, value: T) -> StateBox<T, S> {
+    /// Create a new [`StateBox`] and insert the `value` into the state.
+    pub fn new_box<T: Serial>(&mut self, value: T) -> StateBox<T, S> {
         let prefix = self.get_and_update_item_prefix();
         let prefix_bytes = to_bytes(&prefix);
 
