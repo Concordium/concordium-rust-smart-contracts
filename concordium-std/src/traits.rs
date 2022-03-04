@@ -238,13 +238,14 @@ pub trait HasHost<State> {
     fn self_balance(&self) -> Amount;
 }
 
-/// A type that can be freed in the state.
-/// For simple types, such as `u8` and `String`, the `free` methods is a no-op.
-/// But for [crate::StateBox], [crate::StateMap], [crate::StateSet], `free`
-/// makes sure to the delete _all_ the necessary data.
-pub trait Freeable {
+/// A type that can be deleted from the state.
+/// For simple types, such as `u8` and `String`, the `delete` methods is a
+/// no-op. But for [`StateBox`][crate::StateBox], [`StateMap`][crate::StateMap],
+/// and [`StateSet`][crate::StateSet], `delete` makes sure to the delete _all_
+/// the necessary data from the state.
+pub trait Deletable {
     /// Delete all items that this type owns in the state.
-    fn free(self);
+    fn delete(self);
 }
 
 /// Objects which can serve as loggers.

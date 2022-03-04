@@ -669,7 +669,7 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasState,
     K: Serialize,
-    V: Serial + DeserialWithState<S> + Freeable,
+    V: Serial + DeserialWithState<S> + Deletable,
 {
     /// Try to get the value with the given key.
     pub fn get(&self, key: &K) -> Option<StateRef<V>> {
@@ -721,13 +721,13 @@ where
     /// Clears the map, removing all key-value pairs.
     /// This also includes values pointed at, if `V`, for example, is a
     /// [StateBox].
-    // Note: This does not use free() because free consumes self.
+    // Note: This does not use delete() because delete consumes self.
     pub fn clear(&mut self) {
-        // Free all values pointed at by the statemap. This is necessary if `V` is a
+        // Delete all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap.
-        // TODO: Ideally, only free when `V` _is_ a statetype.
+        // TODO: Ideally, only delete when `V` _is_ a statetype.
         for (_, value) in self.iter() {
-            value.value.free()
+            value.value.delete()
         }
 
         // Then delete the map itself.
@@ -739,7 +739,7 @@ where
     /// previously in the map.
     ///
     /// *Caution*: If `V` is a [StateBox], [StateMap], then it is
-    /// important to call `Freeable::free` on the value returned when you're
+    /// important to call `Deletable::delete` on the value returned when you're
     /// finished with it. Otherwise, it will remain in the contract state.
     #[must_use]
     pub fn remove_and_get(&mut self, key: &K) -> Option<V> {
@@ -759,10 +759,10 @@ where
     }
 
     /// Remove a key from the map.
-    /// This also frees the value.
+    /// This also deletes the value in the state.
     pub fn remove(&mut self, key: &K) {
         if let Some(v) = self.remove_and_get(key) {
-            v.free()
+            v.delete()
         }
     }
 
@@ -910,12 +910,12 @@ where
     /// Clears the set, removing all values.
     /// This also includes values pointed at, if `V`, for example, is a
     /// [StateBox].
-    // Note: This does not use free() because free consumes self.
+    // Note: This does not use delete() because delete consumes self.
     pub fn clear(&mut self) {
-        // Free all values in the stateset. This is necessary if `T` is a
+        // Delete all values in the stateset. This is necessary if `T` is a
         // StateBox/StateMap.
         for value in self.iter() {
-            value.value.free()
+            value.value.delete()
         }
         // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
@@ -1983,18 +1983,18 @@ where
     }
 }
 
-impl<T: Serialize> Freeable for T {
+impl<T: Serialize> Deletable for T {
     #[inline(always)]
-    fn free(self) {} // Types that are Serialize have nothing to free!
+    fn delete(self) {} // Types that are Serialize have nothing to delete!
 }
 
-impl<T, S> Freeable for StateBox<T, S>
+impl<T, S> Deletable for StateBox<T, S>
 where
-    T: Serial + DeserialWithState<S> + Freeable,
+    T: Serial + DeserialWithState<S> + Deletable,
     S: HasState,
 {
-    fn free(mut self) {
-        // Make sure the actual value is cached, so we can free it.
+    fn delete(mut self) {
+        // Make sure the actual value is cached, so we can delete it.
         self.ensure_cached();
 
         // Delete the box node itself.
@@ -2004,34 +2004,34 @@ where
 
         // Then delete the lazy value.
         // Unwrapping the option is safe, because we ensured the value is cached.
-        self.lazy_value.into_inner().unwrap_abort().free();
+        self.lazy_value.into_inner().unwrap_abort().delete();
     }
 }
 
-impl<T, S> Freeable for StateSet<T, S>
+impl<T, S> Deletable for StateSet<T, S>
 where
     S: HasState,
 {
-    fn free(mut self) {
+    fn delete(mut self) {
         // Statesets cannot contain state types (e.g. StateBox), so there is nothing to
-        // free, apart from the set itself.
+        // delete, apart from the set itself.
 
         // Unwrapping is safe when only using the high-level API.
         self.state_ll.delete_prefix(&self.prefix).unwrap_abort()
     }
 }
 
-impl<K, V, S> Freeable for StateMap<K, V, S>
+impl<K, V, S> Deletable for StateMap<K, V, S>
 where
     S: HasState,
     K: Deserial,
-    V: DeserialWithState<S> + Freeable,
+    V: DeserialWithState<S> + Deletable,
 {
-    fn free(mut self) {
-        // Free all values pointed at by the statemap. This is necessary if `V` is a
+    fn delete(mut self) {
+        // Delete all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap.
         for (_, value) in self.iter() {
-            value.value.free()
+            value.value.delete()
         }
 
         // Then delete the map itself.

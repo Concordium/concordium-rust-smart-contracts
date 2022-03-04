@@ -1118,7 +1118,7 @@ impl<State> HostTest<State> {
 mod test {
     use super::StateApiTest;
     use crate::{
-        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Allocator, EntryRaw, Freeable,
+        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Allocator, Deletable, EntryRaw,
         HasState, HasStateEntry, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
@@ -1535,12 +1535,12 @@ mod test {
     }
 
     #[test]
-    fn freeing_nested_stateboxes_works() {
+    fn deleting_nested_stateboxes_works() {
         let mut allocator = Allocator::open(StateApiTest::new());
         let inner_box = allocator.new_box(99u8);
         let middle_box = allocator.new_box(inner_box);
         let outer_box = allocator.new_box(middle_box);
-        outer_box.free();
+        outer_box.delete();
         let iter = allocator.state_ll.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the allocator's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
