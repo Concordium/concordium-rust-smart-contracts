@@ -760,7 +760,11 @@ where
 
     /// Remove a key from the map.
     /// This also frees the value.
-    pub fn remove(&mut self, key: &K) { self.remove_and_get(key).map(|v| v.free()); }
+    pub fn remove(&mut self, key: &K) {
+        if let Some(v) = self.remove_and_get(key) {
+            v.free()
+        }
+    }
 
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();

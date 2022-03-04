@@ -95,8 +95,8 @@
 //!   execution
 //! - [HasPolicy](./trait.HasPolicy.html) for accessing the policy of the
 //!   sender, either of the init or receive method
-//! - [HasState](./trait.HasState.html) for operations possible
-//!   on the contract state.
+//! - [HasState](./trait.HasState.html) for operations possible on the contract
+//!   state.
 //!
 //! These are provided by traits to make testing easier. There are two main
 //! implementations provided for these traits. One provided by so-called
@@ -202,18 +202,18 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 /// Re-export.
 #[cfg(not(feature = "std"))]
 pub use alloc::{
-    borrow::ToOwned, boxed::Box, string, string::String, string::ToString, vec, vec::Vec,
+    borrow::ToOwned, boxed, boxed::Box, string, string::String, string::ToString, vec, vec::Vec,
 };
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use core::{cell, convert, fmt, hash, iter, marker, mem, num, ops, rc, result::*};
+pub use core::{cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc, result::*};
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
 pub use std::{
-    cell, convert, fmt, hash, iter, marker, mem, num, ops, rc, string::String, vec::Vec,
+    boxed, cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc, string::String, vec::Vec,
 };
 
 pub mod collections {

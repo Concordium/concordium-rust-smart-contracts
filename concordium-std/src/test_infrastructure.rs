@@ -57,17 +57,16 @@
 //! ```
 use crate::*;
 
-use crate::collections::{BTreeMap, BTreeSet};
-#[cfg(not(feature = "std"))]
-use alloc::boxed::Box;
-use convert::TryInto;
-#[cfg(not(feature = "std"))]
-use core::{cmp, num};
-#[cfg(feature = "std")]
-use std::{boxed::Box, num};
-use std::{cell::RefCell, cmp, rc::Rc};
-
 use self::trie::StateTrie;
+use crate::{
+    boxed::Box,
+    cell::RefCell,
+    cmp,
+    collections::{BTreeMap, BTreeSet},
+    num,
+    rc::Rc,
+};
+use convert::TryInto;
 
 mod trie;
 

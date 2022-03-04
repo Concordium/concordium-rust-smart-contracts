@@ -2,12 +2,12 @@
 //! This allows setting-up mock objects for testing individual
 //! contract invocations.
 
+#[cfg(not(feature = "std"))]
+use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
     Allocator, CallContractResult, EntryRaw, TransferResult,
 };
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.

@@ -1,10 +1,9 @@
 use super::{StateEntryData, StateEntryTest};
-use crate::{StateEntryId, StateError, UnwrapAbort};
-use std::{
+use crate::{
     cell::{Cell, RefCell},
-    cmp::min,
-    collections::{btree_map, BTreeMap, HashMap, VecDeque},
+    collections::{btree_map, BTreeMap, HashMap as Map, VecDeque},
     rc::Rc,
+    StateEntryId, StateError, UnwrapAbort,
 };
 
 const BRANCHING_FACTOR: usize = 16;
@@ -15,7 +14,7 @@ pub(crate) type Index = usize;
 pub struct StateTrie {
     nodes:           Node,
     next_entry_id:   Cell<StateEntryId>,
-    entry_map:       RefCell<HashMap<StateEntryId, Vec<Index>>>,
+    entry_map:       RefCell<Map<StateEntryId, Vec<Index>>>,
     iterator_counts: RefCell<BTreeMap<Vec<Index>, u16>>,
 }
 
@@ -48,7 +47,7 @@ impl StateTrie {
         Self {
             nodes:           Node::new(),
             next_entry_id:   Cell::new(0),
-            entry_map:       RefCell::new(HashMap::new()),
+            entry_map:       RefCell::new(Map::default()),
             iterator_counts: Default::default(),
         }
     }
@@ -98,7 +97,7 @@ impl StateTrie {
     /// already locked by an existing iterator, false otherwise.
     fn is_locked(&self, prefix: &[usize]) -> bool {
         self.iterator_counts.borrow().keys().any(|p| {
-            let shortest = min(p.len(), prefix.len());
+            let shortest = crate::cmp::min(p.len(), prefix.len());
             p[..shortest] == prefix[..shortest]
         })
     }
@@ -146,7 +145,7 @@ impl StateTrie {
                 let _ = vac.insert(1);
             }
             btree_map::Entry::Occupied(ref mut occ) => {
-                if *occ.get() >= u16::MAX {
+                if *occ.get() == u16::MAX {
                     return Err(StateError::IteratorLimitForPrefixExceeded);
                 }
                 *occ.get_mut() += 1;
