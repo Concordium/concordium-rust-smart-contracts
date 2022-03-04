@@ -5,7 +5,7 @@ type TokenId = TokenIdU8;
 type TokenCount = u8;
 
 #[derive(SchemaType, Serial, DeserialWithState)]
-#[concordium_derive(S)]
+#[concordium(state_parameter = "S")]
 struct State<S> {
     token_state:        StateMap<Address, StateMap<TokenId, TokenCount, S>, S>,
     another_struct:     AnotherStruct<S>,
@@ -17,13 +17,13 @@ struct State<S> {
 }
 
 #[derive(Serial, DeserialWithState)]
-#[concordium_derive(S)]
+#[concordium(state_parameter = "S")]
 struct AnotherStruct<S> {
     a_set: StateSet<u8, S>,
 }
 
 #[derive(Serial, DeserialWithState)]
-#[concordium_derive(MBS)]
+#[concordium(state_parameter = "MBS")]
 enum MaybeBox<S: Serialize, MBS> {
     NoBox(S),
     WithBox(StateBox<String, MBS>),

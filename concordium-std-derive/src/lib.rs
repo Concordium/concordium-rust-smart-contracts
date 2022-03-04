@@ -932,17 +932,35 @@ pub fn deserial_derive(input: TokenStream) -> TokenStream {
 }
 
 /// The prefix used in field attributes: `#[concordium(attr = "something")]`
-const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
+const CONCORDIUM_ATTRIBUTE: &str = "concordium";
 
 /// A list of valid concordium field attributes
 const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ordered", "rename"];
 
+/// A list of valid concordium attributes
+const VALID_CONCORDIUM_ATTRIBUTES: [&str; 1] = ["state_parameter"];
+
+/// Finds concordium field attributes.
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
+    get_concordium_attributes(attributes, true)
+}
+
+/// Finds concordium attributes, either field or general attributes.
+fn get_concordium_attributes(
+    attributes: &[syn::Attribute],
+    for_field: bool,
+) -> syn::Result<Vec<syn::Meta>> {
+    let (valid_attributes, attribute_type) = if for_field {
+        (&VALID_CONCORDIUM_FIELD_ATTRIBUTES[..], "concordium field attribute")
+    } else {
+        (&VALID_CONCORDIUM_ATTRIBUTES[..], "concordium attribute")
+    };
+
     attributes
         .iter()
         // Keep only concordium attributes
         .flat_map(|attr| match attr.parse_meta() {
-            Ok(syn::Meta::List(list)) if list.path.is_ident(CONCORDIUM_FIELD_ATTRIBUTE) => {
+            Ok(syn::Meta::List(list)) if list.path.is_ident(CONCORDIUM_ATTRIBUTE) => {
                 list.nested
             }
             _ => syn::punctuated::Punctuated::new(),
@@ -951,16 +969,16 @@ fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result
         .map(|nested| match nested {
             syn::NestedMeta::Meta(meta) => {
                 let path = meta.path();
-                if VALID_CONCORDIUM_FIELD_ATTRIBUTES.iter().any(|&attr| path.is_ident(attr)) {
+                if valid_attributes.iter().any(|&attr| path.is_ident(attr)) {
                     Ok(meta)
                 } else {
                     Err(syn::Error::new(meta.span(),
-                        format!("The attribute '{}' is not supported as a concordium field attribute.",
-                        path.to_token_stream())
+                        format!("The attribute '{}' is not supported as a {}.",
+                        path.to_token_stream(), attribute_type)
                     ))
                 }
             }
-            lit => Err(syn::Error::new(lit.span(), "Literals are not supported in a concordium field attribute.")),
+            lit => Err(syn::Error::new(lit.span(), format!("Literals are not supported in a {}.", attribute_type))),
         })
         .collect()
 }
@@ -969,8 +987,16 @@ fn find_field_attribute_value(
     attributes: &[syn::Attribute],
     target_attr: &str,
 ) -> syn::Result<Option<syn::Lit>> {
+    find_attribute_value(attributes, true, target_attr)
+}
+
+fn find_attribute_value(
+    attributes: &[syn::Attribute],
+    for_field: bool,
+    target_attr: &str,
+) -> syn::Result<Option<syn::Lit>> {
     let target_attr = format_ident!("{}", target_attr);
-    let attr_values: Vec<_> = get_concordium_field_attributes(attributes)?
+    let attr_values: Vec<_> = get_concordium_attributes(attributes, for_field)?
         .into_iter()
         .filter_map(|nested_meta| match nested_meta {
             syn::Meta::NameValue(value) if value.path.is_ident(&target_attr) => Some(value.lit),
@@ -1022,6 +1048,25 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
     match value {
         1 | 2 | 4 | 8 => Ok(Some(value)),
         _ => Err(syn::Error::new(value_span, "Length info must be either 1, 2, 4, or 8.")),
+    }
+}
+
+/// Find a 'state_parameter' attribute and return it as an identifier.
+/// Checks that the attribute is only defined once and that the value is a
+/// string.
+fn find_state_parameter_attribute(
+    attributes: &[syn::Attribute],
+) -> syn::Result<Option<syn::Ident>> {
+    let value = match find_attribute_value(attributes, false, &"state_parameter")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match value {
+        syn::Lit::Str(value) => Ok(Some(syn::Ident::new(&value.value(), value.span()))),
+        _ => {
+            Err(syn::Error::new(value.span(), "state_parameter attribute value must be a string."))
+        }
     }
 }
 
@@ -1385,15 +1430,6 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     Ok(tokens)
 }
 
-struct DeriveWithStateParameter(syn::Ident);
-impl syn::parse::Parse for DeriveWithStateParameter {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-        syn::parenthesized!(content in input);
-        Ok(DeriveWithStateParameter(content.parse()?))
-    }
-}
-
 /// Derive the DeserialWithState trait. See the documentation of
 /// `derive(Serial)` for details and limitations.
 ///
@@ -1410,7 +1446,7 @@ impl syn::parse::Parse for DeriveWithStateParameter {
 ///     bar: StateMap<u8, u8, S>,
 /// }
 /// ```
-#[proc_macro_derive(DeserialWithState, attributes(concordium_derive))]
+#[proc_macro_derive(DeserialWithState, attributes(concordium))]
 pub fn deserial_with_state_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input);
     unwrap_or_report(impl_deserial_with_state(&ast))
@@ -1420,7 +1456,7 @@ fn impl_deserial_with_state_field(
     f: &syn::Field,
     ident: &syn::Ident,
     source: &syn::Ident,
-    has_state_parameter: &syn::Ident,
+    state_parameter: &syn::Ident,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
@@ -1431,32 +1467,25 @@ fn impl_deserial_with_state_field(
         // Default size length is u32, i.e. 4 bytes.
         let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
         Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialCtxWithState<#has_state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, state, #source)?;
+            let #ident = <#ty as concordium_std::DeserialCtxWithState<#state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, state, #source)?;
         })
     } else {
         Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialWithState<#has_state_parameter>>::deserial_with_state(state, #source)?;
+            let #ident = <#ty as concordium_std::DeserialWithState<#state_parameter>>::deserial_with_state(state, #source)?;
         })
     }
 }
 
 fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let data_name = &ast.ident;
-
     let span = ast.span();
-
     let read_ident = format_ident!("__R", span = span);
-    let derive_attribute = ast
-        .attrs
-        .iter()
-        .filter(|a| a.path.segments.len() == 1 && a.path.segments[0].ident == "concordium_derive")
-        .nth(0)
-        .expect("concordium_derive attribute is required for deriving DeserialWithState.");
-    let has_state_parameter =
-        syn::parse2::<DeriveWithStateParameter>(derive_attribute.tokens.clone())
-            .expect("Invalid concordium_derive attribute!")
-            .0;
-
+    let state_parameter = find_state_parameter_attribute(&ast.attrs)
+        .expect("There was a problem with the concordium attribute")
+        .expect(
+            "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], where \
+             \"S\" should be the HasState generic parameter.",
+        );
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     let where_predicates = where_clauses.map(|c| c.predicates.clone());
 
@@ -1474,7 +1503,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                             field,
                             &field_ident,
                             &source_ident,
-                            &has_state_parameter,
+                            &state_parameter,
                         ));
                         names.extend(quote!(#field_ident,))
                     }
@@ -1487,7 +1516,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                             f,
                             &field_ident,
                             &source_ident,
-                            &has_state_parameter,
+                            &state_parameter,
                         ));
                         names.extend(quote!(#field_ident,))
                     }
@@ -1539,7 +1568,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                     .iter()
                     .zip(variant.fields.iter())
                     .map(|(name, field)| {
-                        impl_deserial_with_state_field(field, name, &source, &has_state_parameter)
+                        impl_deserial_with_state_field(field, name, &source, &state_parameter)
                     })
                     .collect::<syn::Result<proc_macro2::TokenStream>>()?;
                 let idx_lit = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
@@ -1563,8 +1592,8 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
     };
     let gen = quote! {
         #[automatically_derived]
-        impl #impl_generics DeserialWithState<#has_state_parameter> for #data_name #ty_generics where #has_state_parameter : HasState, #where_predicates {
-            fn deserial_with_state<#read_ident: Read>(state: &#has_state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
+        impl #impl_generics DeserialWithState<#state_parameter> for #data_name #ty_generics where #state_parameter : HasState, #where_predicates {
+            fn deserial_with_state<#read_ident: Read>(state: &#state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
                 #body_tokens
             }
         }
