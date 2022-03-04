@@ -519,8 +519,8 @@ pub struct ExternHost<State> {
 }
 
 #[derive(Default)]
-pub struct Allocator<StateLL> {
-    pub(crate) state_ll: StateLL,
+pub struct Allocator<S> {
+    pub(crate) state: S,
 }
 
 #[derive(Debug, Clone, Default)]

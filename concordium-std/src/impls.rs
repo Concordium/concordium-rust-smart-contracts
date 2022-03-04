@@ -1387,38 +1387,35 @@ fn invoke_contract_construct_parameter(
     data
 }
 
-impl<StateLL> Allocator<StateLL>
+impl<S> Allocator<S>
 where
-    StateLL: HasState,
+    S: HasState,
 {
-    pub fn open(state_ll: StateLL) -> Self {
+    pub fn open(state: S) -> Self {
         Self {
-            state_ll,
+            state,
         }
     }
 
-    pub fn new_map<K: Serialize, V>(&mut self) -> StateMap<K, V, StateLL> {
+    pub fn new_map<K: Serialize, V>(&mut self) -> StateMap<K, V, S> {
         let prefix = self.get_and_update_item_prefix();
-        StateMap::open(self.state_ll.clone(), prefix)
+        StateMap::open(self.state.clone(), prefix)
     }
 
-    pub fn new_set<T: Serial + DeserialWithState<StateLL>>(&mut self) -> StateSet<T, StateLL> {
+    pub fn new_set<T: Serial + DeserialWithState<S>>(&mut self) -> StateSet<T, S> {
         let prefix = self.get_and_update_item_prefix();
-        StateSet::open(self.state_ll.clone(), prefix)
+        StateSet::open(self.state.clone(), prefix)
     }
 
-    pub fn new_box<T: Serial + DeserialWithState<StateLL>>(
-        &mut self,
-        value: T,
-    ) -> StateBox<T, StateLL> {
+    pub fn new_box<T: Serial + DeserialWithState<S>>(&mut self, value: T) -> StateBox<T, S> {
         let prefix = self.get_and_update_item_prefix();
         let prefix_bytes = to_bytes(&prefix);
 
         // Insert the value into the state
-        let mut state_entry = self.state_ll.create(&prefix_bytes).unwrap_abort();
+        let mut state_entry = self.state.create(&prefix_bytes).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
 
-        StateBox::new(value, self.state_ll.clone(), prefix_bytes)
+        StateBox::new(value, self.state.clone(), prefix_bytes)
     }
 
     fn get_and_update_item_prefix(&mut self) -> u64 {
@@ -1428,7 +1425,7 @@ where
         // Unwrapping is safe when using the high-level API because it is not possible
         // to get an iterator that locks this entry.
         let mut next_collection_prefix_entry =
-            self.state_ll.entry(&entry_key).unwrap_abort().or_insert(&default_prefix);
+            self.state.entry(&entry_key).unwrap_abort().or_insert(&default_prefix);
 
         // Get the next collection prefix
         let collection_prefix = next_collection_prefix_entry.read_u64().unwrap_abort(); // Unwrapping is safe if only using the high-level API.
@@ -1445,21 +1442,18 @@ where
 
 #[cfg(test)]
 /// Some helper methods that are used for internal tests.
-impl<StateLL> Allocator<StateLL>
+impl<S> Allocator<S>
 where
-    StateLL: HasState,
+    S: HasState,
 {
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
-    pub(crate) fn get<K: Serial, V: DeserialWithState<StateLL>>(
-        &self,
-        key: K,
-    ) -> Option<ParseResult<V>> {
+    pub(crate) fn get<K: Serial, V: DeserialWithState<S>>(&self, key: K) -> Option<ParseResult<V>> {
         let key_with_map_prefix = Self::prepend_generic_map_key(key);
 
-        self.state_ll
+        self.state
             .lookup(&key_with_map_prefix)
-            .map(|mut entry| V::deserial_with_state(&self.state_ll, &mut entry))
+            .map(|mut entry| V::deserial_with_state(&self.state, &mut entry))
     }
 
     pub(crate) fn insert<K: Serial, V: Serial>(
@@ -1469,7 +1463,7 @@ where
     ) -> Result<(), StateError> {
         let key_with_map_prefix = Self::prepend_generic_map_key(key);
         let value_bytes = to_bytes(&value);
-        match self.state_ll.entry(&key_with_map_prefix)? {
+        match self.state.entry(&key_with_map_prefix)? {
             EntryRaw::Vacant(vac) => {
                 let _ = vac.insert(&value_bytes);
             }
@@ -1485,9 +1479,9 @@ where
     }
 }
 
-impl<State> HasHost<State> for ExternHost<State>
+impl<S> HasHost<S> for ExternHost<S>
 where
-    State: DeserialWithState<StateApiExtern>,
+    S: DeserialWithState<StateApiExtern>,
 {
     type ReturnValueType = CallResponse;
     type StateType = StateApiExtern;
@@ -1510,9 +1504,9 @@ where
         if state_modified {
             // The state of the contract changed as a result of the call.
             // So we refresh it.
-            if let Ok(new_state) = State::deserial_with_state(
-                &self.allocator.state_ll,
-                &mut self.allocator.state_ll.lookup(&[]).unwrap_abort(),
+            if let Ok(new_state) = S::deserial_with_state(
+                &self.allocator.state,
+                &mut self.allocator.state.lookup(&[]).unwrap_abort(),
             ) {
                 self.state = new_state;
             } else {
@@ -1522,9 +1516,9 @@ where
         Ok((state_modified, res))
     }
 
-    fn state(&self) -> &State { &self.state }
+    fn state(&self) -> &S { &self.state }
 
-    fn state_mut(&mut self) -> &mut State { &mut self.state }
+    fn state_mut(&mut self) -> &mut S { &mut self.state }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
