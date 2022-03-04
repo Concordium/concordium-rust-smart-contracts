@@ -1,6 +1,38 @@
 use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasState};
 
 #[derive(Debug)]
+/// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
+///
+/// In most situations, this type should be preferred over
+/// [`BTreeMap`][btm] and [`HashMap`][hm].
+///
+/// Stores each value in a separate node in the state trie.
+/// This is different from [`BTreeMap`][btm] and
+/// [`HashMap`][hm], which store their _whole_ structure in a
+/// _single_ node in the state trie. That is why this map should be preferred.
+///
+/// The cost of updates to the map are dependent on the length of `K` (in bytes)
+/// and the size of the data stored (`V`). Short keys are therefore ideal.
+///
+/// Can only be constructed by the [`new_map`][Allocator::new_map] method on
+/// [`Allocator`].
+///
+/// ```
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
+/// # let mut allocator = Allocator::open(StateApiTest::new());
+/// /// In an init method:
+/// let mut map1 = allocator.new_map();
+/// # map1.insert(0u8, 1u8); // Specifies type of map.
+///
+/// # let mut host = HostTest::new_with_allocator((), allocator);
+/// /// In a receive method:
+/// let mut map2 = host.allocator().new_map();
+/// # map2.insert(0u16, 1u16); // Specifies type of map.
+/// ```
+///
+/// [hm]: crate::collections::HashMap
+/// [btm]: crate::collections::BTreeMap
 pub struct StateMap<K, V, S> {
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
@@ -9,6 +41,12 @@ pub struct StateMap<K, V, S> {
 }
 
 #[derive(Debug)]
+/// An iterator over the entries of a [`StateMap`].
+///
+/// Ordered by `K` serialized to bytes.
+///
+/// This `struct` is created by the [`iter`][StateMap::iter] method on
+/// [`StateMap`]. See its documentation for more.
 pub struct StateMapIter<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
@@ -16,6 +54,12 @@ pub struct StateMapIter<'a, K, V, S: HasState> {
 }
 
 #[derive(Debug)]
+/// A mutable iterator over the entries of a [`StateMap`].
+///
+/// Ordered by `K` serialized to bytes.
+///
+/// This `struct` is created by the [`iter_mut`][StateMap::iter_mut] method on
+/// [`StateMap`]. See its documentation for more.
 pub struct StateMapIterMut<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
@@ -23,13 +67,30 @@ pub struct StateMapIterMut<'a, K, V, S: HasState> {
 }
 
 #[derive(Debug)]
+/// A set based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
+///
+/// In most situations, this type should be preferred over
+/// [`BTreeSet`][bts] and [`HashSet`][hs].
+/// See [`StateMap`]'s documentation for a more information about why this is
+/// the case.
+///
+/// The cost of updates to the set are dependent on the length of `T` (in
+/// bytes).
+///
+/// [hs]: crate::collections::HashSet
+/// [bts]: crate::collections::BTreeSet
 pub struct StateSet<T, S> {
     pub(crate) _marker:  PhantomData<T>,
     pub(crate) prefix:   StateItemPrefix,
     pub(crate) state_ll: S,
 }
 
-/// An iterator over the values of the set.
+/// An iterator over the entries of a [`StateMap`].
+///
+/// Ordered by `T` serialized to bytes.
+///
+/// This `struct` is created by the [`iter`][StateSet::iter] method on
+/// [`StateSet`]. See its documentation for more.
 pub struct StateSetIter<'a, T, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_ll:         S,
@@ -37,6 +98,13 @@ pub struct StateSetIter<'a, T, S: HasState> {
 }
 
 #[derive(Debug)]
+/// A pointer type for data in the state.
+///
+/// The actual data is lazily loaded and thereafter cached in memory.
+///
+/// Due to its laziness, a [`Self`] can be used to defer loading of data in your
+/// state. This is useful when parts of your state isn't used in every receive
+/// method.
 pub struct StateBox<T, S> {
     pub(crate) prefix:     StateItemPrefix,
     pub(crate) state_ll:   S,
@@ -44,8 +112,10 @@ pub struct StateBox<T, S> {
 }
 
 #[derive(Debug)]
-/// The [StateRef] behaves like the type `&'a V` in the way that it can be
+/// The [`StateRef`] behaves like the type `&'a V` in the way that it can be
 /// accessed.
+///
+/// Implements [`Deref`][crate::ops::Deref] for ease of use.
 pub struct StateRef<'a, V> {
     pub(crate) value:            V,
     pub(crate) _marker_lifetime: PhantomData<&'a V>,
@@ -69,8 +139,8 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 }
 
 #[derive(Debug)]
-/// The [StateRefMut] behaves like the type `StateBox<V>` in the way that it can
-/// be accessed.
+/// The [`StateRefMut<_, V, _>`] behaves like the type [`StateBox<V, _>`] in the
+/// way that it can be accessed.
 pub struct StateRefMut<'a, V, S> {
     pub(crate) state_box:        StateBox<V, S>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
@@ -98,7 +168,7 @@ pub(crate) type StateEntryId = u64;
 pub(crate) type StateIteratorId = u64;
 pub(crate) type StateItemPrefix = Vec<u8>;
 
-#[derive(Default)]
+/// Represents the data in a node in the state trie.
 pub struct StateEntry {
     pub(crate) state_entry_id:   StateEntryId,
     pub(crate) key:              Vec<u8>,
@@ -106,26 +176,51 @@ pub struct StateEntry {
 }
 
 #[repr(transparent)]
+/// A view into a vacant entry in a [`HasState`][`crate::HasState`] type. It is
+/// part of the [`EntryRaw`] enum.
+///
+/// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
+/// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
 pub struct VacantEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
 
 #[repr(transparent)]
+/// A view into an occupied entry in a [`HasState`][`crate::HasState`] type. It
+/// is part of the [`EntryRaw`] enum.
+///
+/// Differs from [`OccupiedEntry`] in that this has access to the raw bytes
+/// stored in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
 pub struct OccupiedEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
 
+/// A view into a single entry in a [`HasState`][`crate::HasState`] type, which
+/// may either be vacant or occupied.
+///
+/// This `enum` is constructed from the [`entry`][crate::HasState::entry] method
+/// on a [`HasState`][crate::HasState] type.
 pub enum EntryRaw<StateEntryType> {
     Vacant(VacantEntryRaw<StateEntryType>),
     Occupied(OccupiedEntryRaw<StateEntryType>),
 }
 
+/// A view into a vacant entry in a [`StateMap`]. It is
+/// part of the [`Entry`] enum.
+///
+/// Differs from [`VacantEntryRaw`] in that this automatically handles
+/// serialization.
 pub struct VacantEntry<'a, K, V, StateEntryType> {
     pub(crate) key:              K,
     pub(crate) state_entry:      StateEntryType,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
+/// A view into an occupied entry in a [`StateMap`]. It is
+/// part of the [`Entry`] enum.
+///
+/// Differs from [`OccupiedEntryRaw`] in that this automatically handles
+/// serialization.
 pub struct OccupiedEntry<'a, K, V, StateEntryType> {
     pub(crate) key:              K,
     pub(crate) value:            V,
@@ -133,6 +228,11 @@ pub struct OccupiedEntry<'a, K, V, StateEntryType> {
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
+/// A view into a single entry in a [`StateMap`], which
+/// may either be vacant or occupied.
+///
+/// This `enum` is constructed from the [`entry`][StateMap::entry] method
+/// on a [`StateMap`] type.
 pub enum Entry<'a, K, V, S> {
     Vacant(VacantEntry<'a, K, V, S>),
     Occupied(OccupiedEntry<'a, K, V, S>),
@@ -470,19 +570,20 @@ macro_rules! claim_ne {
 /// custom error types.
 ///
 /// # Example
-/// Defining a custom error type
+/// Defining a custom error type that implements [`Reject`].
 /// ```rust
+/// #[derive(Reject)]
 /// enum MyCustomError {
-///     SomeError
+///     SomeError,
 /// }
 ///
 /// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
-///     ctx: &R,
-///     receive_amount: Amount,
-///     logger: &mut L,
-///     state: &mut State,
-/// ) -> Result<A, MyCustomError> { ... }
+/// fn contract_receive<S: HasState>(
+///     _ctx: &impl HasReceiveContext,
+///     _host: &impl HasHost<(), StateType = S>,
+/// ) -> Result<(), MyCustomError> {
+///     Err(MyCustomError::SomeError)
+/// }
 /// ```
 pub type ReceiveResult<A> = Result<A, Reject>;
 
@@ -498,16 +599,18 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// # Example
 /// Defining a custom error type
 /// ```rust
+/// #[derive(Reject)]
 /// enum MyCustomError {
-///     SomeError
+///     SomeError,
 /// }
 ///
 /// #[init(contract = "mycontract")]
-/// fn contract_init<R: HasReceiveContext, L: HasLogger, A: HasActions>(
-///     ctx: &R,
-///     receive_amount: Amount,
-///     logger: &mut L,
-/// ) -> Result<State, MyCustomError> { ... }
+/// fn contract_init<S: HasState>(
+///     _ctx: &impl HasInitContext,
+///     _allocator: &mut Allocator<S>,
+/// ) -> Result<((), ()), MyCustomError> {
+///     Err(MyCustomError::SomeError)
+/// }
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
@@ -519,6 +622,8 @@ pub struct ExternHost<State> {
 }
 
 #[derive(Default)]
+/// An allocator that allows the creation of [`StateMap`], [`StateSet`], and
+/// [`StateBox`].
 pub struct Allocator<S> {
     pub(crate) state: S,
 }
@@ -565,6 +670,8 @@ pub(crate) mod sealed {
 }
 
 #[derive(Debug)]
+/// The error type which is returned by methods on
+/// [`HasState`][`crate::HasState`].
 pub enum StateError {
     /// The subtree is locked.
     SubtreeLocked,
