@@ -74,13 +74,14 @@ extern "C" {
     /// u64::MAX if creating the entry failed because of an iterator lock on
     /// the part of the tree, or else the first bit is 0, and the remaining
     /// bits are an entry identifier that maybe used in subsequent calls.
+    /// If an entry at that key already exists it is set to the empty entry.
     pub(crate) fn state_create_entry(key_start: *const u8, key_length: u32) -> u64;
 
     /// Delete the entry. Returns one of
     /// - 0 if the part of the tree this entry was in is locked
     /// - 1 if the entry did not exist
     /// - 2 if the entry was deleted as a result of this call.
-    pub(crate) fn state_delete_entry(entry: u64) -> u32;
+    pub(crate) fn state_delete_entry(key_start: *const u8, key_length: u32) -> u32;
 
     /// Delete a prefix in the tree, that is, delete all parts of the tree that
     /// have the given key as prefix. Returns
@@ -131,6 +132,11 @@ extern "C" {
     /// - u32::MAX if the iterator has already been deleted
     /// - the amount of data that was copied. This will never be more than the
     ///   supplied length.
+    /// Before the first call to the [state_iterator_next] function this returns
+    /// (sections of) the key that was used to create the iterator. After
+    /// [state_iterator_next] returns (the encoding of) [None] this method
+    /// returns (sections of) the key at the first node returned by the
+    /// iterator.
     pub(crate) fn state_iterator_key_read(
         iterator: u64,
         start: *mut u8,

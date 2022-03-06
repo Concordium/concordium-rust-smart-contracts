@@ -588,7 +588,8 @@ impl HasState for StateApiExtern {
     }
 
     fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError> {
-        let res = unsafe { prims::state_delete_entry(entry.state_entry_id) };
+        let key = entry.get_key();
+        let res = unsafe { prims::state_delete_entry(key.as_ptr(), key.len() as u32) };
         match res {
             0 => Err(StateError::SubtreeLocked),
             1 => Err(StateError::EntryNotFound),
