@@ -56,7 +56,7 @@ pub struct StateMapIter<'a, K, V, S: HasState> {
 #[derive(Debug)]
 /// A mutable iterator over the entries of a [`StateMap`].
 ///
-/// Ordered by `K` serialized to bytes.
+/// Ordered lexicographically by `K` via its serialization.
 ///
 /// This `struct` is created by the [`iter_mut`][StateMap::iter_mut] method on
 /// [`StateMap`]. See its documentation for more.
@@ -216,8 +216,9 @@ pub struct VacantEntry<'a, K, V, StateEntryType> {
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
-/// A view into an occupied entry in a [`StateMap`]. It is
-/// part of the [`Entry`] enum.
+/// A view into an occupied entry in a [`StateMap`]. It can be obtained via the
+/// [StateMap::entry] method. This allows looking up or modifying the value at
+/// a give key in-place.
 ///
 /// Differs from [`OccupiedEntryRaw`] in that this automatically handles
 /// serialization.
@@ -245,16 +246,25 @@ pub struct ExternParameter {
     pub(crate) current_position: u32,
 }
 
-/// A type representing the return value of contract calls.
-/// This is when a contract calls another contract, it may get a return value.
-#[derive(Debug, Clone, Copy)]
-pub struct CallResponse {
+/// A type representing the return value of contract invocation.
+/// A contract invocation **may** return a value. It is returned in the
+/// following cases
+/// - an entrypoint of a V1 contract was invoked and the invocation succeeded
+/// - an entrypoint of a V1 contract was invoked and the invocation failed due
+///   to a [CallContractError::LogicReject]
+///
+/// In all other cases there is no response.
+///
+/// This type is designed to be used via its [Read](crate::Read) and
+/// [HasCallResponse](crate::HasCallResponse) traits.
+#[derive(Debug)]
+pub struct ExternCallResponse {
     /// The index of the call response.
     pub(crate) i:                NonZeroU32,
     pub(crate) current_position: u32,
 }
 
-impl CallResponse {
+impl ExternCallResponse {
     #[inline(always)]
     /// Construct a new call response with the given index,
     /// and starting position set to 0.
@@ -267,7 +277,10 @@ impl CallResponse {
 }
 
 /// A type representing the return value of contract init or receive method.
-pub struct ReturnValue {
+/// The intention is that this type is manipulated using methods of the
+/// [Write](crate::Write) trait. In particular it can be used as a sink to
+/// serialize values into.
+pub struct ExternReturnValue {
     pub(crate) current_position: u32,
 }
 
@@ -623,7 +636,15 @@ pub struct ExternHost<State> {
 
 #[derive(Default)]
 /// An allocator that allows the creation of [`StateMap`], [`StateSet`], and
-/// [`StateBox`].
+/// [`StateBox`]. It is parametrized by a parameter `S` that is assumed to
+/// implement [`HasState`]. The allocator acts analogously to an ordinary memory
+/// allocator, _except that it allocates values in contracts state_ as opposed
+/// to in transient memory (i.e., RAM).
+///
+/// The allocator is designed to provide an abstraction over the contract state,
+/// abstracting over the exact **keys** (keys in the sense of key-value store,
+/// which is the low-level semantics of contract state) that are used when
+/// storing specific values.
 pub struct Allocator<S> {
     pub(crate) state: S,
 }

@@ -79,8 +79,14 @@
 //! testing and for most cases this feature should not be set manually.
 //!
 //! # Traits
-//! Most of the functionality for interacting with the host is abstracted away
-//! by the traits
+//! To support testing of smart contracts most of the functionality is
+//! accessible via traits. This library generally provides two implementations
+//! of most traits. The first one is supported by **host** functions, and this
+//! is the implementation that is used when contracts are executed by nodes. The
+//! second set of implementations supports testing of contracts and it is
+//! defined in the [test_infrastructure](./test_infrastructure/index.html)
+//! module.
+//!
 //! - [HasParameter](./trait.HasParameter.html) for accessing the contract
 //!   parameter
 //! - [HasCommonData](./trait.HasCommonData.html) for accessing the data that is
@@ -98,29 +104,24 @@
 //! - [HasState](./trait.HasState.html) for operations possible on the contract
 //!   state.
 //!
-//! These are provided by traits to make testing easier. There are two main
-//! implementations provided for these traits. One provided by so-called
-//! __host__ functions, which is the implementation that is used by Concordium
-//! nodes when contracts are executed on the chain, or when tested via
-//! `cargo-concordium`.
-//!
-//! The second implementation is on types in the
-//! [test_infrastructure](./test_infrastructure/index.html) module, and is
-//! intended to be used for unit-testing together with the `concordium_test`
-//! infrastructure.
-//!
 //! # Signalling errors
-//! On the Wasm level Contracts can signal errors by returning a negative i32
+//! On the Wasm level contracts can signal errors by returning a negative i32
 //! value as a result of either initialization or invocation of the receive
-//! method. To make error handling more pleasant we provide the
-//! [Reject](./struct.Reject.html) structure. The result type of a contract init
-//! or a receive method is assumed to be of the form `Result<_, E>` where
+//! method. If the error is a logic error and the contract executes successfully
+//! then it can also produce a return value, which may provide additional detail
+//! of the error to the caller. To make error handling more pleasant we provide
+//! the [Reject](./struct.Reject.html) structure. The result type of a contract
+//! init or a receive method is assumed to be of the form `Result<_, E>` where
 //! `Reject: From<E>`.
 //!
-//! The intention is that smart contract writers will write their own custom,
-//! precise, error types and either manually implement `Reject: From<E>` for
-//! their type `E`, or use the [Reject macro](./derive.Reject.html) which
-//! supports the common use cases.
+//! Producing return values is in case of errors is not yet supported by this
+//! library, although smart contract writers can do this manually using the
+//! [Write] implementation of the [ExternReturnValue] type.
+//!
+//! With respect to error **codes**, the intention is that smart contract
+//! writers will write their own custom, precise, error types and either
+//! manually implement `Reject: From<E>` for their type `E`, or use the [Reject
+//! macro](./derive.Reject.html) which supports the common use cases.
 //!
 //! In addition to the custom errors that signal contract-specific error
 //! conditions this library provides some common error cases that most contracts
@@ -216,6 +217,7 @@ pub use std::{
     boxed, cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc, string::String, vec::Vec,
 };
 
+/// Re-export.
 pub mod collections {
     #[cfg(not(feature = "std"))]
     use alloc::collections;
@@ -226,8 +228,6 @@ pub mod collections {
     pub use concordium_contracts_common::{HashMap, HashSet};
 }
 
-/// Chain constants that impose limits on various aspects of smart contract
-/// execution.
 pub mod constants;
 mod impls;
 mod prims;

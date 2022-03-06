@@ -91,10 +91,11 @@ impl From<NotPayableError> for Reject {
     }
 }
 
-/// Return values are intended to be produced by writing to the [ReturnValue]
-/// buffer, either in a high-level interface via serialization, or in a
-/// low-level interface by manually using the [Write] trait's interface.
-impl Write for ReturnValue {
+/// Return values are intended to be produced by writing to the
+/// [ExternReturnValue] buffer, either in a high-level interface via
+/// serialization, or in a low-level interface by manually using the [Write]
+/// trait's interface.
+impl Write for ExternReturnValue {
     type Err = ();
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
@@ -113,7 +114,7 @@ impl Write for ReturnValue {
     }
 }
 
-impl ReturnValue {
+impl ExternReturnValue {
     #[inline(always)]
     /// Create a return value cursor that starts at the beginning.
     /// Note that there is a single return value per contract invocation, so
@@ -428,7 +429,7 @@ where
 
     pub fn insert(mut self, value: V) {
         // Writing to state cannot fail.
-        self.state_entry.write_all(&to_bytes(&value)).unwrap_abort();
+        value.serial(&mut self.state_entry).unwrap_abort();
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
     }
 }
@@ -439,7 +440,7 @@ where
     V: Serial,
     StateEntryType: HasStateEntry,
 {
-    pub fn new(key: K, value: V, state_entry: StateEntryType) -> Self {
+    pub(crate) fn new(key: K, value: V, state_entry: StateEntryType) -> Self {
         Self {
             key,
             value,
@@ -448,6 +449,8 @@ where
         }
     }
 
+    /// Get a reference to the key that is associated with this entry.
+    #[inline(always)]
     pub fn key(&self) -> &K { &self.key }
 
     pub fn insert(mut self, value: V) {
@@ -455,22 +458,34 @@ where
         self.store_value();
     }
 
+    /// Get an immutable reference to the value contained in this entry.
+    #[inline(always)]
     pub fn get_ref(&self) -> &V { &self.value }
 
     // If we had Stored<V> then we wouldn't need this.
-    pub fn modify<F>(&mut self, f: F)
+    /// Modify the value in the entry, and possibly return
+    /// some information.
+    #[inline]
+    pub fn modify<F, A>(&mut self, f: F) -> A
     where
-        F: FnOnce(&mut V), {
-        f(&mut self.value);
+        // NB: This closure cannot return a reference to V. The reason for this is
+        // that the type of the closure is really `for<'b>FnOnce<&'b mut V> -> A`.
+        // In particular, the lifetime of the reference the closure gets is not tied directly to the
+        // lifetime of `Self`.
+        F: FnOnce(&mut V) -> A, {
+        let res = f(&mut self.value);
         self.store_value();
+        res
     }
 
-    pub fn try_modify<F, E>(&mut self, f: F) -> Result<(), E>
+    /// Like [modify](Self::modify), but allows the closure to signal failure,
+    /// aborting the update.
+    pub fn try_modify<F, A, E>(&mut self, f: F) -> Result<A, E>
     where
-        F: FnOnce(&mut V) -> Result<(), E>, {
-        f(&mut self.value)?;
+        F: FnOnce(&mut V) -> Result<A, E>, {
+        let res = f(&mut self.value)?;
         self.store_value();
-        Ok(())
+        Ok(res)
     }
 
     fn store_value(&mut self) {
@@ -672,7 +687,8 @@ where
     K: Serialize,
     V: Serial + DeserialWithState<S> + Deletable,
 {
-    /// Try to get the value with the given key.
+    /// Lookup the value with the given key. Return [None] if there is no value
+    /// with the given key.
     pub fn get(&self, key: &K) -> Option<StateRef<V>> {
         let k = self.key_with_map_prefix(&key);
         self.state_ll.lookup(&k).map(|mut entry| {
@@ -681,8 +697,8 @@ where
         })
     }
 
-    /// Inserts the value with the given key.
-    /// If the position was occupied it will return the old value.
+    /// Inserts the value with the given key. If a value already exists at the
+    /// given key it is replaced, and the old value is returned.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(&key);
         let value_bytes = to_bytes(&value);
@@ -769,7 +785,7 @@ where
 
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
-        key_with_prefix.append(&mut to_bytes(key));
+        key.serial(&mut key_with_prefix).unwrap_abort();
         key_with_prefix
     }
 }
@@ -787,7 +803,7 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasState,
 {
-    pub fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
+    pub(crate) fn open<P: Serial>(state_ll: S, prefix: P) -> Self {
         Self {
             _marker_key: PhantomData,
             _marker_value: PhantomData,
@@ -796,6 +812,9 @@ where
         }
     }
 
+    /// Get an iterator over the key-value pairs of the map. The iterator
+    /// returns values in increasing order of keys, where keys are ordered
+    /// lexicographically via their serializations.
     pub fn iter(&self) -> StateMapIter<'_, K, V, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
         StateMapIter {
@@ -805,6 +824,8 @@ where
         }
     }
 
+    /// Like [iter](Self::iter), but allows modifying the values during
+    /// iterator.
     pub fn iter_mut(&mut self) -> StateMapIterMut<'_, K, V, S> {
         let state_iter = self.state_ll.iterator(&self.prefix).unwrap_abort();
         StateMapIterMut {
@@ -940,7 +961,7 @@ where
 
     fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.clone();
-        key_with_prefix.append(&mut to_bytes(key));
+        key.serial(&mut key_with_prefix).unwrap_abort();
         key_with_prefix
     }
 }
@@ -1094,7 +1115,7 @@ impl HasParameter for ExternParameter {
 
 /// The read implementation uses host functions to read chunks of return value
 /// on demand.
-impl Read for CallResponse {
+impl Read for ExternCallResponse {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
             match buf.len().try_into() {
@@ -1119,10 +1140,10 @@ impl Read for CallResponse {
     }
 }
 
-/// CallResponse can only be constured in this crate. As a result whenever it is
-/// constructed it will point to a valid parameter, which means that
-/// `get_parameter_size` will always return a non-negative value.
-impl HasCallResponse for CallResponse {
+impl HasCallResponse for ExternCallResponse {
+    // CallResponse can only be constured in this crate. As a result whenever it is
+    // constructed it will point to a valid parameter, which means that
+    // `get_parameter_size` will always return a non-negative value.
     fn size(&self) -> u32 { unsafe { prims::get_parameter_size(self.i.get()) as u32 } }
 }
 
@@ -1308,15 +1329,15 @@ fn parse_transfer_response_code(code: u64) -> TransferResult {
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
 ///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
-fn parse_call_response_code(code: u64) -> CallContractResult<CallResponse> {
+fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse> {
     if code & !0xffff_ff00_0000_0000 == 0 {
         // this means success
         let rv = (code >> 40) as u32;
         let tag = 0x80_0000u32;
         if tag & rv != 0 {
-            Ok((true, NonZeroU32::new(rv & !tag).map(CallResponse::new)))
+            Ok((true, NonZeroU32::new(rv & !tag).map(ExternCallResponse::new)))
         } else {
-            Ok((false, NonZeroU32::new(rv).map(CallResponse::new)))
+            Ok((false, NonZeroU32::new(rv).map(ExternCallResponse::new)))
         }
     } else {
         match (0x0000_00ff_0000_0000 & code) >> 32 {
@@ -1331,7 +1352,7 @@ fn parse_call_response_code(code: u64) -> CallContractResult<CallResponse> {
                     if rv > 0 {
                         Err(CallContractError::LogicReject {
                             reason,
-                            return_value: CallResponse::new(unsafe {
+                            return_value: ExternCallResponse::new(unsafe {
                                 NonZeroU32::new_unchecked(rv)
                             }),
                         })
@@ -1392,20 +1413,22 @@ impl<S> Allocator<S>
 where
     S: HasState,
 {
-    /// Open a new allocator.
+    /// Open a new allocator. Only a single instance of the allocator should
+    /// exist during contract execution, thus this should only be called at
+    /// the very beginning of execution.
     pub fn open(state: S) -> Self {
         Self {
             state,
         }
     }
 
-    /// Create a new [`StateMap`].
+    /// Create a new empty [`StateMap`].
     pub fn new_map<K, V>(&mut self) -> StateMap<K, V, S> {
         let prefix = self.get_and_update_item_prefix();
         StateMap::open(self.state.clone(), prefix)
     }
 
-    /// Create a new [`StateSet`].
+    /// Create a new empty [`StateSet`].
     pub fn new_set<T>(&mut self) -> StateSet<T, S> {
         let prefix = self.get_and_update_item_prefix();
         StateSet::open(self.state.clone(), prefix)
@@ -1488,7 +1511,7 @@ impl<S> HasHost<S> for ExternHost<S>
 where
     S: DeserialWithState<StateApiExtern>,
 {
-    type ReturnValueType = CallResponse;
+    type ReturnValueType = ExternCallResponse;
     type StateType = StateApiExtern;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
@@ -1534,7 +1557,7 @@ where
 }
 
 impl HasHost<StateApiExtern> for ExternLowLevelHost {
-    type ReturnValueType = CallResponse;
+    type ReturnValueType = ExternCallResponse;
     type StateType = StateApiExtern;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
