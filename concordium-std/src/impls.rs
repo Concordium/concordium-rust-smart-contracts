@@ -925,10 +925,13 @@ where
     V: Serial + DeserialWithState<S>,
     S: HasState,
 {
+    /// Get a reference to the value `V`.
     pub fn get(&self) -> Ref<'_, V> { self.state_box.get() }
 
+    /// Set the value. Overwrites the existing one.
     pub fn set(&mut self, new_val: V) { self.state_box.set(new_val) }
 
+    /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut V), {
@@ -1017,6 +1020,9 @@ impl<T, S: HasState> StateSet<T, S> {
         }
     }
 
+    /// Get an iterator over the elements in the `StateSet`. The iterator
+    /// returns elements in increasing order, where elements are ordered
+    /// lexicographically via their serializations.
     pub fn iter(&self) -> StateSetIter<T, S> {
         let state_iter = self.state_api.iterator(&self.prefix).unwrap_abort();
         StateSetIter {

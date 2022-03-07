@@ -463,30 +463,6 @@ impl HasLogger for LogRecorder {
     }
 }
 
-/// An actions tree, used to provide a simpler presentation for testing.
-#[derive(Eq, PartialEq, Debug)]
-pub enum ActionsTree {
-    Accept,
-    SimpleTransfer {
-        to:     AccountAddress,
-        amount: Amount,
-    },
-    Send {
-        to:           ContractAddress,
-        receive_name: OwnedReceiveName,
-        amount:       Amount,
-        parameter:    Vec<u8>,
-    },
-    AndThen {
-        left:  Box<ActionsTree>,
-        right: Box<ActionsTree>,
-    },
-    OrElse {
-        left:  Box<ActionsTree>,
-        right: Box<ActionsTree>,
-    },
-}
-
 /// Reports back an error to the host when compiled to wasm
 /// Used internally, not meant to be called directly by contract writers
 #[doc(hidden)]
@@ -540,10 +516,14 @@ impl From<StateTestError> for ParseError {
     fn from(_: StateTestError) -> Self { ParseError::default() }
 }
 
-// TODO: Replace the Vec<u8> with a AsRef<&[u8]>.
 #[derive(Debug)]
+/// A wrapper for the data stored in [`StateEntryTest`], which is used to match
+/// the semantics of the host functions. Specifically, it is used to ensure that
+/// interactions with a deleted entry result in a error.
 pub enum StateEntryData {
+    /// The entry has been deleted.
     EntryDeleted,
+    /// The entry exists and has data.
     EntryExists(Vec<u8>),
 }
 
@@ -578,6 +558,7 @@ impl From<Vec<u8>> for StateEntryData {
 }
 
 #[derive(Debug)]
+/// A state entry used for testing. Implements [`HasStateEntry`].
 pub struct StateEntryTest {
     pub(crate) cursor:         Cursor<Rc<RefCell<StateEntryData>>>,
     pub(crate) key:            Vec<u8>,
@@ -585,7 +566,7 @@ pub struct StateEntryTest {
 }
 
 impl StateEntryTest {
-    pub fn open(
+    pub(crate) fn open(
         data: Rc<RefCell<StateEntryData>>,
         key: Vec<u8>,
         state_entry_id: StateEntryId,
@@ -599,6 +580,7 @@ impl StateEntryTest {
 }
 
 #[derive(Debug, Clone)]
+/// A state api used for testing. Implement [`HasState`].
 pub struct StateApiTest {
     trie: Rc<RefCell<StateTrie>>,
 }
@@ -637,11 +619,20 @@ impl HasState for StateApiTest {
     }
 }
 
+/// An alias for [`StateMapIter`] that fixes the [`HasState`] type to
+/// [`StateApiTest`].
 pub type StateMapIterTest<'a, K, V> = StateMapIter<'a, K, V, StateApiTest>;
 
+/// An alias for [`StateMapIterMut`] that fixes the [`HasState`] type to
+/// [`StateApiTest`].
+pub type StateMapIterMutTest<'a, K, V> = StateMapIterMut<'a, K, V, StateApiTest>;
+
+/// An alias for [`StateSetIter`] that fixes the [`HasState`] type to
+/// [`StateApiTest`].
 pub type StateSetIterTest<'a, T> = StateSetIter<'a, T, StateApiTest>;
 
 impl StateApiTest {
+    /// Create a new empty state.
     pub fn new() -> Self {
         Self {
             trie: Rc::new(RefCell::new(StateTrie::new())),

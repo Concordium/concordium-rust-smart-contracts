@@ -372,6 +372,8 @@ pub trait DeserialCtx: Sized {
 pub trait DeserialWithState<S>: Sized
 where
     S: HasState, {
+    /// Attempt to read a structure from a given source and state, failing if
+    /// an error occurs during deserialization or reading.
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
 }
 
@@ -397,6 +399,8 @@ where
 pub trait DeserialCtxWithState<S>: Sized
 where
     S: HasState, {
+    /// Attempt to read a structure from a given source, context, and state,
+    /// failing if an error occurs during deserialization or reading.
     fn deserial_ctx_with_state<R: Read>(
         size_length: schema::SizeLength,
         ensure_ordered: bool,
