@@ -555,15 +555,6 @@ pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
 impl HasState for StateApiExtern {
     type EntryType = StateEntry;
     type IterType = StateIterExtern;
-    type StateData = ();
-
-    /// Open the contract state.
-    #[inline(always)]
-    fn open(private: Self::StateData) -> Self {
-        StateApiExtern {
-            private,
-        }
-    }
 
     fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
         let key_start = key.as_ptr();

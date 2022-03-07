@@ -470,7 +470,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 use concordium_std::{trap, ExternContext, InitContextExtern, StateApiExtern, HasState};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state = StateApiExtern::open(());
+                let mut state = StateApiExtern::open();
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(rv) => {
                         if rv.serial(&mut ReturnValue::open()).is_err() {
@@ -503,7 +503,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 use concordium_std::{trap, ExternContext, InitContextExtern, Allocator, ReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state_ll = StateApiExtern::open(());
+                let mut state_ll = StateApiExtern::open();
                 let mut allocator = Allocator::open(state_ll.clone());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut allocator) {
                     Ok((rv, state)) => {
@@ -753,7 +753,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, Allocator, Logger, ExternHost, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let state_ll = StateApiExtern::open(());
+                let state_ll = StateApiExtern::open();
                 let mut root_entry = state_ll.lookup(&[]).unwrap_abort();
                 if let Ok(state) = DeserialWithState::deserial_with_state(&state_ll, &mut root_entry) {
                     let mut allocator = Allocator::open(state_ll);

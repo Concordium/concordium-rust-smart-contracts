@@ -606,13 +606,6 @@ pub struct StateApiTest {
 impl HasState for StateApiTest {
     type EntryType = StateEntryTest;
     type IterType = trie::Iter;
-    type StateData = StateTrie;
-
-    fn open(trie: StateTrie) -> Self {
-        Self {
-            trie: Rc::new(RefCell::new(trie)),
-        }
-    }
 
     fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError> {
         self.trie.borrow_mut().create_entry(key)
@@ -1029,7 +1022,7 @@ impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
         HostTest::new_with_allocator(state, Allocator {
-            state: StateApiTest::open(StateTrie::new()),
+            state: StateApiTest::new(),
         })
     }
 

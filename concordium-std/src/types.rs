@@ -655,6 +655,16 @@ pub struct StateApiExtern {
     pub(crate) private: (),
 }
 
+impl StateApiExtern {
+    /// Open the contract state. Only one instance can be opened at the same
+    /// time.
+    pub fn open() -> Self {
+        Self {
+            private: (),
+        }
+    }
+}
+
 /// Operations backed by host functions for the low-level interface.
 #[doc(hidden)]
 #[derive(Default)]

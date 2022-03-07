@@ -158,13 +158,8 @@ where
 
 /// Types which can serve as the contract state.
 pub trait HasState: Clone {
-    type StateData;
     type EntryType: HasStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
-
-    /// Open the contract state. Only one instance can be opened at the same
-    /// time.
-    fn open(_: Self::StateData) -> Self;
 
     /// Get an entry in the state.
     /// Returns an error if it is part of a locked subtree.
