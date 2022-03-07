@@ -473,7 +473,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let mut state = StateApiExtern::open();
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
                     Ok(rv) => {
-                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                        if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value (initialization fails).
                         }
                         0
@@ -483,7 +483,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         let code = reject.error_code.get();
                         if code < 0 {
                             if let Some(rv) = reject.return_value {
-                                if ReturnValue::open().write_all(&rv).is_err() {
+                                if ExternReturnValue::open().write_all(&rv).is_err() {
                                     trap() // Could not serialize the return value.
                                 }
                             }
@@ -500,14 +500,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, Allocator, ReturnValue};
+                use concordium_std::{trap, ExternContext, InitContextExtern, Allocator, ExternReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state_ll = StateApiExtern::open();
                 let mut allocator = Allocator::open(state_ll.clone());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut allocator) {
                     Ok((rv, state)) => {
-                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                        if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value (initialization fails).
                         }
                         // Store the state.
@@ -521,7 +521,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         let code = reject.error_code.get();
                         if code < 0 {
                             if let Some(rv) = reject.return_value {
-                                if ReturnValue::open().write_all(&rv).is_err() {
+                                if ExternReturnValue::open().write_all(&rv).is_err() {
                                     trap() // Could not serialize the return value.
                                 }
                             }
@@ -713,7 +713,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 let mut host = ExternLowLevelHost::default();
                 match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
                     Ok(rv) => {
-                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                        if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value.
                         }
                         0
@@ -723,7 +723,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         let code = reject.error_code.get();
                         if code < 0 {
                             if let Some(rv) = reject.return_value {
-                                if ReturnValue::open().write_all(&rv).is_err() {
+                                if ExternReturnValue::open().write_all(&rv).is_err() {
                                     trap() // Could not serialize the return value.
                                 }
                             }
@@ -760,7 +760,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                     let mut host = ExternHost { state, allocator };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
                         Ok(rv) => {
-                            if rv.serial(&mut ReturnValue::open()).is_err() {
+                            if rv.serial(&mut ExternReturnValue::open()).is_err() {
                                 trap() // Could not serialize return value.
                             }
                             #save_state_if_mutable
@@ -771,7 +771,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                             let code = reject.error_code.get();
                             if code < 0 {
                                 if let Some(rv) = reject.return_value {
-                                    if ReturnValue::open().write_all(&rv).is_err() {
+                                    if ExternReturnValue::open().write_all(&rv).is_err() {
                                         trap() // Could not serialize the return value.
                                     }
                                 }
@@ -875,7 +875,7 @@ fn contract_function_schema_tokens(
             let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
             Some(quote! {
                 let return_value = <#return_value_ident as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::ExternReturnValue(return_value));
             })
         }
         _ => None,
