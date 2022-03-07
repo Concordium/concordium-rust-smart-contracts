@@ -11,7 +11,7 @@ const BRANCHING_FACTOR: usize = 16;
 pub(crate) type Index = usize;
 
 #[derive(Debug)]
-pub struct StateTrie {
+pub(crate) struct StateTrie {
     nodes:           Node,
     next_entry_id:   Cell<StateEntryId>,
     entry_map:       RefCell<Map<StateEntryId, Vec<Index>>>,
@@ -43,7 +43,7 @@ fn from_indexes(indexes: &[Index]) -> Vec<u8> {
 }
 
 impl StateTrie {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             nodes:           Node::new(),
             next_entry_id:   Cell::new(0),
@@ -52,8 +52,8 @@ impl StateTrie {
         }
     }
 
-    // Construct a `StateEntryTest` and use interior mutation to add increment
-    // next_entry_id and add the entry to the entry_map.
+    /// Construct a `StateEntryTest` and use interior mutation to add increment
+    /// next_entry_id and add the entry to the entry_map.
     fn construct_state_entry_test(
         &self,
         indexes: Vec<Index>,
@@ -70,7 +70,7 @@ impl StateTrie {
         StateEntryTest::open(data, key, state_entry_id)
     }
 
-    pub fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
+    pub(crate) fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
         let indexes = to_indexes(prefix);
         if self.is_locked(&indexes) {
             return Err(StateError::SubtreeLocked);
@@ -102,7 +102,7 @@ impl StateTrie {
         })
     }
 
-    pub fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, StateError> {
+    pub(crate) fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, StateError> {
         let indexes = to_indexes(key);
         if self.is_locked(&indexes) {
             return Err(StateError::SubtreeLocked);
@@ -112,14 +112,14 @@ impl StateTrie {
         Ok(entry)
     }
 
-    pub fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
+    pub(crate) fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
         let indexes = to_indexes(key);
         self.nodes
             .lookup(&indexes)
             .map(|data| self.construct_state_entry_test(indexes, data, key.to_vec()))
     }
 
-    pub fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), StateError> {
+    pub(crate) fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), StateError> {
         let indexes = to_indexes(&entry.key);
         if self.is_locked(&indexes) {
             return Err(StateError::SubtreeLocked);
@@ -132,7 +132,7 @@ impl StateTrie {
         }
     }
 
-    pub fn iterator(&self, prefix: &[u8]) -> Result<Iter, StateError> {
+    pub(crate) fn iterator(&self, prefix: &[u8]) -> Result<Iter, StateError> {
         let index_prefix = to_indexes(prefix);
 
         // Try to find the root_node for the prefix.
@@ -156,15 +156,8 @@ impl StateTrie {
         Ok(iter)
     }
 
-    pub fn delete_iterator(&mut self, iterator: Iter) {
-        self.delete_iterator_by_prefix(&iterator.prefix);
-    }
-
-    /// Delete the iterator by prefix.
-    /// Cannot be made pub as that can violate the preconditions.
-    pub(crate) fn delete_iterator_by_prefix(&mut self, iterator_prefix: &[Index]) {
-        // Decrement the counter for iterators alive.
-        match self.iterator_counts.borrow_mut().entry(iterator_prefix.to_vec()) {
+    pub(crate) fn delete_iterator(&mut self, iterator: Iter) {
+        match self.iterator_counts.borrow_mut().entry(iterator.prefix) {
             btree_map::Entry::Vacant(_) => crate::fail!(), // Internal error: Should never happen.
             btree_map::Entry::Occupied(mut occ) => {
                 if *occ.get() == 1 {
@@ -181,8 +174,8 @@ impl StateTrie {
 #[derive(Debug)]
 pub struct Iter {
     // Only used when deleting the iterator.
-    pub(crate) prefix: Vec<Index>,
-    queue:             VecDeque<StateEntryTest>,
+    prefix: Vec<Index>,
+    queue:  VecDeque<StateEntryTest>,
 }
 
 impl Iter {
