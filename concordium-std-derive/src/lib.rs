@@ -345,12 +345,11 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// ```ignore
 /// #[init(contract = "my_contract")]
-/// fn some_init(ctx: &impl HasInitContext) -> InitResult<MyState> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, allocator: &mut Allocator<S>,) -> InitResult<(MyReturnValue, MyState)> {...}
 /// ```
 ///
-/// Where the trait `HasInitContext` and the type `InitResult` are exposed from
-/// `concordium-std` and `MyState` is the user-defined type for the contract
-/// state.
+/// Where `HasInitContext`, `InitResult`, and `Allocator` are exposed from
+/// `concordium-std` and `MyReturnValue` and `MyState` are user-defined types.
 ///
 /// # Optional attributes
 ///
@@ -367,7 +366,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", payable)]
-/// fn some_init(ctx: &impl HasInitContext, amount: Amount) -> InitResult<MyState> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, allocator: Allocator<S>, amount: Amount) -> InitResult<(MyReturnValue, MyState)> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -379,22 +378,24 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", enable_logger)]
-/// fn some_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, allocator: Allocator<S>, logger: &mut impl HasLogger) -> InitResult<(MyReturnValue, MyState)> {...}
 /// ```
 ///
-/// ## `low_level`: Manually deal with writing state bytes
-/// Setting the `low_level` attribute disables the generated code for
-/// serializing the contract state.
+/// ## `low_level`: Manually deal with the low-level state including writing
+/// bytes Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state. However, the return value is still
+/// serialized automatically.
 ///
-/// If `low_level` is set, the signature must contain an extra argument of type
-/// `&mut ContractState` found in `concordium-std`, which gives access to
-/// manipulating the contract state bytes directly. This means there is no need
-/// to return the contract state and the return type becomes `InitResult<()>`.
+/// If `low_level` is set, the `&mut Allocator<S>` in the signature is replaced
+/// by `&impl mut HasState` found in `concordium-std`, which gives access to
+/// manipulating the low-level contract state directly. This means there is no
+/// need to return the contract state and the return type becomes
+/// `InitResult<MyReturnValue>`.
 ///
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", low_level)]
-/// fn some_init(ctx: &impl HasInitContext, state: &mut ContractState) -> InitResult<()> {...}
+/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasState) -> InitResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
@@ -471,7 +472,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = StateApiExtern::open();
-                match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
+                match #fn_name(&ctx, &mut state, #(#fn_optional_args, )*) {
                     Ok(rv) => {
                         if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value (initialization fails).
@@ -505,7 +506,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state_api = StateApiExtern::open();
                 let mut allocator = Allocator::open(state_api.clone());
-                match #fn_name(&ctx, #(#fn_optional_args, )* &mut allocator) {
+                match #fn_name(&ctx, &mut allocator, #(#fn_optional_args, )*) {
                     Ok((rv, state)) => {
                         if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value (initialization fails).

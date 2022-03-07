@@ -16,7 +16,7 @@
 //!     allocator: &mut Allocator<S>,
 //! ) -> InitResult<((), State)> { ... }
 //!
-//! #[receive(contract = "noop", name = "receive", payable, enable_logger)]
+//! #[receive(contract = "noop", name = "receive", payable, enable_logger, mutable)]
 //! fn contract_receive<S: HasState>(
 //!     ctx: &impl HasReceiveContext,
 //!     amount: Amount,
@@ -27,7 +27,7 @@
 //! #[cfg(test)]
 //! mod tests {
 //!     use super::*;
-//!     use concordium_sc_base::test_infrastructure::*;
+//!     use concordium_std::test_infrastructure::*;
 //!     #[test]
 //!     fn test_init() {
 //!         let mut ctx = InitContextTest::empty();
