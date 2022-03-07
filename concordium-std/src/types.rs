@@ -217,7 +217,7 @@ pub struct VacantEntry<'a, K, V, StateEntryType> {
 }
 
 /// A view into an occupied entry in a [`StateMap`]. It can be obtained via the
-/// [StateMap::entry] method. This allows looking up or modifying the value at
+/// [`StateMap::entry`] method. This allows looking up or modifying the value at
 /// a give key in-place.
 ///
 /// Differs from [`OccupiedEntryRaw`] in that this automatically handles

@@ -474,6 +474,7 @@ where
     V: Serial,
     StateEntryType: HasStateEntry,
 {
+    /// Creae a new `OccupiedEntry`.
     pub(crate) fn new(key: K, value: V, state_entry: StateEntryType) -> Self {
         Self {
             key,
@@ -512,7 +513,7 @@ where
         res
     }
 
-    /// Like [modify](Self::modify), but allows the closure to signal failure,
+    /// Like [`modify`](Self::modify), but allows the closure to signal failure,
     /// aborting the update.
     pub fn try_modify<F, A, E>(&mut self, f: F) -> Result<A, E>
     where
@@ -539,9 +540,20 @@ where
     V: Serial,
     StateEntryType: HasStateEntry,
 {
+    /// Ensures a value is in the entry by inserting the default if empty.
     pub fn or_insert(self, default: V) {
         if let Entry::Vacant(vac) = self {
             vac.insert(default);
+        }
+    }
+
+    /// Ensures a value is in the entry by inserting the result of the default
+    /// function if empty.
+    pub fn or_insert_with<F>(self, default: F)
+    where
+        F: FnOnce() -> V, {
+        if let Entry::Vacant(vac) = self {
+            vac.insert(default())
         }
     }
 
@@ -566,6 +578,14 @@ where
         }
         self
     }
+
+    /// Returns a reference to this entry's key.
+    pub fn key(&self) -> &K {
+        match self {
+            Entry::Vacant(vac) => vac.key(),
+            Entry::Occupied(occ) => occ.key(),
+        }
+    }
 }
 
 impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
@@ -574,11 +594,8 @@ where
     V: Serial + Default,
     StateEntryType: HasStateEntry,
 {
-    pub fn or_default(self) {
-        if let Entry::Vacant(vac) = self {
-            vac.insert(Default::default());
-        }
-    }
+    /// Ensures a valud is in the entry by inserting the default value if empty.
+    pub fn or_default(self) { self.or_insert_with(Default::default) }
 }
 
 const NEXT_ITEM_PREFIX_KEY: u64 = 0;

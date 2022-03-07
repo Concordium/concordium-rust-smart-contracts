@@ -21,7 +21,7 @@
 //! contracts. For this reason it re-exports a number of definitions from other
 //! libraries.
 //!
-//! # Global allocator.
+//! # Global allocator
 //! Importing this library has a side-effect of setting  the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
 //! which is a memory allocator aimed at small code footprint.
 //! This allocator is designed to be used in contexts where there are a few
