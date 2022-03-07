@@ -11,16 +11,17 @@
 //! ```rust
 //! // Some contract
 //! #[init(contract = "noop")]
-//! fn contract_init(
+//! fn contract_init<S: HasState>(
 //!     ctx: &impl HasInitContext,
-//! ) -> InitResult<State> { ... }
+//!     allocator: &mut Allocator<S>,
+//! ) -> InitResult<((), State)> { ... }
 //!
 //! #[receive(contract = "noop", name = "receive", payable, enable_logger)]
-//! fn contract_receive(
+//! fn contract_receive<S: HasState>(
 //!     ctx: &impl HasReceiveContext,
 //!     amount: Amount,
 //!     logger: &mut impl HasLogger,
-//!     host: &mut HasHost<State>,
+//!     host: &mut HasHost<State, StateType = S>,
 //! ) -> ReceiveResult<MyReturnValue> { ... }
 //!
 //! #[cfg(test)]
@@ -30,9 +31,10 @@
 //!     #[test]
 //!     fn test_init() {
 //!         let mut ctx = InitContextTest::empty();
+//!         let mut allocator = AllocatorTest::new();
 //!         ctx.set_init_origin(AccountAddress([0u8; 32]));
 //!         ...
-//!         let result = contract_init(&ctx);
+//!         let result = contract_init(&ctx, &mut allocator);
 //!         claim!(...)
 //!         ...
 //!     }
@@ -642,6 +644,15 @@ impl StateApiTest {
 
 impl Default for StateApiTest {
     fn default() -> Self { Self::new() }
+}
+
+// Type alias for [`Allocator`], which fixes the [`HasHost`] type to
+// [`StateApiTest`].
+pub type AllocatorTest = Allocator<StateApiTest>;
+
+impl AllocatorTest {
+    /// Create a new [`Self`] with an empty [`StateApiTest`].
+    pub fn new() -> Self { Self::open(StateApiTest::new()) }
 }
 
 impl HasStateEntry for StateEntryTest {

@@ -110,8 +110,7 @@ mod tests {
     fn test_init() {
         let ctx = InitContextTest::empty();
 
-        let state_api = StateApiTest::new();
-        let mut allocator = Allocator::open(state_api);
+        let mut allocator = AllocatorTest::new();
 
         let _state = init(&ctx, &mut allocator).expect("Init failed");
     }
@@ -130,7 +129,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_api = StateApiTest::new();
-        let mut allocator = Allocator::open(state_api.clone());
+        let mut allocator = AllocatorTest::open(state_api.clone());
 
         // TODO: These extra serial/deserial state steps are no longer necessary. But we
         // can keep them for now to ensure that everything works as expected.
