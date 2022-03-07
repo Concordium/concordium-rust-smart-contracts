@@ -361,12 +361,39 @@ pub trait DeserialCtx: Sized {
     ) -> ParseResult<Self>;
 }
 
+/// The `DeserialWithState` trait provides a means of reading structures from
+/// byte-sources ([`Read`]) for types that also need a reference to a
+/// [`HasState`] type.
+///
+/// Types that need a reference to the state include
+/// [`StateBox`][crate::StateBox], [`StateMap`][crate::StateMap],
+/// [`StateSet`][crate::StateSet], and structs or enums that contain one of
+/// these types.
 pub trait DeserialWithState<S>: Sized
 where
     S: HasState, {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
 }
 
+/// The `DeserialCtxWithState` trait provides a means of reading structures from
+/// byte-sources ([`Read`]) using contextual information for types that also
+/// need a reference to a [`HasState`] type. The trait is a combination
+/// of the [`DeserialCtx`] and [`DeserialWithState`] traits, which each has
+/// additional documentation.
+///
+/// This trait is primarily used when deriving [`DeserialWithState`] for struct
+/// or enums where both contextual information and the state is present.
+///
+/// For example:
+/// ```
+/// #[derive(DeserialWithState)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyStruct<S> {
+///     #[concordium(size_length = 2)]
+///     a: String, // Gets the contextual size_length information.
+///     b: StateBox<u8>, // Needs a HasState type
+/// }
+/// ```
 pub trait DeserialCtxWithState<S>: Sized
 where
     S: HasState, {
