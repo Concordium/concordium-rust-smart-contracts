@@ -129,6 +129,7 @@ impl ExternReturnValue {
 }
 
 impl StateEntry {
+    /// Open a new state entry with its `current_position` set to `0`.
     pub(crate) fn open(state_entry_id: StateEntryId, key: Vec<u8>) -> Self {
         Self {
             state_entry_id,
@@ -140,7 +141,6 @@ impl StateEntry {
 
 impl HasStateEntry for StateEntry {
     type Error = ();
-    // TODO: Should this use another error type?
     type StateEntryData = ();
     type StateEntryKey = ();
 
@@ -352,17 +352,23 @@ impl Write for StateEntry {
     }
 }
 
-// The low-level entry type.
 impl<StateEntryType> VacantEntryRaw<StateEntryType>
 where
     StateEntryType: HasStateEntry,
 {
-    pub fn new(state_entry: StateEntryType) -> Self {
+    /// Create a new `VacantEntryRaw`.
+    pub(crate) fn new(state_entry: StateEntryType) -> Self {
         Self {
             state_entry,
         }
     }
 
+    /// Gets a reference to the key that would be used when inserting a value
+    /// through the `VacantEntryRaw`.
+    pub fn key(&self) -> &[u8] { self.state_entry.get_key() }
+
+    /// Sets the value of the entry with the `VacantEntryRaw`’s key, and returns
+    /// a [`HasStateEntry`] type which corresponds to the data in the state.
     pub fn insert(mut self, value: &[u8]) -> StateEntryType {
         self.state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
@@ -370,23 +376,37 @@ where
     }
 }
 
-// The low-level entry type.
 impl<StateEntryType> OccupiedEntryRaw<StateEntryType>
 where
     StateEntryType: HasStateEntry,
 {
-    pub fn new(state_entry: StateEntryType) -> Self {
+    /// Create a new `OccupiedEntryRaw`.
+    pub(crate) fn new(state_entry: StateEntryType) -> Self {
         Self {
             state_entry,
         }
     }
 
+    /// Gets a reference to the key that would be used when inserting a value
+    /// through the `OccupiedEntryRaw`.
+    pub fn key(&self) -> &[u8] { self.state_entry.get_key() }
+
+    /// Gets a reference to the [`HasStateEntry`] type in the entry.
     pub fn get_ref(&self) -> &StateEntryType { &self.state_entry }
 
+    /// Converts the entry into its [`HasStateEntry`] type.
+    ///
+    /// If you need multiple mutable references to the `OccupiedEntryRaw`, see
+    /// [`get_mut`][Self::get_mut].
     pub fn get(self) -> StateEntryType { self.state_entry }
 
+    /// Gets a mutable reference to the [`HasStateEntry`] type in the entry.
+    ///
+    /// If you need access to a [`HasStateEntry`], which can outlive the
+    /// `OccupiedEntryRaw`, see [`get`][Self::get].
     pub fn get_mut(&mut self) -> &mut StateEntryType { &mut self.state_entry }
 
+    /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
     pub fn insert(&mut self, value: &[u8]) {
         // Rewind state entry. Cannot fail.
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
@@ -401,10 +421,20 @@ impl<StateEntryType> EntryRaw<StateEntryType>
 where
     StateEntryType: HasStateEntry,
 {
+    /// Ensures a value is in the entry by inserting the default if empty, and
+    /// returns the [`HasStateEntry`] type for the entry.
     pub fn or_insert(self, default: &[u8]) -> StateEntryType {
         match self {
             EntryRaw::Vacant(vac) => vac.insert(default),
             EntryRaw::Occupied(occ) => occ.get(),
+        }
+    }
+
+    /// Returns a reference to this entry's key.
+    pub fn key(&self) -> &[u8] {
+        match self {
+            EntryRaw::Vacant(vac) => vac.key(),
+            EntryRaw::Occupied(occ) => occ.key(),
         }
     }
 }
@@ -415,7 +445,8 @@ where
     V: Serial,
     StateEntryType: HasStateEntry,
 {
-    pub fn new(key: K, state_entry: StateEntryType) -> Self {
+    /// Create a new `VacantEntry`.
+    pub(crate) fn new(key: K, state_entry: StateEntryType) -> Self {
         Self {
             key,
             state_entry,
@@ -423,10 +454,13 @@ where
         }
     }
 
+    /// Get a reference to the `VacantEntry`'s key.
     pub fn key(&self) -> &K { &self.key }
 
+    /// Take ownership of the key.
     pub fn into_key(self) -> K { self.key }
 
+    /// Sets the value of the entry with the `VacantEntry`'s key.
     pub fn insert(mut self, value: V) {
         // Writing to state cannot fail.
         value.serial(&mut self.state_entry).unwrap_abort();
@@ -453,6 +487,7 @@ where
     #[inline(always)]
     pub fn key(&self) -> &K { &self.key }
 
+    /// Sets the value of the entry with the `OccupiedEntry`'s key.
     pub fn insert(mut self, value: V) {
         self.value = value;
         self.store_value();
@@ -462,7 +497,6 @@ where
     #[inline(always)]
     pub fn get_ref(&self) -> &V { &self.value }
 
-    // If we had Stored<V> then we wouldn't need this.
     /// Modify the value in the entry, and possibly return
     /// some information.
     #[inline]
