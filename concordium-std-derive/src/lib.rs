@@ -579,12 +579,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
-/// Where the `HasAction`, `HasReceiveContext` traits and the type
-/// `ReceiveResult` are exposed from `concordium-std` and `MyState` is the
-/// user-defined type for the contract state.
+/// Where the `HasState`, `HasReceiveContext`, `HasHost`, and `ReceiveResult`
+/// are from `concordium-std` and `MyState` and `MyReturnValue` are user-defined
+/// types.
 ///
 /// # Optional attributes
 ///
@@ -598,10 +598,23 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// extra argument of type `Amount`, allowing the function to access the amount
 /// of CCD supplied with the transaction.
 ///
+/// ## `mutable`: Function can mutate the state
+/// Setting the `mutable` attribute changes the required signature so the host
+/// becomes a mutable reference.
+///
+/// When a receive method is mutable, the state, e.g. `MyState`, is serialized
+/// and stored after each invocation.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", mutable)]
+/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &mut HasHost<MyState, StateType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", payable)]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, amount: Amount, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -609,26 +622,25 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// include an extra argument `&mut impl HasLogger`, allowing the function to
 /// log events.
 ///
-///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, logger: &mut impl HasLogger, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>, logger: &mut impl HasLogger) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
-/// ## `low_level`: Manually deal with writing state bytes
-/// Setting the `low_level` attribute disables the generated code for
-/// serializing the contract state.
+/// ## `low_level`: Manually deal with the low-level state including writing
+/// bytes Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state. However, the return value is still
+/// serialized automatically.
 ///
-/// If `low_level` is set, instead of the user-defined state type in the
-/// signature, the state argument becomes the type `&mut ContractState` found in
-/// `concordium-std`, which gives access to manipulating the contract state
-/// bytes directly.
+/// If `low_level` is set, the `&mut Allocator<S>` in the signature is replaced
+/// by `&impl mut HasState` found in `concordium-std`, which gives access to
+/// manipulating the low-level contract state directly.
 ///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", low_level)]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut ContractState) -> ReceiveResult<A> {...}
+/// fn contract_receive(ctx: &impl HasReceiveContext, state: &mut impl HasState) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
