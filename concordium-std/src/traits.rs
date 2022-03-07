@@ -156,6 +156,7 @@ where
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error>;
 }
 
+/// Types which can serve as the contract state.
 pub trait HasState: Clone {
     type StateData;
     type EntryType: HasStateEntry;
@@ -187,11 +188,25 @@ pub trait HasState: Clone {
     fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError>;
 
     /// Get an iterator over a map in the state.
-    /// Returns an error if the number of active iterators fro the same prefix
+    ///
+    /// An iterator locks the subtree with the given prefix.
+    /// Locking means that the structure of the tree cannot be altered, i.e.,
+    /// that entries cannot be created or deleted. Altering the data inside
+    /// an entry of a locked subtree is, however, allowed.
+    ///
+    /// Deleting iterators with [`delete_iterator`][HasState::delete_iterator]
+    /// is necessary to unlock the subtree. To unlock a subtree with prefix
+    /// `p1`, all iterators with prefixes `p2`, where `p2` is a prefix of `p1`,
+    /// must be deleted.
+    ///
+    /// Returns an error if the number of active iterators for the same prefix
     /// exceeds [u16::MAX].
+    #[must_use]
     fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError>;
 
     /// Delete an iterator.
+    /// See the [`iterator`][HasState::iterator] method for why this is
+    /// necessary.
     fn delete_iterator(&mut self, iter: Self::IterType);
 }
 

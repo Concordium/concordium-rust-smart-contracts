@@ -87,22 +87,18 @@
 //! defined in the [test_infrastructure](./test_infrastructure/index.html)
 //! module.
 //!
-//! - [HasParameter](./trait.HasParameter.html) for accessing the contract
-//!   parameter
-//! - [HasCommonData](./trait.HasCommonData.html) for accessing the data that is
-//!   common to both init and receive methods
-//! - [HasInitContext](./trait.HasInitContext.html) for all the context data
-//!   available to the init functions (note that this includes all the common
-//!   data)
-//! - [HasReceiveContext](./trait.HasReceiveContext.html) for accessing all the
-//!   context data available to the receive functions (note that this includes
-//!   all the common data)
-//! - [HasLogger](./trait.HasLogger.html) for logging data during smart contract
-//!   execution
-//! - [HasPolicy](./trait.HasPolicy.html) for accessing the policy of the
-//!   sender, either of the init or receive method
-//! - [HasState](./trait.HasState.html) for operations possible on the contract
-//!   state.
+//! - [HasParameter] for accessing the contract parameter
+//! - [HasCommonData] for accessing the data that is common to both init and
+//!   receive methods
+//! - [HasInitContext] for all the context data available to the init functions
+//!   (note that this includes all the common data)
+//! - [HasReceiveContext] for accessing all the context data available to the
+//!   receive functions (note that this includes all the common data)
+//! - [HasLogger] for logging data during smart contract execution
+//! - [HasPolicy] for accessing the policy of the sender, either of the init or
+//!   receive method
+//! - [HasState] for operations possible on the contract state
+//! - [HasHost] for invoking operations on the host and accessing the state
 //!
 //! # Signalling errors
 //! On the Wasm level contracts can signal errors by returning a negative i32
