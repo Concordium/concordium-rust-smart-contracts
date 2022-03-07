@@ -37,7 +37,7 @@ pub struct StateMap<K, V, S> {
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
     pub(crate) prefix:        StateItemPrefix,
-    pub(crate) state_ll:      S,
+    pub(crate) state_api:     S,
 }
 
 #[derive(Debug)]
@@ -49,7 +49,7 @@ pub struct StateMap<K, V, S> {
 /// [`StateMap`]. See its documentation for more.
 pub struct StateMapIter<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
-    pub(crate) state_ll:         S,
+    pub(crate) state_api:        S,
     pub(crate) _lifetime_marker: PhantomData<&'a (K, V)>,
 }
 
@@ -62,7 +62,7 @@ pub struct StateMapIter<'a, K, V, S: HasState> {
 /// [`StateMap`]. See its documentation for more.
 pub struct StateMapIterMut<'a, K, V, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
-    pub(crate) state_ll:         S,
+    pub(crate) state_api:        S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
@@ -80,9 +80,9 @@ pub struct StateMapIterMut<'a, K, V, S: HasState> {
 /// [hs]: crate::collections::HashSet
 /// [bts]: crate::collections::BTreeSet
 pub struct StateSet<T, S> {
-    pub(crate) _marker:  PhantomData<T>,
-    pub(crate) prefix:   StateItemPrefix,
-    pub(crate) state_ll: S,
+    pub(crate) _marker:   PhantomData<T>,
+    pub(crate) prefix:    StateItemPrefix,
+    pub(crate) state_api: S,
 }
 
 /// An iterator over the entries of a [`StateMap`].
@@ -93,7 +93,7 @@ pub struct StateSet<T, S> {
 /// [`StateSet`]. See its documentation for more.
 pub struct StateSetIter<'a, T, S: HasState> {
     pub(crate) state_iter:       Option<S::IterType>,
-    pub(crate) state_ll:         S,
+    pub(crate) state_api:        S,
     pub(crate) _marker_lifetime: PhantomData<&'a T>,
 }
 
@@ -107,7 +107,7 @@ pub struct StateSetIter<'a, T, S: HasState> {
 /// method.
 pub struct StateBox<T, S> {
     pub(crate) prefix:     StateItemPrefix,
-    pub(crate) state_ll:   S,
+    pub(crate) state_api:  S,
     pub(crate) lazy_value: RefCell<Option<T>>,
 }
 
@@ -148,9 +148,9 @@ pub struct StateRefMut<'a, V, S> {
 
 impl<'a, V, S> StateRefMut<'a, V, S> {
     #[inline(always)]
-    pub(crate) fn new(value: V, key: &[u8], state_ll: S) -> Self {
+    pub(crate) fn new(value: V, key: &[u8], state_api: S) -> Self {
         Self {
-            state_box:        StateBox::new(value, state_ll, key.to_vec()),
+            state_box:        StateBox::new(value, state_api, key.to_vec()),
             _marker_lifetime: PhantomData,
         }
     }
@@ -646,7 +646,7 @@ pub struct ExternHost<State> {
 /// which is the low-level semantics of contract state) that are used when
 /// storing specific values.
 pub struct Allocator<S> {
-    pub(crate) state: S,
+    pub(crate) state_api: S,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -669,7 +669,7 @@ impl StateApiExtern {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state:     StateApiExtern,
+    pub(crate) state_api: StateApiExtern,
     pub(crate) allocator: Allocator<StateApiExtern>,
 }
 

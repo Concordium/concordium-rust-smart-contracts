@@ -503,15 +503,15 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 use concordium_std::{trap, ExternContext, InitContextExtern, Allocator, ExternReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state_ll = StateApiExtern::open();
-                let mut allocator = Allocator::open(state_ll.clone());
+                let mut state_api = StateApiExtern::open();
+                let mut allocator = Allocator::open(state_api.clone());
                 match #fn_name(&ctx, #(#fn_optional_args, )* &mut allocator) {
                     Ok((rv, state)) => {
                         if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value (initialization fails).
                         }
                         // Store the state.
-                        let mut root_entry = state_ll.create(&[]).unwrap_abort();
+                        let mut root_entry = state_api.create(&[]).unwrap_abort();
                         state.serial(&mut root_entry).unwrap_abort();
                         // Return success
                         0
@@ -753,10 +753,10 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 use concordium_std::{SeekFrom, Allocator, Logger, ExternHost, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let state_ll = StateApiExtern::open();
-                let mut root_entry = state_ll.lookup(&[]).unwrap_abort();
-                if let Ok(state) = DeserialWithState::deserial_with_state(&state_ll, &mut root_entry) {
-                    let mut allocator = Allocator::open(state_ll);
+                let state_api = StateApiExtern::open();
+                let mut root_entry = state_api.lookup(&[]).unwrap_abort();
+                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut root_entry) {
+                    let mut allocator = Allocator::open(state_api);
                     let mut host = ExternHost { state, allocator };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
                         Ok(rv) => {

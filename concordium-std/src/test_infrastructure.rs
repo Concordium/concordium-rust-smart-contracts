@@ -1022,7 +1022,7 @@ impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
         HostTest::new_with_allocator(state, Allocator {
-            state: StateApiTest::new(),
+            state_api: StateApiTest::new(),
         })
     }
 
@@ -1534,7 +1534,7 @@ mod test {
         let middle_box = allocator.new_box(inner_box);
         let outer_box = allocator.new_box(middle_box);
         outer_box.delete();
-        let iter = allocator.state.iterator(&[]).expect("Could not get iterator");
+        let iter = allocator.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the allocator's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
@@ -1550,7 +1550,7 @@ mod test {
         map.insert(2u8, box2);
         map.insert(3u8, box3);
         map.clear();
-        let iter = allocator.state.iterator(&[]).expect("Could not get iterator");
+        let iter = allocator.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the allocator's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
@@ -1570,7 +1570,7 @@ mod test {
         outer_map.insert(0u8, inner_map_1);
         outer_map.insert(1u8, inner_map_2);
         outer_map.clear();
-        let iter = allocator.state.iterator(&[]).expect("Could not get iterator");
+        let iter = allocator.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the allocator's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
@@ -1595,7 +1595,7 @@ mod test {
         let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
         map.entry(99u8).and_modify(|v| *v = a_short_string);
         let actual_size = allocator
-            .state
+            .state_api
             .lookup(&[INITIAL_NEXT_ITEM_PREFIX as u8, 0, 0, 0, 0, 0, 0, 0, 99])
             .expect("Lookup failed")
             .size()
