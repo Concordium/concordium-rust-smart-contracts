@@ -345,10 +345,10 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// ```ignore
 /// #[init(contract = "my_contract")]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, allocator: &mut Allocator<S>,) -> InitResult<(MyReturnValue, MyState)> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: &mut StateBuilder<S>,) -> InitResult<(MyReturnValue, MyState)> {...}
 /// ```
 ///
-/// Where `HasInitContext`, `InitResult`, and `Allocator` are exposed from
+/// Where `HasInitContext`, `InitResult`, and `StateBuilder` are exposed from
 /// `concordium-std` and `MyReturnValue` and `MyState` are user-defined types.
 ///
 /// # Optional attributes
@@ -366,7 +366,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", payable)]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, allocator: Allocator<S>, amount: Amount) -> InitResult<(MyReturnValue, MyState)> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, amount: Amount) -> InitResult<(MyReturnValue, MyState)> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -378,7 +378,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", enable_logger)]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, allocator: Allocator<S>, logger: &mut impl HasLogger) -> InitResult<(MyReturnValue, MyState)> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<(MyReturnValue, MyState)> {...}
 /// ```
 ///
 /// ## `low_level`: Manually deal with the low-level state including writing
@@ -386,10 +386,10 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// serializing the contract state. However, the return value is still
 /// serialized automatically.
 ///
-/// If `low_level` is set, the `&mut Allocator<S>` in the signature is replaced
-/// by `&impl mut HasState` found in `concordium-std`, which gives access to
-/// manipulating the low-level contract state directly. This means there is no
-/// need to return the contract state and the return type becomes
+/// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
+/// replaced by `&impl mut HasState` found in `concordium-std`, which gives
+/// access to manipulating the low-level contract state directly. This means
+/// there is no need to return the contract state and the return type becomes
 /// `InitResult<MyReturnValue>`.
 ///
 /// ### Example
@@ -497,16 +497,16 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
             }
         }
     } else {
-        required_args.push("allocator: &mut Allocator");
+        required_args.push("state_builder: &mut StateBuilder");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, Allocator, ExternReturnValue};
+                use concordium_std::{trap, ExternContext, InitContextExtern, StateBuilder, ExternReturnValue};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state_api = StateApiExtern::open();
-                let mut allocator = Allocator::open(state_api.clone());
-                match #fn_name(&ctx, &mut allocator, #(#fn_optional_args, )*) {
+                let mut state_builder = StateBuilder::open(state_api.clone());
+                match #fn_name(&ctx, &mut state_builder, #(#fn_optional_args, )*) {
                     Ok((rv, state)) => {
                         if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value (initialization fails).
@@ -633,9 +633,9 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// serializing the contract state. However, the return value is still
 /// serialized automatically.
 ///
-/// If `low_level` is set, the `&mut Allocator<S>` in the signature is replaced
-/// by `&impl mut HasState` found in `concordium-std`, which gives access to
-/// manipulating the low-level contract state directly.
+/// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
+/// replaced by `&impl mut HasState` found in `concordium-std`, which gives
+/// access to manipulating the low-level contract state directly.
 ///
 /// ### Example
 /// ```ignore
@@ -763,14 +763,14 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, Allocator, Logger, ExternHost, trap};
+                use concordium_std::{SeekFrom, StateBuilder, Logger, ExternHost, trap};
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ReceiveContextExtern>::open(());
                 let state_api = StateApiExtern::open();
                 let mut root_entry = state_api.lookup(&[]).unwrap_abort();
                 if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut root_entry) {
-                    let mut allocator = Allocator::open(state_api);
-                    let mut host = ExternHost { state, allocator };
+                    let mut state_builder = StateBuilder::open(state_api);
+                    let mut host = ExternHost { state, state_builder };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
                         Ok(rv) => {
                             if rv.serial(&mut ExternReturnValue::open()).is_err() {

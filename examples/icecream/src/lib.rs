@@ -53,7 +53,7 @@ enum Weather {
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init<S: HasState>(
     ctx: &impl HasInitContext,
-    _allocator: &mut Allocator<S>,
+    _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<((), State<S>)> {
     let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     let return_value = ();
@@ -126,7 +126,7 @@ fn contract_replace_weather_service<S: HasState>(
 #[init(contract = "weather", parameter = "Weather")]
 fn weather_init<S: HasState>(
     ctx: &impl HasInitContext,
-    _allocator: &mut Allocator<S>,
+    _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<((), Persisted<Weather, S>)> {
     let return_value = ();
     let weather = ctx.parameter_cursor().get()?;

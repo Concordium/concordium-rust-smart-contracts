@@ -1457,11 +1457,11 @@ fn invoke_contract_construct_parameter(
     data
 }
 
-impl<S> Allocator<S>
+impl<S> StateBuilder<S>
 where
     S: HasState,
 {
-    /// Open a new allocator. Only a single instance of the allocator should
+    /// Open a new state_builder. Only a single instance of the state_builder should
     /// exist during contract execution, thus this should only be called at
     /// the very beginning of execution.
     pub fn open(state: S) -> Self {
@@ -1518,7 +1518,7 @@ where
 
 #[cfg(test)]
 /// Some helper methods that are used for internal tests.
-impl<S> Allocator<S>
+impl<S> StateBuilder<S>
 where
     S: HasState,
 {
@@ -1581,8 +1581,8 @@ where
             // The state of the contract changed as a result of the call.
             // So we refresh it.
             if let Ok(new_state) = S::deserial_with_state(
-                &self.allocator.state_api,
-                &mut self.allocator.state_api.lookup(&[]).unwrap_abort(),
+                &self.state_builder.state_api,
+                &mut self.state_builder.state_api.lookup(&[]).unwrap_abort(),
             ) {
                 self.state = new_state;
             } else {
@@ -1601,7 +1601,7 @@ where
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
-    fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
 }
 
 impl HasHost<StateApiExtern> for ExternLowLevelHost {
@@ -1639,7 +1639,7 @@ impl HasHost<StateApiExtern> for ExternLowLevelHost {
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
-    fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
 }
 
 /// # Trait implementations for the init context

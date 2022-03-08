@@ -6,7 +6,7 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    Allocator, CallContractResult, EntryRaw, TransferResult,
+    StateBuilder, CallContractResult, EntryRaw, TransferResult,
 };
 use concordium_contracts_common::*;
 
@@ -241,8 +241,8 @@ pub trait HasHost<State> {
     /// Get a mutable reference to the contract state.
     fn state_mut(&mut self) -> &mut State;
 
-    /// Get the allocator for the contract state.
-    fn allocator(&mut self) -> &mut Allocator<Self::StateType>;
+    /// Get the state_builder for the contract state.
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType>;
 
     /// Get the contract balance.
     fn self_balance(&self) -> Amount;

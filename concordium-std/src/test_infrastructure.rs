@@ -13,7 +13,7 @@
 //! #[init(contract = "noop")]
 //! fn contract_init<S: HasState>(
 //!     ctx: &impl HasInitContext,
-//!     allocator: &mut Allocator<S>,
+//!     state_builder: &mut StateBuilder<S>,
 //! ) -> InitResult<((), State)> { ... }
 //!
 //! #[receive(contract = "noop", name = "receive", payable, enable_logger, mutable)]
@@ -31,10 +31,10 @@
 //!     #[test]
 //!     fn test_init() {
 //!         let mut ctx = InitContextTest::empty();
-//!         let mut allocator = AllocatorTest::new();
+//!         let mut state_builder = StateBuilderTest::new();
 //!         ctx.set_init_origin(AccountAddress([0u8; 32]));
 //!         ...
-//!         let result = contract_init(&ctx, &mut allocator);
+//!         let result = contract_init(&ctx, &mut state_builder);
 //!         claim!(...)
 //!         ...
 //!     }
@@ -646,11 +646,11 @@ impl Default for StateApiTest {
     fn default() -> Self { Self::new() }
 }
 
-// Type alias for [`Allocator`], which fixes the [`HasHost`] type to
+// Type alias for [`StateBuilder`], which fixes the [`HasHost`] type to
 // [`StateApiTest`].
-pub type AllocatorTest = Allocator<StateApiTest>;
+pub type StateBuilderTest = StateBuilder<StateApiTest>;
 
-impl AllocatorTest {
+impl StateBuilderTest {
     /// Create a new [`Self`] with an empty [`StateApiTest`].
     pub fn new() -> Self { Self::open(StateApiTest::new()) }
 }
@@ -926,8 +926,8 @@ pub struct HostTest<State> {
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: RefCell<Amount>,
-    /// Allocator for the state.
-    allocator:        Allocator<StateApiTest>,
+    /// StateBuilder for the state.
+    state_builder:        StateBuilder<StateApiTest>,
     /// State of the instance.
     state:            State,
     /// List of accounts that will cause a contract invocation to fail.
@@ -1017,26 +1017,26 @@ impl<State> HasHost<State> for HostTest<State> {
     /// This can be set with `set_balance` and defaults to 0.
     fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
-    fn allocator(&mut self) -> &mut Allocator<Self::StateType> { &mut self.allocator }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
 }
 
 impl<State> HostTest<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
-        HostTest::new_with_allocator(state, Allocator {
+        HostTest::new_with_state_builder(state, StateBuilder {
             state_api: StateApiTest::new(),
         })
     }
 
-    /// Create a new test host with an existing allocator.
+    /// Create a new test host with an existing state_builder.
     /// This can be useful when a single test function invokes both init and
     /// receive.
-    pub fn new_with_allocator(state: State, allocator: Allocator<StateApiTest>) -> Self {
+    pub fn new_with_state_builder(state: State, state_builder: StateBuilder<StateApiTest>) -> Self {
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: RefCell::new(Vec::new()),
             contract_balance: RefCell::new(Amount::zero()),
-            allocator,
+            state_builder,
             state,
             missing_accounts: BTreeSet::new(),
         }
@@ -1113,7 +1113,7 @@ impl<State> HostTest<State> {
 mod test {
     use super::StateApiTest;
     use crate::{
-        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Allocator, Deletable, EntryRaw,
+        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, StateBuilder, Deletable, EntryRaw,
         HasState, HasStateEntry, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
@@ -1208,9 +1208,9 @@ mod test {
     #[test]
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
-        let mut allocator = Allocator::open(StateApiTest::new());
-        allocator.insert(0, expected_value).expect("Insert failed");
-        let actual_value: u64 = allocator.get(0).expect("Not found").expect("Not a valid u64");
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        state_builder.insert(0, expected_value).expect("Insert failed");
+        let actual_value: u64 = state_builder.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
     }
 
@@ -1232,12 +1232,12 @@ mod test {
     #[test]
     fn high_level_statemap() {
         let my_map_key = "my_map";
-        let mut allocator = Allocator::open(StateApiTest::new());
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
 
-        let map_to_insert = allocator.new_map::<String, String>();
-        allocator.insert(my_map_key, map_to_insert).expect("Insert failed");
+        let map_to_insert = state_builder.new_map::<String, String>();
+        state_builder.insert(my_map_key, map_to_insert).expect("Insert failed");
 
-        let mut my_map: StateMap<String, String, _> = allocator
+        let mut my_map: StateMap<String, String, _> = state_builder
             .get(my_map_key)
             .expect("Could not get statemap")
             .expect("Deserializing statemap failed");
@@ -1261,8 +1261,8 @@ mod test {
 
     #[test]
     fn statemap_insert_remove() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut map = state_builder.new_map();
         let value = String::from("hello");
         let _ = map.insert(42, value.clone());
         assert_eq!(*map.get(&42).unwrap(), value);
@@ -1272,8 +1272,8 @@ mod test {
 
     #[test]
     fn statemap_clear() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut map = state_builder.new_map();
         let _ = map.insert(1, 2);
         let _ = map.insert(2, 3);
         let _ = map.insert(3, 4);
@@ -1286,9 +1286,9 @@ mod test {
         let inner_map_key = 0u8;
         let key_to_value = 77u8;
         let value = 255u8;
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut outer_map = allocator.new_map::<u8, StateMap<u8, u8, _>>();
-        let mut inner_map = allocator.new_map::<u8, u8>();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut outer_map = state_builder.new_map::<u8, StateMap<u8, u8, _>>();
+        let mut inner_map = state_builder.new_map::<u8, u8>();
 
         inner_map.insert(key_to_value, value);
         outer_map.insert(inner_map_key, inner_map);
@@ -1298,8 +1298,8 @@ mod test {
 
     #[test]
     fn statemap_iter_mut_works() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut map = state_builder.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
         map.insert(2u8, 3u8);
@@ -1321,9 +1321,9 @@ mod test {
 
     #[test]
     fn iter_mut_works_on_nested_statemaps() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut outer_map = allocator.new_map();
-        let mut inner_map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut outer_map = state_builder.new_map();
+        let mut inner_map = state_builder.new_map();
         inner_map.insert(0u8, 1u8);
         inner_map.insert(1u8, 2u8);
         outer_map.insert(99u8, inner_map);
@@ -1354,8 +1354,8 @@ mod test {
 
     #[test]
     fn statemap_iterator_unlocks_tree_once_dropped() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut map = state_builder.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
         {
@@ -1372,26 +1372,26 @@ mod test {
     #[test]
     fn high_level_stateset() {
         let my_set_key = "my_set";
-        let mut allocator = Allocator::open(StateApiTest::new());
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
 
-        let mut set = allocator.new_set::<u8>();
+        let mut set = state_builder.new_set::<u8>();
         assert_eq!(set.insert(0), true);
         assert_eq!(set.insert(1), true);
         assert_eq!(set.insert(1), false);
         assert_eq!(set.insert(2), true);
         assert_eq!(set.remove(&2), true);
-        allocator.insert(my_set_key, set).expect("Insert failed");
+        state_builder.insert(my_set_key, set).expect("Insert failed");
 
         assert_eq!(
-            allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),
+            state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),
             true
         );
         assert_eq!(
-            allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
+            state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
             false
         );
 
-        let set = allocator.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap();
+        let set = state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap();
         let mut iter = set.iter();
         assert_eq!(*iter.next().unwrap(), 0);
         assert_eq!(*iter.next().unwrap(), 1);
@@ -1402,9 +1402,9 @@ mod test {
     fn high_level_nested_stateset() {
         let inner_set_key = 0u8;
         let value = 255u8;
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut outer_map = allocator.new_map::<u8, StateSet<u8, _>>();
-        let mut inner_set = allocator.new_set::<u8>();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut outer_map = state_builder.new_map::<u8, StateSet<u8, _>>();
+        let mut inner_set = state_builder.new_set::<u8>();
 
         inner_set.insert(value);
         outer_map.insert(inner_set_key, inner_set);
@@ -1414,8 +1414,8 @@ mod test {
 
     #[test]
     fn stateset_insert_remove() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut set = allocator.new_set();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut set = state_builder.new_set();
         let _ = set.insert(42);
         assert!(set.contains(&42));
         set.remove(&42);
@@ -1424,8 +1424,8 @@ mod test {
 
     #[test]
     fn stateset_clear() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut set = allocator.new_set();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut set = state_builder.new_set();
         let _ = set.insert(1);
         let _ = set.insert(2);
         let _ = set.insert(3);
@@ -1435,8 +1435,8 @@ mod test {
 
     #[test]
     fn stateset_iterator_unlocks_tree_once_dropped() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut set = allocator.new_set();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut set = state_builder.new_set();
         set.insert(0u8);
         set.insert(1);
         {
@@ -1452,9 +1452,9 @@ mod test {
 
     #[test]
     fn allocate_and_get_statebox() {
-        let mut allocator = Allocator::open(StateApiTest::new());
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
         let boxed_value = String::from("I'm boxed");
-        let statebox = allocator.new_box(boxed_value.clone());
+        let statebox = state_builder.new_box(boxed_value.clone());
         assert_eq!(*statebox.get(), boxed_value);
     }
 
@@ -1531,56 +1531,56 @@ mod test {
 
     #[test]
     fn deleting_nested_stateboxes_works() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let inner_box = allocator.new_box(99u8);
-        let middle_box = allocator.new_box(inner_box);
-        let outer_box = allocator.new_box(middle_box);
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let inner_box = state_builder.new_box(99u8);
+        let middle_box = state_builder.new_box(inner_box);
+        let outer_box = state_builder.new_box(middle_box);
         outer_box.delete();
-        let iter = allocator.state_api.iterator(&[]).expect("Could not get iterator");
-        // The only remaining node should be the allocator's next_item_prefix node.
+        let iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the state_builder's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
 
     #[test]
     fn clearing_statemap_with_stateboxes_works() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let box1 = allocator.new_box(1u8);
-        let box2 = allocator.new_box(2u8);
-        let box3 = allocator.new_box(3u8);
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let box1 = state_builder.new_box(1u8);
+        let box2 = state_builder.new_box(2u8);
+        let box3 = state_builder.new_box(3u8);
+        let mut map = state_builder.new_map();
         map.insert(1u8, box1);
         map.insert(2u8, box2);
         map.insert(3u8, box3);
         map.clear();
-        let iter = allocator.state_api.iterator(&[]).expect("Could not get iterator");
-        // The only remaining node should be the allocator's next_item_prefix node.
+        let iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the state_builder's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
 
     #[test]
     fn clearing_nested_statemaps_works() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut inner_map_1 = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut inner_map_1 = state_builder.new_map();
         inner_map_1.insert(1u8, 2u8);
         inner_map_1.insert(2u8, 3u8);
         inner_map_1.insert(3u8, 4u8);
-        let mut inner_map_2 = allocator.new_map();
+        let mut inner_map_2 = state_builder.new_map();
         inner_map_2.insert(11u8, 12u8);
         inner_map_2.insert(12u8, 13u8);
         inner_map_2.insert(13u8, 14u8);
-        let mut outer_map = allocator.new_map();
+        let mut outer_map = state_builder.new_map();
         outer_map.insert(0u8, inner_map_1);
         outer_map.insert(1u8, inner_map_2);
         outer_map.clear();
-        let iter = allocator.state_api.iterator(&[]).expect("Could not get iterator");
-        // The only remaining node should be the allocator's next_item_prefix node.
+        let iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the state_builder's next_item_prefix node.
         assert!(iter.skip(1).next().is_none());
     }
 
     #[test]
     fn multiple_entries_not_allowed() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut map = state_builder.new_map();
         map.insert(0u8, 1u8);
         let e1 = map.entry(0u8);
         // Uncommenting this line should give a borrow-check error.
@@ -1590,13 +1590,13 @@ mod test {
 
     #[test]
     fn occupied_entry_truncates_leftover_data() {
-        let mut allocator = Allocator::open(StateApiTest::new());
-        let mut map = allocator.new_map();
+        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut map = state_builder.new_map();
         map.insert(99u8, "A longer string that should be truncated".into());
         let a_short_string = "A short string".to_string();
         let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
         map.entry(99u8).and_modify(|v| *v = a_short_string);
-        let actual_size = allocator
+        let actual_size = state_builder
             .state_api
             .lookup(&[INITIAL_NEXT_ITEM_PREFIX as u8, 0, 0, 0, 0, 0, 0, 0, 99])
             .expect("Lookup failed")

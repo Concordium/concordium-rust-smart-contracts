@@ -14,20 +14,20 @@ use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasState};
 /// The cost of updates to the map are dependent on the length of `K` (in bytes)
 /// and the size of the data stored (`V`). Short keys are therefore ideal.
 ///
-/// Can only be constructed by the [`new_map`][Allocator::new_map] method on
-/// [`Allocator`].
+/// Can only be constructed by the [`new_map`][StateBuilder::new_map] method on
+/// [`StateBuilder`].
 ///
 /// ```
 /// # use concordium_std::*;
 /// # use concordium_std::test_infrastructure::*;
-/// # let mut allocator = Allocator::open(StateApiTest::new());
+/// # let mut state_builder = StateBuilder::open(StateApiTest::new());
 /// /// In an init method:
-/// let mut map1 = allocator.new_map();
+/// let mut map1 = state_builder.new_map();
 /// # map1.insert(0u8, 1u8); // Specifies type of map.
 ///
-/// # let mut host = HostTest::new_with_allocator((), allocator);
+/// # let mut host = HostTest::new_with_state_builder((), state_builder);
 /// /// In a receive method:
-/// let mut map2 = host.allocator().new_map();
+/// let mut map2 = host.state_builder().new_map();
 /// # map2.insert(0u16, 1u16); // Specifies type of map.
 /// ```
 ///
@@ -620,7 +620,7 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// #[init(contract = "mycontract")]
 /// fn contract_init<S: HasState>(
 ///     _ctx: &impl HasInitContext,
-///     _allocator: &mut Allocator<S>,
+///     _state_builder: &mut StateBuilder<S>,
 /// ) -> Result<((), ()), MyCustomError> {
 ///     Err(MyCustomError::SomeError)
 /// }
@@ -630,22 +630,20 @@ pub type InitResult<S> = Result<S, Reject>;
 /// Operations backed by host functions for the high-level interface.
 #[doc(hidden)]
 pub struct ExternHost<State> {
-    pub state:     State,
-    pub allocator: Allocator<StateApiExtern>,
+    pub state:         State,
+    pub state_builder: StateBuilder<StateApiExtern>,
 }
 
 #[derive(Default)]
-/// An allocator that allows the creation of [`StateMap`], [`StateSet`], and
+/// An state builder that allows the creation of [`StateMap`], [`StateSet`], and
 /// [`StateBox`]. It is parametrized by a parameter `S` that is assumed to
-/// implement [`HasState`]. The allocator acts analogously to an ordinary memory
-/// allocator, _except that it allocates values in contracts state_ as opposed
-/// to in transient memory (i.e., RAM).
+/// implement [`HasState`].
 ///
-/// The allocator is designed to provide an abstraction over the contract state,
-/// abstracting over the exact **keys** (keys in the sense of key-value store,
-/// which is the low-level semantics of contract state) that are used when
-/// storing specific values.
-pub struct Allocator<S> {
+/// The state_builder is designed to provide an abstraction over the contract
+/// state, abstracting over the exact **keys** (keys in the sense of key-value
+/// store, which is the low-level semantics of contract state) that are used
+/// when storing specific values.
+pub struct StateBuilder<S> {
     pub(crate) state_api: S,
 }
 
@@ -669,8 +667,8 @@ impl StateApiExtern {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state_api: StateApiExtern,
-    pub(crate) allocator: Allocator<StateApiExtern>,
+    pub(crate) state_api:     StateApiExtern,
+    pub(crate) state_builder: StateBuilder<StateApiExtern>,
 }
 
 /// Context backed by host functions.
