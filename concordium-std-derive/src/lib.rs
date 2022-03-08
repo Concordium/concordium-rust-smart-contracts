@@ -216,7 +216,6 @@ fn parse_attributes<'a>(iter: impl IntoIterator<Item = &'a Meta>) -> syn::Result
 // Supported attributes for the init methods.
 
 const INIT_ATTRIBUTE_PARAMETER: &str = "parameter";
-const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const INIT_ATTRIBUTE_CONTRACT: &str = "contract";
 const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
@@ -235,7 +234,6 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             )
         })?;
     let parameter: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_PARAMETER);
-    let return_value: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_RETURN_VALUE);
     let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
@@ -250,7 +248,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             enable_logger,
             low_level,
             parameter,
-            return_value,
+            return_value: None, // Return values are currently not supported on init methods.
         },
     })
 }
@@ -345,11 +343,11 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// ```ignore
 /// #[init(contract = "my_contract")]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: &mut StateBuilder<S>,) -> InitResult<(MyReturnValue, MyState)> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: &mut StateBuilder<S>,) -> InitResult<MyState> {...}
 /// ```
 ///
 /// Where `HasInitContext`, `InitResult`, and `StateBuilder` are exposed from
-/// `concordium-std` and `MyReturnValue` and `MyState` are user-defined types.
+/// `concordium-std` and `MyState` is a user-defined type.
 ///
 /// # Optional attributes
 ///
@@ -366,7 +364,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", payable)]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, amount: Amount) -> InitResult<(MyReturnValue, MyState)> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, amount: Amount) -> InitResult<MyState> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -378,24 +376,23 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", enable_logger)]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<(MyReturnValue, MyState)> {...}
+/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
 /// ```
 ///
 /// ## `low_level`: Manually deal with the low-level state including writing
 /// bytes Setting the `low_level` attribute disables the generated code for
-/// serializing the contract state. However, the return value is still
-/// serialized automatically.
+/// serializing the contract state.
 ///
 /// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
 /// replaced by `&impl mut HasState` found in `concordium-std`, which gives
 /// access to manipulating the low-level contract state directly. This means
 /// there is no need to return the contract state and the return type becomes
-/// `InitResult<MyReturnValue>`.
+/// `InitResult<()>`.
 ///
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", low_level)]
-/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasState) -> InitResult<MyReturnValue> {...}
+/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasState) -> InitResult<()> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
@@ -411,21 +408,6 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// struct MyParam { ... }
 ///
 /// #[init(contract = "my_contract", parameter = "MyParam")]
-/// ```
-///
-/// ## `return_value="<ReturnValue>"`: Generate schema for return value
-/// To make schema generation to include the return value for this function, add
-/// the attribute `return_value` and set it equal to a string literal containing
-/// the name of the type used for the return value. The return value type must
-/// implement the SchemaType trait, which for most cases can be derived
-/// automatically.
-///
-/// ### Example
-/// ```ignore
-/// #[derive(SchemaType)]
-/// struct MyReturnValue { ... }
-///
-/// #[init(contract = "my_contract", return_value = "MyReturnValue")]
 /// ```
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -473,21 +455,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let ctx = ExternContext::<InitContextExtern>::open(());
                 let mut state = StateApiExtern::open();
                 match #fn_name(&ctx, &mut state, #(#fn_optional_args, )*) {
-                    Ok(rv) => {
-                        if rv.serial(&mut ExternReturnValue::open()).is_err() {
-                            trap() // Could not serialize the return value (initialization fails).
-                        }
-                        0
-                    },
+                    Ok(()) => 0,
                     Err(reject) => {
-                        let reject = Reject::from(reject);
-                        let code = reject.error_code.get();
+                        let code = Reject::from(reject).error_code.get();
                         if code < 0 {
-                            if let Some(rv) = reject.return_value {
-                                if ExternReturnValue::open().write_all(&rv).is_err() {
-                                    trap() // Could not serialize the return value.
-                                }
-                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -507,10 +478,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 let mut state_api = StateApiExtern::open();
                 let mut state_builder = StateBuilder::open(state_api.clone());
                 match #fn_name(&ctx, &mut state_builder, #(#fn_optional_args, )*) {
-                    Ok((rv, state)) => {
-                        if rv.serial(&mut ExternReturnValue::open()).is_err() {
-                            trap() // Could not serialize the return value (initialization fails).
-                        }
+                    Ok(state) => {
                         // Store the state.
                         let mut root_entry = state_api.create(&[]).unwrap_abort();
                         state.serial(&mut root_entry).unwrap_abort();
@@ -518,14 +486,8 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                         0
                     },
                     Err(reject) => {
-                        let reject = Reject::from(reject);
-                        let code = reject.error_code.get();
+                        let code = Reject::from(reject).error_code.get();
                         if code < 0 {
-                            if let Some(rv) = reject.return_value {
-                                if ExternReturnValue::open().write_all(&rv).is_err() {
-                                    trap() // Could not serialize the return value.
-                                }
-                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -550,7 +512,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     // Embed a schema for the parameter and return value if the corresponding
     // attribute is set.
     let parameter_option = init_attributes.optional.parameter.map(|a| a.value());
-    let return_value_option = init_attributes.optional.return_value.map(|a| a.value());
+    let return_value_option = None; // Return values are currently not supported on init.
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
