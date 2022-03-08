@@ -921,14 +921,15 @@ fn contract_function_schema_tokens(
     proc_macro2::TokenStream::new()
 }
 
-/// Derive the Deserial trait. See the documentation of `derive(Serial)` for
-/// details and limitations.
+/// Derive the Deserial trait. See the documentation of
+/// [`derive(Serial)`](./derive.Serial.html) for details and limitations.
 ///
-/// In addition to the attributes supported by `derive(Serial)`, this derivation
-/// macro supports the `ensure_ordered` attribute. If applied to a field the
-/// of type `BTreeMap` or `BTreeSet` deserialization will additionally ensure
-/// that the keys are in strictly increasing order. By default deserialization
-/// only ensures uniqueness.
+/// In addition to the attributes supported by
+/// [`derive(Serial)`](./derive.Serial.html), this derivation macro supports the
+/// `ensure_ordered` attribute. If applied to a field the of type `BTreeMap` or
+/// `BTreeSet` deserialization will additionally ensure that the keys are in
+/// strictly increasing order. By default deserialization only ensures
+/// uniqueness.
 ///
 /// # Example
 /// ``` ignore
@@ -1429,8 +1430,10 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// A helper macro to derive both the Serial and Deserial traits.
-/// `[derive(Serialize)]` is equivalent to `[derive(Serial,Deserial)]`, see
-/// documentation of the latter two for details and options.
+/// `[derive(Serialize)]` is equivalent to `[derive(Serial, Deserial)]`, see
+/// documentation of the latter two for details and options:
+/// [`derive(Serial)`](./derive.Serial.html),
+/// [`derive(Deserial)`](./derive.Deserial.html).
 #[proc_macro_derive(Serialize, attributes(concordium))]
 pub fn serialize_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(serialize_derive_worker(input))
@@ -1444,19 +1447,26 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 /// Derive the DeserialWithState trait. See the documentation of
-/// `derive(Serial)` for details and limitations.
+/// [`derive(Deserial)`](./derive.Deserial.html) for details and limitations.
 ///
-/// In addition to the attributes supported by `derive(Serial)`, this derivation
-/// macro supports the `ensure_ordered` attribute. If applied to a field the
-/// of type `BTreeMap` or `BTreeSet` deserialization will additionally ensure
-/// that the keys are in strictly increasing order. By default deserialization
-/// only ensures uniqueness.
+/// This trait should be derived for `struct`s or `enum`s that have fields with
+/// [`StateBox`](../concordium_std/struct.StateBox.html),
+/// [`StateSet`](../concordium_std/struct.StateSet.html), or
+/// [`StateMap`](../concordium_std/struct.StateMap.html). Please note that it is
+/// necessary to specify the generic parameter name for the
+/// [`HasState`](../concordium_std/trait.HasState.html) generic parameter. To do
+/// so, use the `#[concordium(state_parameter = "NameOfGenericParameter")]`
+/// attribute on the type you are deriving `DeserialWithState` for.
 ///
 /// # Example
 /// ``` ignore
 /// #[derive(DeserialWithState)]
-/// struct Foo<S> {
-///     bar: StateMap<u8, u8, S>,
+/// #[concordium(state_parameter = "S")]
+/// struct Foo<S, T> {
+///     a: StateMap<u8, u8, S>,
+///     #[concordium(size_length = 1)]
+///     b: String,
+///     c: Vec<T>,
 /// }
 /// ```
 #[proc_macro_derive(DeserialWithState, attributes(concordium))]
