@@ -16,11 +16,13 @@ use crate::{
 pub(crate) use concordium_contracts_common::*;
 use mem::MaybeUninit;
 
+/// Mapped to i32::MIN + 1.
 impl convert::From<()> for Reject {
     #[inline(always)]
     fn from(_: ()) -> Self { unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) }.into() }
 }
 
+/// Mapped to i32::MIN + 2.
 impl convert::From<ParseError> for Reject {
     #[inline(always)]
     fn from(_: ParseError) -> Self {
@@ -28,7 +30,8 @@ impl convert::From<ParseError> for Reject {
     }
 }
 
-/// Full is mapped to i32::MIN+3, Malformed is mapped to i32::MIN+4.
+/// Full is mapped to i32::MIN + 3,
+/// Malformed is mapped to i32::MIN + 4.
 impl From<LogError> for Reject {
     #[inline(always)]
     fn from(le: LogError) -> Self {
@@ -83,11 +86,63 @@ impl From<NewReceiveNameError> for Reject {
     }
 }
 
-/// The error code is i32::MIN + 12
+/// The error code is i32::MIN + 12.
 impl From<NotPayableError> for Reject {
     #[inline(always)]
     fn from(_: NotPayableError) -> Self {
         unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 12) }.into()
+    }
+}
+
+/// AmountTooLarge is i32::MIN + 13,
+/// MissingAccount is i32::MIN + 14.
+impl From<TransferError> for Reject {
+    #[inline(always)]
+    fn from(te: TransferError) -> Self {
+        match te {
+            TransferError::AmountTooLarge => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 13).into()
+            },
+            TransferError::MissingAccount => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 14).into()
+            },
+        }
+    }
+}
+
+/// AmountTooLarge is i32::MIN + 15,
+/// MissingAccount is i32::MIN + 16,
+/// MissingContract is i32::MIN + 17,
+/// MissingEntrypoint is i32::MIN + 18,
+/// MessageFailed is i32::MIN + 19,
+/// LogicReject is i32::MIN + 20,
+/// Trap is i32::MIN + 21.
+impl<T> From<CallContractError<T>> for Reject {
+    #[inline(always)]
+    fn from(cce: CallContractError<T>) -> Self {
+        match cce {
+            CallContractError::AmountTooLarge => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 15).into()
+            },
+            CallContractError::MissingAccount => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 16).into()
+            },
+            CallContractError::MissingContract => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 17).into()
+            },
+            CallContractError::MissingEntrypoint => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 18).into()
+            },
+            CallContractError::MessageFailed => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 19).into()
+            },
+            CallContractError::LogicReject {
+                ..
+            } => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 20).into() },
+            CallContractError::Trap => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 21).into()
+            },
+        }
     }
 }
 

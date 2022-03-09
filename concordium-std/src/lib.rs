@@ -127,31 +127,29 @@
 //! | Variant | Error code |
 //! |---------|------------|
 //! | [()][1] | `-2147483647` |
-//! | [ParseError][2] | `-2147483646` |
-//! | [LogError::Full][3] | `-2147483645` |
-//! | [LogError::Malformed][4] | `-2147483644`
-//! | [NewContractNameError::MissingInitPrefix][5] | `-2147483643` |
-//! | [NewContractNameError::TooLong][6] | `-2147483642` |
-//! | [NewContractNameError::ContainsDot][7] | `-2147483639` |
-//! | [NewContractNameError::InvalidCharacters][8] | `-2147483638` |
-//! | [NewReceiveNameError::MissingDotSeparator][9] | `-2147483641` |
-//! | [NewReceiveNameError::TooLong][10] | `-2147483640` |
-//! | [NewReceiveNameError::InvalidCharacters][11] | `-2147483637` |
-//! | [NotPayableError][12] | `-2147483636` |
+//! | [ParseError] | `-2147483646` |
+//! | [LogError::Full] | `-2147483645` |
+//! | [LogError::Malformed] | `-2147483644`
+//! | [NewContractNameError::MissingInitPrefix] | `-2147483643` |
+//! | [NewContractNameError::TooLong] | `-2147483642` |
+//! | [NewContractNameError::ContainsDot] | `-2147483639` |
+//! | [NewContractNameError::InvalidCharacters] | `-2147483638` |
+//! | [NewReceiveNameError::MissingDotSeparator] | `-2147483641` |
+//! | [NewReceiveNameError::TooLong] | `-2147483640` |
+//! | [NewReceiveNameError::InvalidCharacters] | `-2147483637` |
+//! | [NotPayableError] | `-2147483636` |
+//! | [TransferError::AmountTooLarge] | `-2147483635` |
+//! | [TransferError::MissingAccount] | `-2147483634` |
+//! | [CallContractError::AmountTooLarge] | `-2147483633` |
+//! | [CallContractError::MissingAccount] | `-2147483632` |
+//! | [CallContractError::MissingContract] | `-2147483631` |
+//! | [CallContractError::MissingEntrypoint] | `-2147483630` |
+//! | [CallContractError::MessageFailed] | `-2147483629` |
+//! | [CallContractError::LogicReject] | `-2147483628` |
+//! | [CallContractError::Trap] | `-2147483627` |
 //!
 //! [MIN]: https://doc.rust-lang.org/std/primitive.i32.html#associatedconstant.MIN
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
-//! [2]: ./struct.ParseError.html
-//! [3]: ./enum.LogError.html#variant.Full
-//! [4]: ./enum.LogError.html#variant.Malformed
-//! [5]: ./enum.LogError.html#variant.Malformed
-//! [6]: ./enum.NewContractNameError.html#variant.TooLong
-//! [7]: ./enum.NewContractNameError.html#variant.ContainsDot
-//! [8]: ./enum.NewContractNameError.html#variant.InvalidCharacters
-//! [9]: ./enum.NewReceiveNameError.html#variant.MissingDotSeparator
-//! [10]: ./enum.NewReceiveNameError.html#variant.TooLong
-//! [11]: ./enum.NewReceiveNameError.html#variant.InvalidCharacters
-//! [12]: ./struct.NotPayableError.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
