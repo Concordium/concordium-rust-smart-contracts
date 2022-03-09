@@ -1014,7 +1014,7 @@ impl<State> HasHost<State> for HostTest<State> {
     fn state_mut(&mut self) -> &mut State { &mut self.state }
 
     /// Get the contract balance.
-    /// This can be set with `set_balance` and defaults to 0.
+    /// This can be set with `set_self_balance` and defaults to 0.
     fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
@@ -1062,7 +1062,7 @@ impl<State> HostTest<State> {
     /// Example:
     /// ```ignore
     /// ...
-    /// host.set_balance(Amount::from_ccd(10));
+    /// host.set_self_balance(Amount::from_ccd(10));
     /// contract_receive(&ctx,
     ///                  &mut host,
     ///                  // This amount is _not_ added to the balance of the contract,
@@ -1073,7 +1073,9 @@ impl<State> HostTest<State> {
     ///                  Amount::from_ccd(5)
     ///                  );
     /// ```
-    pub fn set_balance(&mut self, amount: Amount) { *self.contract_balance.borrow_mut() = amount; }
+    pub fn set_self_balance(&mut self, amount: Amount) {
+        *self.contract_balance.borrow_mut() = amount;
+    }
 
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {

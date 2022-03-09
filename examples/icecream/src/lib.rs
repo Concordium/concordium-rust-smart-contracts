@@ -190,7 +190,7 @@ mod tests {
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
         ctx.set_parameter(&parameter);
-        host.set_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
+        host.set_self_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
 
         // Set up a mock invocation for the weather service.
         host.setup_mock_entrypoint(
@@ -226,7 +226,7 @@ mod tests {
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
         ctx.set_parameter(&parameter);
-        host.set_balance(ICECREAM_PRICE);
+        host.set_self_balance(ICECREAM_PRICE);
 
         // Set up mock invocation
         host.setup_mock_entrypoint(
@@ -259,7 +259,7 @@ mod tests {
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
         ctx.set_parameter(&parameter);
-        host.set_balance(ICECREAM_PRICE);
+        host.set_self_balance(ICECREAM_PRICE);
 
         // By default all transfers to accounts will work, but here we want to test what
         // happens when the vendor account doesn't exist.
