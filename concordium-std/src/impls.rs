@@ -1516,9 +1516,9 @@ impl<S> StateBuilder<S>
 where
     S: HasState,
 {
-    /// Open a new state_builder. Only a single instance of the state_builder should
-    /// exist during contract execution, thus this should only be called at
-    /// the very beginning of execution.
+    /// Open a new state_builder. Only a single instance of the state_builder
+    /// should exist during contract execution, thus this should only be
+    /// called at the very beginning of execution.
     pub fn open(state: S) -> Self {
         Self {
             state_api: state,

@@ -927,7 +927,7 @@ pub struct HostTest<State> {
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: RefCell<Amount>,
     /// StateBuilder for the state.
-    state_builder:        StateBuilder<StateApiTest>,
+    state_builder:    StateBuilder<StateApiTest>,
     /// State of the instance.
     state:            State,
     /// List of accounts that will cause a contract invocation to fail.
@@ -1113,8 +1113,8 @@ impl<State> HostTest<State> {
 mod test {
     use super::StateApiTest;
     use crate::{
-        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, StateBuilder, Deletable, EntryRaw,
-        HasState, HasStateEntry, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Deletable, EntryRaw, HasState,
+        HasStateEntry, StateBuilder, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 

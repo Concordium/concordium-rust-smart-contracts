@@ -6,7 +6,7 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    StateBuilder, CallContractResult, EntryRaw, TransferResult,
+    CallContractResult, EntryRaw, StateBuilder, TransferResult,
 };
 use concordium_contracts_common::*;
 
