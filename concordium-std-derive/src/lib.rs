@@ -560,6 +560,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// extra argument of type `Amount`, allowing the function to access the amount
 /// of CCD supplied with the transaction.
 ///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", payable)]
+/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
 /// ## `mutable`: Function can mutate the state
 /// Setting the `mutable` attribute changes the required signature so the host
 /// becomes a mutable reference.
@@ -571,12 +577,6 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", mutable)]
 /// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &mut HasHost<MyState, StateType = S>) -> ReceiveResult<MyReturnValue> {...}
-/// ```
-///
-/// ### Example
-/// ```ignore
-/// #[receive(contract = "my_contract", name = "some_receive", payable)]
-/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
