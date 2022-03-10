@@ -171,12 +171,13 @@ fn auction_finalize<A: HasActions>(
 }
 
 #[cfg(test)]
+#[macro_use(quickcheck)]
+extern crate quickcheck_macros;
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU8, Ordering};
     use test_infrastructure::*;
-    extern crate quickcheck;
-    use crate::tests::quickcheck::QuickCheck;
 
     // A counter for generating new account addresses
     static ADDRESS_COUNTER: AtomicU8 = AtomicU8::new(0);
@@ -400,42 +401,41 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_quickcheck() {
-        fn prop_test(amount: Amount) {
-            let (account1, ctx1) = new_account_ctx();
-            let ctx2 = new_account_ctx().1;
+    #[quickcheck]
+    fn prop_test(amount: Amount) {
+        println!{"{:?}", amount};
+        let (account1, ctx1) = new_account_ctx();
+        let ctx2 = new_account_ctx().1;
 
-            let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
-            let ctx0 = parametrized_init_ctx(&parameter_bytes);
+        let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
+        let ctx0 = parametrized_init_ctx(&parameter_bytes);
 
-            let mut bid_map = BTreeMap::new();
+        let mut bid_map = BTreeMap::new();
 
-            // initializing auction
-            let mut state = auction_init(&ctx0).expect("Init results in error");
+        // initializing auction
+        let mut state = auction_init(&ctx0).expect("Init results in error");
 
-            if amount == Amount::zero() {
-                let res: Result<ActionsTree, _> = auction_bid(&ctx1, Amount::zero(), &mut state);
-                expect_error(
-                    res,
-                    BidError::BidTooLow, /* { bid: Amount::zero(), highest_bid: Amount::zero()} */
-                    "Bidding zero should fail",
-                );
-                return;
-            }
-
-            // 1st bid: account1 bids amount1
-            verify_bid(&mut state, account1, &ctx1, amount, &mut bid_map, amount);
-
-            // 2nd bid: account2 bids amount1
-            // should fail because amount is equal to highest bid
-            let res2: Result<ActionsTree, _> = auction_bid(&ctx2, amount, &mut state);
+        if amount == Amount::zero() {
+            let res: Result<ActionsTree, _> = auction_bid(&ctx1, Amount::zero(), &mut state);
             expect_error(
-                res2,
-                BidError::BidTooLow, /* { bid: amount, highest_bid: amount } */
-                "Bidding 2 should fail because bid amount must be higher than highest bid",
+                res,
+                BidError::BidTooLow, /* { bid: Amount::zero(), highest_bid: Amount::zero()} */
+                "Bidding zero should fail",
             );
+            return;
         }
-        QuickCheck::new().quickcheck(prop_test as fn(Amount) -> ());
+
+        // 1st bid: account1 bids amount1
+        verify_bid(&mut state, account1, &ctx1, amount, &mut bid_map, amount);
+
+        // 2nd bid: account2 bids amount1
+        // should fail because amount is equal to highest bid
+        let res2: Result<ActionsTree, _> = auction_bid(&ctx2, amount, &mut state);
+        expect_error(
+            res2,
+            BidError::BidTooLow, /* { bid: amount, highest_bid: amount } */
+            "Bidding 2 should fail because bid amount must be higher than highest bid",
+        );
     }
+
 }
