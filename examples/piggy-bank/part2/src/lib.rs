@@ -78,8 +78,13 @@ fn piggy_smash<S: HasState>(
 
     // Get the current balance of the smart contract.
     let balance = host.self_balance();
-    // Result in a transfer of the whole balance to the contract owner.
-    ensure!(host.invoke_transfer(&owner, balance).is_ok(), SmashError::TransferError);
+
+    // Transfer the whole balance to the contract owner.
+    let transfer_result = host.invoke_transfer(&owner, balance);
+    // The transfer can never fail, since the owner is known to exist, and the
+    // contract has sufficient balance.
+    ensure!(transfer_result.is_ok(), SmashError::TransferError);
+
     Ok(())
 }
 
@@ -99,10 +104,11 @@ mod tests {
         let mut state_builder = StateBuilderTest::new();
 
         // Call the init function
-        let state =
-            piggy_init(&ctx, &mut state_builder).expect_report("Contract initialization failed.");
+        let state_result = piggy_init(&ctx, &mut state_builder);
 
         // Inspect the result
+        let state = state_result.expect_report("Contract initialization results in error.");
+
         claim_eq!(
             state,
             PiggyBankState::Intact,
@@ -118,10 +124,10 @@ mod tests {
         let amount = Amount::from_micro_ccd(100);
 
         // Trigger the insert
-        piggy_insert(&ctx, &host, amount).expect_report("Inserting CCD results in error");
+        let result = piggy_insert(&ctx, &host, amount);
 
-        // Inspect the result
-        claim_eq!(
+        claim!(result.is_ok(), "Inserting CCD results in error");
+        assert_eq!(
             *host.state(),
             PiggyBankState::Intact,
             "Piggy bank state should still be intact."
@@ -151,20 +157,21 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_ccd(100);
         let mut host = HostTest::new(PiggyBankState::Intact);
+        let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
         // Trigger the smash
-        piggy_smash(&ctx, &mut host).expect_report("Smashing intact piggy bank results in error.");
+        let result = piggy_smash(&ctx, &mut host);
 
         // Inspect the result
+        claim!(result.is_ok(), "Smashing intact piggy bank results in error.");
+        claim_eq!(*host.state(), PiggyBankState::Smashed, "Piggy bank should be smashed.");
         claim_eq!(
             host.get_transfers(),
             [(owner, balance)],
             "Smashing did not produce the correct transfers."
         );
-        claim_eq!(*host.state(), PiggyBankState::Smashed, "Piggy bank should be smashed.")
     }
 
     #[concordium_test]
@@ -176,8 +183,8 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(AccountAddress([1u8; 32]));
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_ccd(100);
         let mut host = HostTest::new(PiggyBankState::Intact);
+        let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
         // Trigger the smash
@@ -194,8 +201,8 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_ccd(100);
         let mut host = HostTest::new(PiggyBankState::Smashed);
+        let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
         // Trigger the smash
@@ -220,8 +227,8 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let balance = Amount::from_micro_ccd(100);
         let mut host = HostTest::new(PiggyBankState::Intact);
+        let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
         // By default, all accounts are assumed to exist.
