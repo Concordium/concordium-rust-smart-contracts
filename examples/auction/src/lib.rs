@@ -403,7 +403,7 @@ mod tests {
 
     #[quickcheck]
     fn prop_test(amount: Amount) {
-        println!{"{:?}", amount};
+        println! {"{:?}", amount};
         let (account1, ctx1) = new_account_ctx();
         let ctx2 = new_account_ctx().1;
 
@@ -437,5 +437,4 @@ mod tests {
             "Bidding 2 should fail because bid amount must be higher than highest bid",
         );
     }
-
 }
