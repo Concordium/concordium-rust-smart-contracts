@@ -15,7 +15,7 @@
     - Remove the 16kb limit to state size.
     - Introduce high-level abstractions over the new state, including the
       `StateBuilder`, `StateMap`, `StateSet`, and `StateBox`.
-    - Add new traits for the low-level state interaction: `HasState` and `HasStateEntry`.
+    - Add new traits for the low-level state interaction: `HasStateApi` and `HasStateEntry`.
 
 ## concordium-std 2.0.0 (2022-01-05)
 

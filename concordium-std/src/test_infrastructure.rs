@@ -1,5 +1,5 @@
 //! The test infrastructure module provides alternative implementations of
-//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, `HasState`,
+//! `HasInitContext`, `HasReceiveContext`, `HasParameter`, `HasStateApi`,
 //! and `HasHost` traits intended for testing.
 //!
 //! They allow writing unit tests directly in contract modules with little to no
@@ -11,17 +11,17 @@
 //! ```rust
 //! // Some contract
 //! #[init(contract = "noop")]
-//! fn contract_init<S: HasState>(
+//! fn contract_init<S: HasStateApi>(
 //!     ctx: &impl HasInitContext,
 //!     state_builder: &mut StateBuilder<S>,
 //! ) -> InitResult<((), State)> { ... }
 //!
 //! #[receive(contract = "noop", name = "receive", payable, enable_logger, mutable)]
-//! fn contract_receive<S: HasState>(
+//! fn contract_receive<S: HasStateApi>(
 //!     ctx: &impl HasReceiveContext,
 //!     amount: Amount,
 //!     logger: &mut impl HasLogger,
-//!     host: &mut HasHost<State, StateType = S>,
+//!     host: &mut HasHost<State, StateApiType = S>,
 //! ) -> ReceiveResult<MyReturnValue> { ... }
 //!
 //! #[cfg(test)]
@@ -30,8 +30,8 @@
 //!     use concordium_std::test_infrastructure::*;
 //!     #[test]
 //!     fn test_init() {
-//!         let mut ctx = InitContextTest::empty();
-//!         let mut state_builder = StateBuilderTest::new();
+//!         let mut ctx = TestInitContext::empty();
+//!         let mut state_builder = TestStateBuilder::new();
 //!         ctx.set_init_origin(AccountAddress([0u8; 32]));
 //!         ...
 //!         let result = contract_init(&ctx, &mut state_builder);
@@ -41,11 +41,11 @@
 //!
 //!     #[test]
 //!     fn test_receive() {
-//!         let mut ctx = ReceiveContextTest::empty();
-//!         let mut host = HostTest::new(State::new());
+//!         let mut ctx = TestReceiveContext::empty();
+//!         let mut host = TestHost::new(State::new());
 //!         ctx.set_owner(AccountAddress([0u8; 32]));
 //!         ...
-//!         let mut logger = LogRecorder::init();
+//!         let mut logger = TestLogger::init();
 //!         host.setup_mock_entrypoint(
 //!             ContractAddress{index: 0, subindex: 0},
 //!             OwnedEntrypointName::new_unchecked("get".into()),
@@ -76,13 +76,13 @@ mod trie;
 /// All the fields are optionally set and the getting an unset field will result
 /// in test failing.
 /// For most cases it is used as part of either
-/// [`InitContextTest`](struct.InitContextTest.html) or
-/// [`ReceiveContextTest`](struct.ReceiveContextTest.html).
+/// [`TestInitContext`](struct.TestInitContext.html) or
+/// [`TestReceiveContext`](struct.TestReceiveContext.html).
 /// Use only in unit tests!
 ///
 /// Defaults to having all of the fields unset
 #[derive(Default, Clone)]
-pub struct ChainMetaTest {
+pub struct TestChainMeta {
     pub(crate) slot_time: Option<SlotTime>,
 }
 
@@ -112,11 +112,11 @@ impl TestPolicy {
 ///
 /// # Default
 /// Defaults to having all the fields unset, and constructing
-/// [`ChainMetaTest`](struct.ChainMetaTest.html) using default.
+/// [`TestChainMeta`](struct.TestChainMeta.html) using default.
 #[derive(Default, Clone)]
 #[doc(hidden)]
-pub struct CommonDataTest<'a> {
-    pub(crate) metadata:  ChainMetaTest,
+pub struct TestCommonData<'a> {
+    pub(crate) metadata:  TestChainMeta,
     pub(crate) parameter: Option<&'a [u8]>,
     /// Policy of the creator. We keep the `Option` wrapper
     /// in order that the user can be warned that they are using a policy.
@@ -127,8 +127,8 @@ pub struct CommonDataTest<'a> {
 /// Context used for testing. The type parameter C is used to determine whether
 /// this will be an init or receive context.
 #[derive(Default, Clone)]
-pub struct ContextTest<'a, C> {
-    pub(crate) common: CommonDataTest<'a>,
+pub struct TestContext<'a, C> {
+    pub(crate) common: TestCommonData<'a>,
     pub(crate) custom: C,
 }
 
@@ -142,22 +142,22 @@ pub struct ContextTest<'a, C> {
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
 /// ```rust
-/// let mut ctx = InitContextTest::empty();
+/// let mut ctx = TestInitContext::empty();
 /// ctx.set_init_origin(AccountAddress([0u8; 32]));
 /// ```
 /// ## Set chain meta data
 /// Chain meta data is set using setters on the context or by setters on a
-/// mutable reference of [`ChainMetaTest`](struct.ChainMetaTest.html).
+/// mutable reference of [`TestChainMeta`](struct.TestChainMeta.html).
 ///
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```rust
-/// let mut ctx = InitContextTest::empty();
+/// let mut ctx = TestInitContext::empty();
 /// ctx.set_metadata_slot_time(1609459200);
 /// ```
 /// or
 /// ```rust
-/// let mut ctx = InitContextTest::empty();
+/// let mut ctx = TestInitContext::empty();
 /// ctx.metadata_mut().set_slot_time(1609459200);
 /// ```
 ///
@@ -181,7 +181,7 @@ pub struct ContextTest<'a, C> {
 ///     use concordium_sc_base::test_infrastructure::*;
 ///     #[test]
 ///     fn test() {
-///         let mut ctx = InitContextTest::empty();
+///         let mut ctx = TestInitContext::empty();
 ///         ctx.set_init_origin(AccountAddress([0u8; 32]));
 ///         ...
 ///         let result = contract_init(&ctx, 0, &mut logger);
@@ -190,11 +190,11 @@ pub struct ContextTest<'a, C> {
 ///     }
 /// }
 /// ```
-pub type InitContextTest<'a> = ContextTest<'a, InitOnlyDataTest>;
+pub type TestInitContext<'a> = TestContext<'a, TestInitOnlyData>;
 
 #[derive(Default)]
 #[doc(hidden)]
-pub struct InitOnlyDataTest {
+pub struct TestInitOnlyData {
     init_origin: Option<AccountAddress>,
 }
 
@@ -209,23 +209,23 @@ pub struct InitOnlyDataTest {
 /// Creating an empty context and setting the `init_origin`.
 /// ```rust
 /// let owner = AccountAddress([0u8; 32]);
-/// let mut ctx = ReceiveContextTest::empty();
+/// let mut ctx = TestReceiveContext::empty();
 /// ctx.set_owner(owner);
 /// ctx.set_sender(Address::Account(owner));
 /// ```
 /// ## Set chain meta data
 /// Chain meta data is set using setters on the context or by setters on a
-/// mutable reference of [`ChainMetaTest`](struct.ChainMetaTest.html).
+/// mutable reference of [`TestChainMeta`](struct.TestChainMeta.html).
 ///
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```rust
-/// let mut ctx = ReceiveContextTest::empty();
+/// let mut ctx = TestReceiveContext::empty();
 /// ctx.set_metadata_slot_time(1609459200);
 /// ```
 /// or
 /// ```rust
-/// let mut ctx = ReceiveContextTest::empty();
+/// let mut ctx = TestReceiveContext::empty();
 /// ctx.metadata_mut().set_slot_time(1609459200);
 /// ```
 ///
@@ -250,7 +250,7 @@ pub struct InitOnlyDataTest {
 ///     #[test]
 ///     fn test() {
 ///         let owner = AccountAddress([0u8; 32]);
-///         let mut ctx = ReceiveContextTest::empty();
+///         let mut ctx = TestReceiveContext::empty();
 ///         ctx.set_owner(owner);
 ///         ctx.set_sender(Address::Account(owner));
 ///         ...
@@ -258,11 +258,11 @@ pub struct InitOnlyDataTest {
 ///     }
 /// }
 /// ```
-pub type ReceiveContextTest<'a> = ContextTest<'a, ReceiveOnlyDataTest>;
+pub type TestReceiveContext<'a> = TestContext<'a, TestReceiveOnlyData>;
 
 #[derive(Default)]
 #[doc(hidden)]
-pub struct ReceiveOnlyDataTest {
+pub struct TestReceiveOnlyData {
     pub(crate) invoker:      Option<AccountAddress>,
     pub(crate) self_address: Option<ContractAddress>,
     pub(crate) sender:       Option<Address>,
@@ -270,8 +270,8 @@ pub struct ReceiveOnlyDataTest {
 }
 
 // Setters for testing-context
-impl ChainMetaTest {
-    /// Create an `ChainMetaTest` where every field is unset, and getting any of
+impl TestChainMeta {
+    /// Create an `TestChainMeta` where every field is unset, and getting any of
     /// the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
 
@@ -282,7 +282,7 @@ impl ChainMetaTest {
     }
 }
 
-impl<'a, C> ContextTest<'a, C> {
+impl<'a, C> TestContext<'a, C> {
     /// Push a new sender policy to the context.
     /// When the first policy is pushed this will set the policy vector
     /// to 'Some', even if it was undefined previously.
@@ -310,7 +310,7 @@ impl<'a, C> ContextTest<'a, C> {
     }
 
     /// Get a mutable reference to the chain meta data placeholder
-    pub fn metadata_mut(&mut self) -> &mut ChainMetaTest { &mut self.common.metadata }
+    pub fn metadata_mut(&mut self) -> &mut TestChainMeta { &mut self.common.metadata }
 
     /// Set the metadata block slot time
     pub fn set_metadata_slot_time(&mut self, value: SlotTime) -> &mut Self {
@@ -319,20 +319,20 @@ impl<'a, C> ContextTest<'a, C> {
     }
 }
 
-impl<'a> InitContextTest<'a> {
-    /// Create an `InitContextTest` where every field is unset, and getting any
+impl<'a> TestInitContext<'a> {
+    /// Create an `TestInitContext` where every field is unset, and getting any
     /// of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
 
-    /// Set `init_origin` in the `InitContextTest`
+    /// Set `init_origin` in the `TestInitContext`
     pub fn set_init_origin(&mut self, value: AccountAddress) -> &mut Self {
         self.custom.init_origin = Some(value);
         self
     }
 }
 
-impl<'a> ReceiveContextTest<'a> {
-    /// Create a `ReceiveContextTest` where every field is unset, and getting
+impl<'a> TestReceiveContext<'a> {
+    /// Create a `TestReceiveContext` where every field is unset, and getting
     /// any of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
 
@@ -370,7 +370,7 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> A {
 }
 
 // Getters for testing-context
-impl HasChainMetadata for ChainMetaTest {
+impl HasChainMetadata for TestChainMeta {
     fn slot_time(&self) -> SlotTime { unwrap_ctx_field(self.slot_time, "metadata.slot_time") }
 }
 
@@ -393,8 +393,8 @@ impl HasPolicy for TestPolicy {
     }
 }
 
-impl<'a, C> HasCommonData for ContextTest<'a, C> {
-    type MetadataType = ChainMetaTest;
+impl<'a, C> HasCommonData for TestContext<'a, C> {
+    type MetadataType = TestChainMeta;
     type ParamType = Cursor<&'a [u8]>;
     type PolicyIteratorType = crate::vec::IntoIter<TestPolicy>;
     type PolicyType = TestPolicy;
@@ -410,20 +410,20 @@ impl<'a, C> HasCommonData for ContextTest<'a, C> {
     }
 }
 
-impl<'a> HasInitContext for InitContextTest<'a> {
+impl<'a> HasInitContext for TestInitContext<'a> {
     type InitData = ();
 
-    fn open(_data: Self::InitData) -> Self { InitContextTest::default() }
+    fn open(_data: Self::InitData) -> Self { TestInitContext::default() }
 
     fn init_origin(&self) -> AccountAddress {
         unwrap_ctx_field(self.custom.init_origin, "init_origin")
     }
 }
 
-impl<'a> HasReceiveContext for ReceiveContextTest<'a> {
+impl<'a> HasReceiveContext for TestReceiveContext<'a> {
     type ReceiveData = ();
 
-    fn open(_data: Self::ReceiveData) -> Self { ReceiveContextTest::default() }
+    fn open(_data: Self::ReceiveData) -> Self { TestReceiveContext::default() }
 
     fn invoker(&self) -> AccountAddress { unwrap_ctx_field(self.custom.invoker, "invoker") }
 
@@ -442,11 +442,11 @@ impl<'a> HasParameter for Cursor<&'a [u8]> {
 
 /// A logger that simply accumulates all the logged items to be inspected at the
 /// end of execution.
-pub struct LogRecorder {
+pub struct TestLogger {
     pub logs: Vec<Vec<u8>>,
 }
 
-impl HasLogger for LogRecorder {
+impl HasLogger for TestLogger {
     fn init() -> Self {
         Self {
             logs: Vec::new(),
@@ -492,8 +492,8 @@ pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {
 
 #[derive(Debug, PartialEq, Eq)]
 /// An error that is raised when operating with `Seek`, `Write`, `Read`, or
-/// `HasStateEntry` trait methods of the `StateApiTest` type.
-pub enum StateTestError {
+/// `HasStateEntry` trait methods of the `TestStateApi` type.
+pub enum TestStateError {
     /// The computation of the new offset would result in an overflow.
     Overflow,
     /// An error occurred when writing to the contract state.
@@ -506,70 +506,70 @@ pub enum StateTestError {
     EntryDeleted,
 }
 
-impl Default for StateTestError {
+impl Default for TestStateError {
     fn default() -> Self { Self::Default }
 }
 
-impl From<num::TryFromIntError> for StateTestError {
-    fn from(_: num::TryFromIntError) -> Self { StateTestError::Overflow }
+impl From<num::TryFromIntError> for TestStateError {
+    fn from(_: num::TryFromIntError) -> Self { TestStateError::Overflow }
 }
 
-impl From<StateTestError> for ParseError {
-    fn from(_: StateTestError) -> Self { ParseError::default() }
+impl From<TestStateError> for ParseError {
+    fn from(_: TestStateError) -> Self { ParseError::default() }
 }
 
 #[derive(Debug)]
-/// A wrapper for the data stored in [`StateEntryTest`], which is used to match
+/// A wrapper for the data stored in [`TestStateEntry`], which is used to match
 /// the semantics of the host functions. Specifically, it is used to ensure that
 /// interactions with a deleted entry result in a error.
-pub enum StateEntryData {
+pub enum TestStateEntryData {
     /// The entry has been deleted.
     EntryDeleted,
     /// The entry exists and has data.
     EntryExists(Vec<u8>),
 }
 
-impl StateEntryData {
-    /// Create a new StateEntryData::EntryExists with the data given.
+impl TestStateEntryData {
+    /// Create a new TestStateEntryData::EntryExists with the data given.
     pub(crate) fn new_from(data: Vec<u8>) -> Self { Self::EntryExists(data) }
 
-    /// Create a new StateEntryData::EntryExists with a new Vec.
+    /// Create a new TestStateEntryData::EntryExists with a new Vec.
     pub(crate) fn new() -> Self { Self::EntryExists(Vec::new()) }
 
     /// Tries to get the actual data. Returns an error if the entry has been
     /// deleted.
-    pub(crate) fn data(&self) -> Result<&[u8], StateTestError> {
+    pub(crate) fn data(&self) -> Result<&[u8], TestStateError> {
         match self {
-            StateEntryData::EntryDeleted => Err(StateTestError::EntryDeleted),
-            StateEntryData::EntryExists(v) => Ok(v),
+            TestStateEntryData::EntryDeleted => Err(TestStateError::EntryDeleted),
+            TestStateEntryData::EntryExists(v) => Ok(v),
         }
     }
 
     /// Tries to get the actual data as mutable. Returns an error if the entry
     /// has been deleted.
-    pub(crate) fn data_mut(&mut self) -> Result<&mut Vec<u8>, StateTestError> {
+    pub(crate) fn data_mut(&mut self) -> Result<&mut Vec<u8>, TestStateError> {
         match self {
-            StateEntryData::EntryDeleted => Err(StateTestError::EntryDeleted),
-            StateEntryData::EntryExists(v) => Ok(v),
+            TestStateEntryData::EntryDeleted => Err(TestStateError::EntryDeleted),
+            TestStateEntryData::EntryExists(v) => Ok(v),
         }
     }
 }
 
-impl From<Vec<u8>> for StateEntryData {
+impl From<Vec<u8>> for TestStateEntryData {
     fn from(data: Vec<u8>) -> Self { Self::new_from(data) }
 }
 
 #[derive(Debug)]
 /// A state entry used for testing. Implements [`HasStateEntry`].
-pub struct StateEntryTest {
-    pub(crate) cursor:         Cursor<Rc<RefCell<StateEntryData>>>,
+pub struct TestStateEntry {
+    pub(crate) cursor:         Cursor<Rc<RefCell<TestStateEntryData>>>,
     pub(crate) key:            Vec<u8>,
     pub(crate) state_entry_id: StateEntryId,
 }
 
-impl StateEntryTest {
+impl TestStateEntry {
     pub(crate) fn open(
-        data: Rc<RefCell<StateEntryData>>,
+        data: Rc<RefCell<TestStateEntryData>>,
         key: Vec<u8>,
         state_entry_id: StateEntryId,
     ) -> Self {
@@ -582,14 +582,14 @@ impl StateEntryTest {
 }
 
 #[derive(Debug, Clone)]
-/// A state api used for testing. Implement [`HasState`].
-pub struct StateApiTest {
+/// A state api used for testing. Implement [`HasStateApi`].
+pub struct TestStateApi {
     trie: Rc<RefCell<StateTrie>>,
 }
 
-impl HasState for StateApiTest {
-    type EntryType = StateEntryTest;
-    type IterType = trie::Iter;
+impl HasStateApi for TestStateApi {
+    type EntryType = TestStateEntry;
+    type IterType = trie::TestStateIter;
 
     fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError> {
         self.trie.borrow_mut().create_entry(key)
@@ -621,19 +621,19 @@ impl HasState for StateApiTest {
     }
 }
 
-/// An alias for [`StateMapIter`] that fixes the [`HasState`] type to
-/// [`StateApiTest`].
-pub type StateMapIterTest<'a, K, V> = StateMapIter<'a, K, V, StateApiTest>;
+/// An alias for [`StateMapIter`] that fixes the [`HasStateApi`] type to
+/// [`TestStateApi`].
+pub type TestStateMapIter<'a, K, V> = StateMapIter<'a, K, V, TestStateApi>;
 
-/// An alias for [`StateMapIterMut`] that fixes the [`HasState`] type to
-/// [`StateApiTest`].
-pub type StateMapIterMutTest<'a, K, V> = StateMapIterMut<'a, K, V, StateApiTest>;
+/// An alias for [`StateMapIterMut`] that fixes the [`HasStateApi`] type to
+/// [`TestStateApi`].
+pub type TestStateMapIterMut<'a, K, V> = StateMapIterMut<'a, K, V, TestStateApi>;
 
-/// An alias for [`StateSetIter`] that fixes the [`HasState`] type to
-/// [`StateApiTest`].
-pub type StateSetIterTest<'a, T> = StateSetIter<'a, T, StateApiTest>;
+/// An alias for [`StateSetIter`] that fixes the [`HasStateApi`] type to
+/// [`TestStateApi`].
+pub type TestStateSetIter<'a, T> = StateSetIter<'a, T, TestStateApi>;
 
-impl StateApiTest {
+impl TestStateApi {
     /// Create a new empty state.
     pub fn new() -> Self {
         Self {
@@ -642,22 +642,22 @@ impl StateApiTest {
     }
 }
 
-impl Default for StateApiTest {
+impl Default for TestStateApi {
     fn default() -> Self { Self::new() }
 }
 
 // Type alias for [`StateBuilder`], which fixes the [`HasHost`] type to
-// [`StateApiTest`].
-pub type StateBuilderTest = StateBuilder<StateApiTest>;
+// [`TestStateApi`].
+pub type TestStateBuilder = StateBuilder<TestStateApi>;
 
-impl StateBuilderTest {
-    /// Create a new [`Self`] with an empty [`StateApiTest`].
-    pub fn new() -> Self { Self::open(StateApiTest::new()) }
+impl TestStateBuilder {
+    /// Create a new [`Self`] with an empty [`TestStateApi`].
+    pub fn new() -> Self { Self::open(TestStateApi::new()) }
 }
 
-impl HasStateEntry for StateEntryTest {
-    type Error = StateTestError;
-    type StateEntryData = Rc<RefCell<StateEntryData>>;
+impl HasStateEntry for TestStateEntry {
+    type Error = TestStateError;
+    type StateEntryData = Rc<RefCell<TestStateEntryData>>;
     type StateEntryKey = Vec<u8>;
 
     /// Get the size of the data in the entry.
@@ -691,7 +691,7 @@ impl HasStateEntry for StateEntryTest {
     }
 }
 
-impl Read for StateEntryTest {
+impl Read for TestStateEntry {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let mut len = self.cursor.data.borrow().data()?.len() - self.cursor.offset;
         if len > buf.len() {
@@ -709,8 +709,8 @@ impl Read for StateEntryTest {
     }
 }
 
-impl Write for StateEntryTest {
-    type Err = StateTestError;
+impl Write for TestStateEntry {
+    type Err = TestStateError;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
         let end = self.cursor.offset + buf.len();
@@ -726,12 +726,12 @@ impl Write for StateEntryTest {
     }
 }
 
-impl Seek for StateEntryTest {
-    type Err = StateTestError;
+impl Seek for TestStateEntry {
+    type Err = TestStateError;
 
     // TODO: This does _not_ match the semantics of Seek for StateEntry.
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
-        use self::StateTestError::*;
+        use self::TestStateError::*;
         // This will fail immediately, if the entry has been deleted.
         let len = self.cursor.data.borrow().data()?.len();
         match pos {
@@ -918,7 +918,7 @@ impl<State> MockFn<State> {
 
 /// A Host implementation used for testing.
 /// Exposes a number of helper functions for mocking host behavior.
-pub struct HostTest<State> {
+pub struct TestHost<State> {
     /// Functions that mock responses to calls.
     mocking_fns:      BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
     /// Transfers the contract has made during its execution.
@@ -927,16 +927,16 @@ pub struct HostTest<State> {
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: RefCell<Amount>,
     /// StateBuilder for the state.
-    state_builder:    StateBuilder<StateApiTest>,
+    state_builder:    StateBuilder<TestStateApi>,
     /// State of the instance.
     state:            State,
     /// List of accounts that will cause a contract invocation to fail.
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State> HasHost<State> for HostTest<State> {
+impl<State> HasHost<State> for TestHost<State> {
     type ReturnValueType = Cursor<Vec<u8>>;
-    type StateType = StateApiTest;
+    type StateApiType = TestStateApi;
 
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
@@ -1017,21 +1017,21 @@ impl<State> HasHost<State> for HostTest<State> {
     /// This can be set with `set_self_balance` and defaults to 0.
     fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
 }
 
-impl<State> HostTest<State> {
+impl<State> TestHost<State> {
     /// Create a new test host.
     pub fn new(state: State) -> Self {
-        HostTest::new_with_state_builder(state, StateBuilder {
-            state_api: StateApiTest::new(),
+        TestHost::new_with_state_builder(state, StateBuilder {
+            state_api: TestStateApi::new(),
         })
     }
 
     /// Create a new test host with an existing state_builder.
     /// This can be useful when a single test function invokes both init and
     /// receive.
-    pub fn new_with_state_builder(state: State, state_builder: StateBuilder<StateApiTest>) -> Self {
+    pub fn new_with_state_builder(state: State, state_builder: StateBuilder<TestStateApi>) -> Self {
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: RefCell::new(Vec::new()),
@@ -1113,25 +1113,25 @@ impl<State> HostTest<State> {
 
 #[cfg(test)]
 mod test {
-    use super::StateApiTest;
+    use super::TestStateApi;
     use crate::{
-        cell::RefCell, rc::Rc, test_infrastructure::StateEntryTest, Deletable, EntryRaw, HasState,
-        HasStateEntry, StateBuilder, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        cell::RefCell, rc::Rc, test_infrastructure::TestStateEntry, Deletable, EntryRaw,
+        HasStateApi, HasStateEntry, StateBuilder, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     /// Get an entry and unwrap the result.
-    fn get_entry(state: &mut StateApiTest, key: &[u8]) -> EntryRaw<StateEntryTest> {
+    fn get_entry(state: &mut TestStateApi, key: &[u8]) -> EntryRaw<TestStateEntry> {
         state.entry(key).expect("Failed to get entry")
     }
 
     #[test]
-    // Perform a number of operations from Seek, Read, Write and HasState
-    // classes on the StateApiTest structure and check that they behave as
+    // Perform a number of operations from Seek, Read, Write and HasStateApi
+    // classes on the TestStateApi structure and check that they behave as
     // specified.
     fn test_contract_state() {
         let data = Rc::new(RefCell::new(vec![1; 100].into()));
-        let mut state = StateEntryTest::open(data, Vec::new(), 0);
+        let mut state = TestStateEntry::open(data, Vec::new(), 0);
         assert_eq!(state.seek(SeekFrom::Start(100)), Ok(100), "Seeking to the end failed.");
         assert_eq!(
             state.seek(SeekFrom::Current(0)),
@@ -1192,7 +1192,7 @@ mod test {
     #[test]
     fn test_contract_state_write() {
         let data = Rc::new(RefCell::new(vec![0u8; 10].into()));
-        let mut state = StateEntryTest::open(data, Vec::new(), 0);
+        let mut state = TestStateEntry::open(data, Vec::new(), 0);
         assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
         assert_eq!(
             state.write(&2u64.to_le_bytes()),
@@ -1210,7 +1210,7 @@ mod test {
     #[test]
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         state_builder.insert(0, expected_value).expect("Insert failed");
         let actual_value: u64 = state_builder.get(0).expect("Not found").expect("Not a valid u64");
         assert_eq!(expected_value, actual_value);
@@ -1220,7 +1220,7 @@ mod test {
     fn low_level_entry() {
         let expected_value: u64 = 123123123;
         let key = to_bytes(&42u64);
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
 
         match get_entry(&mut state, &key) {
@@ -1234,7 +1234,7 @@ mod test {
     #[test]
     fn high_level_statemap() {
         let my_map_key = "my_map";
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
 
         let map_to_insert = state_builder.new_map::<String, String>();
         state_builder.insert(my_map_key, map_to_insert).expect("Insert failed");
@@ -1263,7 +1263,7 @@ mod test {
 
     #[test]
     fn statemap_insert_remove() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
         let value = String::from("hello");
         let _ = map.insert(42, value.clone());
@@ -1274,7 +1274,7 @@ mod test {
 
     #[test]
     fn statemap_clear() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
         let _ = map.insert(1, 2);
         let _ = map.insert(2, 3);
@@ -1288,7 +1288,7 @@ mod test {
         let inner_map_key = 0u8;
         let key_to_value = 77u8;
         let value = 255u8;
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut outer_map = state_builder.new_map::<u8, StateMap<u8, u8, _>>();
         let mut inner_map = state_builder.new_map::<u8, u8>();
 
@@ -1300,7 +1300,7 @@ mod test {
 
     #[test]
     fn statemap_iter_mut_works() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
@@ -1323,7 +1323,7 @@ mod test {
 
     #[test]
     fn iter_mut_works_on_nested_statemaps() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut outer_map = state_builder.new_map();
         let mut inner_map = state_builder.new_map();
         inner_map.insert(0u8, 1u8);
@@ -1356,7 +1356,7 @@ mod test {
 
     #[test]
     fn statemap_iterator_unlocks_tree_once_dropped() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
         map.insert(0u8, 1u8);
         map.insert(1u8, 2u8);
@@ -1374,7 +1374,7 @@ mod test {
     #[test]
     fn high_level_stateset() {
         let my_set_key = "my_set";
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
 
         let mut set = state_builder.new_set::<u8>();
         assert_eq!(set.insert(0), true);
@@ -1404,7 +1404,7 @@ mod test {
     fn high_level_nested_stateset() {
         let inner_set_key = 0u8;
         let value = 255u8;
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut outer_map = state_builder.new_map::<u8, StateSet<u8, _>>();
         let mut inner_set = state_builder.new_set::<u8>();
 
@@ -1416,7 +1416,7 @@ mod test {
 
     #[test]
     fn stateset_insert_remove() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut set = state_builder.new_set();
         let _ = set.insert(42);
         assert!(set.contains(&42));
@@ -1426,7 +1426,7 @@ mod test {
 
     #[test]
     fn stateset_clear() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut set = state_builder.new_set();
         let _ = set.insert(1);
         let _ = set.insert(2);
@@ -1437,7 +1437,7 @@ mod test {
 
     #[test]
     fn stateset_iterator_unlocks_tree_once_dropped() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut set = state_builder.new_set();
         set.insert(0u8);
         set.insert(1);
@@ -1454,7 +1454,7 @@ mod test {
 
     #[test]
     fn allocate_and_get_statebox() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let boxed_value = String::from("I'm boxed");
         let statebox = state_builder.new_box(boxed_value.clone());
         assert_eq!(*statebox.get(), boxed_value);
@@ -1464,7 +1464,7 @@ mod test {
     fn there_should_be_an_upper_limit_for_iterators_of_a_key() {
         let expected_value: u64 = 123123123;
         let key1 = vec![1, 2, 3, 4, 5, 6];
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         get_entry(&mut state, &key1).or_insert(&to_bytes(&expected_value));
         let mut iters = vec![];
         for _ in 0..u16::MAX {
@@ -1482,7 +1482,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"ab");
         let sub_key = to_bytes(b"abc");
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.entry(&sub_key);
@@ -1494,7 +1494,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"abcd");
         let key2 = to_bytes(b"abe");
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.entry(&key2);
@@ -1506,7 +1506,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"ab");
         let sub_key = to_bytes(b"abc");
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         let sub_entry = get_entry(&mut state, &sub_key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
@@ -1521,7 +1521,7 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(b"abcd");
         let key2 = to_bytes(b"abe");
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         let entry2 = get_entry(&mut state, &key2).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
@@ -1533,7 +1533,7 @@ mod test {
 
     #[test]
     fn deleting_nested_stateboxes_works() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let inner_box = state_builder.new_box(99u8);
         let middle_box = state_builder.new_box(inner_box);
         let outer_box = state_builder.new_box(middle_box);
@@ -1545,7 +1545,7 @@ mod test {
 
     #[test]
     fn clearing_statemap_with_stateboxes_works() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let box1 = state_builder.new_box(1u8);
         let box2 = state_builder.new_box(2u8);
         let box3 = state_builder.new_box(3u8);
@@ -1561,7 +1561,7 @@ mod test {
 
     #[test]
     fn clearing_nested_statemaps_works() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut inner_map_1 = state_builder.new_map();
         inner_map_1.insert(1u8, 2u8);
         inner_map_1.insert(2u8, 3u8);
@@ -1581,7 +1581,7 @@ mod test {
 
     #[test]
     fn multiple_entries_not_allowed() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
         map.insert(0u8, 1u8);
         let e1 = map.entry(0u8);
@@ -1592,7 +1592,7 @@ mod test {
 
     #[test]
     fn occupied_entry_truncates_leftover_data() {
-        let mut state_builder = StateBuilder::open(StateApiTest::new());
+        let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
         map.insert(99u8, "A longer string that should be truncated".into());
         let a_short_string = "A short string".to_string();
@@ -1609,7 +1609,7 @@ mod test {
 
     #[test]
     fn occupied_entry_raw_truncates_leftover_data() {
-        let mut state = StateApiTest::new();
+        let mut state = TestStateApi::new();
         state
             .entry(&[])
             .expect("Could not get entry")

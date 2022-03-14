@@ -27,7 +27,7 @@ enum PiggyBankState {
 
 /// Setup a new Intact piggy bank.
 #[init(contract = "PiggyBank")]
-fn piggy_init<S: HasState>(
+fn piggy_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<PiggyBankState> {
@@ -37,9 +37,9 @@ fn piggy_init<S: HasState>(
 
 /// Insert some CCD into a piggy bank, allowed by anyone.
 #[receive(contract = "PiggyBank", name = "insert", payable)]
-fn piggy_insert<S: HasState>(
+fn piggy_insert<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<PiggyBankState, StateType = S>,
+    host: &impl HasHost<PiggyBankState, StateApiType = S>,
     _amount: Amount,
 ) -> ReceiveResult<()> {
     // Ensure the piggy bank has not been smashed already.
@@ -50,9 +50,9 @@ fn piggy_insert<S: HasState>(
 
 /// Smash a piggy bank retrieving the CCD, only allowed by the owner.
 #[receive(contract = "PiggyBank", name = "smash", mutable)]
-fn piggy_smash<S: HasState>(
+fn piggy_smash<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<PiggyBankState, StateType = S>,
+    host: &mut impl HasHost<PiggyBankState, StateApiType = S>,
 ) -> ReceiveResult<()> {
     // Get the contract owner, i.e. the account who initialized the contract.
     let owner = ctx.owner();

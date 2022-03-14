@@ -157,7 +157,7 @@ where
 }
 
 /// Types which can serve as the contract state.
-pub trait HasState: Clone {
+pub trait HasStateApi: Clone {
     type EntryType: HasStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
 
@@ -189,8 +189,9 @@ pub trait HasState: Clone {
     /// that entries cannot be created or deleted. Altering the data inside
     /// an entry of a locked subtree is, however, allowed.
     ///
-    /// Deleting iterators with [`delete_iterator`][HasState::delete_iterator]
-    /// is necessary to unlock the subtree. To unlock a subtree with prefix
+    /// Deleting iterators with
+    /// [`delete_iterator`][HasStateApi::delete_iterator] is necessary to
+    /// unlock the subtree. To unlock a subtree with prefix
     /// `p1`, all iterators with prefixes `p2`, where `p2` is a prefix of `p1`,
     /// must be deleted.
     ///
@@ -200,7 +201,7 @@ pub trait HasState: Clone {
     fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError>;
 
     /// Delete an iterator.
-    /// See the [`iterator`][HasState::iterator] method for why this is
+    /// See the [`iterator`][HasStateApi::iterator] method for why this is
     /// necessary.
     fn delete_iterator(&mut self, iter: Self::IterType);
 }
@@ -208,7 +209,7 @@ pub trait HasState: Clone {
 /// A type that can serve as the host.
 /// It supports invoking operations, accessing state, and self_balance.
 pub trait HasHost<State> {
-    type StateType: HasState;
+    type StateApiType: HasStateApi;
 
     /// The type of return values this host provides. This is the raw return
     /// value. The intention is that it will be deserialized by the
@@ -242,7 +243,7 @@ pub trait HasHost<State> {
     fn state_mut(&mut self) -> &mut State;
 
     /// Get the state_builder for the contract state.
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType>;
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType>;
 
     /// Get the contract balance.
     fn self_balance(&self) -> Amount;
@@ -363,7 +364,7 @@ pub trait DeserialCtx: Sized {
 
 /// The `DeserialWithState` trait provides a means of reading structures from
 /// byte-sources ([`Read`]) for types that also need a reference to a
-/// [`HasState`] type.
+/// [`HasStateApi`] type.
 ///
 /// Types that need a reference to the state include
 /// [`StateBox`][crate::StateBox], [`StateMap`][crate::StateMap],
@@ -371,7 +372,7 @@ pub trait DeserialCtx: Sized {
 /// these types.
 pub trait DeserialWithState<S>: Sized
 where
-    S: HasState, {
+    S: HasStateApi, {
     /// Attempt to read a structure from a given source and state, failing if
     /// an error occurs during deserialization or reading.
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
@@ -379,7 +380,7 @@ where
 
 /// The `DeserialCtxWithState` trait provides a means of reading structures from
 /// byte-sources ([`Read`]) using contextual information for types that also
-/// need a reference to a [`HasState`] type. The trait is a combination
+/// need a reference to a [`HasStateApi`] type. The trait is a combination
 /// of the [`DeserialCtx`] and [`DeserialWithState`] traits, which each has
 /// additional documentation.
 ///
@@ -393,12 +394,12 @@ where
 /// struct MyStruct<S> {
 ///     #[concordium(size_length = 2)]
 ///     a: String, // Gets the contextual size_length information.
-///     b: StateBox<u8>, // Needs a HasState type
+///     b: StateBox<u8>, // Needs a HasStateApi type
 /// }
 /// ```
 pub trait DeserialCtxWithState<S>: Sized
 where
-    S: HasState, {
+    S: HasStateApi, {
     /// Attempt to read a structure from a given source, context, and state,
     /// failing if an error occurs during deserialization or reading.
     fn deserial_ctx_with_state<R: Read>(

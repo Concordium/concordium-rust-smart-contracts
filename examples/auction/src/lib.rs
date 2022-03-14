@@ -216,8 +216,8 @@ mod tests {
 
     fn create_parameter_bytes(parameter: &InitParameter) -> Vec<u8> { to_bytes(parameter) }
 
-    fn parametrized_init_ctx<'a>(parameter_bytes: &'a Vec<u8>) -> InitContextTest<'a> {
-        let mut ctx = InitContextTest::empty();
+    fn parametrized_init_ctx<'a>(parameter_bytes: &'a Vec<u8>) -> TestInitContext<'a> {
+        let mut ctx = TestInitContext::empty();
         ctx.set_parameter(parameter_bytes);
         ctx
     }
@@ -228,7 +228,7 @@ mod tests {
         account
     }
 
-    fn new_account_ctx<'a>() -> (AccountAddress, ReceiveContextTest<'a>) {
+    fn new_account_ctx<'a>() -> (AccountAddress, TestReceiveContext<'a>) {
         let account = new_account();
         let ctx = new_ctx(account, account, AUCTION_END);
         (account, ctx)
@@ -238,8 +238,8 @@ mod tests {
         owner: AccountAddress,
         sender: AccountAddress,
         slot_time: u64,
-    ) -> ReceiveContextTest<'a> {
-        let mut ctx = ReceiveContextTest::empty();
+    ) -> TestReceiveContext<'a> {
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(Address::Account(sender));
         ctx.set_owner(owner);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(slot_time));
@@ -298,7 +298,7 @@ mod tests {
         // trying to finalize auction that is still active
         // (specifically, the bid is submitted at the last moment, at the AUCTION_END
         // time)
-        let mut ctx4 = ReceiveContextTest::empty();
+        let mut ctx4 = TestReceiveContext::empty();
         ctx4.set_metadata_slot_time(Timestamp::from_timestamp_millis(AUCTION_END));
         let finres: Result<ActionsTree, _> = auction_finalize(&ctx4, &mut state);
         expect_error(
@@ -347,7 +347,7 @@ mod tests {
     fn verify_bid(
         mut state: &mut State,
         account: AccountAddress,
-        ctx: &ContextTest<ReceiveOnlyDataTest>,
+        ctx: &TestContext<TestReceiveOnlyData>,
         amount: Amount,
         bid_map: &mut BTreeMap<AccountAddress, Amount>,
         highest_bid: Amount,

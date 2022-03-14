@@ -97,7 +97,7 @@
 //! - [HasLogger] for logging data during smart contract execution
 //! - [HasPolicy] for accessing the policy of the sender, either of the init or
 //!   receive method
-//! - [HasState] for operations possible on the contract state
+//! - [HasStateApi] for operations possible on the contract state
 //! - [HasHost] for invoking operations on the host and accessing the state
 //!
 //! # Signalling errors

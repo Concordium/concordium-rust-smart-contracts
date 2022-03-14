@@ -51,7 +51,7 @@ enum Weather {
 
 /// Initialise the contract with the contract address of the weather service.
 #[init(contract = "icecream", parameter = "ContractAddress")]
-fn contract_init<S: HasState>(
+fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<((), State<S>)> {
@@ -65,9 +65,9 @@ fn contract_init<S: HasState>(
 
 /// Attempt purchasing icecream from the icecream vendor.
 #[receive(contract = "icecream", name = "buy_icecream", parameter = "AccountAddress", payable)]
-fn contract_buy_icecream<S: HasState>(
+fn contract_buy_icecream<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
 ) -> ReceiveResult<()> {
     let weather_service = host
@@ -107,9 +107,9 @@ fn contract_buy_icecream<S: HasState>(
 /// Replace the weather service with another.
 /// Only the owner of the contract can do so.
 #[receive(contract = "icecream", name = "replace_weather_service", parameter = "ContractAddress")]
-fn contract_replace_weather_service<S: HasState>(
+fn contract_replace_weather_service<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
@@ -124,7 +124,7 @@ fn contract_replace_weather_service<S: HasState>(
 
 /// Initialse the weather service with the weather.
 #[init(contract = "weather", parameter = "Weather")]
-fn weather_init<S: HasState>(
+fn weather_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<((), Persisted<Weather, S>)> {
@@ -136,9 +136,9 @@ fn weather_init<S: HasState>(
 
 /// Get the current weather.
 #[receive(contract = "weather", name = "get", return_value = "Weather")]
-fn weather_get<S: HasState>(
+fn weather_get<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>, StateType = S>,
+    host: &mut impl HasHost<Persisted<Weather, S>, StateApiType = S>,
 ) -> ReceiveResult<Weather> {
     Ok(host
         .state()
@@ -150,9 +150,9 @@ fn weather_get<S: HasState>(
 
 /// Update the weather.
 #[receive(contract = "weather", name = "set", parameter = "Weather")]
-fn weather_set<S: HasState>(
+fn weather_set<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>, StateType = S>,
+    host: &mut impl HasHost<Persisted<Weather, S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can update the weather.
     host.state().set(ctx.parameter_cursor().get()?);
@@ -179,11 +179,11 @@ mod tests {
     #[concordium_test]
     fn test_sunny_days() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let state = Persisted::new(StateStruct {
             weather_service: WEATHER_SERVICE,
         });
-        let mut host = HostTest::new(state);
+        let mut host = TestHost::new(state);
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -215,11 +215,11 @@ mod tests {
     #[concordium_test]
     fn test_rainy_days() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let state = Persisted::new(StateStruct {
             weather_service: WEATHER_SERVICE,
         });
-        let mut host = HostTest::new(state);
+        let mut host = TestHost::new(state);
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -248,11 +248,11 @@ mod tests {
     #[should_panic(expected = "Sending CCD to the icecream vendor failed.: MissingAccount")]
     fn test_missing_icecream_vendor() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let state = Persisted::new(StateStruct {
             weather_service: WEATHER_SERVICE,
         });
-        let mut host = HostTest::new(state);
+        let mut host = TestHost::new(state);
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -280,11 +280,11 @@ mod tests {
     #[should_panic(expected = "Invoking weather contract failed.: MissingContract")]
     fn test_missing_weather_service() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let state = Persisted::new(StateStruct {
             weather_service: WEATHER_SERVICE,
         });
-        let mut host = HostTest::new(state);
+        let mut host = TestHost::new(state);
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);

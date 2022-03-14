@@ -29,7 +29,7 @@ enum PiggyBankState {
 
 /// Setup a new Intact piggy bank.
 #[init(contract = "PiggyBank")]
-fn piggy_init<S: HasState>(
+fn piggy_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<PiggyBankState> {
@@ -39,9 +39,9 @@ fn piggy_init<S: HasState>(
 
 /// Insert some CCD into a piggy bank, allowed by anyone.
 #[receive(contract = "PiggyBank", name = "insert", payable)]
-fn piggy_insert<S: HasState>(
+fn piggy_insert<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<PiggyBankState, StateType = S>,
+    host: &impl HasHost<PiggyBankState, StateApiType = S>,
     _amount: Amount,
 ) -> ReceiveResult<()> {
     // Ensure the piggy bank has not been smashed already.
@@ -59,9 +59,9 @@ enum SmashError {
 
 /// Smash a piggy bank retrieving the CCD, only allowed by the owner.
 #[receive(contract = "PiggyBank", name = "smash", mutable)]
-fn piggy_smash<S: HasState>(
+fn piggy_smash<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<PiggyBankState, StateType = S>,
+    host: &mut impl HasHost<PiggyBankState, StateApiType = S>,
 ) -> Result<(), SmashError> {
     // Get the contract owner, i.e. the account who initialized the contract.
     let owner = ctx.owner();
@@ -100,8 +100,8 @@ mod tests {
     #[concordium_test]
     fn test_init() {
         // Setup
-        let ctx = InitContextTest::empty();
-        let mut state_builder = StateBuilderTest::new();
+        let ctx = TestInitContext::empty();
+        let mut state_builder = TestStateBuilder::new();
 
         // Call the init function
         let state_result = piggy_init(&ctx, &mut state_builder);
@@ -119,8 +119,8 @@ mod tests {
     #[concordium_test]
     fn test_insert_intact() {
         // Setup
-        let ctx = ReceiveContextTest::empty();
-        let host = HostTest::new(PiggyBankState::Intact);
+        let ctx = TestReceiveContext::empty();
+        let host = TestHost::new(PiggyBankState::Intact);
         let amount = Amount::from_micro_ccd(100);
 
         // Trigger the insert
@@ -137,9 +137,9 @@ mod tests {
     #[concordium_test]
     fn test_insert_smashed() {
         // Setup
-        let ctx = ReceiveContextTest::empty();
+        let ctx = TestReceiveContext::empty();
         let amount = Amount::from_micro_ccd(100);
-        let host = HostTest::new(PiggyBankState::Smashed);
+        let host = TestHost::new(PiggyBankState::Smashed);
 
         // Trigger the insert
         let result = piggy_insert(&ctx, &host, amount);
@@ -152,12 +152,12 @@ mod tests {
     fn test_smash_intact() {
         // Setup the context
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let owner = AccountAddress([0u8; 32]);
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let mut host = HostTest::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact);
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -178,12 +178,12 @@ mod tests {
     fn test_smash_intact_not_owner() {
         // Setup the context
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let owner = AccountAddress([0u8; 32]);
         ctx.set_owner(owner);
         let sender = Address::Account(AccountAddress([1u8; 32]));
         ctx.set_sender(sender);
-        let mut host = HostTest::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact);
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -196,12 +196,12 @@ mod tests {
     #[concordium_test]
     fn test_smash_smashed() {
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let owner = AccountAddress([0u8; 32]);
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let mut host = HostTest::new(PiggyBankState::Smashed);
+        let mut host = TestHost::new(PiggyBankState::Smashed);
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -222,12 +222,12 @@ mod tests {
         // illustrative for how to test for transfers to missing accounts.
 
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let owner = AccountAddress([0u8; 32]);
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let mut host = HostTest::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact);
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 

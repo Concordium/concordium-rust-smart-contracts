@@ -689,7 +689,7 @@ mod tests {
     /// The initial tokens are owned by the sender.
     #[concordium_test]
     fn test_init() {
-        let mut ctx = InitContextTest::empty();
+        let mut ctx = TestInitContext::empty();
         ctx.set_init_origin(ACCOUNT_0);
 
         let mut tokens: Tokens = Set::default();
@@ -713,7 +713,7 @@ mod tests {
     /// Test transfer succeeds when sender owns token.
     #[concordium_test]
     fn test_transfer() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
         let mut state = initial_state();
@@ -729,7 +729,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let actions: ActionsTree = contract_safe_transfer_from(&ctx, &mut logger, &mut state)
             .expect_report("Failed NFT transfer");
@@ -754,7 +754,7 @@ mod tests {
     /// and not an operator of the owner.
     #[concordium_test]
     fn test_transfer_not_authorized() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
@@ -770,7 +770,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let result: ContractResult<ActionsTree> =
             contract_safe_transfer_from(&ctx, &mut logger, &mut state);
@@ -782,7 +782,7 @@ mod tests {
     /// the owner.
     #[concordium_test]
     fn test_approved_transfer() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
@@ -799,7 +799,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let actions: ActionsTree = contract_safe_transfer_from(&ctx, &mut logger, &mut state)
             .expect_report("Failed NFT transfer");
@@ -823,7 +823,7 @@ mod tests {
     /// of the owner.
     #[concordium_test]
     fn test_operator_transfer() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
@@ -840,7 +840,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let actions: ActionsTree = contract_safe_transfer_from(&ctx, &mut logger, &mut state)
             .expect_report("Failed NFT transfer");
@@ -863,7 +863,7 @@ mod tests {
     /// Test approve succeeds when sender is owner
     #[concordium_test]
     fn test_approve() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
         let mut state = initial_state();
@@ -876,7 +876,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let actions: ActionsTree = contract_approve(&ctx, &mut logger, &mut state)
             .expect_report("Failed valid approve call");
@@ -901,7 +901,7 @@ mod tests {
     /// the owner.
     #[concordium_test]
     fn test_approve_unauthorized() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
@@ -914,7 +914,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let result: ContractResult<ActionsTree> = contract_approve(&ctx, &mut logger, &mut state);
         let err = result.expect_err_report("Expected to fail");
@@ -925,7 +925,7 @@ mod tests {
     /// of the owner.
     #[concordium_test]
     fn test_operator_approve() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         let mut state = initial_state();
@@ -939,7 +939,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let actions: ActionsTree = contract_approve(&ctx, &mut logger, &mut state)
             .expect_report("Failed valid approve call");
@@ -963,7 +963,7 @@ mod tests {
     /// Test approve_for_all succeeds
     #[concordium_test]
     fn test_set_approve_for_all() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
         let mut state = initial_state();
@@ -976,7 +976,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
 
         let actions: ActionsTree = contract_set_approval_for_all(&ctx, &mut logger, &mut state)
             .expect_report("Failed valid approve call");

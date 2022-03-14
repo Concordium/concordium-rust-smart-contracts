@@ -1,4 +1,4 @@
-use super::{StateEntryData, StateEntryTest};
+use super::{TestStateEntry, TestStateEntryData};
 use crate::{
     cell::{Cell, RefCell},
     collections::{btree_map, BTreeMap, HashMap as Map, VecDeque},
@@ -52,14 +52,14 @@ impl StateTrie {
         }
     }
 
-    /// Construct a `StateEntryTest` and use interior mutation to add increment
+    /// Construct a `TestStateEntry` and use interior mutation to add increment
     /// next_entry_id and add the entry to the entry_map.
     fn construct_state_entry_test(
         &self,
         indexes: Vec<Index>,
-        data: Rc<RefCell<StateEntryData>>,
+        data: Rc<RefCell<TestStateEntryData>>,
         key: Vec<u8>,
-    ) -> StateEntryTest {
+    ) -> TestStateEntry {
         // Get the current next_entry_id
         let state_entry_id = self.next_entry_id.get();
 
@@ -67,7 +67,7 @@ impl StateTrie {
         self.entry_map.borrow_mut().insert(state_entry_id, indexes);
         self.next_entry_id.set(state_entry_id + 1);
 
-        StateEntryTest::open(data, key, state_entry_id)
+        TestStateEntry::open(data, key, state_entry_id)
     }
 
     pub(crate) fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
@@ -85,7 +85,7 @@ impl StateTrie {
         // out due to the Rc. This uses the queue iter because Iterator isn't
         // implemented for &Iter and we need to delete the iterator afterwards.
         for entry in iterator.queue.iter() {
-            *entry.cursor.data.borrow_mut() = StateEntryData::EntryDeleted;
+            *entry.cursor.data.borrow_mut() = TestStateEntryData::EntryDeleted;
         }
         self.delete_iterator(iterator);
 
@@ -102,7 +102,7 @@ impl StateTrie {
         })
     }
 
-    pub(crate) fn create_entry(&mut self, key: &[u8]) -> Result<StateEntryTest, StateError> {
+    pub(crate) fn create_entry(&mut self, key: &[u8]) -> Result<TestStateEntry, StateError> {
         let indexes = to_indexes(key);
         if self.is_locked(&indexes) {
             return Err(StateError::SubtreeLocked);
@@ -112,14 +112,14 @@ impl StateTrie {
         Ok(entry)
     }
 
-    pub(crate) fn lookup(&self, key: &[u8]) -> Option<StateEntryTest> {
+    pub(crate) fn lookup(&self, key: &[u8]) -> Option<TestStateEntry> {
         let indexes = to_indexes(key);
         self.nodes
             .lookup(&indexes)
             .map(|data| self.construct_state_entry_test(indexes, data, key.to_vec()))
     }
 
-    pub(crate) fn delete_entry(&mut self, entry: StateEntryTest) -> Result<(), StateError> {
+    pub(crate) fn delete_entry(&mut self, entry: TestStateEntry) -> Result<(), StateError> {
         let indexes = to_indexes(&entry.key);
         if self.is_locked(&indexes) {
             return Err(StateError::SubtreeLocked);
@@ -132,7 +132,7 @@ impl StateTrie {
         }
     }
 
-    pub(crate) fn iterator(&self, prefix: &[u8]) -> Result<Iter, StateError> {
+    pub(crate) fn iterator(&self, prefix: &[u8]) -> Result<TestStateIter, StateError> {
         let index_prefix = to_indexes(prefix);
 
         // Try to find the root_node for the prefix.
@@ -152,11 +152,11 @@ impl StateTrie {
             }
         }
 
-        let iter = Iter::new(self, index_prefix, node);
+        let iter = TestStateIter::new(self, index_prefix, node);
         Ok(iter)
     }
 
-    pub(crate) fn delete_iterator(&mut self, iterator: Iter) {
+    pub(crate) fn delete_iterator(&mut self, iterator: TestStateIter) {
         match self.iterator_counts.borrow_mut().entry(iterator.prefix) {
             btree_map::Entry::Vacant(_) => crate::fail!(), // Internal error: Should never happen.
             btree_map::Entry::Occupied(mut occ) => {
@@ -172,20 +172,20 @@ impl StateTrie {
 }
 
 #[derive(Debug)]
-pub struct Iter {
+pub struct TestStateIter {
     // Only used when deleting the iterator.
     prefix: Vec<Index>,
-    queue:  VecDeque<StateEntryTest>,
+    queue:  VecDeque<TestStateEntry>,
 }
 
-impl Iter {
+impl TestStateIter {
     fn new(trie: &StateTrie, mut root_index: Vec<Index>, root_of_iter: &Node) -> Self {
         let mut queue = VecDeque::new();
         let prefix = root_index.clone();
 
         fn build_queue(
             trie: &StateTrie,
-            queue: &mut VecDeque<StateEntryTest>,
+            queue: &mut VecDeque<TestStateEntry>,
             indexes: &mut Vec<Index>,
             node: &Node,
         ) {
@@ -219,15 +219,15 @@ impl Iter {
     }
 }
 
-impl Iterator for Iter {
-    type Item = StateEntryTest;
+impl Iterator for TestStateIter {
+    type Item = TestStateEntry;
 
     fn next(&mut self) -> Option<Self::Item> { self.queue.pop_front() }
 }
 
 #[derive(Debug)]
 struct Node {
-    data:     Option<Rc<RefCell<StateEntryData>>>,
+    data:     Option<Rc<RefCell<TestStateEntryData>>>,
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
 }
 
@@ -242,8 +242,8 @@ impl Node {
     /// Tries to find the data in a node with the given index.
     /// Returns `None` if the node doesn't exist or if it doesn't have any data.
     /// Note: If `Some` is returned, it will _always_ be a
-    /// `StateEntryData::EntryExists(..)`.
-    fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<StateEntryData>>> {
+    /// `TestStateEntryData::EntryExists(..)`.
+    fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<TestStateEntryData>>> {
         self.lookup_node(indexes).and_then(|node| node.data.as_ref().map(Rc::clone))
     }
 
@@ -259,14 +259,14 @@ impl Node {
     }
 
     /// Create a new entry.
-    /// It will always return `StateEntryData::EntryExists(..)`.
-    fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<StateEntryData>> {
+    /// It will always return `TestStateEntryData::EntryExists(..)`.
+    fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<TestStateEntryData>> {
         match indexes.first() {
             Some(idx) => {
                 self.children[*idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
             }
             None => {
-                let new_data = Rc::new(RefCell::new(StateEntryData::new()));
+                let new_data = Rc::new(RefCell::new(TestStateEntryData::new()));
                 let new_data_clone = Rc::clone(&new_data);
                 self.data = Some(new_data);
                 new_data_clone
@@ -324,16 +324,16 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_infrastructure::{trie::StateTrie, StateEntryTest};
+    use crate::test_infrastructure::{trie::StateTrie, TestStateEntry};
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     /// Create an entry and unwrap the result.
-    fn create_entry(trie: &mut StateTrie, key: &[u8]) -> StateEntryTest {
+    fn create_entry(trie: &mut StateTrie, key: &[u8]) -> TestStateEntry {
         trie.create_entry(key).expect("Failed to create entry")
     }
 
     /// Delete an entry and unwrap the result.
-    fn delete_entry(trie: &mut StateTrie, entry: StateEntryTest) {
+    fn delete_entry(trie: &mut StateTrie, entry: TestStateEntry) {
         trie.delete_entry(entry).expect("Failed to delete entry")
     }
 

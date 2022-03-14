@@ -343,7 +343,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// ```ignore
 /// #[init(contract = "my_contract")]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: &mut StateBuilder<S>,) -> InitResult<MyState> {...}
+/// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: &mut StateBuilder<S>,) -> InitResult<MyState> {...}
 /// ```
 ///
 /// Where `HasInitContext`, `InitResult`, and `StateBuilder` are exposed from
@@ -364,7 +364,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", payable)]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, amount: Amount) -> InitResult<MyState> {...}
+/// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, amount: Amount) -> InitResult<MyState> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -376,7 +376,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", enable_logger)]
-/// fn some_init<S: HasState>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
+/// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
 /// ```
 ///
 /// ## `low_level`: Manually deal with the low-level state including writing
@@ -384,7 +384,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// serializing the contract state.
 ///
 /// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
-/// replaced by `&impl mut HasState` found in `concordium-std`, which gives
+/// replaced by `&impl mut HasStateApi` found in `concordium-std`, which gives
 /// access to manipulating the low-level contract state directly. This means
 /// there is no need to return the contract state and the return type becomes
 /// `InitResult<()>`.
@@ -392,7 +392,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", low_level)]
-/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasState) -> InitResult<()> {...}
+/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasStateApi) -> InitResult<()> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
@@ -446,14 +446,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     );
 
     let mut out = if init_attributes.optional.low_level {
-        required_args.push("state: &mut impl HasState");
+        required_args.push("state: &mut impl HasStateApi");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, StateApiExtern, HasState};
+                use concordium_std::{trap, ExternContext, ExternInitContext, ExternStateApi, HasStateApi};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state = StateApiExtern::open();
+                let ctx = ExternContext::<ExternInitContext>::open(());
+                let mut state = ExternStateApi::open();
                 match #fn_name(&ctx, &mut state, #(#fn_optional_args, )*) {
                     Ok(()) => 0,
                     Err(reject) => {
@@ -472,10 +472,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, StateBuilder, ExternReturnValue};
+                use concordium_std::{trap, ExternContext, ExternInitContext, StateBuilder, ExternReturnValue};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state_api = StateApiExtern::open();
+                let ctx = ExternContext::<ExternInitContext>::open(());
+                let mut state_api = ExternStateApi::open();
                 let mut state_builder = StateBuilder::open(state_api.clone());
                 match #fn_name(&ctx, &mut state_builder, #(#fn_optional_args, )*) {
                     Ok(state) => {
@@ -541,10 +541,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
-/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
-/// Where the `HasState`, `HasReceiveContext`, `HasHost`, and `ReceiveResult`
+/// Where the `HasStateApi`, `HasReceiveContext`, `HasHost`, and `ReceiveResult`
 /// are from `concordium-std` and `MyState` and `MyReturnValue` are user-defined
 /// types.
 ///
@@ -563,7 +563,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", payable)]
-/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `mutable`: Function can mutate the state
@@ -576,7 +576,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", mutable)]
-/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &mut HasHost<MyState, StateType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &mut HasHost<MyState, StateApiType = S>) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -587,7 +587,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
-/// fn contract_receive<S: HasState>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateType = S>, logger: &mut impl HasLogger) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>, logger: &mut impl HasLogger) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `low_level`: Manually deal with the low-level state including writing
@@ -596,13 +596,13 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// serialized automatically.
 ///
 /// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
-/// replaced by `&impl mut HasState` found in `concordium-std`, which gives
+/// replaced by `&impl mut HasStateApi` found in `concordium-std`, which gives
 /// access to manipulating the low-level contract state directly.
 ///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", low_level)]
-/// fn contract_receive(ctx: &impl HasReceiveContext, state: &mut impl HasState) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive(ctx: &impl HasReceiveContext, state: &mut impl HasStateApi) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
@@ -682,9 +682,9 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, Logger, ReceiveContextExtern, ExternContext, ExternLowLevelHost};
+                use concordium_std::{SeekFrom, Logger, ExternReceiveContext, ExternContext, ExternLowLevelHost};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<ReceiveContextExtern>::open(());
+                let ctx = ExternContext::<ExternReceiveContext>::open(());
                 let mut host = ExternLowLevelHost::default();
                 match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
                     Ok(rv) => {
@@ -727,8 +727,8 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
                 use concordium_std::{SeekFrom, StateBuilder, Logger, ExternHost, trap};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let state_api = StateApiExtern::open();
+                let ctx = ExternContext::<ExternReceiveContext>::open(());
+                let state_api = ExternStateApi::open();
                 let mut root_entry = state_api.lookup(&[]).unwrap_abort();
                 if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut root_entry) {
                     let mut state_builder = StateBuilder::open(state_api);
@@ -1416,7 +1416,7 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 /// [`StateSet`](../concordium_std/struct.StateSet.html), or
 /// [`StateMap`](../concordium_std/struct.StateMap.html). Please note that it is
 /// necessary to specify the generic parameter name for the
-/// [`HasState`](../concordium_std/trait.HasState.html) generic parameter. To do
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter. To do
 /// so, use the `#[concordium(state_parameter = "NameOfGenericParameter")]`
 /// attribute on the type you are deriving `DeserialWithState` for.
 ///
@@ -1469,7 +1469,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
         .expect("There was a problem with the concordium attribute")
         .expect(
             "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], where \
-             \"S\" should be the HasState generic parameter.",
+             \"S\" should be the HasStateApi generic parameter.",
         );
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     let where_predicates = where_clauses.map(|c| c.predicates.clone());
@@ -1577,7 +1577,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
     };
     let gen = quote! {
         #[automatically_derived]
-        impl #impl_generics DeserialWithState<#state_parameter> for #data_name #ty_generics where #state_parameter : HasState, #where_predicates {
+        impl #impl_generics DeserialWithState<#state_parameter> for #data_name #ty_generics where #state_parameter : HasStateApi, #where_predicates {
             fn deserial_with_state<#read_ident: Read>(state: &#state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
                 #body_tokens
             }

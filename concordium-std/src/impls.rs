@@ -658,9 +658,9 @@ const NEXT_ITEM_PREFIX_KEY: u64 = 0;
 const GENERIC_MAP_PREFIX: u64 = 1;
 pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
 
-impl HasState for StateApiExtern {
+impl HasStateApi for ExternStateApi {
     type EntryType = StateEntry;
-    type IterType = StateIterExtern;
+    type IterType = ExternStateIter;
 
     fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
         let key_start = key.as_ptr();
@@ -727,21 +727,21 @@ impl HasState for StateApiExtern {
         match iterator_id {
             OK_NONE => Err(StateError::SubtreeWithPrefixNotFound),
             ERR => Err(StateError::IteratorLimitForPrefixExceeded),
-            iterator_id => Ok(StateIterExtern {
+            iterator_id => Ok(ExternStateIter {
                 iterator_id,
             }),
         }
     }
 
     fn delete_iterator(&mut self, iter: Self::IterType) {
-        // This call can never fail because the only way to get an `StateIterExtern`
+        // This call can never fail because the only way to get an `ExternStateIter`
         // is through `StateApi::iterator(..)`. And this call consumes
         // the iterator.
         // These conditions rule out the two types of errors that the prims
         // call can return, iterator not found and iterator already deleted.
         // The iterator can also be deleted with `delete_iterator_by_id`, but that is
         // only called when a [StateMapIter] or [StateSetIter] is dropped (which
-        // also drops the [StateIterExtern]). Again ruling out the already
+        // also drops the [ExternStateIter]). Again ruling out the already
         // deleted error.
         unsafe { prims::state_iterator_delete(iter.iterator_id) };
     }
@@ -752,7 +752,7 @@ const OK_NONE: u64 = u64::MAX;
 /// Encoding of Err that is returned by some host functions.
 const ERR: u64 = u64::MAX & !(1u64 << 62);
 
-impl Iterator for StateIterExtern {
+impl Iterator for ExternStateIter {
     type Item = StateEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -762,8 +762,8 @@ impl Iterator for StateIterExtern {
             // This next case means that an iterator never existed or was deleted.
             // In both cases, it is not possible to call `next` on such an iterator with the current
             // API. The only way to get an iterator is through
-            // [HasState::iterator] and the only way to delete it is through
-            // [HasState::delete_iterator].
+            // [HasStateApi::iterator] and the only way to delete it is through
+            // [HasStateApi::delete_iterator].
             ERR => None,
             _ => {
                 // This will always return a valid size, because the iterator is guaranteed to
@@ -788,7 +788,7 @@ impl Iterator for StateIterExtern {
 
 impl<K, V, S> StateMap<K, V, S>
 where
-    S: HasState,
+    S: HasStateApi,
     K: Serialize,
     V: Serial + DeserialWithState<S> + Deletable,
 {
@@ -895,7 +895,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasState> Drop for StateMapIter<'a, K, V, S> {
+impl<'a, K, V, S: HasStateApi> Drop for StateMapIter<'a, K, V, S> {
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
         if let Some(valid) = self.state_iter.take() {
@@ -906,7 +906,7 @@ impl<'a, K, V, S: HasState> Drop for StateMapIter<'a, K, V, S> {
 
 impl<K, V, S> StateMap<K, V, S>
 where
-    S: HasState,
+    S: HasStateApi,
 {
     pub(crate) fn open<P: Serial>(state_api: S, prefix: P) -> Self {
         Self {
@@ -955,7 +955,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasState> Iterator for StateMapIter<'a, K, V, S>
+impl<'a, K, V, S: HasStateApi> Iterator for StateMapIter<'a, K, V, S>
 where
     K: Deserial + 'a,
     V: DeserialWithState<S> + 'a,
@@ -976,7 +976,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasState> Iterator for StateMapIterMut<'a, K, V, S>
+impl<'a, K, V, S: HasStateApi> Iterator for StateMapIterMut<'a, K, V, S>
 where
     K: Deserial + 'a,
     V: DeserialWithState<S> + 'a,
@@ -1000,7 +1000,7 @@ where
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
     V: Serial + DeserialWithState<S>,
-    S: HasState,
+    S: HasStateApi,
 {
     /// Get a reference to the value `V`.
     pub fn get(&self) -> Ref<'_, V> { self.state_box.get() }
@@ -1025,7 +1025,7 @@ impl<K, V, S> Serial for StateMap<K, V, S> {
 impl<T, S> StateSet<T, S>
 where
     T: Serialize,
-    S: HasState,
+    S: HasStateApi,
 {
     /// Adds a value to the set.
     /// If the set did not have this value, `true` is returned. Otherwise,
@@ -1088,7 +1088,7 @@ where
     }
 }
 
-impl<T, S: HasState> StateSet<T, S> {
+impl<T, S: HasStateApi> StateSet<T, S> {
     pub(crate) fn open<P: Serial>(state_api: S, prefix: P) -> Self {
         Self {
             _marker: PhantomData,
@@ -1131,7 +1131,7 @@ impl<T, S> StateBox<T, S> {
 impl<T, S> StateBox<T, S>
 where
     T: Serial + DeserialWithState<S>,
-    S: HasState,
+    S: HasStateApi,
 {
     /// Get a reference to the value.
     // TODO: Figure out if we can implement Deref that uses this method.
@@ -1192,7 +1192,7 @@ impl<T, S> Serial for StateSet<T, S> {
 }
 
 /// Unlock the part of the tree locked by the iterator.
-impl<'a, T, S: HasState> Drop for StateSetIter<'a, T, S> {
+impl<'a, T, S: HasStateApi> Drop for StateSetIter<'a, T, S> {
     #[inline]
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
@@ -1202,7 +1202,7 @@ impl<'a, T, S: HasState> Drop for StateSetIter<'a, T, S> {
     }
 }
 
-impl<'a, T, S: HasState> Iterator for StateSetIter<'a, T, S>
+impl<'a, T, S: HasStateApi> Iterator for StateSetIter<'a, T, S>
 where
     T: DeserialWithState<S>,
 {
@@ -1280,7 +1280,7 @@ impl HasCallResponse for ExternCallResponse {
 }
 
 /// # Trait implementations for the chain metadata.
-impl HasChainMetadata for ChainMetaExtern {
+impl HasChainMetadata for ExternChainMeta {
     #[inline(always)]
     fn slot_time(&self) -> SlotTime {
         Timestamp::from_timestamp_millis(unsafe { prims::get_slot_time() })
@@ -1387,13 +1387,13 @@ impl ExactSizeIterator for PoliciesIterator {
 }
 
 impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
-    type MetadataType = ChainMetaExtern;
+    type MetadataType = ExternChainMeta;
     type ParamType = ExternParameter;
     type PolicyIteratorType = PoliciesIterator;
     type PolicyType = Policy<AttributesCursor>;
 
     #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ChainMetaExtern {} }
+    fn metadata(&self) -> &Self::MetadataType { &ExternChainMeta {} }
 
     fn policies(&self) -> PoliciesIterator {
         let mut buf: MaybeUninit<[u8; 2]> = MaybeUninit::uninit();
@@ -1543,7 +1543,7 @@ fn invoke_contract_construct_parameter(
 
 impl<S> StateBuilder<S>
 where
-    S: HasState,
+    S: HasStateApi,
 {
     /// Open a new state_builder. Only a single instance of the state_builder
     /// should exist during contract execution, thus this should only be
@@ -1604,7 +1604,7 @@ where
 /// Some helper methods that are used for internal tests.
 impl<S> StateBuilder<S>
 where
-    S: HasState,
+    S: HasStateApi,
 {
     /// Some(Err(_)) means that something exists in the state with that key, but
     /// it isn't of type `V`.
@@ -1641,10 +1641,10 @@ where
 
 impl<S> HasHost<S> for ExternHost<S>
 where
-    S: DeserialWithState<StateApiExtern>,
+    S: DeserialWithState<ExternStateApi>,
 {
     type ReturnValueType = ExternCallResponse;
-    type StateType = StateApiExtern;
+    type StateApiType = ExternStateApi;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
@@ -1685,12 +1685,12 @@ where
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
 }
 
-impl HasHost<StateApiExtern> for ExternLowLevelHost {
+impl HasHost<ExternStateApi> for ExternLowLevelHost {
     type ReturnValueType = ExternCallResponse;
-    type StateType = StateApiExtern;
+    type StateApiType = ExternStateApi;
 
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         invoke_transfer_worker(receiver, amount)
@@ -1713,21 +1713,21 @@ impl HasHost<StateApiExtern> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn state(&self) -> &StateApiExtern { &self.state_api }
+    fn state(&self) -> &ExternStateApi { &self.state_api }
 
     #[inline(always)]
-    fn state_mut(&mut self) -> &mut StateApiExtern { &mut self.state_api }
+    fn state_mut(&mut self) -> &mut ExternStateApi { &mut self.state_api }
 
     #[inline(always)]
     fn self_balance(&self) -> Amount {
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateType> { &mut self.state_builder }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
 }
 
 /// # Trait implementations for the init context
-impl HasInitContext for ExternContext<crate::types::InitContextExtern> {
+impl HasInitContext for ExternContext<crate::types::ExternInitContext> {
     type InitData = ();
 
     /// Create a new init context by using an external call.
@@ -1746,7 +1746,7 @@ impl HasInitContext for ExternContext<crate::types::InitContextExtern> {
 }
 
 /// # Trait implementations for the receive context
-impl HasReceiveContext for ExternContext<crate::types::ReceiveContextExtern> {
+impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
     type ReceiveData = ();
 
     /// Create a new receive context
@@ -2083,7 +2083,7 @@ impl DeserialCtx for String {
 
 /// Blanket implementation for Deserial, which simply does not use the state
 /// argument.
-impl<D: Deserial, S: HasState> DeserialWithState<S> for D {
+impl<D: Deserial, S: HasStateApi> DeserialWithState<S> for D {
     #[inline(always)]
     fn deserial_with_state<R: Read>(_state: &S, source: &mut R) -> ParseResult<Self> {
         Self::deserial(source)
@@ -2092,7 +2092,7 @@ impl<D: Deserial, S: HasState> DeserialWithState<S> for D {
 
 /// Blanket implementation for DeserialCtx, which simply does not use the state
 /// argument.
-impl<D: DeserialCtx, S: HasState> DeserialCtxWithState<S> for D {
+impl<D: DeserialCtx, S: HasStateApi> DeserialCtxWithState<S> for D {
     #[inline(always)]
     fn deserial_ctx_with_state<R: Read>(
         size_length: schema::SizeLength,
@@ -2106,7 +2106,7 @@ impl<D: DeserialCtx, S: HasState> DeserialCtxWithState<S> for D {
 
 impl<K, V, S> DeserialWithState<S> for StateMap<K, V, S>
 where
-    S: HasState,
+    S: HasStateApi,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         source.read_u64().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
@@ -2115,7 +2115,7 @@ where
 
 impl<T, S> DeserialWithState<S> for StateSet<T, S>
 where
-    S: HasState,
+    S: HasStateApi,
     T: Serial + DeserialWithState<S>,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
@@ -2125,7 +2125,7 @@ where
 
 impl<T, S> DeserialWithState<S> for StateBox<T, S>
 where
-    S: HasState,
+    S: HasStateApi,
     T: Serial + DeserialWithState<S>,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
@@ -2147,7 +2147,7 @@ impl<T: Serialize> Deletable for T {
 impl<T, S> Deletable for StateBox<T, S>
 where
     T: Serial + DeserialWithState<S> + Deletable,
-    S: HasState,
+    S: HasStateApi,
 {
     fn delete(mut self) {
         // Make sure the actual value is cached, so we can delete it.
@@ -2166,7 +2166,7 @@ where
 
 impl<T, S> Deletable for StateSet<T, S>
 where
-    S: HasState,
+    S: HasStateApi,
 {
     fn delete(mut self) {
         // Statesets cannot contain state types (e.g. StateBox), so there is nothing to
@@ -2179,7 +2179,7 @@ where
 
 impl<K, V, S> Deletable for StateMap<K, V, S>
 where
-    S: HasState,
+    S: HasStateApi,
     K: Deserial,
     V: DeserialWithState<S> + Deletable,
 {

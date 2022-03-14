@@ -1,4 +1,4 @@
-use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasState};
+use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasStateApi};
 
 #[derive(Debug)]
 /// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
@@ -20,12 +20,12 @@ use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasState};
 /// ```
 /// # use concordium_std::*;
 /// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = StateBuilder::open(StateApiTest::new());
+/// # let mut state_builder = TestStateBuilder::new();
 /// /// In an init method:
 /// let mut map1 = state_builder.new_map();
 /// # map1.insert(0u8, 1u8); // Specifies type of map.
 ///
-/// # let mut host = HostTest::new_with_state_builder((), state_builder);
+/// # let mut host = TestHost::new_with_state_builder((), state_builder);
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_map();
 /// # map2.insert(0u16, 1u16); // Specifies type of map.
@@ -47,7 +47,7 @@ pub struct StateMap<K, V, S> {
 ///
 /// This `struct` is created by the [`iter`][StateMap::iter] method on
 /// [`StateMap`]. See its documentation for more.
-pub struct StateMapIter<'a, K, V, S: HasState> {
+pub struct StateMapIter<'a, K, V, S: HasStateApi> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_api:        S,
     pub(crate) _lifetime_marker: PhantomData<&'a (K, V)>,
@@ -60,7 +60,7 @@ pub struct StateMapIter<'a, K, V, S: HasState> {
 ///
 /// This `struct` is created by the [`iter_mut`][StateMap::iter_mut] method on
 /// [`StateMap`]. See its documentation for more.
-pub struct StateMapIterMut<'a, K, V, S: HasState> {
+pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_api:        S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
@@ -91,7 +91,7 @@ pub struct StateSet<T, S> {
 ///
 /// This `struct` is created by the [`iter`][StateSet::iter] method on
 /// [`StateSet`]. See its documentation for more.
-pub struct StateSetIter<'a, T, S: HasState> {
+pub struct StateSetIter<'a, T, S: HasStateApi> {
     pub(crate) state_iter:       Option<S::IterType>,
     pub(crate) state_api:        S,
     pub(crate) _marker_lifetime: PhantomData<&'a T>,
@@ -163,7 +163,7 @@ impl<'a, V, S> StateRefMut<'a, V, S> {
 #[repr(transparent)]
 /// An iterator over a part of the state. Its implementation is supported by
 /// host calls.
-pub struct StateIterExtern {
+pub struct ExternStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
 
@@ -179,8 +179,8 @@ pub struct StateEntry {
 }
 
 #[repr(transparent)]
-/// A view into a vacant entry in a [`HasState`][`crate::HasState`] type. It is
-/// part of the [`EntryRaw`] enum.
+/// A view into a vacant entry in a [`HasStateApi`][`crate::HasStateApi`] type.
+/// It is part of the [`EntryRaw`] enum.
 ///
 /// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
 /// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
@@ -189,8 +189,8 @@ pub struct VacantEntryRaw<StateEntryType> {
 }
 
 #[repr(transparent)]
-/// A view into an occupied entry in a [`HasState`][`crate::HasState`] type. It
-/// is part of the [`EntryRaw`] enum.
+/// A view into an occupied entry in a [`HasStateApi`][`crate::HasStateApi`]
+/// type. It is part of the [`EntryRaw`] enum.
 ///
 /// Differs from [`OccupiedEntry`] in that this has access to the raw bytes
 /// stored in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
@@ -198,11 +198,11 @@ pub struct OccupiedEntryRaw<StateEntryType> {
     pub(crate) state_entry: StateEntryType,
 }
 
-/// A view into a single entry in a [`HasState`][`crate::HasState`] type, which
-/// may either be vacant or occupied.
+/// A view into a single entry in a [`HasStateApi`][`crate::HasStateApi`] type,
+/// which may either be vacant or occupied.
 ///
-/// This `enum` is constructed from the [`entry`][crate::HasState::entry] method
-/// on a [`HasState`][crate::HasState] type.
+/// This `enum` is constructed from the [`entry`][crate::HasStateApi::entry]
+/// method on a [`HasStateApi`][crate::HasStateApi] type.
 pub enum EntryRaw<StateEntryType> {
     Vacant(VacantEntryRaw<StateEntryType>),
     Occupied(OccupiedEntryRaw<StateEntryType>),
@@ -594,9 +594,9 @@ macro_rules! claim_ne {
 /// }
 ///
 /// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<S: HasState>(
+/// fn contract_receive<S: HasStateApi>(
 ///     _ctx: &impl HasReceiveContext,
-///     _host: &impl HasHost<(), StateType = S>,
+///     _host: &impl HasHost<(), StateApiType = S>,
 /// ) -> Result<(), MyCustomError> {
 ///     Err(MyCustomError::SomeError)
 /// }
@@ -621,7 +621,7 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// }
 ///
 /// #[init(contract = "mycontract")]
-/// fn contract_init<S: HasState>(
+/// fn contract_init<S: HasStateApi>(
 ///     _ctx: &impl HasInitContext,
 ///     _state_builder: &mut StateBuilder<S>,
 /// ) -> Result<((), ()), MyCustomError> {
@@ -634,13 +634,13 @@ pub type InitResult<S> = Result<S, Reject>;
 #[doc(hidden)]
 pub struct ExternHost<State> {
     pub state:         State,
-    pub state_builder: StateBuilder<StateApiExtern>,
+    pub state_builder: StateBuilder<ExternStateApi>,
 }
 
 #[derive(Default)]
 /// An state builder that allows the creation of [`StateMap`], [`StateSet`], and
 /// [`StateBox`]. It is parametrized by a parameter `S` that is assumed to
-/// implement [`HasState`].
+/// implement [`HasStateApi`].
 ///
 /// The state_builder is designed to provide an abstraction over the contract
 /// state, abstracting over the exact **keys** (keys in the sense of key-value
@@ -652,11 +652,11 @@ pub struct StateBuilder<S> {
 
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]
-pub struct StateApiExtern {
+pub struct ExternStateApi {
     pub(crate) private: (),
 }
 
-impl StateApiExtern {
+impl ExternStateApi {
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
     pub fn open() -> Self {
@@ -670,8 +670,8 @@ impl StateApiExtern {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state_api:     StateApiExtern,
-    pub(crate) state_builder: StateBuilder<StateApiExtern>,
+    pub(crate) state_api:     ExternStateApi,
+    pub(crate) state_builder: StateBuilder<ExternStateApi>,
 }
 
 /// Context backed by host functions.
@@ -682,14 +682,14 @@ pub struct ExternContext<T: sealed::ContextType> {
 }
 
 #[doc(hidden)]
-pub struct ChainMetaExtern {}
+pub struct ExternChainMeta {}
 
 #[derive(Default)]
 #[doc(hidden)]
-pub struct InitContextExtern;
+pub struct ExternInitContext;
 #[derive(Default)]
 #[doc(hidden)]
-pub struct ReceiveContextExtern;
+pub struct ExternReceiveContext;
 
 pub(crate) mod sealed {
     use super::*;
@@ -697,13 +697,13 @@ pub(crate) mod sealed {
     /// This is deliberately a sealed trait, so that it is only implementable
     /// by types in this crate.
     pub trait ContextType {}
-    impl ContextType for InitContextExtern {}
-    impl ContextType for ReceiveContextExtern {}
+    impl ContextType for ExternInitContext {}
+    impl ContextType for ExternReceiveContext {}
 }
 
 #[derive(Debug)]
 /// The error type which is returned by methods on
-/// [`HasState`][`crate::HasState`].
+/// [`HasStateApi`][`crate::HasStateApi`].
 pub enum StateError {
     /// The subtree is locked.
     SubtreeLocked,

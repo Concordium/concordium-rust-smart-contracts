@@ -16,7 +16,7 @@ struct InitParameter;
 
 /// Init function that creates a new contract.
 #[init(contract = "memo", parameter = "InitParameter", low_level)]
-fn memo_init(_ctx: &impl HasInitContext, _state: &mut impl HasState) -> InitResult<()> {
+fn memo_init(_ctx: &impl HasInitContext, _state: &mut impl HasStateApi) -> InitResult<()> {
     Ok(())
 }
 
@@ -30,7 +30,7 @@ pub type ReceiveParameter = [u8; 32];
 fn memo_receive<A: HasActions>(
     ctx: &impl HasReceiveContext,
     amount: Amount,
-    _state: &mut impl HasState,
+    _state: &mut impl HasStateApi,
 ) -> ReceiveResult<A> {
     ensure!(matches!(ctx.sender(), Address::Account(..)));
     ensure!(ctx.parameter_cursor().size() == EXPECTED_PARAMETER_SIZE);

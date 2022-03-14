@@ -300,7 +300,7 @@ mod tests {
         };
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = InitContextTest::empty();
+        let mut ctx = TestInitContext::empty();
         ctx.set_parameter(&parameter_bytes);
 
         let amount = Amount::from_micro_ccd(0);
@@ -347,7 +347,7 @@ mod tests {
         let parameter = Message::RequestTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account1));
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
@@ -407,7 +407,7 @@ mod tests {
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account2));
@@ -488,7 +488,7 @@ mod tests {
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account2));
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));

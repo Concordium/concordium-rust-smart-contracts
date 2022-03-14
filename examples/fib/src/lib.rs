@@ -72,7 +72,7 @@ fn contract_receive(
     return_value = "u64",
     low_level
 )]
-fn contract_receive_ll<S: HasState>(
+fn contract_receive_ll<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<S>,
 ) -> ReceiveResult<u64> {
@@ -146,7 +146,7 @@ mod tests {
 
     #[concordium_test]
     fn receive_works() {
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         let parameter_bytes = to_bytes(&10u64);
         let contract_address = ContractAddress {
             index:    0,
@@ -155,7 +155,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_self_address(contract_address.clone());
 
-        let mut host = HostTest::new(State {
+        let mut host = TestHost::new(State {
             result: 0,
         });
 

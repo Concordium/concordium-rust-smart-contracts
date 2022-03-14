@@ -527,7 +527,7 @@ mod tests {
     #[concordium_test]
     fn test_init() {
         // Setup the context
-        let ctx = InitContextTest::empty();
+        let ctx = TestInitContext::empty();
 
         // Call the contract function.
         let result = contract_init(&ctx);
@@ -544,7 +544,7 @@ mod tests {
     #[concordium_test]
     fn test_mint() {
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
         ctx.set_owner(ACCOUNT_0);
 
@@ -560,7 +560,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
         let mut state = State::empty();
 
         // Call the contract function.
@@ -623,7 +623,7 @@ mod tests {
     #[concordium_test]
     fn test_transfer_account() {
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
         // and parameter.
@@ -638,7 +638,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
         let mut state = initial_state();
 
         // Call the contract function.
@@ -678,7 +678,7 @@ mod tests {
     #[concordium_test]
     fn test_transfer_not_authorized() {
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         // and parameter.
@@ -693,7 +693,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
         let mut state = initial_state();
 
         // Call the contract function.
@@ -708,7 +708,7 @@ mod tests {
     #[concordium_test]
     fn test_operator_transfer() {
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
         // and parameter.
@@ -723,7 +723,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
         let mut state = initial_state();
         state.add_operator(&ADDRESS_0, &ADDRESS_1);
 
@@ -764,7 +764,7 @@ mod tests {
     #[concordium_test]
     fn test_add_operator() {
         // Setup the context
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
         // and parameter.
@@ -776,7 +776,7 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut logger = LogRecorder::init();
+        let mut logger = TestLogger::init();
         let mut state = initial_state();
 
         // Call the contract function.
