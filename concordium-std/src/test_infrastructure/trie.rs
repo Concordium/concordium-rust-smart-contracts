@@ -3,7 +3,7 @@ use crate::{
     cell::{Cell, RefCell},
     collections::{btree_map, BTreeMap, HashMap as Map, VecDeque},
     rc::Rc,
-    StateEntryId, StateError, UnwrapAbort,
+    Box, StateEntryId, StateError, UnwrapAbort, Vec,
 };
 
 const BRANCHING_FACTOR: usize = 16;

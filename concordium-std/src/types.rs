@@ -1,4 +1,4 @@
-use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasStateApi};
+use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
 
 #[derive(Debug)]
 /// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.

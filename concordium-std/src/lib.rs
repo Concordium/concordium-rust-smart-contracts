@@ -197,11 +197,11 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 /// Re-export.
 #[cfg(not(feature = "std"))]
 pub use alloc::{
-    borrow::ToOwned, boxed, boxed::Box, string, string::String, string::ToString, vec, vec::Vec,
+    borrow::ToOwned, boxed, boxed::Box, rc, string, string::String, string::ToString, vec, vec::Vec,
 };
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use core::{cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc, result::*};
+pub use core::{cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, result::*};
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
 
