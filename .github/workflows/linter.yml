@@ -19,6 +19,7 @@ jobs:
         crates:
           - concordium-std/Cargo.toml
           - concordium-std-derive/Cargo.toml
+          - examples/recorder/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis1-multi/Cargo.toml
           - examples/cis1-nft/Cargo.toml
