@@ -706,7 +706,7 @@ impl HasStateApi for ExternStateApi {
             0 => Err(StateError::SubtreeLocked),
             1 => Err(StateError::EntryNotFound),
             2 => Ok(()),
-            _ => crate::fail!(), // Cannot happen.
+            _ => crate::trap(), // cannot happen
         }
     }
 
@@ -716,7 +716,7 @@ impl HasStateApi for ExternStateApi {
             0 => Err(StateError::SubtreeLocked),
             1 => Err(StateError::SubtreeWithPrefixNotFound),
             2 => Ok(()),
-            _ => crate::fail!(), // Cannot happen.
+            _ => crate::trap(), // cannot happen
         }
     }
 

@@ -963,6 +963,7 @@ impl<State> HasHost<State> for TestHost<State> {
                 Err(TransferError::AmountTooLarge)
             }
         } else {
+            self.transfers.borrow_mut().push((*receiver, amount));
             Ok(())
         }
     }
@@ -1082,7 +1083,8 @@ impl<State> TestHost<State> {
         self.transfers.borrow().contains(&(*receiver, amount))
     }
 
-    /// Get a list of all transfers that has occurred.
+    /// Get a list of all transfers that have occurred, in the order they
+    /// occurred in.
     pub fn get_transfers(&self) -> Vec<(AccountAddress, Amount)> {
         self.transfers.borrow().to_vec()
     }
