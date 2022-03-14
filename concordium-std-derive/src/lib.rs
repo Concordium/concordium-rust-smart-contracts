@@ -511,14 +511,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 
     // Embed a schema for the parameter and return value if the corresponding
     // attribute is set.
-    let parameter_option = init_attributes.optional.parameter.map(|a| a.value());
+    let parameter_option = init_attributes.optional.parameter;
     let return_value_option = None; // Return values are currently not supported on init.
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
-    ));
+    )?);
 
     ast.to_tokens(&mut out);
 
@@ -776,14 +776,14 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     // Embed a schema for the parameter and return value if the corresponding
     // attribute is set.
-    let parameter_option = receive_attributes.optional.parameter.map(|a| a.value());
-    let return_value_option = receive_attributes.optional.return_value.map(|a| a.value());
+    let parameter_option = receive_attributes.optional.parameter;
+    let return_value_option = receive_attributes.optional.return_value;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
-    ));
+    )?);
     // add the original function to the output as well.
     ast.to_tokens(&mut out);
     Ok(out.into())
@@ -824,33 +824,33 @@ fn contract_function_optional_args_tokens(
 
 #[cfg(feature = "build-schema")]
 fn contract_function_schema_tokens(
-    parameter_option: Option<String>,
-    return_value_option: Option<String>,
+    parameter_option: Option<syn::LitStr>,
+    return_value_option: Option<syn::LitStr>,
     rust_name: syn::Ident,
     wasm_name: String,
-) -> proc_macro2::TokenStream {
+) -> syn::Result<proc_macro2::TokenStream> {
     let construct_schema_bytes = match (parameter_option, return_value_option) {
         (Some(parameter_ty), Some(return_value_ty)) => {
-            let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
-            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
-                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
                 let schema_bytes = concordium_std::to_bytes(&schema::Function::Both { parameter, return_value });
             })
         }
         (Some(parameter_ty), None) => {
-            let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
+                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
                 let schema_bytes = concordium_std::to_bytes(&schema::Function::Parameter(parameter));
             })
         }
         (None, Some(return_value_ty)) => {
-            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::ExternReturnValue(return_value));
+                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
             })
         }
         _ => None,
@@ -861,26 +861,26 @@ fn contract_function_schema_tokens(
     if let Some(construct_schema_bytes) = construct_schema_bytes {
         let schema_name = format!("concordium_schema_function_{}", wasm_name);
         let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
-        quote! {
+        Ok(quote! {
             #[export_name = #schema_name]
             pub extern "C" fn #schema_ident() -> *mut u8 {
                 #construct_schema_bytes
                 concordium_std::put_in_memory(&schema_bytes)
             }
-        }
+        })
     } else {
-        proc_macro2::TokenStream::new()
+        Ok(proc_macro2::TokenStream::new())
     }
 }
 
 #[cfg(not(feature = "build-schema"))]
 fn contract_function_schema_tokens(
-    _parameter_option: Option<String>,
-    _return_value_option: Option<String>,
+    _parameter_option: Option<syn::LitStr>,
+    _return_value_option: Option<syn::LitStr>,
     _rust_name: syn::Ident,
     _wasm_name: String,
-) -> proc_macro2::TokenStream {
-    proc_macro2::TokenStream::new()
+) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(proc_macro2::TokenStream::new())
 }
 
 /// Derive the Deserial trait. See the documentation of
