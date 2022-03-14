@@ -103,8 +103,11 @@ pub struct StateSetIter<'a, T, S: HasState> {
 /// The actual data is lazily loaded and thereafter cached in memory.
 ///
 /// Due to its laziness, a [`Self`] can be used to defer loading of data in your
-/// state. This is useful when parts of your state isn't used in every receive
+/// state. This is useful when part of your state isn't used in every receive
 /// method.
+///
+/// The type parameter `T` is the type stored in the box. The type parameter `S`
+/// is the state.
 pub struct StateBox<T, S> {
     pub(crate) prefix:     StateItemPrefix,
     pub(crate) state_api:  S,

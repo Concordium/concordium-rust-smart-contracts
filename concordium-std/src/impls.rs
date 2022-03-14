@@ -714,7 +714,7 @@ impl HasState for StateApiExtern {
         let res = unsafe { prims::state_delete_prefix(prefix.as_ptr(), prefix.len() as u32) };
         match res {
             0 => Err(StateError::SubtreeLocked),
-            1 => Err(StateError::EntryNotFound),
+            1 => Err(StateError::SubtreeWithPrefixNotFound),
             2 => Ok(()),
             _ => crate::fail!(), // Cannot happen.
         }
@@ -724,16 +724,13 @@ impl HasState for StateApiExtern {
         let prefix_start = prefix.as_ptr();
         let prefix_len = prefix.len() as u32; // Wasm usize == 32bit.
         let iterator_id = unsafe { prims::state_iterate_prefix(prefix_start, prefix_len) };
-        let all_ones = u64::MAX;
-        if iterator_id == all_ones {
-            return Err(StateError::IteratorLimitForPrefixExceeded);
+        match iterator_id {
+            OK_NONE => Err(StateError::SubtreeWithPrefixNotFound),
+            ERR => Err(StateError::IteratorLimitForPrefixExceeded),
+            iterator_id => Ok(StateIterExtern {
+                iterator_id,
+            }),
         }
-        if iterator_id | 1u64.rotate_right(2) == all_ones {
-            return Err(StateError::EntryNotFound);
-        }
-        Ok(StateIterExtern {
-            iterator_id,
-        })
     }
 
     fn delete_iterator(&mut self, iter: Self::IterType) {
@@ -750,19 +747,24 @@ impl HasState for StateApiExtern {
     }
 }
 
+/// Encoding of Ok(None) that is returned by some host functions.
+const OK_NONE: u64 = u64::MAX;
+/// Encoding of Err that is returned by some host functions.
+const ERR: u64 = u64::MAX & !(1u64 << 62);
+
 impl Iterator for StateIterExtern {
     type Item = StateEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
         let res = unsafe { prims::state_iterator_next(self.iterator_id) };
         match res {
-            // This means that an iterator never existed or was deleted.
+            OK_NONE => None,
+            // This next case means that an iterator never existed or was deleted.
             // In both cases, it is not possible to call `next` on such an iterator with the current
             // API. The only way to get an iterator is through
             // [HasState::iterator] and the only way to delete it is through
             // [HasState::delete_iterator].
-            u64::MAX => crate::fail!(),
-            _ if res | 1u64.rotate_right(2) == u64::MAX => None,
+            ERR => None,
             _ => {
                 // This will always return a valid size, because the iterator is guaranteed to
                 // exist.
@@ -913,22 +915,36 @@ where
     /// returns values in increasing order of keys, where keys are ordered
     /// lexicographically via their serializations.
     pub fn iter(&self) -> StateMapIter<'_, K, V, S> {
-        let state_iter = self.state_api.iterator(&self.prefix).unwrap_abort();
-        StateMapIter {
-            state_iter:       Some(state_iter),
-            state_api:        self.state_api.clone(),
-            _lifetime_marker: PhantomData,
+        match self.state_api.iterator(&self.prefix) {
+            Ok(state_iter) => StateMapIter {
+                state_iter:       Some(state_iter),
+                state_api:        self.state_api.clone(),
+                _lifetime_marker: PhantomData,
+            },
+            Err(StateError::SubtreeWithPrefixNotFound) => StateMapIter {
+                state_iter:       None,
+                state_api:        self.state_api.clone(),
+                _lifetime_marker: PhantomData,
+            },
+            _ => crate::trap(),
         }
     }
 
     /// Like [iter](Self::iter), but allows modifying the values during
     /// iterator.
     pub fn iter_mut(&mut self) -> StateMapIterMut<'_, K, V, S> {
-        let state_iter = self.state_api.iterator(&self.prefix).unwrap_abort();
-        StateMapIterMut {
-            state_iter:       Some(state_iter),
-            state_api:        self.state_api.clone(),
-            _lifetime_marker: PhantomData,
+        match self.state_api.iterator(&self.prefix) {
+            Ok(state_iter) => StateMapIterMut {
+                state_iter:       Some(state_iter),
+                state_api:        self.state_api.clone(),
+                _lifetime_marker: PhantomData,
+            },
+            Err(StateError::SubtreeWithPrefixNotFound) => StateMapIterMut {
+                state_iter:       None,
+                state_api:        self.state_api.clone(),
+                _lifetime_marker: PhantomData,
+            },
+            _ => crate::trap(),
         }
     }
 }
@@ -1079,11 +1095,18 @@ impl<T, S: HasState> StateSet<T, S> {
     /// returns elements in increasing order, where elements are ordered
     /// lexicographically via their serializations.
     pub fn iter(&self) -> StateSetIter<T, S> {
-        let state_iter = self.state_api.iterator(&self.prefix).unwrap_abort();
-        StateSetIter {
-            state_iter:       Some(state_iter),
-            state_api:        self.state_api.clone(),
-            _marker_lifetime: PhantomData,
+        match self.state_api.iterator(&self.prefix) {
+            Ok(state_iter) => StateSetIter {
+                state_iter:       Some(state_iter),
+                state_api:        self.state_api.clone(),
+                _marker_lifetime: PhantomData,
+            },
+            Err(StateError::SubtreeWithPrefixNotFound) => StateSetIter {
+                state_iter:       None,
+                state_api:        self.state_api.clone(),
+                _marker_lifetime: PhantomData,
+            },
+            _ => crate::trap(),
         }
     }
 }
