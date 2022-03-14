@@ -772,7 +772,13 @@ impl Iterator for StateIterExtern {
                 let mut key = Vec::with_capacity(key_size as usize);
                 // The key will always be read, because the iterator is guaranteed to exist.
                 unsafe {
-                    prims::state_iterator_key_read(self.iterator_id, key.as_mut_ptr(), key_size, 0)
+                    let num_read = prims::state_iterator_key_read(
+                        self.iterator_id,
+                        key.as_mut_ptr(),
+                        key_size,
+                        0,
+                    );
+                    key.set_len(num_read as usize);
                 };
                 Some(StateEntry::open(res, key))
             }
@@ -2078,6 +2084,7 @@ impl DeserialCtx for String {
 /// Blanket implementation for Deserial, which simply does not use the state
 /// argument.
 impl<D: Deserial, S: HasState> DeserialWithState<S> for D {
+    #[inline(always)]
     fn deserial_with_state<R: Read>(_state: &S, source: &mut R) -> ParseResult<Self> {
         Self::deserial(source)
     }
@@ -2086,6 +2093,7 @@ impl<D: Deserial, S: HasState> DeserialWithState<S> for D {
 /// Blanket implementation for DeserialCtx, which simply does not use the state
 /// argument.
 impl<D: DeserialCtx, S: HasState> DeserialCtxWithState<S> for D {
+    #[inline(always)]
     fn deserial_ctx_with_state<R: Read>(
         size_length: schema::SizeLength,
         ensure_ordered: bool,
