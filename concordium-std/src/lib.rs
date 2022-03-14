@@ -208,7 +208,8 @@ pub(crate) use std::vec;
 /// Re-export.
 #[cfg(feature = "std")]
 pub use std::{
-    boxed, cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc, string::String, vec::Vec,
+    boxed, boxed::Box, cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc,
+    string::String, vec::Vec,
 };
 
 /// Re-export.
