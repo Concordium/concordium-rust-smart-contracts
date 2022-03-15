@@ -16,9 +16,7 @@ struct InitParameter;
 
 /// Init function that creates a new contract.
 #[init(contract = "memo", parameter = "InitParameter", low_level)]
-fn memo_init(_ctx: &impl HasInitContext, _state: &mut impl HasStateApi) -> InitResult<()> {
-    Ok(())
-}
+fn memo_init(_ctx: &impl HasInitContext, _state: &mut impl HasStateApi) -> InitResult<()> { Ok(()) }
 
 const EXPECTED_PARAMETER_SIZE: u32 = 32;
 

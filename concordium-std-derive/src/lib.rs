@@ -1416,9 +1416,10 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 /// [`StateSet`](../concordium_std/struct.StateSet.html), or
 /// [`StateMap`](../concordium_std/struct.StateMap.html). Please note that it is
 /// necessary to specify the generic parameter name for the
-/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter. To do
-/// so, use the `#[concordium(state_parameter = "NameOfGenericParameter")]`
-/// attribute on the type you are deriving `DeserialWithState` for.
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
+/// To do so, use the `#[concordium(state_parameter =
+/// "NameOfGenericParameter")]` attribute on the type you are deriving
+/// `DeserialWithState` for.
 ///
 /// # Example
 /// ``` ignore
