@@ -94,7 +94,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
 
-        let _ = init(&ctx, &mut state_builder).expect("Init failed");
+        let _ = init(&ctx, &mut state_builder).expect_report("Init failed");
     }
 
     #[concordium_test]

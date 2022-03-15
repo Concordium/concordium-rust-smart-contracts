@@ -163,7 +163,7 @@ pub trait HasStateApi: Clone {
 
     /// Get an entry in the state.
     /// Returns an error if it is part of a locked subtree.
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError>;
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self>, StateError>;
 
     /// Create a new entry in the state.
     /// Returns an error if it is part of a locked subtree.

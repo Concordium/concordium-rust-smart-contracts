@@ -595,11 +595,11 @@ impl HasStateApi for TestStateApi {
         self.trie.borrow_mut().create_entry(key)
     }
 
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self>, StateError> {
         if let Some(state_entry) = self.trie.borrow_mut().lookup(key) {
             return Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry)));
         };
-        Ok(EntryRaw::Vacant(VacantEntryRaw::new(self.create(key)?)))
+        Ok(EntryRaw::Vacant(VacantEntryRaw::new(key, self.clone())))
     }
 
     fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.borrow().lookup(key) }
@@ -1120,13 +1120,16 @@ impl<State> TestHost<State> {
 mod test {
     use super::TestStateApi;
     use crate::{
-        cell::RefCell, rc::Rc, test_infrastructure::TestStateEntry, Deletable, EntryRaw,
-        HasStateApi, HasStateEntry, StateBuilder, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        cell::RefCell,
+        rc::Rc,
+        test_infrastructure::{TestStateBuilder, TestStateEntry},
+        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateMap, StateSet,
+        INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     /// Get an entry and unwrap the result.
-    fn get_entry(state: &mut TestStateApi, key: &[u8]) -> EntryRaw<TestStateEntry> {
+    fn get_entry(state: &mut TestStateApi, key: &[u8]) -> EntryRaw<TestStateApi> {
         state.entry(key).expect("Failed to get entry")
     }
 
@@ -1490,7 +1493,7 @@ mod test {
         let mut state = TestStateApi::new();
         get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
-        let entry = state.entry(&sub_key);
+        let entry = state.create(&sub_key);
         assert!(entry.is_err(), "Should not be able to create an entry under a locked subtree");
     }
 

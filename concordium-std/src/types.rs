@@ -145,7 +145,7 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 #[derive(Debug)]
 /// The [`StateRefMut<_, V, _>`] behaves like the type [`StateBox<V, _>`],
 /// but its lifetime is tied to the lifetime of some parent object. In that
-/// sense it is more like `&'mut V` except it does not implement
+/// sense it is more like `&mut V` except it does not implement
 /// [crate::ops::DerefMut] since that would allow updates that would not be
 /// properly reflected in contract state.
 pub struct StateRefMut<'a, V, S> {
@@ -182,14 +182,14 @@ pub struct StateEntry {
     pub(crate) current_position: u32,
 }
 
-#[repr(transparent)]
 /// A view into a vacant entry in a [`HasStateApi`][`crate::HasStateApi`] type.
 /// It is part of the [`EntryRaw`] enum.
 ///
 /// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
 /// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
-pub struct VacantEntryRaw<StateEntryType> {
-    pub(crate) state_entry: StateEntryType,
+pub struct VacantEntryRaw<S> {
+    pub(crate) key:       Vec<u8>,
+    pub(crate) state_api: S,
 }
 
 #[repr(transparent)]
@@ -198,8 +198,8 @@ pub struct VacantEntryRaw<StateEntryType> {
 ///
 /// Differs from [`OccupiedEntry`] in that this has access to the raw bytes
 /// stored in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
-pub struct OccupiedEntryRaw<StateEntryType> {
-    pub(crate) state_entry: StateEntryType,
+pub struct OccupiedEntryRaw<StateApi: HasStateApi> {
+    pub(crate) state_entry: StateApi::EntryType,
 }
 
 /// A view into a single entry in a [`HasStateApi`][`crate::HasStateApi`] type,
@@ -207,9 +207,9 @@ pub struct OccupiedEntryRaw<StateEntryType> {
 ///
 /// This `enum` is constructed from the [`entry`][crate::HasStateApi::entry]
 /// method on a [`HasStateApi`][crate::HasStateApi] type.
-pub enum EntryRaw<StateEntryType> {
-    Vacant(VacantEntryRaw<StateEntryType>),
-    Occupied(OccupiedEntryRaw<StateEntryType>),
+pub enum EntryRaw<StateApi: HasStateApi> {
+    Vacant(VacantEntryRaw<StateApi>),
+    Occupied(OccupiedEntryRaw<StateApi>),
 }
 
 /// A view into a vacant entry in a [`StateMap`]. It is
@@ -217,9 +217,10 @@ pub enum EntryRaw<StateEntryType> {
 ///
 /// Differs from [`VacantEntryRaw`] in that this automatically handles
 /// serialization.
-pub struct VacantEntry<'a, K, V, StateEntryType> {
+pub struct VacantEntry<'a, K, V, S> {
     pub(crate) key:              K,
-    pub(crate) state_entry:      StateEntryType,
+    pub(crate) key_bytes:        Vec<u8>,
+    pub(crate) state_api:        S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
@@ -248,9 +249,9 @@ impl<'a, K, V, StateEntryType> crate::ops::Deref for OccupiedEntry<'a, K, V, Sta
 ///
 /// This `enum` is constructed from the [`entry`][StateMap::entry] method
 /// on a [`StateMap`] type.
-pub enum Entry<'a, K, V, S> {
+pub enum Entry<'a, K, V, S: HasStateApi> {
     Vacant(VacantEntry<'a, K, V, S>),
-    Occupied(OccupiedEntry<'a, K, V, S>),
+    Occupied(OccupiedEntry<'a, K, V, S::EntryType>),
 }
 
 #[derive(Default)]

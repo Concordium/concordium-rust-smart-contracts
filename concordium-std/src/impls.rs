@@ -407,36 +407,33 @@ impl Write for StateEntry {
     }
 }
 
-impl<StateEntryType> VacantEntryRaw<StateEntryType>
-where
-    StateEntryType: HasStateEntry,
-{
+impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
     /// Create a new `VacantEntryRaw`.
-    pub(crate) fn new(state_entry: StateEntryType) -> Self {
+    pub(crate) fn new(key: &[u8], state_api: StateApi) -> Self {
         Self {
-            state_entry,
+            key: key.into(),
+            state_api,
         }
     }
 
     /// Gets a reference to the key that would be used when inserting a value
     /// through the `VacantEntryRaw`.
-    pub fn key(&self) -> &[u8] { self.state_entry.get_key() }
+    #[inline(always)]
+    pub fn key(&self) -> &[u8] { &self.key }
 
-    /// Sets the value of the entry with the `VacantEntryRaw`’s key, and returns
-    /// a [`HasStateEntry`] type which corresponds to the data in the state.
-    pub fn insert(mut self, value: &[u8]) -> StateEntryType {
-        self.state_entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
-        self.state_entry
+    /// Sets the value of the entry with the `VacantEntryRaw`’s key.
+    pub fn insert(mut self, value: &[u8]) -> Result<StateApi::EntryType, StateError> {
+        let mut entry = self.state_api.create(&self.key)?;
+        entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
+        entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        Ok(entry)
     }
 }
 
-impl<StateEntryType> OccupiedEntryRaw<StateEntryType>
-where
-    StateEntryType: HasStateEntry,
+impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi>
 {
     /// Create a new `OccupiedEntryRaw`.
-    pub(crate) fn new(state_entry: StateEntryType) -> Self {
+    pub(crate) fn new(state_entry: StateApi::EntryType) -> Self {
         Self {
             state_entry,
         }
@@ -447,19 +444,19 @@ where
     pub fn key(&self) -> &[u8] { self.state_entry.get_key() }
 
     /// Gets a reference to the [`HasStateEntry`] type in the entry.
-    pub fn get_ref(&self) -> &StateEntryType { &self.state_entry }
+    pub fn get_ref(&self) -> &StateApi::EntryType { &self.state_entry }
 
     /// Converts the entry into its [`HasStateEntry`] type.
     ///
     /// If you need multiple mutable references to the `OccupiedEntryRaw`, see
     /// [`get_mut`][Self::get_mut].
-    pub fn get(self) -> StateEntryType { self.state_entry }
+    pub fn get(self) -> StateApi::EntryType { self.state_entry }
 
     /// Gets a mutable reference to the [`HasStateEntry`] type in the entry.
     ///
     /// If you need access to a [`HasStateEntry`], which can outlive the
     /// `OccupiedEntryRaw`, see [`get`][Self::get].
-    pub fn get_mut(&mut self) -> &mut StateEntryType { &mut self.state_entry }
+    pub fn get_mut(&mut self) -> &mut StateApi::EntryType { &mut self.state_entry }
 
     /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
     pub fn insert(&mut self, value: &[u8]) {
@@ -472,15 +469,12 @@ where
     }
 }
 
-impl<StateEntryType> EntryRaw<StateEntryType>
-where
-    StateEntryType: HasStateEntry,
-{
+impl<StateApi: HasStateApi> EntryRaw<StateApi> {
     /// Ensures a value is in the entry by inserting the default if empty, and
     /// returns the [`HasStateEntry`] type for the entry.
-    pub fn or_insert(self, default: &[u8]) -> StateEntryType {
+    pub fn or_insert(self, default: &[u8]) -> StateApi::EntryType {
         match self {
-            EntryRaw::Vacant(vac) => vac.insert(default),
+            EntryRaw::Vacant(vac) => vac.insert(default).unwrap_abort(),
             EntryRaw::Occupied(occ) => occ.get(),
         }
     }
@@ -494,17 +488,18 @@ where
     }
 }
 
-impl<'a, K, V, StateEntryType> VacantEntry<'a, K, V, StateEntryType>
+impl<'a, K, V, StateApi> VacantEntry<'a, K, V, StateApi>
 where
     K: Serial,
     V: Serial,
-    StateEntryType: HasStateEntry,
+    StateApi: HasStateApi,
 {
     /// Create a new `VacantEntry`.
-    pub(crate) fn new(key: K, state_entry: StateEntryType) -> Self {
+    pub(crate) fn new(key: K, key_bytes: Vec<u8>, state_api: StateApi) -> Self {
         Self {
             key,
-            state_entry,
+            key_bytes,
+            state_api,
             _lifetime_marker: PhantomData,
         }
     }
@@ -516,15 +511,15 @@ where
     pub fn into_key(self) -> K { self.key }
 
     /// Sets the value of the entry with the `VacantEntry`'s key.
-    pub fn insert(mut self, value: V) -> OccupiedEntry<'a, K, V, StateEntryType> {
+    pub fn insert(mut self, value: V) -> OccupiedEntry<'a, K, V, StateApi::EntryType> {
         // Writing to state cannot fail.
-        // TODO: This is subtle. Should we normalize to 0 first, and reset the cursor?
-        value.serial(&mut self.state_entry).unwrap_abort();
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        let mut state_entry = self.state_api.create(&self.key_bytes).unwrap_abort();
+        value.serial(&mut state_entry).unwrap_abort();
+        state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
         OccupiedEntry {
             key: self.key,
             value,
-            state_entry: self.state_entry,
+            state_entry,
             _lifetime_marker: self._lifetime_marker,
         }
     }
@@ -596,14 +591,14 @@ where
     }
 }
 
-impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
+impl<'a, K, V, StateApi> Entry<'a, K, V, StateApi>
 where
     K: Serial,
     V: Serial,
-    StateEntryType: HasStateEntry,
+    StateApi: HasStateApi,
 {
     /// Ensures a value is in the entry by inserting the default if empty.
-    pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateEntryType> {
+    pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateApi::EntryType> {
         match self {
             Entry::Vacant(vac) => vac.insert(default),
             Entry::Occupied(oe) => oe,
@@ -612,7 +607,7 @@ where
 
     /// Ensures a value is in the entry by inserting the result of the default
     /// function if empty.
-    pub fn or_insert_with<F>(self, default: F) -> OccupiedEntry<'a, K, V, StateEntryType>
+    pub fn or_insert_with<F>(self, default: F) -> OccupiedEntry<'a, K, V, StateApi::EntryType>
     where
         F: FnOnce() -> V, {
         match self {
@@ -624,7 +619,7 @@ where
     /// Try to modify the entry using the given function.
     /// TODO: This might not be needed now that the high-level API unwraps the
     /// potential results.
-    pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<'a, K, V, StateEntryType>, E>
+    pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<'a, K, V, StateApi>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
         if let Entry::Occupied(ref mut occ) = self {
@@ -634,7 +629,7 @@ where
     }
 
     /// Modify the entry using the given function.
-    pub fn and_modify<F>(mut self, f: F) -> Entry<'a, K, V, StateEntryType>
+    pub fn and_modify<F>(mut self, f: F) -> Entry<'a, K, V, StateApi>
     where
         F: FnOnce(&mut V), {
         if let Entry::Occupied(ref mut occ) = self {
@@ -652,14 +647,14 @@ where
     }
 }
 
-impl<'a, K, V, StateEntryType> Entry<'a, K, V, StateEntryType>
+impl<'a, K, V, StateApi> Entry<'a, K, V, StateApi>
 where
     K: Serial,
     V: Serial + Default,
-    StateEntryType: HasStateEntry,
+    StateApi: HasStateApi,
 {
     /// Ensures a value is in the entry by inserting the default value if empty.
-    pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateEntryType> {
+    pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateApi::EntryType> {
         self.or_insert_with(Default::default)
     }
 }
@@ -673,15 +668,14 @@ impl HasStateApi for ExternStateApi {
     type EntryType = StateEntry;
     type IterType = ExternStateIter;
 
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self::EntryType>, StateError> {
+    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self>, StateError> {
         let key_start = key.as_ptr();
         let key_len = key.len() as u32; // Wasm usize == 32bit.
         let res = unsafe { prims::state_lookup_entry(key_start, key_len) };
 
         if res == u64::MAX {
-            // No entry exists. Create one.
-            let state_entry = self.create(key)?;
-            Ok(EntryRaw::Vacant(VacantEntryRaw::new(state_entry)))
+            // No entry exists. Record the key at which it should be created.
+            Ok(EntryRaw::Vacant(VacantEntryRaw::new(key, self.clone())))
         } else {
             // Lookup returned an entry.
             let entry_id = res;
@@ -821,7 +815,7 @@ where
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_api.entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&value_bytes);
+                let _ = vac.insert(&value_bytes).unwrap_abort();
                 None
             }
             EntryRaw::Occupied(mut occ) => {
@@ -835,11 +829,13 @@ where
     }
 
     /// Get an entry for the given key.
-    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S::EntryType> {
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S> {
         let key_bytes = self.key_with_map_prefix(&key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_api.entry(&key_bytes).unwrap_abort() {
-            EntryRaw::Vacant(vac) => Entry::Vacant(VacantEntry::new(key, vac.state_entry)),
+            EntryRaw::Vacant(_vac) => {
+                Entry::Vacant(VacantEntry::new(key, key_bytes, self.state_api.clone()))
+            }
             EntryRaw::Occupied(mut occ) => {
                 // Unwrapping is safe when using only the high-level API.
                 let value = V::deserial_with_state(&self.state_api, occ.get_mut()).unwrap_abort();
