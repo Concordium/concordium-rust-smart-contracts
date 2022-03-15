@@ -516,10 +516,17 @@ where
     pub fn into_key(self) -> K { self.key }
 
     /// Sets the value of the entry with the `VacantEntry`'s key.
-    pub fn insert(mut self, value: V) {
+    pub fn insert(mut self, value: V) -> OccupiedEntry<'a, K, V, StateEntryType> {
         // Writing to state cannot fail.
+        // TODO: This is subtle. Should we normalize to 0 first, and reset the cursor?
         value.serial(&mut self.state_entry).unwrap_abort();
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        OccupiedEntry {
+            key: self.key,
+            value,
+            state_entry: self.state_entry,
+            _lifetime_marker: self._lifetime_marker,
+        }
     }
 }
 
@@ -596,19 +603,21 @@ where
     StateEntryType: HasStateEntry,
 {
     /// Ensures a value is in the entry by inserting the default if empty.
-    pub fn or_insert(self, default: V) {
-        if let Entry::Vacant(vac) = self {
-            vac.insert(default);
+    pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateEntryType> {
+        match self {
+            Entry::Vacant(vac) => vac.insert(default),
+            Entry::Occupied(oe) => oe,
         }
     }
 
     /// Ensures a value is in the entry by inserting the result of the default
     /// function if empty.
-    pub fn or_insert_with<F>(self, default: F)
+    pub fn or_insert_with<F>(self, default: F) -> OccupiedEntry<'a, K, V, StateEntryType>
     where
         F: FnOnce() -> V, {
-        if let Entry::Vacant(vac) = self {
-            vac.insert(default())
+        match self {
+            Entry::Vacant(vac) => vac.insert(default()),
+            Entry::Occupied(oe) => oe,
         }
     }
 
@@ -649,8 +658,10 @@ where
     V: Serial + Default,
     StateEntryType: HasStateEntry,
 {
-    /// Ensures a valud is in the entry by inserting the default value if empty.
-    pub fn or_default(self) { self.or_insert_with(Default::default) }
+    /// Ensures a value is in the entry by inserting the default value if empty.
+    pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateEntryType> {
+        self.or_insert_with(Default::default)
+    }
 }
 
 const NEXT_ITEM_PREFIX_KEY: u64 = 0;
@@ -861,8 +872,9 @@ where
     /// previously in the map.
     ///
     /// *Caution*: If `V` is a [StateBox], [StateMap], then it is
-    /// important to call `Deletable::delete` on the value returned when you're
-    /// finished with it. Otherwise, it will remain in the contract state.
+    /// important to call [`Deletable::delete`] on the value returned when
+    /// you're finished with it. Otherwise, it will remain in the contract
+    /// state.
     #[must_use]
     pub fn remove_and_get(&mut self, key: &K) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(key);
@@ -970,6 +982,7 @@ where
             offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
+        // TODO: This is inefficient. There's no need to allocate the entry.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
         let v = V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
         Some((StateRef::new(k), StateRef::new(v)))
@@ -991,6 +1004,7 @@ where
             offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
+        // TODO: This is inefficient. There's no need to allocate the entry.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
         let v = V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
         Some((StateRef::new(k), StateRefMut::new(v, &key_bytes, self.state_api.clone())))

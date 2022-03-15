@@ -115,10 +115,11 @@ pub struct StateBox<T, S> {
 }
 
 #[derive(Debug)]
-/// The [`StateRef`] behaves like the type `&'a V` in the way that it can be
-/// accessed.
+/// The [`StateRef`] behaves like the type `&'a V`, except that it is not
+/// copyable.
 ///
-/// Implements [`Deref`][crate::ops::Deref] for ease of use.
+/// The type implements [`Deref`][crate::ops::Deref] to `V`, and that is the
+/// intended, and only, way to use it.
 pub struct StateRef<'a, V> {
     pub(crate) value:            V,
     pub(crate) _marker_lifetime: PhantomData<&'a V>,
@@ -142,8 +143,11 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 }
 
 #[derive(Debug)]
-/// The [`StateRefMut<_, V, _>`] behaves like the type [`StateBox<V, _>`] in the
-/// way that it can be accessed.
+/// The [`StateRefMut<_, V, _>`] behaves like the type [`StateBox<V, _>`],
+/// but its lifetime is tied to the lifetime of some parent object. In that
+/// sense it is more like `&'mut V` except it does not implement
+/// [crate::ops::DerefMut] since that would allow updates that would not be
+/// properly reflected in contract state.
 pub struct StateRefMut<'a, V, S> {
     pub(crate) state_box:        StateBox<V, S>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
@@ -230,6 +234,13 @@ pub struct OccupiedEntry<'a, K, V, StateEntryType> {
     pub(crate) value:            V,
     pub(crate) state_entry:      StateEntryType,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
+}
+
+impl<'a, K, V, StateEntryType> crate::ops::Deref for OccupiedEntry<'a, K, V, StateEntryType> {
+    type Target = V;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target { &self.value }
 }
 
 /// A view into a single entry in a [`StateMap`], which

@@ -1043,6 +1043,9 @@ impl<State> TestHost<State> {
         }
     }
 
+    /// Retrieve a reference to the underlying state builder.
+    pub fn state_builder(&mut self) -> &mut StateBuilder<TestStateApi> { &mut self.state_builder }
+
     /// Set up a mock entrypoint for handling calls to `invoke_contract`.
     ///
     /// If you set up multiple handlers for the same entrypoint (to, method),
