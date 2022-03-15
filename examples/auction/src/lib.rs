@@ -42,9 +42,8 @@ pub struct State<S> {
     /// The highest bid so far (stored explicitly so that bidders can quickly
     /// see it)
     highest_bid:   Amount,
-    /// The sold item (to be displayed to the auction participants), encoded in
-    /// ASCII
-    item:          Vec<u8>,
+    /// The sold item (to be displayed to the auction participants).
+    item:          String,
     /// Expiration time of the auction at which bids will be closed (to be
     /// displayed to the auction participants)
     expiry:        Timestamp,
@@ -55,8 +54,8 @@ pub struct State<S> {
 /// Type of the parameter to the `init` function.
 #[derive(Serialize, SchemaType)]
 struct InitParameter {
-    /// The item to be sold, as a sequence of ASCII codes.
-    item:   Vec<u8>,
+    /// The item to be sold.
+    item:   String,
     /// Time of the auction end in the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
     expiry: Timestamp,
 }
@@ -197,7 +196,7 @@ mod tests {
 
     fn item_expiry_parameter() -> InitParameter {
         InitParameter {
-            item:   ITEM.as_bytes().to_vec(),
+            item:   ITEM.into(),
             expiry: Timestamp::from_timestamp_millis(AUCTION_END),
         }
     }
