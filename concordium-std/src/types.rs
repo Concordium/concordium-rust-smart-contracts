@@ -167,6 +167,7 @@ impl<'a, V, S> StateRefMut<'a, V, S> {
 #[repr(transparent)]
 /// An iterator over a part of the state. Its implementation is supported by
 /// host calls.
+#[doc(hidden)]
 pub struct ExternStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
@@ -257,6 +258,7 @@ pub enum Entry<'a, K, V, S: HasStateApi> {
 #[derive(Default)]
 /// A type representing the parameter to init and receive methods.
 /// Its trait implementations are backed by host functions.
+#[doc(hidden)]
 pub struct ExternParameter {
     pub(crate) current_position: u32,
 }
@@ -273,6 +275,7 @@ pub struct ExternParameter {
 /// This type is designed to be used via its [Read](crate::Read) and
 /// [HasCallResponse](crate::HasCallResponse) traits.
 #[derive(Debug)]
+#[doc(hidden)]
 pub struct ExternCallResponse {
     /// The index of the call response.
     pub(crate) i:                NonZeroU32,

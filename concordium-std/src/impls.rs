@@ -430,8 +430,7 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
     }
 }
 
-impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi>
-{
+impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
     /// Create a new `OccupiedEntryRaw`.
     pub(crate) fn new(state_entry: StateApi::EntryType) -> Self {
         Self {

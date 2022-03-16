@@ -236,7 +236,7 @@ pub trait HasHost<State> {
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType>;
 
-    /// Get an immutable refernce to the contract state.
+    /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;
 
     /// Get a mutable reference to the contract state.
