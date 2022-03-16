@@ -1531,7 +1531,7 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         }
     };
 
-    let variant_error_conversions = generate_variant_error_conversions(&enum_data, &enum_ident)?;
+    let variant_error_conversions = generate_variant_error_conversions(enum_data, enum_ident)?;
 
     let gen = quote! {
         /// The from implementation maps the first variant to -1, second to -2, etc.
@@ -1621,7 +1621,7 @@ fn parse_attr_and_gen_error_conversions(
                     syn::NestedMeta::Lit(l) => return Err(wrong_from_usage(&l)),
                 }
             }
-            Ok(from_error_token_stream(&from_error_names, &enum_name, variant_name).collect())
+            Ok(from_error_token_stream(&from_error_names, enum_name, variant_name).collect())
         }
         Ok(syn::Meta::NameValue(mnv)) if mnv.path.is_ident("from") => Err(wrong_from_usage(&mnv)),
         _ => Ok(vec![]),
