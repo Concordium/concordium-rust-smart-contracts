@@ -1713,3 +1713,28 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
     };
     out.into()
 }
+
+/// If `wasm-test` feature of `concordium-std` is enabled ignore the item,
+/// this usually happens when executing tests with `cargo-concordium` utility.
+/// Otherwise this is equivalent to `#[cfg(not(test))]`. Use as a dual to
+/// `#[concordium_cfg_test]`.
+#[cfg(feature = "wasm-test")]
+#[proc_macro_attribute]
+pub fn concordium_cfg_not_test(_attr: TokenStream, _item: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
+/// If `wasm-test` feature of `concordium-std` is enabled ignore the item,
+/// this usually happens when executing tests with `cargo-concordium` utility.
+/// Otherwise this is equivalent to `#[cfg(not(test))]`. Use as a dual to
+/// `#[concordium_cfg_test]`.
+#[cfg(not(feature = "wasm-test"))]
+#[proc_macro_attribute]
+pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let item = proc_macro2::TokenStream::from(item);
+    let out = quote! {
+        #[cfg(not(test))]
+        #item
+    };
+    out.into()
+}
