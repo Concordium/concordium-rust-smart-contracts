@@ -37,13 +37,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
-#[derive(Serialize, SchemaType, Clone)]
-struct StateStruct {
+#[derive(Serialize, SchemaType)]
+struct State {
     weather_service: ContractAddress,
 }
-type State<S> = Persisted<StateStruct, S>;
 
-#[derive(Serialize, SchemaType, Clone)]
+#[derive(Serialize, SchemaType, Clone, Copy)]
 enum Weather {
     Rainy,
     Sunny,
@@ -54,29 +53,27 @@ enum Weather {
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
-) -> InitResult<((), State<S>)> {
+) -> InitResult<State> {
     let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
-    let return_value = ();
-    let initial_state = Persisted::new(StateStruct {
+    Ok(State {
         weather_service,
-    });
-    Ok((return_value, initial_state))
+    })
 }
 
 /// Attempt purchasing icecream from the icecream vendor.
-#[receive(contract = "icecream", name = "buy_icecream", parameter = "AccountAddress", payable)]
+#[receive(
+    contract = "icecream",
+    name = "buy_icecream",
+    parameter = "AccountAddress",
+    payable,
+    mutable
+)]
 fn contract_buy_icecream<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State, StateApiType = S>,
     amount: Amount,
 ) -> ReceiveResult<()> {
-    let weather_service = host
-        .state()
-        .get()
-        .expect("Not found in state")
-        .expect("Could not parse as weather service address")
-        .weather_service
-        .clone();
+    let weather_service = host.state().weather_service;
     let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
 
     let weather = host
@@ -106,17 +103,19 @@ fn contract_buy_icecream<S: HasStateApi>(
 
 /// Replace the weather service with another.
 /// Only the owner of the contract can do so.
-#[receive(contract = "icecream", name = "replace_weather_service", parameter = "ContractAddress")]
+#[receive(
+    contract = "icecream",
+    name = "replace_weather_service",
+    parameter = "ContractAddress",
+    mutable
+)]
 fn contract_replace_weather_service<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender());
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
-    host.state()
-        .update(|state_struct| state_struct.weather_service = new_weather_service)
-        .expect("Not found in state")
-        .expect("Could not parse state");
+    host.state_mut().weather_service = new_weather_service;
     Ok(())
 }
 
@@ -127,35 +126,28 @@ fn contract_replace_weather_service<S: HasStateApi>(
 fn weather_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
-) -> InitResult<((), Persisted<Weather, S>)> {
-    let return_value = ();
+) -> InitResult<Weather> {
     let weather = ctx.parameter_cursor().get()?;
-    let initial_state = Persisted::new(weather);
-    Ok((return_value, initial_state))
+    Ok(weather)
 }
 
 /// Get the current weather.
 #[receive(contract = "weather", name = "get", return_value = "Weather")]
 fn weather_get<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>, StateApiType = S>,
+    host: &impl HasHost<Weather, StateApiType = S>,
 ) -> ReceiveResult<Weather> {
-    Ok(host
-        .state()
-        .get()
-        .expect("Weather is not saved in state")
-        .expect("Could not parse state as weather")
-        .clone())
+    Ok(*host.state())
 }
 
 /// Update the weather.
-#[receive(contract = "weather", name = "set", parameter = "Weather")]
+#[receive(contract = "weather", name = "set", parameter = "Weather", mutable)]
 fn weather_set<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Persisted<Weather, S>, StateApiType = S>,
+    host: &mut impl HasHost<Weather, StateApiType = S>,
 ) -> ReceiveResult<()> {
     assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can update the weather.
-    host.state().set(ctx.parameter_cursor().get()?);
+    *host.state_mut() = ctx.parameter_cursor().get()?;
     Ok(())
 }
 
@@ -180,9 +172,9 @@ mod tests {
     fn test_sunny_days() {
         // Arrange
         let mut ctx = TestReceiveContext::empty();
-        let state = Persisted::new(StateStruct {
+        let state = State {
             weather_service: WEATHER_SERVICE,
-        });
+        };
         let mut host = TestHost::new(state);
 
         // Set up context
@@ -216,9 +208,9 @@ mod tests {
     fn test_rainy_days() {
         // Arrange
         let mut ctx = TestReceiveContext::empty();
-        let state = Persisted::new(StateStruct {
+        let state = State {
             weather_service: WEATHER_SERVICE,
-        });
+        };
         let mut host = TestHost::new(state);
 
         // Set up context
@@ -244,14 +236,16 @@ mod tests {
         assert_eq!(host.get_transfers(), &[(INVOKER_ADDR, ICECREAM_PRICE)]); // Check that this is the only transfer.
     }
 
+    // TODO: Use a custom error type and check the result instead of using panics,
+    // because they can't be caught in wasm (i.e. with cargo concordium test).
     #[concordium_test]
     #[should_panic(expected = "Sending CCD to the icecream vendor failed.: MissingAccount")]
     fn test_missing_icecream_vendor() {
         // Arrange
         let mut ctx = TestReceiveContext::empty();
-        let state = Persisted::new(StateStruct {
+        let state = State {
             weather_service: WEATHER_SERVICE,
-        });
+        };
         let mut host = TestHost::new(state);
 
         // Set up context
@@ -276,14 +270,16 @@ mod tests {
         contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE).unwrap();
     }
 
+    // TODO: Use a custom error type and check the result instead of using panics,
+    // because they can't be caught in wasm (i.e. with cargo concordium test).
     #[concordium_test]
     #[should_panic(expected = "Invoking weather contract failed.: MissingContract")]
     fn test_missing_weather_service() {
         // Arrange
         let mut ctx = TestReceiveContext::empty();
-        let state = Persisted::new(StateStruct {
+        let state = State {
             weather_service: WEATHER_SERVICE,
-        });
+        };
         let mut host = TestHost::new(state);
 
         // Set up context
