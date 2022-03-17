@@ -1697,6 +1697,40 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
     Ok(test_fn.into())
 }
 
+#[proc_macro_attribute]
+/// Derive the appropriate export for an annotated quickcheck function, when feature "wasm-test" is enabled, otherwise behaves like `#[quickcheck]`.
+pub fn concordium_quickcheck(attr: TokenStream, item: TokenStream) -> TokenStream {
+    unwrap_or_report(concordium_quickcheck_worker(attr, item))
+}
+
+#[cfg(feature = "wasm-test")]
+fn concordium_quickcheck_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let quickcheck_fn_ast: syn::ItemFn =
+    attach_error(syn::parse(item), "#[concordium_quickcheck] can only be applied to functions.")?;
+
+    // todo use quickcheck with wasm32
+    let quickcheck_fn = quote! {
+        #[quickcheck]
+        #quickcheck_fn_ast
+    };
+    Ok(quickcheck_fn.into())
+}
+
+#[cfg(not(feature = "wasm-test"))]
+fn concordium_quickcheck_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let quickcheck_fn_ast: syn::ItemFn =
+    attach_error(syn::parse(item), "#[concordium_quickcheck] can only be applied to functions.")?;
+    
+    // todo import quickcheck macro
+    let quickcheck_fn = quote! {
+        #[quickcheck]
+        #quickcheck_fn_ast
+    };
+    Ok(quickcheck_fn.into())
+}
+
+
+
 /// Sets the cfg for testing targeting either Wasm and native.
 #[cfg(feature = "wasm-test")]
 #[proc_macro_attribute]
