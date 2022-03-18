@@ -665,6 +665,11 @@ pub struct StateBuilder<S> {
     pub(crate) state_api: S,
 }
 
+impl<S> StateBuilder<S> {
+    #[doc(hidden)]
+    pub fn into_inner(self) -> S { self.state_api }
+}
+
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]
 pub struct ExternStateApi {

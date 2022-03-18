@@ -713,10 +713,11 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     } else {
         let (host_ref, save_state_if_mutable) = if receive_attributes.mutable {
             (quote!(&mut host), quote! {
-                root_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-                host.state().serial(&mut root_entry).unwrap_abort();
-                let new_state_size = root_entry.size().unwrap_abort();
-                root_entry.truncate(new_state_size).unwrap_abort();
+                // look up the root entry again, since we might be in a different generation now
+                let mut root_entry_end = host.state_builder.into_inner().lookup(&[]).unwrap_abort();
+                host.state.serial(&mut root_entry_end).unwrap_abort();
+                let new_state_size = root_entry_end.size().unwrap_abort();
+                root_entry_end.truncate(new_state_size).unwrap_abort();
             })
         } else {
             (quote!(&host), quote!())
@@ -729,8 +730,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ExternReceiveContext>::open(());
                 let state_api = ExternStateApi::open();
-                let mut root_entry = state_api.lookup(&[]).unwrap_abort();
-                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut root_entry) {
+                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut state_api.lookup(&[]).unwrap_abort()) {
                     let mut state_builder = StateBuilder::open(state_api);
                     let mut host = ExternHost { state, state_builder };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
