@@ -7,7 +7,7 @@
 //! [Piggy Bank Tutorial](https://developer.concordium.software/en/mainnet/smart-contracts/tutorials/piggy-bank).
 //!
 //! Covers:
-//! - Reading owner, sender and self_balance from the context and host.
+//! - Reading owner, sender, and self_balance from the context and host.
 //! - The `ensure` macro.
 //! - The `payable` attribute.
 //! - The `mutable` attribute.
@@ -17,7 +17,7 @@
 use concordium_std::*;
 
 /// The state of the piggy bank
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq, Eq, Clone, Copy)]
 enum PiggyBankState {
     /// Alive and well, allows for CCD to be inserted.
     Intact,
@@ -71,4 +71,15 @@ fn piggy_smash<S: HasStateApi>(
     let balance = host.self_balance();
     // Result in a transfer of the whole balance to the contract owner.
     Ok(host.invoke_transfer(&owner, balance)?)
+}
+
+/// View the state and balance of the piggy bank.
+#[receive(contract = "PiggyBank", name = "view")]
+fn piggy_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<PiggyBankState, StateApiType = S>,
+) -> ReceiveResult<(PiggyBankState, Amount)> {
+    let current_state = *host.state();
+    let current_balance = host.self_balance();
+    Ok((current_state, current_balance))
 }

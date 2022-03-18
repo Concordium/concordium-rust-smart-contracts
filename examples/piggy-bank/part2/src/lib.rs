@@ -19,7 +19,7 @@
 use concordium_std::*;
 
 /// The state of the piggy bank
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq, Eq, Clone, Copy)]
 enum PiggyBankState {
     /// Alive and well, allows for CCD to be inserted.
     Intact,
@@ -86,6 +86,17 @@ fn piggy_smash<S: HasStateApi>(
     ensure!(transfer_result.is_ok(), SmashError::TransferError);
 
     Ok(())
+}
+
+/// View the state and balance of the piggy bank.
+#[receive(contract = "PiggyBank", name = "view")]
+fn piggy_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<PiggyBankState, StateApiType = S>,
+) -> ReceiveResult<(PiggyBankState, Amount)> {
+    let current_state = *host.state();
+    let current_balance = host.self_balance();
+    Ok((current_state, current_balance))
 }
 
 // Unit tests for the smart contract "PiggyBank"
@@ -244,5 +255,20 @@ mod tests {
             Err(SmashError::TransferError),
             "Expected to fail with error TransferError."
         );
+    }
+
+    #[concordium_test]
+    fn test_view() {
+        // Setup the context.
+        let ctx = TestReceiveContext::empty();
+        let mut host = TestHost::new(PiggyBankState::Intact);
+        let self_balance = Amount::from_ccd(99);
+        host.set_self_balance(self_balance);
+
+        // Call the view function.
+        let result = piggy_view(&ctx, &host);
+
+        // Check the result.
+        claim_eq!(result, Ok((PiggyBankState::Intact, self_balance)));
     }
 }
