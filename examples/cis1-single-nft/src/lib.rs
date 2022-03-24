@@ -161,7 +161,7 @@ impl State {
 #[init(contract = "CIS1-singleNFT", parameter = "MetadataUrl", enable_logger)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
+    _state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
 ) -> InitResult<State> {
     let metadata_url: MetadataUrl = ctx.parameter_cursor().get()?;
