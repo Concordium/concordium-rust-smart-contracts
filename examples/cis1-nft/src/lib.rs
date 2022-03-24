@@ -599,7 +599,7 @@ mod tests {
         let result: ContractResult<()> = contract_mint(&ctx, &mut host, &mut logger);
 
         // Check the result
-        claim!(result.is_ok(), "No action should be produced.");
+        claim!(result.is_ok(), "Results in rejection");
 
         // Check the state
         claim_eq!(host.state().all_tokens.len(), 2, "Expected two tokens in the state.");
@@ -676,7 +676,7 @@ mod tests {
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
         // Check the result.
-        claim!(result.is_ok(), "No action should be produced.");
+        claim!(result.is_ok(), "Results in rejection");
 
         // Check the state.
         let balance0 =
@@ -763,7 +763,7 @@ mod tests {
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
 
         // Check the result.
-        claim!(result.is_ok(), "No action should be produced.");
+        claim!(result.is_ok(), "Results in rejection");
 
         // Check the state.
         let balance0 =
@@ -817,7 +817,7 @@ mod tests {
         let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
 
         // Check the result.
-        claim!(result.is_ok(), "No action should be produced.");
+        claim!(result.is_ok(), "Results in rejection");
 
         // Check the state.
         let is_operator = host.state().is_operator(&ADDRESS_1, &ADDRESS_0);
