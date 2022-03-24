@@ -37,8 +37,8 @@ struct AddressState {
 }
 
 /// The contract state.
-#[contract_state(contract = "CIS1-singleNFT")]
 #[derive(Serialize, SchemaType)]
+#[concordium(state_parameter = "S")]
 struct State {
     /// The owner of the NFT
     owner:         Address,
@@ -159,7 +159,11 @@ impl State {
 
 /// Initialize contract instance with the one NFT.
 #[init(contract = "CIS1-singleNFT", parameter = "MetadataUrl", enable_logger)]
-fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    state_builder: &mut StateBuilder<S>,
+    logger: &mut impl HasLogger,
+) -> InitResult<State> {
     let metadata_url: MetadataUrl = ctx.parameter_cursor().get()?;
     let owner = Address::Account(ctx.init_origin());
 
@@ -201,19 +205,18 @@ type TransferParameter = TransferParams<ContractTokenId>;
     contract = "CIS1-singleNFT",
     name = "transfer",
     parameter = "TransferParameter",
+    mutable,
     enable_logger
 )]
-fn contract_transfer<A: HasActions>(
+fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
-    let mut actions = A::accept();
     for Transfer {
         token_id,
         amount,
@@ -223,10 +226,13 @@ fn contract_transfer<A: HasActions>(
     } in transfers
     {
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        ensure!(
+            from == sender || host.state().is_operator(&sender, &from),
+            ContractError::Unauthorized
+        );
         let to_address = to.address();
         // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address)?;
+        host.state_mut().transfer(&token_id, amount, &from, &to_address)?;
 
         // Log transfer event
         logger.log(&Cis1Event::Transfer(TransferEvent {
@@ -248,11 +254,17 @@ fn contract_transfer<A: HasActions>(
                 )),
                 data,
             };
-            let action = send(&address, function.as_ref(), Amount::zero(), &parameter);
-            actions = actions.and_then(action);
+
+            host.invoke_contract(
+                &address,
+                Parameter(&to_bytes(&parameter)),
+                function.as_receive_name().entrypoint_name(),
+                Amount::from_micro_ccd(amount),
+            )
+            .unwrap_abort();
         }
     }
-    Ok(actions)
+    Ok(())
 }
 
 /// Enable or disable addresses as operators of the sender address.
@@ -265,18 +277,19 @@ fn contract_transfer<A: HasActions>(
     contract = "CIS1-singleNFT",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
+    mutable,
     enable_logger
 )]
-fn contract_update_operator<A: HasActions>(
+fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     // Parse the parameter.
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
+    let state = host.state_mut();
     for param in params {
         // Update the operator in the state.
         match param.update {
@@ -292,7 +305,7 @@ fn contract_update_operator<A: HasActions>(
         }))?;
     }
 
-    Ok(A::accept())
+    Ok(())
 }
 
 /// Takes a list of queries. Each query is an owner address and some address to
@@ -302,27 +315,34 @@ fn contract_update_operator<A: HasActions>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CIS1-singleNFT", name = "operatorOf", parameter = "OperatorOfQueryParams")]
-fn contract_operator_of<A: HasActions>(
+#[receive(
+    contract = "CIS1-singleNFT",
+    name = "operatorOf",
+    parameter = "OperatorOfQueryParams",
+    mutable
+)]
+fn contract_operator_of(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State>,
+) -> ContractResult<()> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
+    let state = host.state();
     for query in params.queries {
         // Query the state for address being an operator of owner.
         let is_operator = state.is_operator(&query.owner, &query.address);
         response.push((query, is_operator));
     }
-    // Send back the response.
-    Ok(send(
+    host.invoke_contract(
         &params.result_contract,
-        params.result_function.as_ref(),
+        Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
+        params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
-        &OperatorOfQueryResponse::from(response),
-    ))
+    )
+    .unwrap_abort();
+    Ok(())
 }
 
 /// Parameter type for the CIS-1 function `balanceOf` specialized to the subset
@@ -338,28 +358,32 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 #[receive(
     contract = "CIS1-singleNFT",
     name = "balanceOf",
-    parameter = "ContractBalanceOfQueryParams"
+    parameter = "ContractBalanceOfQueryParams",
+    mutable
 )]
-fn contract_balance_of<A: HasActions>(
+fn contract_balance_of(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State>,
+) -> ContractResult<()> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
+    let state = host.state();
     for query in params.queries {
         // Query the state for balance.
         let amount = state.balance(&query.token_id, &query.address)?;
         response.push((query, amount));
     }
     // Send back the response.
-    Ok(send(
+    host.invoke_contract(
         &params.result_contract,
-        params.result_function.as_ref(),
+        Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
+        params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
-        &BalanceOfQueryResponse::from(response),
-    ))
+    )
+    .unwrap_abort();
+    Ok(())
 }
 
 /// Parameter type for the CIS-1 function `tokenMetadata` specialized to the
@@ -376,24 +400,28 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 #[receive(
     contract = "CIS1-singleNFT",
     name = "tokenMetadata",
-    parameter = "ContractTokenMetadataQueryParams"
+    parameter = "ContractTokenMetadataQueryParams",
+    mutable
 )]
-fn contract_token_metadata<A: HasActions>(
+fn contract_token_metadata(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State>,
+) -> ContractResult<()> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
+    let state = host.state();
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for token_id in params.queries {
         response.push((token_id, state.metadata_url.clone()));
     }
     // Send back the response.
-    Ok(send(
+    host.invoke_contract(
         &params.result_contract,
-        params.result_function.as_ref(),
+        Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
+        params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
-        &TokenMetadataQueryResponse::from(response),
-    ))
+    )
+    .unwrap_abort();
+    Ok(())
 }
