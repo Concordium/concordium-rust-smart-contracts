@@ -242,8 +242,7 @@ fn contract_transfer<S: HasStateApi>(
             to: to_address,
         }))?;
 
-        // If the receiver is a contract, we add sending it a message to the list of
-        // actions.
+        // If the receiver is a contract we call it.
         if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCis1Params {
                 token_id,
