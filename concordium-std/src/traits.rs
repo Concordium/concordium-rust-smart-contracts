@@ -245,6 +245,12 @@ pub trait HasHost<State> {
     /// Get the state_builder for the contract state.
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType>;
 
+    /// Get a mutable reference to both the state and the builder.
+    /// This is required due to limitations of the Rust type system. Once some
+    /// incarnation of "view types" is stable this can be removed, and the
+    /// types of `state_builder` and `state_mut` can be refined.
+    fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>);
+
     /// Get the contract balance.
     fn self_balance(&self) -> Amount;
 }

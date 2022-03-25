@@ -1694,7 +1694,13 @@ where
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
+    #[inline(always)]
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
+
+    #[inline(always)]
+    fn state_and_builder(&mut self) -> (&mut S, &mut StateBuilder<Self::StateApiType>) {
+        (&mut self.state, &mut self.state_builder)
+    }
 }
 
 impl HasHost<ExternStateApi> for ExternLowLevelHost {
@@ -1732,7 +1738,15 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         Amount::from_micro_ccd(unsafe { prims::get_receive_self_balance() })
     }
 
+    #[inline(always)]
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
+
+    #[inline(always)]
+    fn state_and_builder(
+        &mut self,
+    ) -> (&mut ExternStateApi, &mut StateBuilder<Self::StateApiType>) {
+        (&mut self.state_api, &mut self.state_builder)
+    }
 }
 
 /// # Trait implementations for the init context
