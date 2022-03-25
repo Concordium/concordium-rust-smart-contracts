@@ -1116,7 +1116,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
 
-    let source_ident = Ident::new("source", Span::call_site());
+    let source_ident = Ident::new("________________source", Span::call_site());
 
     let body_tokens = match ast.data {
         syn::Data::Struct(ref data) => {
@@ -1152,7 +1152,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         }
         syn::Data::Enum(ref data) => {
             let mut matches_tokens = proc_macro2::TokenStream::new();
-            let source = Ident::new("source", Span::call_site());
+            let source = Ident::new("________________source", Span::call_site());
             let size = if data.variants.len() <= 256 {
                 format_ident!("u8")
             } else if data.variants.len() <= 256 * 256 {
@@ -1440,6 +1440,7 @@ pub fn deserial_with_state_derive(input: TokenStream) -> TokenStream {
 
 fn impl_deserial_with_state_field(
     f: &syn::Field,
+    state_ident: &syn::Ident,
     ident: &syn::Ident,
     source: &syn::Ident,
     state_parameter: &syn::Ident,
@@ -1453,11 +1454,11 @@ fn impl_deserial_with_state_field(
         // Default size length is u32, i.e. 4 bytes.
         let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
         Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialCtxWithState<#state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, state, #source)?;
+            let #ident = <#ty as concordium_std::DeserialCtxWithState<#state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, #state_ident, #source)?;
         })
     } else {
         Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialWithState<#state_parameter>>::deserial_with_state(state, #source)?;
+            let #ident = <#ty as concordium_std::DeserialWithState<#state_parameter>>::deserial_with_state(#state_ident, #source)?;
         })
     }
 }
@@ -1475,8 +1476,9 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     let where_predicates = where_clauses.map(|c| c.predicates.clone());
 
-    let source_ident = Ident::new("source", Span::call_site());
+    let source_ident = Ident::new("________________source", Span::call_site());
 
+    let state_ident = Ident::new("_______________________________STATE", Span::call_site());
     let body_tokens = match ast.data {
         syn::Data::Struct(ref data) => {
             let mut names = proc_macro2::TokenStream::new();
@@ -1487,6 +1489,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                         let field_ident = field.ident.clone().unwrap(); // safe since named fields.
                         field_tokens.extend(impl_deserial_with_state_field(
                             field,
+                            &state_ident,
                             &field_ident,
                             &source_ident,
                             &state_parameter,
@@ -1500,6 +1503,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                         let field_ident = format_ident!("x_{}", i);
                         field_tokens.extend(impl_deserial_with_state_field(
                             f,
+                            &state_ident,
                             &field_ident,
                             &source_ident,
                             &state_parameter,
@@ -1517,7 +1521,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
         }
         syn::Data::Enum(ref data) => {
             let mut matches_tokens = proc_macro2::TokenStream::new();
-            let source = Ident::new("source", Span::call_site());
+            let source = Ident::new("________________source", Span::call_site());
             let size = if data.variants.len() <= 256 {
                 format_ident!("u8")
             } else if data.variants.len() <= 256 * 256 {
@@ -1528,6 +1532,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                     "[derive(DeserialWithState)]: Too many variants. Maximum 65536 are supported.",
                 ));
             };
+            let state_ident = Ident::new("_______________________________STATE", Span::call_site());
             for (i, variant) in data.variants.iter().enumerate() {
                 let (field_names, pattern) = match variant.fields {
                     syn::Fields::Named(_) => {
@@ -1549,12 +1554,17 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                     }
                     syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
                 };
-
                 let field_tokens: proc_macro2::TokenStream = field_names
                     .iter()
                     .zip(variant.fields.iter())
                     .map(|(name, field)| {
-                        impl_deserial_with_state_field(field, name, &source, &state_parameter)
+                        impl_deserial_with_state_field(
+                            field,
+                            &state_ident,
+                            name,
+                            &source,
+                            &state_parameter,
+                        )
                     })
                     .collect::<syn::Result<proc_macro2::TokenStream>>()?;
                 let idx_lit = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
@@ -1579,7 +1589,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
     let gen = quote! {
         #[automatically_derived]
         impl #impl_generics DeserialWithState<#state_parameter> for #data_name #ty_generics where #state_parameter : HasStateApi, #where_predicates {
-            fn deserial_with_state<#read_ident: Read>(state: &#state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
+            fn deserial_with_state<#read_ident: Read>(#state_ident: &#state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
                 #body_tokens
             }
         }
