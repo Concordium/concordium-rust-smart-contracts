@@ -299,9 +299,11 @@ fn contract_mint<S: HasStateApi>(
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
+    let (state, builder) = host.state_and_builder();
+
     for &token_id in params.tokens.iter() {
         // Mint the token in the state.
-        host.state_mut().mint(token_id, &params.owner, host.state_builder())?;
+        state.mint(token_id, &params.owner, builder)?;
 
         // Event for minted NFT.
         logger.log(&Cis1Event::Mint(MintEvent {
@@ -365,14 +367,15 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
+        let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
         ensure!(
-            from == sender || host.state().is_operator(&sender, &from),
+            from == sender || state.is_operator(&sender, &from),
             ContractError::Unauthorized
         );
         let to_address = to.address();
         // Update the contract state
-        host.state_mut().transfer(&token_id, amount, &from, &to_address, host.state_builder())?;
+        state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
         // Log transfer event
         logger.log(&Cis1Event::Transfer(TransferEvent {
@@ -427,15 +430,15 @@ fn contract_update_operator<S: HasStateApi>(
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
+    let (state, builder) = host.state_and_builder();
     for param in params {
         // Update the operator in the state.
         match param.update {
             OperatorUpdate::Add => {
-                host.state_mut().add_operator(&sender, &param.operator, host.state_builder())
+                state.add_operator(&sender, &param.operator, builder)
             }
             OperatorUpdate::Remove => {
-                host.state_mut().remove_operator(&sender, &param.operator, host.state_builder())
+                state.remove_operator(&sender, &param.operator, builder)
             }
         }
 
