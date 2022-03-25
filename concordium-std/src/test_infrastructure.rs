@@ -1019,6 +1019,10 @@ impl<State> HasHost<State> for TestHost<State> {
     fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
+
+    fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>) {
+        (&mut self.state, &mut self.state_builder)
+    }
 }
 
 impl<State> TestHost<State> {
