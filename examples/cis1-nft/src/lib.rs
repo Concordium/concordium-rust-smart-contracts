@@ -116,6 +116,7 @@ impl From<LogError> for CustomContractError {
     }
 }
 
+/// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
 }
@@ -396,8 +397,7 @@ fn contract_transfer<S: HasStateApi>(
                 Parameter(&to_bytes(&parameter)),
                 function.as_receive_name().entrypoint_name(),
                 Amount::zero(),
-            )
-            .unwrap_abort();
+            )?;
         }
     }
     Ok(())
