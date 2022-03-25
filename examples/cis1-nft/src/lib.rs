@@ -36,25 +36,22 @@ type ContractTokenId = TokenIdU8;
 
 /// The parameter for the contract function `mint` which mints a number of
 /// tokens to a given address.
-#[derive(SchemaType, Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-struct MintParams<S> {
+#[derive(Serial, Deserial)]
+struct MintParams {
     /// Owner of the newly minted tokens.
     owner:  Address,
     /// A collection of tokens to mint.
     #[concordium(size_length = 1)]
-    tokens: StateSet<ContractTokenId, S>,
+    tokens: collections::BTreeSet<ContractTokenId>,
 }
 
 /// The state for each address.
-#[derive(SchemaType, Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The tokens owned by this address.
-    #[concordium(size_length = 2)]
     owned_tokens: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
-    #[concordium(size_length = 1)]
     operators:    StateSet<Address, S>,
 }
 
@@ -70,13 +67,20 @@ impl<S: HasStateApi> AddressState<S> {
 /// The contract state.
 // Note: The specification does not specify how to structure the contract state
 // and this could be structured in a more space efficient way depending on the use case.
-#[derive(SchemaType, Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state for each address.
     state:      StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
     all_tokens: StateSet<ContractTokenId, S>,
+}
+
+impl <S: HasStateApi>Deletable for AddressState<S> {
+    fn delete(self) {
+        self.owned_tokens.delete();
+        self.operators.delete();
+    }
 }
 
 /// The custom errors the contract can produce.
@@ -139,7 +143,7 @@ impl<S: HasStateApi> State<S> {
     ) -> ContractResult<()> {
         ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
         let owner_address =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(&mut state_builder));
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         owner_address.owned_tokens.insert(token);
         Ok(())
     }
@@ -293,11 +297,11 @@ fn contract_mint<S: HasStateApi>(
     ensure!(sender.matches_account(&owner), ContractError::Unauthorized);
 
     // Parse the parameter.
-    let params: MintParams<S> = ctx.parameter_cursor().get()?;
+    let params: MintParams = ctx.parameter_cursor().get()?;
 
-    for token_id in params.tokens.iter() {
+    for &token_id in params.tokens.iter() {
         // Mint the token in the state.
-        host.state_mut().mint(*token_id, &params.owner, host.state_builder())?;
+        host.state_mut().mint(token_id, &params.owner, host.state_builder())?;
 
         // Event for minted NFT.
         logger.log(&Cis1Event::Mint(MintEvent {
@@ -581,7 +585,7 @@ mod tests {
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
-    fn initial_state(state_builder: &mut StateBuilder<S>) -> State {
+    fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         let mut state = State::empty(state_builder);
         state.mint(TOKEN_0, &ADDRESS_0).expect_report("Failed to mint TOKEN_0");
         state.mint(TOKEN_1, &ADDRESS_0).expect_report("Failed to mint TOKEN_0");
