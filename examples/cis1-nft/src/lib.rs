@@ -21,10 +21,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis1::*;
-use concordium_std::{
-    collections::{HashMap as Map, HashSet as Set},
-    *,
-};
+use concordium_std::*;
 
 /// The baseurl for the token metadata, gets appended with the token ID as hex
 /// encoding before emitted in the TokenMetadata event.
@@ -39,36 +36,47 @@ type ContractTokenId = TokenIdU8;
 
 /// The parameter for the contract function `mint` which mints a number of
 /// tokens to a given address.
-#[derive(Serialize, SchemaType)]
-struct MintParams {
+#[derive(SchemaType, Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct MintParams<S> {
     /// Owner of the newly minted tokens.
     owner:  Address,
     /// A collection of tokens to mint.
     #[concordium(size_length = 1)]
-    tokens: Set<ContractTokenId>,
+    tokens: StateSet<ContractTokenId, S>,
 }
 
 /// The state for each address.
-#[derive(Serialize, SchemaType, Default)]
-struct AddressState {
+#[derive(SchemaType, Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct AddressState<S> {
     /// The tokens owned by this address.
     #[concordium(size_length = 2)]
-    owned_tokens: Set<ContractTokenId>,
+    owned_tokens: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
     #[concordium(size_length = 1)]
-    operators:    Set<Address>,
+    operators:    StateSet<Address, S>,
+}
+
+impl<S: HasStateApi> AddressState<S> {
+    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+        AddressState {
+            owned_tokens: state_builder.new_set(),
+            operators:    state_builder.new_set(),
+        }
+    }
 }
 
 /// The contract state.
 // Note: The specification does not specify how to structure the contract state
 // and this could be structured in a more space efficient way depending on the use case.
+#[derive(SchemaType, Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-#[derive(Serialize, SchemaType)]
-struct State {
+struct State<S> {
     /// The state for each address.
-    state:      Map<Address, AddressState>,
+    state:      StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    all_tokens: Set<ContractTokenId>,
+    all_tokens: StateSet<ContractTokenId, S>,
 }
 
 /// The custom errors the contract can produce.
@@ -84,6 +92,8 @@ enum CustomContractError {
     /// Failing to mint new tokens because one of the token IDs already exists
     /// in this contract.
     TokenIdAlreadyExists,
+    /// Failed to invoke a contract.
+    InvokeContractError,
 }
 
 /// Wrapping the custom errors in a type with CIS1 errors.
@@ -101,25 +111,35 @@ impl From<LogError> for CustomContractError {
     }
 }
 
+impl<T> From<CallContractError<T>> for CustomContractError {
+    fn from(cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+}
+
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis1Error::Custom(c) }
 }
 
 // Functions for creating, updating and querying the contract state.
-impl State {
+impl<S: HasStateApi> State<S> {
     /// Creates a new state with no tokens.
-    fn empty() -> Self {
+    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         State {
-            state:      Map::default(),
-            all_tokens: Set::default(),
+            state:      state_builder.new_map(),
+            all_tokens: state_builder.new_set(),
         }
     }
 
     /// Mint a new token with a given address as the owner
-    fn mint(&mut self, token: ContractTokenId, owner: &Address) -> ContractResult<()> {
+    fn mint(
+        &mut self,
+        token: ContractTokenId,
+        owner: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) -> ContractResult<()> {
         ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
-        let owner_address = self.state.entry(*owner).or_insert_with(AddressState::default);
+        let owner_address =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(&mut state_builder));
         owner_address.owned_tokens.insert(token);
         Ok(())
     }
@@ -171,6 +191,7 @@ impl State {
         amount: TokenAmount,
         from: &Address,
         to: &Address,
+        state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
@@ -182,8 +203,7 @@ impl State {
         // address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
 
-        let from_address_state =
-            self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
+        let from_address_state = self.state.get(from).ok_or(ContractError::InsufficientFunds)?;
 
         // Find and remove the token from the owner, if nothing is removed, we know the
         // address did not own the token.
@@ -191,7 +211,8 @@ impl State {
         ensure!(from_had_the_token, ContractError::InsufficientFunds);
 
         // Add the token to the new owner.
-        let to_address_state = self.state.entry(*to).or_insert_with(AddressState::default);
+        let to_address_state =
+            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
         to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
@@ -199,15 +220,26 @@ impl State {
     /// Update the state adding a new operator for a given address.
     /// Succeeds even if the `operator` is already an operator for the
     /// `address`.
-    fn add_operator(&mut self, owner: &Address, operator: &Address) {
-        let owner_address_state = self.state.entry(*owner).or_insert_with(AddressState::default);
+    fn add_operator(
+        &mut self,
+        owner: &Address,
+        operator: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) {
+        let owner_address_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         owner_address_state.operators.insert(*operator);
     }
 
     /// Update the state removing an operator for a given address.
     /// Succeeds even if the `operator` is _not_ an operator for the `address`.
-    fn remove_operator(&mut self, owner: &Address, operator: &Address) {
-        self.state.get_mut(owner).map(|address_state| address_state.operators.remove(operator));
+    fn remove_operator(
+        &mut self,
+        owner: &Address,
+        operator: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) {
+        self.state.get(owner).map(|address_state| address_state.operators.remove(operator));
     }
 }
 
@@ -225,10 +257,10 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 #[init(contract = "CIS1-NFT")]
 fn contract_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
+    state_builder: &mut StateBuilder<S>,
+) -> InitResult<State<S>> {
     // Construct the initial contract state.
-    Ok(State::empty())
+    Ok(State::empty(state_builder))
 }
 
 /// Mint new tokens with a given address as the owner of these tokens.
@@ -250,7 +282,7 @@ fn contract_init<S: HasStateApi>(
 #[receive(contract = "CIS1-NFT", name = "mint", parameter = "MintParams", enable_logger, mutable)]
 fn contract_mint<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Get the contract owner
@@ -261,11 +293,11 @@ fn contract_mint<S: HasStateApi>(
     ensure!(sender.matches_account(&owner), ContractError::Unauthorized);
 
     // Parse the parameter.
-    let params: MintParams = ctx.parameter_cursor().get()?;
+    let params: MintParams<S> = ctx.parameter_cursor().get()?;
 
-    for token_id in params.tokens {
+    for token_id in params.tokens.iter() {
         // Mint the token in the state.
-        host.state_mut().mint(token_id, &params.owner)?;
+        host.state_mut().mint(*token_id, &params.owner, host.state_builder())?;
 
         // Event for minted NFT.
         logger.log(&Cis1Event::Mint(MintEvent {
@@ -313,7 +345,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 )]
 fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -336,7 +368,7 @@ fn contract_transfer<S: HasStateApi>(
         );
         let to_address = to.address();
         // Update the contract state
-        host.state_mut().transfer(&token_id, amount, &from, &to_address)?;
+        host.state_mut().transfer(&token_id, amount, &from, &to_address, host.state_builder())?;
 
         // Log transfer event
         logger.log(&Cis1Event::Transfer(TransferEvent {
@@ -384,7 +416,7 @@ fn contract_transfer<S: HasStateApi>(
 )]
 fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -395,8 +427,12 @@ fn contract_update_operator<S: HasStateApi>(
     for param in params {
         // Update the operator in the state.
         match param.update {
-            OperatorUpdate::Add => host.state_mut().add_operator(&sender, &param.operator),
-            OperatorUpdate::Remove => host.state_mut().remove_operator(&sender, &param.operator),
+            OperatorUpdate::Add => {
+                host.state_mut().add_operator(&sender, &param.operator, host.state_builder())
+            }
+            OperatorUpdate::Remove => {
+                host.state_mut().remove_operator(&sender, &param.operator, host.state_builder())
+            }
         }
 
         // Log the appropriate event
@@ -420,7 +456,7 @@ fn contract_update_operator<S: HasStateApi>(
 #[receive(contract = "CIS1-NFT", name = "operatorOf", parameter = "OperatorOfQueryParams", mutable)]
 fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -461,7 +497,7 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -502,7 +538,7 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -545,8 +581,8 @@ mod tests {
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
-    fn initial_state() -> State {
-        let mut state = State::empty();
+    fn initial_state(state_builder: &mut StateBuilder<S>) -> State {
+        let mut state = State::empty(state_builder);
         state.mint(TOKEN_0, &ADDRESS_0).expect_report("Failed to mint TOKEN_0");
         state.mint(TOKEN_1, &ADDRESS_0).expect_report("Failed to mint TOKEN_0");
         state
@@ -670,7 +706,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state();
+        let state = initial_state(TestStateBuilder::new());
         let mut host = TestHost::new(state);
 
         // Call the contract function.
@@ -725,7 +761,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state();
+        let state = initial_state(TestStateBuilder::new());
         let mut host = TestHost::new(state);
 
         // Call the contract function.
@@ -756,7 +792,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state();
+        let state = initial_state(TestStateBuilder::new());
         let mut host = TestHost::new(state);
         host.state_mut().add_operator(&ADDRESS_0, &ADDRESS_1);
         // Call the contract function.
@@ -810,7 +846,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state();
+        let state = initial_state(TestStateBuilder::new());
         let mut host = TestHost::new(state);
 
         // Call the contract function.
