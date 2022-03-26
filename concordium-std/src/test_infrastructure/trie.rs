@@ -3,7 +3,7 @@ use crate::{
     cell::{Cell, RefCell},
     collections::{btree_map, BTreeMap, HashMap as Map, VecDeque},
     rc::Rc,
-    Box, StateEntryId, StateError, UnwrapAbort, Vec,
+    Box, StateEntryId, StateError, Vec,
 };
 
 const BRANCHING_FACTOR: usize = 16;
@@ -15,7 +15,7 @@ pub(crate) struct StateTrie {
     nodes:           Node,
     next_entry_id:   Cell<StateEntryId>,
     entry_map:       RefCell<Map<StateEntryId, Vec<Index>>>,
-    iterator_counts: RefCell<BTreeMap<Vec<Index>, u16>>,
+    iterator_counts: RefCell<BTreeMap<Vec<Index>, u32>>,
 }
 
 impl Default for StateTrie {
@@ -77,7 +77,14 @@ impl StateTrie {
         }
 
         // Unwrapping is safe, because the subtree isn't locked.
-        let iterator = self.iterator(prefix).unwrap_abort();
+        // TODO: Getting an iterator is not OK here due to the bound.
+        let iterator = match self.iterator(prefix) {
+            Err(StateError::SubtreeWithPrefixNotFound) => {
+                return Err(StateError::SubtreeWithPrefixNotFound);
+            }
+            Err(e) => crate::fail!("Unexpected error in delete_prefix: {:?}", e),
+            Ok(v) => v,
+        };
 
         // Invalidate all the data in the deleted entries such that reading and writing
         // them will fail.
@@ -145,7 +152,7 @@ impl StateTrie {
                 let _ = vac.insert(1);
             }
             btree_map::Entry::Occupied(ref mut occ) => {
-                if *occ.get() == u16::MAX {
+                if *occ.get() == u32::MAX {
                     return Err(StateError::IteratorLimitForPrefixExceeded);
                 }
                 *occ.get_mut() += 1;
@@ -211,7 +218,6 @@ impl TestStateIter {
         }
 
         build_queue(trie, &mut queue, &mut root_index, root_of_iter);
-
         Self {
             prefix,
             queue,

@@ -2196,7 +2196,11 @@ where
         // delete, apart from the set itself.
 
         // Unwrapping is safe when only using the high-level API.
-        self.state_api.delete_prefix(&self.prefix).unwrap_abort()
+        match self.state_api.delete_prefix(&self.prefix) {
+            Err(StateError::SubtreeWithPrefixNotFound) => (),
+            Err(_) => crate::trap(),
+            Ok(_) => ()
+        }
     }
 }
 
@@ -2215,6 +2219,10 @@ where
 
         // Then delete the map itself.
         // Unwrapping is safe when only using the high-level API.
-        self.state_api.delete_prefix(&self.prefix).unwrap_abort()
+        match self.state_api.delete_prefix(&self.prefix) {
+            Err(StateError::SubtreeWithPrefixNotFound) => (),
+            Err(_) => crate::trap(),
+            Ok(_) => ()
+        }
     }
 }
