@@ -144,7 +144,7 @@ impl<S: HasStateApi> State<S> {
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
-        self.state.entry(*owner).or_insert(AddressState::empty(state_builder)).modify(
+        self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder)).modify(
             |owner_address| {
                 owner_address.owned_tokens.insert(token);
             },
