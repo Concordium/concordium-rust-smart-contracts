@@ -214,7 +214,7 @@ impl<S: HasStateApi> State<S> {
         self.state.remove_and_get(from).ok_or(ContractError::InsufficientFunds)?.delete();
 
         // Add the token to the new owner.
-        self.state.entry(*to).or_insert(AddressState::empty(state_builder)).modify(
+        self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder)).modify(
             |to_address_state| {
                 to_address_state.owned_tokens.insert(*token_id);
             },
@@ -231,7 +231,7 @@ impl<S: HasStateApi> State<S> {
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.state.entry(*owner).or_insert(AddressState::empty(state_builder)).modify(
+        self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder)).modify(
             |owner_address_state| {
                 owner_address_state.operators.insert(*operator);
             },
