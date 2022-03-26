@@ -631,8 +631,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(&mut &mut state_builder);
-
+        let state = State::empty(&mut state_builder);
         let mut host = TestHost::new_with_state_builder(state, state_builder);
 
         // Call the contract function.
@@ -717,8 +716,9 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state(&mut TestStateBuilder::new());
-        let mut host = TestHost::new(state);
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new_with_state_builder(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -772,8 +772,9 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state(&mut TestStateBuilder::new());
-        let mut host = TestHost::new(state);
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new_with_state_builder(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -803,10 +804,12 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
+
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state);
-        host.state_mut().add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
+        let mut state = initial_state(&mut state_builder);
+        state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
+        let mut host = TestHost::new_with_state_builder(state, state_builder);
+
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
 
@@ -858,8 +861,9 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = initial_state(&mut TestStateBuilder::new());
-        let mut host = TestHost::new(state);
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new_with_state_builder(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
