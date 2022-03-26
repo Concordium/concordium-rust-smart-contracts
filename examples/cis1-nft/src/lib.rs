@@ -472,8 +472,8 @@ fn contract_operator_of<S: HasStateApi>(
         Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
-    )
-    .unwrap_abort();
+    )?;
+
     Ok(())
 }
 
@@ -513,8 +513,8 @@ fn contract_balance_of<S: HasStateApi>(
         Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
-    )
-    .unwrap_abort();
+    )?;
+
     Ok(())
 }
 
@@ -559,8 +559,8 @@ fn contract_token_metadata<S: HasStateApi>(
         Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
-    )
-    .unwrap_abort();
+    )?;
+
     Ok(())
 }
 
