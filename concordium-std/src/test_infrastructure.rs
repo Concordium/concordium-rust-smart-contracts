@@ -1612,7 +1612,7 @@ mod test {
         map.entry(99u8).and_modify(|v| *v = a_short_string);
         let actual_size = state_builder
             .state_api
-            .lookup(&[INITIAL_NEXT_ITEM_PREFIX as u8, 0, 0, 0, 0, 0, 0, 0, 99])
+            .lookup(&[INITIAL_NEXT_ITEM_PREFIX[0], 0, 0, 0, 0, 0, 0, 0, 99])
             .expect("Lookup failed")
             .size()
             .expect("Getting size failed");
