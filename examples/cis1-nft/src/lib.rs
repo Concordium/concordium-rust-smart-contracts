@@ -577,13 +577,14 @@ mod tests {
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
     const TOKEN_0: ContractTokenId = TokenIdU8(0);
     const TOKEN_1: ContractTokenId = TokenIdU8(42);
+    const TOKEN_2: ContractTokenId = TokenIdU8(43);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
     fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         let mut state = State::empty(state_builder);
         state.mint(TOKEN_0, &ADDRESS_0, state_builder).expect_report("Failed to mint TOKEN_0");
-        state.mint(TOKEN_1, &ADDRESS_0, state_builder).expect_report("Failed to mint TOKEN_0");
+        state.mint(TOKEN_1, &ADDRESS_0, state_builder).expect_report("Failed to mint TOKEN_1");
         state
     }
 
@@ -617,6 +618,7 @@ mod tests {
         let mut tokens = collections::BTreeSet::new();
         tokens.insert(TOKEN_0);
         tokens.insert(TOKEN_1);
+        tokens.insert(TOKEN_2);
         let parameter = MintParams {
             tokens,
             owner: ADDRESS_0,
@@ -626,9 +628,10 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
-        let state = State::empty(&mut TestStateBuilder::new());
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::empty(&mut &mut state_builder);
 
-        let mut host = TestHost::new(state);
+        let mut host = TestHost::new_with_state_builder(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_mint(&ctx, &mut host, &mut logger);
@@ -637,14 +640,18 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the state
-        claim_eq!(host.state().all_tokens.iter().count(), 2, "Expected two tokens in the state.");
+        claim_eq!(host.state().all_tokens.iter().count(), 3, "Expected three tokens in the state.");
         let balance0 =
             host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 1, "Tokens should be owned by the given address");
+        claim_eq!(balance0, 1, "Tokens should be owned by the given address 0");
 
         let balance1 =
             host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance1, 1, "Tokens should be owned by the given address");
+        claim_eq!(balance1, 1, "Tokens should be owned by the given address 0");
+
+        let balance2 =
+            host.state().balance(&TOKEN_2, &ADDRESS_0).expect_report("Token is expected to exist");
+        claim_eq!(balance2, 1, "Tokens should be owned by the given address 0");
 
         // Check the logs
         claim!(
