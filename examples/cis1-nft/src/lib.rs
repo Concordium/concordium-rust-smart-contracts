@@ -601,6 +601,8 @@ mod tests {
         let state = result.expect_report("Contract initialization failed");
 
         // Check the state
+        // Note. This is rather expensive as an iterator is created and then traversed -
+        // should be avoided when writing smart contracts.
         claim_eq!(state.all_tokens.iter().count(), 0, "No token should be initialized");
     }
 
@@ -637,6 +639,8 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the state
+        // Note. This is rather expensive as an iterator is created and then traversed -
+        // should be avoided when writing smart contracts.
         claim_eq!(host.state().all_tokens.iter().count(), 2, "Expected two tokens in the state.");
         let balance0 =
             host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
