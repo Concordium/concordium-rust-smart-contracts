@@ -208,7 +208,7 @@ pub trait HasStateApi: Clone {
 
 /// A type that can serve as the host.
 /// It supports invoking operations, accessing state, and self_balance.
-pub trait HasHost<State> {
+pub trait HasHost<State>: Sized {
     type StateApiType: HasStateApi;
 
     /// The type of return values this host provides. This is the raw return

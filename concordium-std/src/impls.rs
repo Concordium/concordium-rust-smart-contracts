@@ -658,10 +658,10 @@ where
     }
 }
 
-const NEXT_ITEM_PREFIX_KEY: u64 = 0;
+const NEXT_ITEM_PREFIX_KEY: [u8; 8] = 0u64.to_le_bytes();
 #[cfg(test)]
 const GENERIC_MAP_PREFIX: u64 = 1;
-pub(crate) const INITIAL_NEXT_ITEM_PREFIX: u64 = 2;
+pub(crate) const INITIAL_NEXT_ITEM_PREFIX: [u8; 8] = 2u64.to_le_bytes();
 
 impl HasStateApi for ExternStateApi {
     type EntryType = StateEntry;
@@ -1589,12 +1589,10 @@ where
 
     fn get_and_update_item_prefix(&mut self) -> u64 {
         // Get the next prefix or insert and use the initial one.
-        let entry_key = to_bytes(&NEXT_ITEM_PREFIX_KEY);
-        let default_prefix = to_bytes(&INITIAL_NEXT_ITEM_PREFIX);
         // Unwrapping is safe when using the high-level API because it is not possible
         // to get an iterator that locks this entry.
         let mut next_collection_prefix_entry =
-            self.state_api.entry(&entry_key).unwrap_abort().or_insert(&default_prefix);
+            self.state_api.entry(&NEXT_ITEM_PREFIX_KEY).unwrap_abort().or_insert(&INITIAL_NEXT_ITEM_PREFIX);
 
         // Get the next collection prefix
         let collection_prefix = next_collection_prefix_entry.read_u64().unwrap_abort(); // Unwrapping is safe if only using the high-level API.
@@ -2196,7 +2194,11 @@ where
         // delete, apart from the set itself.
 
         // Unwrapping is safe when only using the high-level API.
-        self.state_api.delete_prefix(&self.prefix).unwrap_abort()
+        match self.state_api.delete_prefix(&self.prefix) {
+            Err(StateError::SubtreeWithPrefixNotFound) => (),
+            Err(_) => crate::trap(),
+            Ok(_) => ()
+        }
     }
 }
 
@@ -2215,6 +2217,10 @@ where
 
         // Then delete the map itself.
         // Unwrapping is safe when only using the high-level API.
-        self.state_api.delete_prefix(&self.prefix).unwrap_abort()
+        match self.state_api.delete_prefix(&self.prefix) {
+            Err(StateError::SubtreeWithPrefixNotFound) => (),
+            Err(_) => crate::trap(),
+            Ok(_) => ()
+        }
     }
 }

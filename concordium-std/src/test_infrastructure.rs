@@ -1479,13 +1479,13 @@ mod test {
         let mut state = TestStateApi::new();
         get_entry(&mut state, &key1).or_insert(&to_bytes(&expected_value));
         let mut iters = vec![];
-        for _ in 0..u16::MAX {
+        for _ in 0..u32::MAX {
             let iter = state.iterator(&key1).unwrap();
             iters.push(iter);
         }
         assert!(
             state.iterator(&key1).is_err(),
-            "Creating more than u16::MAX iterators should fail"
+            "Creating more than u32::MAX iterators should fail"
         );
     }
 
@@ -1612,7 +1612,7 @@ mod test {
         map.entry(99u8).and_modify(|v| *v = a_short_string);
         let actual_size = state_builder
             .state_api
-            .lookup(&[INITIAL_NEXT_ITEM_PREFIX as u8, 0, 0, 0, 0, 0, 0, 0, 99])
+            .lookup(&[INITIAL_NEXT_ITEM_PREFIX[0], 0, 0, 0, 0, 0, 0, 0, 99])
             .expect("Lookup failed")
             .size()
             .expect("Getting size failed");
