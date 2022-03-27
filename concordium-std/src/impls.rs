@@ -1591,8 +1591,11 @@ where
         // Get the next prefix or insert and use the initial one.
         // Unwrapping is safe when using the high-level API because it is not possible
         // to get an iterator that locks this entry.
-        let mut next_collection_prefix_entry =
-            self.state_api.entry(&NEXT_ITEM_PREFIX_KEY).unwrap_abort().or_insert(&INITIAL_NEXT_ITEM_PREFIX);
+        let mut next_collection_prefix_entry = self
+            .state_api
+            .entry(&NEXT_ITEM_PREFIX_KEY)
+            .unwrap_abort()
+            .or_insert(&INITIAL_NEXT_ITEM_PREFIX);
 
         // Get the next collection prefix
         let collection_prefix = next_collection_prefix_entry.read_u64().unwrap_abort(); // Unwrapping is safe if only using the high-level API.
@@ -2197,7 +2200,7 @@ where
         match self.state_api.delete_prefix(&self.prefix) {
             Err(StateError::SubtreeWithPrefixNotFound) => (),
             Err(_) => crate::trap(),
-            Ok(_) => ()
+            Ok(_) => (),
         }
     }
 }
@@ -2220,7 +2223,7 @@ where
         match self.state_api.delete_prefix(&self.prefix) {
             Err(StateError::SubtreeWithPrefixNotFound) => (),
             Err(_) => crate::trap(),
-            Ok(_) => ()
+            Ok(_) => (),
         }
     }
 }
