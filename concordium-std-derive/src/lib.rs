@@ -84,14 +84,25 @@ struct ParsedAttributes {
 }
 
 impl ParsedAttributes {
-    /// Remove an attribute and return it, if present. The key must be a valid
-    /// Rust identifier, otherwise this function will panic.
+    /// Remove an attribute and return its value (i.e., right hand side of ident
+    /// = value), if present. The key must be a valid Rust identifier,
+    /// otherwise this function will panic.
     pub(crate) fn extract_value(&mut self, key: &str) -> Option<syn::LitStr> {
+        self.extract_ident_and_value(key).map(|x| x.1)
+    }
+
+    /// Remove an attribute identifier and the value and return it, if present.
+    /// The key must be a valid Rust identifier, otherwise this function
+    /// will panic.
+    pub(crate) fn extract_ident_and_value(
+        &mut self,
+        key: &str,
+    ) -> Option<(syn::Ident, syn::LitStr)> {
         // This is not clean, constructing a new identifier with a call_site span.
         // But the only alternative I see is iterating over the map and locating the key
         // since Ident implements equality comparison with &str.
         let key = syn::Ident::new(key, Span::call_site());
-        self.values.remove(&key)
+        self.values.remove_entry(&key)
     }
 
     /// Remove an attribute and return whether it was present.
@@ -220,6 +231,7 @@ const INIT_ATTRIBUTE_CONTRACT: &str = "contract";
 const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
+const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
@@ -237,6 +249,13 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
     let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
     let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
+    let return_value = attributes.extract_ident_and_value(INIT_ATTRIBUTE_RETURN_VALUE);
+    if let Some((ident, _)) = return_value {
+        return Err(syn::Error::new(
+            ident.span(),
+            format!("The 'return_value' attribute is currently not supported for init methods."),
+        ));
+    }
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
