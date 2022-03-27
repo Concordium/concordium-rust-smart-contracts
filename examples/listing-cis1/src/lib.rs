@@ -3,7 +3,7 @@
 //! one of the listed NFTs.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis1::*;
-use concordium_std::{collections::HashMap as Map, *};
+use concordium_std::*;
 
 // Types
 
@@ -18,12 +18,11 @@ struct Token {
 }
 
 /// The contract state.
-#[derive(Serialize, SchemaType)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State {
+struct State<S> {
     /// Map of 'CIS1-singleNFT' contract addresses to a listing price
-    #[concordium(size_length = 1)]
-    listings: Map<Token, (AccountAddress, Amount)>,
+    listings: StateMap<Token, (AccountAddress, Amount), S>,
 }
 
 /// The custom errors the contract can produce.
@@ -44,6 +43,10 @@ enum CustomContractError {
     OnlyAccountAddress,
     /// Only the contract owner can list tokens.
     OnlyOwner,
+    /// Failed to invoke a contract.
+    InvokeContractError,
+    /// Failed to invoke a transfer.
+    InvokeTransferError,
 }
 
 /// Wrapping the custom errors in a type with CIS1 errors.
@@ -61,17 +64,27 @@ impl From<LogError> for CustomContractError {
     }
 }
 
+/// Mapping errors related to contract invocations to CustomContractError.
+impl<T> From<CallContractError<T>> for CustomContractError {
+    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+}
+
+/// Mapping errors related to contract invocations to CustomContractError.
+impl From<TransferError> for CustomContractError {
+    fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
+}
+
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis1Error::Custom(c) }
 }
 
 // Functions for creating and updating the contract state.
-impl State {
+impl<S: HasStateApi> State<S> {
     /// Creates a new state with no listings.
-    fn empty() -> Self {
+    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         State {
-            listings: Map::default(),
+            listings: state_builder.new_map(),
         }
     }
 
@@ -83,7 +96,7 @@ impl State {
     /// Remove a listing and fails with UnknownToken, if token is not listed.
     /// Returns the listing price and owner if successful.
     fn unlist(&mut self, token: &Token) -> ContractResult<(AccountAddress, Amount)> {
-        self.listings.remove(token).ok_or_else(|| CustomContractError::UnknownToken.into())
+        self.listings.remove_and_get(token).ok_or_else(|| CustomContractError::UnknownToken.into())
     }
 }
 
@@ -106,9 +119,9 @@ struct ListParams {
 #[init(contract = "listing-CIS1-singleNFT")]
 fn contract_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
-    Ok(State::empty())
+    state_builder: &mut StateBuilder<S>,
+) -> InitResult<State<S>> {
+    Ok(State::empty(state_builder))
 }
 
 /// List or update the price of a list of NFTs.
@@ -120,7 +133,7 @@ fn contract_init<S: HasStateApi>(
 #[receive(contract = "listing-CIS1-singleNFT", name = "list", parameter = "ListParams", mutable)]
 fn contract_list<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let sender = ctx.sender();
     let contract_owner = ctx.owner();
@@ -153,7 +166,7 @@ struct UnlistParams {
 )]
 fn contract_unlist<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let sender = ctx.sender();
     let contract_owner = ctx.owner();
@@ -177,7 +190,7 @@ fn contract_unlist<S: HasStateApi>(
 #[receive(contract = "listing-CIS1-singleNFT", name = "buy", parameter = "Token", mutable, payable)]
 fn contract_buy<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
     let sender = match ctx.sender() {
@@ -201,8 +214,7 @@ fn contract_buy<S: HasStateApi>(
         Parameter(&to_bytes(&parameter)),
         receive_name.entrypoint_name(),
         Amount::zero(),
-    )
-    .unwrap_abort();
-    host.invoke_transfer(&owner, amount).unwrap_abort();
+    )?;
+    host.invoke_transfer(&owner, amount)?;
     Ok(())
 }
