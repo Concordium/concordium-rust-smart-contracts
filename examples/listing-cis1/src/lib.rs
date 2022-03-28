@@ -209,7 +209,7 @@ fn contract_buy<S: HasStateApi>(
     };
     let parameter = TransferParams(vec![transfer]);
     let receive_name = ReceiveName::new_unchecked("CIS1-singleNFT.transfer");
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &token.contract,
         Parameter(&to_bytes(&parameter)),
         receive_name.entrypoint_name(),
