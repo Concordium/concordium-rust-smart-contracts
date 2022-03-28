@@ -154,7 +154,7 @@ impl<S: HasStateApi> State<S> {
                 address_state
                     .balances
                     .entry(*token_id)
-                    .or_insert(amount)
+                    .or_insert(0)
                     .modify(|balance| *balance += amount)
             },
         );
@@ -207,14 +207,24 @@ impl<S: HasStateApi> State<S> {
         // Get the `from` state and balance, if not present it will fail since the
         // balance is interpreted as 0 and the transfer amount must be more than
         // 0 as this point.
-        self.state.entry(*from).and_try_modify::<_, ContractError>(|from_address_state| {
-            from_address_state.balances.entry(*token_id).and_try_modify(|from_balance| {
-                ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
-                *from_balance -= amount;
+        let address_exists = self
+            .state
+            .entry(*from)
+            .and_try_modify::<_, ContractError>(|from_address_state| {
+                let balance_exists = from_address_state
+                    .balances
+                    .entry(*token_id)
+                    .and_try_modify(|from_balance| {
+                        ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
+                        *from_balance -= amount;
+                        Ok(())
+                    })?
+                    .is_occupied();
+                ensure!(balance_exists, ContractError::InsufficientFunds);
                 Ok(())
-            })?;
-            Ok(())
-        })?;
+            })?
+            .is_occupied();
+        ensure!(address_exists, ContractError::InsufficientFunds);
 
         self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder)).modify(
             |to_address_state| {
@@ -396,7 +406,7 @@ fn contract_transfer<S: HasStateApi>(
                 contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-Multi")),
                 data,
             };
-            host.invoke_contract(
+            host.invoke_contract_raw(
                 &address,
                 Parameter(&to_bytes(&parameter)),
                 function.as_receive_name().entrypoint_name(),
@@ -481,7 +491,7 @@ fn contract_balance_of<S: HasStateApi>(
         response.push((query, amount));
     }
     // Send back the response.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &params.result_contract,
         Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
@@ -518,7 +528,7 @@ fn contract_operator_of<S: HasStateApi>(
         response.push((query, is_operator));
     }
     // Send back the response.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &params.result_contract,
         Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
@@ -564,7 +574,7 @@ fn contract_token_metadata<S: HasStateApi>(
         response.push((token_id, metadata_url));
     }
     // Send back the response.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &params.result_contract,
         Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
@@ -628,7 +638,7 @@ fn contract_on_cis1_received<S: HasStateApi>(
     let receive_name = ReceiveName::new_unchecked(&receive_name_string);
 
     // Send back a transfer
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &sender,
         Parameter(&to_bytes(&parameter)),
         receive_name.entrypoint_name(),
@@ -795,7 +805,7 @@ mod tests {
         claim_eq!(
             balance0,
             300,
-            "Token owner balance should be decreased by the transferred amount"
+            "Token owner balance should be decreased by the transferred amount."
         );
         claim_eq!(
             balance1,
