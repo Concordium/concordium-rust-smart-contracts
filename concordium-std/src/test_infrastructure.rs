@@ -973,7 +973,7 @@ impl<State> HasHost<State> for TestHost<State> {
     /// This uses the mock entrypoints set up with
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
-    fn invoke_contract<'a, 'b>(
+    fn invoke_contract_raw<'a, 'b>(
         &'a mut self,
         to: &'b ContractAddress,
         parameter: Parameter<'b>,

@@ -34,7 +34,7 @@ fn contract_receive<StateApi: HasStateApi>(
     } else {
         let self_address = ctx.self_address();
         let mut n2 = host
-            .invoke_contract(
+            .invoke_contract_raw(
                 &self_address,
                 Parameter(&(n - 2).to_le_bytes()[..]),
                 EntrypointName::new_unchecked("receive"),
@@ -47,7 +47,7 @@ fn contract_receive<StateApi: HasStateApi>(
         let n2: u64 = n2.get().unwrap_abort();
         ensure_eq!(cv2, n2);
         let mut n1 = host
-            .invoke_contract(
+            .invoke_contract_raw(
                 &self_address,
                 Parameter(&(n - 1).to_le_bytes()[..]),
                 EntrypointName::new_unchecked("receive"),

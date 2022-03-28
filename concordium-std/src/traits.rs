@@ -228,13 +228,29 @@ pub trait HasHost<State>: Sized {
     /// a boolean which indicates whether the state of the contract has changed
     /// or not, and a possible return value. The return value is present if and
     /// only if a V1 contract was invoked.
-    fn invoke_contract<'a, 'b>(
+    fn invoke_contract_raw<'a, 'b>(
         &'a mut self,
         to: &'b ContractAddress,
         parameter: Parameter<'b>,
         method: EntrypointName<'b>,
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType>;
+
+    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the parameter
+    /// is automatically serialized. If the parameter already implements
+    /// [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply converted
+    /// to a byte array, then [`invoke_contract_raw`](Self::invoke_contract_raw) should be
+    /// used, since it avoids intermediate allocations.
+    fn invoke_contract<'a, 'b, P: Serial>(
+        &'a mut self,
+        to: &'b ContractAddress,
+        parameter: &P,
+        method: EntrypointName<'b>,
+        amount: Amount,
+    ) -> CallContractResult<Self::ReturnValueType> {
+        let param = to_bytes(parameter);
+        self.invoke_contract_raw(to, Parameter(&param), method, amount)
+    }
 
     /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;
