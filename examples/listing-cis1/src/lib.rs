@@ -69,7 +69,7 @@ impl<T> From<CallContractError<T>> for CustomContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
 }
 
-/// Mapping errors related to contract invocations to CustomContractError.
+/// Mapping errors related to transfer invocations to CustomContractError.
 impl From<TransferError> for CustomContractError {
     fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
 }
