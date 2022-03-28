@@ -128,7 +128,7 @@ where
 
     /// Set the cursor to the beginning. Equivalent to
     /// `.seek(SeekFrom::Start(0))` but can be implemented more efficiently.
-    fn to_start(&mut self);
+    fn move_to_start(&mut self);
 
     /// Get the current size of the entry.
     /// Returns an error if the entry does not exist.
@@ -201,7 +201,6 @@ pub trait HasStateApi: Clone {
     ///
     /// Returns an error if the number of active iterators for the same prefix
     /// exceeds [u16::MAX].
-    #[must_use]
     fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError>;
 
     /// Delete an iterator.

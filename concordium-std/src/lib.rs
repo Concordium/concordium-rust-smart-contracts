@@ -201,14 +201,14 @@ pub use alloc::{
 };
 /// Re-export.
 #[cfg(not(feature = "std"))]
-pub use core::{cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, result::*};
+pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
 #[cfg(feature = "std")]
 pub(crate) use std::vec;
 
 /// Re-export.
 #[cfg(feature = "std")]
 pub use std::{
-    boxed, boxed::Box, cell, cmp, convert, fmt, hash, iter, marker, mem, num, ops, rc,
+    boxed, boxed::Box, cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, rc,
     string::String, vec::Vec,
 };
 

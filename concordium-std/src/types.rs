@@ -1,9 +1,4 @@
-use crate::{
-    cell::{RefCell, UnsafeCell},
-    marker::PhantomData,
-    num::NonZeroU32,
-    HasStateApi, Vec,
-};
+use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
 
 #[derive(Debug)]
 /// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
@@ -113,11 +108,21 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 ///
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
 /// is the state.
-pub struct StateBox<T, S> {
-    // FIXME: This should have the entry as well.
-    pub(crate) prefix:     StateItemPrefix,
-    pub(crate) state_api:  S,
-    pub(crate) lazy_value: RefCell<Option<T>>,
+pub struct StateBox<T, S: HasStateApi> {
+    pub(crate) state_api: S,
+    pub(crate) inner:     UnsafeCell<StateBoxInner<T, S>>,
+}
+
+pub(crate) enum StateBoxInner<T, S: HasStateApi> {
+    /// Value is loaded in memory, and we have a backing entry.
+    Loaded {
+        entry: S::EntryType,
+        value: T,
+    },
+    /// We only have the memory location at which the value is stored.
+    Reference {
+        prefix: StateItemPrefix,
+    },
 }
 
 #[derive(Debug)]

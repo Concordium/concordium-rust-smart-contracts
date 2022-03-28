@@ -1,5 +1,5 @@
 use crate::{
-    cell::{Ref, RefCell, RefMut},
+    cell::UnsafeCell,
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryFrom, TryInto},
     fmt,
@@ -200,7 +200,7 @@ impl HasStateEntry for StateEntry {
     type StateEntryKey = ();
 
     #[inline(always)]
-    fn to_start(&mut self) { self.current_position = 0; }
+    fn move_to_start(&mut self) { self.current_position = 0; }
 
     #[inline(always)]
     fn size(&self) -> Result<u32, Self::Error> {
@@ -428,7 +428,7 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
     pub fn insert(mut self, value: &[u8]) -> Result<StateApi::EntryType, StateError> {
         let mut entry = self.state_api.create(&self.key)?;
         entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
-        entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        entry.move_to_start(); // Reset cursor.
         Ok(entry)
     }
 
@@ -446,7 +446,7 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
         // Writing to state cannot fail unless the value is too large (more than 2^31
         // bytes). We can't do much about that.
         value.serial(&mut entry).unwrap_abort();
-        entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        entry.move_to_start(); // Reset cursor.
         Ok(entry)
     }
 }
@@ -484,8 +484,7 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
 
     /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
     pub fn insert(&mut self, value: &[u8]) {
-        // Rewind state entry. Cannot fail.
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        self.state_entry.move_to_start();
         self.state_entry.write_all(value).unwrap_abort();
 
         // Truncate any data leftover from previous value.
@@ -499,7 +498,7 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
     pub fn insert_serial<V: Serial>(&mut self, value: &V) {
         // Truncate so that no data is leftover from previous value.
         self.state_entry.truncate(0).unwrap_abort();
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        self.state_entry.move_to_start();
         value.serial(&mut self.state_entry).unwrap_abort()
     }
 }
@@ -565,7 +564,7 @@ where
         // Writing to state cannot fail.
         let mut state_entry = self.state_api.create(&self.key_bytes).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
-        state_entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        state_entry.move_to_start(); // Reset cursor.
         OccupiedEntry {
             key: self.key,
             value,
@@ -631,8 +630,7 @@ where
     }
 
     fn store_value(&mut self) {
-        // Rewind state entry. Cannot fail.
-        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        self.state_entry.move_to_start();
         // First truncate it back to 0. This is not ideal in some cases, since
         // it is a needless call.
         // An alternative would be to first write to a temporary buffer,
@@ -1122,7 +1120,7 @@ where
             v
         } else {
             let entry = unsafe { &mut *self.entry.get() };
-            entry.to_start();
+            entry.move_to_start();
             let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
             lv.insert(value)
         }
@@ -1131,7 +1129,7 @@ where
     /// Set the value. Overwrites the existing one.
     pub fn set(&mut self, new_val: V) {
         let entry = self.entry.get_mut();
-        entry.to_start();
+        entry.move_to_start();
         new_val.serial(entry).unwrap_abort();
         self.lazy_value.get_mut().insert(new_val);
     }
@@ -1145,14 +1143,14 @@ where
         let value = if let Some(v) = lv {
             v
         } else {
-            entry.to_start();
+            entry.move_to_start();
             let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
             lv.insert(value)
         };
 
         // Mutate the value (perhaps only in memory, depends on the type).
         f(value);
-        entry.to_start();
+        entry.move_to_start();
         value.serial(entry).unwrap_abort()
     }
 }
@@ -1258,15 +1256,38 @@ impl<T, S: HasStateApi> StateSet<T, S> {
     }
 }
 
-impl<T, S> StateBox<T, S> {
+impl<T, S: HasStateApi> StateBox<T, S> {
     /// Create a new statebox.
-    pub(crate) fn new(value: T, state_api: S, prefix: StateItemPrefix) -> Self {
-        Self {
-            prefix,
+    pub(crate) fn new(value: T, state_api: S, entry: S::EntryType) -> Self {
+        StateBox {
             state_api,
-            lazy_value: RefCell::new(Some(value)),
+            inner: UnsafeCell::new(StateBoxInner::Loaded {
+                entry,
+                value,
+            }),
         }
     }
+
+    /// Return the key under which the value is stored in the contract state
+    /// trie.
+    pub(crate) fn get_location(&self) -> &[u8] {
+        match unsafe { &*self.inner.get() } {
+            StateBoxInner::Loaded {
+                entry,
+                ..
+            } => entry.get_key(),
+            StateBoxInner::Reference {
+                prefix,
+            } => &prefix[..],
+        }
+    }
+}
+
+impl<S: HasStateApi, T: Serial + DeserialWithState<S>> crate::ops::Deref for StateBox<T, S> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target { self.get() }
 }
 
 impl<T, S> StateBox<T, S>
@@ -1275,53 +1296,106 @@ where
     S: HasStateApi,
 {
     /// Get a reference to the value.
-    // TODO: Figure out if we can implement Deref that uses this method.
-    pub fn get(&self) -> Ref<'_, T> {
-        self.ensure_cached();
-        // Unwrapping is safe because the value is cached.
-        Ref::map(self.lazy_value.borrow(), |t| t.as_ref().unwrap_abort())
+    pub fn get(&self) -> &T {
+        let inner = unsafe { &mut *self.inner.get() };
+        let (entry, value) = match inner {
+            StateBoxInner::Loaded {
+                value,
+                ..
+            } => return value,
+            StateBoxInner::Reference {
+                prefix,
+            } => {
+                let mut entry = self.state_api.lookup(prefix).unwrap_abort();
+                // new entry, positioned at the start.
+                let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
+                (entry, value)
+            }
+        };
+        *inner = StateBoxInner::Loaded {
+            entry,
+            value,
+        };
+        match inner {
+            StateBoxInner::Loaded {
+                value,
+                ..
+            } => value,
+            StateBoxInner::Reference {
+                ..
+            } => {
+                // We just set it to loaded.
+                unsafe { crate::hint::unreachable_unchecked() }
+            }
+        }
     }
 
-    /// Set the value. Overwrites the existing one.
-    pub fn set(&mut self, new_val: T) {
-        self.store_value(&new_val);
-        *self.lazy_value.borrow_mut() = Some(new_val);
+    /// Replace the value with the provided one. The current value is returned.
+    /// Note that if the type `T` contains
+    #[must_use]
+    pub fn replace(&mut self, new_val: T) -> T {
+        let (entry, value) = self.ensure_cached();
+        entry.move_to_start();
+        new_val.serial(entry).unwrap_abort();
+        mem::replace(value, new_val)
     }
 
     /// Update the existing value with the given function.
-    pub fn update<F>(&mut self, f: F)
+    /// The supplied function may return some data, which is then returned by
+    /// [`update`].
+    pub fn update<F, A>(&mut self, f: F) -> A
     where
-        F: FnOnce(&mut T), {
-        self.ensure_cached();
-        let mut value = RefMut::map(self.lazy_value.borrow_mut(), |t| t.as_mut().unwrap_abort());
-
+        F: FnOnce(&mut T) -> A, {
+        let (entry, value) = self.ensure_cached();
         // Mutate the value (perhaps only in memory, depends on the type).
-        f(&mut value);
-
-        // Store the value in the state.
-        self.store_value(&value)
+        let res = f(value);
+        entry.move_to_start();
+        value.serial(entry).unwrap_abort();
+        res
     }
 
-    /// Stores the value in the state.
-    fn store_value(&self, value: &T) {
-        // Both unwraps are safe when using only the high-level API.
-        let mut state_entry = self.state_api.lookup(self.prefix.as_ref()).unwrap_abort();
-        value.serial(&mut state_entry).unwrap_abort()
-    }
-
-    /// If the value isn't cached, it loads the value from the state and sets
-    /// the lazy_value field.
-    fn ensure_cached(&self) {
-        if self.lazy_value.borrow_mut().is_none() {
-            let mut state_entry = self.state_api.lookup(self.prefix.as_ref()).unwrap_abort();
-            let value = T::deserial_with_state(&self.state_api, &mut state_entry).unwrap_abort();
-            *self.lazy_value.borrow_mut() = Some(value);
+    /// If the value isn't cached, load the value from the state. Return a
+    /// reference to the entry, and the value. Note that **if the value is
+    /// modified, the entry should be used to write it.**
+    fn ensure_cached(&mut self) -> (&mut S::EntryType, &mut T) {
+        let inner = self.inner.get_mut();
+        let (entry, value) = match inner {
+            StateBoxInner::Loaded {
+                entry,
+                value,
+            } => return (entry, value),
+            StateBoxInner::Reference {
+                prefix,
+            } => {
+                let mut entry = self.state_api.lookup(prefix).unwrap_abort();
+                // new entry, positioned at the start.
+                let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
+                (entry, value)
+            }
+        };
+        *inner = StateBoxInner::Loaded {
+            entry,
+            value,
+        };
+        match inner {
+            StateBoxInner::Loaded {
+                entry,
+                value,
+            } => (entry, value),
+            StateBoxInner::Reference {
+                ..
+            } => {
+                // We just set it to loaded
+                unsafe { crate::hint::unreachable_unchecked() }
+            }
         }
     }
 }
 
-impl<T, S> Serial for StateBox<T, S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.prefix) }
+impl<T, S: HasStateApi> Serial for StateBox<T, S> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(self.get_location())
+    }
 }
 
 impl<T, S> Serial for StateSet<T, S> {
@@ -1712,7 +1786,7 @@ where
         // Insert the value into the state
         let mut state_entry = self.state_api.create(&prefix).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
-        StateBox::new(value, self.state_api.clone(), prefix)
+        StateBox::new(value, self.state_api.clone(), state_entry)
     }
 
     fn get_and_update_item_prefix(&mut self) -> [u8; 8] {
@@ -1729,8 +1803,8 @@ where
         let mut collection_prefix = [0u8; 8];
         next_collection_prefix_entry.read_exact(&mut collection_prefix).unwrap_abort(); // Unwrapping is safe if only using the high-level API.
 
-        // Rewind state entry position. Cannot fail.
-        next_collection_prefix_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        // Rewind state entry position.
+        next_collection_prefix_entry.move_to_start();
 
         // Increment the collection prefix
         next_collection_prefix_entry
@@ -1747,8 +1821,8 @@ impl<S> StateBuilder<S>
 where
     S: HasStateApi,
 {
-    /// Some(Err(_)) means that something exists in the state with that key, but
-    /// it isn't of type `V`.
+    /// `Some(Err(_))` means that something exists in the state with that key,
+    /// but it isn't of type `V`.
     pub(crate) fn get<K: Serial, V: DeserialWithState<S>>(&self, key: K) -> Option<ParseResult<V>> {
         let key_with_map_prefix = Self::prepend_generic_map_key(key);
 
@@ -2283,8 +2357,9 @@ where
         let prefix = source.read_array()?;
         Ok(StateBox {
             state_api: state.clone(),
-            prefix,
-            lazy_value: RefCell::new(None),
+            inner:     UnsafeCell::new(StateBoxInner::Reference {
+                prefix,
+            }),
         })
     }
 }
@@ -2300,17 +2375,24 @@ where
     S: HasStateApi,
 {
     fn delete(mut self) {
-        // Make sure the actual value is cached, so we can delete it.
-        self.ensure_cached();
-
-        // Delete the box node itself.
-        // Unwrapping is safe when only using the high-level API.
-        let entry = self.state_api.lookup(self.prefix.as_ref()).unwrap_abort();
+        let inner = self.inner.into_inner();
+        let (entry, value) = match inner {
+            StateBoxInner::Loaded {
+                entry,
+                value,
+            } => (entry, value),
+            StateBoxInner::Reference {
+                prefix,
+            } => {
+                // we load the value first because it might be necessary to delete
+                // the nested value. This is not ideal, but
+                let mut entry = self.state_api.lookup(&prefix).unwrap_abort();
+                let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
+                (entry, value)
+            }
+        };
         self.state_api.delete_entry(entry).unwrap_abort();
-
-        // Then delete the lazy value.
-        // Unwrapping the option is safe, because we ensured the value is cached.
-        self.lazy_value.into_inner().unwrap_abort().delete();
+        value.delete()
     }
 }
 

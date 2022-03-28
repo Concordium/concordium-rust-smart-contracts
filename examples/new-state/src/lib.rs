@@ -6,7 +6,7 @@ type TokenCount = u8;
 
 #[derive(SchemaType, Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State<S> {
+struct State<S: HasStateApi> {
     token_state:        StateMap<Address, StateMap<TokenId, TokenCount, S>, S>,
     another_struct:     AnotherStruct<S>,
     total_tokens:       u64,
@@ -24,7 +24,7 @@ struct AnotherStruct<S> {
 
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "MBS")]
-enum MaybeBox<S: Serialize, MBS> {
+enum MaybeBox<S: Serialize, MBS: HasStateApi> {
     NoBox(S),
     WithBox(StateBox<String, MBS>),
 }

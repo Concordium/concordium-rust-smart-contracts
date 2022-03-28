@@ -661,7 +661,7 @@ impl HasStateEntry for TestStateEntry {
     type StateEntryKey = Vec<u8>;
 
     #[inline(always)]
-    fn to_start(&mut self) { self.cursor.offset = 0; }
+    fn move_to_start(&mut self) { self.cursor.offset = 0; }
 
     /// Get the size of the data in the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
