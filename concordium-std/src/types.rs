@@ -231,14 +231,14 @@ pub struct VacantEntry<'a, K, V, S> {
 ///
 /// Differs from [`OccupiedEntryRaw`] in that this automatically handles
 /// serialization.
-pub struct OccupiedEntry<'a, K, V, StateEntryType> {
+pub struct OccupiedEntry<'a, K, V, S: HasStateApi> {
     pub(crate) key:              K,
     pub(crate) value:            V,
-    pub(crate) state_entry:      StateEntryType,
+    pub(crate) state_entry:      S::EntryType,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
-impl<'a, K, V, StateEntryType> crate::ops::Deref for OccupiedEntry<'a, K, V, StateEntryType> {
+impl<'a, K, V, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> {
     type Target = V;
 
     #[inline(always)]
@@ -252,7 +252,7 @@ impl<'a, K, V, StateEntryType> crate::ops::Deref for OccupiedEntry<'a, K, V, Sta
 /// on a [`StateMap`] type.
 pub enum Entry<'a, K, V, S: HasStateApi> {
     Vacant(VacantEntry<'a, K, V, S>),
-    Occupied(OccupiedEntry<'a, K, V, S::EntryType>),
+    Occupied(OccupiedEntry<'a, K, V, S>),
 }
 
 #[derive(Default)]
