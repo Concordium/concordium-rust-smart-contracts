@@ -392,7 +392,7 @@ fn contract_transfer<S: HasStateApi>(
                 contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-NFT")),
                 data,
             };
-            host.invoke_contract(
+            host.invoke_contract_raw(
                 &address,
                 Parameter(&to_bytes(&parameter)),
                 function.as_receive_name().entrypoint_name(),
@@ -467,7 +467,7 @@ fn contract_operator_of<S: HasStateApi>(
         response.push((query, is_operator));
     }
     // Send back the response.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &params.result_contract,
         Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
@@ -508,7 +508,7 @@ fn contract_balance_of<S: HasStateApi>(
         response.push((query, amount));
     }
     // Send back the response.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &params.result_contract,
         Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
@@ -554,7 +554,7 @@ fn contract_token_metadata<S: HasStateApi>(
         response.push((token_id, metadata_url));
     }
     // Send back the response.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &params.result_contract,
         Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
         params.result_function.as_receive_name().entrypoint_name(),
