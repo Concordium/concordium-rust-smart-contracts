@@ -440,21 +440,25 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
 
     /// Gets a reference to the key that would be used when inserting a value
     /// through the `OccupiedEntryRaw`.
+    #[inline(always)]
     pub fn key(&self) -> &[u8] { self.state_entry.get_key() }
 
     /// Gets a reference to the [`HasStateEntry`] type in the entry.
+    #[inline(always)]
     pub fn get_ref(&self) -> &StateApi::EntryType { &self.state_entry }
 
     /// Converts the entry into its [`HasStateEntry`] type.
     ///
     /// If you need multiple mutable references to the `OccupiedEntryRaw`, see
     /// [`get_mut`][Self::get_mut].
+    #[inline(always)]
     pub fn get(self) -> StateApi::EntryType { self.state_entry }
 
     /// Gets a mutable reference to the [`HasStateEntry`] type in the entry.
     ///
     /// If you need access to a [`HasStateEntry`], which can outlive the
     /// `OccupiedEntryRaw`, see [`get`][Self::get].
+    #[inline(always)]
     pub fn get_mut(&mut self) -> &mut StateApi::EntryType { &mut self.state_entry }
 
     /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
@@ -596,8 +600,13 @@ where
     V: Serial,
     StateApi: HasStateApi,
 {
-    /// Ensures a value is in the entry by inserting the default if empty.
-    pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateApi::EntryType> {
+    /// Return whether the entry is vacant.
+    #[inline(always)]
+    pub fn is_vacant(&self) -> bool { matches!(self, Entry::Vacant(_)) }
+
+    /// Return whether the entry is occupied.
+    #[inline(always)]
+    pub fn is_occupied(&self) -> bool { matches!(self, Entry::Occupied(_)) }
         match self {
             Entry::Vacant(vac) => vac.insert(default),
             Entry::Occupied(oe) => oe,
