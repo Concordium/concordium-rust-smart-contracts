@@ -36,7 +36,7 @@ fn increment_and_notify<S: HasStateApi>(
     // Notify a contract about the new counter value.
     host.invoke_contract(
         &contract,
-        Parameter(&to_bytes(&preinvoke_count)),
+        &preinvoke_count,
         entrypoint.as_entrypoint_name(),
         Amount::zero(),
     )

@@ -77,7 +77,7 @@ fn contract_buy_icecream<S: HasStateApi>(
     let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
 
     let weather = host
-        .invoke_contract(
+        .invoke_contract_raw(
             &weather_service,
             Parameter(&[]),
             EntrypointName::new_unchecked("get"),
