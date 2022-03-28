@@ -207,16 +207,14 @@ impl<S: HasStateApi> State<S> {
         // Get the `from` state and balance, if not present it will fail since the
         // balance is interpreted as 0 and the transfer amount must be more than
         // 0 as this point.
-
-        let from_address_state =
-            self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
-        let from_balance = from_address_state
-            .balances
-            .get_mut(token_id)
-            .ok_or(ContractError::InsufficientFunds)?;
-
-        ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
-        *from_balance -= amount;
+        self.state.entry(*from).and_try_modify::<_, ContractError>(|from_address_state| {
+            from_address_state.balances.entry(*token_id).and_try_modify(|from_balance| {
+                ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
+                *from_balance -= amount;
+                Ok(())
+            })?;
+            Ok(())
+        })?;
 
         self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder)).modify(
             |to_address_state| {
