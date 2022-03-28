@@ -279,20 +279,20 @@ impl<S: HasStateApi> State<S> {
     }
 
     /// Get the current owner of a token.
-    fn get_owner(&self, token_id: &TokenId) -> ContractResult<&Address> {
-        self.token_owners.get(token_id).ok_or_else(|| ContractError::NoTokenWithThisId)
+    fn get_owner(&self, token_id: &TokenId) -> ContractResult<StateRef<'_, Address>> {
+        self.token_owners.get(token_id).ok_or(ContractError::NoTokenWithThisId)
     }
 
     /// Check if an address is the current owner of a token, results in an error
     /// if no token exists with `token_id`.
     fn is_owner(&self, address: &Address, token_id: &TokenId) -> ContractResult<bool> {
         let owner = self.get_owner(token_id)?;
-        Ok(address == owner)
+        Ok(*address == *owner)
     }
 
     /// Get the approve of a token.
-    fn get_approved(&self, token_id: &TokenId) -> Option<&Address> {
-        self.token_approvals.get(token_id).as_deref()
+    fn get_approved(&self, token_id: &TokenId) -> Option<StateRef<'_, Address>> {
+        self.token_approvals.get(token_id)
     }
 
     /// Check is an address is approved to transfer a specific token.
@@ -797,7 +797,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
-        let mut state = initial_state(&mut state_builder);
+        let state = initial_state(&mut state_builder);
         let mut logger = TestLogger::init();
         let mut host = TestHost::new_with_state_builder(state, state_builder);
 
@@ -805,7 +805,7 @@ mod tests {
             .expect_report("Failed NFT transfer");
 
         let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
+        claim_eq!(*owner, ADDRESS_1, "Ownership should be transferred");
 
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
@@ -876,7 +876,7 @@ mod tests {
             .expect_report("Failed NFT transfer");
 
         let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
+        claim_eq!(*owner, ADDRESS_1, "Ownership should be transferred");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
@@ -897,7 +897,7 @@ mod tests {
         ctx.set_sender(ADDRESS_1);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let mut state = initial_state(&mut state_builder);
         state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true, &mut state_builder);
         let mut host = TestHost::new_with_state_builder(state, state_builder);
 
@@ -918,7 +918,7 @@ mod tests {
             .expect_report("Failed NFT transfer");
 
         let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
+        claim_eq!(*owner, ADDRESS_1, "Ownership should be transferred");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
@@ -954,7 +954,7 @@ mod tests {
         contract_approve(&ctx, &mut host, &mut logger).expect_report("Failed valid approve call");
 
         let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
+        claim_eq!(*owner, ADDRESS_0, "Ownership should not be transferred");
         claim!(host.state().is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
@@ -1002,9 +1002,9 @@ mod tests {
         ctx.set_sender(ADDRESS_1);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut state = initial_state(&mut state_builder);
         state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true, &mut state_builder);
+        let mut host = TestHost::new_with_state_builder(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -1019,7 +1019,7 @@ mod tests {
         contract_approve(&ctx, &mut host, &mut logger).expect_report("Failed valid approve call");
 
         let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
+        claim_eq!(*owner, ADDRESS_0, "Ownership should not be transferred");
         claim!(host.state().is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
@@ -1057,7 +1057,7 @@ mod tests {
             .expect_report("Failed valid approve call");
 
         let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
+        claim_eq!(*owner, ADDRESS_0, "Ownership should not be transferred");
         claim!(host.state().is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
