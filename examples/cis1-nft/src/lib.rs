@@ -65,6 +65,13 @@ impl<S: HasStateApi> AddressState<S> {
     }
 }
 
+impl<S: HasStateApi> Deletable for AddressState<S> {
+    fn delete(self) {
+        self.owned_tokens.delete();
+        self.operators.delete();
+    }
+}
+
 /// The contract state.
 // Note: The specification does not specify how to structure the contract state
 // and this could be structured in a more space efficient way depending on the use case.
@@ -75,13 +82,6 @@ struct State<S> {
     state:      StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
     all_tokens: StateSet<ContractTokenId, S>,
-}
-
-impl<S: HasStateApi> Deletable for AddressState<S> {
-    fn delete(self) {
-        self.owned_tokens.delete();
-        self.operators.delete();
-    }
 }
 
 /// The custom errors the contract can produce.
