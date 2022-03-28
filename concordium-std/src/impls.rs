@@ -514,7 +514,7 @@ where
     pub fn into_key(self) -> K { self.key }
 
     /// Sets the value of the entry with the `VacantEntry`'s key.
-    pub fn insert(mut self, value: V) -> OccupiedEntry<'a, K, V, StateApi::EntryType> {
+    pub fn insert(mut self, value: V) -> OccupiedEntry<'a, K, V, StateApi> {
         // Writing to state cannot fail.
         let mut state_entry = self.state_api.create(&self.key_bytes).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
@@ -528,14 +528,14 @@ where
     }
 }
 
-impl<'a, K, V, StateEntryType> OccupiedEntry<'a, K, V, StateEntryType>
+impl<'a, K, V, StateApi> OccupiedEntry<'a, K, V, StateApi>
 where
     K: Serial,
     V: Serial,
-    StateEntryType: HasStateEntry,
+    StateApi: HasStateApi,
 {
     /// Creae a new `OccupiedEntry`.
-    pub(crate) fn new(key: K, value: V, state_entry: StateEntryType) -> Self {
+    pub(crate) fn new(key: K, value: V, state_entry: StateApi::EntryType) -> Self {
         Self {
             key,
             value,
@@ -584,13 +584,20 @@ where
     }
 
     fn store_value(&mut self) {
-        let value_bytes = to_bytes(&self.value);
         // Rewind state entry. Cannot fail.
         self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
-        self.state_entry.write(&value_bytes).unwrap_abort();
-
-        // Remove any additional data from prior value.
-        self.state_entry.truncate(value_bytes.len() as u32).unwrap_abort();
+        // First truncate it back to 0. This is not ideal in some cases, since
+        // it is a needless call.
+        // An alternative would be to first write to a temporary buffer,
+        // resize the entry to the size of that buffer, and then copy that buffer in.
+        // That has the disadvantage of allocating an intermediate buffer.
+        self.state_entry.truncate(0).unwrap_abort();
+        // If we did not manage to serialize we just abort. This can only happen
+        // if (1) one of the serial implementations raises an error, which it should not
+        // in normal circumstances or (2) we have run of out of space to write
+        // the entry. However the limit to entry size is 2^31 so this
+        // will not happen in practice.
+        self.value.serial(&mut self.state_entry).unwrap_abort();
     }
 }
 
@@ -607,6 +614,10 @@ where
     /// Return whether the entry is occupied.
     #[inline(always)]
     pub fn is_occupied(&self) -> bool { matches!(self, Entry::Occupied(_)) }
+
+    /// Ensure a value is in the entry by inserting the provided value if the
+    /// entry is vacant.
+    pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateApi> {
         match self {
             Entry::Vacant(vac) => vac.insert(default),
             Entry::Occupied(oe) => oe,
@@ -615,7 +626,7 @@ where
 
     /// Ensures a value is in the entry by inserting the result of the default
     /// function if empty.
-    pub fn or_insert_with<F>(self, default: F) -> OccupiedEntry<'a, K, V, StateApi::EntryType>
+    pub fn or_insert_with<F>(self, default: F) -> OccupiedEntry<'a, K, V, StateApi>
     where
         F: FnOnce() -> V, {
         match self {
@@ -624,9 +635,9 @@ where
         }
     }
 
-    /// Try to modify the entry using the given function.
-    /// TODO: This might not be needed now that the high-level API unwraps the
-    /// potential results.
+    /// If the entry is occupied apply the given function to its contents.
+    /// If the function returns an error the contents are not updated.
+    /// If the entry is vacant no changes are made.
     pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<'a, K, V, StateApi>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
@@ -636,7 +647,8 @@ where
         Ok(self)
     }
 
-    /// Modify the entry using the given function.
+    /// If the entry is occupied apply the given function to its contents.
+    /// If the entry is vacant no changes are made.
     pub fn and_modify<F>(mut self, f: F) -> Entry<'a, K, V, StateApi>
     where
         F: FnOnce(&mut V), {
@@ -646,7 +658,7 @@ where
         self
     }
 
-    /// Returns a reference to this entry's key.
+    /// Return a reference to this entry's key.
     pub fn key(&self) -> &K {
         match self {
             Entry::Vacant(vac) => vac.key(),
@@ -662,14 +674,19 @@ where
     StateApi: HasStateApi,
 {
     /// Ensures a value is in the entry by inserting the default value if empty.
-    pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateApi::EntryType> {
+    pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateApi> {
         self.or_insert_with(Default::default)
     }
 }
 
+/// The (i.e., location in the contract state trie) at which the
+/// "allocator"/state builder stores "next location". The values stored at this
+/// location are 64-bit integers.
 const NEXT_ITEM_PREFIX_KEY: [u8; 8] = 0u64.to_le_bytes();
 #[cfg(test)]
 const GENERIC_MAP_PREFIX: u64 = 1;
+/// Initial location to store in [NEXT_ITEM_PREFIX_KEY]. For example, the
+/// initial call to "new_state_box" will allocate the box at this location.
 pub(crate) const INITIAL_NEXT_ITEM_PREFIX: [u8; 8] = 2u64.to_le_bytes();
 
 impl HasStateApi for ExternStateApi {
@@ -1669,7 +1686,7 @@ where
         invoke_transfer_worker(receiver, amount)
     }
 
-    fn invoke_contract(
+    fn invoke_contract_raw(
         &mut self,
         to: &ContractAddress,
         parameter: Parameter,
@@ -1721,7 +1738,7 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         invoke_transfer_worker(receiver, amount)
     }
 
-    fn invoke_contract(
+    fn invoke_contract_raw(
         &mut self,
         to: &ContractAddress,
         parameter: Parameter,
@@ -1731,9 +1748,6 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         let data = invoke_contract_construct_parameter(to, parameter, method, amount);
         let len = data.len();
         let response = unsafe { prims::invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
-        // TODO: Figure out if we need to do anything special here.
-        // Old entries are invalidated by the host, so no cursors should need to be
-        // reset.
         parse_call_response_code(response)
     }
 
