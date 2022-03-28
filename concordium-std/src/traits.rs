@@ -126,6 +126,10 @@ where
     type StateEntryKey;
     type Error: Default;
 
+    /// Set the cursor to the beginning. Equivalent to
+    /// `.seek(SeekFrom::Start(0))` but can be implemented more efficiently.
+    fn to_start(&mut self);
+
     /// Get the current size of the entry.
     /// Returns an error if the entry does not exist.
     fn size(&self) -> Result<u32, Self::Error>;
@@ -236,10 +240,11 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType>;
 
-    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the parameter
-    /// is automatically serialized. If the parameter already implements
-    /// [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply converted
-    /// to a byte array, then [`invoke_contract_raw`](Self::invoke_contract_raw) should be
+    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the
+    /// parameter is automatically serialized. If the parameter already
+    /// implements [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply
+    /// converted to a byte array, then
+    /// [`invoke_contract_raw`](Self::invoke_contract_raw) should be
     /// used, since it avoids intermediate allocations.
     fn invoke_contract<'a, 'b, P: Serial>(
         &'a mut self,

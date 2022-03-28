@@ -200,6 +200,9 @@ impl HasStateEntry for StateEntry {
     type StateEntryKey = ();
 
     #[inline(always)]
+    fn to_start(&mut self) { self.current_position = 0; }
+
+    #[inline(always)]
     fn size(&self) -> Result<u32, Self::Error> {
         let res = unsafe { prims::state_entry_size(self.state_entry_id) };
         match res {
@@ -428,6 +431,24 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
         entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
         Ok(entry)
     }
+
+    /// Sets the value of the entry with the `VacantEntryRaw`’s key.
+    /// This differs from
+    /// [`insert`](Self::insert) in that it automatically serializes
+    /// the provided value. [`insert`](Self::insert) should be preferred
+    /// for values that can be directly converted to byte arrays, e.g., any
+    /// value that implements [`AsRef<[u8]>](AsRef).
+    pub fn insert_serial<V: Serial>(
+        mut self,
+        value: &V,
+    ) -> Result<StateApi::EntryType, StateError> {
+        let mut entry = self.state_api.create(&self.key)?;
+        // Writing to state cannot fail unless the value is too large (more than 2^31
+        // bytes). We can't do much about that.
+        value.serial(&mut entry).unwrap_abort();
+        entry.seek(SeekFrom::Start(0)).unwrap_abort(); // Reset cursor.
+        Ok(entry)
+    }
 }
 
 impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
@@ -470,6 +491,17 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
         // Truncate any data leftover from previous value.
         self.state_entry.truncate(value.len() as u32).unwrap_abort();
     }
+
+    /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
+    /// This differs from [`insert`](Self::insert) in that it automatically
+    /// serializes the value. The [`insert`](Self::insert) should be
+    /// preferred if the value is already a byte array.
+    pub fn insert_serial<V: Serial>(&mut self, value: &V) {
+        // Truncate so that no data is leftover from previous value.
+        self.state_entry.truncate(0).unwrap_abort();
+        self.state_entry.seek(SeekFrom::Start(0)).unwrap_abort();
+        value.serial(&mut self.state_entry).unwrap_abort()
+    }
 }
 
 impl<StateApi: HasStateApi> EntryRaw<StateApi> {
@@ -478,6 +510,19 @@ impl<StateApi: HasStateApi> EntryRaw<StateApi> {
     pub fn or_insert(self, default: &[u8]) -> StateApi::EntryType {
         match self {
             EntryRaw::Vacant(vac) => vac.insert(default).unwrap_abort(),
+            EntryRaw::Occupied(occ) => occ.get(),
+        }
+    }
+
+    /// Ensures a value is in the entry by inserting the default if empty, and
+    /// returns the [`HasStateEntry`] type. This differs from
+    /// [`or_insert`](Self::or_insert) in that it automatically serializes
+    /// the provided value. [`or_insert`](Self::or_insert) should be preferred
+    /// for values that can be directly converted to byte arrays, e.g., any
+    /// value that implements [`AsRef<[u8]>](AsRef).
+    pub fn or_insert_serial<V: Serial>(self, default: &V) -> StateApi::EntryType {
+        match self {
+            EntryRaw::Vacant(vac) => vac.insert_serial(default).unwrap_abort(),
             EntryRaw::Occupied(occ) => occ.get(),
         }
     }
@@ -508,9 +553,11 @@ where
     }
 
     /// Get a reference to the `VacantEntry`'s key.
+    #[inline(always)]
     pub fn key(&self) -> &K { &self.key }
 
     /// Take ownership of the key.
+    #[inline(always)]
     pub fn into_key(self) -> K { self.key }
 
     /// Sets the value of the entry with the `VacantEntry`'s key.
@@ -615,6 +662,26 @@ where
     #[inline(always)]
     pub fn is_occupied(&self) -> bool { matches!(self, Entry::Occupied(_)) }
 
+    /// If the entry is [`Occupied`](Entry::Occupied) return `Ok`. Otherwise
+    /// return the supplied error.
+    #[inline]
+    pub fn occupied_or<E>(self, e: E) -> Result<OccupiedEntry<'a, K, V, StateApi>, E> {
+        match self {
+            Entry::Vacant(_) => Err(e),
+            Entry::Occupied(oe) => Ok(oe),
+        }
+    }
+
+    /// If the entry is [`Vacant`](Entry::Vacant) return `Ok`. Otherwise return
+    /// the supplied error.
+    #[inline]
+    pub fn vacant_or<E>(self, e: E) -> Result<VacantEntry<'a, K, V, StateApi>, E> {
+        match self {
+            Entry::Vacant(vac) => Ok(vac),
+            Entry::Occupied(_) => Err(e),
+        }
+    }
+
     /// Ensure a value is in the entry by inserting the provided value if the
     /// entry is vacant.
     pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateApi> {
@@ -637,7 +704,9 @@ where
 
     /// If the entry is occupied apply the given function to its contents.
     /// If the function returns an error the contents are not updated.
-    /// If the entry is vacant no changes are made.
+    /// **If the supplied function returns an error then it should not modify
+    /// the given value. If it does so than the map will become
+    /// inconsistent.** If the entry is vacant no changes are made.
     pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<'a, K, V, StateApi>, E>
     where
         F: FnOnce(&mut V) -> Result<(), E>, {
@@ -836,18 +905,17 @@ where
     /// given key it is replaced and the old value is returned.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let key_bytes = self.key_with_map_prefix(&key);
-        let value_bytes = to_bytes(&value);
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_api.entry(&key_bytes).unwrap_abort() {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&value_bytes).unwrap_abort();
+                let _ = vac.insert_serial(&value).unwrap_abort();
                 None
             }
             EntryRaw::Occupied(mut occ) => {
                 // Unwrapping is safe when using only the high-level API.
                 let old_value =
                     V::deserial_with_state(&self.state_api, occ.get_mut()).unwrap_abort();
-                occ.insert(&value_bytes);
+                occ.insert_serial(&value);
                 Some(old_value)
             }
         }
@@ -922,7 +990,7 @@ where
     }
 
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
-        let mut key_with_prefix = self.prefix.clone();
+        let mut key_with_prefix = self.prefix.to_vec();
         key.serial(&mut key_with_prefix).unwrap_abort();
         key_with_prefix
     }
@@ -941,11 +1009,11 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasStateApi,
 {
-    pub(crate) fn open<P: Serial>(state_api: S, prefix: P) -> Self {
+    pub(crate) fn open(state_api: S, prefix: [u8; 8]) -> Self {
         Self {
             _marker_key: PhantomData,
             _marker_value: PhantomData,
-            prefix: to_bytes(&prefix),
+            prefix,
             state_api,
         }
     }
@@ -1014,22 +1082,33 @@ impl<'a, K, V, S: HasStateApi> Iterator for StateMapIterMut<'a, K, V, S>
 where
     K: Deserial + 'a,
     V: DeserialWithState<S> + 'a,
+    S::EntryType: 'a,
 {
     type Item = (StateRef<'a, K>, StateRefMut<'a, V, S>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut entry = self.state_iter.as_mut()?.next()?;
-        let key_bytes = entry.get_key().to_vec();
+        let entry = self.state_iter.as_mut()?.next()?;
+
+        let key_bytes = entry.get_key();
         let mut key_cursor = Cursor {
-            data:   &key_bytes,
+            data:   key_bytes,
             offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
-        // TODO: This is inefficient. There's no need to allocate the entry.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
-        let v = V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
-        Some((StateRef::new(k), StateRefMut::new(v, &key_bytes, self.state_api.clone())))
+        // we do not load the value here, only on demand. This allows iteration over
+        // keys to be reasonably efficient.
+        Some((StateRef::new(k), StateRefMut::new(entry, self.state_api.clone())))
     }
+}
+
+impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::Deref
+    for StateRefMut<'a, V, S>
+{
+    type Target = V;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target { self.get() }
 }
 
 impl<'a, V, S> StateRefMut<'a, V, S>
@@ -1037,17 +1116,44 @@ where
     V: Serial + DeserialWithState<S>,
     S: HasStateApi,
 {
-    /// Get a reference to the value `V`.
-    pub fn get(&self) -> Ref<'_, V> { self.state_box.get() }
+    pub fn get(&self) -> &V {
+        let lv = unsafe { &mut *self.lazy_value.get() };
+        if let Some(v) = lv {
+            v
+        } else {
+            let entry = unsafe { &mut *self.entry.get() };
+            entry.to_start();
+            let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
+            lv.insert(value)
+        }
+    }
 
     /// Set the value. Overwrites the existing one.
-    pub fn set(&mut self, new_val: V) { self.state_box.set(new_val) }
+    pub fn set(&mut self, new_val: V) {
+        let entry = self.entry.get_mut();
+        entry.to_start();
+        new_val.serial(entry).unwrap_abort();
+        self.lazy_value.get_mut().insert(new_val);
+    }
 
     /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
         F: FnOnce(&mut V), {
-        self.state_box.update(f);
+        let lv = self.lazy_value.get_mut();
+        let entry = self.entry.get_mut();
+        let value = if let Some(v) = lv {
+            v
+        } else {
+            entry.to_start();
+            let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
+            lv.insert(value)
+        };
+
+        // Mutate the value (perhaps only in memory, depends on the type).
+        f(value);
+        entry.to_start();
+        value.serial(entry).unwrap_abort()
     }
 }
 
@@ -1117,17 +1223,17 @@ where
     }
 
     fn key_with_set_prefix(&self, key: &T) -> Vec<u8> {
-        let mut key_with_prefix = self.prefix.clone();
+        let mut key_with_prefix = self.prefix.to_vec();
         key.serial(&mut key_with_prefix).unwrap_abort();
         key_with_prefix
     }
 }
 
 impl<T, S: HasStateApi> StateSet<T, S> {
-    pub(crate) fn open<P: Serial>(state_api: S, prefix: P) -> Self {
+    pub(crate) fn open(state_api: S, prefix: [u8; 8]) -> Self {
         Self {
             _marker: PhantomData,
-            prefix: to_bytes(&prefix),
+            prefix,
             state_api,
         }
     }
@@ -1199,7 +1305,7 @@ where
     /// Stores the value in the state.
     fn store_value(&self, value: &T) {
         // Both unwraps are safe when using only the high-level API.
-        let mut state_entry = self.state_api.lookup(&self.prefix).unwrap_abort();
+        let mut state_entry = self.state_api.lookup(self.prefix.as_ref()).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort()
     }
 
@@ -1207,7 +1313,7 @@ where
     /// the lazy_value field.
     fn ensure_cached(&self) {
         if self.lazy_value.borrow_mut().is_none() {
-            let mut state_entry = self.state_api.lookup(&self.prefix).unwrap_abort();
+            let mut state_entry = self.state_api.lookup(self.prefix.as_ref()).unwrap_abort();
             let value = T::deserial_with_state(&self.state_api, &mut state_entry).unwrap_abort();
             *self.lazy_value.borrow_mut() = Some(value);
         }
@@ -1215,9 +1321,7 @@ where
 }
 
 impl<T, S> Serial for StateBox<T, S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        serial_vector_no_length(&self.prefix, out)
-    }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.prefix) }
 }
 
 impl<T, S> Serial for StateSet<T, S> {
@@ -1604,16 +1708,14 @@ where
     /// Create a new [`StateBox`] and insert the `value` into the state.
     pub fn new_box<T: Serial>(&mut self, value: T) -> StateBox<T, S> {
         let prefix = self.get_and_update_item_prefix();
-        let prefix_bytes = to_bytes(&prefix);
 
         // Insert the value into the state
-        let mut state_entry = self.state_api.create(&prefix_bytes).unwrap_abort();
+        let mut state_entry = self.state_api.create(&prefix).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
-
-        StateBox::new(value, self.state_api.clone(), prefix_bytes)
+        StateBox::new(value, self.state_api.clone(), prefix)
     }
 
-    fn get_and_update_item_prefix(&mut self) -> u64 {
+    fn get_and_update_item_prefix(&mut self) -> [u8; 8] {
         // Get the next prefix or insert and use the initial one.
         // Unwrapping is safe when using the high-level API because it is not possible
         // to get an iterator that locks this entry.
@@ -1624,13 +1726,16 @@ where
             .or_insert(&INITIAL_NEXT_ITEM_PREFIX);
 
         // Get the next collection prefix
-        let collection_prefix = next_collection_prefix_entry.read_u64().unwrap_abort(); // Unwrapping is safe if only using the high-level API.
+        let mut collection_prefix = [0u8; 8];
+        next_collection_prefix_entry.read_exact(&mut collection_prefix).unwrap_abort(); // Unwrapping is safe if only using the high-level API.
 
         // Rewind state entry position. Cannot fail.
         next_collection_prefix_entry.seek(SeekFrom::Start(0)).unwrap_abort();
 
         // Increment the collection prefix
-        next_collection_prefix_entry.write_u64(collection_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
+        next_collection_prefix_entry
+            .write_u64(u64::from_le_bytes(collection_prefix) + 1)
+            .unwrap_abort(); // Writing to state cannot fail.
 
         collection_prefix
     }
@@ -1658,12 +1763,11 @@ where
         value: V,
     ) -> Result<(), StateError> {
         let key_with_map_prefix = Self::prepend_generic_map_key(key);
-        let value_bytes = to_bytes(&value);
         match self.state_api.entry(&key_with_map_prefix)? {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&value_bytes);
+                let _ = vac.insert_serial(&value);
             }
-            EntryRaw::Occupied(mut occ) => occ.insert(&value_bytes),
+            EntryRaw::Occupied(mut occ) => occ.insert_serial(&value),
         }
         Ok(())
     }
@@ -2156,7 +2260,7 @@ where
     S: HasStateApi,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        source.read_u64().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
+        source.read_array().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
     }
 }
 
@@ -2166,7 +2270,7 @@ where
     T: Serial + DeserialWithState<S>,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        source.read_u64().map(|set_prefix| StateSet::open(state.clone(), set_prefix))
+        source.read_array().map(|set_prefix| StateSet::open(state.clone(), set_prefix))
     }
 }
 
@@ -2176,11 +2280,10 @@ where
     T: Serial + DeserialWithState<S>,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        let mut prefix = [0u8; 8];
-        source.read_exact(&mut prefix)?;
+        let prefix = source.read_array()?;
         Ok(StateBox {
-            state_api:  state.clone(),
-            prefix:     prefix.to_vec(),
+            state_api: state.clone(),
+            prefix,
             lazy_value: RefCell::new(None),
         })
     }
@@ -2202,7 +2305,7 @@ where
 
         // Delete the box node itself.
         // Unwrapping is safe when only using the high-level API.
-        let entry = self.state_api.lookup(&self.prefix).unwrap_abort();
+        let entry = self.state_api.lookup(self.prefix.as_ref()).unwrap_abort();
         self.state_api.delete_entry(entry).unwrap_abort();
 
         // Then delete the lazy value.

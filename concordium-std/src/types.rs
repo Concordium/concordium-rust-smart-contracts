@@ -1,4 +1,9 @@
-use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
+use crate::{
+    cell::{RefCell, UnsafeCell},
+    marker::PhantomData,
+    num::NonZeroU32,
+    HasStateApi, Vec,
+};
 
 #[derive(Debug)]
 /// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
@@ -109,14 +114,16 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
 /// is the state.
 pub struct StateBox<T, S> {
+    // FIXME: This should have the entry as well.
     pub(crate) prefix:     StateItemPrefix,
     pub(crate) state_api:  S,
     pub(crate) lazy_value: RefCell<Option<T>>,
 }
 
 #[derive(Debug)]
-/// The [`StateRef`] behaves like the type `&'a V`, except that it is not
-/// copyable.
+/// The [`StateRef`] behaves akin the type `&'a V`, except that it is not
+/// copyable. It should be used as [MutexGuard](std::sync::MutexGuard) or
+/// similar types which guard access to a resource.
 ///
 /// The type implements [`Deref`][crate::ops::Deref] to `V`, and that is the
 /// intended, and only, way to use it.
@@ -143,21 +150,29 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 }
 
 #[derive(Debug)]
-/// The [`StateRefMut<_, V, _>`] behaves like the type [`StateBox<V, _>`],
-/// but its lifetime is tied to the lifetime of some parent object. In that
-/// sense it is more like `&mut V` except it does not implement
-/// [crate::ops::DerefMut] since that would allow updates that would not be
-/// properly reflected in contract state.
-pub struct StateRefMut<'a, V, S> {
-    pub(crate) state_box:        StateBox<V, S>,
+/// The [`StateRefMut<_, V, _>`] behaves like `&mut V` except that values cannot
+/// be directly mutated, that is, it does not implement
+/// [`DerefMut`](crate::ops::DerefMut) since that would allow updates that would
+/// not be properly reflected in contract state. Instead the
+/// [`update`](StateRefMut::update) or [`set`](StateRefMut::set) methods should
+/// be used.
+///
+/// The type does implement [`Deref`](crate::ops::Deref) however, so immutable
+/// borrows are convenient.
+pub struct StateRefMut<'a, V, S: HasStateApi> {
+    pub(crate) entry:            UnsafeCell<S::EntryType>,
+    pub(crate) state_api:        S,
+    pub(crate) lazy_value:       UnsafeCell<Option<V>>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
-impl<'a, V, S> StateRefMut<'a, V, S> {
+impl<'a, V, S: HasStateApi> StateRefMut<'a, V, S> {
     #[inline(always)]
-    pub(crate) fn new(value: V, key: &[u8], state_api: S) -> Self {
+    pub(crate) fn new(entry: S::EntryType, state_api: S) -> Self {
         Self {
-            state_box:        StateBox::new(value, state_api, key.to_vec()),
+            entry: UnsafeCell::new(entry),
+            state_api,
+            lazy_value: UnsafeCell::new(None),
             _marker_lifetime: PhantomData,
         }
     }
@@ -174,7 +189,7 @@ pub struct ExternStateIter {
 
 pub(crate) type StateEntryId = u64;
 pub(crate) type StateIteratorId = u64;
-pub(crate) type StateItemPrefix = Vec<u8>;
+pub(crate) type StateItemPrefix = [u8; 8];
 
 /// Represents the data in a node in the state trie.
 pub struct StateEntry {

@@ -660,6 +660,9 @@ impl HasStateEntry for TestStateEntry {
     type StateEntryData = Rc<RefCell<TestStateEntryData>>;
     type StateEntryKey = Vec<u8>;
 
+    #[inline(always)]
+    fn to_start(&mut self) { self.cursor.offset = 0; }
+
     /// Get the size of the data in the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
     fn size(&self) -> Result<u32, Self::Error> {
@@ -1470,23 +1473,6 @@ mod test {
         let boxed_value = String::from("I'm boxed");
         let statebox = state_builder.new_box(boxed_value.clone());
         assert_eq!(*statebox.get(), boxed_value);
-    }
-
-    #[test]
-    fn there_should_be_an_upper_limit_for_iterators_of_a_key() {
-        let expected_value: u64 = 123123123;
-        let key1 = vec![1, 2, 3, 4, 5, 6];
-        let mut state = TestStateApi::new();
-        get_entry(&mut state, &key1).or_insert(&to_bytes(&expected_value));
-        let mut iters = vec![];
-        for _ in 0..u32::MAX {
-            let iter = state.iterator(&key1).unwrap();
-            iters.push(iter);
-        }
-        assert!(
-            state.iterator(&key1).is_err(),
-            "Creating more than u32::MAX iterators should fail"
-        );
     }
 
     #[test]
