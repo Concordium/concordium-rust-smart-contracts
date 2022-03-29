@@ -267,6 +267,55 @@ fn contract_init<S: HasStateApi>(
     Ok(State::empty(state_builder))
 }
 
+/// View function
+#[receive(contract = "CIS1-NFT", name = "view")]
+fn contract_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<ViewState> {
+    let state = host.state();
+
+    let mut innter_state: std::collections::BTreeMap<Address, ViewAddressState> =
+        std::collections::BTreeMap::new();
+    for (k, a_state) in state.state.iter() {
+        let mut owned_tokens = std::collections::BTreeSet::new();
+        let mut operators = std::collections::BTreeSet::new();
+        for t in a_state.owned_tokens.iter() {
+            owned_tokens.insert(*t);
+        }
+        for o in a_state.operators.iter() {
+            operators.insert(*o);
+        }
+
+        innter_state.insert(*k, ViewAddressState {
+            owned_tokens,
+            operators,
+        });
+    }
+    let mut all_tokens: std::collections::BTreeSet<ContractTokenId> =
+        std::collections::BTreeSet::new();
+    for v in state.all_tokens.iter() {
+        all_tokens.insert(*v);
+    }
+
+    Ok(ViewState {
+        state: innter_state,
+        all_tokens,
+    })
+}
+
+#[derive(Serialize)]
+struct ViewAddressState {
+    owned_tokens: std::collections::BTreeSet<ContractTokenId>,
+    operators:    std::collections::BTreeSet<Address>,
+}
+
+#[derive(Serialize)]
+struct ViewState {
+    state:      std::collections::BTreeMap<Address, ViewAddressState>,
+    all_tokens: std::collections::BTreeSet<ContractTokenId>,
+}
+
 /// Mint new tokens with a given address as the owner of these tokens.
 /// Can only be called by the contract owner.
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
