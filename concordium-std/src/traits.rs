@@ -200,7 +200,7 @@ pub trait HasStateApi: Clone {
     /// must be deleted.
     ///
     /// Returns an error if the number of active iterators for the same prefix
-    /// exceeds [u16::MAX].
+    /// exceeds [u32::MAX].
     fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError>;
 
     /// Delete an iterator.
