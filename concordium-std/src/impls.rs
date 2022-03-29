@@ -935,7 +935,7 @@ where
         }
     }
 
-    /// Returns `true` if the map contains no elements.
+    /// Return `true` if the map contains no elements.
     pub fn is_empty(&self) -> bool { self.state_api.lookup(&self.prefix).is_none() }
 
     /// Clears the map, removing all key-value pairs.
@@ -1702,7 +1702,7 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
                             }),
                         })
                     } else {
-                        unsafe {crate::hint::unreachable_unchecked()} // host precondition violation.
+                        unsafe { crate::hint::unreachable_unchecked() } // host precondition violation.
                     }
                 }
             }
@@ -1712,7 +1712,7 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
             0x04 => Err(CallContractError::MissingEntrypoint),
             0x05 => Err(CallContractError::MessageFailed),
             0x06 => Err(CallContractError::Trap),
-            _ => unsafe {crate::hint::unreachable_unchecked()}, // host precondition violation
+            _ => unsafe { crate::hint::unreachable_unchecked() }, // host precondition violation
         }
     }
 }
