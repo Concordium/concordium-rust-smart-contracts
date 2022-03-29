@@ -182,9 +182,9 @@ pub trait HasStateApi: Clone {
     fn delete_entry(&mut self, key: Self::EntryType) -> Result<(), StateError>;
 
     /// Delete the entire subtree.
-    /// Returns an error if no nodes with that prefix exists, or if it is part
-    /// of a locked subtree.
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError>;
+    /// Returns whether any values were deleted, or an error if the given prefix
+    /// is part of a locked subtree.
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<bool, StateError>;
 
     /// Get an iterator over a map in the state.
     ///

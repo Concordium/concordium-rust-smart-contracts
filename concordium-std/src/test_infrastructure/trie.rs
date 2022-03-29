@@ -70,7 +70,7 @@ impl StateTrie {
         TestStateEntry::open(data, key, state_entry_id)
     }
 
-    pub(crate) fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
+    pub(crate) fn delete_prefix(&mut self, prefix: &[u8]) -> Result<bool, StateError> {
         let indexes = to_indexes(prefix);
         if self.is_locked(&indexes) {
             return Err(StateError::SubtreeLocked);
@@ -80,7 +80,7 @@ impl StateTrie {
         // TODO: Getting an iterator is not OK here due to the bound.
         let iterator = match self.iterator(prefix) {
             Err(StateError::SubtreeWithPrefixNotFound) => {
-                return Err(StateError::SubtreeWithPrefixNotFound);
+                return Ok(false);
             }
             Err(e) => crate::fail!("Unexpected error in delete_prefix: {:?}", e),
             Ok(v) => v,
@@ -97,7 +97,8 @@ impl StateTrie {
         self.delete_iterator(iterator);
 
         // Delete the nodes in the tree.
-        self.nodes.delete_prefix(&indexes, false)
+        self.nodes.delete_prefix(&indexes, false)?;
+        Ok(true)
     }
 
     /// Returns true if the subtree corresponding to the given key is

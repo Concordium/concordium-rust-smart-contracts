@@ -744,6 +744,7 @@ pub(crate) mod sealed {
 #[derive(Debug)]
 /// The error type which is returned by methods on
 /// [`HasStateApi`][`crate::HasStateApi`].
+#[repr(u8)]
 pub enum StateError {
     /// The subtree is locked.
     SubtreeLocked,

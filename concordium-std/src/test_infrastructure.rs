@@ -608,7 +608,7 @@ impl HasStateApi for TestStateApi {
         self.trie.borrow_mut().delete_entry(entry)
     }
 
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<bool, StateError> {
         self.trie.borrow_mut().delete_prefix(prefix)
     }
 

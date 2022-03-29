@@ -807,12 +807,12 @@ impl HasStateApi for ExternStateApi {
         }
     }
 
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError> {
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<bool, StateError> {
         let res = unsafe { prims::state_delete_prefix(prefix.as_ptr(), prefix.len() as u32) };
         match res {
             0 => Err(StateError::SubtreeLocked),
-            1 => Err(StateError::SubtreeWithPrefixNotFound),
-            2 => Ok(()),
+            1 => Ok(false),
+            2 => Ok(true),
             _ => crate::trap(), // cannot happen
         }
     }
@@ -1201,7 +1201,7 @@ where
             value.value.delete()
         }
         // Unwrapping is safe when only using the high-level API.
-        self.state_api.delete_prefix(&self.prefix).unwrap_abort()
+        self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
 
     /// Removes a value from the set. Returns whether the value was present in
@@ -2405,11 +2405,7 @@ where
         // delete, apart from the set itself.
 
         // Unwrapping is safe when only using the high-level API.
-        match self.state_api.delete_prefix(&self.prefix) {
-            Err(StateError::SubtreeWithPrefixNotFound) => (),
-            Err(_) => crate::trap(),
-            Ok(_) => (),
-        }
+        self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
 }
 
@@ -2428,10 +2424,6 @@ where
 
         // Then delete the map itself.
         // Unwrapping is safe when only using the high-level API.
-        match self.state_api.delete_prefix(&self.prefix) {
-            Err(StateError::SubtreeWithPrefixNotFound) => (),
-            Err(_) => crate::trap(),
-            Ok(_) => (),
-        }
+        self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
 }
