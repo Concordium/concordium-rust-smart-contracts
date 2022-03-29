@@ -37,7 +37,7 @@ type ContractTokenId = TokenIdU8;
 
 /// The parameter for the contract function `mint` which mints a number of
 /// tokens to a given address.
-#[derive(Serial, Deserial)]
+#[derive(Serial, Deserial, SchemaType)]
 struct MintParams {
     /// Owner of the newly minted tokens.
     owner:  Address,
