@@ -268,7 +268,7 @@ fn contract_init<S: HasStateApi>(
 }
 
 /// View function
-#[receive(contract = "CIS1-NFT", name = "view")]
+#[receive(contract = "CIS1-NFT", name = "view", return_value = "ViewState")]
 fn contract_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -304,13 +304,13 @@ fn contract_view<S: HasStateApi>(
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, SchemaType)]
 struct ViewAddressState {
     owned_tokens: std::collections::BTreeSet<ContractTokenId>,
     operators:    std::collections::BTreeSet<Address>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, SchemaType)]
 struct ViewState {
     state:      std::collections::BTreeMap<Address, ViewAddressState>,
     all_tokens: std::collections::BTreeSet<ContractTokenId>,
