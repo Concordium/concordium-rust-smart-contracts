@@ -1,7 +1,7 @@
 use crate::{
     cell::UnsafeCell,
     collections::{BTreeMap, BTreeSet},
-    convert::{self, TryFrom, TryInto},
+    convert::{self, TryInto},
     fmt,
     hash::Hash,
     marker::PhantomData,
@@ -238,55 +238,47 @@ impl HasStateEntry for StateEntry {
 impl Seek for StateEntry {
     type Err = ();
 
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
+    #[inline]
+    // Make sure the inline is OK. This is a relatively big function, but once
+    // specialized to one of the branches it should benefit from inlining.
+    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> {
         use SeekFrom::*;
+        let end = self.size()?;
         match pos {
-            Start(offset) => match u32::try_from(offset) {
-                Ok(offset_u32) => {
-                    self.current_position = offset_u32;
+            Start(offset) => {
+                if offset <= end {
+                    self.current_position = offset;
                     Ok(offset)
-                }
-                _ => Err(()),
-            },
-            End(delta) => {
-                let end = self.size()?;
-                if delta >= 0 {
-                    match u32::try_from(delta)
-                        .ok()
-                        .and_then(|x| self.current_position.checked_add(x))
-                    {
-                        Some(offset_u32) => {
-                            self.current_position = offset_u32;
-                            Ok(u64::from(offset_u32))
-                        }
-                        _ => Err(()),
-                    }
                 } else {
-                    match delta.checked_abs().and_then(|x| u32::try_from(x).ok()) {
-                        Some(before) if before <= end => {
-                            let new_pos = end - before;
-                            self.current_position = new_pos;
-                            Ok(u64::from(new_pos))
-                        }
-                        _ => Err(()),
+                    Err(())
+                }
+            }
+            End(delta) => {
+                if delta > 0 {
+                    Err(()) // cannot seek beyond the end
+                } else {
+                    // due to two's complement representation of values we do not have to
+                    // distinguish on whether we go forward or backwards. Reinterpreting the bits
+                    // and adding unsigned values is the same as subtracting the
+                    // absolute value.
+                    let new_offset = end.wrapping_add(delta as u32);
+                    if new_offset <= end {
+                        self.current_position = new_offset;
+                        Ok(new_offset)
+                    } else {
+                        Err(())
                     }
                 }
             }
             Current(delta) => {
-                let new_offset = if delta >= 0 {
-                    u32::try_from(delta).ok().and_then(|x| self.current_position.checked_add(x))
+                // due to two's complement representation of values we do not have to
+                // distinguish on whether we go forward or backwards.
+                let new_offset = self.current_position + delta as u32;
+                if new_offset <= end {
+                    self.current_position = new_offset;
+                    Ok(new_offset)
                 } else {
-                    delta
-                        .checked_abs()
-                        .and_then(|x| u32::try_from(x).ok())
-                        .and_then(|x| self.current_position.checked_sub(x))
-                };
-                match new_offset {
-                    Some(offset) => {
-                        self.current_position = offset;
-                        Ok(u64::from(offset))
-                    }
-                    _ => Err(()),
+                    Err(())
                 }
             }
         }

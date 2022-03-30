@@ -733,12 +733,11 @@ impl Seek for TestStateEntry {
     type Err = TestStateError;
 
     // TODO: This does _not_ match the semantics of Seek for StateEntry.
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Err> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> {
         use self::TestStateError::*;
         // This will fail immediately, if the entry has been deleted.
         let len = self.cursor.data.borrow().data()?.len();
         match pos {
-            // TODO: Should this allow seeking beyond the end (allowed in std::io::SeekFrom)?
             SeekFrom::Start(x) => {
                 // We can set the position to just after the end of the current length.
                 let new_offset = x.try_into()?;
@@ -756,7 +755,7 @@ impl Seek for TestStateEntry {
                     let minus_x = x.checked_abs().ok_or(Overflow)?;
                     if let Some(new_pos) = end.checked_sub(minus_x.try_into()?) {
                         self.cursor.offset = new_pos.try_into()?;
-                        Ok(u64::from(new_pos))
+                        Ok(new_pos)
                     } else {
                         Err(Offset)
                     }
@@ -764,7 +763,6 @@ impl Seek for TestStateEntry {
                     Err(Offset)
                 }
             }
-            // TODO: Should this allow seeking beyond the end (allowed in std::io::SeekFrom)?
             SeekFrom::Current(x) => match x {
                 0 => Ok(self.cursor.offset.try_into()?),
                 x if x > 0 => {
