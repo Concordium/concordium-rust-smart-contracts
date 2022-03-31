@@ -9,20 +9,29 @@
 //! # Example
 //!
 //! ```rust
+//! # use concordium_std::*;
+//! # type MyReturnValue = u64;
+//! # type State = u64;
 //! // Some contract
 //! #[init(contract = "noop")]
 //! fn contract_init<S: HasStateApi>(
 //!     ctx: &impl HasInitContext,
 //!     state_builder: &mut StateBuilder<S>,
-//! ) -> InitResult<((), State)> { ... }
+//! ) -> InitResult<State> {
+//!     // ...
+//!     # Ok(0)
+//! }
 //!
 //! #[receive(contract = "noop", name = "receive", payable, enable_logger, mutable)]
 //! fn contract_receive<S: HasStateApi>(
 //!     ctx: &impl HasReceiveContext,
+//!     host: &mut impl HasHost<State, StateApiType = S>,
 //!     amount: Amount,
 //!     logger: &mut impl HasLogger,
-//!     host: &mut HasHost<State, StateApiType = S>,
-//! ) -> ReceiveResult<MyReturnValue> { ... }
+//! ) -> ReceiveResult<MyReturnValue> {
+//!     // ...
+//!    # Ok(0)
+//! }
 //!
 //! #[cfg(test)]
 //! mod tests {
@@ -33,10 +42,8 @@
 //!         let mut ctx = TestInitContext::empty();
 //!         let mut state_builder = TestStateBuilder::new();
 //!         ctx.set_init_origin(AccountAddress([0u8; 32]));
-//!         ...
 //!         let result = contract_init(&ctx, &mut state_builder);
-//!         claim!(...)
-//!         ...
+//!         // claim!(...)
 //!     }
 //!
 //!     #[test]
@@ -44,16 +51,19 @@
 //!         let mut ctx = TestReceiveContext::empty();
 //!         let mut host = TestHost::new(State::new());
 //!         ctx.set_owner(AccountAddress([0u8; 32]));
-//!         ...
+//!         // ...
 //!         let mut logger = TestLogger::init();
 //!         host.setup_mock_entrypoint(
-//!             ContractAddress{index: 0, subindex: 0},
+//!             ContractAddress {
+//!                 index:    0,
+//!                 subindex: 0,
+//!             },
 //!             OwnedEntrypointName::new_unchecked("get".into()),
-//!             MockFn::returning_ok(MyReturnValue::new()));
-//!         let result: ReceiveResult<MyReturnValue> = contract_receive(&ctx, &mut host,
-//!                    Amount::zero(), &mut logger);
-//!         claim!(...)
-//!         ...
+//!             MockFn::returning_ok(MyReturnValue::new()),
+//!         );
+//!         let result: ReceiveResult<MyReturnValue> =
+//!             contract_receive(&ctx, &mut host, Amount::zero(), &mut logger);
+//!         // claim!(...)
 //!     }
 //! }
 //! ```
@@ -142,6 +152,8 @@ pub struct TestContext<'a, C> {
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
 /// ```rust
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
 /// let mut ctx = TestInitContext::empty();
 /// ctx.set_init_origin(AccountAddress([0u8; 32]));
 /// ```
@@ -152,39 +164,44 @@ pub struct TestContext<'a, C> {
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```rust
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
 /// let mut ctx = TestInitContext::empty();
-/// ctx.set_metadata_slot_time(1609459200);
+/// ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(1609459200));
 /// ```
 /// or
 /// ```rust
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
 /// let mut ctx = TestInitContext::empty();
-/// ctx.metadata_mut().set_slot_time(1609459200);
+/// ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(1609459200));
 /// ```
 ///
 /// # Use case example
 ///
 /// ```rust
-/// #[init(contract = "noop")]
-/// fn contract_init<I: HasInitContext, L: HasLogger>(
-///     ctx: &I,
-///     _amount: Amount,
-///     _logger: &mut L,
+/// # use concordium_std::*;
+/// type ParameterType = u64;
+/// #[init(contract = "noop", parameter = "ParameterType")]
+/// fn contract_init<S: HasStateApi>(
+///     ctx: &impl HasInitContext,
+///     state_builder: &mut StateBuilder<S>,
 /// ) -> InitResult<()> {
 ///     let init_origin = ctx.init_origin();
-///     let parameter: SomeParameterType = ctx.parameter_cursor().get()?;
+///     let parameter: ParameterType = ctx.parameter_cursor().get()?;
 ///     Ok(())
 /// }
 ///
 /// #[cfg(test)]
 /// mod tests {
 ///     use super::*;
-///     use concordium_sc_base::test_infrastructure::*;
+///     use concordium_std::test_infrastructure::*;
 ///     #[test]
 ///     fn test() {
-///         let mut ctx = TestInitContext::empty();
+///         let ctx = TestInitContext::empty();
+///         let mut state_builder = TestStateBuilder::new();
 ///         ctx.set_init_origin(AccountAddress([0u8; 32]));
-///         ...
-///         let result = contract_init(&ctx, 0, &mut logger);
+///         let result = contract_init(&ctx, &mut state_builder);
 ///         // Reads the init_origin without any problems.
 ///         // But then fails because the parameter is not set.
 ///     }
@@ -208,6 +225,8 @@ pub struct TestInitOnlyData {
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
 /// ```rust
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
 /// let owner = AccountAddress([0u8; 32]);
 /// let mut ctx = TestReceiveContext::empty();
 /// ctx.set_owner(owner);
@@ -220,27 +239,33 @@ pub struct TestInitOnlyData {
 /// ### Example
 /// Creating an empty context and setting the `slot_time` metadata.
 /// ```rust
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
 /// let mut ctx = TestReceiveContext::empty();
-/// ctx.set_metadata_slot_time(1609459200);
+/// ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(1609459200));
 /// ```
 /// or
 /// ```rust
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
 /// let mut ctx = TestReceiveContext::empty();
-/// ctx.metadata_mut().set_slot_time(1609459200);
+/// ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(1609459200));
 /// ```
 ///
 /// # Use case example
 /// Creating a context for running unit tests
 /// ```rust
-/// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<R: HasReceiveContext, L: HasLogger, A: HasActions>(
-///     ctx: &R,
-///     amount: Amount,
-///     logger: &mut L,
-///     state: &mut State,
-/// ) -> ReceiveResult<A> {
-///     ensure!(ctx.sender().matches_account(&ctx.owner()), "Only the owner can increment.");
-///     Ok(A::accept())
+/// # use concordium_std::*;
+/// # type ReceiveResult<A> = Result<A, ParseError>;
+/// # type State = u64;
+/// #[receive(contract = "mycontract", name = "receive", mutable)]
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &mut impl HasHost<State, StateApiType = S>,
+/// ) -> ReceiveResult<()> {
+///     ensure!(ctx.sender().matches_account(&ctx.owner()));
+///     // ...
+///     Ok(())
 /// }
 ///
 /// #[cfg(test)]
@@ -253,7 +278,7 @@ pub struct TestInitOnlyData {
 ///         let mut ctx = TestReceiveContext::empty();
 ///         ctx.set_owner(owner);
 ///         ctx.set_sender(Address::Account(owner));
-///         ...
+///         // ...
 ///         let result: ReceiveResult<ActionsTree> = contract_receive(&ctx, 0, &mut logger, state);
 ///     }
 /// }
@@ -1069,18 +1094,29 @@ impl<State> TestHost<State> {
     /// amount you wish to invoke it with.
     ///
     /// Example:
-    /// ```ignore
-    /// ...
+    /// ```rust
+    /// # use concordium_std::*;
+    /// # use concordium_std::test_infrastructure::*;
+    /// # fn contract_receive<S: HasStateApi>(
+    /// #    ctx: &impl HasReceiveContext,
+    /// #    host: &mut impl HasHost<u64, StateApiType = S>,
+    /// #    amount: Amount,
+    /// # ) -> ReceiveResult<()> {
+    /// #    Ok(())
+    /// # }
+    /// # let mut host = TestHost::new(0u64);
+    /// # let ctx = TestReceiveContext::empty();
     /// host.set_self_balance(Amount::from_ccd(10));
-    /// contract_receive(&ctx,
-    ///                  &mut host,
-    ///                  // This amount is _not_ added to the balance of the contract,
-    ///                  // so calling `host.self_balance()` will return `10` initially.
-    ///                  // This differs from when you run a contract on the node,
-    ///                  // where the amount automatically is added to the existing
-    ///                  // balance of the contract.
-    ///                  Amount::from_ccd(5)
-    ///                  );
+    /// contract_receive(
+    ///     &ctx,
+    ///     &mut host,
+    ///     // This amount is _not_ added to the balance of the contract,
+    ///     // so calling `host.self_balance()` will return `10` initially.
+    ///     // When a contract is executed by the node the amount that is being sent (`5`)
+    ///     // is added to the balance of the contract, so that `host.self_balance()`
+    ///     // already observes it.
+    ///     Amount::from_ccd(5),
+    /// );
     /// ```
     pub fn set_self_balance(&mut self, amount: Amount) {
         *self.contract_balance.borrow_mut() = amount;

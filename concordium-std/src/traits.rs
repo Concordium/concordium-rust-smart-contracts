@@ -414,13 +414,14 @@ where
 /// or enums where both contextual information and the state is present.
 ///
 /// For example:
-/// ```
+/// ```no_run
+/// # use concordium_std::*;
 /// #[derive(DeserialWithState)]
 /// #[concordium(state_parameter = "S")]
-/// struct MyStruct<S> {
+/// struct MyStruct<S: HasStateApi> {
 ///     #[concordium(size_length = 2)]
 ///     a: String, // Gets the contextual size_length information.
-///     b: StateBox<u8>, // Needs a HasStateApi type
+///     b: StateBox<u8, S>, // Needs a HasStateApi type
 /// }
 /// ```
 pub trait DeserialCtxWithState<S>: Sized

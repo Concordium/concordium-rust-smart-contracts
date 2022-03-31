@@ -1148,9 +1148,7 @@ where
 }
 
 impl<K, V, S> Serial for StateMap<K, V, S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        serial_vector_no_length(&self.prefix, out)
-    }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.prefix) }
 }
 
 impl<T, S> StateSet<T, S>
@@ -1334,7 +1332,7 @@ where
 
     /// Update the existing value with the given function.
     /// The supplied function may return some data, which is then returned by
-    /// [`update`].
+    /// [`update`](Self::update).
     pub fn update<F, A>(&mut self, f: F) -> A
     where
         F: FnOnce(&mut T) -> A, {
@@ -1391,9 +1389,7 @@ impl<T, S: HasStateApi> Serial for StateBox<T, S> {
 }
 
 impl<T, S> Serial for StateSet<T, S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        serial_vector_no_length(&self.prefix, out)
-    }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.prefix) }
 }
 
 /// Unlock the part of the tree locked by the iterator.
@@ -1772,6 +1768,42 @@ where
     }
 
     /// Create a new [`StateBox`] and insert the `value` into the state.
+    /// This stores the serialized value in the contract state. Thus **if the
+    /// `StateBox` is dropped without calling [`delete`](StateBox::delete)
+    /// then the value will remain in contract state, leading to a space leak.**
+    ///
+    /// Note that this dropping can happen implicitly via assignment. For
+    /// example,
+    ///
+    /// ```no_run
+    /// # use concordium_std::*;
+    /// struct MyState<S: HasStateApi> {
+    ///     inner: StateBox<u64, S>,
+    /// }
+    /// fn incorrect_replace<S: HasStateApi>(
+    ///     state_builder: &mut StateBuilder<S>,
+    ///     state: &mut MyState<S>,
+    /// ) {
+    ///     // The following is incorrect. The old value of `inner` is not properly deleted.
+    ///     // from the state.
+    ///     state.inner = state_builder.new_box(0); // ⚠️
+    /// }
+    /// ```
+    /// Instead, the old value should be manually deleted.
+    /// ```no_run
+    /// # use concordium_std::*;
+    /// # struct MyState<S: HasStateApi> {
+    /// #    inner: StateBox<u64, S>
+    /// # }
+    /// fn incorrect_replace<S: HasStateApi>(
+    ///     state_builder: &mut StateBuilder<S>,
+    ///     state: &mut MyState<S>,
+    /// ) {
+    ///     let old_box = mem::replace(&mut state.inner, state_builder.new_box(0));
+    ///     old_box.delete()
+    /// }
+    /// ```
+    #[must_use]
     pub fn new_box<T: Serial>(&mut self, value: T) -> StateBox<T, S> {
         let prefix = self.get_and_update_item_prefix();
 

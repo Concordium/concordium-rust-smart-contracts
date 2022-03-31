@@ -11,7 +11,7 @@
 //!
 //! To use this library without the `std` feature you have to disable it, which
 //! can be done, for example, as follows.
-//! ```
+//! ```toml
 //! [dependencies.concordium-std]
 //! default-features = false
 //! ```

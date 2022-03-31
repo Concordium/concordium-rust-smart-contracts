@@ -278,8 +278,8 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          # only run the library tests, no doc tests
-          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} --lib
+          # Run all tests, including doc tests.
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }}
 
   test-examples:
     name: Test examples

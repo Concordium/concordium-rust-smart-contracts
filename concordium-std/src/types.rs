@@ -622,7 +622,8 @@ macro_rules! claim_ne {
 ///
 /// # Example
 /// Defining a custom error type that implements [`Reject`].
-/// ```rust
+/// ```no_run
+/// # use concordium_std::*;
 /// #[derive(Reject)]
 /// enum MyCustomError {
 ///     SomeError,
@@ -649,7 +650,8 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 ///
 /// # Example
 /// Defining a custom error type
-/// ```rust
+/// ```no_run
+/// # use concordium_std::*;
 /// #[derive(Reject)]
 /// enum MyCustomError {
 ///     SomeError,
@@ -659,7 +661,7 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// fn contract_init<S: HasStateApi>(
 ///     _ctx: &impl HasInitContext,
 ///     _state_builder: &mut StateBuilder<S>,
-/// ) -> Result<((), ()), MyCustomError> {
+/// ) -> Result<(), MyCustomError> {
 ///     Err(MyCustomError::SomeError)
 /// }
 /// ```
