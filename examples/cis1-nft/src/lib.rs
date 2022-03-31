@@ -211,8 +211,8 @@ impl<S: HasStateApi> State<S> {
         // address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
 
-        self.state.entry(*from).and_try_modify(|owned_tokens| {
-            let removed = owned_tokens.owned_tokens.remove(token_id);
+        self.state.entry(*from).and_try_modify(|address_state| {
+            let removed = address_state.owned_tokens.remove(token_id);
             ensure!(removed, ContractError::InsufficientFunds);
             Ok(())
         })?;
@@ -793,7 +793,7 @@ mod tests {
         );
         claim_eq!(
             balance2,
-            1,
+            0,
             "Token receiver balance should be decreased by the transferred amount"
         );
 
