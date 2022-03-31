@@ -211,7 +211,11 @@ impl<S: HasStateApi> State<S> {
         // address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
 
-        self.state.remove_and_get(from).ok_or(ContractError::InsufficientFunds)?.delete();
+        self.state.entry(*from).and_try_modify(|owned_tokens| {
+            let removed = owned_tokens.owned_tokens.remove(token_id);
+            ensure!(removed, ContractError::InsufficientFunds);
+            Ok(())
+        })?;
 
         // Add the token to the new owner.
         self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder)).modify(
@@ -779,9 +783,16 @@ mod tests {
             host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
         let balance1 =
             host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
+        let balance2 =
+            host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
         claim_eq!(balance0, 0, "Token owner balance should be decreased by the transferred amount");
         claim_eq!(
             balance1,
+            1,
+            "Token receiver balance should be increased by the transferred amount"
+        );
+        claim_eq!(
+            balance2,
             1,
             "Token receiver balance should be increased by the transferred amount"
         );
