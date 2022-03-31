@@ -149,7 +149,7 @@ mod tests {
         let state_for_rcv =
             State::deserial_with_state(&state_api, &mut root_entry).expect("Could not read state");
 
-        let mut host = TestHost::new_with_state_builder(state_for_rcv, state_builder);
+        let mut host = TestHost::new(state_for_rcv, state_builder);
 
         // Invoke receive.
         assert!(receive_mint(&ctx, &mut host).is_ok());

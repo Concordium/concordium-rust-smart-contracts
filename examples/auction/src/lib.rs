@@ -272,7 +272,7 @@ mod tests {
         let initial_state =
             auction_init(&ctx0, &mut state_builder).expect("Initialization should pass");
 
-        let mut host = TestHost::new_with_state_builder(initial_state, state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
 
         // 1st bid: account1 bids amount1
         let (alice, alice_ctx) = new_account_ctx();
@@ -358,7 +358,7 @@ mod tests {
         let initial_state =
             auction_init(&ctx0, &mut state_builder).expect("Initialization should succeed.");
 
-        let mut host = TestHost::new_with_state_builder(initial_state, state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
 
         // 1st bid: account1 bids amount1
         verify_bid(&mut host, account1, &ctx1, amount, &mut bid_map, amount);
@@ -386,7 +386,7 @@ mod tests {
         let initial_state =
             auction_init(&ctx, &mut state_builder).expect("Initialization should succeed.");
 
-        let mut host = TestHost::new_with_state_builder(initial_state, state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
 
         let res = auction_bid(&ctx1, &mut host, Amount::zero());
         expect_error(res, BidError::BidTooLow, "Bidding zero should fail");

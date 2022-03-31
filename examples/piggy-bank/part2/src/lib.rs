@@ -131,7 +131,7 @@ mod tests {
     fn test_insert_intact() {
         // Setup
         let ctx = TestReceiveContext::empty();
-        let host = TestHost::new(PiggyBankState::Intact);
+        let host = TestHost::new(PiggyBankState::Intact, TestStateBuilder::new());
         let amount = Amount::from_micro_ccd(100);
 
         // Trigger the insert
@@ -150,7 +150,7 @@ mod tests {
         // Setup
         let ctx = TestReceiveContext::empty();
         let amount = Amount::from_micro_ccd(100);
-        let host = TestHost::new(PiggyBankState::Smashed);
+        let host = TestHost::new(PiggyBankState::Smashed, TestStateBuilder::new());
 
         // Trigger the insert
         let result = piggy_insert(&ctx, &host, amount);
@@ -168,7 +168,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let mut host = TestHost::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact, TestStateBuilder::new());
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -194,7 +194,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(AccountAddress([1u8; 32]));
         ctx.set_sender(sender);
-        let mut host = TestHost::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact, TestStateBuilder::new());
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -212,7 +212,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let mut host = TestHost::new(PiggyBankState::Smashed);
+        let mut host = TestHost::new(PiggyBankState::Smashed, TestStateBuilder::new());
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -238,7 +238,7 @@ mod tests {
         ctx.set_owner(owner);
         let sender = Address::Account(owner);
         ctx.set_sender(sender);
-        let mut host = TestHost::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact, TestStateBuilder::new());
         let balance = Amount::from_micro_ccd(100);
         host.set_self_balance(balance);
 
@@ -261,7 +261,7 @@ mod tests {
     fn test_view() {
         // Setup the context.
         let ctx = TestReceiveContext::empty();
-        let mut host = TestHost::new(PiggyBankState::Intact);
+        let mut host = TestHost::new(PiggyBankState::Intact, TestStateBuilder::new());
         let self_balance = Amount::from_ccd(99);
         host.set_self_balance(self_balance);
 

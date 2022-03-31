@@ -106,7 +106,7 @@ mod tests {
         let initial_state =
             init(&TestInitContext::empty(), &mut state_builder).expect_report("Init failed");
 
-        let mut host = TestHost::new_with_state_builder(initial_state, state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
 
         let mut ctx = TestReceiveContext::empty();
 

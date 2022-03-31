@@ -49,7 +49,7 @@
 //!     #[test]
 //!     fn test_receive() {
 //!         let mut ctx = TestReceiveContext::empty();
-//!         let mut host = TestHost::new(State::new());
+//!         let mut host = TestHost::new(State::new(), TestStateBuilder::new());
 //!         ctx.set_owner(AccountAddress([0u8; 32]));
 //!         // ...
 //!         let mut logger = TestLogger::init();
@@ -1052,17 +1052,12 @@ impl<State> HasHost<State> for TestHost<State> {
 }
 
 impl<State> TestHost<State> {
-    /// Create a new test host.
-    pub fn new(state: State) -> Self {
-        TestHost::new_with_state_builder(state, StateBuilder {
-            state_api: TestStateApi::new(),
-        })
-    }
-
-    /// Create a new test host with an existing state_builder.
-    /// This can be useful when a single test function invokes both init and
-    /// receive.
-    pub fn new_with_state_builder(state: State, state_builder: StateBuilder<TestStateApi>) -> Self {
+    /// Create a new test host. **It is essential that any [`StateMap`],
+    /// [`StateSet`] or [`StateBox`] that exists in the provided `state` was
+    /// created with the `state_builder` that is supplied. Otherwise the
+    /// behaviour of the host is unspecified, but it will likely lead to a
+    /// runtime error in the test.
+    pub fn new(state: State, state_builder: StateBuilder<TestStateApi>) -> Self {
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: RefCell::new(Vec::new()),
@@ -1104,7 +1099,7 @@ impl<State> TestHost<State> {
     /// # ) -> ReceiveResult<()> {
     /// #    Ok(())
     /// # }
-    /// # let mut host = TestHost::new(0u64);
+    /// # let mut host = TestHost::new(0u64, TestStateBuilder::new());
     /// # let ctx = TestReceiveContext::empty();
     /// host.set_self_balance(Amount::from_ccd(10));
     /// contract_receive(

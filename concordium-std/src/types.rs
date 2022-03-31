@@ -25,7 +25,7 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 /// let mut map1 = state_builder.new_map();
 /// # map1.insert(0u8, 1u8); // Specifies type of map.
 ///
-/// # let mut host = TestHost::new_with_state_builder((), state_builder);
+/// # let mut host = TestHost::new((), state_builder);
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_map();
 /// # map2.insert(0u16, 1u16); // Specifies type of map.

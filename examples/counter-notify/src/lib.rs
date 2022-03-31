@@ -64,7 +64,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_self_address(self_address);
 
-        let mut host = TestHost::new(0u64);
+        let mut host = TestHost::new(0u64, TestStateBuilder::new());
 
         // We are simulating reentrancy with this mock because we mutate the state.
         host.setup_mock_entrypoint(
