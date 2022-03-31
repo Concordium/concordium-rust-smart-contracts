@@ -794,7 +794,7 @@ mod tests {
         claim_eq!(
             balance2,
             1,
-            "Token receiver balance should be increased by the transferred amount"
+            "Token receiver balance should be decreased by the transferred amount"
         );
 
         // Check the logs.
