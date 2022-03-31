@@ -1879,7 +1879,7 @@ where
 
 impl<S> HasHost<S> for ExternHost<S>
 where
-    S: DeserialWithState<ExternStateApi>,
+    S: Serial + DeserialWithState<ExternStateApi>,
 {
     type ReturnValueType = ExternCallResponse;
     type StateApiType = ExternStateApi;
@@ -1897,6 +1897,15 @@ where
     ) -> CallContractResult<Self::ReturnValueType> {
         let data = invoke_contract_construct_parameter(to, parameter, method, amount);
         let len = data.len();
+        // save the state before the out-call to reflect any changes we might have done.
+        // this is not optimal, and ideally we'd keep track of changes. But that is more
+        // error prone for the programmer.
+        {
+            let mut root_entry = self.state_builder.state_api.lookup(&[]).unwrap_abort();
+            self.state.serial(&mut root_entry).unwrap_abort();
+            let new_state_size = root_entry.size().unwrap_abort();
+            root_entry.truncate(new_state_size).unwrap_abort();
+        }
         let response = unsafe { prims::invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         let (state_modified, res) = parse_call_response_code(response)?;
         if state_modified {
