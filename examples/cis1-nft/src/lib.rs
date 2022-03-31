@@ -791,11 +791,7 @@ mod tests {
             1,
             "Token receiver balance should be increased by the transferred amount"
         );
-        claim_eq!(
-            balance2,
-            0,
-            "Token receiver balance should be decreased by the transferred amount"
-        );
+        claim_eq!(balance2, 1, "Token receiver balance for token 1 should be the same as before");
 
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
