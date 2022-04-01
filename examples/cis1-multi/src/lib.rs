@@ -281,6 +281,55 @@ fn contract_init<S: HasStateApi>(
     Ok(State::empty(state_builder))
 }
 
+#[derive(Serialize, SchemaType)]
+struct ViewAddressState {
+    balances:  std::collections::BTreeMap<ContractTokenId, TokenAmount>,
+    operators: std::collections::BTreeSet<Address>,
+}
+
+#[derive(Serialize, SchemaType)]
+struct ViewState {
+    state:  std::collections::BTreeMap<Address, ViewAddressState>,
+    tokens: std::collections::BTreeSet<ContractTokenId>,
+}
+
+/// View function
+#[receive(contract = "CIS1-NFT", name = "view", return_value = "ViewState")]
+fn contract_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<ViewState> {
+    let state = host.state();
+
+    let mut inner_state: std::collections::BTreeMap<Address, ViewAddressState> =
+        std::collections::BTreeMap::new();
+    for (k, a_state) in state.state.iter() {
+        let mut balances: std::collections::BTreeMap<ContractTokenId, TokenAmount> =
+            std::collections::BTreeMap::new();
+        let mut operators = std::collections::BTreeSet::new();
+        for (token_id, amount) in a_state.balances.iter() {
+            balances.insert(*token_id, *amount);
+        }
+        for o in a_state.operators.iter() {
+            operators.insert(*o);
+        }
+
+        inner_state.insert(*k, ViewAddressState {
+            balances,
+            operators,
+        });
+    }
+    let mut tokens: std::collections::BTreeSet<ContractTokenId> = std::collections::BTreeSet::new();
+    for v in state.tokens.iter() {
+        tokens.insert(*v);
+    }
+
+    Ok(ViewState {
+        state: inner_state,
+        tokens,
+    })
+}
+
 /// Mint new tokens with a given address as the owner of these tokens.
 /// Can only be called by the contract owner.
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
