@@ -279,7 +279,7 @@ fn contract_view<S: HasStateApi>(
 ) -> ReceiveResult<ViewState> {
     let state = host.state();
 
-    let mut innter_state: std::collections::BTreeMap<Address, ViewAddressState> =
+    let mut inner_state: std::collections::BTreeMap<Address, ViewAddressState> =
         std::collections::BTreeMap::new();
     for (k, a_state) in state.state.iter() {
         let mut owned_tokens = std::collections::BTreeSet::new();
@@ -291,7 +291,7 @@ fn contract_view<S: HasStateApi>(
             operators.insert(*o);
         }
 
-        innter_state.insert(*k, ViewAddressState {
+        inner_state.insert(*k, ViewAddressState {
             owned_tokens,
             operators,
         });
@@ -303,7 +303,7 @@ fn contract_view<S: HasStateApi>(
     }
 
     Ok(ViewState {
-        state: innter_state,
+        state: inner_state,
         all_tokens,
     })
 }
