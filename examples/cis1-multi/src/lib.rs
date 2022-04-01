@@ -294,7 +294,7 @@ struct ViewState {
 }
 
 /// View function
-#[receive(contract = "CIS1-NFT", name = "view", return_value = "ViewState")]
+#[receive(contract = "CIS1-Multi", name = "view", return_value = "ViewState")]
 fn contract_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
