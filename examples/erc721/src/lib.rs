@@ -56,7 +56,7 @@ type TokenId = u64;
 /// TokenId to some Metadata struct.
 type Tokens = collections::BTreeSet<TokenId>;
 
-#[derive(Serial, DeserialWithState, SchemaType)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// Map from a token id to the owning account address.

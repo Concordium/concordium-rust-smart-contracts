@@ -42,7 +42,7 @@ type ContractTokenId = TokenIdU8;
 
 /// The parameter for the contract function `mint` which mints a number of
 /// token types and/or amounts of tokens to a given address.
-#[derive(Serial, Deserial)]
+#[derive(Serial, Deserial, SchemaType)]
 struct MintParams {
     /// Owner of the newly minted tokens.
     owner:  Address,
@@ -51,7 +51,7 @@ struct MintParams {
 }
 
 /// The state for each address.
-#[derive(Serial, DeserialWithState, SchemaType)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The amount of tokens owned by this address.
@@ -80,7 +80,7 @@ impl<S: HasStateApi> Deletable for AddressState<S> {
 ///
 /// Note: The specification does not specify how to structure the contract state
 /// and this could be structured in a more space efficient way.
-#[derive(Serial, DeserialWithState, SchemaType)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state of addresses.

@@ -26,7 +26,7 @@ const TOKEN_ID: ContractTokenId = TokenIdUnit();
 type ContractTokenId = TokenIdUnit;
 
 /// The state for each address.
-#[derive(Serial, SchemaType, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The address which are currently enabled as operators for this address.
@@ -46,7 +46,7 @@ impl<S: HasStateApi> Deletable for AddressState<S> {
 }
 
 /// The contract state.
-#[derive(Serial, SchemaType, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The owner of the NFT

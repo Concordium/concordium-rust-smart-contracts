@@ -42,7 +42,7 @@ const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 type ContractTokenId = TokenIdUnit;
 
 /// The state tracked for each address.
-#[derive(Serial, SchemaType, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The number of tokens owned by this address.
@@ -60,7 +60,7 @@ impl<S: HasStateApi> Deletable for AddressState<S> {
 }
 
 /// The contract state,
-#[derive(Serial, SchemaType, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state the one token.
