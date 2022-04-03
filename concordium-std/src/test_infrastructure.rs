@@ -616,18 +616,11 @@ impl HasStateApi for TestStateApi {
     type EntryType = TestStateEntry;
     type IterType = trie::TestStateIter;
 
-    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError> {
+    fn create_entry(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError> {
         self.trie.borrow_mut().create_entry(key)
     }
 
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self>, StateError> {
-        if let Some(state_entry) = self.trie.borrow_mut().lookup(key) {
-            return Ok(EntryRaw::Occupied(OccupiedEntryRaw::new(state_entry)));
-        };
-        Ok(EntryRaw::Vacant(VacantEntryRaw::new(key, self.clone())))
-    }
-
-    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.borrow().lookup(key) }
+    fn lookup_entry(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.borrow().lookup(key) }
 
     fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError> {
         self.trie.borrow_mut().delete_entry(entry)
@@ -829,9 +822,8 @@ pub struct MockFn<State> {
 /// via incrementing a local variable is not going to be possible to express.
 ///
 /// This might be improved in the future.
-type TestMockFn<State> = Box<
-    dyn FnMut(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<Cursor<Vec<u8>>>,
->;
+type TestMockFn<State> =
+    Box<dyn Fn(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<Cursor<Vec<u8>>>>;
 
 impl<State> MockFn<State> {
     /// Create a mock function which has access to `parameter`, `amount`,
@@ -851,11 +843,10 @@ impl<State> MockFn<State> {
     ///
     /// See also `returning_ok` and `returning_err` for when you need simple
     /// mocks.
-    pub fn new<R, F>(mut mock_fn_return: F) -> Self
+    pub fn new<R, F>(mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<R> + 'static,
-    {
+        F: Fn(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<R> + 'static, {
         let mock_fn = Box::new(
             move |parameter: Parameter, amount: Amount, balance: &mut Amount, state: &mut State| {
                 match mock_fn_return(parameter, amount, balance, state) {
@@ -895,10 +886,10 @@ impl<State> MockFn<State> {
 
     /// A helper that assumes that a V1 contract is invoked. This means that the
     /// return value will **always** be present in case of success.
-    pub fn new_v1<R, F>(mut mock_fn_return: F) -> Self
+    pub fn new_v1<R, F>(mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(
+        F: Fn(
                 Parameter,
                 Amount,
                 &mut Amount,
@@ -913,10 +904,10 @@ impl<State> MockFn<State> {
     /// A helper that assumes that a V0 contract is invoked. This means that the
     /// return value will **never** be present in case of success, and hence
     /// does not have to be provided by the caller.
-    pub fn new_v0<R, F>(mut mock_fn_return: F) -> Self
+    pub fn new_v0<R, F>(mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: FnMut(Parameter, Amount, &mut Amount, &mut State) -> Result<bool, CallContractError<R>>
+        F: Fn(Parameter, Amount, &mut Amount, &mut State) -> Result<bool, CallContractError<R>>
             + 'static, {
         Self::new(move |p, a, b, s| mock_fn_return(p, a, b, s).map(|modified| (modified, None)))
     }
@@ -942,8 +933,16 @@ impl<State> MockFn<State> {
     }
 }
 
-/// A Host implementation used for testing.
-/// Exposes a number of helper functions for mocking host behavior.
+/// A [`Host`](HasHost) implementation used for unit testing smart contracts.
+///
+/// The host provides a way to set up mock responses to transfers, and to
+/// contract invocations. This allows testing a specific entrypoint of a
+/// contract in isolation, assuming its dependents behave in the way specified
+/// by the supplied mock functions.
+///
+/// Additionally, this host provides some inspection capability so that after
+/// execution of an entrypoint tests can observe which accounts or contracts
+/// were affected.
 pub struct TestHost<State> {
     /// Functions that mock responses to calls.
     mocking_fns:      BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
@@ -960,7 +959,7 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State> HasHost<State> for TestHost<State> {
+impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -999,14 +998,60 @@ impl<State> HasHost<State> for TestHost<State> {
     /// This uses the mock entrypoints set up with
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
-    fn invoke_contract_raw<'a, 'b>(
-        &'a mut self,
-        to: &'b ContractAddress,
-        parameter: Parameter<'b>,
-        method: EntrypointName<'b>,
+    fn invoke_contract_raw(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType> {
+        self.commit_state();
         let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
+            Some(handler) => handler,
+            None => fail!(
+                "Mocking has not been set up for invoking contract {:?} with method '{}'.",
+                to,
+                method
+            ),
+        };
+
+        // Check if the contract has sufficient balance.
+        if amount.micro_ccd > 0 && *self.contract_balance.borrow() < amount {
+            return Err(CallContractError::AmountTooLarge);
+        }
+        // Invoke the handler.
+        let (state_modified, res) = (handler.f)(
+            parameter,
+            amount,
+            &mut self.contract_balance.borrow_mut(),
+            &mut self.state,
+        )?;
+
+        // Update the contract balance if the invocation succeeded.
+        if amount.micro_ccd > 0 {
+            *self.contract_balance.borrow_mut() -= amount;
+        }
+        // since the caller only modified (in principle) the in-memory state,
+        // we make sure to persist it to reflect what happens in actual calls
+        if state_modified {
+            self.commit_state();
+        }
+        Ok((state_modified, res))
+    }
+
+    /// Invoke a contract entrypoint.
+    ///
+    /// This uses the mock entrypoints set up with
+    /// `setup_mock_entrypoint`. The method will [fail] with a panic
+    /// if no responses were set for the given contract address and method.
+    fn invoke_contract_raw_read_only(
+        &self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> ReadOnlyCallContractResult<Self::ReturnValueType> {
+        let handler = match self.mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
@@ -1019,19 +1064,45 @@ impl<State> HasHost<State> for TestHost<State> {
             return Err(CallContractError::AmountTooLarge);
         }
 
-        // Invoke the handler.
-        let res = (handler.f)(
-            parameter,
-            amount,
-            &mut self.contract_balance.borrow_mut(),
-            &mut self.state,
-        );
+        // The callee will see state that is stored at this point.
+        let mut state = match State::deserial_with_state(
+            &self.state_builder.state_api,
+            &mut self
+                .state_builder
+                .state_api
+                .lookup_entry(&[])
+                .expect_report("Could not lookup the state root."),
+        ) {
+            Ok(state) => state,
+            Err(e) => fail!("Failed to deserialize state: {:?}", e),
+        };
 
+        // Invoke the handler.
+        let (state_modified, res) =
+            (handler.f)(parameter, amount, &mut self.contract_balance.borrow_mut(), &mut state)?;
+        if state_modified {
+            fail!("State modified in a read-only contract call.");
+        }
         // Update the contract balance if the invocation succeeded.
-        if res.is_ok() && amount.micro_ccd > 0 {
+        if amount.micro_ccd > 0 {
             *self.contract_balance.borrow_mut() -= amount;
         }
-        res
+        Ok(res)
+    }
+
+    fn commit_state(&mut self) {
+        let mut root_entry = self
+            .state_builder
+            .state_api
+            .lookup_entry(&[])
+            .expect_report("commit_state: Cannot lookup state root.");
+        self.state.serial(&mut root_entry).expect_report("commit_state: Cannot serialize state.");
+        let new_state_size = root_entry
+            .size()
+            .expect_report("commit_state: Cannot get state size. Entry was deleted.");
+        root_entry
+            .truncate(new_state_size)
+            .expect_report("commit_state: Cannot truncate state. Entry was deleted.");
     }
 
     /// Get an immutable reference to the contract state.
@@ -1051,13 +1122,17 @@ impl<State> HasHost<State> for TestHost<State> {
     }
 }
 
-impl<State> TestHost<State> {
+impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     /// Create a new test host. **It is essential that any [`StateMap`],
     /// [`StateSet`] or [`StateBox`] that exists in the provided `state` was
     /// created with the `state_builder` that is supplied. Otherwise the
-    /// behaviour of the host is unspecified, but it will likely lead to a
     /// runtime error in the test.
-    pub fn new(state: State, state_builder: StateBuilder<TestStateApi>) -> Self {
+    pub fn new(state: State, mut state_builder: StateBuilder<TestStateApi>) -> Self {
+        let mut root_entry = state_builder
+            .state_api
+            .create_entry(&[])
+            .expect_report("TestHost::new: Could not store state root.");
+        state.serial(&mut root_entry).expect_report("TestHost::new: cannot serialize state.");
         Self {
             mocking_fns: BTreeMap::new(),
             transfers: RefCell::new(Vec::new()),
@@ -1164,11 +1239,6 @@ mod test {
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
-    /// Get an entry and unwrap the result.
-    fn get_entry(state: &mut TestStateApi, key: &[u8]) -> EntryRaw<TestStateApi> {
-        state.entry(key).expect("Failed to get entry")
-    }
-
     #[test]
     // Perform a number of operations from Seek, Read, Write and HasStateApi
     // classes on the TestStateApi structure and check that they behave as
@@ -1265,9 +1335,12 @@ mod test {
         let expected_value: u64 = 123123123;
         let key = to_bytes(&42u64);
         let mut state = TestStateApi::new();
-        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        state
+            .entry(&key[..])
+            .or_insert(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
 
-        match get_entry(&mut state, &key) {
+        match state.entry(key) {
             EntryRaw::Vacant(_) => assert!(false),
             EntryRaw::Occupied(occ) => {
                 assert_eq!(u64::deserial(&mut occ.get()), Ok(expected_value))
@@ -1510,9 +1583,12 @@ mod test {
         let key = to_bytes(b"ab");
         let sub_key = to_bytes(b"abc");
         let mut state = TestStateApi::new();
-        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        state
+            .entry(&key[..])
+            .or_insert(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
-        let entry = state.create(&sub_key);
+        let entry = state.create_entry(&sub_key);
         assert!(entry.is_err(), "Should not be able to create an entry under a locked subtree");
     }
 
@@ -1522,9 +1598,12 @@ mod test {
         let key = to_bytes(b"abcd");
         let key2 = to_bytes(b"abe");
         let mut state = TestStateApi::new();
-        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
+        state
+            .entry(&key[..])
+            .or_insert(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
-        let entry = state.entry(&key2);
+        let entry = state.create_entry(&key2);
         assert!(entry.is_ok(), "Failed to create a new entry under a different subtree");
     }
 
@@ -1534,8 +1613,14 @@ mod test {
         let key = to_bytes(b"ab");
         let sub_key = to_bytes(b"abc");
         let mut state = TestStateApi::new();
-        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
-        let sub_entry = get_entry(&mut state, &sub_key).or_insert(&to_bytes(&expected_value));
+        state
+            .entry(&key[..])
+            .or_insert(&to_bytes(&expected_value))
+            .expect("no iterators, so insertion should work.");
+        let sub_entry = state
+            .entry(sub_key)
+            .or_insert(&to_bytes(&expected_value))
+            .expect("Should be possible to create the entry.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         assert!(
             state.delete_entry(sub_entry).is_err(),
@@ -1549,8 +1634,14 @@ mod test {
         let key = to_bytes(b"abcd");
         let key2 = to_bytes(b"abe");
         let mut state = TestStateApi::new();
-        get_entry(&mut state, &key).or_insert(&to_bytes(&expected_value));
-        let entry2 = get_entry(&mut state, &key2).or_insert(&to_bytes(&expected_value));
+        state
+            .entry(&key[..])
+            .or_insert(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
+        let entry2 = state
+            .entry(key2)
+            .or_insert(&to_bytes(&expected_value))
+            .expect("Should be possible to create the entry.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         assert!(
             state.delete_entry(entry2).is_ok(),
@@ -1627,7 +1718,7 @@ mod test {
         map.entry(99u8).and_modify(|v| *v = a_short_string);
         let actual_size = state_builder
             .state_api
-            .lookup(&[INITIAL_NEXT_ITEM_PREFIX[0], 0, 0, 0, 0, 0, 0, 0, 99])
+            .lookup_entry(&[INITIAL_NEXT_ITEM_PREFIX[0], 0, 0, 0, 0, 0, 0, 0, 99])
             .expect("Lookup failed")
             .size()
             .expect("Getting size failed");
@@ -1638,19 +1729,19 @@ mod test {
     fn occupied_entry_raw_truncates_leftover_data() {
         let mut state = TestStateApi::new();
         state
-            .entry(&[])
-            .expect("Could not get entry")
-            .or_insert(&to_bytes(&"A longer string that should be truncated"));
+            .entry([])
+            .or_insert(&to_bytes(&"A longer string that should be truncated"))
+            .expect("No iterators, so insertion should work.");
 
         let a_short_string = "A short string";
         let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
 
-        match state.entry(&[]).expect("Could not get entry") {
+        match state.entry([]) {
             EntryRaw::Vacant(_) => assert!(false, "Entry is vacant"),
             EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&a_short_string)),
         }
         let actual_size =
-            state.lookup(&[]).expect("Lookup failed").size().expect("Getting size failed");
+            state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
         assert_eq!(expected_size as u32, actual_size);
     }
 }

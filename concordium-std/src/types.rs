@@ -195,11 +195,13 @@ pub struct ExternStateIter {
 pub(crate) type StateEntryId = u64;
 pub(crate) type StateIteratorId = u64;
 pub(crate) type StateItemPrefix = [u8; 8];
+/// Type of keys that index into the contract state.
+pub type Key = Vec<u8>;
 
 /// Represents the data in a node in the state trie.
 pub struct StateEntry {
     pub(crate) state_entry_id:   StateEntryId,
-    pub(crate) key:              Vec<u8>,
+    pub(crate) key:              Key,
     pub(crate) current_position: u32,
 }
 
@@ -209,7 +211,7 @@ pub struct StateEntry {
 /// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
 /// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
 pub struct VacantEntryRaw<S> {
-    pub(crate) key:       Vec<u8>,
+    pub(crate) key:       Key,
     pub(crate) state_api: S,
 }
 
@@ -359,8 +361,17 @@ pub enum TransferError {
 }
 
 /// A wrapper around [Result] that fixes the error variant to
-/// [CallContractError].
+/// [CallContractError], and the result to `(bool, Option<A>)`.
+/// If the result is `Ok` then the boolean indicates whether the state was
+/// modified or not, and the second item is the actual return value, which is
+/// present (i.e., [`Some`]) if and only if a `V1` contract was invoked.
 pub type CallContractResult<A> = Result<(bool, Option<A>), CallContractError<A>>;
+
+/// A wrapper around [Result] that fixes the error variant to
+/// [CallContractError], and the result to [`Option<A>`](Option)
+/// If the result is `Ok` then the value is [`None`] if a `V0` contract was
+/// invoked, and a return value returned by a `V1` contract otherwise.
+pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>;
 
 /// A wrapper around [Result] that fixes the error variant to [TransferError]
 /// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).

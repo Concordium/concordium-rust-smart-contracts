@@ -506,7 +506,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 match #fn_name(&ctx, &mut state_builder, #(#fn_optional_args, )*) {
                     Ok(state) => {
                         // Store the state.
-                        let mut root_entry = state_api.create(&[]).unwrap_abort();
+                        let mut root_entry = state_api.create_entry(&[]).unwrap_abort();
                         state.serial(&mut root_entry).unwrap_abort();
                         // Return success
                         0
@@ -740,7 +740,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         let (host_ref, save_state_if_mutable) = if receive_attributes.mutable {
             (quote!(&mut host), quote! {
                 // look up the root entry again, since we might be in a different generation now
-                let mut root_entry_end = host.state_builder.into_inner().lookup(&[]).unwrap_abort();
+                let mut root_entry_end = host.state_builder.into_inner().lookup_entry(&[]).unwrap_abort();
                 host.state.serial(&mut root_entry_end).unwrap_abort();
                 let new_state_size = root_entry_end.size().unwrap_abort();
                 root_entry_end.truncate(new_state_size).unwrap_abort();
@@ -756,7 +756,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ExternReceiveContext>::open(());
                 let state_api = ExternStateApi::open();
-                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut state_api.lookup(&[]).unwrap_abort()) {
+                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut state_api.lookup_entry(&[]).unwrap_abort()) {
                     let mut state_builder = StateBuilder::open(state_api);
                     let mut host = ExternHost { state, state_builder };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
