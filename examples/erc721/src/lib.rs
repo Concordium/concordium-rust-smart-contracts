@@ -233,7 +233,7 @@ enum ContractError {
     /// Note this one is optional since it is only used by "onERC721Received".
     InvalidContractName,
     /// Failed to invoke a contract.
-    InvokeContractError,
+    Invoke,
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -249,7 +249,7 @@ impl From<LogError> for ContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for ContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self { Self::Invoke }
 }
 
 impl<S: HasStateApi> State<S> {
@@ -799,7 +799,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
         let mut logger = TestLogger::init();
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         contract_safe_transfer_from(&ctx, &mut host, &mut logger)
             .expect_report("Failed NFT transfer");
@@ -840,7 +840,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let result: ContractResult<()> = contract_safe_transfer_from(&ctx, &mut host, &mut logger);
         let err = result.expect_err_report("Expected to fail");
@@ -856,7 +856,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
         host.state_mut().approve(&Some(ADDRESS_1), &TOKEN_ID);
 
         let parameter = SafeTransferFromParams {
@@ -899,7 +899,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut state = initial_state(&mut state_builder);
         state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true, &mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = SafeTransferFromParams {
             from:         ADDRESS_0,
@@ -939,7 +939,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -977,7 +977,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -1004,7 +1004,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut state = initial_state(&mut state_builder);
         state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true, &mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -1041,7 +1041,7 @@ mod tests {
 
         let mut state_builder = StateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveForAllParams {
             operator: ADDRESS_1,

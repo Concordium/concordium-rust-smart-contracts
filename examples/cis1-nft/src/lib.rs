@@ -211,6 +211,8 @@ impl<S: HasStateApi> State<S> {
         // address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
 
+        // Find and remove the token from the owner, if nothing is removed, we know the
+        // address did not own the token.
         self.state.entry(*from).and_try_modify(|address_state| {
             let removed = address_state.owned_tokens.remove(token_id);
             ensure!(removed, ContractError::InsufficientFunds);
@@ -271,7 +273,20 @@ fn contract_init<S: HasStateApi>(
     Ok(State::empty(state_builder))
 }
 
-/// View function
+#[derive(Serialize, SchemaType)]
+struct ViewAddressState {
+    owned_tokens: Vec<ContractTokenId>,
+    operators:    Vec<Address>,
+}
+
+#[derive(Serialize, SchemaType)]
+struct ViewState {
+    state:      Vec<(Address, ViewAddressState)>,
+    all_tokens: Vec<ContractTokenId>,
+}
+
+/// View function that returns the entire contents of the state. Meant for
+/// testing.
 #[receive(contract = "CIS1-NFT", name = "view", return_value = "ViewState")]
 fn contract_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -279,45 +294,21 @@ fn contract_view<S: HasStateApi>(
 ) -> ReceiveResult<ViewState> {
     let state = host.state();
 
-    let mut inner_state: std::collections::BTreeMap<Address, ViewAddressState> =
-        std::collections::BTreeMap::new();
+    let mut inner_state = Vec::new();
     for (k, a_state) in state.state.iter() {
-        let mut owned_tokens = std::collections::BTreeSet::new();
-        let mut operators = std::collections::BTreeSet::new();
-        for t in a_state.owned_tokens.iter() {
-            owned_tokens.insert(*t);
-        }
-        for o in a_state.operators.iter() {
-            operators.insert(*o);
-        }
-
-        inner_state.insert(*k, ViewAddressState {
+        let owned_tokens = a_state.owned_tokens.iter().map(|x| *x).collect();
+        let operators = a_state.operators.iter().map(|x| *x).collect();
+        inner_state.push((*k, ViewAddressState {
             owned_tokens,
             operators,
-        });
+        }));
     }
-    let mut all_tokens: std::collections::BTreeSet<ContractTokenId> =
-        std::collections::BTreeSet::new();
-    for v in state.all_tokens.iter() {
-        all_tokens.insert(*v);
-    }
+    let all_tokens = state.all_tokens.iter().map(|x| *x).collect();
 
     Ok(ViewState {
         state: inner_state,
         all_tokens,
     })
-}
-
-#[derive(Serialize, SchemaType)]
-struct ViewAddressState {
-    owned_tokens: std::collections::BTreeSet<ContractTokenId>,
-    operators:    std::collections::BTreeSet<Address>,
-}
-
-#[derive(Serialize, SchemaType)]
-struct ViewState {
-    state:      std::collections::BTreeMap<Address, ViewAddressState>,
-    all_tokens: std::collections::BTreeSet<ContractTokenId>,
 }
 
 /// Mint new tokens with a given address as the owner of these tokens.
@@ -685,7 +676,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = State::empty(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_mint(&ctx, &mut host, &mut logger);
@@ -771,7 +762,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -830,7 +821,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -864,7 +855,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut state = initial_state(&mut state_builder);
         state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -919,7 +910,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);

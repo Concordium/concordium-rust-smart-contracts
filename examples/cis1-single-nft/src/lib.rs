@@ -250,14 +250,12 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
+        let state = host.state_mut();
         // Authenticate the sender for this transfer
-        ensure!(
-            from == sender || host.state().is_operator(&sender, &from),
-            ContractError::Unauthorized
-        );
+        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
         let to_address = to.address();
         // Update the contract state
-        host.state_mut().transfer(&token_id, amount, &from, &to_address)?;
+        state.transfer(&token_id, amount, &from, &to_address)?;
 
         // Log transfer event
         logger.log(&Cis1Event::Transfer(TransferEvent {

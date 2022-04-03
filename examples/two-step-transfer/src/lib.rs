@@ -409,7 +409,7 @@ mod tests {
             init_params,
             requests: state_builder.new_map(),
         };
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
         host.set_self_balance(Amount::from_micro_ccd(0));
 
         let receive_amount = Amount::from_micro_ccd(100);
@@ -474,7 +474,7 @@ mod tests {
             init_params,
             requests,
         };
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let receive_amount = Amount::from_micro_ccd(75);
 
@@ -542,7 +542,7 @@ mod tests {
             requests,
         };
 
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
         host.set_self_balance(Amount::from_micro_ccd(100)); //
 
         // Execution

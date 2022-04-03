@@ -392,13 +392,14 @@ fn contract_unwrap<S: HasStateApi>(
     let params: UnwrapParams = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
+    let state = host.state_mut();
     ensure!(
-        sender == params.owner || host.state().is_operator(&sender, &params.owner),
+        sender == params.owner || state.is_operator(&sender, &params.owner),
         ContractError::Unauthorized
     );
 
     // Update the state.
-    host.state_mut().burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
+    state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
     logger.log(&Cis1Event::Burn(BurnEvent {
@@ -409,19 +410,17 @@ fn contract_unwrap<S: HasStateApi>(
 
     let unwrapped_amount = Amount::from_micro_ccd(params.amount);
 
-    let action = match params.receiver {
-        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount),
+    match params.receiver {
+        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
         Receiver::Contract(address, function) => {
             host.invoke_contract_raw(
                 &address,
                 Parameter(&to_bytes(&params.data)),
                 function.as_receive_name().entrypoint_name(),
                 unwrapped_amount,
-            )
-            .unwrap_abort();
-            Ok(())
+            )?;
         }
-    };
+    }
 
     Ok(())
 }
@@ -793,7 +792,7 @@ mod tests {
         state
             .mint(&TOKEN_ID_WCCD, 400, &ADDRESS_0, &mut state_builder)
             .expect_report("Failed to setup state");
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -857,7 +856,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -890,7 +889,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut state = initial_state(&mut state_builder);
         state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -947,7 +946,7 @@ mod tests {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new_with_state_builder(state, state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
