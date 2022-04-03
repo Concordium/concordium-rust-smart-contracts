@@ -53,7 +53,50 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 /// However values may contain references to the low-level state, in particular
 /// maps may be nested.
 ///
-/// ## Pitfalls
+/// ### Low-level state `S`
+///
+/// The type parameter `S` is extra compared to usual Rust collections. As
+/// mentioned above it specifies the [low-level state
+/// implementation](crate::HasStateApi). This library provides two such
+/// implementations. The "external" one, which is the implementation supported
+/// by external host functions provided by the chain, and a
+/// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
+/// useful for testing since it provides an implementation that is easier to
+/// construct, executed, and inspect during unit testing.
+///
+/// In user code this type parameter should generally be treated as boilerplate,
+/// and contract entrypoints should always be stated in terms of a generic type
+/// `S` that implements [HasStateApi](crate::HasStateApi)
+///
+/// #### Example
+/// ```rust
+/// # use concordium_std::*;
+/// #[derive(Serial, DeserialWithState)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S: HasStateApi> {
+///     inner: StateMap<u64, u64, S>,
+/// }
+/// #[init(contract = "mycontract")]
+/// fn contract_init<S: HasStateApi>(
+///     _ctx: &impl HasInitContext,
+///     state_builder: &mut StateBuilder<S>,
+/// ) -> InitResult<MyState<S>> {
+///     Ok(MyState {
+///         inner: state_builder.new_map(),
+///     })
+/// }
+///
+/// #[receive(contract = "mycontract", name = "receive", return_value = "Option<u64>")]
+/// fn contract_receive<S: HasStateApi>(
+///     _ctx: &impl HasReceiveContext,
+///     host: &impl HasHost<MyState<S>, StateApiType = S>, // the same low-level state must be propagated throughout
+/// ) -> ReceiveResult<Option<u64>> {
+///     let state = host.state();
+///     Ok(state.inner.get(&0).map(|v| *v))
+/// }
+/// ```
+///
+/// ## **Caution**
 ///
 /// `StateMap`s must be explicitly deleted when they are no longer needed,
 /// otherwise they will remain in the contract's state, albeit unreachable.
@@ -168,6 +211,50 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// required then a custom solution should be devised using the operations on
 /// `S` (see [HasStateApi](crate::HasStateApi)).
 ///
+/// ### Low-level state `S`
+///
+/// The type parameter `S` is extra compared to usual Rust collections. As
+/// mentioned above it specifies the [low-level state
+/// implementation](crate::HasStateApi). This library provides two such
+/// implementations. The "external" one, which is the implementation supported
+/// by external host functions provided by the chain, and a
+/// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
+/// useful for testing since it provides an implementation that is easier to
+/// construct, executed, and inspect during unit testing.
+///
+/// In user code this type parameter should generally be treated as boilerplate,
+/// and contract entrypoints should always be stated in terms of a generic type
+/// `S` that implements [HasStateApi](crate::HasStateApi)
+///
+/// #### Example
+/// ```rust
+/// # use concordium_std::*;
+/// #[derive(Serial, DeserialWithState)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S: HasStateApi> {
+///     inner: StateSet<u64, S>,
+/// }
+/// #[init(contract = "mycontract")]
+/// fn contract_init<S: HasStateApi>(
+///     _ctx: &impl HasInitContext,
+///     state_builder: &mut StateBuilder<S>,
+/// ) -> InitResult<MyState<S>> {
+///     Ok(MyState {
+///         inner: state_builder.new_set(),
+///     })
+/// }
+///
+/// #[receive(contract = "mycontract", name = "receive", return_value = "bool")]
+/// fn contract_receive<S: HasStateApi>(
+///     _ctx: &impl HasReceiveContext,
+///     host: &impl HasHost<MyState<S>, StateApiType = S>, // the same low-level state must be propagated throughout
+/// ) -> ReceiveResult<bool> {
+///     let state = host.state();
+///     Ok(state.inner.contains(&0))
+/// }
+/// ```
+///
+/// ## **Caution**
 ///
 /// `StateSet`s must be explicitly deleted when they are no longer needed,
 /// otherwise they will remain in the contract's state, albeit unreachable.
