@@ -560,6 +560,7 @@ where
         OccupiedEntry {
             key: self.key,
             value,
+            modified: false,
             state_entry,
             _lifetime_marker: self._lifetime_marker,
         }
@@ -572,11 +573,12 @@ where
     V: Serial,
     StateApi: HasStateApi,
 {
-    /// Creae a new `OccupiedEntry`.
+    /// Create a new `OccupiedEntry`.
     pub(crate) fn new(key: K, value: V, state_entry: StateApi::EntryType) -> Self {
         Self {
             key,
             value,
+            modified: false,
             state_entry,
             _lifetime_marker: PhantomData,
         }
@@ -620,8 +622,14 @@ where
         self.store_value();
         Ok(res)
     }
+}
 
-    fn store_value(&mut self) {
+impl<'a, K, V, StateApi> OccupiedEntry<'a, K, V, StateApi>
+where
+    V: Serial,
+    StateApi: HasStateApi,
+{
+    pub(crate) fn store_value(&mut self) {
         self.state_entry.move_to_start();
         // First truncate it back to 0. This is not ideal in some cases, since
         // it is a needless call.
@@ -1052,7 +1060,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasStateApi> Iterator for StateMapIterMut<'a, K, V, S>
+impl<'a, K, V: Serial, S: HasStateApi> Iterator for StateMapIterMut<'a, K, V, S>
 where
     K: Deserial + 'a,
     V: DeserialWithState<S> + 'a,
@@ -1085,12 +1093,41 @@ impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::Deref
     fn deref(&self) -> &Self::Target { self.get() }
 }
 
+impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
+    for StateRefMut<'a, V, S>
+{
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
+}
+
+impl<'a, V: Serial, S: HasStateApi> Drop for StateRefMut<'a, V, S> {
+    fn drop(&mut self) {
+        if let Some(value) = self.lazy_value.get_mut() {
+            let entry = self.entry.get_mut();
+            entry.move_to_start();
+            value.serial(entry).unwrap_abort()
+        }
+    }
+}
+
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
     V: Serial + DeserialWithState<S>,
     S: HasStateApi,
 {
     pub fn get(&self) -> &V {
+        let lv = unsafe { &mut *self.lazy_value.get() };
+        if let Some(v) = lv {
+            v
+        } else {
+            let entry = unsafe { &mut *self.entry.get() };
+            entry.move_to_start();
+            let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
+            lv.insert(value)
+        }
+    }
+
+    pub fn get_mut(&mut self) -> &mut V {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v

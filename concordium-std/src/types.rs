@@ -1,4 +1,4 @@
-use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
+use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Serial, Vec};
 
 #[derive(Debug)]
 /// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
@@ -155,23 +155,20 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 }
 
 #[derive(Debug)]
-/// The [`StateRefMut<_, V, _>`] behaves like `&mut V` except that values cannot
-/// be directly mutated, that is, it does not implement
-/// [`DerefMut`](crate::ops::DerefMut) since that would allow updates that would
-/// not be properly reflected in contract state. Instead the
-/// [`update`](StateRefMut::update) or [`set`](StateRefMut::set) methods should
-/// be used.
-///
-/// The type does implement [`Deref`](crate::ops::Deref) however, so immutable
-/// borrows are convenient.
-pub struct StateRefMut<'a, V, S: HasStateApi> {
+/// The [`StateRefMut<_, V, _>`] behaves like `&mut V`, by analogy with other
+/// standard library RAII guards like [`RefMut`](std::cell::RefMut).
+/// The type implements [`DerefMut`](crate::ops::DerefMut) which allows the
+/// value to be mutated. Additionally, the [`Drop`](Drop) implementation ensures
+/// that the value is properly stored in the contract state maintained by the
+/// node.
+pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
     pub(crate) entry:            UnsafeCell<S::EntryType>,
     pub(crate) state_api:        S,
     pub(crate) lazy_value:       UnsafeCell<Option<V>>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
-impl<'a, V, S: HasStateApi> StateRefMut<'a, V, S> {
+impl<'a, V: Serial, S: HasStateApi> StateRefMut<'a, V, S> {
     #[inline(always)]
     pub(crate) fn new(entry: S::EntryType, state_api: S) -> Self {
         Self {
@@ -251,20 +248,47 @@ pub struct VacantEntry<'a, K, V, S> {
 /// [`StateMap::entry`] method. This allows looking up or modifying the value at
 /// a give key in-place.
 ///
+/// The type implements [`DerefMut`](crate::ops::DerefMut) which allows the
+/// value to be mutated. The [`Drop`](Drop) implementation ensures
+/// that the value is properly stored in the contract state maintained by the
+/// node.
+///
 /// Differs from [`OccupiedEntryRaw`] in that this automatically handles
-/// serialization.
-pub struct OccupiedEntry<'a, K, V, S: HasStateApi> {
+/// serialization and provides convenience methods for modifying the value via
+/// the [`DerefMut`](crate::ops::DerefMut).
+pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi> {
     pub(crate) key:              K,
     pub(crate) value:            V,
+    /// Indicates whether the value should be stored by the drop implementation.
+    /// This is set when deref_mut method is called only, since that is when we
+    /// **might** implicitly mutate the value.
+    pub(crate) modified:         bool,
     pub(crate) state_entry:      S::EntryType,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
-impl<'a, K, V, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> {
+impl<'a, K, V: Serial, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> {
     type Target = V;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target { &self.value }
+}
+
+impl<'a, K, V: Serial, S: HasStateApi> crate::ops::DerefMut for OccupiedEntry<'a, K, V, S> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.modified = true;
+        &mut self.value
+    }
+}
+
+impl<'a, K, V: Serial, S: HasStateApi> Drop for OccupiedEntry<'a, K, V, S> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if self.modified {
+            self.store_value()
+        }
+    }
 }
 
 /// A view into a single entry in a [`StateMap`], which
@@ -272,7 +296,7 @@ impl<'a, K, V, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> 
 ///
 /// This `enum` is constructed from the [`entry`][StateMap::entry] method
 /// on a [`StateMap`] type.
-pub enum Entry<'a, K, V, S: HasStateApi> {
+pub enum Entry<'a, K, V: Serial, S: HasStateApi> {
     Vacant(VacantEntry<'a, K, V, S>),
     Occupied(OccupiedEntry<'a, K, V, S>),
 }
