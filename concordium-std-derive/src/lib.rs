@@ -596,8 +596,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// Setting the `mutable` attribute changes the required signature so the host
 /// becomes a mutable reference.
 ///
-/// When a receive method is mutable, the state, e.g. `MyState`, is serialized
-/// and stored after each invocation.
+/// **When a receive method is mutable, the state, e.g. `MyState`, is serialized
+/// and stored after each invocation. This means that even if the state does
+/// not change semantically, it will be considered as modified by callers.**
+/// Thus the `mutable` option should only be used when absolutely necessary.
 ///
 /// ### Example
 /// ```ignore
