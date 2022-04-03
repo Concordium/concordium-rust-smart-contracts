@@ -1,21 +1,22 @@
 use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
 
 #[derive(Debug)]
-/// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
+/// A high-level map based on the low-level key-value store, which is the
+/// interface provided by the chain.
 ///
-/// In most situations, this type should be preferred over
-/// [`BTreeMap`][btm] and [`HashMap`][hm].
-///
-/// Stores each value in a separate node in the state trie.
-/// This is different from [`BTreeMap`][btm] and
-/// [`HashMap`][hm], which store their _whole_ structure in a
-/// _single_ node in the state trie. That is why this map should be preferred.
+/// In most situations, this collection should be preferred over
+/// [`BTreeMap`][btm] and [`HashMap`][hm] since it will be more efficient to
+/// lookup and update since costs to lookup and update will be grow very slowly
+/// with the size of the collection. In contrast, using [`BTreeMap`][btm] and
+/// [`HashMap`][hm] almost always entails their serialization, which is linear
+/// in the size of the collection.
 ///
 /// The cost of updates to the map are dependent on the length of `K` (in bytes)
 /// and the size of the data stored (`V`). Short keys are therefore ideal.
 ///
-/// Can only be constructed by the [`new_map`][StateBuilder::new_map] method on
-/// [`StateBuilder`].
+/// New maps can be constructed using the
+/// [`new_map`][StateBuilder::new_map] method on the [`StateBuilder`].
+///
 ///
 /// ```
 /// # use concordium_std::*;
@@ -28,7 +29,77 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 /// # let mut host = TestHost::new((), state_builder);
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_map();
-/// # map2.insert(0u16, 1u16); // Specifies type of map.
+/// # map2.insert(0u16, 1u16);
+/// ```
+///
+/// ## Type parameters
+///
+/// The map `StateMap<K, V, S>` is parametrized by the type of _keys_ `K`, the
+/// type of _values_ `V` and the type of the low-level state `S`. In line with
+/// other Rust collections, e.g., [`BTreeMap`][btm] and [`HashMap`][hm]
+/// constructing the statemap via [`new`](StateMap::new) does not require
+/// anything specific from `K` and `V`. However most operations do require that
+/// `K` is serializable and `V` can be stored and loaded in the context of the
+/// low-level state `S`.
+///
+/// This concretely means that `K` must implement
+/// [`Serialize`](crate::Serialize) and `V` has to implement
+/// [`Serial`](crate::Serial) and [`DeserialWithState<S>`](crate::
+/// DeserialWithState). In practice, this means that keys must be
+/// _flat_, meaning that it cannot have any references to the low-level state.
+/// This is almost all types, except [`StateBox`], [`StateMap`] and [`StateSet`]
+/// and types containing these.
+///
+/// However values may contain references to the low-level state, in particular
+/// maps may be nested.
+///
+/// ## Pitfalls
+///
+/// `StateMap`s must be explicitly deleted when they are no longer needed,
+/// otherwise they will remain in the contract's state, albeit unreachable.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// struct MyState<S: HasStateApi> {
+///     inner: StateMap<u64, u64, S>,
+/// }
+/// fn incorrect_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     // The following is incorrect. The old value of `inner` is not properly deleted.
+///     // from the state.
+///     state.inner = state_builder.new_map(); // ⚠️
+/// }
+/// ```
+/// Instead, either the map should be [cleared](StateMap::clear) or
+/// explicitly deleted.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateMap<u64, u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     state.inner.clear_flat();
+/// }
+/// ```
+/// Or alternatively
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateMap<u64, u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     let old_map = mem::replace(&mut state.inner, state_builder.new_map());
+///     old_map.delete()
+/// }
 /// ```
 ///
 /// [hm]: crate::collections::HashMap
@@ -67,15 +138,83 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 }
 
 #[derive(Debug)]
-/// A set based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
+/// A high-level set of _flat_ values based on the low-level key-value store,
+/// which is the interface provided by the chain.
 ///
-/// In most situations, this type should be preferred over
-/// [`BTreeSet`][bts] and [`HashSet`][hs].
-/// See [`StateMap`]'s documentation for a more information about why this is
-/// the case.
+/// In most situations, this collection should be preferred over
+/// [`BTreeSet`][bts] and [`HashSet`][hs] since it will be more efficient to
+/// lookup and update since costs to lookup and update will be grow very slowly
+/// with the size of the collection. In contrast, using [`BTreeSet`][bts] and
+/// [`HashSet`][hs] almost always entails their serialization, which is linear
+/// in the size of the collection.
 ///
-/// The cost of updates to the set are dependent on the length of `T` (in
-/// bytes).
+/// The cost of updates to the set are dependent on the serialized size of the
+/// value `T`.
+///
+/// New sets can be constructed using the
+/// [`new_set`][StateBuilder::new_set] method on the [`StateBuilder`].
+///
+/// ## Type parameters
+///
+/// The set `StateSet<T, S>` is parametrized by the type of _values_ `T`, and
+/// the type of the low-level state `S`. In line with other Rust collections,
+/// e.g., [`BTreeSet`][bts] and [`HashSet`][hs] constructing the stateset via
+/// [`new`](StateSet::new) does not require anything specific from `T`.
+/// However most operations do require that `T` implements
+/// [`Serialize`](crate::Serialize).
+///
+/// Since `StateSet<T, S>` itself **does not** implement
+/// [`Serialize`](crate::Serialize) **sets cannot be nested**. If this is really
+/// required then a custom solution should be devised using the operations on
+/// `S` (see [HasStateApi](crate::HasStateApi)).
+///
+///
+/// `StateSet`s must be explicitly deleted when they are no longer needed,
+/// otherwise they will remain in the contract's state, albeit unreachable.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// struct MyState<S: HasStateApi> {
+///     inner: StateSet<u64, S>,
+/// }
+/// fn incorrect_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     // The following is incorrect. The old value of `inner` is not properly deleted.
+///     // from the state.
+///     state.inner = state_builder.new_set(); // ⚠️
+/// }
+/// ```
+/// Instead, either the set should be [cleared](StateSet::clear) or
+/// explicitly deleted.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateSet<u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     state.inner.clear();
+/// }
+/// ```
+/// Or alternatively
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateSet<u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     let old_set = mem::replace(&mut state.inner, state_builder.new_set());
+///     old_set.delete()
+/// }
+/// ```
 ///
 /// [hs]: crate::collections::HashSet
 /// [bts]: crate::collections::BTreeSet
@@ -102,9 +241,9 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 ///
 /// The actual data is lazily loaded and thereafter cached in memory.
 ///
-/// Due to its laziness, a [`Self`] can be used to defer loading of data in your
-/// state. This is useful when part of your state isn't used in every receive
-/// method.
+/// Due to its laziness, a [`StateBox`] can be used to defer loading of data in
+/// your state. This is useful when part of your state isn't used in every
+/// receive method.
 ///
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
 /// is the state.

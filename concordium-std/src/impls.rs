@@ -864,7 +864,7 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasStateApi,
     K: Serialize,
-    V: Serial + DeserialWithState<S> + Deletable,
+    V: Serial + DeserialWithState<S>,
 {
     /// Lookup the value with the given key. Return [None] if there is no value
     /// with the given key.
@@ -916,17 +916,36 @@ where
 
     /// Clears the map, removing all key-value pairs.
     /// This also includes values pointed at, if `V`, for example, is a
-    /// [StateBox].
+    /// [StateBox]. **If applicable use [`clear_flat`](Self::clear_flat)
+    /// instead.**
     // Note: This does not use delete() because delete consumes self.
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self)
+    where
+        V: Deletable, {
         // Delete all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap.
-        // TODO: Ideally, only delete when `V` _is_ a statetype.
         for (_, value) in self.iter() {
             value.value.delete()
         }
 
         // Then delete the map itself.
+        // Unwrapping is safe when only using the high-level API.
+        self.state_api.delete_prefix(&self.prefix).unwrap_abort();
+    }
+
+    /// Clears the map, removing all key-value pairs.
+    /// **This should be used over [`clear`](Self::clear) if it is
+    /// applicable.** It avoids recursive deletion of values since the
+    /// values are required to be _flat_.
+    ///
+    /// Unfortunately it is not possible to automatically choose between these
+    /// implementations. Once Rust gets trait specialization then this might
+    /// be possible.
+    pub fn clear_flat(&mut self)
+    where
+        V: Deserial, {
+        // Delete only the map itself since the values have no pointers to state.
+        // Thus there will be no dangling references.
         // Unwrapping is safe when only using the high-level API.
         self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
@@ -957,7 +976,9 @@ where
 
     /// Remove a key from the map.
     /// This also deletes the value in the state.
-    pub fn remove(&mut self, key: &K) {
+    pub fn remove(&mut self, key: &K)
+    where
+        V: Deletable, {
         if let Some(v) = self.remove_and_get(key) {
             v.delete()
         }
@@ -1169,11 +1190,9 @@ where
     /// [StateBox].
     // Note: This does not use delete() because delete consumes self.
     pub fn clear(&mut self) {
-        // Delete all values in the stateset. This is necessary if `T` is a
-        // StateBox/StateMap.
-        for value in self.iter() {
-            value.value.delete()
-        }
+        // Delete all values in the stateset. Since `T` is serializable
+        // there is no need to recursively delete the values since
+        // serializable values cannot have pointers to other parts of state.
         // Unwrapping is safe when only using the high-level API.
         self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
@@ -1779,7 +1798,7 @@ where
     /// # struct MyState<S: HasStateApi> {
     /// #    inner: StateBox<u64, S>
     /// # }
-    /// fn incorrect_replace<S: HasStateApi>(
+    /// fn correct_replace<S: HasStateApi>(
     ///     state_builder: &mut StateBuilder<S>,
     ///     state: &mut MyState<S>,
     /// ) {
