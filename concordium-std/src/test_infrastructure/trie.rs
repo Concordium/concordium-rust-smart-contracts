@@ -387,7 +387,7 @@ mod tests {
         create_entry(&mut trie, &key2);
         create_entry(&mut trie, &key3);
 
-        assert_eq!(trie.delete_prefix(&key2).is_ok(), true);
+        assert!(trie.delete_prefix(&key2).is_ok());
 
         assert!(trie.lookup(&key1).is_some());
         assert!(trie.lookup(&key2).is_none());

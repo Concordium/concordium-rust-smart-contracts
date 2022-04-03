@@ -1341,7 +1341,7 @@ mod test {
             .expect("No iterators, so insertion should work.");
 
         match state.entry(key) {
-            EntryRaw::Vacant(_) => assert!(false),
+            EntryRaw::Vacant(_) => panic!("Unexpected vacant entry."),
             EntryRaw::Occupied(occ) => {
                 assert_eq!(u64::deserial(&mut occ.get()), Ok(expected_value))
             }
@@ -1494,21 +1494,19 @@ mod test {
         let mut state_builder = TestStateBuilder::new();
 
         let mut set = state_builder.new_set::<u8>();
-        assert_eq!(set.insert(0), true);
-        assert_eq!(set.insert(1), true);
-        assert_eq!(set.insert(1), false);
-        assert_eq!(set.insert(2), true);
-        assert_eq!(set.remove(&2), true);
+        assert!(set.insert(0));
+        assert!(set.insert(1));
+        assert!(!set.insert(1));
+        assert!(set.insert(2));
+        assert!(set.remove(&2));
         state_builder.insert(my_set_key, set).expect("Insert failed");
 
-        assert_eq!(
-            state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),
-            true
-        );
-        assert_eq!(
-            state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),
-            false
-        );
+        assert!(state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),);
+        assert!(!state_builder
+            .get::<_, StateSet<u8, _>>(my_set_key)
+            .unwrap()
+            .unwrap()
+            .contains(&2),);
 
         let set = state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap();
         let mut iter = set.iter();
@@ -1656,9 +1654,9 @@ mod test {
         let middle_box = state_builder.new_box(inner_box);
         let outer_box = state_builder.new_box(middle_box);
         outer_box.delete();
-        let iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
-        assert!(iter.skip(1).next().is_none());
+        assert!(iter.nth(1).is_none());
     }
 
     #[test]
@@ -1672,9 +1670,9 @@ mod test {
         map.insert(2u8, box2);
         map.insert(3u8, box3);
         map.clear();
-        let iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
-        assert!(iter.skip(1).next().is_none());
+        assert!(iter.nth(1).is_none());
     }
 
     #[test]
@@ -1737,7 +1735,7 @@ mod test {
         let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
 
         match state.entry([]) {
-            EntryRaw::Vacant(_) => assert!(false, "Entry is vacant"),
+            EntryRaw::Vacant(_) => panic!("Entry is vacant"),
             EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&a_short_string)),
         }
         let actual_size =
