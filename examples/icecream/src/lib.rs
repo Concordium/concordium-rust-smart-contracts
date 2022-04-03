@@ -175,7 +175,7 @@ mod tests {
         let state = State {
             weather_service: WEATHER_SERVICE,
         };
-        let mut host = TestHost::new(state);
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -211,7 +211,7 @@ mod tests {
         let state = State {
             weather_service: WEATHER_SERVICE,
         };
-        let mut host = TestHost::new(state);
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -246,7 +246,7 @@ mod tests {
         let state = State {
             weather_service: WEATHER_SERVICE,
         };
-        let mut host = TestHost::new(state);
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -280,7 +280,7 @@ mod tests {
         let state = State {
             weather_service: WEATHER_SERVICE,
         };
-        let mut host = TestHost::new(state);
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);

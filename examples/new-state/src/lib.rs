@@ -6,7 +6,7 @@ type TokenCount = u8;
 
 #[derive(SchemaType, Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State<S> {
+struct State<S: HasStateApi> {
     token_state:        StateMap<Address, StateMap<TokenId, TokenCount, S>, S>,
     another_struct:     AnotherStruct<S>,
     total_tokens:       u64,
@@ -24,7 +24,7 @@ struct AnotherStruct<S> {
 
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "MBS")]
-enum MaybeBox<S: Serialize, MBS> {
+enum MaybeBox<S: Serialize, MBS: HasStateApi> {
     NoBox(S),
     WithBox(StateBox<String, MBS>),
 }
@@ -149,7 +149,7 @@ mod tests {
         let state_for_rcv =
             State::deserial_with_state(&state_api, &mut root_entry).expect("Could not read state");
 
-        let mut host = TestHost::new_with_state_builder(state_for_rcv, state_builder);
+        let mut host = TestHost::new(state_for_rcv, state_builder);
 
         // Invoke receive.
         assert!(receive_mint(&ctx, &mut host).is_ok());

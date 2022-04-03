@@ -106,12 +106,12 @@ impl ParsedAttributes {
     }
 
     /// Remove an attribute and return whether it was present.
-    pub(crate) fn extract_flag(&mut self, key: &str) -> bool {
+    pub(crate) fn extract_flag(&mut self, key: &str) -> Option<Ident> {
         // This is not clean, constructing a new identifier with a call_site span.
         // But the only alternative I see is iterating over the map and locating the key
         // since Ident implements equality comparison with &str.
         let key = syn::Ident::new(key, Span::call_site());
-        self.flags.remove(&key)
+        self.flags.take(&key)
     }
 
     /// If there are any remaining attributes signal an error. Otherwise return
@@ -246,9 +246,9 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             )
         })?;
     let parameter: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_PARAMETER);
-    let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
-    let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
-    let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
+    let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE).is_some();
+    let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER).is_some();
+    let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL).is_some();
     let return_value = attributes.extract_ident_and_value(INIT_ATTRIBUTE_RETURN_VALUE);
     if let Some((ident, _)) = return_value {
         return Err(syn::Error::new(
@@ -293,17 +293,23 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
     let return_value: Option<syn::LitStr> =
         attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
-    let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE);
-    let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER);
+    let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE).is_some();
+    let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER).is_some();
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
     let mutable = attributes.extract_flag(RECEIVE_ATTRIBUTE_MUTABLE);
 
-    if mutable && low_level {
-        return Err(syn::Error::new(
-            Span::call_site(),
+    if let (Some(mutable), Some(low_level)) = (&mutable, &low_level) {
+        let mut error = syn::Error::new(
+            mutable.span(),
             "The attributes 'mutable' and 'low_level' are incompatible and should not be used on \
-             the same method.",
+             the same method. `mutable` appears here.",
+        );
+        error.combine(syn::Error::new(
+            low_level.span(),
+            "The attributes 'mutable' and 'low_level' are incompatible and should not be used on \
+             the same method. `low_level` appears here.",
         ));
+        return Err(error);
     }
 
     // Make sure that there are no unrecognized attributes. These would typically be
@@ -317,12 +323,13 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             optional: OptionalArguments {
                 payable,
                 enable_logger,
-                low_level,
+                low_level: low_level.is_some(),
                 parameter,
                 return_value,
             },
-            mutable, /* TODO: This is also optional, but does not belong in OptionalArguments, as
-                      * it doesn't apply to init methods. */
+            mutable: mutable.is_some(), /* TODO: This is also optional, but does not belong in
+                                         * OptionalArguments, as
+                                         * it doesn't apply to init methods. */
         }),
         (Some(_), None) => Err(syn::Error::new(
             Span::call_site(),
@@ -398,8 +405,8 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
 /// ```
 ///
-/// ## `low_level`: Manually deal with the low-level state including writing
-/// bytes Setting the `low_level` attribute disables the generated code for
+/// ## `low_level`: Manually deal with the low-level state.
+/// Setting the `low_level` attribute disables the generated code for
 /// serializing the contract state.
 ///
 /// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
@@ -499,7 +506,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
                 match #fn_name(&ctx, &mut state_builder, #(#fn_optional_args, )*) {
                     Ok(state) => {
                         // Store the state.
-                        let mut root_entry = state_api.create(&[]).unwrap_abort();
+                        let mut root_entry = state_api.create_entry(&[]).unwrap_abort();
                         state.serial(&mut root_entry).unwrap_abort();
                         // Return success
                         0
@@ -733,7 +740,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         let (host_ref, save_state_if_mutable) = if receive_attributes.mutable {
             (quote!(&mut host), quote! {
                 // look up the root entry again, since we might be in a different generation now
-                let mut root_entry_end = host.state_builder.into_inner().lookup(&[]).unwrap_abort();
+                let mut root_entry_end = host.state_builder.into_inner().lookup_entry(&[]).unwrap_abort();
                 host.state.serial(&mut root_entry_end).unwrap_abort();
                 let new_state_size = root_entry_end.size().unwrap_abort();
                 root_entry_end.truncate(new_state_size).unwrap_abort();
@@ -749,7 +756,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                 #setup_fn_optional_args
                 let ctx = ExternContext::<ExternReceiveContext>::open(());
                 let state_api = ExternStateApi::open();
-                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut state_api.lookup(&[]).unwrap_abort()) {
+                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut state_api.lookup_entry(&[]).unwrap_abort()) {
                     let mut state_builder = StateBuilder::open(state_api);
                     let mut host = ExternHost { state, state_builder };
                     match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {

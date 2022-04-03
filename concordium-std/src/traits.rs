@@ -6,7 +6,8 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    CallContractResult, EntryRaw, StateBuilder, TransferResult,
+    CallContractResult, EntryRaw, Key, OccupiedEntryRaw, ReadOnlyCallContractResult, StateBuilder,
+    TransferResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -126,6 +127,10 @@ where
     type StateEntryKey;
     type Error: Default;
 
+    /// Set the cursor to the beginning. Equivalent to
+    /// `.seek(SeekFrom::Start(0))` but can be implemented more efficiently.
+    fn move_to_start(&mut self);
+
     /// Get the current size of the entry.
     /// Returns an error if the entry does not exist.
     fn size(&self) -> Result<u32, Self::Error>;
@@ -161,16 +166,27 @@ pub trait HasStateApi: Clone {
     type EntryType: HasStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
 
-    /// Get an entry in the state.
-    /// Returns an error if it is part of a locked subtree.
-    fn entry(&mut self, key: &[u8]) -> Result<EntryRaw<Self>, StateError>;
-
-    /// Create a new entry in the state.
-    /// Returns an error if it is part of a locked subtree.
-    fn create(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError>;
+    /// Create a new entry in the state. If an entry with the given key already
+    /// exists then it is reset to an empty entry. If the part of the tree
+    /// where the key points to is locked due to an acquired iterator
+    /// then no entry is created, and an error will be returned.
+    fn create_entry(&mut self, key: &[u8]) -> Result<Self::EntryType, StateError>;
 
     /// Lookup an entry in the state.
-    fn lookup(&self, key: &[u8]) -> Option<Self::EntryType>;
+    fn lookup_entry(&self, key: &[u8]) -> Option<Self::EntryType>;
+
+    /// Like [`lookup_entry`](Self::lookup_entry) except that it consumes the
+    /// key and returns an [`EntryRaw`] instead of an optional entry.
+    ///
+    /// For maximal flexibility the function is parametrized by the type of key
+    /// with the intention that needless allocations are avoided for short
+    /// keys and existing entries. The most common examples of keys will be [`Vec<u8>`](Vec) or fixed sized arrays [`[u8; N]`](https://doc.rust-lang.org/std/primitive.array.html).
+    fn entry<K: AsRef<[u8]> + Into<Key>>(&mut self, key: K) -> EntryRaw<Self> {
+        match self.lookup_entry(key.as_ref()) {
+            Some(e) => EntryRaw::Occupied(OccupiedEntryRaw::new(e)),
+            None => EntryRaw::Vacant(VacantEntryRaw::new(key.into(), self.clone())),
+        }
+    }
 
     /// Delete an entry.
     /// Returns an error if the entry did not exist, or if it is part of a
@@ -178,9 +194,9 @@ pub trait HasStateApi: Clone {
     fn delete_entry(&mut self, key: Self::EntryType) -> Result<(), StateError>;
 
     /// Delete the entire subtree.
-    /// Returns an error if no nodes with that prefix exists, or if it is part
-    /// of a locked subtree.
-    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<(), StateError>;
+    /// Returns whether any values were deleted, or an error if the given prefix
+    /// is part of a locked subtree.
+    fn delete_prefix(&mut self, prefix: &[u8]) -> Result<bool, StateError>;
 
     /// Get an iterator over a map in the state.
     ///
@@ -196,8 +212,7 @@ pub trait HasStateApi: Clone {
     /// must be deleted.
     ///
     /// Returns an error if the number of active iterators for the same prefix
-    /// exceeds [u16::MAX].
-    #[must_use]
+    /// exceeds [u32::MAX].
     fn iterator(&self, prefix: &[u8]) -> Result<Self::IterType, StateError>;
 
     /// Delete an iterator.
@@ -206,9 +221,15 @@ pub trait HasStateApi: Clone {
     fn delete_iterator(&mut self, iter: Self::IterType);
 }
 
-/// A type that can serve as the host.
-/// It supports invoking operations, accessing state, and self_balance.
+/// A type that can serve as the host, meaning that it supports interactions
+/// with the chain, such as querying balance of the contract, accessing its
+/// state, and invoking operations on other contracts and accounts.
+///
+/// The trait is parameterized by the `State` type. This is the type of the
+/// contract state that the particular contract operates on.
 pub trait HasHost<State>: Sized {
+    /// The type of low-level state that is associated with the host.
+    /// This provides access to low-level state operations.
     type StateApiType: HasStateApi;
 
     /// The type of return values this host provides. This is the raw return
@@ -228,28 +249,85 @@ pub trait HasHost<State>: Sized {
     /// a boolean which indicates whether the state of the contract has changed
     /// or not, and a possible return value. The return value is present if and
     /// only if a V1 contract was invoked.
-    fn invoke_contract_raw<'a, 'b>(
-        &'a mut self,
-        to: &'b ContractAddress,
-        parameter: Parameter<'b>,
-        method: EntrypointName<'b>,
+    fn invoke_contract_raw(
+        &mut self,
+        to: &ContractAddress,
+        parameter: Parameter,
+        method: EntrypointName,
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType>;
 
-    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the parameter
-    /// is automatically serialized. If the parameter already implements
-    /// [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply converted
-    /// to a byte array, then [`invoke_contract_raw`](Self::invoke_contract_raw) should be
+    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the
+    /// parameter is automatically serialized. If the parameter already
+    /// implements [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply
+    /// converted to a byte array, then
+    /// [`invoke_contract_raw`](Self::invoke_contract_raw) should be
     /// used, since it avoids intermediate allocations.
-    fn invoke_contract<'a, 'b, P: Serial>(
-        &'a mut self,
-        to: &'b ContractAddress,
+    fn invoke_contract<P: Serial>(
+        &mut self,
+        to: &ContractAddress,
         parameter: &P,
-        method: EntrypointName<'b>,
+        method: EntrypointName,
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType> {
         let param = to_bytes(parameter);
         self.invoke_contract_raw(to, Parameter(&param), method, amount)
+    }
+
+    /// Invoke a given method of a contract with the amount and parameter
+    /// provided. If invocation succeeds **and the state of the contract
+    /// instance is not modified** then the return value is the return value
+    /// of the contract that was invoked. The return value is present (i.e.,
+    /// not [`None`]) if and only if a V1 contract was invoked. If the
+    /// invocation succeeds but the state of the contract is modified then
+    /// this method will panic.
+    ///
+    /// <div class="example-wrap" style="display:inline-block"><pre
+    /// class="compile_fail" style="white-space:normal;font:inherit;">
+    ///
+    /// **Warning**: If the state of the contract was modified **prior**, i.e.,
+    /// if a mutable reference obtained via
+    /// [`state_mut`](HasHost::state_mut) was used to modify the state then
+    /// the state must be manually stored via the
+    /// [`commit_state`](HasHost::commit_state) function, otherwise it will not
+    /// be seen by the callee.
+    ///
+    /// </pre></div>
+    fn invoke_contract_raw_read_only(
+        &self,
+        to: &ContractAddress,
+        parameter: Parameter<'_>,
+        method: EntrypointName<'_>,
+        amount: Amount,
+    ) -> ReadOnlyCallContractResult<Self::ReturnValueType>;
+
+    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the
+    /// parameter is automatically serialized. If the parameter already
+    /// implements [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply
+    /// converted to a byte array, then
+    /// [`invoke_contract_raw`](Self::invoke_contract_raw) should be
+    /// used, since it avoids intermediate allocations.
+    ///
+    /// <div class="example-wrap" style="display:inline-block"><pre
+    /// class="compile_fail" style="white-space:normal;font:inherit;">
+    ///
+    /// **Warning**: If the state of the contract was modified **prior**, i.e.,
+    /// if a mutable reference obtained via
+    /// [`state_mut`](HasHost::state_mut) was used to modify the state then
+    /// the state must be manually stored via the
+    /// [`commit_state`](HasHost::commit_state) function, otherwise it will not
+    /// be seen by the callee.
+    ///
+    /// </pre></div>
+    fn invoke_contract_read_only<P: Serial>(
+        &self,
+        to: &ContractAddress,
+        parameter: &P,
+        method: EntrypointName,
+        amount: Amount,
+    ) -> ReadOnlyCallContractResult<Self::ReturnValueType> {
+        let param = to_bytes(parameter);
+        self.invoke_contract_raw_read_only(to, Parameter(&param), method, amount)
     }
 
     /// Get an immutable reference to the contract state.
@@ -258,16 +336,26 @@ pub trait HasHost<State>: Sized {
     /// Get a mutable reference to the contract state.
     fn state_mut(&mut self) -> &mut State;
 
+    /// Make sure the contract state is fully written out, so that any changes
+    /// that were done in-memory up to the point in contract execution are
+    /// reflected in the actual contract state maintained by the node.
+    fn commit_state(&mut self);
+
     /// Get the state_builder for the contract state.
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType>;
 
     /// Get a mutable reference to both the state and the builder.
-    /// This is required due to limitations of the Rust type system. Once some
-    /// incarnation of "view types" is stable this can be removed, and the
+    /// This is required due to limitations of the Rust type system, since
+    /// otherwise it is not possible to get the reference to the state and
+    /// the state builder at the same time. Once some incarnation of "view
+    /// types" is stable this will likely be possible to remove, and the
     /// types of `state_builder` and `state_mut` can be refined.
     fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>);
 
-    /// Get the contract balance.
+    /// Get the contract's own current balance. Upon entry to the entrypoint the
+    /// balance that is returned is the sum of balance of the contract at
+    /// the time of the invocation and the amount that is being transferred to
+    /// the contract.
     fn self_balance(&self) -> Amount;
 }
 
@@ -287,16 +375,22 @@ pub trait Deletable {
 /// might be of interest to external parties. These events are not used on the
 /// chain, and cannot be observed by other contracts, but they are stored by the
 /// node, and can be queried to provide information to off-chain actors.
+///
+/// In v1 contracts logging is per section of execution (between
+/// [`invoke_contract`](HasHost::invoke_contract) or
+/// [`invoke_transfer`](HasHost::invoke_transfer) calls. In each section at most
+/// `64` items may be logged.
 pub trait HasLogger {
     /// Initialize a logger.
     fn init() -> Self;
 
     /// Log the given slice as-is. If logging is not successful an error will be
-    /// returned.
+    /// returned. The event can be no bigger than `512` bytes.
     fn log_raw(&mut self, event: &[u8]) -> Result<(), LogError>;
 
     #[inline(always)]
     /// Log a serializable event by serializing it with a supplied serializer.
+    /// Note that the serialized event must be no larger than `512` bytes.
     fn log<S: Serial>(&mut self, event: &S) -> Result<(), LogError> {
         let mut out = Vec::new();
         if event.serial(&mut out).is_err() {
@@ -410,13 +504,14 @@ where
 /// or enums where both contextual information and the state is present.
 ///
 /// For example:
-/// ```
+/// ```no_run
+/// # use concordium_std::*;
 /// #[derive(DeserialWithState)]
 /// #[concordium(state_parameter = "S")]
-/// struct MyStruct<S> {
+/// struct MyStruct<S: HasStateApi> {
 ///     #[concordium(size_length = 2)]
 ///     a: String, // Gets the contextual size_length information.
-///     b: StateBox<u8>, // Needs a HasStateApi type
+///     b: StateBox<u8, S>, // Needs a HasStateApi type
 /// }
 /// ```
 pub trait DeserialCtxWithState<S>: Sized

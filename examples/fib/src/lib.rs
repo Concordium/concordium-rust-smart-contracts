@@ -103,9 +103,12 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_self_address(contract_address);
 
-        let mut host = TestHost::new(State {
-            result: 0,
-        });
+        let mut host = TestHost::new(
+            State {
+                result: 0,
+            },
+            TestStateBuilder::new(),
+        );
 
         host.setup_mock_entrypoint(
             contract_address,

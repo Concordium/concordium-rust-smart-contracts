@@ -1,4 +1,4 @@
-use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
+use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
 
 #[derive(Debug)]
 /// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
@@ -25,7 +25,7 @@ use crate::{cell::RefCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Ve
 /// let mut map1 = state_builder.new_map();
 /// # map1.insert(0u8, 1u8); // Specifies type of map.
 ///
-/// # let mut host = TestHost::new_with_state_builder((), state_builder);
+/// # let mut host = TestHost::new((), state_builder);
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_map();
 /// # map2.insert(0u16, 1u16); // Specifies type of map.
@@ -108,15 +108,27 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 ///
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
 /// is the state.
-pub struct StateBox<T, S> {
-    pub(crate) prefix:     StateItemPrefix,
-    pub(crate) state_api:  S,
-    pub(crate) lazy_value: RefCell<Option<T>>,
+pub struct StateBox<T, S: HasStateApi> {
+    pub(crate) state_api: S,
+    pub(crate) inner:     UnsafeCell<StateBoxInner<T, S>>,
+}
+
+pub(crate) enum StateBoxInner<T, S: HasStateApi> {
+    /// Value is loaded in memory, and we have a backing entry.
+    Loaded {
+        entry: S::EntryType,
+        value: T,
+    },
+    /// We only have the memory location at which the value is stored.
+    Reference {
+        prefix: StateItemPrefix,
+    },
 }
 
 #[derive(Debug)]
-/// The [`StateRef`] behaves like the type `&'a V`, except that it is not
-/// copyable.
+/// The [`StateRef`] behaves akin the type `&'a V`, except that it is not
+/// copyable. It should be used as [MutexGuard](std::sync::MutexGuard) or
+/// similar types which guard access to a resource.
 ///
 /// The type implements [`Deref`][crate::ops::Deref] to `V`, and that is the
 /// intended, and only, way to use it.
@@ -143,21 +155,29 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 }
 
 #[derive(Debug)]
-/// The [`StateRefMut<_, V, _>`] behaves like the type [`StateBox<V, _>`],
-/// but its lifetime is tied to the lifetime of some parent object. In that
-/// sense it is more like `&mut V` except it does not implement
-/// [crate::ops::DerefMut] since that would allow updates that would not be
-/// properly reflected in contract state.
-pub struct StateRefMut<'a, V, S> {
-    pub(crate) state_box:        StateBox<V, S>,
+/// The [`StateRefMut<_, V, _>`] behaves like `&mut V` except that values cannot
+/// be directly mutated, that is, it does not implement
+/// [`DerefMut`](crate::ops::DerefMut) since that would allow updates that would
+/// not be properly reflected in contract state. Instead the
+/// [`update`](StateRefMut::update) or [`set`](StateRefMut::set) methods should
+/// be used.
+///
+/// The type does implement [`Deref`](crate::ops::Deref) however, so immutable
+/// borrows are convenient.
+pub struct StateRefMut<'a, V, S: HasStateApi> {
+    pub(crate) entry:            UnsafeCell<S::EntryType>,
+    pub(crate) state_api:        S,
+    pub(crate) lazy_value:       UnsafeCell<Option<V>>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
-impl<'a, V, S> StateRefMut<'a, V, S> {
+impl<'a, V, S: HasStateApi> StateRefMut<'a, V, S> {
     #[inline(always)]
-    pub(crate) fn new(value: V, key: &[u8], state_api: S) -> Self {
+    pub(crate) fn new(entry: S::EntryType, state_api: S) -> Self {
         Self {
-            state_box:        StateBox::new(value, state_api, key.to_vec()),
+            entry: UnsafeCell::new(entry),
+            state_api,
+            lazy_value: UnsafeCell::new(None),
             _marker_lifetime: PhantomData,
         }
     }
@@ -174,12 +194,14 @@ pub struct ExternStateIter {
 
 pub(crate) type StateEntryId = u64;
 pub(crate) type StateIteratorId = u64;
-pub(crate) type StateItemPrefix = Vec<u8>;
+pub(crate) type StateItemPrefix = [u8; 8];
+/// Type of keys that index into the contract state.
+pub type Key = Vec<u8>;
 
 /// Represents the data in a node in the state trie.
 pub struct StateEntry {
     pub(crate) state_entry_id:   StateEntryId,
-    pub(crate) key:              Vec<u8>,
+    pub(crate) key:              Key,
     pub(crate) current_position: u32,
 }
 
@@ -189,7 +211,7 @@ pub struct StateEntry {
 /// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
 /// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
 pub struct VacantEntryRaw<S> {
-    pub(crate) key:       Vec<u8>,
+    pub(crate) key:       Key,
     pub(crate) state_api: S,
 }
 
@@ -339,8 +361,17 @@ pub enum TransferError {
 }
 
 /// A wrapper around [Result] that fixes the error variant to
-/// [CallContractError].
+/// [CallContractError], and the result to `(bool, Option<A>)`.
+/// If the result is `Ok` then the boolean indicates whether the state was
+/// modified or not, and the second item is the actual return value, which is
+/// present (i.e., [`Some`]) if and only if a `V1` contract was invoked.
 pub type CallContractResult<A> = Result<(bool, Option<A>), CallContractError<A>>;
+
+/// A wrapper around [Result] that fixes the error variant to
+/// [CallContractError], and the result to [`Option<A>`](Option)
+/// If the result is `Ok` then the value is [`None`] if a `V0` contract was
+/// invoked, and a return value returned by a `V1` contract otherwise.
+pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>;
 
 /// A wrapper around [Result] that fixes the error variant to [TransferError]
 /// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
@@ -602,7 +633,8 @@ macro_rules! claim_ne {
 ///
 /// # Example
 /// Defining a custom error type that implements [`Reject`].
-/// ```rust
+/// ```no_run
+/// # use concordium_std::*;
 /// #[derive(Reject)]
 /// enum MyCustomError {
 ///     SomeError,
@@ -629,7 +661,8 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 ///
 /// # Example
 /// Defining a custom error type
-/// ```rust
+/// ```no_run
+/// # use concordium_std::*;
 /// #[derive(Reject)]
 /// enum MyCustomError {
 ///     SomeError,
@@ -639,7 +672,7 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// fn contract_init<S: HasStateApi>(
 ///     _ctx: &impl HasInitContext,
 ///     _state_builder: &mut StateBuilder<S>,
-/// ) -> Result<((), ()), MyCustomError> {
+/// ) -> Result<(), MyCustomError> {
 ///     Err(MyCustomError::SomeError)
 /// }
 /// ```
@@ -724,6 +757,7 @@ pub(crate) mod sealed {
 #[derive(Debug)]
 /// The error type which is returned by methods on
 /// [`HasStateApi`][`crate::HasStateApi`].
+#[repr(u8)]
 pub enum StateError {
     /// The subtree is locked.
     SubtreeLocked,
