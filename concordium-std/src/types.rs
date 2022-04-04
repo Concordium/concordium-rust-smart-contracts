@@ -37,18 +37,18 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 /// The map `StateMap<K, V, S>` is parametrized by the type of _keys_ `K`, the
 /// type of _values_ `V` and the type of the low-level state `S`. In line with
 /// other Rust collections, e.g., [`BTreeMap`][btm] and [`HashMap`][hm]
-/// constructing the statemap via [`new`](StateMap::new) does not require
-/// anything specific from `K` and `V`. However most operations do require that
-/// `K` is serializable and `V` can be stored and loaded in the context of the
-/// low-level state `S`.
+/// constructing the statemap via [`new_map`](StateBuilder::new_map) does not
+/// require anything specific from `K` and `V`. However most operations do
+/// require that `K` is serializable and `V` can be stored and loaded in the
+/// context of the low-level state `S`.
 ///
 /// This concretely means that `K` must implement
 /// [`Serialize`](crate::Serialize) and `V` has to implement
-/// [`Serial`](crate::Serial) and [`DeserialWithState<S>`](crate::
-/// DeserialWithState). In practice, this means that keys must be
-/// _flat_, meaning that it cannot have any references to the low-level state.
-/// This is almost all types, except [`StateBox`], [`StateMap`] and [`StateSet`]
-/// and types containing these.
+/// [`Serial`](crate::Serial) and
+/// [`DeserialWithState<S>`](crate::DeserialWithState). In practice, this means
+/// that keys must be _flat_, meaning that it cannot have any references to the
+/// low-level state. This is almost all types, except [`StateBox`], [`StateMap`]
+/// and [`StateSet`] and types containing these.
 ///
 /// However values may contain references to the low-level state, in particular
 /// maps may be nested.
@@ -202,8 +202,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// The set `StateSet<T, S>` is parametrized by the type of _values_ `T`, and
 /// the type of the low-level state `S`. In line with other Rust collections,
 /// e.g., [`BTreeSet`][bts] and [`HashSet`][hs] constructing the stateset via
-/// [`new`](StateSet::new) does not require anything specific from `T`.
-/// However most operations do require that `T` implements
+/// [`new_set`](StateBuilder::new_set) does not require anything specific from
+/// `T`. However most operations do require that `T` implements
 /// [`Serialize`](crate::Serialize).
 ///
 /// Since `StateSet<T, S>` itself **does not** implement

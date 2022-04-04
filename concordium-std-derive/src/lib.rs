@@ -40,7 +40,7 @@ fn attach_error<A>(mut v: syn::Result<A>, msg: &str) -> syn::Result<A> {
 /// Attributes that can be attached either to the init or receive method of a
 /// smart contract.
 struct OptionalArguments {
-    /// If set, the contract can receive gTU.
+    /// If set, the contract can receive CCD.
     pub(crate) payable:       bool,
     /// If enabled, the function has access to logging facilities.
     pub(crate) enable_logger: bool,
@@ -567,7 +567,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// Where the `HasStateApi`, `HasReceiveContext`, `HasHost`, and `ReceiveResult`
@@ -589,7 +592,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", payable)]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+///     amount: Amount
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `mutable`: Function can mutate the state
@@ -604,7 +611,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", mutable)]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &mut HasHost<MyState, StateApiType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &mut HasHost<MyState, StateApiType = S>
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -615,7 +625,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>, logger: &mut impl HasLogger) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+///     logger: &mut impl HasLogger
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `low_level`: Manually deal with the low-level state including writing
@@ -630,13 +644,16 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", low_level)]
-/// fn contract_receive(ctx: &impl HasReceiveContext, state: &mut impl HasStateApi) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive(
+///     ctx: &impl HasReceiveContext,
+///     state: &mut impl HasStateApi
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
 /// To make schema generation include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
-/// the name of the type used for the parameter. The parameter type must
+/// the type used for the parameter. The parameter type must
 /// implement the SchemaType trait, which for most cases can be derived
 /// automatically.
 ///
@@ -646,8 +663,33 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// struct MyParam { ... }
 ///
 /// #[receive(contract = "my_contract", name = "some_receive", parameter = "MyParam")]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<A> { ...}
 /// ```
+///
+/// ## `return_value="<ReturnValue>"`: Generate schema for the return value.
+/// To make schema generation include the return value for this function, add
+/// the attribute `return_value` and set it equal to a string literal containing
+/// the type used for the parameter. The parameter type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+///
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyReturnValue { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", return_value = "MyReturnValue")]
+/// fn contract_receive<S: HasStateApi>(
+///    ctx: &impl HasReceiveContext,
+///    host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<MyReturnValue> { ...}
+/// ```
+
+
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(receive_worker(attr, item))
