@@ -108,7 +108,7 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 ///
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
 /// is the state.
-pub struct StateBox<T, S: HasStateApi> {
+pub struct StateBox<T: Serial, S: HasStateApi> {
     pub(crate) state_api: S,
     pub(crate) inner:     UnsafeCell<StateBoxInner<T, S>>,
 }
@@ -116,8 +116,9 @@ pub struct StateBox<T, S: HasStateApi> {
 pub(crate) enum StateBoxInner<T, S: HasStateApi> {
     /// Value is loaded in memory, and we have a backing entry.
     Loaded {
-        entry: S::EntryType,
-        value: T,
+        entry:    S::EntryType,
+        modified: bool,
+        value:    T,
     },
     /// We only have the memory location at which the value is stored.
     Reference {
@@ -253,9 +254,9 @@ pub struct VacantEntry<'a, K, V, S> {
 /// that the value is properly stored in the contract state maintained by the
 /// node.
 ///
-/// Differs from [`OccupiedEntryRaw`] in that this automatically handles
+/// This differs from [`OccupiedEntryRaw`] in that this automatically handles
 /// serialization and provides convenience methods for modifying the value via
-/// the [`DerefMut`](crate::ops::DerefMut).
+/// the [`DerefMut`](crate::ops::DerefMut) implementation.
 pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi> {
     pub(crate) key:              K,
     pub(crate) value:            V,
