@@ -1987,11 +1987,12 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
 }
 
 /// Derive the `Deletable` trait.
+///
 /// ``` ignore
 /// #[derive(Deletable)]
-/// struct Foo<S: HasStateApi>
-/// {
-///    bars: StateSet<Baz, S>,
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S> {
+///    my_set: StateSet<MyType, S>,
 /// }
 /// ```
 #[proc_macro_derive(Deletable)]
@@ -2008,12 +2009,16 @@ fn impl_deletable_field(ident: &proc_macro2::TokenStream) -> syn::Result<proc_ma
 
 fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let data_name = &ast.ident;
-    let state_parameter = find_state_parameter_attribute(&ast.attrs)
-        .expect("There was a problem with the concordium attribute")
-        .expect(
-            "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], where \
-             \"S\" should be the HasStateApi generic parameter.",
-        );
+    let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+        Some(state_param) => state_param,
+        None => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "Deletable requires the attribute #[concordium(state_parameter = \"S\")], where \
+                 \"S\" should be the HasStateApi generic parameter.",
+            ))
+        }
+    };
 
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     let where_predicates = where_clauses.map(|c| c.predicates.clone());
