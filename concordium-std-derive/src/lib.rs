@@ -689,7 +689,6 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ) -> ReceiveResult<MyReturnValue> { ...}
 /// ```
 
-
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(receive_worker(attr, item))
@@ -1537,12 +1536,16 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
     let data_name = &ast.ident;
     let span = ast.span();
     let read_ident = format_ident!("__R", span = span);
-    let state_parameter = find_state_parameter_attribute(&ast.attrs)
-        .expect("There was a problem with the concordium attribute")
-        .expect(
-            "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], where \
-             \"S\" should be the HasStateApi generic parameter.",
-        );
+    let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+        Some(state_parameter) => state_parameter,
+        None => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], \
+                 where \"S\" should be the generic parameter satisfying `HasStateApi`.",
+            ))
+        }
+    };
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     let where_predicates = where_clauses.map(|c| c.predicates.clone());
 
