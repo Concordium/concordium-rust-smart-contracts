@@ -1985,3 +1985,122 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
     };
     out.into()
 }
+
+/// Derive the `Deletable` trait for a type.
+/// impl<S: HasStateApi> Deletable for Foo<S>
+///      where S: HasStateApi
+/// {
+///    fn delete(self) { self.bars.delete(); }
+/// }
+#[proc_macro_derive(Deletable)]
+pub fn deletable_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input);
+    unwrap_or_report(impl_deletable(&ast))
+}
+
+fn impl_deletable_field(ident: &proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(quote!({
+        use concordium_std::Deletable;
+        #ident.delete();
+    }))
+}
+
+fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let data_name = &ast.ident;
+    let state_parameter = find_state_parameter_attribute(&ast.attrs)
+        .expect("There was a problem with the concordium attribute")
+        .expect(
+            "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], where \
+             \"S\" should be the HasStateApi generic parameter.",
+        );
+
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    let where_predicates = where_clauses.map(|c| c.predicates.clone());
+    let body = match ast.data {
+        syn::Data::Struct(ref data) => {
+            let fields_tokens = match data.fields {
+                syn::Fields::Named(_) => {
+                    data.fields
+                        .iter()
+                        .map(|field| {
+                            let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                            let field_ident = quote!(self.#field_ident);
+                            impl_deletable_field(&field_ident)
+                        })
+                        .collect::<syn::Result<_>>()?
+                }
+                syn::Fields::Unnamed(_) => data
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        let i = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
+                        let field_ident = quote!(self.#i);
+                        impl_deletable_field(&field_ident)
+                    })
+                    .collect::<syn::Result<_>>()?,
+                syn::Fields::Unit => proc_macro2::TokenStream::new(),
+            };
+            quote! {
+                #fields_tokens
+            }
+        }
+        syn::Data::Enum(ref data) => {
+            let mut matches_tokens = proc_macro2::TokenStream::new();
+            for (i, variant) in data.variants.iter().enumerate() {
+                let (field_names, pattern) = match variant.fields {
+                    syn::Fields::Named(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .map(|field| field.ident.clone().unwrap())
+                            .collect();
+                        (field_names.clone(), quote! { {#(#field_names),*} })
+                    }
+                    syn::Fields::Unnamed(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| format_ident!("x_{}", i))
+                            .collect();
+                        (field_names.clone(), quote! { (#(#field_names),*) })
+                    }
+                    syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
+                };
+                let field_tokens: proc_macro2::TokenStream = field_names
+                    .iter()
+                    .zip(variant.fields.iter())
+                    .map(|(name, _)| impl_deletable_field(&quote!(#name)))
+                    .collect::<syn::Result<_>>()?;
+
+                let idx_lit = syn::LitInt::new(format!("{}", i).as_str(), Span::call_site());
+                let variant_ident = &variant.ident;
+
+                matches_tokens.extend(quote! {
+                    #data_name::#variant_ident#pattern => {
+                        #idx_lit.delete()?;
+                        #field_tokens
+                    },
+                })
+            }
+            quote! {
+                match self {
+                    #matches_tokens
+                }
+            }
+        }
+        _ => unimplemented!("#[derive(Deletable)] is not implemented for union."),
+    };
+
+    let gen = quote! {
+        #[automatically_derived]
+        impl #impl_generics Deletable for #data_name #ty_generics where #state_parameter : HasStateApi, #where_predicates {
+            fn delete(self) {
+                #body
+            }
+        }
+    };
+
+    Ok(gen.into())
+}

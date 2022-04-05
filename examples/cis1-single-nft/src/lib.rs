@@ -26,7 +26,7 @@ const TOKEN_ID: ContractTokenId = TokenIdUnit();
 type ContractTokenId = TokenIdUnit;
 
 /// The state for each address.
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The address which are currently enabled as operators for this address.
@@ -39,10 +39,6 @@ impl<S: HasStateApi> AddressState<S> {
             operators: state_builder.new_set(),
         }
     }
-}
-
-impl<S: HasStateApi> Deletable for AddressState<S> {
-    fn delete(self) { self.operators.delete(); }
 }
 
 /// The contract state.
