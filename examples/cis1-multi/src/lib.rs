@@ -51,7 +51,7 @@ struct MintParams {
 }
 
 /// The state for each address.
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The amount of tokens owned by this address.
@@ -66,13 +66,6 @@ impl<S: HasStateApi> AddressState<S> {
             balances:  state_builder.new_map(),
             operators: state_builder.new_set(),
         }
-    }
-}
-
-impl<S: HasStateApi> Deletable for AddressState<S> {
-    fn delete(self) {
-        self.balances.delete();
-        self.operators.delete();
     }
 }
 

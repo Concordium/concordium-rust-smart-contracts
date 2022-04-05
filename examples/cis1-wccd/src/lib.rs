@@ -42,7 +42,7 @@ const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 type ContractTokenId = TokenIdUnit;
 
 /// The state tracked for each address.
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The number of tokens owned by this address.
@@ -50,13 +50,6 @@ struct AddressState<S> {
     /// The address which are currently enabled as operators for this token and
     /// this address.
     operators: StateSet<Address, S>,
-}
-
-impl<S: HasStateApi> Deletable for AddressState<S> {
-    fn delete(self) {
-        self.balance.delete();
-        self.operators.delete();
-    }
 }
 
 /// The contract state,
