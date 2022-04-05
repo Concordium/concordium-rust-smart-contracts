@@ -1986,12 +1986,14 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
     out.into()
 }
 
-/// Derive the `Deletable` trait for a type.
-/// impl<S: HasStateApi> Deletable for Foo<S>
-///      where S: HasStateApi
+/// Derive the `Deletable` trait.
+/// ``` ignore
+/// #[derive(Deletable)]
+/// struct Foo<S: HasStateApi>
 /// {
-///    fn delete(self) { self.bars.delete(); }
+///    bars: StateSet<Baz, S>,
 /// }
+/// ```
 #[proc_macro_derive(Deletable)]
 pub fn deletable_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input);
