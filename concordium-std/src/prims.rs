@@ -198,6 +198,13 @@ extern "C" {
     /// Owner of the contract, AccountAddress.
     pub(crate) fn get_receive_owner(start: *mut u8);
 
+    /// Get the size of the entrypoint that was named.
+    pub(crate) fn get_receive_entrypoint_size() -> u32;
+
+    /// Write the receive entrypoint name into the given location.
+    /// It is assumed that the location contains enough space to write the name.
+    pub(crate) fn get_receive_entrypoint(start: *mut u8);
+
     // Getters for the chain meta data
     /// Slot time (in milliseconds) from chain meta data
     pub(crate) fn get_slot_time() -> u64;
@@ -338,6 +345,15 @@ mod host_dummy_functions {
     extern "C" fn get_receive_owner(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
+    #[no_mangle]
+    extern "C" fn get_receive_entrypoint_size() -> u32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    extern "C" fn get_receive_entrypoint(_start: *mut u8) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
     #[no_mangle]
     extern "C" fn get_slot_time() -> u64 { unimplemented!("Dummy function! Not to be executed") }
 }

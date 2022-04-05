@@ -115,6 +115,10 @@ pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
     fn sender(&self) -> Address;
     /// Account which created the contract instance.
     fn owner(&self) -> AccountAddress;
+    /// Get the name of the entrypoint that was named. In case a default
+    /// entrypoint is invoked this can be different from the name of the
+    /// entrypoint that is being executed.
+    fn named_entrypoint(&self) -> OwnedEntrypointName;
 }
 
 /// A type that can serve as the contract state entry type.
