@@ -2035,7 +2035,7 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     .fields
                     .iter()
                     .enumerate()
-                    .map(|(i, _)| {
+                    .map(|(i, _field)| {
                         let i = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
                         let field_ident = quote!(self.#i);
                         impl_deletable_field(&field_ident)
@@ -2081,7 +2081,7 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
                 matches_tokens.extend(quote! {
                     #data_name::#variant_ident#pattern => {
-                        #idx_lit.delete()?;
+                        #idx_lit.delete();
                         #field_tokens
                     },
                 })
