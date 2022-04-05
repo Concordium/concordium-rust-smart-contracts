@@ -114,16 +114,12 @@ fn auction_bid<S: HasStateApi>(
         Address::Contract(_) => bail!(BidError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let bid_to_update =
-        state.bids.entry(sender_address).or_insert(Amount::zero()).modify(|bid_to_update| {
-            let new_amount = *bid_to_update + amount;
-            *bid_to_update = new_amount;
-            new_amount
-        });
+    let mut bid_to_update = state.bids.entry(sender_address).or_insert(Amount::zero());
+    *bid_to_update += amount;
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(bid_to_update > state.highest_bid, BidError::BidTooLow);
+    ensure!(*bid_to_update > state.highest_bid, BidError::BidTooLow);
 
-    state.highest_bid = bid_to_update;
+    state.highest_bid = *bid_to_update;
 
     Ok(())
 }
