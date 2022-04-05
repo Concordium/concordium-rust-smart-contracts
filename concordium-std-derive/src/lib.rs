@@ -2000,19 +2000,10 @@ pub fn deletable_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(impl_deletable(&ast))
 }
 
-fn impl_deletable_field(
-    field: &syn::Field,
-    ident: &proc_macro2::TokenStream,
-) -> syn::Result<proc_macro2::TokenStream> {
-    let concordium_attributes = get_concordium_attributes(&field.attrs, false)?;
-    let state_parameter = contains_attribute(&concordium_attributes, "state_parameter");
-    if state_parameter {
-        Ok(quote!({
-            #ident.delete();
-        }))
-    } else {
-        Ok(quote!({}))
-    }
+fn impl_deletable_field(ident: &proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(quote!({
+        #ident.delete();
+    }))
 }
 
 fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -2035,7 +2026,7 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                         .map(|field| {
                             let field_ident = field.ident.clone().unwrap(); // safe since named fields.
                             let field_ident = quote!(self.#field_ident);
-                            impl_deletable_field(field, &field_ident)
+                            impl_deletable_field(&field_ident)
                         })
                         .collect::<syn::Result<_>>()?
                 }
@@ -2043,10 +2034,10 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     .fields
                     .iter()
                     .enumerate()
-                    .map(|(i, field)| {
+                    .map(|(i, _)| {
                         let i = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
                         let field_ident = quote!(self.#i);
-                        impl_deletable_field(field, &field_ident)
+                        impl_deletable_field(&field_ident)
                     })
                     .collect::<syn::Result<_>>()?,
                 syn::Fields::Unit => proc_macro2::TokenStream::new(),
@@ -2081,7 +2072,7 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 let field_tokens: proc_macro2::TokenStream = field_names
                     .iter()
                     .zip(variant.fields.iter())
-                    .map(|(name, field)| impl_deletable_field(field, &quote!(#name)))
+                    .map(|(name, _)| impl_deletable_field(&quote!(#name)))
                     .collect::<syn::Result<_>>()?;
                 let variant_ident = &variant.ident;
 
