@@ -278,6 +278,7 @@ const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
 const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
+const RECEIVE_ATTRIBUTE_FALLBACK: &str = "fallback";
 const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
 const RECEIVE_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const RECEIVE_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
@@ -289,7 +290,8 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let mut attributes = parse_attributes(attrs)?;
 
     let contract = attributes.extract_value(RECEIVE_ATTRIBUTE_CONTRACT);
-    let name = attributes.extract_value(RECEIVE_ATTRIBUTE_NAME);
+    let name = attributes.extract_ident_and_value(RECEIVE_ATTRIBUTE_NAME);
+    let fallback = attributes.extract_flag(RECEIVE_ATTRIBUTE_FALLBACK);
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
     let return_value: Option<syn::LitStr> =
         attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
@@ -312,12 +314,25 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
         return Err(error);
     }
 
+    if let (Some((name, _)), Some(fallback)) = (&name, &fallback) {
+        let mut error = syn::Error::new(
+            name.span(),
+            "The attributes 'name' and 'fallback' are incompatible and should not be used on the \
+             same method. `name` appears here.",
+        );
+        error.combine(syn::Error::new(
+            fallback.span(),
+            "The attributes 'name' and 'fallback' are incompatible and should not be used on the \
+             same method. `fallback` appears here.",
+        ));
+        return Err(error);
+    }
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
     attributes.report_all_attributes()?;
     match (contract, name) {
-        (Some(contract), Some(name)) => Ok(ReceiveAttributes {
+        (Some(contract), Some((_, name))) => Ok(ReceiveAttributes {
             contract,
             name,
             optional: OptionalArguments {
@@ -331,11 +346,32 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                                          * OptionalArguments, as
                                          * it doesn't apply to init methods. */
         }),
-        (Some(_), None) => Err(syn::Error::new(
-            Span::call_site(),
-            "A name for the method must be provided, using the 'name' attribute.\n\nFor example, \
-             #[receive(name = \"receive\")]",
-        )),
+        (Some(contract), None) => {
+            if let Some(ident) = fallback {
+                Ok(ReceiveAttributes {
+                    contract,
+                    name: syn::LitStr::new("", ident.span()),
+                    optional: OptionalArguments {
+                        payable,
+                        enable_logger,
+                        low_level: low_level.is_some(),
+                        parameter,
+                        return_value,
+                    },
+                    mutable: mutable.is_some(), /* TODO: This is also optional, but does not
+                                                 * belong in
+                                                 * OptionalArguments, as
+                                                 * it doesn't apply to init methods. */
+                })
+            } else {
+                Err(syn::Error::new(
+                    Span::call_site(),
+                    "A name for the method must be provided using the 'name' attribute, or the \
+                     'fallback' option must be used.\n\nFor example, #[receive(name = \
+                     \"receive\")]",
+                ))
+            }
+        }
         (None, Some(_)) => Err(syn::Error::new(
             Span::call_site(),
             "A name for the method must be provided, using the 'contract' attribute.\n\nFor \
@@ -557,9 +593,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// - `contract = "<contract-name>"` where *\<contract-name\>* is the name of
 ///   the smart contract.
 /// - `name = "<receive-name>"` where *\<receive-name\>* is the name of the
-///   receive function. The generated function is exported as
-///   `<contract-name>.<receive-name>`. Contract name and receive name is
-///   required to be unique in the module.
+///   receive function, **or** the `fallback` option. The generated function is
+///   exported as `<contract-name>.<receive-name>`, or if `fallback` is given,
+///   as `<contract-name>.`.Contract name and receive name is required to be
+///   unique in the module. In particular, a contract may have only a single
+///   fallback method.
 ///
 /// The annotated function must be of a specific type, which depends on the
 /// enabled attributes. *Without* any of the optional attributes the function
