@@ -2008,16 +2008,10 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
 ///
 /// # Example
 /// ``` ignore
-/// #[derive(Serial, DeserialWithState)]
-/// #[concordium(state_parameter = "S")]
-/// struct MyState<S> {
-///    my_state_map: StateMap<SomeType, MyNonTrivialStateType<S>, S>,
-/// }
-///
 /// #[derive(Serial, DeserialWithState, Deletable)]
 /// #[concordium(state_parameter = "S")]
-/// struct MyNonTrivialStateType<S> {
-///    my_state_set: StateSet<SomeOtherType, S>,
+/// struct MyState<S> {
+///    my_state_map: StateMap<SomeType, SomeOtherType, S>,
 /// }
 /// ```
 #[proc_macro_derive(Deletable)]
