@@ -1,21 +1,22 @@
-use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Vec};
+use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Serial, Vec};
 
 #[derive(Debug)]
-/// A map based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
+/// A high-level map based on the low-level key-value store, which is the
+/// interface provided by the chain.
 ///
-/// In most situations, this type should be preferred over
-/// [`BTreeMap`][btm] and [`HashMap`][hm].
-///
-/// Stores each value in a separate node in the state trie.
-/// This is different from [`BTreeMap`][btm] and
-/// [`HashMap`][hm], which store their _whole_ structure in a
-/// _single_ node in the state trie. That is why this map should be preferred.
+/// In most situations, this collection should be preferred over
+/// [`BTreeMap`][btm] and [`HashMap`][hm] since it will be more efficient to
+/// lookup and update since costs to lookup and update will be grow very slowly
+/// with the size of the collection. In contrast, using [`BTreeMap`][btm] and
+/// [`HashMap`][hm] almost always entails their serialization, which is linear
+/// in the size of the collection.
 ///
 /// The cost of updates to the map are dependent on the length of `K` (in bytes)
 /// and the size of the data stored (`V`). Short keys are therefore ideal.
 ///
-/// Can only be constructed by the [`new_map`][StateBuilder::new_map] method on
-/// [`StateBuilder`].
+/// New maps can be constructed using the
+/// [`new_map`][StateBuilder::new_map] method on the [`StateBuilder`].
+///
 ///
 /// ```
 /// # use concordium_std::*;
@@ -28,7 +29,120 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 /// # let mut host = TestHost::new((), state_builder);
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_map();
-/// # map2.insert(0u16, 1u16); // Specifies type of map.
+/// # map2.insert(0u16, 1u16);
+/// ```
+///
+/// ## Type parameters
+///
+/// The map `StateMap<K, V, S>` is parametrized by the type of _keys_ `K`, the
+/// type of _values_ `V` and the type of the low-level state `S`. In line with
+/// other Rust collections, e.g., [`BTreeMap`][btm] and [`HashMap`][hm]
+/// constructing the statemap via [`new_map`](StateBuilder::new_map) does not
+/// require anything specific from `K` and `V`. However most operations do
+/// require that `K` is serializable and `V` can be stored and loaded in the
+/// context of the low-level state `S`.
+///
+/// This concretely means that `K` must implement
+/// [`Serialize`](crate::Serialize) and `V` has to implement
+/// [`Serial`](crate::Serial) and
+/// [`DeserialWithState<S>`](crate::DeserialWithState). In practice, this means
+/// that keys must be _flat_, meaning that it cannot have any references to the
+/// low-level state. This is almost all types, except [`StateBox`], [`StateMap`]
+/// and [`StateSet`] and types containing these.
+///
+/// However values may contain references to the low-level state, in particular
+/// maps may be nested.
+///
+/// ### Low-level state `S`
+///
+/// The type parameter `S` is extra compared to usual Rust collections. As
+/// mentioned above it specifies the [low-level state
+/// implementation](crate::HasStateApi). This library provides two such
+/// implementations. The "external" one, which is the implementation supported
+/// by external host functions provided by the chain, and a
+/// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
+/// useful for testing since it provides an implementation that is easier to
+/// construct, executed, and inspect during unit testing.
+///
+/// In user code this type parameter should generally be treated as boilerplate,
+/// and contract entrypoints should always be stated in terms of a generic type
+/// `S` that implements [HasStateApi](crate::HasStateApi)
+///
+/// #### Example
+/// ```rust
+/// # use concordium_std::*;
+/// #[derive(Serial, DeserialWithState)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S: HasStateApi> {
+///     inner: StateMap<u64, u64, S>,
+/// }
+/// #[init(contract = "mycontract")]
+/// fn contract_init<S: HasStateApi>(
+///     _ctx: &impl HasInitContext,
+///     state_builder: &mut StateBuilder<S>,
+/// ) -> InitResult<MyState<S>> {
+///     Ok(MyState {
+///         inner: state_builder.new_map(),
+///     })
+/// }
+///
+/// #[receive(contract = "mycontract", name = "receive", return_value = "Option<u64>")]
+/// fn contract_receive<S: HasStateApi>(
+///     _ctx: &impl HasReceiveContext,
+///     host: &impl HasHost<MyState<S>, StateApiType = S>, // the same low-level state must be propagated throughout
+/// ) -> ReceiveResult<Option<u64>> {
+///     let state = host.state();
+///     Ok(state.inner.get(&0).map(|v| *v))
+/// }
+/// ```
+///
+/// ## **Caution**
+///
+/// `StateMap`s must be explicitly deleted when they are no longer needed,
+/// otherwise they will remain in the contract's state, albeit unreachable.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// struct MyState<S: HasStateApi> {
+///     inner: StateMap<u64, u64, S>,
+/// }
+/// fn incorrect_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     // The following is incorrect. The old value of `inner` is not properly deleted.
+///     // from the state.
+///     state.inner = state_builder.new_map(); // ⚠️
+/// }
+/// ```
+/// Instead, either the map should be [cleared](StateMap::clear) or
+/// explicitly deleted.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateMap<u64, u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     state.inner.clear_flat();
+/// }
+/// ```
+/// Or alternatively
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateMap<u64, u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     let old_map = mem::replace(&mut state.inner, state_builder.new_map());
+///     old_map.delete()
+/// }
 /// ```
 ///
 /// [hm]: crate::collections::HashMap
@@ -67,15 +181,127 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 }
 
 #[derive(Debug)]
-/// A set based on a [Trie](https://en.wikipedia.org/wiki/Trie) in the state.
+/// A high-level set of _flat_ values based on the low-level key-value store,
+/// which is the interface provided by the chain.
 ///
-/// In most situations, this type should be preferred over
-/// [`BTreeSet`][bts] and [`HashSet`][hs].
-/// See [`StateMap`]'s documentation for a more information about why this is
-/// the case.
+/// In most situations, this collection should be preferred over
+/// [`BTreeSet`][bts] and [`HashSet`][hs] since it will be more efficient to
+/// lookup and update since costs to lookup and update will be grow very slowly
+/// with the size of the collection. In contrast, using [`BTreeSet`][bts] and
+/// [`HashSet`][hs] almost always entails their serialization, which is linear
+/// in the size of the collection.
 ///
-/// The cost of updates to the set are dependent on the length of `T` (in
-/// bytes).
+/// The cost of updates to the set are dependent on the serialized size of the
+/// value `T`.
+///
+/// New sets can be constructed using the
+/// [`new_set`][StateBuilder::new_set] method on the [`StateBuilder`].
+///
+/// ## Type parameters
+///
+/// The set `StateSet<T, S>` is parametrized by the type of _values_ `T`, and
+/// the type of the low-level state `S`. In line with other Rust collections,
+/// e.g., [`BTreeSet`][bts] and [`HashSet`][hs] constructing the stateset via
+/// [`new_set`](StateBuilder::new_set) does not require anything specific from
+/// `T`. However most operations do require that `T` implements
+/// [`Serialize`](crate::Serialize).
+///
+/// Since `StateSet<T, S>` itself **does not** implement
+/// [`Serialize`](crate::Serialize) **sets cannot be nested**. If this is really
+/// required then a custom solution should be devised using the operations on
+/// `S` (see [HasStateApi](crate::HasStateApi)).
+///
+/// ### Low-level state `S`
+///
+/// The type parameter `S` is extra compared to usual Rust collections. As
+/// mentioned above it specifies the [low-level state
+/// implementation](crate::HasStateApi). This library provides two such
+/// implementations. The "external" one, which is the implementation supported
+/// by external host functions provided by the chain, and a
+/// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
+/// useful for testing since it provides an implementation that is easier to
+/// construct, executed, and inspect during unit testing.
+///
+/// In user code this type parameter should generally be treated as boilerplate,
+/// and contract entrypoints should always be stated in terms of a generic type
+/// `S` that implements [HasStateApi](crate::HasStateApi)
+///
+/// #### Example
+/// ```rust
+/// # use concordium_std::*;
+/// #[derive(Serial, DeserialWithState)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S: HasStateApi> {
+///     inner: StateSet<u64, S>,
+/// }
+/// #[init(contract = "mycontract")]
+/// fn contract_init<S: HasStateApi>(
+///     _ctx: &impl HasInitContext,
+///     state_builder: &mut StateBuilder<S>,
+/// ) -> InitResult<MyState<S>> {
+///     Ok(MyState {
+///         inner: state_builder.new_set(),
+///     })
+/// }
+///
+/// #[receive(contract = "mycontract", name = "receive", return_value = "bool")]
+/// fn contract_receive<S: HasStateApi>(
+///     _ctx: &impl HasReceiveContext,
+///     host: &impl HasHost<MyState<S>, StateApiType = S>, // the same low-level state must be propagated throughout
+/// ) -> ReceiveResult<bool> {
+///     let state = host.state();
+///     Ok(state.inner.contains(&0))
+/// }
+/// ```
+///
+/// ## **Caution**
+///
+/// `StateSet`s must be explicitly deleted when they are no longer needed,
+/// otherwise they will remain in the contract's state, albeit unreachable.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// struct MyState<S: HasStateApi> {
+///     inner: StateSet<u64, S>,
+/// }
+/// fn incorrect_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     // The following is incorrect. The old value of `inner` is not properly deleted.
+///     // from the state.
+///     state.inner = state_builder.new_set(); // ⚠️
+/// }
+/// ```
+/// Instead, either the set should be [cleared](StateSet::clear) or
+/// explicitly deleted.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateSet<u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     state.inner.clear();
+/// }
+/// ```
+/// Or alternatively
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi> {
+/// #    inner: StateSet<u64, S>
+/// # }
+/// fn correct_replace<S: HasStateApi>(
+///     state_builder: &mut StateBuilder<S>,
+///     state: &mut MyState<S>,
+/// ) {
+///     let old_set = mem::replace(&mut state.inner, state_builder.new_set());
+///     old_set.delete()
+/// }
+/// ```
 ///
 /// [hs]: crate::collections::HashSet
 /// [bts]: crate::collections::BTreeSet
@@ -102,13 +328,13 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 ///
 /// The actual data is lazily loaded and thereafter cached in memory.
 ///
-/// Due to its laziness, a [`Self`] can be used to defer loading of data in your
-/// state. This is useful when part of your state isn't used in every receive
-/// method.
+/// Due to its laziness, a [`StateBox`] can be used to defer loading of data in
+/// your state. This is useful when part of your state isn't used in every
+/// receive method.
 ///
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
 /// is the state.
-pub struct StateBox<T, S: HasStateApi> {
+pub struct StateBox<T: Serial, S: HasStateApi> {
     pub(crate) state_api: S,
     pub(crate) inner:     UnsafeCell<StateBoxInner<T, S>>,
 }
@@ -116,8 +342,9 @@ pub struct StateBox<T, S: HasStateApi> {
 pub(crate) enum StateBoxInner<T, S: HasStateApi> {
     /// Value is loaded in memory, and we have a backing entry.
     Loaded {
-        entry: S::EntryType,
-        value: T,
+        entry:    S::EntryType,
+        modified: bool,
+        value:    T,
     },
     /// We only have the memory location at which the value is stored.
     Reference {
@@ -155,23 +382,20 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 }
 
 #[derive(Debug)]
-/// The [`StateRefMut<_, V, _>`] behaves like `&mut V` except that values cannot
-/// be directly mutated, that is, it does not implement
-/// [`DerefMut`](crate::ops::DerefMut) since that would allow updates that would
-/// not be properly reflected in contract state. Instead the
-/// [`update`](StateRefMut::update) or [`set`](StateRefMut::set) methods should
-/// be used.
-///
-/// The type does implement [`Deref`](crate::ops::Deref) however, so immutable
-/// borrows are convenient.
-pub struct StateRefMut<'a, V, S: HasStateApi> {
+/// The [`StateRefMut<_, V, _>`] behaves like `&mut V`, by analogy with other
+/// standard library RAII guards like [`RefMut`](std::cell::RefMut).
+/// The type implements [`DerefMut`](crate::ops::DerefMut) which allows the
+/// value to be mutated. Additionally, the [`Drop`](Drop) implementation ensures
+/// that the value is properly stored in the contract state maintained by the
+/// node.
+pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
     pub(crate) entry:            UnsafeCell<S::EntryType>,
     pub(crate) state_api:        S,
     pub(crate) lazy_value:       UnsafeCell<Option<V>>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
-impl<'a, V, S: HasStateApi> StateRefMut<'a, V, S> {
+impl<'a, V: Serial, S: HasStateApi> StateRefMut<'a, V, S> {
     #[inline(always)]
     pub(crate) fn new(entry: S::EntryType, state_api: S) -> Self {
         Self {
@@ -251,20 +475,47 @@ pub struct VacantEntry<'a, K, V, S> {
 /// [`StateMap::entry`] method. This allows looking up or modifying the value at
 /// a give key in-place.
 ///
-/// Differs from [`OccupiedEntryRaw`] in that this automatically handles
-/// serialization.
-pub struct OccupiedEntry<'a, K, V, S: HasStateApi> {
+/// The type implements [`DerefMut`](crate::ops::DerefMut) which allows the
+/// value to be mutated. The [`Drop`](Drop) implementation ensures
+/// that the value is properly stored in the contract state maintained by the
+/// node.
+///
+/// This differs from [`OccupiedEntryRaw`] in that this automatically handles
+/// serialization and provides convenience methods for modifying the value via
+/// the [`DerefMut`](crate::ops::DerefMut) implementation.
+pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi> {
     pub(crate) key:              K,
     pub(crate) value:            V,
+    /// Indicates whether the value should be stored by the drop implementation.
+    /// This is set when deref_mut method is called only, since that is when we
+    /// **might** implicitly mutate the value.
+    pub(crate) modified:         bool,
     pub(crate) state_entry:      S::EntryType,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
-impl<'a, K, V, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> {
+impl<'a, K, V: Serial, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> {
     type Target = V;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target { &self.value }
+}
+
+impl<'a, K, V: Serial, S: HasStateApi> crate::ops::DerefMut for OccupiedEntry<'a, K, V, S> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.modified = true;
+        &mut self.value
+    }
+}
+
+impl<'a, K, V: Serial, S: HasStateApi> Drop for OccupiedEntry<'a, K, V, S> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if self.modified {
+            self.store_value()
+        }
+    }
 }
 
 /// A view into a single entry in a [`StateMap`], which
@@ -272,7 +523,7 @@ impl<'a, K, V, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> 
 ///
 /// This `enum` is constructed from the [`entry`][StateMap::entry] method
 /// on a [`StateMap`] type.
-pub enum Entry<'a, K, V, S: HasStateApi> {
+pub enum Entry<'a, K, V: Serial, S: HasStateApi> {
     Vacant(VacantEntry<'a, K, V, S>),
     Occupied(OccupiedEntry<'a, K, V, S>),
 }

@@ -40,7 +40,7 @@ fn attach_error<A>(mut v: syn::Result<A>, msg: &str) -> syn::Result<A> {
 /// Attributes that can be attached either to the init or receive method of a
 /// smart contract.
 struct OptionalArguments {
-    /// If set, the contract can receive gTU.
+    /// If set, the contract can receive CCD.
     pub(crate) payable:       bool,
     /// If enabled, the function has access to logging facilities.
     pub(crate) enable_logger: bool,
@@ -278,6 +278,7 @@ const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
 const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
+const RECEIVE_ATTRIBUTE_FALLBACK: &str = "fallback";
 const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
 const RECEIVE_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const RECEIVE_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
@@ -289,7 +290,8 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let mut attributes = parse_attributes(attrs)?;
 
     let contract = attributes.extract_value(RECEIVE_ATTRIBUTE_CONTRACT);
-    let name = attributes.extract_value(RECEIVE_ATTRIBUTE_NAME);
+    let name = attributes.extract_ident_and_value(RECEIVE_ATTRIBUTE_NAME);
+    let fallback = attributes.extract_flag(RECEIVE_ATTRIBUTE_FALLBACK);
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
     let return_value: Option<syn::LitStr> =
         attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
@@ -312,12 +314,25 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
         return Err(error);
     }
 
+    if let (Some((name, _)), Some(fallback)) = (&name, &fallback) {
+        let mut error = syn::Error::new(
+            name.span(),
+            "The attributes 'name' and 'fallback' are incompatible and should not be used on the \
+             same method. `name` appears here.",
+        );
+        error.combine(syn::Error::new(
+            fallback.span(),
+            "The attributes 'name' and 'fallback' are incompatible and should not be used on the \
+             same method. `fallback` appears here.",
+        ));
+        return Err(error);
+    }
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
     attributes.report_all_attributes()?;
     match (contract, name) {
-        (Some(contract), Some(name)) => Ok(ReceiveAttributes {
+        (Some(contract), Some((_, name))) => Ok(ReceiveAttributes {
             contract,
             name,
             optional: OptionalArguments {
@@ -331,11 +346,32 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                                          * OptionalArguments, as
                                          * it doesn't apply to init methods. */
         }),
-        (Some(_), None) => Err(syn::Error::new(
-            Span::call_site(),
-            "A name for the method must be provided, using the 'name' attribute.\n\nFor example, \
-             #[receive(name = \"receive\")]",
-        )),
+        (Some(contract), None) => {
+            if let Some(ident) = fallback {
+                Ok(ReceiveAttributes {
+                    contract,
+                    name: syn::LitStr::new("", ident.span()),
+                    optional: OptionalArguments {
+                        payable,
+                        enable_logger,
+                        low_level: low_level.is_some(),
+                        parameter,
+                        return_value,
+                    },
+                    mutable: mutable.is_some(), /* TODO: This is also optional, but does not
+                                                 * belong in
+                                                 * OptionalArguments, as
+                                                 * it doesn't apply to init methods. */
+                })
+            } else {
+                Err(syn::Error::new(
+                    Span::call_site(),
+                    "A name for the method must be provided using the 'name' attribute, or the \
+                     'fallback' option must be used.\n\nFor example, #[receive(name = \
+                     \"receive\")]",
+                ))
+            }
+        }
         (None, Some(_)) => Err(syn::Error::new(
             Span::call_site(),
             "A name for the method must be provided, using the 'contract' attribute.\n\nFor \
@@ -557,9 +593,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// - `contract = "<contract-name>"` where *\<contract-name\>* is the name of
 ///   the smart contract.
 /// - `name = "<receive-name>"` where *\<receive-name\>* is the name of the
-///   receive function. The generated function is exported as
-///   `<contract-name>.<receive-name>`. Contract name and receive name is
-///   required to be unique in the module.
+///   receive function, **or** the `fallback` option. The generated function is
+///   exported as `<contract-name>.<receive-name>`, or if `fallback` is given,
+///   as `<contract-name>.`.Contract name and receive name is required to be
+///   unique in the module. In particular, a contract may have only a single
+///   fallback method.
 ///
 /// The annotated function must be of a specific type, which depends on the
 /// enabled attributes. *Without* any of the optional attributes the function
@@ -567,7 +605,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// Where the `HasStateApi`, `HasReceiveContext`, `HasHost`, and `ReceiveResult`
@@ -589,20 +630,29 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", payable)]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>, amount: Amount) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+///     amount: Amount
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `mutable`: Function can mutate the state
 /// Setting the `mutable` attribute changes the required signature so the host
 /// becomes a mutable reference.
 ///
-/// When a receive method is mutable, the state, e.g. `MyState`, is serialized
-/// and stored after each invocation.
+/// **When a receive method is mutable, the state, e.g. `MyState`, is serialized
+/// and stored after each invocation. This means that even if the state does
+/// not change semantically, it will be considered as modified by callers.**
+/// Thus the `mutable` option should only be used when absolutely necessary.
 ///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", mutable)]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &mut HasHost<MyState, StateApiType = S>) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &mut HasHost<MyState, StateApiType = S>
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -613,7 +663,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
-/// fn contract_receive<S: HasStateApi>(ctx: &impl HasReceiveContext, host: &HasHost<MyState, StateApiType = S>, logger: &mut impl HasLogger) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+///     logger: &mut impl HasLogger
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `low_level`: Manually deal with the low-level state including writing
@@ -628,13 +682,16 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", low_level)]
-/// fn contract_receive(ctx: &impl HasReceiveContext, state: &mut impl HasStateApi) -> ReceiveResult<MyReturnValue> {...}
+/// fn contract_receive(
+///     ctx: &impl HasReceiveContext,
+///     state: &mut impl HasStateApi
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
 /// To make schema generation include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
-/// the name of the type used for the parameter. The parameter type must
+/// the type used for the parameter. The parameter type must
 /// implement the SchemaType trait, which for most cases can be derived
 /// automatically.
 ///
@@ -644,8 +701,32 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// struct MyParam { ... }
 ///
 /// #[receive(contract = "my_contract", name = "some_receive", parameter = "MyParam")]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<A> { ...}
 /// ```
+///
+/// ## `return_value="<ReturnValue>"`: Generate schema for the return value.
+/// To make schema generation include the return value for this function, add
+/// the attribute `return_value` and set it equal to a string literal containing
+/// the type used for the parameter. The parameter type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+///
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyReturnValue { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", return_value = "MyReturnValue")]
+/// fn contract_receive<S: HasStateApi>(
+///    ctx: &impl HasReceiveContext,
+///    host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<MyReturnValue> { ...}
+/// ```
+
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(receive_worker(attr, item))
@@ -1493,12 +1574,16 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
     let data_name = &ast.ident;
     let span = ast.span();
     let read_ident = format_ident!("__R", span = span);
-    let state_parameter = find_state_parameter_attribute(&ast.attrs)
-        .expect("There was a problem with the concordium attribute")
-        .expect(
-            "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], where \
-             \"S\" should be the HasStateApi generic parameter.",
-        );
+    let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+        Some(state_parameter) => state_parameter,
+        None => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], \
+                 where \"S\" should be the generic parameter satisfying `HasStateApi`.",
+            ))
+        }
+    };
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
     let where_predicates = where_clauses.map(|c| c.predicates.clone());
 

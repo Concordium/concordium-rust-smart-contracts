@@ -288,10 +288,11 @@ pub type TestReceiveContext<'a> = TestContext<'a, TestReceiveOnlyData>;
 #[derive(Default)]
 #[doc(hidden)]
 pub struct TestReceiveOnlyData {
-    pub(crate) invoker:      Option<AccountAddress>,
-    pub(crate) self_address: Option<ContractAddress>,
-    pub(crate) sender:       Option<Address>,
-    pub(crate) owner:        Option<AccountAddress>,
+    pub(crate) invoker:          Option<AccountAddress>,
+    pub(crate) self_address:     Option<ContractAddress>,
+    pub(crate) sender:           Option<Address>,
+    pub(crate) owner:            Option<AccountAddress>,
+    pub(crate) named_entrypoint: Option<OwnedEntrypointName>,
 }
 
 // Setters for testing-context
@@ -380,6 +381,11 @@ impl<'a> TestReceiveContext<'a> {
         self.custom.owner = Some(value);
         self
     }
+
+    pub fn set_named_entrypoint(&mut self, value: OwnedEntrypointName) -> &mut Self {
+        self.custom.named_entrypoint = Some(value);
+        self
+    }
 }
 
 // Error handling when unwrapping
@@ -459,6 +465,10 @@ impl<'a> HasReceiveContext for TestReceiveContext<'a> {
     fn sender(&self) -> Address { unwrap_ctx_field(self.custom.sender, "sender") }
 
     fn owner(&self) -> AccountAddress { unwrap_ctx_field(self.custom.owner, "owner") }
+
+    fn named_entrypoint(&self) -> OwnedEntrypointName {
+        unwrap_ctx_field(self.custom.named_entrypoint.clone(), "named_entrypoint")
+    }
 }
 
 impl<'a> HasParameter for Cursor<&'a [u8]> {

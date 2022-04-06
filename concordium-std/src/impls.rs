@@ -560,6 +560,7 @@ where
         OccupiedEntry {
             key: self.key,
             value,
+            modified: false,
             state_entry,
             _lifetime_marker: self._lifetime_marker,
         }
@@ -572,11 +573,12 @@ where
     V: Serial,
     StateApi: HasStateApi,
 {
-    /// Creae a new `OccupiedEntry`.
+    /// Create a new `OccupiedEntry`.
     pub(crate) fn new(key: K, value: V, state_entry: StateApi::EntryType) -> Self {
         Self {
             key,
             value,
+            modified: false,
             state_entry,
             _lifetime_marker: PhantomData,
         }
@@ -620,8 +622,14 @@ where
         self.store_value();
         Ok(res)
     }
+}
 
-    fn store_value(&mut self) {
+impl<'a, K, V, StateApi> OccupiedEntry<'a, K, V, StateApi>
+where
+    V: Serial,
+    StateApi: HasStateApi,
+{
+    pub(crate) fn store_value(&mut self) {
         self.state_entry.move_to_start();
         // First truncate it back to 0. This is not ideal in some cases, since
         // it is a needless call.
@@ -864,7 +872,7 @@ impl<K, V, S> StateMap<K, V, S>
 where
     S: HasStateApi,
     K: Serialize,
-    V: Serial + DeserialWithState<S> + Deletable,
+    V: Serial + DeserialWithState<S>,
 {
     /// Lookup the value with the given key. Return [None] if there is no value
     /// with the given key.
@@ -916,17 +924,36 @@ where
 
     /// Clears the map, removing all key-value pairs.
     /// This also includes values pointed at, if `V`, for example, is a
-    /// [StateBox].
+    /// [StateBox]. **If applicable use [`clear_flat`](Self::clear_flat)
+    /// instead.**
     // Note: This does not use delete() because delete consumes self.
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self)
+    where
+        V: Deletable, {
         // Delete all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap.
-        // TODO: Ideally, only delete when `V` _is_ a statetype.
         for (_, value) in self.iter() {
             value.value.delete()
         }
 
         // Then delete the map itself.
+        // Unwrapping is safe when only using the high-level API.
+        self.state_api.delete_prefix(&self.prefix).unwrap_abort();
+    }
+
+    /// Clears the map, removing all key-value pairs.
+    /// **This should be used over [`clear`](Self::clear) if it is
+    /// applicable.** It avoids recursive deletion of values since the
+    /// values are required to be _flat_.
+    ///
+    /// Unfortunately it is not possible to automatically choose between these
+    /// implementations. Once Rust gets trait specialization then this might
+    /// be possible.
+    pub fn clear_flat(&mut self)
+    where
+        V: Deserial, {
+        // Delete only the map itself since the values have no pointers to state.
+        // Thus there will be no dangling references.
         // Unwrapping is safe when only using the high-level API.
         self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
@@ -957,7 +984,9 @@ where
 
     /// Remove a key from the map.
     /// This also deletes the value in the state.
-    pub fn remove(&mut self, key: &K) {
+    pub fn remove(&mut self, key: &K)
+    where
+        V: Deletable, {
         if let Some(v) = self.remove_and_get(key) {
             v.delete()
         }
@@ -1052,7 +1081,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasStateApi> Iterator for StateMapIterMut<'a, K, V, S>
+impl<'a, K, V: Serial, S: HasStateApi> Iterator for StateMapIterMut<'a, K, V, S>
 where
     K: Deserial + 'a,
     V: DeserialWithState<S> + 'a,
@@ -1085,12 +1114,41 @@ impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::Deref
     fn deref(&self) -> &Self::Target { self.get() }
 }
 
+impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
+    for StateRefMut<'a, V, S>
+{
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
+}
+
+impl<'a, V: Serial, S: HasStateApi> Drop for StateRefMut<'a, V, S> {
+    fn drop(&mut self) {
+        if let Some(value) = self.lazy_value.get_mut() {
+            let entry = self.entry.get_mut();
+            entry.move_to_start();
+            value.serial(entry).unwrap_abort()
+        }
+    }
+}
+
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
     V: Serial + DeserialWithState<S>,
     S: HasStateApi,
 {
     pub fn get(&self) -> &V {
+        let lv = unsafe { &mut *self.lazy_value.get() };
+        if let Some(v) = lv {
+            v
+        } else {
+            let entry = unsafe { &mut *self.entry.get() };
+            entry.move_to_start();
+            let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
+            lv.insert(value)
+        }
+    }
+
+    pub fn get_mut(&mut self) -> &mut V {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1169,11 +1227,9 @@ where
     /// [StateBox].
     // Note: This does not use delete() because delete consumes self.
     pub fn clear(&mut self) {
-        // Delete all values in the stateset. This is necessary if `T` is a
-        // StateBox/StateMap.
-        for value in self.iter() {
-            value.value.delete()
-        }
+        // Delete all values in the stateset. Since `T` is serializable
+        // there is no need to recursively delete the values since
+        // serializable values cannot have pointers to other parts of state.
         // Unwrapping is safe when only using the high-level API.
         self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
@@ -1230,13 +1286,14 @@ impl<T, S: HasStateApi> StateSet<T, S> {
     }
 }
 
-impl<T, S: HasStateApi> StateBox<T, S> {
+impl<T: Serial, S: HasStateApi> StateBox<T, S> {
     /// Create a new statebox.
     pub(crate) fn new(value: T, state_api: S, entry: S::EntryType) -> Self {
         StateBox {
             state_api,
             inner: UnsafeCell::new(StateBoxInner::Loaded {
                 entry,
+                modified: true,
                 value,
             }),
         }
@@ -1264,6 +1321,66 @@ impl<S: HasStateApi, T: Serial + DeserialWithState<S>> crate::ops::Deref for Sta
     fn deref(&self) -> &Self::Target { self.get() }
 }
 
+impl<S: HasStateApi, T: Serial + DeserialWithState<S>> crate::ops::DerefMut for StateBox<T, S> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
+}
+
+impl<T: Serial, S: HasStateApi> Drop for StateBox<T, S> {
+    fn drop(&mut self) {
+        if let StateBoxInner::Loaded {
+            entry,
+            modified,
+            value,
+        } = self.inner.get_mut()
+        {
+            if *modified {
+                entry.move_to_start();
+                value.serial(entry).unwrap_abort();
+            }
+        }
+    }
+}
+
+fn get_with_inner<'a, T: Serial + DeserialWithState<S>, S: HasStateApi>(
+    state_api: &S,
+    inner: &'a mut StateBoxInner<T, S>,
+) -> (&'a mut T, &'a mut bool) {
+    let (entry, value) = match inner {
+        StateBoxInner::Loaded {
+            value,
+            modified,
+            ..
+        } => return (value, modified),
+        StateBoxInner::Reference {
+            prefix,
+        } => {
+            let mut entry = state_api.lookup_entry(prefix).unwrap_abort();
+            // new entry, positioned at the start.
+            let value = T::deserial_with_state(state_api, &mut entry).unwrap_abort();
+            (entry, value)
+        }
+    };
+    *inner = StateBoxInner::Loaded {
+        entry,
+        modified: false,
+        value,
+    };
+    match inner {
+        StateBoxInner::Loaded {
+            value,
+            modified,
+            ..
+        } => (value, modified),
+        StateBoxInner::Reference {
+            ..
+        } => {
+            // We just set it to loaded.
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    }
+}
+
 impl<T, S> StateBox<T, S>
 where
     T: Serial + DeserialWithState<S>,
@@ -1272,40 +1389,22 @@ where
     /// Get a reference to the value.
     pub fn get(&self) -> &T {
         let inner = unsafe { &mut *self.inner.get() };
-        let (entry, value) = match inner {
-            StateBoxInner::Loaded {
-                value,
-                ..
-            } => return value,
-            StateBoxInner::Reference {
-                prefix,
-            } => {
-                let mut entry = self.state_api.lookup_entry(prefix).unwrap_abort();
-                // new entry, positioned at the start.
-                let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
-                (entry, value)
-            }
-        };
-        *inner = StateBoxInner::Loaded {
-            entry,
-            value,
-        };
-        match inner {
-            StateBoxInner::Loaded {
-                value,
-                ..
-            } => value,
-            StateBoxInner::Reference {
-                ..
-            } => {
-                // We just set it to loaded.
-                unsafe { crate::hint::unreachable_unchecked() }
-            }
-        }
+        get_with_inner(&self.state_api, inner).0
+    }
+
+    /// Get a mutable reference to the value. If the value is modified in-memory
+    /// then it will be stored when the box is dropped.
+    pub fn get_mut(&mut self) -> &mut T {
+        let inner = self.inner.get_mut();
+        let (value, modified) = get_with_inner(&self.state_api, inner);
+        *modified = true;
+        value
     }
 
     /// Replace the value with the provided one. The current value is returned.
-    /// Note that if the type `T` contains
+    /// Note that if the type `T` contains references to state, e.g., is a
+    /// [`StateBox`], then it must be [deleted](Deletable::delete) to avoid
+    /// space leaks.
     #[must_use]
     pub fn replace(&mut self, new_val: T) -> T {
         let (entry, value) = self.ensure_cached();
@@ -1333,10 +1432,11 @@ where
     /// modified, the entry should be used to write it.**
     fn ensure_cached(&mut self) -> (&mut S::EntryType, &mut T) {
         let inner = self.inner.get_mut();
-        let (entry, value) = match inner {
+        let (entry, modified, value) = match inner {
             StateBoxInner::Loaded {
                 entry,
                 value,
+                ..
             } => return (entry, value),
             StateBoxInner::Reference {
                 prefix,
@@ -1344,17 +1444,19 @@ where
                 let mut entry = self.state_api.lookup_entry(prefix).unwrap_abort();
                 // new entry, positioned at the start.
                 let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
-                (entry, value)
+                (entry, false, value)
             }
         };
         *inner = StateBoxInner::Loaded {
             entry,
+            modified,
             value,
         };
         match inner {
             StateBoxInner::Loaded {
                 entry,
                 value,
+                ..
             } => (entry, value),
             StateBoxInner::Reference {
                 ..
@@ -1366,7 +1468,7 @@ where
     }
 }
 
-impl<T, S: HasStateApi> Serial for StateBox<T, S> {
+impl<T: Serial, S: HasStateApi> Serial for StateBox<T, S> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         out.write_all(self.get_location())
     }
@@ -1779,7 +1881,7 @@ where
     /// # struct MyState<S: HasStateApi> {
     /// #    inner: StateBox<u64, S>
     /// # }
-    /// fn incorrect_replace<S: HasStateApi>(
+    /// fn correct_replace<S: HasStateApi>(
     ///     state_builder: &mut StateBuilder<S>,
     ///     state: &mut MyState<S>,
     /// ) {
@@ -2096,6 +2198,12 @@ impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
             bytes.assume_init()
         };
         AccountAddress(address)
+    }
+
+    fn named_entrypoint(&self) -> OwnedEntrypointName {
+        let mut data = vec![0u8; unsafe { prims::get_receive_entrypoint_size() as usize }];
+        unsafe { prims::get_receive_entrypoint(data.as_mut_ptr()) };
+        OwnedEntrypointName::new_unchecked(unsafe { String::from_utf8_unchecked(data) })
     }
 }
 
@@ -2436,17 +2544,26 @@ where
     S: HasStateApi,
 {
     fn delete(mut self) {
-        let inner = self.inner.into_inner();
-        let (entry, value) = match inner {
+        // replace the value with a dummy one for which drop is a no-op.
+        let inner = mem::replace(
+            &mut self.inner,
+            UnsafeCell::new(StateBoxInner::Reference {
+                prefix: [0u8; 8],
+            }),
+        );
+        let (entry, value) = match inner.into_inner() {
             StateBoxInner::Loaded {
                 entry,
                 value,
+                ..
             } => (entry, value),
             StateBoxInner::Reference {
                 prefix,
             } => {
                 // we load the value first because it might be necessary to delete
-                // the nested value. This is not ideal, but
+                // the nested value.
+                // TODO: This is pretty bad for performance, but we cannot specialize the
+                // implementation for flat values.
                 let mut entry = self.state_api.lookup_entry(&prefix).unwrap_abort();
                 let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
                 (entry, value)
