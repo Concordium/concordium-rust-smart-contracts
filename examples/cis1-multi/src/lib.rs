@@ -149,15 +149,10 @@ impl<S: HasStateApi> State<S> {
         state_builder: &mut StateBuilder<S>,
     ) {
         self.tokens.insert(*token_id);
-        self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder)).modify(
-            |address_state| {
-                address_state
-                    .balances
-                    .entry(*token_id)
-                    .or_insert(0)
-                    .modify(|balance| *balance += amount)
-            },
-        );
+        let mut owner_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0);
+        *owner_balance += amount;
     }
 
     /// Check that the token ID currently exists in this contract.
@@ -206,28 +201,22 @@ impl<S: HasStateApi> State<S> {
 
         // Get the `from` state and balance, if not present it will fail since the
         // balance is interpreted as 0 and the transfer amount must be more than
-        // 0 as this point.
-        let address_entry =
-            self.state.entry(*from).and_try_modify::<_, ContractError>(|from_address_state| {
-                let balance_entry = from_address_state.balances.entry(*token_id).and_try_modify(
-                    |from_balance| {
-                        ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
-                        *from_balance -= amount;
-                        Ok(())
-                    },
-                )?;
-                ensure!(balance_entry.is_occupied(), ContractError::InsufficientFunds);
-                Ok(())
-            })?;
-        ensure!(address_entry.is_occupied(), ContractError::InsufficientFunds);
+        // 0 as this point.;
+        {
+            let mut from_address_state =
+                self.state.entry(*from).occupied_or(ContractError::InsufficientFunds)?;
+            let mut from_balance = from_address_state
+                .balances
+                .entry(*token_id)
+                .occupied_or(ContractError::InsufficientFunds)?;
+            ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
+            *from_balance -= amount;
+        }
 
-        self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder)).modify(
-            |to_address_state| {
-                to_address_state.balances.entry(*token_id).or_insert(0).modify(|to_balance| {
-                    *to_balance += amount;
-                })
-            },
-        );
+        let mut to_address_state =
+            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
+        let mut to_address_balance = to_address_state.balances.entry(*token_id).or_insert(0);
+        *to_address_balance += amount;
 
         Ok(())
     }
@@ -241,10 +230,9 @@ impl<S: HasStateApi> State<S> {
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.state
-            .entry(*owner)
-            .or_insert_with(|| AddressState::empty(state_builder))
-            .modify(|owner_address_state| owner_address_state.operators.insert(*operator));
+        let mut owner_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        owner_state.operators.insert(*operator);
     }
 
     /// Update the state removing an operator for a given address.
@@ -675,9 +663,8 @@ fn contract_on_cis1_received<S: HasStateApi>(
     let parameter = TransferParams::from(vec![transfer]);
 
     // Construct the Cis1 function name for transfer.
-    let mut receive_name_string = String::from(
-        params.contract_name.contract_name().ok_or(CustomContractError::InvalidContractName)?,
-    );
+    let mut receive_name_string =
+        String::from(params.contract_name.as_contract_name().contract_name());
     receive_name_string.push_str(".transfer");
     let receive_name = ReceiveName::new_unchecked(&receive_name_string);
 

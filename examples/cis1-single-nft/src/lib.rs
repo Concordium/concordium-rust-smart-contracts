@@ -164,11 +164,9 @@ impl<S: HasStateApi> State<S> {
         operator: Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.address_state.entry(owner).or_insert(AddressState::empty(state_builder)).modify(
-            |owner_address| {
-                owner_address.operators.insert(operator);
-            },
-        );
+        let mut owner_state =
+            self.address_state.entry(owner).or_insert(AddressState::empty(state_builder));
+        owner_state.operators.insert(operator);
     }
 
     /// Update the state removing an operator for a given address.

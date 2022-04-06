@@ -144,11 +144,10 @@ impl<S: HasStateApi> State<S> {
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
-        self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder)).modify(
-            |owner_address| {
-                owner_address.owned_tokens.insert(token);
-            },
-        );
+
+        let mut owner_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        owner_state.owned_tokens.insert(token);
         Ok(())
     }
 
@@ -212,7 +211,7 @@ impl<S: HasStateApi> State<S> {
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
 
         // Find and remove the token from the owner, if nothing is removed, we know the
-        // address did not own the token.
+        // address did not own the token..
         self.state.entry(*from).and_try_modify(|address_state| {
             let removed = address_state.owned_tokens.remove(token_id);
             ensure!(removed, ContractError::InsufficientFunds);
@@ -220,11 +219,9 @@ impl<S: HasStateApi> State<S> {
         })?;
 
         // Add the token to the new owner.
-        self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder)).modify(
-            |to_address_state| {
-                to_address_state.owned_tokens.insert(*token_id);
-            },
-        );
+        let mut to_state =
+            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
+        to_state.owned_tokens.insert(*token_id);
         Ok(())
     }
 
@@ -237,11 +234,9 @@ impl<S: HasStateApi> State<S> {
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder)).modify(
-            |owner_address_state| {
-                owner_address_state.operators.insert(*operator);
-            },
-        );
+        let mut owner_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        owner_state.operators.insert(*operator);
     }
 
     /// Update the state removing an operator for a given address.

@@ -252,6 +252,10 @@ impl<T> From<CallContractError<T>> for ContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::Invoke }
 }
 
+impl From<NewReceiveNameError> for ContractError {
+    fn from(_nre: NewReceiveNameError) -> Self { Self::InvalidContractName }
+}
+
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with a number of tokens all with the same owner.
     fn new(tokens: Tokens, owner: Address, state_builder: &mut StateBuilder<S>) -> Self {
@@ -586,9 +590,9 @@ fn contract_on_erc721_received<S: HasStateApi>(
     };
 
     let mut receive_name_string =
-        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?.to_owned();
+        params.contract_name.as_contract_name().contract_name().to_owned();
     receive_name_string.push_str(".safeTransferFrom");
-    let receive_name = ReceiveName::new_unchecked(&receive_name_string);
+    let receive_name = ReceiveName::new(&receive_name_string)?;
 
     host.invoke_contract_raw(
         &sender,

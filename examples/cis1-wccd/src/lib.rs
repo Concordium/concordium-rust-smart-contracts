@@ -193,15 +193,11 @@ impl<S: HasStateApi> State<S> {
             .is_occupied();
         ensure!(balance_exists, ContractError::InsufficientFunds);
 
-        self.token
-            .entry(*to)
-            .or_insert_with(|| AddressState {
-                balance:   0,
-                operators: state_builder.new_set(),
-            })
-            .modify(|to_state| {
-                to_state.balance += amount;
-            });
+        let mut to_state = self.token.entry(*to).or_insert_with(|| AddressState {
+            balance:   0,
+            operators: state_builder.new_set(),
+        });
+        to_state.balance += amount;
 
         Ok(())
     }
@@ -216,15 +212,11 @@ impl<S: HasStateApi> State<S> {
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.token
-            .entry(*owner)
-            .or_insert_with(|| AddressState {
-                balance:   0,
-                operators: state_builder.new_set(),
-            })
-            .modify(|address_state| {
-                address_state.operators.insert(*operator);
-            });
+        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
+            balance:   0,
+            operators: state_builder.new_set(),
+        });
+        owner_state.operators.insert(*operator);
     }
 
     /// Update the state removing an operator for a given token id and address.
@@ -245,16 +237,11 @@ impl<S: HasStateApi> State<S> {
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        self.token
-            .entry(*owner)
-            .or_insert_with(|| AddressState {
-                balance:   0,
-                operators: state_builder.new_set(),
-            })
-            .modify(|address_state| {
-                address_state.balance += amount;
-            });
-
+        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
+            balance:   0,
+            operators: state_builder.new_set(),
+        });
+        owner_state.balance += amount;
         Ok(())
     }
 
