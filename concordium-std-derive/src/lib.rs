@@ -1986,13 +1986,38 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
     out.into()
 }
 
-/// Derive the `Deletable` trait.
+/// Derive the Deletable trait.
+/// See the documentation of
+/// [`derive(Deletable)`](./derive.Deletable.html) for details and limitations.
 ///
+/// The trait should be derived for types which have not implemented the
+/// `Serialize` trait. That is, Deletable should be derived for types with a
+/// non-trivial state.
+/// Non-trivial state here means when you have a type `MyState` which has one or
+/// more fields comprised of
+/// [`StateBox`](../concordium_std/struct.StateBox.html),
+/// [`StateSet`](../concordium_std/struct.StateSet.html), or
+/// [`StateMap`](../concordium_std/struct.StateMap.html).
+///
+/// Please note that it is
+/// necessary to specify the generic parameter name for the
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
+/// To do so, use the `#[concordium(state_parameter =
+/// "NameOfGenericParameter")]` attribute on the type you are deriving
+/// `Deletable` for.
+///
+/// # Example
 /// ``` ignore
-/// #[derive(Deletable)]
+/// #[derive(Serial, DeserialWithState)]
 /// #[concordium(state_parameter = "S")]
 /// struct MyState<S> {
-///    my_set: StateSet<MyType, S>,
+///    my_state_map: StateMap<SomeType, MyNonTrivialStateType<S>, S>,
+/// }
+///
+/// #[derive(Serial, DeserialWithState, Deletable)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyNonTrivialStateType<S> {
+///    my_state_set: StateSet<SomeOtherType, S>,
 /// }
 /// ```
 #[proc_macro_derive(Deletable)]
