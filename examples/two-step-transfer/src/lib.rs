@@ -288,7 +288,7 @@ fn contract_receive_message<S: HasStateApi>(
                     ReceiveError::RequestAlreadySupported
                 );
                 matching_request.supporters.insert(sender_address);
-                matching_request.supporters.len() as u8 >= threshold
+                matching_request.supporters.len() >= usize::from(threshold)
             };
 
             if transfer {
