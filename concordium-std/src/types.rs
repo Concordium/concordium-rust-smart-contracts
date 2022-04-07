@@ -6,7 +6,7 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 ///
 /// In most situations, this collection should be preferred over
 /// [`BTreeMap`][btm] and [`HashMap`][hm] since it will be more efficient to
-/// lookup and update since costs to lookup and update will be grow very slowly
+/// lookup and update since costs to lookup and update will grow very slowly
 /// with the size of the collection. In contrast, using [`BTreeMap`][btm] and
 /// [`HashMap`][hm] almost always entails their serialization, which is linear
 /// in the size of the collection.
@@ -62,7 +62,7 @@ use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi,
 /// by external host functions provided by the chain, and a
 /// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
 /// useful for testing since it provides an implementation that is easier to
-/// construct, executed, and inspect during unit testing.
+/// construct, execute, and inspect during unit testing.
 ///
 /// In user code this type parameter should generally be treated as boilerplate,
 /// and contract entrypoints should always be stated in terms of a generic type
@@ -186,7 +186,7 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// In most situations, this collection should be preferred over
 /// [`BTreeSet`][bts] and [`HashSet`][hs] since it will be more efficient to
-/// lookup and update since costs to lookup and update will be grow very slowly
+/// lookup and update since costs to lookup and update will grow very slowly
 /// with the size of the collection. In contrast, using [`BTreeSet`][bts] and
 /// [`HashSet`][hs] almost always entails their serialization, which is linear
 /// in the size of the collection.
@@ -220,7 +220,7 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// by external host functions provided by the chain, and a
 /// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
 /// useful for testing since it provides an implementation that is easier to
-/// construct, executed, and inspect during unit testing.
+/// construct, execute, and inspect during unit testing.
 ///
 /// In user code this type parameter should generally be treated as boilerplate,
 /// and contract entrypoints should always be stated in terms of a generic type

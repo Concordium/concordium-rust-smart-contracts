@@ -416,8 +416,8 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
     #[inline(always)]
     pub fn key(&self) -> &[u8] { &self.key }
 
-    /// Sets the value of the entry with the `VacantEntryRaw`’s key.
-    pub fn insert(mut self, value: &[u8]) -> Result<StateApi::EntryType, StateError> {
+    /// Sets the value of the entry with the [`VacantEntryRaw`’s](Self) key.
+    pub fn insert_raw(mut self, value: &[u8]) -> Result<StateApi::EntryType, StateError> {
         let mut entry = self.state_api.create_entry(&self.key)?;
         entry.write_all(value).unwrap_abort(); // Writing to state cannot fail.
         entry.move_to_start(); // Reset cursor.
@@ -426,14 +426,11 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
 
     /// Sets the value of the entry with the `VacantEntryRaw`’s key.
     /// This differs from
-    /// [`insert`](Self::insert) in that it automatically serializes
+    /// [`insert_raw`](Self::insert_raw) in that it automatically serializes
     /// the provided value. [`insert`](Self::insert) should be preferred
     /// for values that can be directly converted to byte arrays, e.g., any
-    /// value that implements [`AsRef<[u8]>](AsRef).
-    pub fn insert_serial<V: Serial>(
-        mut self,
-        value: &V,
-    ) -> Result<StateApi::EntryType, StateError> {
+    /// value that implements [`AsRef<[u8]>`](AsRef).
+    pub fn insert<V: Serial>(mut self, value: &V) -> Result<StateApi::EntryType, StateError> {
         let mut entry = self.state_api.create_entry(&self.key)?;
         // Writing to state cannot fail unless the value is too large (more than 2^31
         // bytes). We can't do much about that.
@@ -475,7 +472,7 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
     pub fn get_mut(&mut self) -> &mut StateApi::EntryType { &mut self.state_entry }
 
     /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
-    pub fn insert(&mut self, value: &[u8]) {
+    pub fn insert_raw(&mut self, value: &[u8]) {
         self.state_entry.move_to_start();
         self.state_entry.write_all(value).unwrap_abort();
 
@@ -483,11 +480,11 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
         self.state_entry.truncate(value.len() as u32).unwrap_abort();
     }
 
-    /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
-    /// This differs from [`insert`](Self::insert) in that it automatically
-    /// serializes the value. The [`insert`](Self::insert) should be
-    /// preferred if the value is already a byte array.
-    pub fn insert_serial<V: Serial>(&mut self, value: &V) {
+    /// Sets the value of the entry with the [`OccupiedEntryRaw`'s](Self) key.
+    /// This differs from [`insert_raw`](Self::insert_raw) in that it
+    /// automatically serializes the value. The [`insert`](Self::insert)
+    /// should be preferred if the value is already a byte array.
+    pub fn insert<V: Serial>(&mut self, value: &V) {
         // Truncate so that no data is leftover from previous value.
         self.state_entry.truncate(0).unwrap_abort();
         self.state_entry.move_to_start();
@@ -498,22 +495,22 @@ impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
 impl<StateApi: HasStateApi> EntryRaw<StateApi> {
     /// Ensures a value is in the entry by inserting the default if empty, and
     /// returns the [`HasStateEntry`] type for the entry.
-    pub fn or_insert(self, default: &[u8]) -> Result<StateApi::EntryType, StateError> {
+    pub fn or_insert_raw(self, default: &[u8]) -> Result<StateApi::EntryType, StateError> {
         match self {
-            EntryRaw::Vacant(vac) => vac.insert(default),
+            EntryRaw::Vacant(vac) => vac.insert_raw(default),
             EntryRaw::Occupied(occ) => Ok(occ.get()),
         }
     }
 
     /// Ensures a value is in the entry by inserting the default if empty, and
     /// returns the [`HasStateEntry`] type. This differs from
-    /// [`or_insert`](Self::or_insert) in that it automatically serializes
-    /// the provided value. [`or_insert`](Self::or_insert) should be preferred
-    /// for values that can be directly converted to byte arrays, e.g., any
-    /// value that implements [`AsRef<[u8]>](AsRef).
-    pub fn or_insert_serial<V: Serial>(self, default: &V) -> StateApi::EntryType {
+    /// [`or_insert_raw`](Self::or_insert_raw) in that it automatically
+    /// serializes the provided value. [`or_insert`](Self::or_insert) should
+    /// be preferred for values that can be directly converted to byte
+    /// arrays, e.g., any value that implements [`AsRef<[u8]>`](AsRef).
+    pub fn or_insert<V: Serial>(self, default: &V) -> StateApi::EntryType {
         match self {
-            EntryRaw::Vacant(vac) => vac.insert_serial(default).unwrap_abort(),
+            EntryRaw::Vacant(vac) => vac.insert(default).unwrap_abort(),
             EntryRaw::Occupied(occ) => occ.get(),
         }
     }
@@ -891,14 +888,14 @@ where
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_api.entry(key_bytes) {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert_serial(&value).unwrap_abort();
+                let _ = vac.insert(&value).unwrap_abort();
                 None
             }
             EntryRaw::Occupied(mut occ) => {
                 // Unwrapping is safe when using only the high-level API.
                 let old_value =
                     V::deserial_with_state(&self.state_api, occ.get_mut()).unwrap_abort();
-                occ.insert_serial(&value);
+                occ.insert(&value);
                 Some(old_value)
             }
         }
@@ -1136,6 +1133,9 @@ where
     V: Serial + DeserialWithState<S>,
     S: HasStateApi,
 {
+    /// Get a shared reference to the value. Note that [StateRefMut](Self) also
+    /// implements [Deref](crate::ops::Deref) so this conversion can happen
+    /// implicitly.
     pub fn get(&self) -> &V {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
@@ -1148,6 +1148,9 @@ where
         }
     }
 
+    /// Get a unique reference to the value. Note that [StateRefMut](Self) also
+    /// implements [DerefMut](crate::ops::DerefMut) so this conversion can
+    /// happen implicitly.
     pub fn get_mut(&mut self) -> &mut V {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
@@ -1206,7 +1209,7 @@ where
         // Unwrapping is safe, because iter() keeps a reference to the statemap.
         match self.state_api.entry(key_bytes) {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&[]);
+                let _ = vac.insert_raw(&[]);
                 true
             }
             EntryRaw::Occupied(_) => false,
@@ -1906,7 +1909,7 @@ where
         let mut next_collection_prefix_entry = self
             .state_api
             .entry(NEXT_ITEM_PREFIX_KEY)
-            .or_insert(&INITIAL_NEXT_ITEM_PREFIX)
+            .or_insert_raw(&INITIAL_NEXT_ITEM_PREFIX)
             .unwrap_abort();
 
         // Get the next collection prefix
@@ -1949,9 +1952,9 @@ where
         let key_with_map_prefix = Self::prepend_generic_map_key(key);
         match self.state_api.entry(key_with_map_prefix) {
             EntryRaw::Vacant(vac) => {
-                let _ = vac.insert_serial(&value);
+                let _ = vac.insert(&value);
             }
-            EntryRaw::Occupied(mut occ) => occ.insert_serial(&value),
+            EntryRaw::Occupied(mut occ) => occ.insert(&value),
         }
         Ok(())
     }

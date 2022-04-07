@@ -60,36 +60,20 @@ fn receive_mint<S: HasStateApi>(
 ) -> ReceiveResult<()> {
     let params: MintParams = ctx.parameter_cursor().get()?;
 
-    // TODO: Avoid allocating new map up front. Necessary because of lifetime
-    // restrictions on host.
-    let mut owner_map = host.state_builder().new_map();
+    let (state, builder) = host.state_and_builder();
+    let mut owner_map = state.token_state.entry(params.owner).or_insert_with(|| builder.new_map());
+    let mut token_count = owner_map.entry(params.token_id).or_insert(0);
+    *token_count += params.token_count;
 
-    host.state_mut()
-        .token_state
-        .entry(params.owner)
-        .and_modify(|owner_map| {
-            owner_map
-                .entry(params.token_id)
-                .and_modify(|current_count| {
-                    *current_count += params.token_count;
-                })
-                .or_insert(params.token_count);
-        })
-        .or_insert({
-            let _old_value = owner_map.insert(params.token_id, params.token_count);
-            owner_map
-        });
+    state.another_struct.a_set.insert(42);
 
-    host.state_mut().another_struct.a_set.insert(42);
-
-    host.state_mut().maybe_box =
-        MaybeBox::WithBox(host.state_builder().new_box("I'm boxed".into()));
+    state.maybe_box = MaybeBox::WithBox(builder.new_box("I'm boxed".into()));
 
     // This won't be persisted. The change only occurs in memory.
-    host.state_mut().total_tokens += params.token_count as u64;
+    state.total_tokens += params.token_count as u64;
 
     // But this should be.
-    host.state_mut().boxed_total_tokens.update(|old_count| *old_count += params.token_count as u64);
+    state.boxed_total_tokens.update(|old_count| *old_count += params.token_count as u64);
 
     Ok(())
 }
