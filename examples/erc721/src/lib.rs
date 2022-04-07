@@ -589,15 +589,15 @@ fn contract_on_erc721_received<S: HasStateApi>(
         data:         vec![],
     };
 
-    let mut receive_name_string =
-        params.contract_name.as_contract_name().contract_name().to_owned();
-    receive_name_string.push_str(".safeTransferFrom");
-    let receive_name = ReceiveName::new(&receive_name_string)?;
+    let receive_name = OwnedReceiveName::construct(
+        params.contract_name.as_contract_name(),
+        EntrypointName::new("safeTransferFrom")?,
+    )?;
 
     host.invoke_contract_raw(
         &sender,
         Parameter(&to_bytes(&parameter)),
-        receive_name.entrypoint_name(),
+        receive_name.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
 
