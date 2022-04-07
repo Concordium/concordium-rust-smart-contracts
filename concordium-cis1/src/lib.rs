@@ -627,6 +627,16 @@ impl<X: From<TransferError>> From<TransferError> for Cis1Error<X> {
     fn from(err: TransferError) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
+impl<X: From<NewReceiveNameError>> From<NewReceiveNameError> for Cis1Error<X> {
+    #[inline]
+    fn from(err: NewReceiveNameError) -> Self { Cis1Error::Custom(X::from(err)) }
+}
+
+impl<X: From<NewContractNameError>> From<NewContractNameError> for Cis1Error<X> {
+    #[inline]
+    fn from(err: NewContractNameError) -> Self { Cis1Error::Custom(X::from(err)) }
+}
+
 /// The receiving address for a transfer, similar to the Address type, but
 /// contains extra information when the receiver address is a contract.
 // Note: For the serialization to be derived according to the CIS1

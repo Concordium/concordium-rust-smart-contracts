@@ -124,6 +124,14 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis1Error::Custom(c) }
 }
 
+impl From<NewReceiveNameError> for CustomContractError {
+    fn from(_: NewReceiveNameError) -> Self { Self::InvalidContractName }
+}
+
+impl From<NewContractNameError> for CustomContractError {
+    fn from(_: NewContractNameError) -> Self { Self::InvalidContractName }
+}
+
 impl<S: HasStateApi> State<S> {
     /// Construct a state with no tokens
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
@@ -428,7 +436,7 @@ fn contract_transfer<S: HasStateApi>(
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-Multi")),
+                contract_name: OwnedContractName::new(String::from("init_CIS1-Multi"))?,
                 data,
             };
             host.invoke_contract_raw(
@@ -656,16 +664,16 @@ fn contract_on_cis1_received<S: HasStateApi>(
     let parameter = TransferParams::from(vec![transfer]);
 
     // Construct the Cis1 function name for transfer.
-    let mut receive_name_string =
-        String::from(params.contract_name.as_contract_name().contract_name());
-    receive_name_string.push_str(".transfer");
-    let receive_name = ReceiveName::new_unchecked(&receive_name_string);
+    let receive_name = OwnedReceiveName::construct(
+        params.contract_name.as_contract_name(),
+        EntrypointName::new("transfer")?,
+    )?;
 
     // Send back a transfer
     host.invoke_contract_raw(
         &sender,
         Parameter(&to_bytes(&parameter)),
-        receive_name.entrypoint_name(),
+        receive_name.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
     Ok(())
