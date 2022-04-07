@@ -266,48 +266,36 @@ fn contract_receive_message<S: HasStateApi>(
         }
 
         Message::SupportTransfer(transfer_request_id, transfer_amount, target_account) => {
-            // Support the request
-            let entry = host
-                .state_mut()
-                .requests
-                .entry(transfer_request_id)
-                .and_try_modify::<_, ReceiveError>(|matching_request| {
-                    // Validate the details of the transfer
-                    ensure!(matching_request.times_out_at > now, ReceiveError::RequestTimeout);
-                    ensure!(
-                        matching_request.transfer_amount == transfer_amount,
-                        ReceiveError::MismatchingRequestInformation
-                    );
-                    ensure!(
-                        matching_request.target_account == target_account,
-                        ReceiveError::MismatchingRequestInformation
-                    );
+            let transfer = {
+                let threshold = host.state().init_params.transfer_agreement_threshold;
+                let mut matching_request = host
+                    .state_mut()
+                    .requests
+                    .entry(transfer_request_id)
+                    .occupied_or(ReceiveError::UnknownTransfer)?;
 
-                    // Can't have already supported this transfer
-                    ensure!(
-                        !matching_request.supporters.contains(&sender_address),
-                        ReceiveError::RequestAlreadySupported
-                    );
-                    matching_request.supporters.insert(sender_address);
-                    Ok(())
-                })?;
-            match entry {
-                Entry::Vacant(_) => bail!(ReceiveError::UnknownTransfer),
-                Entry::Occupied(matching_request) => {
-                    // Check if the have enough supporters to trigger
-                    if matching_request.supporters.len() as u8
-                        >= host.state().init_params.transfer_agreement_threshold
-                    {
-                        // Remove the transfer from the list of outstanding transfers and send it
-                        host.state_mut().requests.remove(&transfer_request_id);
-                        host.invoke_transfer(&target_account, transfer_amount)?;
-                        Ok(())
-                    } else {
-                        // Keep the updated support and accept
-                        Ok(())
-                    }
-                }
+                ensure!(matching_request.times_out_at > now, ReceiveError::RequestTimeout);
+                ensure!(
+                    matching_request.transfer_amount == transfer_amount,
+                    ReceiveError::MismatchingRequestInformation
+                );
+                ensure!(
+                    matching_request.target_account == target_account,
+                    ReceiveError::MismatchingRequestInformation
+                );
+                ensure!(
+                    !matching_request.supporters.contains(&sender_address),
+                    ReceiveError::RequestAlreadySupported
+                );
+                matching_request.supporters.insert(sender_address);
+                matching_request.supporters.len() as u8 >= threshold
+            };
+
+            if transfer {
+                host.invoke_transfer(&target_account, transfer_amount)?;
+                host.state_mut().requests.remove(&transfer_request_id);
             }
+            Ok(())
         }
     }
 }
