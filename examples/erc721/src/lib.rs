@@ -40,10 +40,7 @@
  */
 
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_std::{
-    collections::{HashMap as Map, HashSet as Set},
-    *,
-};
+use concordium_std::*;
 
 // Types
 
@@ -57,22 +54,22 @@ type TokenId = u64;
 /// Information of which tokens included in this instance.
 /// Note: To add the ERC721 metadata extension, change this to a Map from
 /// TokenId to some Metadata struct.
-type Tokens = Set<TokenId>;
+type Tokens = collections::BTreeSet<TokenId>;
 
-#[contract_state(contract = "erc721")]
-#[derive(Serialize, SchemaType)]
-struct State {
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct State<S> {
     /// Map from a token id to the owning account address.
     /// Every token must be an entry in this map.
-    token_owners:    Map<TokenId, Address>,
+    token_owners:    StateMap<TokenId, Address, S>,
     /// Map from a token id to an account which are allowed to transfer this
     /// token on the owners behalf.
     /// Only tokens with approvals have entries in this map.
-    token_approvals: Map<TokenId, Address>,
+    token_approvals: StateMap<TokenId, Address, S>,
     /// Map from an account to operator accounts, which can transfer any token
     /// on their behalf.
     /// Only accounts with operators have entries in this map.
-    owner_operators: Map<Address, Set<Address>>,
+    owner_operators: StateMap<Address, StateSet<Address, S>, S>,
 }
 
 /// Event to be printed in the log.
@@ -235,6 +232,8 @@ enum ContractError {
     /// Invalid contract name.
     /// Note this one is optional since it is only used by "onERC721Received".
     InvalidContractName,
+    /// Failed to invoke a contract.
+    Invoke,
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -248,26 +247,35 @@ impl From<LogError> for ContractError {
     }
 }
 
-impl State {
+/// Mapping errors related to contract invocations to CustomContractError.
+impl<T> From<CallContractError<T>> for ContractError {
+    fn from(_cce: CallContractError<T>) -> Self { Self::Invoke }
+}
+
+impl From<NewReceiveNameError> for ContractError {
+    fn from(_nre: NewReceiveNameError) -> Self { Self::InvalidContractName }
+}
+
+impl<S: HasStateApi> State<S> {
     /// Creates a new state with a number of tokens all with the same owner.
-    fn new(tokens: Tokens, owner: Address) -> Self {
-        let mut token_owners = Map::default();
+    fn new(tokens: Tokens, owner: Address, state_builder: &mut StateBuilder<S>) -> Self {
+        let mut token_owners = state_builder.new_map();
         for token_id in tokens {
             token_owners.insert(token_id, owner);
         }
 
         State {
             token_owners,
-            token_approvals: Map::default(),
-            owner_operators: Map::default(),
+            token_approvals: state_builder.new_map(),
+            owner_operators: state_builder.new_map(),
         }
     }
 
     /// Count the number of tokens owned by a given address.
     fn balance(&self, address: &Address) -> u64 {
         let mut count = 0;
-        for owner in self.token_owners.values() {
-            if owner == address {
+        for (_, owner) in self.token_owners.iter() {
+            if *owner == *address {
                 count += 1;
             }
         }
@@ -275,7 +283,7 @@ impl State {
     }
 
     /// Get the current owner of a token.
-    fn get_owner(&self, token_id: &TokenId) -> ContractResult<&Address> {
+    fn get_owner(&self, token_id: &TokenId) -> ContractResult<StateRef<Address>> {
         self.token_owners.get(token_id).ok_or(ContractError::NoTokenWithThisId)
     }
 
@@ -283,18 +291,18 @@ impl State {
     /// if no token exists with `token_id`.
     fn is_owner(&self, address: &Address, token_id: &TokenId) -> ContractResult<bool> {
         let owner = self.get_owner(token_id)?;
-        Ok(address == owner)
+        Ok(*address == *owner)
     }
 
     /// Get the approve of a token.
-    fn get_approved(&self, token_id: &TokenId) -> Option<&Address> {
+    fn get_approved(&self, token_id: &TokenId) -> Option<StateRef<Address>> {
         self.token_approvals.get(token_id)
     }
 
     /// Check is an address is approved to transfer a specific token.
     fn is_approved(&self, address: &Address, token_id: &TokenId) -> bool {
         if let Some(approval) = self.token_approvals.get(token_id) {
-            address == approval
+            *address == *approval
         } else {
             false
         }
@@ -333,17 +341,19 @@ impl State {
     }
 
     /// Enable/Disable an address as an operator of the owner address
-    fn approval_for_all(&mut self, owner: &Address, operator: &Address, approved: bool) {
-        if let Some(operators) = self.owner_operators.get_mut(owner) {
-            if approved {
-                operators.insert(*operator);
-            } else {
-                operators.remove(operator);
-            }
-        } else if approved {
-            let mut operators = Set::default();
-            operators.insert(*operator);
-            self.owner_operators.insert(*owner, operators);
+    fn approval_for_all(
+        &mut self,
+        owner: &Address,
+        operator: &Address,
+        approved: bool,
+        state_builder: &mut StateBuilder<S>,
+    ) {
+        if approved {
+            let mut entry =
+                self.owner_operators.entry(*owner).or_insert_with(|| state_builder.new_set());
+            entry.insert(*operator);
+        } else if let Some(mut operators) = self.owner_operators.get_mut(owner) {
+            operators.remove(operator);
         }
     }
 }
@@ -354,10 +364,13 @@ impl State {
 /// invoker.
 /// Note: Does not produce any `Transfer` events
 #[init(contract = "erc721", parameter = "Tokens")]
-fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    state_builder: &mut StateBuilder<S>,
+) -> InitResult<State<S>> {
     let tokens: Tokens = ctx.parameter_cursor().get()?;
     let invoker = ctx.init_origin();
-    let state = State::new(tokens, Address::Account(invoker));
+    let state = State::new(tokens, Address::Account(invoker), state_builder);
     Ok(state)
 }
 
@@ -378,16 +391,17 @@ fn contract_init(ctx: &impl HasInitContext) -> InitResult<State> {
     contract = "erc721",
     name = "safeTransferFrom",
     parameter = "SafeTransferFromParams",
-    enable_logger
+    enable_logger,
+    mutable
 )]
-fn contract_safe_transfer_from<A: HasActions>(
+fn contract_safe_transfer_from<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     // Does the actual transfer, checks the sender is authorized, mutates the state
     // and logs the Transfer event.
-    let params = transfer_from(ctx, logger, state)?;
+    let params = transfer_from(ctx, logger, host.state_mut())?;
 
     if let Address::Contract(receiving_contract) = params.to {
         let parameter = OnERC721ReceivedParams {
@@ -398,9 +412,15 @@ fn contract_safe_transfer_from<A: HasActions>(
         };
         let receive_name = params.receive_name.ok_or(ContractError::MissingContractReceiveName)?;
 
-        Ok(send(&receiving_contract, receive_name.as_ref(), Amount::zero(), &parameter))
+        host.invoke_contract(
+            &receiving_contract,
+            &parameter,
+            receive_name.as_receive_name().entrypoint_name(),
+            Amount::zero(),
+        )?;
+        Ok(())
     } else {
-        Ok(A::accept())
+        Ok(())
     }
 }
 
@@ -411,25 +431,26 @@ fn contract_safe_transfer_from<A: HasActions>(
     contract = "erc721",
     name = "transferFrom",
     parameter = "SafeTransferFromParams",
-    enable_logger
+    enable_logger,
+    mutable
 )]
-fn contract_transfer_from<A: HasActions>(
+fn contract_transfer_from<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     // Does the actual transfer, checks the sender is authorized, mutates the state
     // and logs the Transfer event.
-    transfer_from(ctx, logger, state)?;
-    Ok(A::accept())
+    transfer_from(ctx, logger, host.state_mut())?;
+    Ok(())
 }
 
 /// Helper function, ensures the sender is authorized, then transfers ownership
 /// of a token and logs the transfer event.
-fn transfer_from(
+fn transfer_from<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     logger: &mut impl HasLogger,
-    state: &mut State,
+    state: &mut State<S>,
 ) -> ContractResult<SafeTransferFromParams> {
     let params: SafeTransferFromParams = ctx.parameter_cursor().get()?;
     let sender = ctx.sender();
@@ -458,16 +479,22 @@ fn transfer_from(
 /// - It fails to parse the parameter.
 /// - The sender is not: the owner of the token or an operator for the owner.
 /// - The `token_id` does not exist.
-#[receive(contract = "erc721", name = "approve", parameter = "ApproveParams", enable_logger)]
-fn contract_approve<A: HasActions>(
+#[receive(
+    contract = "erc721",
+    name = "approve",
+    parameter = "ApproveParams",
+    enable_logger,
+    mutable
+)]
+fn contract_approve<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     let params: ApproveParams = ctx.parameter_cursor().get()?;
     let sender = ctx.sender();
+    let state = host.state_mut();
     let owner = *state.get_owner(&params.token_id)?;
-
     if let Some(approved) = params.approved {
         ensure!(owner != approved, ContractError::ApprovedIsOwner);
     }
@@ -481,7 +508,7 @@ fn contract_approve<A: HasActions>(
         token_id: params.token_id,
     })?;
 
-    Ok(A::accept())
+    Ok(())
 }
 
 /// Enable or disable some address as an operator of the address of the sender.
@@ -494,21 +521,23 @@ fn contract_approve<A: HasActions>(
     contract = "erc721",
     name = "setApprovalForAll",
     parameter = "ApproveForAllParams",
-    enable_logger
+    enable_logger,
+    mutable
 )]
-fn contract_set_approval_for_all<A: HasActions>(
+fn contract_set_approval_for_all<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     let params: ApproveForAllParams = ctx.parameter_cursor().get()?;
 
     let sender = ctx.sender();
 
     // No reason to be an operator yourself
     ensure!(params.operator != sender, ContractError::OperatorIsSender);
+    let (state, state_builder) = host.state_and_builder();
 
-    state.approval_for_all(&sender, &params.operator, params.approved);
+    state.approval_for_all(&sender, &params.operator, params.approved, state_builder);
 
     logger.log(&Event::ApprovalForAll {
         owner:    sender,
@@ -516,7 +545,7 @@ fn contract_set_approval_for_all<A: HasActions>(
         approved: params.approved,
     })?;
 
-    Ok(A::accept())
+    Ok(())
 }
 
 /// Optional contract function called when a token is transferred to an instance
@@ -529,11 +558,11 @@ fn contract_set_approval_for_all<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - Sender is not a contract.
 /// - `safeTransferFrom` to instance owner rejects
-#[receive(contract = "erc721", name = "onERC721Received")]
-fn contract_on_erc721_received<A: HasActions>(
+#[receive(contract = "erc721", name = "onERC721Received", mutable)]
+fn contract_on_erc721_received<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
     let params: OnERC721ReceivedParams = ctx.parameter_cursor().get()?;
 
     let sender = if let Address::Contract(contract) = ctx.sender() {
@@ -550,14 +579,19 @@ fn contract_on_erc721_received<A: HasActions>(
         data:         vec![],
     };
 
-    let mut receive_name_string =
-        params.contract_name.contract_name().ok_or(ContractError::InvalidContractName)?.to_owned();
-    receive_name_string.push_str(".safeTransferFrom");
-    let receive_name = ReceiveName::new_unchecked(&receive_name_string);
+    let receive_name = OwnedReceiveName::construct(
+        params.contract_name.as_contract_name(),
+        EntrypointName::new("safeTransferFrom")?,
+    )?;
 
-    let action = send(&sender, receive_name, Amount::zero(), &parameter);
+    host.invoke_contract(
+        &sender,
+        &parameter,
+        receive_name.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
 
-    Ok(action)
+    Ok(())
 }
 
 /// Get the number of tokens owned by a given address and callback contract
@@ -568,11 +602,11 @@ fn contract_on_erc721_received<A: HasActions>(
 /// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Callback with result rejects.
-#[receive(contract = "erc721", name = "balanceOf")]
-fn contract_balance_of<A: HasActions>(
+#[receive(contract = "erc721", name = "balanceOf", mutable)]
+fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
     } else {
@@ -580,9 +614,16 @@ fn contract_balance_of<A: HasActions>(
     };
 
     let params: BalanceOfParams = ctx.parameter_cursor().get()?;
-    let balance = state.balance(&params.owner);
+    let balance = host.state().balance(&params.owner);
 
-    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &balance))
+    host.invoke_contract(
+        &sender,
+        &balance,
+        params.callback.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+
+    Ok(())
 }
 
 /// Get the address of the current owner of a given tokenId and callback with
@@ -593,11 +634,11 @@ fn contract_balance_of<A: HasActions>(
 /// - It fails to parse the parameter.
 /// - The token id does not exist.
 /// - Callback with result rejects.
-#[receive(contract = "erc721", name = "ownerOf")]
-fn contract_owner_of<A: HasActions>(
+#[receive(contract = "erc721", name = "ownerOf", mutable)]
+fn contract_owner_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
     } else {
@@ -605,9 +646,16 @@ fn contract_owner_of<A: HasActions>(
     };
 
     let params: OwnerOfParams = ctx.parameter_cursor().get()?;
-    let owner = state.get_owner(&params.token_id)?;
+    let owner = *host.state().get_owner(&params.token_id)?;
 
-    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), owner))
+    host.invoke_contract(
+        &sender,
+        &owner,
+        params.callback.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+
+    Ok(())
 }
 
 /// Get the address of the current address approved for a given tokenId and
@@ -620,11 +668,11 @@ fn contract_owner_of<A: HasActions>(
 /// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Callback with result rejects.
-#[receive(contract = "erc721", name = "getApproved")]
-fn contract_get_approved<A: HasActions>(
+#[receive(contract = "erc721", name = "getApproved", mutable)]
+fn contract_get_approved<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
     } else {
@@ -632,9 +680,16 @@ fn contract_get_approved<A: HasActions>(
     };
 
     let params: GetApprovedParams = ctx.parameter_cursor().get()?;
-    let approved = state.get_approved(&params.token_id).map(|n| n.to_owned());
+    let approved = host.state().get_approved(&params.token_id).map(|n| n.to_owned());
 
-    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &approved))
+    host.invoke_contract(
+        &sender,
+        &approved,
+        params.callback.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+
+    Ok(())
 }
 
 /// Check if a given address is enabled as an operator for another given address
@@ -646,11 +701,11 @@ fn contract_get_approved<A: HasActions>(
 /// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Callback with result rejects.
-#[receive(contract = "erc721", name = "isApprovedForAll")]
-fn contract_is_approved_for_all<A: HasActions>(
+#[receive(contract = "erc721", name = "isApprovedForAll", mutable)]
+fn contract_is_approved_for_all<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
     } else {
@@ -658,9 +713,16 @@ fn contract_is_approved_for_all<A: HasActions>(
     };
 
     let params: IsApprovedForAllParams = ctx.parameter_cursor().get()?;
-    let is_operator = state.is_operator(&params.operator, &params.owner);
+    let is_operator = host.state().is_operator(&params.operator, &params.owner);
 
-    Ok(send(&sender, params.callback.as_ref(), Amount::zero(), &is_operator))
+    host.invoke_contract(
+        &sender,
+        &is_operator,
+        params.callback.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+
+    Ok(())
 }
 
 // Tests
@@ -678,10 +740,10 @@ mod tests {
 
     /// Test helper function which creates a contract state with one token with
     /// id `TOKEN_ID` owned by `ADDRESS_0`
-    fn initial_state() -> State {
-        let mut tokens: Tokens = Set::default();
+    fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
+        let mut tokens: Tokens = collections::BTreeSet::default();
         tokens.insert(TOKEN_ID);
-        State::new(tokens, ADDRESS_0)
+        State::new(tokens, ADDRESS_0, state_builder)
     }
 
     /// Test initialization succeeds, with no one approved and no operators from
@@ -692,19 +754,20 @@ mod tests {
         let mut ctx = TestInitContext::empty();
         ctx.set_init_origin(ACCOUNT_0);
 
-        let mut tokens: Tokens = Set::default();
+        let mut tokens: Tokens = collections::BTreeSet::default();
         tokens.insert(TOKEN_ID);
 
         let parameter_bytes = to_bytes(&tokens);
         ctx.set_parameter(&parameter_bytes);
+        let mut builder = TestStateBuilder::new();
 
-        let result = contract_init(&ctx);
+        let result = contract_init(&ctx, &mut builder);
 
         let state = result.expect_report("Contract initialization failed");
 
-        claim_eq!(state.token_approvals.len(), 0, "No token approvals at initialization");
-        claim_eq!(state.owner_operators.len(), 0, "No operators at initialization");
-        claim_eq!(state.token_owners.len(), 1, "Initial tokens are stored in the state");
+        claim_eq!(state.token_approvals.iter().count(), 0, "No token approvals at initialization");
+        claim_eq!(state.owner_operators.iter().count(), 0, "No operators at initialization");
+        claim_eq!(state.token_owners.iter().count(), 1, "Initial tokens are stored in the state");
         let token_owner =
             *state.token_owners.get(&TOKEN_ID).expect_report("Token is expected to exist");
         claim_eq!(token_owner, ADDRESS_0, "Initial token is owned by the sender");
@@ -715,8 +778,6 @@ mod tests {
     fn test_transfer() {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
-
-        let mut state = initial_state();
 
         let parameter = SafeTransferFromParams {
             from:         ADDRESS_0,
@@ -729,14 +790,16 @@ mod tests {
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
         let mut logger = TestLogger::init();
+        let mut host = TestHost::new(state, state_builder);
 
-        let actions: ActionsTree = contract_safe_transfer_from(&ctx, &mut logger, &mut state)
+        contract_safe_transfer_from(&ctx, &mut host, &mut logger)
             .expect_report("Failed NFT transfer");
-        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
-        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
+        let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(*owner, ADDRESS_1, "Ownership should be transferred");
 
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
@@ -757,8 +820,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
-        let mut state = initial_state();
-
         let parameter = SafeTransferFromParams {
             from:         ADDRESS_0,
             to:           ADDRESS_1,
@@ -771,9 +832,11 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
-        let result: ContractResult<ActionsTree> =
-            contract_safe_transfer_from(&ctx, &mut logger, &mut state);
+        let result: ContractResult<()> = contract_safe_transfer_from(&ctx, &mut host, &mut logger);
         let err = result.expect_err_report("Expected to fail");
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
     }
@@ -785,8 +848,10 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
-        let mut state = initial_state();
-        state.approve(&Some(ADDRESS_1), &TOKEN_ID);
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+        host.state_mut().approve(&Some(ADDRESS_1), &TOKEN_ID);
 
         let parameter = SafeTransferFromParams {
             from:         ADDRESS_0,
@@ -801,12 +866,11 @@ mod tests {
 
         let mut logger = TestLogger::init();
 
-        let actions: ActionsTree = contract_safe_transfer_from(&ctx, &mut logger, &mut state)
+        contract_safe_transfer_from(&ctx, &mut host, &mut logger)
             .expect_report("Failed NFT transfer");
-        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
-        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
+        let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(*owner, ADDRESS_1, "Ownership should be transferred");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
@@ -826,8 +890,10 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
-        let mut state = initial_state();
-        state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true);
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = initial_state(&mut state_builder);
+        state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true, &mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = SafeTransferFromParams {
             from:         ADDRESS_0,
@@ -842,12 +908,11 @@ mod tests {
 
         let mut logger = TestLogger::init();
 
-        let actions: ActionsTree = contract_safe_transfer_from(&ctx, &mut logger, &mut state)
+        contract_safe_transfer_from(&ctx, &mut host, &mut logger)
             .expect_report("Failed NFT transfer");
-        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
-        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_1, "Ownership should be transferred");
+        let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(*owner, ADDRESS_1, "Ownership should be transferred");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
@@ -866,7 +931,9 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
-        let mut state = initial_state();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -878,13 +945,11 @@ mod tests {
 
         let mut logger = TestLogger::init();
 
-        let actions: ActionsTree = contract_approve(&ctx, &mut logger, &mut state)
-            .expect_report("Failed valid approve call");
-        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
+        contract_approve(&ctx, &mut host, &mut logger).expect_report("Failed valid approve call");
 
-        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
-        claim!(state.is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
+        let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(*owner, ADDRESS_0, "Ownership should not be transferred");
+        claim!(host.state().is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
@@ -904,7 +969,9 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
-        let mut state = initial_state();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -916,7 +983,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
 
-        let result: ContractResult<ActionsTree> = contract_approve(&ctx, &mut logger, &mut state);
+        let result: ContractResult<()> = contract_approve(&ctx, &mut host, &mut logger);
         let err = result.expect_err_report("Expected to fail");
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized");
     }
@@ -928,8 +995,10 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
 
-        let mut state = initial_state();
-        state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true);
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = initial_state(&mut state_builder);
+        state.approval_for_all(&ADDRESS_0, &ADDRESS_1, true, &mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveParams {
             approved: Some(ADDRESS_1),
@@ -941,13 +1010,11 @@ mod tests {
 
         let mut logger = TestLogger::init();
 
-        let actions: ActionsTree = contract_approve(&ctx, &mut logger, &mut state)
-            .expect_report("Failed valid approve call");
-        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
+        contract_approve(&ctx, &mut host, &mut logger).expect_report("Failed valid approve call");
 
-        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
-        claim!(state.is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
+        let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(*owner, ADDRESS_0, "Ownership should not be transferred");
+        claim!(host.state().is_approved(&ADDRESS_1, &TOKEN_ID), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
@@ -966,7 +1033,9 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
 
-        let mut state = initial_state();
+        let mut state_builder = StateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
 
         let parameter = ApproveForAllParams {
             operator: ADDRESS_1,
@@ -978,13 +1047,12 @@ mod tests {
 
         let mut logger = TestLogger::init();
 
-        let actions: ActionsTree = contract_set_approval_for_all(&ctx, &mut logger, &mut state)
+        contract_set_approval_for_all(&ctx, &mut host, &mut logger)
             .expect_report("Failed valid approve call");
-        claim_eq!(actions, ActionsTree::accept(), "No action should be produced.");
 
-        let owner = state.get_owner(&TOKEN_ID).expect_report("No token with id");
-        claim_eq!(owner, &ADDRESS_0, "Ownership should not be transferred");
-        claim!(state.is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be approved");
+        let owner = host.state().get_owner(&TOKEN_ID).expect_report("No token with id");
+        claim_eq!(*owner, ADDRESS_0, "Ownership should not be transferred");
+        claim!(host.state().is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be approved");
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],

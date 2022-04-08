@@ -15,24 +15,42 @@ use concordium_std::*;
 struct InitParameter;
 
 /// Init function that creates a new contract.
-#[init(contract = "memo", parameter = "InitParameter", low_level)]
-fn memo_init(_ctx: &impl HasInitContext, _state: &mut impl HasStateApi) -> InitResult<()> { Ok(()) }
+#[init(contract = "memo", parameter = "InitParameter")]
+fn memo_init<S: HasStateApi>(
+    _ctx: &impl HasInitContext,
+    _state_builder: &mut StateBuilder<S>,
+) -> InitResult<()> {
+    Ok(())
+}
 
 const EXPECTED_PARAMETER_SIZE: u32 = 32;
 
 pub type ReceiveParameter = [u8; 32];
 
+/// The different errors the contract can produce.
+#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+enum CustomContractError {
+    InvokeTransferError,
+}
+
+/// Mapping errors related to transfer invocations to CustomContractError.
+impl From<TransferError> for CustomContractError {
+    fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
+}
+
+#[derive(Serialize)]
+struct State;
+
 /// Receive a transaction with a message. This ensures that the message is 32
 /// bytes and that the sender of the message is an account.
-#[receive(contract = "memo", name = "receive", parameter = "ReceiveParameter", payable, low_level)]
-fn memo_receive<A: HasActions>(
+#[receive(contract = "memo", name = "receive", parameter = "ReceiveParameter", payable)]
+fn memo_receive<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State, StateApiType = S>,
     amount: Amount,
-    _state: &mut impl HasStateApi,
-) -> ReceiveResult<A> {
+) -> ReceiveResult<()> {
     ensure!(matches!(ctx.sender(), Address::Account(..)));
     ensure!(ctx.parameter_cursor().size() == EXPECTED_PARAMETER_SIZE);
-    // Forward the received funds to the owner of the contract.
-    let act = A::simple_transfer(&ctx.owner(), amount);
-    Ok(act)
+    host.invoke_transfer(&ctx.owner(), amount)?;
+    Ok(())
 }

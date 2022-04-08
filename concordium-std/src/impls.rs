@@ -585,12 +585,6 @@ where
     #[inline(always)]
     pub fn key(&self) -> &K { &self.key }
 
-    /// Sets the value of the entry with the `OccupiedEntry`'s key.
-    pub fn insert(mut self, value: V) {
-        self.value = value;
-        self.store_value();
-    }
-
     /// Get an immutable reference to the value contained in this entry.
     #[inline(always)]
     pub fn get_ref(&self) -> &V { &self.value }
@@ -879,6 +873,14 @@ where
             // Unwrapping is safe when using only the high-level API.
             StateRef::new(V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort())
         })
+    }
+
+    /// Lookup a mutable reference to the value with the given key. Return
+    /// [None] if there is no value with the given key.
+    pub fn get_mut(&self, key: &K) -> Option<StateRefMut<V, S>> {
+        let k = self.key_with_map_prefix(&key);
+        let entry = self.state_api.lookup_entry(&k)?;
+        Some(StateRefMut::new(entry, self.state_api.clone()))
     }
 
     /// Inserts the value with the given key. If a value already exists at the
