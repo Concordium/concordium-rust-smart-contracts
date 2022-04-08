@@ -253,7 +253,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     if let Some((ident, _)) = return_value {
         return Err(syn::Error::new(
             ident.span(),
-            format!("The 'return_value' attribute is currently not supported for init methods."),
+            "The 'return_value' attribute is currently not supported for init methods.",
         ));
     }
     // Make sure that there are no unrecognized attributes. These would typically be

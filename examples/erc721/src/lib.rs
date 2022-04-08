@@ -348,16 +348,12 @@ impl<S: HasStateApi> State<S> {
         approved: bool,
         state_builder: &mut StateBuilder<S>,
     ) {
-        if let Some(operators) = self.owner_operators.get_mut(owner) {
-            if approved {
-                operators.insert(*operator);
-            } else {
-                operators.remove(operator);
-            }
-        } else if approved {
-            let mut operators = state_builder.new_set();
-            operators.insert(*operator);
-            self.owner_operators.insert(*owner, operators);
+        if approved {
+            let mut entry =
+                self.owner_operators.entry(*owner).or_insert_with(|| state_builder.new_set());
+            entry.insert(*operator);
+        } else if let Some(mut operators) = self.owner_operators.get_mut(owner) {
+            operators.remove(operator);
         }
     }
 }

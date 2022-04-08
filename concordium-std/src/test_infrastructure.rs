@@ -1347,7 +1347,7 @@ mod test {
         let mut state = TestStateApi::new();
         state
             .entry(&key[..])
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("No iterators, so insertion should work.");
 
         match state.entry(key) {
@@ -1593,7 +1593,7 @@ mod test {
         let mut state = TestStateApi::new();
         state
             .entry(&key[..])
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("No iterators, so insertion should work.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.create_entry(&sub_key);
@@ -1608,7 +1608,7 @@ mod test {
         let mut state = TestStateApi::new();
         state
             .entry(&key[..])
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("No iterators, so insertion should work.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.create_entry(&key2);
@@ -1623,11 +1623,11 @@ mod test {
         let mut state = TestStateApi::new();
         state
             .entry(&key[..])
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("no iterators, so insertion should work.");
         let sub_entry = state
             .entry(sub_key)
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("Should be possible to create the entry.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         assert!(
@@ -1644,11 +1644,11 @@ mod test {
         let mut state = TestStateApi::new();
         state
             .entry(&key[..])
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("No iterators, so insertion should work.");
         let entry2 = state
             .entry(key2)
-            .or_insert(&to_bytes(&expected_value))
+            .or_insert_raw(&to_bytes(&expected_value))
             .expect("Should be possible to create the entry.");
         assert!(state.iterator(&key).is_ok(), "Iterator should be present");
         assert!(
@@ -1738,7 +1738,7 @@ mod test {
         let mut state = TestStateApi::new();
         state
             .entry([])
-            .or_insert(&to_bytes(&"A longer string that should be truncated"))
+            .or_insert_raw(&to_bytes(&"A longer string that should be truncated"))
             .expect("No iterators, so insertion should work.");
 
         let a_short_string = "A short string";
@@ -1746,7 +1746,7 @@ mod test {
 
         match state.entry([]) {
             EntryRaw::Vacant(_) => panic!("Entry is vacant"),
-            EntryRaw::Occupied(mut occ) => occ.insert(&to_bytes(&a_short_string)),
+            EntryRaw::Occupied(mut occ) => occ.insert_raw(&to_bytes(&a_short_string)),
         }
         let actual_size =
             state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
