@@ -203,18 +203,19 @@ impl<S: HasStateApi> State<S> {
         // address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1, ContractError::InsufficientFunds);
 
-        // Find and remove the token from the owner, if nothing is removed, we know the
-        // address did not own the token..
-        self.state.entry(*from).and_try_modify(|address_state| {
-            let removed = address_state.owned_tokens.remove(token_id);
-            ensure!(removed, ContractError::InsufficientFunds);
-            Ok(())
-        })?;
+        {
+            let mut from_address_state =
+                self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
+            // Find and remove the token from the owner, if nothing is removed, we know the
+            // address did not own the token..
+            let from_had_the_token = from_address_state.owned_tokens.remove(token_id);
+            ensure!(from_had_the_token, ContractError::InsufficientFunds);
+        }
 
         // Add the token to the new owner.
-        let mut to_state =
+        let mut to_address_state =
             self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
-        to_state.owned_tokens.insert(*token_id);
+        to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
 
@@ -424,9 +425,9 @@ fn contract_transfer<S: HasStateApi>(
                 contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-NFT")),
                 data,
             };
-            host.invoke_contract_raw(
+            host.invoke_contract(
                 &address,
-                Parameter(&to_bytes(&parameter)),
+                &parameter,
                 function.as_receive_name().entrypoint_name(),
                 Amount::zero(),
             )?;
@@ -499,9 +500,9 @@ fn contract_operator_of<S: HasStateApi>(
         response.push((query, is_operator));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
+        &OperatorOfQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -540,9 +541,9 @@ fn contract_balance_of<S: HasStateApi>(
         response.push((query, amount));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
+        &BalanceOfQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -586,9 +587,9 @@ fn contract_token_metadata<S: HasStateApi>(
         response.push((token_id, metadata_url));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
+        &TokenMetadataQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;

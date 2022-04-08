@@ -412,12 +412,9 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
-        // Authenticate the sender for this transfer
-        ensure!(
-            from == sender || host.state().is_operator(&sender, &from),
-            ContractError::Unauthorized
-        );
         let (state, builder) = host.state_and_builder();
+        // Authenticate the sender for this transfer
+        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
         let to_address = to.address();
         // Update the contract state
         state.transfer(&token_id, amount, &from, &to_address, builder)?;
@@ -436,12 +433,12 @@ fn contract_transfer<S: HasStateApi>(
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new(String::from("init_CIS1-Multi"))?,
+                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-Multi")),
                 data,
             };
-            host.invoke_contract_raw(
+            host.invoke_contract(
                 &address,
-                Parameter(&to_bytes(&parameter)),
+                &parameter,
                 function.as_receive_name().entrypoint_name(),
                 Amount::zero(),
             )?;
@@ -524,9 +521,9 @@ fn contract_balance_of<S: HasStateApi>(
         response.push((query, amount));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
+        &BalanceOfQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -561,9 +558,9 @@ fn contract_operator_of<S: HasStateApi>(
         response.push((query, is_operator));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
+        &OperatorOfQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -607,9 +604,9 @@ fn contract_token_metadata<S: HasStateApi>(
         response.push((token_id, metadata_url));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
+        &TokenMetadataQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -670,9 +667,9 @@ fn contract_on_cis1_received<S: HasStateApi>(
     )?;
 
     // Send back a transfer
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &sender,
-        Parameter(&to_bytes(&parameter)),
+        &parameter,
         receive_name.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;

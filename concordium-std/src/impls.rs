@@ -884,6 +884,14 @@ where
         })
     }
 
+    /// Lookup a mutable reference to the value with the given key. Return
+    /// [None] if there is no value with the given key.
+    pub fn get_mut(&self, key: &K) -> Option<StateRefMut<V, S>> {
+        let k = self.key_with_map_prefix(&key);
+        let entry = self.state_api.lookup_entry(&k)?;
+        Some(StateRefMut::new(entry, self.state_api.clone()))
+    }
+
     /// Inserts the value with the given key. If a value already exists at the
     /// given key it is replaced and the old value is returned.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {

@@ -161,7 +161,7 @@ impl<S: HasStateApi> State<S> {
         state_builder: &mut StateBuilder<S>,
     ) {
         let mut owner_state =
-            self.address_state.entry(owner).or_insert(AddressState::empty(state_builder));
+            self.address_state.entry(owner).or_insert_with(|| AddressState::empty(state_builder));
         owner_state.operators.insert(operator);
     }
 
@@ -271,9 +271,9 @@ fn contract_transfer<S: HasStateApi>(
                 data,
             };
 
-            host.invoke_contract_raw(
+            host.invoke_contract(
                 &address,
-                Parameter(&to_bytes(&parameter)),
+                &parameter,
                 function.as_receive_name().entrypoint_name(),
                 Amount::from_micro_ccd(amount),
             )?;
@@ -350,9 +350,9 @@ fn contract_operator_of<S: HasStateApi>(
         let is_operator = state.is_operator(&query.owner, &query.address);
         response.push((query, is_operator));
     }
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&OperatorOfQueryResponse::from(response))),
+        &OperatorOfQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -391,9 +391,9 @@ fn contract_balance_of<S: HasStateApi>(
         response.push((query, amount));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&BalanceOfQueryResponse::from(response))),
+        &BalanceOfQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -430,9 +430,9 @@ fn contract_token_metadata<S: HasStateApi>(
         response.push((token_id, state.metadata_url.clone()));
     }
     // Send back the response.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &params.result_contract,
-        Parameter(&to_bytes(&TokenMetadataQueryResponse::from(response))),
+        &TokenMetadataQueryResponse::from(response),
         params.result_function.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;

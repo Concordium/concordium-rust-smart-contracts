@@ -283,7 +283,7 @@ impl<S: HasStateApi> State<S> {
     }
 
     /// Get the current owner of a token.
-    fn get_owner(&self, token_id: &TokenId) -> ContractResult<StateRef<'_, Address>> {
+    fn get_owner(&self, token_id: &TokenId) -> ContractResult<StateRef<Address>> {
         self.token_owners.get(token_id).ok_or(ContractError::NoTokenWithThisId)
     }
 
@@ -295,7 +295,7 @@ impl<S: HasStateApi> State<S> {
     }
 
     /// Get the approve of a token.
-    fn get_approved(&self, token_id: &TokenId) -> Option<StateRef<'_, Address>> {
+    fn get_approved(&self, token_id: &TokenId) -> Option<StateRef<Address>> {
         self.token_approvals.get(token_id)
     }
 
@@ -348,20 +348,17 @@ impl<S: HasStateApi> State<S> {
         approved: bool,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.owner_operators
-            .entry(*owner)
-            .and_modify(|owner_address| {
-                if approved {
-                    owner_address.insert(*operator);
-                } else {
-                    owner_address.remove(operator);
-                }
-            })
-            .or_insert_with(|| {
-                let mut operators = state_builder.new_set();
+        if let Some(operators) = self.owner_operators.get_mut(owner) {
+            if approved {
                 operators.insert(*operator);
-                operators
-            });
+            } else {
+                operators.remove(operator);
+            }
+        } else if approved {
+            let mut operators = state_builder.new_set();
+            operators.insert(*operator);
+            self.owner_operators.insert(*owner, operators);
+        }
     }
 }
 
@@ -419,9 +416,9 @@ fn contract_safe_transfer_from<S: HasStateApi>(
         };
         let receive_name = params.receive_name.ok_or(ContractError::MissingContractReceiveName)?;
 
-        host.invoke_contract_raw(
+        host.invoke_contract(
             &receiving_contract,
-            Parameter(&to_bytes(&parameter)),
+            &parameter,
             receive_name.as_receive_name().entrypoint_name(),
             Amount::zero(),
         )?;
@@ -500,17 +497,14 @@ fn contract_approve<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: ApproveParams = ctx.parameter_cursor().get()?;
     let sender = ctx.sender();
-    let owner = *host.state().get_owner(&params.token_id)?;
-
+    let state = host.state_mut();
+    let owner = *state.get_owner(&params.token_id)?;
     if let Some(approved) = params.approved {
         ensure!(owner != approved, ContractError::ApprovedIsOwner);
     }
-    ensure!(
-        sender == owner || host.state().is_operator(&sender, &owner),
-        ContractError::Unauthorized
-    );
+    ensure!(sender == owner || state.is_operator(&sender, &owner), ContractError::Unauthorized);
 
-    host.state_mut().approve(&params.approved, &params.token_id);
+    state.approve(&params.approved, &params.token_id);
 
     logger.log(&Event::Approval {
         owner,
@@ -594,9 +588,9 @@ fn contract_on_erc721_received<S: HasStateApi>(
         EntrypointName::new("safeTransferFrom")?,
     )?;
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &sender,
-        Parameter(&to_bytes(&parameter)),
+        &parameter,
         receive_name.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -626,9 +620,9 @@ fn contract_balance_of<S: HasStateApi>(
     let params: BalanceOfParams = ctx.parameter_cursor().get()?;
     let balance = host.state().balance(&params.owner);
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &sender,
-        Parameter(&to_bytes(&balance)),
+        &balance,
         params.callback.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -658,9 +652,9 @@ fn contract_owner_of<S: HasStateApi>(
     let params: OwnerOfParams = ctx.parameter_cursor().get()?;
     let owner = *host.state().get_owner(&params.token_id)?;
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &sender,
-        Parameter(&to_bytes(&owner)),
+        &owner,
         params.callback.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -692,9 +686,9 @@ fn contract_get_approved<S: HasStateApi>(
     let params: GetApprovedParams = ctx.parameter_cursor().get()?;
     let approved = host.state().get_approved(&params.token_id).map(|n| n.to_owned());
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &sender,
-        Parameter(&to_bytes(&approved)),
+        &approved,
         params.callback.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
@@ -725,9 +719,9 @@ fn contract_is_approved_for_all<S: HasStateApi>(
     let params: IsApprovedForAllParams = ctx.parameter_cursor().get()?;
     let is_operator = host.state().is_operator(&params.operator, &params.owner);
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &sender,
-        Parameter(&to_bytes(&is_operator)),
+        &is_operator,
         params.callback.as_receive_name().entrypoint_name(),
         Amount::zero(),
     )?;
