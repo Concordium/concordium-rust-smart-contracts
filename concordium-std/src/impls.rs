@@ -287,12 +287,7 @@ impl Seek for StateEntry {
 
 impl Read for StateEntry {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
-        let len: u32 = {
-            match buf.len().try_into() {
-                Ok(v) => v,
-                _ => return Err(ParseError::default()),
-            }
-        };
+        let len: u32 = buf.len().try_into().map_err(|_| ParseError::default())?;
         let num_read = unsafe {
             prims::state_entry_read(
                 self.state_entry_id,
@@ -621,7 +616,6 @@ where
     StateApi: HasStateApi,
 {
     pub(crate) fn store_value(&mut self) {
-        self.state_entry.move_to_start();
         // First truncate it back to 0. This is not ideal in some cases, since
         // it is a needless call.
         // An alternative would be to first write to a temporary buffer,
@@ -673,9 +667,9 @@ where
 
     /// Ensure a value is in the entry by inserting the provided value if the
     /// entry is vacant.
-    pub fn or_insert(self, default: V) -> OccupiedEntry<'a, K, V, StateApi> {
+    pub fn or_insert(self, value: V) -> OccupiedEntry<'a, K, V, StateApi> {
         match self {
-            Entry::Vacant(vac) => vac.insert(default),
+            Entry::Vacant(vac) => vac.insert(value),
             Entry::Occupied(oe) => oe,
         }
     }
@@ -868,7 +862,7 @@ where
     /// Lookup the value with the given key. Return [None] if there is no value
     /// with the given key.
     pub fn get(&self, key: &K) -> Option<StateRef<V>> {
-        let k = self.key_with_map_prefix(&key);
+        let k = self.key_with_map_prefix(key);
         self.state_api.lookup_entry(&k).map(|mut entry| {
             // Unwrapping is safe when using only the high-level API.
             StateRef::new(V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort())
@@ -878,7 +872,7 @@ where
     /// Lookup a mutable reference to the value with the given key. Return
     /// [None] if there is no value with the given key.
     pub fn get_mut(&self, key: &K) -> Option<StateRefMut<V, S>> {
-        let k = self.key_with_map_prefix(&key);
+        let k = self.key_with_map_prefix(key);
         let entry = self.state_api.lookup_entry(&k)?;
         Some(StateRefMut::new(entry, self.state_api.clone()))
     }
@@ -925,7 +919,6 @@ where
     /// This also includes values pointed at, if `V`, for example, is a
     /// [StateBox]. **If applicable use [`clear_flat`](Self::clear_flat)
     /// instead.**
-    // Note: This does not use delete() because delete consumes self.
     pub fn clear(&mut self)
     where
         V: Deletable, {
@@ -991,6 +984,7 @@ where
         }
     }
 
+    /// Serializes the key and prepends the unique map prefix to it.
     fn key_with_map_prefix(&self, key: &K) -> Vec<u8> {
         let mut key_with_prefix = self.prefix.to_vec();
         key.serial(&mut key_with_prefix).unwrap_abort();
@@ -1040,7 +1034,7 @@ where
     }
 
     /// Like [iter](Self::iter), but allows modifying the values during
-    /// iterator.
+    /// iteration.
     pub fn iter_mut(&mut self) -> StateMapIterMut<'_, K, V, S> {
         match self.state_api.iterator(&self.prefix) {
             Ok(state_iter) => StateMapIterMut {
@@ -1120,6 +1114,7 @@ impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
     fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
 }
 
+/// When dropped, the value, `V`, is written to the entry in the contract state.
 impl<'a, V: Serial, S: HasStateApi> Drop for StateRefMut<'a, V, S> {
     fn drop(&mut self) {
         if let Some(value) = self.lazy_value.get_mut() {
@@ -1143,10 +1138,7 @@ where
         if let Some(v) = lv {
             v
         } else {
-            let entry = unsafe { &mut *self.entry.get() };
-            entry.move_to_start();
-            let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
-            lv.insert(value)
+            lv.insert(self.load_value())
         }
     }
 
@@ -1158,11 +1150,15 @@ where
         if let Some(v) = lv {
             v
         } else {
-            let entry = unsafe { &mut *self.entry.get() };
-            entry.move_to_start();
-            let value = V::deserial_with_state(&self.state_api, entry).unwrap_abort();
-            lv.insert(value)
+            lv.insert(self.load_value())
         }
+    }
+
+    /// Load the value referenced by the entry from the chain data.
+    fn load_value(&self) -> V {
+        let entry = unsafe { &mut *self.entry.get() };
+        entry.move_to_start();
+        V::deserial_with_state(&self.state_api, entry).unwrap_abort()
     }
 
     /// Set the value. Overwrites the existing one.
@@ -1170,7 +1166,7 @@ where
         let entry = self.entry.get_mut();
         entry.move_to_start();
         new_val.serial(entry).unwrap_abort();
-        self.lazy_value.get_mut().insert(new_val);
+        let _ = self.lazy_value.get_mut().insert(new_val);
     }
 
     /// Update the existing value with the given function.
@@ -1208,7 +1204,6 @@ where
     /// `false`.
     pub fn insert(&mut self, value: T) -> bool {
         let key_bytes = self.key_with_set_prefix(&value);
-        // Unwrapping is safe, because iter() keeps a reference to the statemap.
         match self.state_api.entry(key_bytes) {
             EntryRaw::Vacant(vac) => {
                 let _ = vac.insert_raw(&[]);
@@ -1915,18 +1910,15 @@ where
             .unwrap_abort();
 
         // Get the next collection prefix
-        let mut collection_prefix = [0u8; 8];
-        next_collection_prefix_entry.read_exact(&mut collection_prefix).unwrap_abort(); // Unwrapping is safe if only using the high-level API.
+        let collection_prefix = next_collection_prefix_entry.read_u64().unwrap_abort(); // Unwrapping is safe if only using the high-level API.
 
         // Rewind state entry position.
         next_collection_prefix_entry.move_to_start();
 
         // Increment the collection prefix
-        next_collection_prefix_entry
-            .write_u64(u64::from_le_bytes(collection_prefix) + 1)
-            .unwrap_abort(); // Writing to state cannot fail.
+        next_collection_prefix_entry.write_u64(collection_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
 
-        collection_prefix
+        collection_prefix.to_le_bytes()
     }
 }
 
@@ -1936,6 +1928,7 @@ impl<S> StateBuilder<S>
 where
     S: HasStateApi,
 {
+    /// Get a value from the generic map.
     /// `Some(Err(_))` means that something exists in the state with that key,
     /// but it isn't of type `V`.
     pub(crate) fn get<K: Serial, V: DeserialWithState<S>>(&self, key: K) -> Option<ParseResult<V>> {
@@ -1946,6 +1939,8 @@ where
             .map(|mut entry| V::deserial_with_state(&self.state_api, &mut entry))
     }
 
+    /// Inserts a value in the generic map.
+    /// The key and value are serialized before insert.
     pub(crate) fn insert<K: Serial, V: Serial>(
         &mut self,
         key: K,
@@ -1961,6 +1956,10 @@ where
         Ok(())
     }
 
+    /// Serializes the key and prepends [GENERIC_MAP_PREFIX].
+    /// This is similar to how [StateMap] works, where a unique prefix is
+    /// prepended onto keys. Since there is only one generic map, the prefix
+    /// is a constant.
     fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
         let mut key_with_map_prefix = to_bytes(&GENERIC_MAP_PREFIX);
         key_with_map_prefix.append(&mut to_bytes(&key));
@@ -2480,8 +2479,8 @@ impl DeserialCtx for String {
     }
 }
 
-/// Blanket implementation for Deserial, which simply does not use the state
-/// argument.
+/// Blanket implementation of [DeserialWithState] for any [Deserial] types,
+/// which simply does not use the state argument.
 impl<D: Deserial, S: HasStateApi> DeserialWithState<S> for D {
     #[inline(always)]
     fn deserial_with_state<R: Read>(_state: &S, source: &mut R) -> ParseResult<Self> {
@@ -2489,8 +2488,8 @@ impl<D: Deserial, S: HasStateApi> DeserialWithState<S> for D {
     }
 }
 
-/// Blanket implementation for DeserialCtx, which simply does not use the state
-/// argument.
+/// Blanket implementation of [DeserialCtxWithState] for any [DeserialCtx]
+/// types, which simply does not use the state argument.
 impl<D: DeserialCtx, S: HasStateApi> DeserialCtxWithState<S> for D {
     #[inline(always)]
     fn deserial_ctx_with_state<R: Read>(
@@ -2595,18 +2594,8 @@ where
 impl<K, V, S> Deletable for StateMap<K, V, S>
 where
     S: HasStateApi,
-    K: Deserial,
-    V: DeserialWithState<S> + Deletable,
+    K: Serialize,
+    V: Serial + DeserialWithState<S> + Deletable,
 {
-    fn delete(mut self) {
-        // Delete all values pointed at by the statemap. This is necessary if `V` is a
-        // StateBox/StateMap.
-        for (_, value) in self.iter() {
-            value.value.delete()
-        }
-
-        // Then delete the map itself.
-        // Unwrapping is safe when only using the high-level API.
-        self.state_api.delete_prefix(&self.prefix).unwrap_abort();
-    }
+    fn delete(mut self) { self.clear(); }
 }

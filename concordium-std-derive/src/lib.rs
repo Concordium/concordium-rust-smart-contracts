@@ -704,7 +704,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// fn contract_receive<S: HasStateApi>(
 ///     ctx: &impl HasReceiveContext,
 ///     host: &HasHost<MyState, StateApiType = S>,
-/// ) -> ReceiveResult<A> { ...}
+/// ) -> ReceiveResult<A> {...}
 /// ```
 ///
 /// ## `return_value="<ReturnValue>"`: Generate schema for the return value.
@@ -724,7 +724,30 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// fn contract_receive<S: HasStateApi>(
 ///    ctx: &impl HasReceiveContext,
 ///    host: &HasHost<MyState, StateApiType = S>,
-/// ) -> ReceiveResult<MyReturnValue> { ...}
+/// ) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
+/// ## `fallback`: Create a fallback entrypoint.
+/// A contract can have a *single* fallback entrypoint defined.
+/// If defined, invocations on missing entrypoint will be redirected to the
+/// fallback entrypoint. For fallback entrypoints, the `name` attribute is not
+/// allowed. This is because fallback entrypoints always have the empty string
+/// as their name.
+///
+/// To get the name of the entrypoint used for invocation, use
+/// `ctx.named_entrypoint()`. The method is available in all receive methods,
+/// but is only useful on fallback entrypoints.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", fallback)]
+/// fn contract_receive<S: HasStateApi>(
+///    ctx: &impl HasReceiveContext,
+///    host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<MyReturnValue> {
+///     let named_entrypoint = ctx.named_entrypoint();
+///     // ...
+/// }
 /// ```
 
 #[proc_macro_attribute]

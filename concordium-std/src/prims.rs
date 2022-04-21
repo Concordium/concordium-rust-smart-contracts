@@ -121,7 +121,7 @@ extern "C" {
     /// - 1 if the iterator was successfully deleted as a result of this call.
     pub(crate) fn state_iterator_delete(iterator: u64) -> u32;
 
-    /// Get the length of the key that the iterator is currently pointing at.
+    /// Get the size of the key that the iterator is currently pointing at.
     /// Returns
     /// - u32::MAX if the iterator does not exist
     /// - otherwise the length of the key in bytes.

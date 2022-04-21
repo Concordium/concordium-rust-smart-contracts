@@ -1,5 +1,5 @@
-//! This library provides types and functions for working with the Concordium
-//! Token Standard CIS1.
+//! This library provides types and functions for working with the [Concordium
+//! Token Standard CIS1](https://proposals.concordium.software/CIS/cis-1.html).
 //!
 //! It contains types for the parameters for each of the contract functions and
 //! types for each event. Each type have implemented serialization according to
@@ -607,33 +607,57 @@ impl<R: Into<Reject>> From<Cis1Error<R>> for Reject {
     }
 }
 
-impl<X: From<LogError>> From<LogError> for Cis1Error<X> {
+impl<X> From<LogError> for Cis1Error<X>
+where
+    X: From<LogError>,
+{
     #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
     fn from(err: LogError) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
-impl<X: From<ParseError>> From<ParseError> for Cis1Error<X> {
+impl<X> From<ParseError> for Cis1Error<X>
+where
+    X: From<ParseError>,
+{
     #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
     fn from(err: ParseError) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
-impl<T, X: From<CallContractError<T>>> From<CallContractError<T>> for Cis1Error<X> {
+impl<T, X> From<CallContractError<T>> for Cis1Error<X>
+where
+    X: From<CallContractError<T>>,
+{
     #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
     fn from(err: CallContractError<T>) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
-impl<X: From<TransferError>> From<TransferError> for Cis1Error<X> {
+impl<X> From<TransferError> for Cis1Error<X>
+where
+    X: From<TransferError>,
+{
     #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
     fn from(err: TransferError) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
-impl<X: From<NewReceiveNameError>> From<NewReceiveNameError> for Cis1Error<X> {
+impl<X> From<NewReceiveNameError> for Cis1Error<X>
+where
+    X: From<NewReceiveNameError>,
+{
     #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
     fn from(err: NewReceiveNameError) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
-impl<X: From<NewContractNameError>> From<NewContractNameError> for Cis1Error<X> {
+impl<X> From<NewContractNameError> for Cis1Error<X>
+where
+    X: From<NewContractNameError>,
+{
     #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
     fn from(err: NewContractNameError) -> Self { Cis1Error::Custom(X::from(err)) }
 }
 
