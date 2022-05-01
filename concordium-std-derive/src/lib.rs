@@ -1908,7 +1908,7 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         }
     };
 
-    let variant_error_conversions = generate_variant_error_conversions(&enum_data, &enum_ident)?;
+    let variant_error_conversions = generate_variant_error_conversions(enum_data, enum_ident)?;
 
     let gen = quote! {
         /// The from implementation maps the first variant to -1, second to -2, etc.
@@ -1998,7 +1998,7 @@ fn parse_attr_and_gen_error_conversions(
                     syn::NestedMeta::Lit(l) => return Err(wrong_from_usage(&l)),
                 }
             }
-            Ok(from_error_token_stream(&from_error_names, &enum_name, variant_name).collect())
+            Ok(from_error_token_stream(&from_error_names, enum_name, variant_name).collect())
         }
         Ok(syn::Meta::NameValue(mnv)) if mnv.path.is_ident("from") => Err(wrong_from_usage(&mnv)),
         _ => Ok(vec![]),
@@ -2231,4 +2231,29 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
     };
 
     Ok(gen.into())
+}
+
+/// If `wasm-test` feature of `concordium-std` is enabled ignore the item,
+/// this usually happens when executing tests with `cargo-concordium` utility.
+/// Otherwise this is equivalent to `#[cfg(not(test))]`. Use as a dual to
+/// `#[concordium_cfg_test]`.
+#[cfg(feature = "wasm-test")]
+#[proc_macro_attribute]
+pub fn concordium_cfg_not_test(_attr: TokenStream, _item: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
+/// If `wasm-test` feature of `concordium-std` is enabled ignore the item,
+/// this usually happens when executing tests with `cargo-concordium` utility.
+/// Otherwise this is equivalent to `#[cfg(not(test))]`. Use as a dual to
+/// `#[concordium_cfg_test]`.
+#[cfg(not(feature = "wasm-test"))]
+#[proc_macro_attribute]
+pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let item = proc_macro2::TokenStream::from(item);
+    let out = quote! {
+        #[cfg(not(test))]
+        #item
+    };
+    out.into()
 }

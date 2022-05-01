@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.
+
 ## concordium-std-derive 2.0.0 (2022-01-05)
 
 - Update references to token to match token name (CCD).
