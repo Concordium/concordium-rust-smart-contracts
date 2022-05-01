@@ -199,7 +199,7 @@ mod tests {
 
     fn create_parameter_bytes(parameter: &InitParameter) -> Vec<u8> { to_bytes(parameter) }
 
-    fn parametrized_init_ctx<'a>(parameter_bytes: &'a Vec<u8>) -> TestInitContext<'a> {
+    fn parametrized_init_ctx(parameter_bytes: &[u8]) -> TestInitContext {
         let mut ctx = TestInitContext::empty();
         ctx.set_parameter(parameter_bytes);
         ctx

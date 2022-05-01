@@ -27,7 +27,7 @@ struct RawReturnValue(Option<Vec<u8>>);
 impl Serial for RawReturnValue {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match &self.0 {
-            Some(rv) => out.write_all(&rv),
+            Some(rv) => out.write_all(rv),
             None => Ok(()),
         }
     }
