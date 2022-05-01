@@ -3,6 +3,10 @@
 ## Unreleased changes
 
 - Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.
+- Add `derive(Deletable)` macro for deriving the `Deletable` trait.
+- Add `derive(DeserialWithState)` macro.
+- Change `receive` and `init` macros to support the new V1 contract state and
+  sync calls.
 
 ## concordium-std-derive 2.0.0 (2022-01-05)
 
