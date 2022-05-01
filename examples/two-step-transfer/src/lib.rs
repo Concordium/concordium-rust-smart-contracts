@@ -80,17 +80,16 @@ struct InitParams {
     transfer_request_ttl: TransferRequestTimeToLiveMilliseconds,
 }
 
-#[contract_state(contract = "two-step-transfer")]
-#[derive(Serialize, SchemaType)]
-pub struct State {
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+pub struct State<S> {
     // The initial configuration of the contract
     init_params: InitParams,
 
     // Requests which have not been dropped due to timing out or due to being agreed to yet
     // The request ID, the associated amount, when it times out, who is making the transfer and
     // which account holders support this transfer
-    #[concordium(size_length = 2)]
-    requests: BTreeMap<TransferRequestId, TransferRequest>,
+    requests: StateMap<TransferRequestId, TransferRequest, S>,
 }
 
 // Contract implementation
@@ -114,7 +113,11 @@ enum InitError {
 
 #[init(contract = "two-step-transfer", parameter = "InitParams", payable)]
 #[inline(always)]
-fn contract_init(ctx: &impl HasInitContext, _amount: Amount) -> Result<State, InitError> {
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    state_builder: &mut StateBuilder<S>,
+    _amount: Amount,
+) -> Result<State<S>, InitError> {
     let init_params: InitParams = ctx.parameter_cursor().get()?;
     ensure!(init_params.account_holders.len() >= 2, InitError::InsufficientAccountHolders);
     ensure!(
@@ -125,7 +128,7 @@ fn contract_init(ctx: &impl HasInitContext, _amount: Amount) -> Result<State, In
 
     let state = State {
         init_params,
-        requests: BTreeMap::new(),
+        requests: state_builder.new_map(),
     };
 
     Ok(state)
@@ -133,12 +136,12 @@ fn contract_init(ctx: &impl HasInitContext, _amount: Amount) -> Result<State, In
 
 #[receive(contract = "two-step-transfer", name = "deposit", payable)]
 #[inline(always)]
-fn contract_receive_deposit<A: HasActions>(
+fn contract_receive_deposit<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
     _amount: Amount,
-    _state: &mut State,
-) -> ReceiveResult<A> {
-    Ok(A::accept())
+) -> ReceiveResult<()> {
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq, Reject)]
@@ -164,18 +167,40 @@ enum ReceiveError {
     RequestAlreadySupported,
     /// End time is not expressible, i.e., would overflow.
     Overflow,
+    /// Invalid receiver when invoking a transfer.
+    InvokeTransferMissingAccount,
+    /// Insufficient funds when invoking a transfer.
+    InvokeTransferInsufficientFunds,
 }
 
-#[receive(contract = "two-step-transfer", name = "receive", parameter = "Message", payable)]
+/// Mapping errors related to transfer invocations to CustomContractError.
+impl From<TransferError> for ReceiveError {
+    fn from(te: TransferError) -> Self {
+        match te {
+            TransferError::AmountTooLarge => Self::InvokeTransferInsufficientFunds,
+            TransferError::MissingAccount => Self::InvokeTransferMissingAccount,
+        }
+    }
+}
+
+type ContractResult<A> = Result<A, ReceiveError>;
+
+#[receive(
+    contract = "two-step-transfer",
+    name = "receive",
+    parameter = "Message",
+    payable,
+    mutable
+)]
 #[inline(always)]
-fn contract_receive_message<A: HasActions>(
+fn contract_receive_message<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
-    state: &mut State,
-) -> Result<A, ReceiveError> {
+) -> ContractResult<()> {
     let sender = ctx.sender();
     ensure!(
-        state
+        host.state()
             .init_params
             .account_holders
             .iter()
@@ -194,19 +219,31 @@ fn contract_receive_message<A: HasActions>(
             // Remove outdated requests and calculate the reserved balance
             let mut reserved_balance = Amount::zero();
             let mut active_requests: BTreeMap<TransferRequestId, TransferRequest> = BTreeMap::new();
-            for (key, req) in state.requests.iter() {
+            for (key, req) in host.state().requests.iter() {
                 if req.times_out_at > now {
                     active_requests.insert(*key, req.clone());
                     reserved_balance += req.transfer_amount;
                 }
             }
-            state.requests = active_requests;
+
+            // Persist the active requests
+            host.state_mut().requests = host.state_builder().new_map();
+            for (key, req) in active_requests.iter() {
+                host.state_mut().requests.insert(*key, req.clone());
+            }
 
             // Check if a request already exists
-            ensure!(!state.requests.contains_key(&req_id), ReceiveError::RequestAlreadyExists);
+            let mut contains = false;
+            for (k, _) in host.state().requests.iter() {
+                if *k == req_id {
+                    contains = true;
+                    break;
+                }
+            }
+            ensure!(!contains, ReceiveError::RequestAlreadyExists);
 
             // Ensure enough funds for the requested transfer
-            let balance = amount + ctx.self_balance();
+            let balance = amount + host.self_balance();
             ensure!(
                 balance - reserved_balance >= transfer_amount,
                 ReceiveError::InsufficientAvailableFunds
@@ -219,54 +256,46 @@ fn contract_receive_message<A: HasActions>(
                 transfer_amount,
                 target_account,
                 times_out_at: now
-                    .checked_add(state.init_params.transfer_request_ttl)
+                    .checked_add(host.state().init_params.transfer_request_ttl)
                     .ok_or(ReceiveError::Overflow)?,
                 supporters,
             };
-            state.requests.insert(req_id, new_request);
-            Ok(A::accept())
+
+            host.state_mut().requests.insert(req_id, new_request);
+            Ok(())
         }
 
         Message::SupportTransfer(transfer_request_id, transfer_amount, target_account) => {
-            // Find the request
-            let matching_request_result = state.requests.get_mut(&transfer_request_id);
+            let transfer = {
+                let threshold = host.state().init_params.transfer_agreement_threshold;
+                let mut matching_request = host
+                    .state_mut()
+                    .requests
+                    .entry(transfer_request_id)
+                    .occupied_or(ReceiveError::UnknownTransfer)?;
 
-            let matching_request = match matching_request_result {
-                None => bail!(ReceiveError::UnknownTransfer),
-                Some(matching) => matching,
+                ensure!(matching_request.times_out_at > now, ReceiveError::RequestTimeout);
+                ensure!(
+                    matching_request.transfer_amount == transfer_amount,
+                    ReceiveError::MismatchingRequestInformation
+                );
+                ensure!(
+                    matching_request.target_account == target_account,
+                    ReceiveError::MismatchingRequestInformation
+                );
+                ensure!(
+                    !matching_request.supporters.contains(&sender_address),
+                    ReceiveError::RequestAlreadySupported
+                );
+                matching_request.supporters.insert(sender_address);
+                matching_request.supporters.len() >= usize::from(threshold)
             };
 
-            // Validate the details of the transfer
-            ensure!(matching_request.times_out_at > now, ReceiveError::RequestTimeout);
-            ensure!(
-                matching_request.transfer_amount == transfer_amount,
-                ReceiveError::MismatchingRequestInformation
-            );
-            ensure!(
-                matching_request.target_account == target_account,
-                ReceiveError::MismatchingRequestInformation
-            );
-
-            // Can't have already supported this transfer
-            ensure!(
-                !matching_request.supporters.contains(&sender_address),
-                ReceiveError::RequestAlreadySupported
-            );
-
-            // Support the request
-            matching_request.supporters.insert(sender_address);
-
-            // Check if the have enough supporters to trigger
-            if matching_request.supporters.len() as u8
-                >= state.init_params.transfer_agreement_threshold
-            {
-                // Remove the transfer from the list of outstanding transfers and send it
-                state.requests.remove(&transfer_request_id);
-                Ok(A::simple_transfer(&target_account, transfer_amount))
-            } else {
-                // Keep the updated support and accept
-                Ok(A::accept())
+            if transfer {
+                host.invoke_transfer(&target_account, transfer_amount)?;
+                host.state_mut().requests.remove(&transfer_request_id);
             }
+            Ok(())
         }
     }
 }
@@ -278,7 +307,7 @@ mod tests {
     use super::*;
     use concordium_std::test_infrastructure::*;
 
-    fn sum_reserved_balance(state: &State) -> Amount {
+    fn sum_reserved_balance<S: HasStateApi>(state: &State<S>) -> Amount {
         state.requests.iter().map(|(_, req)| req.transfer_amount).sum()
     }
 
@@ -300,12 +329,13 @@ mod tests {
         };
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = InitContextTest::empty();
+        let mut ctx = TestInitContext::empty();
         ctx.set_parameter(&parameter_bytes);
 
         let amount = Amount::from_micro_ccd(0);
+        let mut state_builder = TestStateBuilder::new();
         // call the init function
-        let out = contract_init(&ctx, amount);
+        let out = contract_init(&ctx, &mut state_builder, amount);
 
         // and inspect the result.
         let state = match out {
@@ -326,7 +356,7 @@ mod tests {
             "Should not contain more account holders"
         );
         // and make sure the correct logs were produced.
-        claim_eq!(state.requests.len(), 0, "No transfer request at initialisation");
+        claim_eq!(state.requests.iter().count(), 0, "No transfer request at initialisation");
     }
 
     #[concordium_test]
@@ -347,11 +377,10 @@ mod tests {
         let parameter = Message::RequestTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account1));
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
-        ctx.set_self_balance(Amount::from_micro_ccd(0));
 
         // Setup state
         let mut account_holders = BTreeSet::new();
@@ -363,30 +392,25 @@ mod tests {
             transfer_request_ttl: TransferRequestTimeToLiveMilliseconds::from_millis(10),
         };
 
-        // set up the logger so we can intercept and analyze them at the end.
-        let mut state = State {
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
             init_params,
-            requests: BTreeMap::new(),
+            requests: state_builder.new_map(),
         };
+        let mut host = TestHost::new(state, state_builder);
+        host.set_self_balance(Amount::from_micro_ccd(0));
 
         let receive_amount = Amount::from_micro_ccd(100);
         // Execution
-        let res: Result<ActionsTree, _> =
-            contract_receive_message(&ctx, receive_amount, &mut state);
+        let res = contract_receive_message(&ctx, &mut host, receive_amount);
+        claim!(res.is_ok(), "Contract receive failed, but it should not have.");
 
-        // Test
-        let actions = match res {
-            Err(_) => fail!("Contract receive failed, but it should not have."),
-            Ok(actions) => actions,
-        };
-        claim_eq!(actions, ActionsTree::Accept, "Contract receive produced incorrect actions.");
-        claim_eq!(state.requests.len(), 1, "Contract receive did not create transfer request");
         claim_eq!(
-            sum_reserved_balance(&state),
+            sum_reserved_balance(host.state()),
             Amount::from_micro_ccd(50),
             "Contract receive did not reserve requested amount"
         );
-        let request = state.requests.get(&request_id).unwrap();
+        let request = host.state().requests.get(&request_id).unwrap();
         claim_eq!(request.supporters.len(), 1, "Only one is supporting the request from start");
         claim!(request.supporters.contains(&account1), "The request sender supports the request");
     }
@@ -407,7 +431,7 @@ mod tests {
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account2));
@@ -430,42 +454,28 @@ mod tests {
             times_out_at: Timestamp::from_timestamp_millis(200),
             transfer_amount,
         };
-        let mut requests = BTreeMap::new();
-        requests.insert(request_id, request);
 
-        let mut state = State {
+        let mut state_builder = TestStateBuilder::new();
+        let mut requests = state_builder.new_map();
+        requests.insert(request_id, request);
+        let state = State {
             init_params,
             requests,
         };
+        let mut host = TestHost::new(state, state_builder);
 
         let receive_amount = Amount::from_micro_ccd(75);
 
         // Execution
-        let res: Result<ActionsTree, _> =
-            contract_receive_message(&ctx, receive_amount, &mut state);
+        let res: ContractResult<()> = contract_receive_message(&ctx, &mut host, receive_amount);
 
-        // Test
-        let actions = match res {
-            Err(_) => fail!("Contract receive support failed, but it should not have.:"),
-            Ok(actions) => actions,
-        };
-
+        claim!(res.is_ok(), "Contract receive support failed, but it should not have.:");
         claim_eq!(
-            actions,
-            ActionsTree::Accept,
-            "Contract receive support produced incorrect actions."
-        );
-        claim_eq!(
-            state.requests.len(),
-            1,
-            "Contract receive support should not mutate the outstanding requests"
-        );
-        claim_eq!(
-            sum_reserved_balance(&state),
+            sum_reserved_balance(host.state()),
             Amount::from_micro_ccd(50),
             "Contract receive did not reserve the requested amount"
         );
-        let request = state.requests.get(&request_id).unwrap();
+        let request = host.state().requests.get(&request_id).unwrap();
         claim_eq!(request.supporters.len(), 2, "Two should support the transfer request");
         claim!(request.supporters.contains(&account2), "The support sender supports the request");
     }
@@ -488,7 +498,7 @@ mod tests {
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
         let parameter_bytes = to_bytes(&parameter);
 
-        let mut ctx = ReceiveContextTest::empty();
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account2));
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
@@ -512,32 +522,24 @@ mod tests {
             transfer_amount,
         };
 
-        let mut requests = BTreeMap::new();
+        let mut state_builder = TestStateBuilder::new();
+        let mut requests = state_builder.new_map();
         requests.insert(request_id, request);
-        let mut state = State {
+        let state = State {
             init_params,
             requests,
         };
 
-        let receive_amount = Amount::from_micro_ccd(100);
+        let mut host = TestHost::new(state, state_builder);
+        host.set_self_balance(Amount::from_micro_ccd(100)); //
 
         // Execution
-        let res: Result<ActionsTree, _> =
-            contract_receive_message(&ctx, receive_amount, &mut state);
+        let res: ContractResult<()> =
+            contract_receive_message(&ctx, &mut host, Amount::from_ccd(0));
 
-        // Test
-        let actions = match res {
-            Err(_) => fail!("Contract receive support failed, but it should not have."),
-            Ok(actions) => actions,
-        };
+        claim!(res.is_ok(), "Contract receive support failed, but it should not have.");
         claim_eq!(
-            actions,
-            ActionsTree::simple_transfer(&target_account, Amount::from_micro_ccd(50)),
-            "Supporting the transfer did not result in the right transfer"
-        );
-        claim_eq!(state.requests.len(), 0, "The request should be removed");
-        claim_eq!(
-            sum_reserved_balance(&state),
+            sum_reserved_balance(host.state()),
             Amount::from_micro_ccd(0),
             "The transfer should be subtracted from the reserved balance"
         );
