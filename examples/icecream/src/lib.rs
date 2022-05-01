@@ -37,72 +37,105 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
-#[derive(Serialize, SchemaType, Clone)]
+#[derive(Serialize, SchemaType)]
 struct State {
     weather_service: ContractAddress,
 }
 
-#[derive(Serialize, SchemaType, Clone)]
+#[derive(Serialize, SchemaType, Clone, Copy)]
 enum Weather {
     Rainy,
     Sunny,
 }
 
+/// The custom errors the contract can produce.
+#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+enum ContractError {
+    /// Failed parsing the parameter.
+    #[from(ParseError)]
+    ParseParams,
+    /// Failed account transfer.
+    #[from(TransferError)]
+    TransferError,
+    /// Failed contract invoke.
+    ContractError,
+    Unauthenticated,
+}
+
+impl<A> From<CallContractError<A>> for ContractError {
+    fn from(_: CallContractError<A>) -> Self { Self::ContractError }
+}
+
+type ContractResult<A> = Result<A, ContractError>;
+
 /// Initialise the contract with the contract address of the weather service.
 #[init(contract = "icecream", parameter = "ContractAddress")]
-fn contract_init(ctx: &impl HasInitContext) -> InitResult<((), State)> {
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    _state_builder: &mut StateBuilder<S>,
+) -> InitResult<State> {
     let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
-    let return_value = ();
-    Ok((return_value, State {
+    Ok(State {
         weather_service,
-    }))
+    })
 }
 
 /// Attempt purchasing icecream from the icecream vendor.
-#[receive(contract = "icecream", name = "buy_icecream", parameter = "AccountAddress", payable)]
-fn contract_buy_icecream(
+#[receive(
+    contract = "icecream",
+    name = "buy_icecream",
+    parameter = "AccountAddress",
+    payable,
+    mutable
+)]
+fn contract_buy_icecream<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State>,
+    host: &mut impl HasHost<State, StateApiType = S>,
     amount: Amount,
-) -> ReceiveResult<()> {
-    let weather_service = host.state().weather_service.clone();
+) -> ContractResult<()> {
+    let weather_service = host.state().weather_service;
     let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
 
     let weather = host
-        .invoke_contract(
+        .invoke_contract_raw(
             &weather_service,
             Parameter(&[]),
             EntrypointName::new_unchecked("get"),
             Amount::zero(),
-        )
-        .expect_report("Invoking weather contract failed.")
-        .1
-        .expect_report("Invocation did not return a value.")
-        .get()?;
+        )?
+        .1;
+    let weather = if let Some(mut weather) = weather {
+        weather.get()?
+    } else {
+        return Err(ContractError::ContractError);
+    };
 
     match weather {
         Weather::Rainy => {
-            host.invoke_transfer(&ctx.invoker(), amount).expect("Returning CCD to invoker failed.")
+            host.invoke_transfer(&ctx.invoker(), amount)?;
             // We could also abort here, but this is useful to show off some
             // testing features.
         }
-        Weather::Sunny => host
-            .invoke_transfer(&icecream_vendor, amount)
-            .expect_report("Sending CCD to the icecream vendor failed."),
+        Weather::Sunny => host.invoke_transfer(&icecream_vendor, amount)?,
     }
     Ok(())
 }
 
 /// Replace the weather service with another.
 /// Only the owner of the contract can do so.
-#[receive(contract = "icecream", name = "replace_weather_service", parameter = "ContractAddress")]
-fn contract_replace_weather_service(
+#[receive(
+    contract = "icecream",
+    name = "replace_weather_service",
+    parameter = "ContractAddress",
+    mutable
+)]
+fn contract_replace_weather_service<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State>,
-) -> ReceiveResult<()> {
-    assert_eq!(Address::Account(ctx.owner()), ctx.sender());
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> ContractResult<()> {
+    ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated);
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
-    host.state().weather_service = new_weather_service;
+    host.state_mut().weather_service = new_weather_service;
     Ok(())
 }
 
@@ -110,28 +143,31 @@ fn contract_replace_weather_service(
 
 /// Initialse the weather service with the weather.
 #[init(contract = "weather", parameter = "Weather")]
-fn weather_init(ctx: &impl HasInitContext) -> InitResult<((), Weather)> {
-    let return_value = ();
-    Ok((return_value, ctx.parameter_cursor().get()?))
+fn weather_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    _state_builder: &mut StateBuilder<S>,
+) -> InitResult<Weather> {
+    let weather = ctx.parameter_cursor().get()?;
+    Ok(weather)
 }
 
 /// Get the current weather.
 #[receive(contract = "weather", name = "get", return_value = "Weather")]
-fn weather_get(
+fn weather_get<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Weather>,
-) -> ReceiveResult<Weather> {
-    Ok(host.state().clone())
+    host: &impl HasHost<Weather, StateApiType = S>,
+) -> ContractResult<Weather> {
+    Ok(*host.state())
 }
 
 /// Update the weather.
-#[receive(contract = "weather", name = "set", parameter = "Weather")]
-fn weather_set(
+#[receive(contract = "weather", name = "set", parameter = "Weather", mutable)]
+fn weather_set<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Weather>,
-) -> ReceiveResult<()> {
-    assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can update the weather.
-    *host.state() = ctx.parameter_cursor().get()?;
+    host: &mut impl HasHost<Weather, StateApiType = S>,
+) -> ContractResult<()> {
+    ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated); // Only the owner can update the weather.
+    *host.state_mut() = ctx.parameter_cursor().get()?;
     Ok(())
 }
 
@@ -151,22 +187,22 @@ mod tests {
     const ICECREAM_PRICE: Amount = Amount {
         micro_ccd: 6000000, // 6 CCD
     };
-    const STATE: State = State {
-        weather_service: WEATHER_SERVICE,
-    };
 
     #[concordium_test]
     fn test_sunny_days() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
-        let mut host = HostTest::new(STATE);
+        let mut ctx = TestReceiveContext::empty();
+        let state = State {
+            weather_service: WEATHER_SERVICE,
+        };
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
         ctx.set_parameter(&parameter);
-        host.set_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
+        host.set_self_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
 
         // Set up a mock invocation for the weather service.
         host.setup_mock_entrypoint(
@@ -191,15 +227,18 @@ mod tests {
     #[concordium_test]
     fn test_rainy_days() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
-        let mut host = HostTest::new(STATE);
+        let mut ctx = TestReceiveContext::empty();
+        let state = State {
+            weather_service: WEATHER_SERVICE,
+        };
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
         ctx.set_parameter(&parameter);
-        host.set_balance(ICECREAM_PRICE);
+        host.set_self_balance(ICECREAM_PRICE);
 
         // Set up mock invocation
         host.setup_mock_entrypoint(
@@ -218,18 +257,20 @@ mod tests {
     }
 
     #[concordium_test]
-    #[should_panic(expected = "Sending CCD to the icecream vendor failed.: MissingAccount")]
     fn test_missing_icecream_vendor() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
-        let mut host = HostTest::new(STATE);
+        let mut ctx = TestReceiveContext::empty();
+        let state = State {
+            weather_service: WEATHER_SERVICE,
+        };
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
         ctx.set_owner(INVOKER_ADDR);
         ctx.set_invoker(INVOKER_ADDR);
         ctx.set_parameter(&parameter);
-        host.set_balance(ICECREAM_PRICE);
+        host.set_self_balance(ICECREAM_PRICE);
 
         // By default all transfers to accounts will work, but here we want to test what
         // happens when the vendor account doesn't exist.
@@ -242,16 +283,19 @@ mod tests {
             MockFn::returning_ok(Weather::Sunny),
         );
 
-        // Act + Assert (should panic)
-        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE).unwrap();
+        // Act + Assert
+        let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
+        claim_eq!(result, Err(ContractError::TransferError));
     }
 
     #[concordium_test]
-    #[should_panic(expected = "Invoking weather contract failed.: MissingContract")]
     fn test_missing_weather_service() {
         // Arrange
-        let mut ctx = ReceiveContextTest::empty();
-        let mut host = HostTest::new(STATE);
+        let mut ctx = TestReceiveContext::empty();
+        let state = State {
+            weather_service: WEATHER_SERVICE,
+        };
+        let mut host = TestHost::new(state, TestStateBuilder::new());
 
         // Set up context
         let parameter = to_bytes(&ICECREAM_VENDOR);
@@ -266,7 +310,7 @@ mod tests {
         );
 
         // Act + Assert (should panic)
-        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
-            .expect_report("Calling buy_icecream failed.");
+        let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
+        claim_eq!(result, Err(ContractError::ContractError));
     }
 }

@@ -40,7 +40,7 @@ fn attach_error<A>(mut v: syn::Result<A>, msg: &str) -> syn::Result<A> {
 /// Attributes that can be attached either to the init or receive method of a
 /// smart contract.
 struct OptionalArguments {
-    /// If set, the contract can receive gTU.
+    /// If set, the contract can receive CCD.
     pub(crate) payable:       bool,
     /// If enabled, the function has access to logging facilities.
     pub(crate) enable_logger: bool,
@@ -68,6 +68,9 @@ struct ReceiveAttributes {
     /// Name of the method.
     pub(crate) name:     syn::LitStr,
     pub(crate) optional: OptionalArguments,
+    /// If enabled, the function has access to a mutable state, which will also
+    /// be stored after the function returns.
+    pub(crate) mutable:  bool,
 }
 
 #[derive(Default)]
@@ -81,23 +84,34 @@ struct ParsedAttributes {
 }
 
 impl ParsedAttributes {
-    /// Remove an attribute and return it, if present. The key must be a valid
-    /// Rust identifier, otherwise this function will panic.
+    /// Remove an attribute and return its value (i.e., right hand side of ident
+    /// = value), if present. The key must be a valid Rust identifier,
+    /// otherwise this function will panic.
     pub(crate) fn extract_value(&mut self, key: &str) -> Option<syn::LitStr> {
+        self.extract_ident_and_value(key).map(|x| x.1)
+    }
+
+    /// Remove an attribute identifier and the value and return it, if present.
+    /// The key must be a valid Rust identifier, otherwise this function
+    /// will panic.
+    pub(crate) fn extract_ident_and_value(
+        &mut self,
+        key: &str,
+    ) -> Option<(syn::Ident, syn::LitStr)> {
         // This is not clean, constructing a new identifier with a call_site span.
         // But the only alternative I see is iterating over the map and locating the key
         // since Ident implements equality comparison with &str.
         let key = syn::Ident::new(key, Span::call_site());
-        self.values.remove(&key)
+        self.values.remove_entry(&key)
     }
 
     /// Remove an attribute and return whether it was present.
-    pub(crate) fn extract_flag(&mut self, key: &str) -> bool {
+    pub(crate) fn extract_flag(&mut self, key: &str) -> Option<Ident> {
         // This is not clean, constructing a new identifier with a call_site span.
         // But the only alternative I see is iterating over the map and locating the key
         // since Ident implements equality comparison with &str.
         let key = syn::Ident::new(key, Span::call_site());
-        self.flags.remove(&key)
+        self.flags.take(&key)
     }
 
     /// If there are any remaining attributes signal an error. Otherwise return
@@ -213,11 +227,11 @@ fn parse_attributes<'a>(iter: impl IntoIterator<Item = &'a Meta>) -> syn::Result
 // Supported attributes for the init methods.
 
 const INIT_ATTRIBUTE_PARAMETER: &str = "parameter";
-const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const INIT_ATTRIBUTE_CONTRACT: &str = "contract";
 const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
+const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
@@ -232,10 +246,16 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             )
         })?;
     let parameter: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_PARAMETER);
-    let return_value: Option<syn::LitStr> = attributes.extract_value(INIT_ATTRIBUTE_RETURN_VALUE);
-    let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE);
-    let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER);
-    let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL);
+    let payable = attributes.extract_flag(INIT_ATTRIBUTE_PAYABLE).is_some();
+    let enable_logger = attributes.extract_flag(INIT_ATTRIBUTE_ENABLE_LOGGER).is_some();
+    let low_level = attributes.extract_flag(INIT_ATTRIBUTE_LOW_LEVEL).is_some();
+    let return_value = attributes.extract_ident_and_value(INIT_ATTRIBUTE_RETURN_VALUE);
+    if let Some((ident, _)) = return_value {
+        return Err(syn::Error::new(
+            ident.span(),
+            "The 'return_value' attribute is currently not supported for init methods.",
+        ));
+    }
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
@@ -247,7 +267,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             enable_logger,
             low_level,
             parameter,
-            return_value,
+            return_value: None, // Return values are currently not supported on init methods.
         },
     })
 }
@@ -258,9 +278,11 @@ const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
 const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
+const RECEIVE_ATTRIBUTE_FALLBACK: &str = "fallback";
 const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
 const RECEIVE_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const RECEIVE_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
+const RECEIVE_ATTRIBUTE_MUTABLE: &str = "mutable";
 
 fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
@@ -268,34 +290,88 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let mut attributes = parse_attributes(attrs)?;
 
     let contract = attributes.extract_value(RECEIVE_ATTRIBUTE_CONTRACT);
-    let name = attributes.extract_value(RECEIVE_ATTRIBUTE_NAME);
+    let name = attributes.extract_ident_and_value(RECEIVE_ATTRIBUTE_NAME);
+    let fallback = attributes.extract_flag(RECEIVE_ATTRIBUTE_FALLBACK);
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
     let return_value: Option<syn::LitStr> =
         attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
-    let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE);
-    let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER);
+    let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE).is_some();
+    let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER).is_some();
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
+    let mutable = attributes.extract_flag(RECEIVE_ATTRIBUTE_MUTABLE);
+
+    if let (Some(mutable), Some(low_level)) = (&mutable, &low_level) {
+        let mut error = syn::Error::new(
+            mutable.span(),
+            "The attributes 'mutable' and 'low_level' are incompatible and should not be used on \
+             the same method. `mutable` appears here.",
+        );
+        error.combine(syn::Error::new(
+            low_level.span(),
+            "The attributes 'mutable' and 'low_level' are incompatible and should not be used on \
+             the same method. `low_level` appears here.",
+        ));
+        return Err(error);
+    }
+
+    if let (Some((name, _)), Some(fallback)) = (&name, &fallback) {
+        let mut error = syn::Error::new(
+            name.span(),
+            "The attributes 'name' and 'fallback' are incompatible and should not be used on the \
+             same method. `name` appears here.",
+        );
+        error.combine(syn::Error::new(
+            fallback.span(),
+            "The attributes 'name' and 'fallback' are incompatible and should not be used on the \
+             same method. `fallback` appears here.",
+        ));
+        return Err(error);
+    }
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
     // for each of them and report that in the error.
     attributes.report_all_attributes()?;
     match (contract, name) {
-        (Some(contract), Some(name)) => Ok(ReceiveAttributes {
+        (Some(contract), Some((_, name))) => Ok(ReceiveAttributes {
             contract,
             name,
             optional: OptionalArguments {
                 payable,
                 enable_logger,
-                low_level,
+                low_level: low_level.is_some(),
                 parameter,
                 return_value,
             },
+            mutable: mutable.is_some(), /* This is also optional, but does not belong in
+                                         * OptionalArguments, as
+                                         * it doesn't apply to init methods. */
         }),
-        (Some(_), None) => Err(syn::Error::new(
-            Span::call_site(),
-            "A name for the method must be provided, using the 'name' attribute.\n\nFor example, \
-             #[receive(name = \"receive\")]",
-        )),
+        (Some(contract), None) => {
+            if let Some(ident) = fallback {
+                Ok(ReceiveAttributes {
+                    contract,
+                    name: syn::LitStr::new("", ident.span()),
+                    optional: OptionalArguments {
+                        payable,
+                        enable_logger,
+                        low_level: low_level.is_some(),
+                        parameter,
+                        return_value,
+                    },
+                    mutable: mutable.is_some(), /* TODO: This is also optional, but does not
+                                                 * belong in
+                                                 * OptionalArguments, as
+                                                 * it doesn't apply to init methods. */
+                })
+            } else {
+                Err(syn::Error::new(
+                    Span::call_site(),
+                    "A name for the method must be provided using the 'name' attribute, or the \
+                     'fallback' option must be used.\n\nFor example, #[receive(name = \
+                     \"receive\")]",
+                ))
+            }
+        }
         (None, Some(_)) => Err(syn::Error::new(
             Span::call_site(),
             "A name for the method must be provided, using the 'contract' attribute.\n\nFor \
@@ -329,12 +405,11 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 ///
 /// ```ignore
 /// #[init(contract = "my_contract")]
-/// fn some_init(ctx: &impl HasInitContext) -> InitResult<MyState> {...}
+/// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: &mut StateBuilder<S>,) -> InitResult<MyState> {...}
 /// ```
 ///
-/// Where the trait `HasInitContext` and the type `InitResult` are exposed from
-/// `concordium-std` and `MyState` is the user-defined type for the contract
-/// state.
+/// Where `HasInitContext`, `InitResult`, and `StateBuilder` are exposed from
+/// `concordium-std` and `MyState` is a user-defined type.
 ///
 /// # Optional attributes
 ///
@@ -351,7 +426,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", payable)]
-/// fn some_init(ctx: &impl HasInitContext, amount: Amount) -> InitResult<MyState> {...}
+/// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, amount: Amount) -> InitResult<MyState> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -363,22 +438,23 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", enable_logger)]
-/// fn some_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
+/// fn some_init<S: HasStateApi>(ctx: &impl HasInitContext, state_builder: StateBuilder<S>, logger: &mut impl HasLogger) -> InitResult<MyState> {...}
 /// ```
 ///
-/// ## `low_level`: Manually deal with writing state bytes
+/// ## `low_level`: Manually deal with the low-level state.
 /// Setting the `low_level` attribute disables the generated code for
 /// serializing the contract state.
 ///
-/// If `low_level` is set, the signature must contain an extra argument of type
-/// `&mut ContractState` found in `concordium-std`, which gives access to
-/// manipulating the contract state bytes directly. This means there is no need
-/// to return the contract state and the return type becomes `InitResult<()>`.
+/// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
+/// replaced by `&impl mut HasStateApi` found in `concordium-std`, which gives
+/// access to manipulating the low-level contract state directly. This means
+/// there is no need to return the contract state and the return type becomes
+/// `InitResult<()>`.
 ///
 /// ### Example
 /// ```ignore
 /// #[init(contract = "my_contract", low_level)]
-/// fn some_init(ctx: &impl HasInitContext, state: &mut ContractState) -> InitResult<()> {...}
+/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasStateApi) -> InitResult<()> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
@@ -394,21 +470,6 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// struct MyParam { ... }
 ///
 /// #[init(contract = "my_contract", parameter = "MyParam")]
-/// ```
-///
-/// ## `return_value="<ReturnValue>"`: Generate schema for return value
-/// To make schema generation to include the return value for this function, add
-/// the attribute `return_value` and set it equal to a string literal containing
-/// the name of the type used for the return value. The return value type must
-/// implement the SchemaType trait, which for most cases can be derived
-/// automatically.
-///
-/// ### Example
-/// ```ignore
-/// #[derive(SchemaType)]
-/// struct MyReturnValue { ... }
-///
-/// #[init(contract = "my_contract", return_value = "MyReturnValue")]
 /// ```
 #[proc_macro_attribute]
 pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -447,30 +508,19 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     );
 
     let mut out = if init_attributes.optional.low_level {
-        required_args.push("state: &mut impl HasContractState");
+        required_args.push("state: &mut impl HasStateApi");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState};
+                use concordium_std::{trap, ExternContext, ExternInitContext, ExternStateApi, HasStateApi};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<InitContextExtern>::open(());
-                let mut state = ContractState::open(());
-                match #fn_name(&ctx, #(#fn_optional_args, )* &mut state) {
-                    Ok(rv) => {
-                        if rv.serial(&mut ReturnValue::open()).is_err() {
-                            trap() // Could not serialize the return value (initialization fails).
-                        }
-                        0
-                    },
+                let ctx = ExternContext::<ExternInitContext>::open(());
+                let mut state = ExternStateApi::open();
+                match #fn_name(&ctx, &mut state, #(#fn_optional_args, )*) {
+                    Ok(()) => 0,
                     Err(reject) => {
-                        let reject = Reject::from(reject);
-                        let code = reject.error_code.get();
+                        let code = Reject::from(reject).error_code.get();
                         if code < 0 {
-                            if let Some(rv) = reject.return_value {
-                                if ReturnValue::open().write_all(&rv).is_err() {
-                                    trap() // Could not serialize the return value.
-                                }
-                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -480,32 +530,26 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
             }
         }
     } else {
+        required_args.push("state_builder: &mut StateBuilder");
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(amount: concordium_std::Amount) -> i32 {
-                use concordium_std::{trap, ExternContext, InitContextExtern, ContractState, ReturnValue};
+                use concordium_std::{trap, ExternContext, ExternInitContext, StateBuilder, ExternReturnValue};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<InitContextExtern>::open(());
-                match #fn_name(&ctx, #(#fn_optional_args),*) {
-                    Ok((rv, state)) => {
-                        if rv.serial(&mut ReturnValue::open()).is_err() {
-                            trap() // Could not serialize the return value (initialization fails).
-                        }
-                        let mut state_bytes = ContractState::open(());
-                        if state.serial(&mut state_bytes).is_err() {
-                            trap() // Could not initialize contract.
-                        };
+                let ctx = ExternContext::<ExternInitContext>::open(());
+                let mut state_api = ExternStateApi::open();
+                let mut state_builder = StateBuilder::open(state_api.clone());
+                match #fn_name(&ctx, &mut state_builder, #(#fn_optional_args, )*) {
+                    Ok(state) => {
+                        // Store the state.
+                        let mut root_entry = state_api.create_entry(&[]).unwrap_abort();
+                        state.serial(&mut root_entry).unwrap_abort();
+                        // Return success
                         0
-                    }
+                    },
                     Err(reject) => {
-                        let reject = Reject::from(reject);
-                        let code = reject.error_code.get();
+                        let code = Reject::from(reject).error_code.get();
                         if code < 0 {
-                            if let Some(rv) = reject.return_value {
-                                if ReturnValue::open().write_all(&rv).is_err() {
-                                    trap() // Could not serialize the return value.
-                                }
-                            }
                             code
                         } else {
                             trap() // precondition violation
@@ -529,14 +573,14 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 
     // Embed a schema for the parameter and return value if the corresponding
     // attribute is set.
-    let parameter_option = init_attributes.optional.parameter.map(|a| a.value());
-    let return_value_option = init_attributes.optional.return_value.map(|a| a.value());
+    let parameter_option = init_attributes.optional.parameter;
+    let return_value_option = None; // Return values are currently not supported on init.
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
-    ));
+    )?);
 
     ast.to_tokens(&mut out);
 
@@ -549,9 +593,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// - `contract = "<contract-name>"` where *\<contract-name\>* is the name of
 ///   the smart contract.
 /// - `name = "<receive-name>"` where *\<receive-name\>* is the name of the
-///   receive function. The generated function is exported as
-///   `<contract-name>.<receive-name>`. Contract name and receive name is
-///   required to be unique in the module.
+///   receive function, **or** the `fallback` option. The generated function is
+///   exported as `<contract-name>.<receive-name>`, or if `fallback` is given,
+///   as `<contract-name>.`.Contract name and receive name is required to be
+///   unique in the module. In particular, a contract may have only a single
+///   fallback method.
 ///
 /// The annotated function must be of a specific type, which depends on the
 /// enabled attributes. *Without* any of the optional attributes the function
@@ -559,12 +605,15 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive")]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
-/// Where the `HasAction`, `HasReceiveContext` traits and the type
-/// `ReceiveResult` are exposed from `concordium-std` and `MyState` is the
-/// user-defined type for the contract state.
+/// Where the `HasStateApi`, `HasReceiveContext`, `HasHost`, and `ReceiveResult`
+/// are from `concordium-std` and `MyState` and `MyReturnValue` are user-defined
+/// types.
 ///
 /// # Optional attributes
 ///
@@ -581,7 +630,29 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", payable)]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, amount: Amount, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+///     amount: Amount
+/// ) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
+/// ## `mutable`: Function can mutate the state
+/// Setting the `mutable` attribute changes the required signature so the host
+/// becomes a mutable reference.
+///
+/// **When a receive method is mutable, the state, e.g. `MyState`, is serialized
+/// and stored after each invocation. This means that even if the state does
+/// not change semantically, it will be considered as modified by callers.**
+/// Thus the `mutable` option should only be used when absolutely necessary.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", name = "some_receive", mutable)]
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &mut HasHost<MyState, StateApiType = S>
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `enable_logger`: Function can access event logging
@@ -589,32 +660,38 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// include an extra argument `&mut impl HasLogger`, allowing the function to
 /// log events.
 ///
-///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", enable_logger)]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, logger: &mut impl HasLogger, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+///     logger: &mut impl HasLogger
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
-/// ## `low_level`: Manually deal with writing state bytes
-/// Setting the `low_level` attribute disables the generated code for
-/// serializing the contract state.
+/// ## `low_level`: Manually deal with the low-level state including writing
+/// bytes Setting the `low_level` attribute disables the generated code for
+/// serializing the contract state. However, the return value is still
+/// serialized automatically.
 ///
-/// If `low_level` is set, instead of the user-defined state type in the
-/// signature, the state argument becomes the type `&mut ContractState` found in
-/// `concordium-std`, which gives access to manipulating the contract state
-/// bytes directly.
+/// If `low_level` is set, the `&mut StateBuilder<S>` in the signature is
+/// replaced by `&impl mut HasStateApi` found in `concordium-std`, which gives
+/// access to manipulating the low-level contract state directly.
 ///
 /// ### Example
 /// ```ignore
 /// #[receive(contract = "my_contract", name = "some_receive", low_level)]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut ContractState) -> ReceiveResult<A> {...}
+/// fn contract_receive(
+///     ctx: &impl HasReceiveContext,
+///     state: &mut impl HasStateApi
+/// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
 /// To make schema generation include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
-/// the name of the type used for the parameter. The parameter type must
+/// the type used for the parameter. The parameter type must
 /// implement the SchemaType trait, which for most cases can be derived
 /// automatically.
 ///
@@ -624,8 +701,55 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 /// struct MyParam { ... }
 ///
 /// #[receive(contract = "my_contract", name = "some_receive", parameter = "MyParam")]
-/// fn contract_receive<A: HasActions>(ctx: &impl HasReceiveContext, state: &mut MyState) -> ReceiveResult<A> {...}
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<A> {...}
 /// ```
+///
+/// ## `return_value="<ReturnValue>"`: Generate schema for the return value.
+/// To make schema generation include the return value for this function, add
+/// the attribute `return_value` and set it equal to a string literal containing
+/// the type used for the parameter. The parameter type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+///
+/// ```ignore
+/// #[derive(SchemaType)]
+/// struct MyReturnValue { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", return_value = "MyReturnValue")]
+/// fn contract_receive<S: HasStateApi>(
+///    ctx: &impl HasReceiveContext,
+///    host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
+/// ## `fallback`: Create a fallback entrypoint.
+/// A contract can have a *single* fallback entrypoint defined.
+/// If defined, invocations on missing entrypoint will be redirected to the
+/// fallback entrypoint. For fallback entrypoints, the `name` attribute is not
+/// allowed. This is because fallback entrypoints always have the empty string
+/// as their name.
+///
+/// To get the name of the entrypoint used for invocation, use
+/// `ctx.named_entrypoint()`. The method is available in all receive methods,
+/// but is only useful on fallback entrypoints.
+///
+/// ### Example
+/// ```ignore
+/// #[receive(contract = "my_contract", fallback)]
+/// fn contract_receive<S: HasStateApi>(
+///    ctx: &impl HasReceiveContext,
+///    host: &HasHost<MyState, StateApiType = S>,
+/// ) -> ReceiveResult<MyReturnValue> {
+///     let named_entrypoint = ctx.named_entrypoint();
+///     // ...
+/// }
+/// ```
+
 #[proc_macro_attribute]
 pub fn receive(attr: TokenStream, item: TokenStream) -> TokenStream {
     unwrap_or_report(receive_worker(attr, item))
@@ -671,7 +795,12 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // Accumulate a list of required arguments, if the function contains a
     // different number of arguments, than elements in this vector, then the
     // strings are displayed as the expected arguments.
-    let mut required_args = vec!["ctx: &impl HasReceiveContext", "host: &mut impl HasHost"];
+    let mut required_args = vec!["ctx: &impl HasReceiveContext"];
+    if receive_attributes.mutable {
+        required_args.push("host: &mut impl HasHost");
+    } else {
+        required_args.push("host: &impl HasHost");
+    }
 
     let (setup_fn_optional_args, fn_optional_args) = contract_function_optional_args_tokens(
         &receive_attributes.optional,
@@ -683,13 +812,13 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, ReceiveContextExtern, ExternContext, ExternLowLevelHost};
+                use concordium_std::{SeekFrom, Logger, ExternReceiveContext, ExternContext, ExternLowLevelHost};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<ReceiveContextExtern>::open(());
+                let ctx = ExternContext::<ExternReceiveContext>::open(());
                 let mut host = ExternLowLevelHost::default();
                 match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
                     Ok(rv) => {
-                        if rv.serial(&mut ReturnValue::open()).is_err() {
+                        if rv.serial(&mut ExternReturnValue::open()).is_err() {
                             trap() // Could not serialize the return value.
                         }
                         0
@@ -699,7 +828,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                         let code = reject.error_code.get();
                         if code < 0 {
                             if let Some(rv) = reject.return_value {
-                                if ReturnValue::open().write_all(&rv).is_err() {
+                                if ExternReturnValue::open().write_all(&rv).is_err() {
                                     trap() // Could not serialize the return value.
                                 }
                             }
@@ -712,24 +841,34 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
             }
         }
     } else {
+        let (host_ref, save_state_if_mutable) = if receive_attributes.mutable {
+            (quote!(&mut host), quote! {
+                // look up the root entry again, since we might be in a different generation now
+                let mut root_entry_end = host.state_builder.into_inner().lookup_entry(&[]).unwrap_abort();
+                host.state.serial(&mut root_entry_end).unwrap_abort();
+                let new_state_size = root_entry_end.size().unwrap_abort();
+                root_entry_end.truncate(new_state_size).unwrap_abort();
+            })
+        } else {
+            (quote!(&host), quote!())
+        };
+
         quote! {
             #[export_name = #wasm_export_fn_name]
             pub extern "C" fn #rust_export_fn_name(#amount_ident: concordium_std::Amount) -> i32 {
-                use concordium_std::{SeekFrom, ContractState, Logger, ExternHost, trap};
+                use concordium_std::{SeekFrom, StateBuilder, Logger, ExternHost, trap};
                 #setup_fn_optional_args
-                let ctx = ExternContext::<ReceiveContextExtern>::open(());
-                let mut state_bytes = ContractState::open(());
-                if let Ok(state) = (&mut state_bytes).get() {
-                    let mut host = ExternHost { state };
-                    match #fn_name(&ctx, &mut host, #(#fn_optional_args, )*) {
+                let ctx = ExternContext::<ExternReceiveContext>::open(());
+                let state_api = ExternStateApi::open();
+                if let Ok(state) = DeserialWithState::deserial_with_state(&state_api, &mut state_api.lookup_entry(&[]).unwrap_abort()) {
+                    let mut state_builder = StateBuilder::open(state_api);
+                    let mut host = ExternHost { state, state_builder };
+                    match #fn_name(&ctx, #host_ref, #(#fn_optional_args, )*) {
                         Ok(rv) => {
-                            let res = state_bytes
-                                .seek(SeekFrom::Start(0))
-                                .and_then(|_| host.state().serial(&mut state_bytes))
-                                .and_then(|_| rv.serial(&mut ReturnValue::open()));
-                            if res.is_err() {
-                                trap() // Could not serialize state or return value.
+                            if rv.serial(&mut ExternReturnValue::open()).is_err() {
+                                trap() // Could not serialize return value.
                             }
+                            #save_state_if_mutable
                             0
                         }
                         Err(reject) => {
@@ -737,7 +876,7 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
                             let code = reject.error_code.get();
                             if code < 0 {
                                 if let Some(rv) = reject.return_value {
-                                    if ReturnValue::open().write_all(&rv).is_err() {
+                                    if ExternReturnValue::open().write_all(&rv).is_err() {
                                         trap() // Could not serialize the return value.
                                     }
                                 }
@@ -767,14 +906,14 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
 
     // Embed a schema for the parameter and return value if the corresponding
     // attribute is set.
-    let parameter_option = receive_attributes.optional.parameter.map(|a| a.value());
-    let return_value_option = receive_attributes.optional.return_value.map(|a| a.value());
+    let parameter_option = receive_attributes.optional.parameter;
+    let return_value_option = receive_attributes.optional.return_value;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
         rust_export_fn_name,
         wasm_export_fn_name,
-    ));
+    )?);
     // add the original function to the output as well.
     ast.to_tokens(&mut out);
     Ok(out.into())
@@ -815,32 +954,32 @@ fn contract_function_optional_args_tokens(
 
 #[cfg(feature = "build-schema")]
 fn contract_function_schema_tokens(
-    parameter_option: Option<String>,
-    return_value_option: Option<String>,
+    parameter_option: Option<syn::LitStr>,
+    return_value_option: Option<syn::LitStr>,
     rust_name: syn::Ident,
     wasm_name: String,
-) -> proc_macro2::TokenStream {
+) -> syn::Result<proc_macro2::TokenStream> {
     let construct_schema_bytes = match (parameter_option, return_value_option) {
         (Some(parameter_ty), Some(return_value_ty)) => {
-            let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
-            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
-                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
                 let schema_bytes = concordium_std::to_bytes(&schema::Function::Both { parameter, return_value });
             })
         }
         (Some(parameter_ty), None) => {
-            let parameter_ident = syn::Ident::new(&parameter_ty, Span::call_site());
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ident as schema::SchemaType>::get_type();
+                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
                 let schema_bytes = concordium_std::to_bytes(&schema::Function::Parameter(parameter));
             })
         }
         (None, Some(return_value_ty)) => {
-            let return_value_ident = syn::Ident::new(&return_value_ty, Span::call_site());
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let return_value = <#return_value_ident as schema::SchemaType>::get_type();
+                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
                 let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
             })
         }
@@ -852,36 +991,37 @@ fn contract_function_schema_tokens(
     if let Some(construct_schema_bytes) = construct_schema_bytes {
         let schema_name = format!("concordium_schema_function_{}", wasm_name);
         let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
-        quote! {
+        Ok(quote! {
             #[export_name = #schema_name]
             pub extern "C" fn #schema_ident() -> *mut u8 {
                 #construct_schema_bytes
                 concordium_std::put_in_memory(&schema_bytes)
             }
-        }
+        })
     } else {
-        proc_macro2::TokenStream::new()
+        Ok(proc_macro2::TokenStream::new())
     }
 }
 
 #[cfg(not(feature = "build-schema"))]
 fn contract_function_schema_tokens(
-    _parameter_option: Option<String>,
-    _return_value_option: Option<String>,
+    _parameter_option: Option<syn::LitStr>,
+    _return_value_option: Option<syn::LitStr>,
     _rust_name: syn::Ident,
     _wasm_name: String,
-) -> proc_macro2::TokenStream {
-    proc_macro2::TokenStream::new()
+) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(proc_macro2::TokenStream::new())
 }
 
-/// Derive the Deserial trait. See the documentation of `derive(Serial)` for
-/// details and limitations.
+/// Derive the Deserial trait. See the documentation of
+/// [`derive(Serial)`](./derive.Serial.html) for details and limitations.
 ///
-/// In addition to the attributes supported by `derive(Serial)`, this derivation
-/// macro supports the `ensure_ordered` attribute. If applied to a field the
-/// of type `BTreeMap` or `BTreeSet` deserialization will additionally ensure
-/// that the keys are in strictly increasing order. By default deserialization
-/// only ensures uniqueness.
+/// In addition to the attributes supported by
+/// [`derive(Serial)`](./derive.Serial.html), this derivation macro supports the
+/// `ensure_ordered` attribute. If applied to a field the of type `BTreeMap` or
+/// `BTreeSet` deserialization will additionally ensure that the keys are in
+/// strictly increasing order. By default deserialization only ensures
+/// uniqueness.
 ///
 /// # Example
 /// ``` ignore
@@ -898,17 +1038,35 @@ pub fn deserial_derive(input: TokenStream) -> TokenStream {
 }
 
 /// The prefix used in field attributes: `#[concordium(attr = "something")]`
-const CONCORDIUM_FIELD_ATTRIBUTE: &str = "concordium";
+const CONCORDIUM_ATTRIBUTE: &str = "concordium";
 
 /// A list of valid concordium field attributes
 const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ordered", "rename"];
 
+/// A list of valid concordium attributes
+const VALID_CONCORDIUM_ATTRIBUTES: [&str; 1] = ["state_parameter"];
+
+/// Finds concordium field attributes.
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
+    get_concordium_attributes(attributes, true)
+}
+
+/// Finds concordium attributes, either field or general attributes.
+fn get_concordium_attributes(
+    attributes: &[syn::Attribute],
+    for_field: bool,
+) -> syn::Result<Vec<syn::Meta>> {
+    let (valid_attributes, attribute_type) = if for_field {
+        (&VALID_CONCORDIUM_FIELD_ATTRIBUTES[..], "concordium field attribute")
+    } else {
+        (&VALID_CONCORDIUM_ATTRIBUTES[..], "concordium attribute")
+    };
+
     attributes
         .iter()
         // Keep only concordium attributes
         .flat_map(|attr| match attr.parse_meta() {
-            Ok(syn::Meta::List(list)) if list.path.is_ident(CONCORDIUM_FIELD_ATTRIBUTE) => {
+            Ok(syn::Meta::List(list)) if list.path.is_ident(CONCORDIUM_ATTRIBUTE) => {
                 list.nested
             }
             _ => syn::punctuated::Punctuated::new(),
@@ -917,16 +1075,16 @@ fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result
         .map(|nested| match nested {
             syn::NestedMeta::Meta(meta) => {
                 let path = meta.path();
-                if VALID_CONCORDIUM_FIELD_ATTRIBUTES.iter().any(|&attr| path.is_ident(attr)) {
+                if valid_attributes.iter().any(|&attr| path.is_ident(attr)) {
                     Ok(meta)
                 } else {
                     Err(syn::Error::new(meta.span(),
-                        format!("The attribute '{}' is not supported as a concordium field attribute.",
-                        path.to_token_stream())
+                        format!("The attribute '{}' is not supported as a {}.",
+                        path.to_token_stream(), attribute_type)
                     ))
                 }
             }
-            lit => Err(syn::Error::new(lit.span(), "Literals are not supported in a concordium field attribute.")),
+            lit => Err(syn::Error::new(lit.span(), format!("Literals are not supported in a {}.", attribute_type))),
         })
         .collect()
 }
@@ -935,8 +1093,16 @@ fn find_field_attribute_value(
     attributes: &[syn::Attribute],
     target_attr: &str,
 ) -> syn::Result<Option<syn::Lit>> {
+    find_attribute_value(attributes, true, target_attr)
+}
+
+fn find_attribute_value(
+    attributes: &[syn::Attribute],
+    for_field: bool,
+    target_attr: &str,
+) -> syn::Result<Option<syn::Lit>> {
     let target_attr = format_ident!("{}", target_attr);
-    let attr_values: Vec<_> = get_concordium_field_attributes(attributes)?
+    let attr_values: Vec<_> = get_concordium_attributes(attributes, for_field)?
         .into_iter()
         .filter_map(|nested_meta| match nested_meta {
             syn::Meta::NameValue(value) if value.path.is_ident(&target_attr) => Some(value.lit),
@@ -988,6 +1154,25 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
     match value {
         1 | 2 | 4 | 8 => Ok(Some(value)),
         _ => Err(syn::Error::new(value_span, "Length info must be either 1, 2, 4, or 8.")),
+    }
+}
+
+/// Find a 'state_parameter' attribute and return it as an identifier.
+/// Checks that the attribute is only defined once and that the value is a
+/// string.
+fn find_state_parameter_attribute(
+    attributes: &[syn::Attribute],
+) -> syn::Result<Option<syn::Ident>> {
+    let value = match find_attribute_value(attributes, false, &"state_parameter")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match value {
+        syn::Lit::Str(value) => Ok(Some(syn::Ident::new(&value.value(), value.span()))),
+        _ => {
+            Err(syn::Error::new(value.span(), "state_parameter attribute value must be a string."))
+        }
     }
 }
 
@@ -1061,7 +1246,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
 
-    let source_ident = Ident::new("source", Span::call_site());
+    let source_ident = Ident::new("________________source", Span::call_site());
 
     let body_tokens = match ast.data {
         syn::Data::Struct(ref data) => {
@@ -1097,7 +1282,7 @@ fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         }
         syn::Data::Enum(ref data) => {
             let mut matches_tokens = proc_macro2::TokenStream::new();
-            let source = Ident::new("source", Span::call_site());
+            let source = Ident::new("________________source", Span::call_site());
             let size = if data.variants.len() <= 256 {
                 format_ident!("u8")
             } else if data.variants.len() <= 256 * 256 {
@@ -1337,8 +1522,10 @@ fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// A helper macro to derive both the Serial and Deserial traits.
-/// `[derive(Serialize)]` is equivalent to `[derive(Serial,Deserial)]`, see
-/// documentation of the latter two for details and options.
+/// `[derive(Serialize)]` is equivalent to `[derive(Serial, Deserial)]`, see
+/// documentation of the latter two for details and options:
+/// [`derive(Serial)`](./derive.Serial.html),
+/// [`derive(Deserial)`](./derive.Deserial.html).
 #[proc_macro_derive(Serialize, attributes(concordium))]
 pub fn serialize_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(serialize_derive_worker(input))
@@ -1349,6 +1536,199 @@ fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     let mut tokens = impl_deserial(&ast)?;
     tokens.extend(impl_serial(&ast)?);
     Ok(tokens)
+}
+
+/// Derive the DeserialWithState trait. See the documentation of
+/// [`derive(Deserial)`](./derive.Deserial.html) for details and limitations.
+///
+/// This trait should be derived for `struct`s or `enum`s that have fields with
+/// [`StateBox`](../concordium_std/struct.StateBox.html),
+/// [`StateSet`](../concordium_std/struct.StateSet.html), or
+/// [`StateMap`](../concordium_std/struct.StateMap.html). Please note that it is
+/// necessary to specify the generic parameter name for the
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
+/// To do so, use the `#[concordium(state_parameter =
+/// "NameOfGenericParameter")]` attribute on the type you are deriving
+/// `DeserialWithState` for.
+///
+/// # Example
+/// ``` ignore
+/// #[derive(DeserialWithState)]
+/// #[concordium(state_parameter = "S")]
+/// struct Foo<S, T> {
+///     a: StateMap<u8, u8, S>,
+///     #[concordium(size_length = 1)]
+///     b: String,
+///     c: Vec<T>,
+/// }
+/// ```
+#[proc_macro_derive(DeserialWithState, attributes(concordium))]
+pub fn deserial_with_state_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input);
+    unwrap_or_report(impl_deserial_with_state(&ast))
+}
+
+fn impl_deserial_with_state_field(
+    f: &syn::Field,
+    state_ident: &syn::Ident,
+    ident: &syn::Ident,
+    source: &syn::Ident,
+    state_parameter: &syn::Ident,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
+    let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
+    let size_length = find_length_attribute(&f.attrs)?;
+    let has_ctx = ensure_ordered || size_length.is_some();
+    let ty = &f.ty;
+    if has_ctx {
+        // Default size length is u32, i.e. 4 bytes.
+        let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
+        Ok(quote! {
+            let #ident = <#ty as concordium_std::DeserialCtxWithState<#state_parameter>>::deserial_ctx_with_state(concordium_std::schema::SizeLength::#l, #ensure_ordered, #state_ident, #source)?;
+        })
+    } else {
+        Ok(quote! {
+            let #ident = <#ty as concordium_std::DeserialWithState<#state_parameter>>::deserial_with_state(#state_ident, #source)?;
+        })
+    }
+}
+
+fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let data_name = &ast.ident;
+    let span = ast.span();
+    let read_ident = format_ident!("__R", span = span);
+    let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+        Some(state_parameter) => state_parameter,
+        None => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "DeriveWithState requires the attribute #[concordium(state_parameter = \"S\")], \
+                 where \"S\" should be the generic parameter satisfying `HasStateApi`.",
+            ))
+        }
+    };
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    let where_predicates = where_clauses.map(|c| c.predicates.clone());
+
+    let source_ident = Ident::new("________________source", Span::call_site());
+
+    let state_ident = Ident::new("_______________________________STATE", Span::call_site());
+    let body_tokens = match ast.data {
+        syn::Data::Struct(ref data) => {
+            let mut names = proc_macro2::TokenStream::new();
+            let mut field_tokens = proc_macro2::TokenStream::new();
+            let return_tokens = match data.fields {
+                syn::Fields::Named(_) => {
+                    for field in data.fields.iter() {
+                        let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                        field_tokens.extend(impl_deserial_with_state_field(
+                            field,
+                            &state_ident,
+                            &field_ident,
+                            &source_ident,
+                            &state_parameter,
+                        ));
+                        names.extend(quote!(#field_ident,))
+                    }
+                    quote!(Ok(#data_name{#names}))
+                }
+                syn::Fields::Unnamed(_) => {
+                    for (i, f) in data.fields.iter().enumerate() {
+                        let field_ident = format_ident!("x_{}", i);
+                        field_tokens.extend(impl_deserial_with_state_field(
+                            f,
+                            &state_ident,
+                            &field_ident,
+                            &source_ident,
+                            &state_parameter,
+                        ));
+                        names.extend(quote!(#field_ident,))
+                    }
+                    quote!(Ok(#data_name(#names)))
+                }
+                _ => quote!(Ok(#data_name{})),
+            };
+            quote! {
+                #field_tokens
+                #return_tokens
+            }
+        }
+        syn::Data::Enum(ref data) => {
+            let mut matches_tokens = proc_macro2::TokenStream::new();
+            let source = Ident::new("________________source", Span::call_site());
+            let size = if data.variants.len() <= 256 {
+                format_ident!("u8")
+            } else if data.variants.len() <= 256 * 256 {
+                format_ident!("u16")
+            } else {
+                return Err(syn::Error::new(
+                    ast.span(),
+                    "[derive(DeserialWithState)]: Too many variants. Maximum 65536 are supported.",
+                ));
+            };
+            let state_ident = Ident::new("_______________________________STATE", Span::call_site());
+            for (i, variant) in data.variants.iter().enumerate() {
+                let (field_names, pattern) = match variant.fields {
+                    syn::Fields::Named(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .map(|field| field.ident.clone().unwrap())
+                            .collect();
+                        (field_names.clone(), quote! { {#(#field_names),*} })
+                    }
+                    syn::Fields::Unnamed(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| format_ident!("x_{}", i))
+                            .collect();
+                        (field_names.clone(), quote! { ( #(#field_names),* ) })
+                    }
+                    syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
+                };
+                let field_tokens: proc_macro2::TokenStream = field_names
+                    .iter()
+                    .zip(variant.fields.iter())
+                    .map(|(name, field)| {
+                        impl_deserial_with_state_field(
+                            field,
+                            &state_ident,
+                            name,
+                            &source,
+                            &state_parameter,
+                        )
+                    })
+                    .collect::<syn::Result<proc_macro2::TokenStream>>()?;
+                let idx_lit = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
+                let variant_ident = &variant.ident;
+                matches_tokens.extend(quote! {
+                    #idx_lit => {
+                        #field_tokens
+                        Ok(#data_name::#variant_ident#pattern)
+                    },
+                })
+            }
+            quote! {
+                let idx = #size::deserial(#source)?;
+                match idx {
+                    #matches_tokens
+                    _ => Err(Default::default())
+                }
+            }
+        }
+        _ => unimplemented!("#[derive(DeserialWithState)] is not implemented for union."),
+    };
+    let gen = quote! {
+        #[automatically_derived]
+        impl #impl_generics DeserialWithState<#state_parameter> for #data_name #ty_generics where #state_parameter : HasStateApi, #where_predicates {
+            fn deserial_with_state<#read_ident: Read>(#state_ident: &#state_parameter, #source_ident: &mut #read_ident) -> ParseResult<Self> {
+                #body_tokens
+            }
+        }
+    };
+    Ok(gen.into())
 }
 
 /// Derive the `SchemaType` trait for a type.
@@ -1611,10 +1991,7 @@ fn parse_attr_and_gen_error_conversions(
                 match nested {
                     syn::NestedMeta::Meta(meta) => match meta {
                         Meta::Path(from_error) => {
-                            let ident = from_error
-                                .get_ident()
-                                .ok_or_else(|| wrong_from_usage(from_error))?;
-                            from_error_names.push(ident);
+                            from_error_names.push(from_error);
                         }
                         other => return Err(wrong_from_usage(&other)),
                     },
@@ -1637,7 +2014,7 @@ fn parse_attr_and_gen_error_conversions(
 /// }
 /// ```
 fn from_error_token_stream<'a>(
-    paths: &'a [&'a syn::Ident],
+    paths: &'a [&'a syn::Path],
     enum_name: &'a syn::Ident,
     variant_name: &'a syn::Ident,
 ) -> impl Iterator<Item = proc_macro2::TokenStream> + 'a {
@@ -1712,4 +2089,146 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
         #item
     };
     out.into()
+}
+
+/// Derive the Deletable trait.
+/// See the documentation of
+/// [`derive(Deletable)`](./derive.Deletable.html) for details and limitations.
+///
+/// The trait should be derived for types which have not implemented the
+/// `Serialize` trait. That is, Deletable should be derived for types with a
+/// non-trivial state.
+/// Non-trivial state here means when you have a type `MyState` which has one or
+/// more fields comprised of
+/// [`StateBox`](../concordium_std/struct.StateBox.html),
+/// [`StateSet`](../concordium_std/struct.StateSet.html), or
+/// [`StateMap`](../concordium_std/struct.StateMap.html).
+///
+/// Please note that it is
+/// necessary to specify the generic parameter name for the
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
+/// To do so, use the `#[concordium(state_parameter =
+/// "NameOfGenericParameter")]` attribute on the type you are deriving
+/// `Deletable` for.
+///
+/// # Example
+/// ``` ignore
+/// #[derive(Serial, DeserialWithState, Deletable)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S> {
+///    my_state_map: StateMap<SomeType, SomeOtherType, S>,
+/// }
+/// ```
+#[proc_macro_derive(Deletable)]
+pub fn deletable_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input);
+    unwrap_or_report(impl_deletable(&ast))
+}
+
+fn impl_deletable_field(ident: &proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(quote!({
+        #ident.delete();
+    }))
+}
+
+fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let data_name = &ast.ident;
+    let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+        Some(state_param) => state_param,
+        None => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "Deletable requires the attribute #[concordium(state_parameter = \"S\")], where \
+                 \"S\" should be the HasStateApi generic parameter.",
+            ))
+        }
+    };
+
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    let where_predicates = where_clauses.map(|c| c.predicates.clone());
+    let body = match ast.data {
+        syn::Data::Struct(ref data) => {
+            let fields_tokens = match data.fields {
+                syn::Fields::Named(_) => {
+                    data.fields
+                        .iter()
+                        .map(|field| {
+                            let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                            let field_ident = quote!(self.#field_ident);
+                            impl_deletable_field(&field_ident)
+                        })
+                        .collect::<syn::Result<_>>()?
+                }
+                syn::Fields::Unnamed(_) => data
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        let i = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
+                        let field_ident = quote!(self.#i);
+                        impl_deletable_field(&field_ident)
+                    })
+                    .collect::<syn::Result<_>>()?,
+                syn::Fields::Unit => proc_macro2::TokenStream::new(),
+            };
+            quote! {
+                #fields_tokens
+            }
+        }
+        syn::Data::Enum(ref data) => {
+            let mut matches_tokens = proc_macro2::TokenStream::new();
+            for (_, variant) in data.variants.iter().enumerate() {
+                let (field_names, pattern) = match variant.fields {
+                    syn::Fields::Named(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .map(|field| field.ident.clone().unwrap())
+                            .collect();
+                        (field_names.clone(), quote! { {#(#field_names),*} })
+                    }
+                    syn::Fields::Unnamed(_) => {
+                        let field_names: Vec<_> = variant
+                            .fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| format_ident!("x_{}", i))
+                            .collect();
+                        (field_names.clone(), quote! { (#(#field_names),*) })
+                    }
+                    syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
+                };
+                let field_tokens: proc_macro2::TokenStream = field_names
+                    .iter()
+                    .zip(variant.fields.iter())
+                    .map(|(name, _)| impl_deletable_field(&quote!(#name)))
+                    .collect::<syn::Result<_>>()?;
+                let variant_ident = &variant.ident;
+
+                matches_tokens.extend(quote! {
+                    #data_name::#variant_ident#pattern => {
+                        #field_tokens
+                    },
+                })
+            }
+            quote! {
+                match self {
+                    #matches_tokens
+                }
+            }
+        }
+        _ => unimplemented!("#[derive(Deletable)] is not implemented for union."),
+    };
+
+    let gen = quote! {
+        #[automatically_derived]
+        impl #impl_generics Deletable for #data_name #ty_generics where #state_parameter : HasStateApi, #where_predicates {
+            fn delete(self) {
+                use concordium_std::Deletable;
+                #body
+            }
+        }
+    };
+
+    Ok(gen.into())
 }

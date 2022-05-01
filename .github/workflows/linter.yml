@@ -25,10 +25,15 @@ jobs:
           - examples/cis1-single-nft/Cargo.toml
           - examples/cis1-wccd/Cargo.toml
           - examples/erc721/Cargo.toml
+          - examples/fib/Cargo.toml
+          - examples/icecream/Cargo.toml
           - examples/listing-cis1/Cargo.toml
           - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
+          - examples/proxy/Cargo.toml
+          - examples/proxy/Cargo.toml
+          - examples/recorder/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
 
     steps:
@@ -217,10 +222,15 @@ jobs:
           - examples/cis1-single-nft/Cargo.toml
           - examples/cis1-wccd/Cargo.toml
           - examples/erc721/Cargo.toml
+          - examples/fib/Cargo.toml
+          - examples/icecream/Cargo.toml
           - examples/listing-cis1/Cargo.toml
           - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
+          - examples/proxy/Cargo.toml
+          - examples/proxy/Cargo.toml
+          - examples/recorder/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
 
     steps:
@@ -277,8 +287,8 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          # only run the library tests, no doc tests
-          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} --lib
+          # Run all tests, including doc tests.
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }}
 
   test-examples:
     name: Test examples
@@ -296,10 +306,15 @@ jobs:
           - examples/cis1-single-nft/Cargo.toml
           - examples/cis1-wccd/Cargo.toml
           - examples/erc721/Cargo.toml
+          - examples/fib/Cargo.toml
+          - examples/icecream/Cargo.toml
           - examples/listing-cis1/Cargo.toml
           - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
+          - examples/proxy/Cargo.toml
+          - examples/proxy/Cargo.toml
+          - examples/recorder/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
 
     steps:

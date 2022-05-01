@@ -14,10 +14,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis1::*;
-use concordium_std::{
-    collections::{HashMap as Map, HashSet as Set},
-    *,
-};
+use concordium_std::*;
 
 const TOKEN_ID: ContractTokenId = TokenIdUnit();
 
@@ -29,24 +26,31 @@ const TOKEN_ID: ContractTokenId = TokenIdUnit();
 type ContractTokenId = TokenIdUnit;
 
 /// The state for each address.
-#[derive(Serialize, SchemaType, Default)]
-struct AddressState {
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+struct AddressState<S> {
     /// The address which are currently enabled as operators for this address.
-    #[concordium(size_length = 1)]
-    operators: Set<Address>,
+    operators: StateSet<Address, S>,
+}
+
+impl<S: HasStateApi> AddressState<S> {
+    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+        AddressState {
+            operators: state_builder.new_set(),
+        }
+    }
 }
 
 /// The contract state.
-#[contract_state(contract = "CIS1-singleNFT")]
-#[derive(Serialize, SchemaType)]
-struct State {
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct State<S> {
     /// The owner of the NFT
     owner:         Address,
     /// Url for the metadata
     metadata_url:  MetadataUrl,
     /// The state for each address.
-    #[concordium(size_length = 1)]
-    address_state: Map<Address, AddressState>,
+    address_state: StateMap<Address, AddressState<S>, S>,
 }
 
 /// The custom errors the contract can produce.
@@ -59,6 +63,8 @@ enum CustomContractError {
     LogFull,
     /// Failed logging: Log is malformed.
     LogMalformed,
+    /// Failed to invoke a contract.
+    InvokeContractError,
 }
 
 /// Wrapping the custom errors in a type with CIS1 errors.
@@ -76,19 +82,24 @@ impl From<LogError> for CustomContractError {
     }
 }
 
+/// Mapping errors related to contract invocations to CustomContractError.
+impl<T> From<CallContractError<T>> for CustomContractError {
+    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+}
+
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis1Error::Custom(c) }
 }
 
 // Functions for creating, updating and querying the contract state.
-impl State {
+impl<S: HasStateApi> State<S> {
     /// Creates a new state with no tokens.
-    fn new(owner: Address, metadata_url: MetadataUrl) -> Self {
+    fn new(owner: Address, metadata_url: MetadataUrl, state_builder: &mut StateBuilder<S>) -> Self {
         State {
             owner,
             metadata_url,
-            address_state: Map::default(),
+            address_state: state_builder.new_map(),
         }
     }
 
@@ -143,15 +154,23 @@ impl State {
     /// Update the state adding a new operator for a given address.
     /// Succeeds even if the `operator` is already an operator for the
     /// `address`.
-    fn add_operator(&mut self, owner: Address, operator: Address) {
-        let owner_address_state = self.address_state.entry(owner).or_default();
-        owner_address_state.operators.insert(operator);
+    fn add_operator(
+        &mut self,
+        owner: Address,
+        operator: Address,
+        state_builder: &mut StateBuilder<S>,
+    ) {
+        let mut owner_state =
+            self.address_state.entry(owner).or_insert_with(|| AddressState::empty(state_builder));
+        owner_state.operators.insert(operator);
     }
 
     /// Update the state removing an operator for a given address.
     /// Succeeds even if the `operator` is _not_ an operator for the `address`.
     fn remove_operator(&mut self, owner: &Address, operator: &Address) {
-        self.address_state.get_mut(owner).map(|state| state.operators.remove(operator));
+        self.address_state.entry(*owner).and_modify(|owner_address| {
+            owner_address.operators.remove(operator);
+        });
     }
 }
 
@@ -159,7 +178,11 @@ impl State {
 
 /// Initialize contract instance with the one NFT.
 #[init(contract = "CIS1-singleNFT", parameter = "MetadataUrl", enable_logger)]
-fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> InitResult<State> {
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    state_builder: &mut StateBuilder<S>,
+    logger: &mut impl HasLogger,
+) -> InitResult<State<S>> {
     let metadata_url: MetadataUrl = ctx.parameter_cursor().get()?;
     let owner = Address::Account(ctx.init_origin());
 
@@ -177,7 +200,7 @@ fn contract_init(ctx: &impl HasInitContext, logger: &mut impl HasLogger) -> Init
     }))?;
 
     // Construct the initial contract state.
-    Ok(State::new(owner, metadata_url))
+    Ok(State::new(owner, metadata_url, state_builder))
 }
 
 type TransferParameter = TransferParams<ContractTokenId>;
@@ -201,19 +224,18 @@ type TransferParameter = TransferParams<ContractTokenId>;
     contract = "CIS1-singleNFT",
     name = "transfer",
     parameter = "TransferParameter",
+    mutable,
     enable_logger
 )]
-fn contract_transfer<A: HasActions>(
+fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
-    let mut actions = A::accept();
     for Transfer {
         token_id,
         amount,
@@ -222,6 +244,7 @@ fn contract_transfer<A: HasActions>(
         data,
     } in transfers
     {
+        let state = host.state_mut();
         // Authenticate the sender for this transfer
         ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
         let to_address = to.address();
@@ -236,8 +259,7 @@ fn contract_transfer<A: HasActions>(
             to: to_address,
         }))?;
 
-        // If the receiver is a contract, we add sending it a message to the list of
-        // actions.
+        // If the receiver is a contract we call it.
         if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCis1Params {
                 token_id,
@@ -248,11 +270,16 @@ fn contract_transfer<A: HasActions>(
                 )),
                 data,
             };
-            let action = send(&address, function.as_ref(), Amount::zero(), &parameter);
-            actions = actions.and_then(action);
+
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_receive_name().entrypoint_name(),
+                Amount::from_micro_ccd(amount),
+            )?;
         }
     }
-    Ok(actions)
+    Ok(())
 }
 
 /// Enable or disable addresses as operators of the sender address.
@@ -265,22 +292,23 @@ fn contract_transfer<A: HasActions>(
     contract = "CIS1-singleNFT",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
+    mutable,
     enable_logger
 )]
-fn contract_update_operator<A: HasActions>(
+fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
-    state: &mut State,
-) -> ContractResult<A> {
+) -> ContractResult<()> {
     // Parse the parameter.
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
+    let (state, state_builder) = host.state_and_builder();
     for param in params {
         // Update the operator in the state.
         match param.update {
-            OperatorUpdate::Add => state.add_operator(sender, param.operator),
+            OperatorUpdate::Add => state.add_operator(sender, param.operator, state_builder),
             OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
         }
 
@@ -292,7 +320,7 @@ fn contract_update_operator<A: HasActions>(
         }))?;
     }
 
-    Ok(A::accept())
+    Ok(())
 }
 
 /// Takes a list of queries. Each query is an owner address and some address to
@@ -302,27 +330,34 @@ fn contract_update_operator<A: HasActions>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Message sent back with the result rejects.
-#[receive(contract = "CIS1-singleNFT", name = "operatorOf", parameter = "OperatorOfQueryParams")]
-fn contract_operator_of<A: HasActions>(
+#[receive(
+    contract = "CIS1-singleNFT",
+    name = "operatorOf",
+    parameter = "OperatorOfQueryParams",
+    mutable
+)]
+fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>>,
+) -> ContractResult<()> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
+    let state = host.state();
     for query in params.queries {
         // Query the state for address being an operator of owner.
         let is_operator = state.is_operator(&query.owner, &query.address);
         response.push((query, is_operator));
     }
-    // Send back the response.
-    Ok(send(
+    host.invoke_contract(
         &params.result_contract,
-        params.result_function.as_ref(),
-        Amount::zero(),
         &OperatorOfQueryResponse::from(response),
-    ))
+        params.result_function.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+
+    Ok(())
 }
 
 /// Parameter type for the CIS-1 function `balanceOf` specialized to the subset
@@ -338,28 +373,31 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 #[receive(
     contract = "CIS1-singleNFT",
     name = "balanceOf",
-    parameter = "ContractBalanceOfQueryParams"
+    parameter = "ContractBalanceOfQueryParams",
+    mutable
 )]
-fn contract_balance_of<A: HasActions>(
+fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>>,
+) -> ContractResult<()> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
+    let state = host.state();
     for query in params.queries {
         // Query the state for balance.
         let amount = state.balance(&query.token_id, &query.address)?;
         response.push((query, amount));
     }
     // Send back the response.
-    Ok(send(
+    host.invoke_contract(
         &params.result_contract,
-        params.result_function.as_ref(),
-        Amount::zero(),
         &BalanceOfQueryResponse::from(response),
-    ))
+        params.result_function.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+    Ok(())
 }
 
 /// Parameter type for the CIS-1 function `tokenMetadata` specialized to the
@@ -376,24 +414,27 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 #[receive(
     contract = "CIS1-singleNFT",
     name = "tokenMetadata",
-    parameter = "ContractTokenMetadataQueryParams"
+    parameter = "ContractTokenMetadataQueryParams",
+    mutable
 )]
-fn contract_token_metadata<A: HasActions>(
+fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    state: &mut State,
-) -> ContractResult<A> {
+    host: &mut impl HasHost<State<S>>,
+) -> ContractResult<()> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
+    let state = host.state();
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for token_id in params.queries {
         response.push((token_id, state.metadata_url.clone()));
     }
     // Send back the response.
-    Ok(send(
+    host.invoke_contract(
         &params.result_contract,
-        params.result_function.as_ref(),
-        Amount::zero(),
         &TokenMetadataQueryResponse::from(response),
-    ))
+        params.result_function.as_receive_name().entrypoint_name(),
+        Amount::zero(),
+    )?;
+    Ok(())
 }

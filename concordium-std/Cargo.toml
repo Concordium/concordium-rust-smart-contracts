@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "2.0.0"
+version = "3.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -16,11 +16,11 @@ wee_alloc="0.4.5"
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"
-version = "2.0"
+version = "3.0"
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-contracts-common"
-version = "2.0"
+version = "3.0"
 default-features = false
 
 [features]
@@ -38,3 +38,11 @@ crate-type = ["rlib"]
 opt-level = "s"
 # Don't unwind on panics, just trap.
 # panic = "abort"
+
+
+
+[package.metadata.docs.rs]
+# This sets the default target to `wasm32-unknown-unknown` and only builds that
+# target on docs.rs. This is useful because the some parts of documentation only
+# exist on that platform.
+targets = ["wasm32-unknown-unknown"]
