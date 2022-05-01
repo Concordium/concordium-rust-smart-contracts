@@ -48,6 +48,26 @@ enum Weather {
     Sunny,
 }
 
+/// The custom errors the contract can produce.
+#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+enum ContractError {
+    /// Failed parsing the parameter.
+    #[from(ParseError)]
+    ParseParams,
+    /// Failed account transfer.
+    #[from(TransferError)]
+    TransferError,
+    /// Failed contract invoke.
+    ContractError,
+    Unauthenticated,
+}
+
+impl<A> From<CallContractError<A>> for ContractError {
+    fn from(_: CallContractError<A>) -> Self { Self::ContractError }
+}
+
+type ContractResult<A> = Result<A, ContractError>;
+
 /// Initialise the contract with the contract address of the weather service.
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init<S: HasStateApi>(
@@ -72,7 +92,7 @@ fn contract_buy_icecream<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State, StateApiType = S>,
     amount: Amount,
-) -> ReceiveResult<()> {
+) -> ContractResult<()> {
     let weather_service = host.state().weather_service;
     let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
 
@@ -82,21 +102,21 @@ fn contract_buy_icecream<S: HasStateApi>(
             Parameter(&[]),
             EntrypointName::new_unchecked("get"),
             Amount::zero(),
-        )
-        .expect_report("Invoking weather contract failed.")
-        .1
-        .expect_report("Invocation did not return a value.")
-        .get()?;
+        )?
+        .1;
+    let weather = if let Some(mut weather) = weather {
+        weather.get()?
+    } else {
+        return Err(ContractError::ContractError);
+    };
 
     match weather {
         Weather::Rainy => {
-            host.invoke_transfer(&ctx.invoker(), amount).expect("Returning CCD to invoker failed.")
+            host.invoke_transfer(&ctx.invoker(), amount)?;
             // We could also abort here, but this is useful to show off some
             // testing features.
         }
-        Weather::Sunny => host
-            .invoke_transfer(&icecream_vendor, amount)
-            .expect_report("Sending CCD to the icecream vendor failed."),
+        Weather::Sunny => host.invoke_transfer(&icecream_vendor, amount)?,
     }
     Ok(())
 }
@@ -112,8 +132,8 @@ fn contract_buy_icecream<S: HasStateApi>(
 fn contract_replace_weather_service<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<()> {
-    assert_eq!(Address::Account(ctx.owner()), ctx.sender());
+) -> ContractResult<()> {
+    ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated);
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     host.state_mut().weather_service = new_weather_service;
     Ok(())
@@ -136,7 +156,7 @@ fn weather_init<S: HasStateApi>(
 fn weather_get<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<Weather, StateApiType = S>,
-) -> ReceiveResult<Weather> {
+) -> ContractResult<Weather> {
     Ok(*host.state())
 }
 
@@ -145,8 +165,8 @@ fn weather_get<S: HasStateApi>(
 fn weather_set<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<Weather, StateApiType = S>,
-) -> ReceiveResult<()> {
-    assert_eq!(Address::Account(ctx.owner()), ctx.sender()); // Only the owner can update the weather.
+) -> ContractResult<()> {
+    ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated); // Only the owner can update the weather.
     *host.state_mut() = ctx.parameter_cursor().get()?;
     Ok(())
 }
@@ -236,10 +256,7 @@ mod tests {
         assert_eq!(host.get_transfers(), &[(INVOKER_ADDR, ICECREAM_PRICE)]); // Check that this is the only transfer.
     }
 
-    // TODO: Use a custom error type and check the result instead of using panics,
-    // because they can't be caught in wasm (i.e. with cargo concordium test).
     #[concordium_test]
-    #[should_panic(expected = "Sending CCD to the icecream vendor failed.: MissingAccount")]
     fn test_missing_icecream_vendor() {
         // Arrange
         let mut ctx = TestReceiveContext::empty();
@@ -266,14 +283,12 @@ mod tests {
             MockFn::returning_ok(Weather::Sunny),
         );
 
-        // Act + Assert (should panic)
-        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE).unwrap();
+        // Act + Assert
+        let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
+        claim_eq!(result, Err(ContractError::TransferError));
     }
 
-    // TODO: Use a custom error type and check the result instead of using panics,
-    // because they can't be caught in wasm (i.e. with cargo concordium test).
     #[concordium_test]
-    #[should_panic(expected = "Invoking weather contract failed.: MissingContract")]
     fn test_missing_weather_service() {
         // Arrange
         let mut ctx = TestReceiveContext::empty();
@@ -295,7 +310,7 @@ mod tests {
         );
 
         // Act + Assert (should panic)
-        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
-            .expect_report("Calling buy_icecream failed.");
+        let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
+        claim_eq!(result, Err(ContractError::ContractError));
     }
 }

@@ -956,18 +956,12 @@ impl<S> StateBuilder<S> {
 
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]
-pub struct ExternStateApi {
-    pub(crate) private: (),
-}
+pub struct ExternStateApi;
 
 impl ExternStateApi {
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
-    pub fn open() -> Self {
-        Self {
-            private: (),
-        }
-    }
+    pub fn open() -> Self { Self }
 }
 
 /// Operations backed by host functions for the low-level interface.

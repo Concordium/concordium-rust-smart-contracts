@@ -1067,7 +1067,6 @@ where
             offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
-        // TODO: This is inefficient. There's no need to allocate the entry.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
         let v = V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
         Some((StateRef::new(k), StateRef::new(v)))
@@ -1342,6 +1341,9 @@ impl<T: Serial, S: HasStateApi> Drop for StateBox<T, S> {
     }
 }
 
+/// Return a reference to the value stored inside the [`StateBoxInner`], as well
+/// as a reference to the flag that indicates whether the value has been
+/// modified or not.
 fn get_with_inner<'a, T: Serial + DeserialWithState<S>, S: HasStateApi>(
     state_api: &S,
     inner: &'a mut StateBoxInner<T, S>,
@@ -2567,7 +2569,9 @@ where
                 // we load the value first because it might be necessary to delete
                 // the nested value.
                 // TODO: This is pretty bad for performance, but we cannot specialize the
-                // implementation for flat values.
+                // implementation for flat values. Once rust supports specialization we might be
+                // able to have a more precise implementation for flat values,
+                // i.e., ones which are Deserial.
                 let mut entry = self.state_api.lookup_entry(&prefix).unwrap_abort();
                 let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
                 (entry, value)

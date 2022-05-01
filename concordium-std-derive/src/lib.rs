@@ -342,7 +342,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 parameter,
                 return_value,
             },
-            mutable: mutable.is_some(), /* TODO: This is also optional, but does not belong in
+            mutable: mutable.is_some(), /* This is also optional, but does not belong in
                                          * OptionalArguments, as
                                          * it doesn't apply to init methods. */
         }),
@@ -1991,10 +1991,7 @@ fn parse_attr_and_gen_error_conversions(
                 match nested {
                     syn::NestedMeta::Meta(meta) => match meta {
                         Meta::Path(from_error) => {
-                            let ident = from_error
-                                .get_ident()
-                                .ok_or_else(|| wrong_from_usage(from_error))?;
-                            from_error_names.push(ident);
+                            from_error_names.push(from_error);
                         }
                         other => return Err(wrong_from_usage(&other)),
                     },
@@ -2017,7 +2014,7 @@ fn parse_attr_and_gen_error_conversions(
 /// }
 /// ```
 fn from_error_token_stream<'a>(
-    paths: &'a [&'a syn::Ident],
+    paths: &'a [&'a syn::Path],
     enum_name: &'a syn::Ident,
     variant_name: &'a syn::Ident,
 ) -> impl Iterator<Item = proc_macro2::TokenStream> + 'a {
