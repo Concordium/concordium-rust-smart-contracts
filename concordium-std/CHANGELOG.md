@@ -16,6 +16,8 @@
     - Introduce high-level abstractions over the new state, including the
       `StateBuilder`, `StateMap`, `StateSet`, and `StateBox`.
     - Add new traits for the low-level state interaction: `HasStateApi` and `HasStateEntry`.
+  - The Seek trait now works with i32 instead of i64. This is more efficient,
+    and sufficient for the target architecture.
 
 ## concordium-std 2.0.0 (2022-01-05)
 
