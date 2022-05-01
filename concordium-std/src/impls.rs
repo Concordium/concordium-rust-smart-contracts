@@ -2207,7 +2207,7 @@ impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
     }
 
     fn named_entrypoint(&self) -> OwnedEntrypointName {
-        let mut data = vec![0u8; unsafe { prims::get_receive_entrypoint_size() as usize }];
+        let mut data = crate::vec![0u8; unsafe { prims::get_receive_entrypoint_size() as usize }];
         unsafe { prims::get_receive_entrypoint(data.as_mut_ptr()) };
         OwnedEntrypointName::new_unchecked(unsafe { String::from_utf8_unchecked(data) })
     }

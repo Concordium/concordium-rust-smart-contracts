@@ -1,8 +1,8 @@
 //! This module provides the primitive interface to the chain.
 //! Functions here should be wrapped in safer wrappers when used from contracts.
 
-/// Interface to the chain. These functions are assumed to be instantiated by
-/// the scheduler with relevant primitives.
+// Interface to the chain. These functions are assumed to be instantiated by
+// the scheduler with relevant primitives.
 #[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
 extern "C" {
     /// Invoke a host instruction. The arguments are
