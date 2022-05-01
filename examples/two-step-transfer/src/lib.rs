@@ -80,7 +80,7 @@ struct InitParams {
     transfer_request_ttl: TransferRequestTimeToLiveMilliseconds,
 }
 
-#[derive(Serial, DeserialWithState, SchemaType)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
     // The initial configuration of the contract
