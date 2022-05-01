@@ -1,4 +1,4 @@
-//! This internal module provides the primitive interface to the chain.
+//! This module provides the primitive interface to the chain.
 //! Functions here should be wrapped in safer wrappers when used from contracts.
 
 /// Interface to the chain. These functions are assumed to be instantiated by

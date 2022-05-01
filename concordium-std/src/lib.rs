@@ -225,7 +225,7 @@ pub mod collections {
 
 pub mod constants;
 mod impls;
-mod prims;
+pub mod prims;
 mod traits;
 mod types;
 pub use concordium_contracts_common::*;
