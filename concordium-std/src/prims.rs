@@ -210,6 +210,49 @@ extern "C" {
     /// Slot time (in milliseconds) from chain meta data
     pub fn get_slot_time() -> u64;
 
+    // Cryptographic primitives
+
+    /// Verify an ed25519 signature. The public key is expected to be 32 bytes,
+    /// the signature is expected to be 64 bytes, and the message may be
+    /// variable length.
+    ///
+    /// The return value is 0 if verification fails, and 1 if it succeeds. No
+    /// other return values are possible.
+    pub fn verify_ed25519_signature(
+        public_key: *const u8,
+        signature: *const u8,
+        message: *const u8,
+        message_len: u32,
+    ) -> i32;
+
+    /// Verify an ed25519 signature. The public key is expected to be 33 bytes,
+    /// the signature is expected to be 64 bytes (serialized in compressed
+    /// format), and the message may be variable length.
+    ///
+    /// The return value is 0 if verification fails, and 1 if it succeeds. No
+    /// other return values are possible.
+    pub fn verify_ecdsa_secp256k1_signature(
+        public_key: *const u8,
+        signature: *const u8,
+        message: *const u8,
+        message_len: u32,
+    ) -> i32;
+
+    /// Hash the data using the SHA2-256 algorithm. The resulting hash (32
+    /// bytes) is written starting at the `output` pointer. The output
+    /// segment *may* overlap with the data segment.
+    pub fn hash_sha2_256(data: *const u8, data_len: u32, output: *mut u8);
+
+    /// Hash the data using the SHA3-256 algorithm. The resulting hash (32
+    /// bytes) is written starting at the `output` pointer. The output
+    /// segment *may* overlap with the data segment.
+    pub fn hash_sha3_256(data: *const u8, data_len: u32, output: *mut u8);
+
+    /// Hash the data using Keccak-256 algorithm. The resulting hash (32 bytes)
+    /// is written starting at the `output` pointer. The output segment
+    /// *may* overlap with the data segment.
+    pub fn hash_keccak_256(data: *const u8, data_len: u32, output: *mut u8);
+
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     /// Reporting back an error, only exists in debug mode
     pub(crate) fn report_error(
@@ -357,4 +400,39 @@ mod host_dummy_functions {
 
     #[no_mangle]
     extern "C" fn get_slot_time() -> u64 { unimplemented!("Dummy function! Not to be executed") }
+
+    #[no_mangle]
+    extern "C" fn verify_ed25519_signature(
+        _public_key: *const u8,
+        _signature: *const u8,
+        _message: *const u8,
+        _message_len: u32,
+    ) -> i32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
+    #[no_mangle]
+    fn verify_ecdsa_secp256k1_signature(
+        _public_key: *const u8,
+        _signature: *const u8,
+        _message: *const u8,
+        _message_len: u32,
+    ) -> i32 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
+    #[no_mangle]
+    fn hash_sha2_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
+    #[no_mangle]
+    fn hash_sha3_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
+    #[no_mangle]
+    fn hash_keccak_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
 }
