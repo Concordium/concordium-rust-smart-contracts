@@ -227,17 +227,15 @@ extern "C" {
 
     /// Verify an ed25519 signature. The public key is expected to be 33 bytes,
     /// the signature is expected to be 64 bytes (serialized in compressed
-    /// format), and the message must be 32 bytes. For the signature to not leak
-    /// the key the message must be hashed with a cryptographically secure
-    /// hash before signing. Thus we only allow checking signatures on
-    /// 32-byte messages.
+    /// format), and the message must be 32 bytes. We only allow checking
+    /// signatures on 32-byte arrays which are expected to be message hashes.
     ///
     /// The return value is 0 if verification fails, and 1 if it succeeds. No
     /// other return values are possible.
     pub fn verify_ecdsa_secp256k1_signature(
         public_key: *const u8,
         signature: *const u8,
-        message: *const u8,
+        message_hash: *const u8,
     ) -> i32;
 
     /// Hash the data using the SHA2-256 algorithm. The resulting hash (32
@@ -417,7 +415,7 @@ mod host_dummy_functions {
     fn verify_ecdsa_secp256k1_signature(
         _public_key: *const u8,
         _signature: *const u8,
-        _message: *const u8,
+        _message_hash: *const u8,
     ) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
