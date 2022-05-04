@@ -18,6 +18,7 @@
     - Add new traits for the low-level state interaction: `HasStateApi` and `HasStateEntry`.
   - The Seek trait now works with i32 instead of i64. This is more efficient,
     and sufficient for the target architecture.
+- Expose the module of primitive host functions with an unsafe API.
 
 ## concordium-std 2.0.0 (2022-01-05)
 
