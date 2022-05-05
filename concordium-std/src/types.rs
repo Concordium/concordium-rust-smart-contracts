@@ -954,6 +954,15 @@ impl<S> StateBuilder<S> {
     pub fn into_inner(self) -> S { self.state_api }
 }
 
+pub struct ExternCryptoUtils;
+
+pub type PublicKeyEd25519 = [u8; 32];
+pub type PublicKeyEcdsaSecp256k1 = [u8; 33];
+pub type SignatureEd25519 = [u8; 64];
+pub type SignatureEcdsaSecp256k1 = [u8; 64];
+pub type MessageHashEcdsaSecp256k1 = [u8; 32];
+pub type Hash256 = [u8; 32];
+
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]
 pub struct ExternStateApi;
