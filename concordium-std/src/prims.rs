@@ -225,10 +225,11 @@ extern "C" {
         message_len: u32,
     ) -> i32;
 
-    /// Verify an ed25519 signature. The public key is expected to be 33 bytes,
-    /// the signature is expected to be 64 bytes (serialized in compressed
-    /// format), and the message must be 32 bytes. We only allow checking
-    /// signatures on 32-byte arrays which are expected to be message hashes.
+    /// Verify an ecdsa over secp256k1 with bitcoin-core implementation.
+    /// The public key is expected to be 33 bytes, the signature is expected
+    /// to be 64 bytes (serialized in compressed format), and the message
+    /// must be 32 bytes. We only allow checking signatures on 32-byte arrays
+    /// which are expected to be message hashes.
     ///
     /// The return value is 0 if verification fails, and 1 if it succeeds. No
     /// other return values are possible.

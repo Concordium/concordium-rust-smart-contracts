@@ -1973,6 +1973,7 @@ impl<S> HasHost<S> for ExternHost<S>
 where
     S: Serial + DeserialWithState<ExternStateApi>,
 {
+    type CryptoUtilsType = ExternCryptoUtils;
     type ReturnValueType = ExternCallResponse;
     type StateApiType = ExternStateApi;
 
@@ -2051,9 +2052,12 @@ where
     fn state_and_builder(&mut self) -> (&mut S, &mut StateBuilder<Self::StateApiType>) {
         (&mut self.state, &mut self.state_builder)
     }
+
+    fn crypto_utils(&self) -> &Self::CryptoUtilsType { &ExternCryptoUtils }
 }
 
 impl HasHost<ExternStateApi> for ExternLowLevelHost {
+    type CryptoUtilsType = ExternCryptoUtils;
     type ReturnValueType = ExternCallResponse;
     type StateApiType = ExternStateApi;
 
@@ -2117,6 +2121,61 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         } else {
             Ok(res)
         }
+    }
+
+    fn crypto_utils(&self) -> &Self::CryptoUtilsType { &ExternCryptoUtils }
+}
+
+impl HasCryptoUtils for ExternCryptoUtils {
+    fn verify_ed25519_signature(
+        &self,
+        public_key: PublicKeyEd25519,
+        signature: SignatureEd25519,
+        message: &[u8],
+    ) -> bool {
+        let res = unsafe {
+            prims::verify_ed25519_signature(
+                public_key.as_ptr(),
+                signature.as_ptr(),
+                message.as_ptr(),
+                message.len() as u32,
+            )
+        };
+        res == 1
+    }
+
+    fn verify_ecdsa_secp256k1_signature(
+        &self,
+        public_key: PublicKeyEcdsaSecp256k1,
+        signature: SignatureEcdsaSecp256k1,
+        message_hash: MessageHashEcdsaSecp256k1,
+    ) -> bool {
+        let res = unsafe {
+            prims::verify_ecdsa_secp256k1_signature(
+                public_key.as_ptr(),
+                signature.as_ptr(),
+                message_hash.as_ptr(),
+            )
+        };
+        res == 1
+    }
+
+    fn hash_sha2_256(&self, data: &[u8]) -> Hash256 {
+        let mut output: Hash256 = [0; 32];
+        unsafe { prims::hash_sha2_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr()) }
+        output
+    }
+
+    fn hash_sha3_256(&self, data: &[u8]) -> Hash256 {
+        let mut output = [0; 32];
+        unsafe { prims::hash_sha3_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr()) }
+        output
+    }
+
+    fn hash_keccak_256(&self, data: &[u8]) -> Hash256 {
+        let mut output = [0; 32];
+        unsafe { prims::hash_keccak_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr()) }
+        output
     }
 }
 
