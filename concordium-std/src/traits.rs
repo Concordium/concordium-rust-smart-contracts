@@ -245,8 +245,6 @@ pub trait HasHost<State>: Sized {
     /// methods like [ExpectReport::expect_report].
     type ReturnValueType: HasCallResponse + crate::fmt::Debug;
 
-    type CryptoUtilsType: HasCryptoUtils;
-
     /// Perform a transfer to the given account if the contract has sufficient
     /// balance.
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult;
@@ -359,8 +357,6 @@ pub trait HasHost<State>: Sized {
     /// types of `state_builder` and `state_mut` can be refined.
     fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>);
 
-    fn crypto_utils(&self) -> &Self::CryptoUtilsType;
-
     /// Get the contract's own current balance. Upon entry to the entrypoint the
     /// balance that is returned is the sum of balance of the contract at
     /// the time of the invocation and the amount that is being transferred to
@@ -409,6 +405,7 @@ pub trait HasLogger {
     }
 }
 
+/// Objects which provide cryptographic utility functions.
 pub trait HasCryptoUtils {
     /// Verify an ed25519 signature.
     fn verify_ed25519_signature(
@@ -421,8 +418,8 @@ pub trait HasCryptoUtils {
     /// Verify an ecdsa signature over secp256k1 with the bitcoin-core
     /// implementation.
     ///
-    /// *The message must be a cryptographically safe hash. Otheriwse, the
-    /// signature may leak.*
+    /// **The message must be a cryptographically safe hash. Otheriwse, the
+    /// signature may leak.**
     fn verify_ecdsa_secp256k1_signature(
         &self,
         public_key: PublicKeyEcdsaSecp256k1,
