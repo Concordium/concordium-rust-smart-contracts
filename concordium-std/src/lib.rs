@@ -99,6 +99,8 @@
 //!   receive method
 //! - [HasStateApi] for operations possible on the contract state
 //! - [HasHost] for invoking operations on the host and accessing the state
+//! - [HasCryptoUtils] for calling cryptographic utility functions such as
+//!   hashing and verifying signatures.
 //!
 //! # Signalling errors
 //! On the Wasm level contracts can signal errors by returning a negative i32
@@ -148,7 +150,6 @@
 //! | [CallContractError::LogicReject] | `-2147483628` |
 //! | [CallContractError::Trap] | `-2147483627` |
 //!
-//! [MIN]: https://doc.rust-lang.org/std/primitive.i32.html#associatedconstant.MIN
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.

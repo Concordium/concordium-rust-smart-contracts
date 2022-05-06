@@ -954,6 +954,9 @@ impl<S> StateBuilder<S> {
     pub fn into_inner(self) -> S { self.state_api }
 }
 
+/// A struct for which HasCryptoUtils is implemented via the crypto host
+/// functions.
+#[doc(hidden)]
 pub struct ExternCryptoUtils;
 
 pub type PublicKeyEd25519 = [u8; 32];

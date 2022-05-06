@@ -1973,7 +1973,6 @@ impl<S> HasHost<S> for ExternHost<S>
 where
     S: Serial + DeserialWithState<ExternStateApi>,
 {
-    type CryptoUtilsType = ExternCryptoUtils;
     type ReturnValueType = ExternCallResponse;
     type StateApiType = ExternStateApi;
 
@@ -2052,12 +2051,9 @@ where
     fn state_and_builder(&mut self) -> (&mut S, &mut StateBuilder<Self::StateApiType>) {
         (&mut self.state, &mut self.state_builder)
     }
-
-    fn crypto_utils(&self) -> &Self::CryptoUtilsType { &ExternCryptoUtils }
 }
 
 impl HasHost<ExternStateApi> for ExternLowLevelHost {
-    type CryptoUtilsType = ExternCryptoUtils;
     type ReturnValueType = ExternCallResponse;
     type StateApiType = ExternStateApi;
 
@@ -2122,8 +2118,6 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
             Ok(res)
         }
     }
-
-    fn crypto_utils(&self) -> &Self::CryptoUtilsType { &ExternCryptoUtils }
 }
 
 impl HasCryptoUtils for ExternCryptoUtils {
