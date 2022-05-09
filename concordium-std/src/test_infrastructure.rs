@@ -683,6 +683,24 @@ impl TestStateBuilder {
     pub fn new() -> Self { Self::open(TestStateApi::new()) }
 }
 
+/// A closure used in tests for mocking calls to
+/// [`HasCryptoUtils::verify_ed25519_signature`].
+#[cfg(not(feature = "crypto-utils"))]
+type MockFnVerifyEd25519 = Box<dyn FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool>;
+
+/// A closure used in tests for mocking calls to
+/// [`HasCryptoUtils::verify_ecdsa_secp256k1_signature`].
+#[cfg(not(feature = "crypto-utils"))]
+type MockFnEcdsaSecp256k1 = Box<
+    dyn FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, MessageHashEcdsaSecp256k1) -> bool,
+>;
+
+/// A closure used in tests for mocking calls to
+/// [`HasCryptoUtils::hash_sha2_256`], [`HasCryptoUtils::hash_sha3_256`], or
+/// [`HasCryptoUtils::hash_keccak_256`].
+#[cfg(not(feature = "crypto-utils"))]
+type MockFnHash256 = Box<dyn FnMut(&[u8]) -> Hash256>;
+
 /// A [`HasCryptoUtils`] implementation used for unit testing smart contracts.
 ///
 /// You can test smart contracts that use the cryptographic utility methods in
@@ -695,26 +713,20 @@ impl TestStateBuilder {
 /// "crypto-utils" feature.
 pub struct TestCryptoUtils {
     #[cfg(not(feature = "crypto-utils"))]
-    verify_ed25519_signature_mock:
-        RefCell<Option<Box<dyn FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool>>>,
+    verify_ed25519_signature_mock:         RefCell<Option<MockFnVerifyEd25519>>,
     #[cfg(not(feature = "crypto-utils"))]
-    verify_ecdsa_secp256k1_signature_mock: RefCell<
-        Option<
-            Box<
-                dyn FnMut(
-                    PublicKeyEcdsaSecp256k1,
-                    SignatureEcdsaSecp256k1,
-                    MessageHashEcdsaSecp256k1,
-                ) -> bool,
-            >,
-        >,
-    >,
+    verify_ecdsa_secp256k1_signature_mock: RefCell<Option<MockFnEcdsaSecp256k1>>,
     #[cfg(not(feature = "crypto-utils"))]
-    hash_sha2_256_mock:                    RefCell<Option<Box<dyn FnMut(&[u8]) -> Hash256>>>,
+    hash_sha2_256_mock:                    RefCell<Option<MockFnHash256>>,
     #[cfg(not(feature = "crypto-utils"))]
-    hash_sha3_256_mock:                    RefCell<Option<Box<dyn FnMut(&[u8]) -> Hash256>>>,
+    hash_sha3_256_mock:                    RefCell<Option<MockFnHash256>>,
     #[cfg(not(feature = "crypto-utils"))]
-    hash_keccak_256_mock:                  RefCell<Option<Box<dyn FnMut(&[u8]) -> Hash256>>>,
+    hash_keccak_256_mock:                  RefCell<Option<MockFnHash256>>,
+}
+
+/// Create a new [`TestCryptoUtils`], for which no mocks has been set up.
+impl Default for TestCryptoUtils {
+    fn default() -> Self { Self::new() }
 }
 
 impl TestCryptoUtils {
@@ -729,7 +741,7 @@ impl TestCryptoUtils {
             hash_keccak_256_mock:                  RefCell::new(None),
         };
         #[cfg(feature = "crypto-utils")]
-        return Self;
+        return Self {};
     }
 
     #[cfg(not(feature = "crypto-utils"))]
@@ -800,6 +812,7 @@ impl TestCryptoUtils {
 
     /// Fail with an error message that tells you to set up mocks
     /// OR enable the crypto-utils feature.
+    #[cfg(not(feature = "crypto-utils"))]
     fn fail_with_crypto_utils_error(method_name: &str) -> ! {
         fail!(
             "To use {}, you need to either enable the \"concordium-std/crypto-utils\" feature, \
@@ -849,12 +862,12 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             let signature = secp256k1::ecdsa::Signature::from_compact(&signature[..]);
-            let public_key = secp256k1::ecdsa::PublicKey::from_slice(&public_key[..]);
-            let message_hash = secp2561::Message::from_slice(&message[..]);
+            let public_key = secp256k1::PublicKey::from_slice(&public_key[..]);
+            let message_hash = secp256k1::Message::from_slice(&message_hash[..]);
             match (signature, public_key, message_hash) {
                 (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
-                    let verifier = secp256k1::Secp256k1::verificiation_only();
-                    return verifier.verify_ecdsa(&message, &signate, &public_key).is_ok();
+                    let verifier = secp256k1::Secp256k1::verification_only();
+                    return verifier.verify_ecdsa(&message_hash, &signature, &public_key).is_ok();
                 }
                 _ => return false,
             }
@@ -873,7 +886,10 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use sha2::Digest;
-            sha2::Sha256::digest(data);
+            sha2::Sha256::digest(data)
+                .as_slice()
+                .try_into()
+                .expect_report("Digest had the wrong size")
         }
         #[cfg(not(feature = "crypto-utils"))]
         {
@@ -889,7 +905,10 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use sha3::Digest;
-            sha3::Sha256::digest(data);
+            sha3::Sha3_256::digest(data)
+                .as_slice()
+                .try_into()
+                .expect_report("Digest had the wrong size")
         }
         #[cfg(not(feature = "crypto-utils"))]
         {
@@ -905,7 +924,10 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use sha3::Digest;
-            sha3::Keccak256::digest(data);
+            sha3::Keccak256::digest(data)
+                .as_slice()
+                .try_into()
+                .expect_report("Digest had the wrong size")
         }
         #[cfg(not(feature = "crypto-utils"))]
         {
