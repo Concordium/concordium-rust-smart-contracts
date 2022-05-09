@@ -19,6 +19,11 @@
   - The Seek trait now works with i32 instead of i64. This is more efficient,
     and sufficient for the target architecture.
 - Expose the module of primitive host functions with an unsafe API.
+- Add cryptographic utility functions:
+  - Add a new attribute `crypto-utils` (on both init and receive functions), which gives the function an additional parameter, `&impl HasCryptoUtils`.
+  - Add the trait `HasCryptoUtils` with two implementations (host-backed + test).
+   - For the test implementation, the default option uses mocks. But the actual implementations can be used if you enable the feature `crypto-utils`.
+  - Add new feature flag `crypto-utils`.
 
 ## concordium-std 2.0.0 (2022-01-05)
 
