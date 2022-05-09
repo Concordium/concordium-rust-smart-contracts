@@ -43,6 +43,7 @@ pub struct State<S> {
     bids:           StateMap<AccountAddress, Amount, S>,
 }
 
+/// The part of the state to be viewed using `concordium-client contract invoke`
 #[derive(Debug, Serialize, SchemaType, Clone)]
 pub struct ViewableState {
     /// Has the item been sold?
