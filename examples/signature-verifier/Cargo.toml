@@ -13,6 +13,7 @@ concordium-std = {path = "../../concordium-std"}
 [features]
 default = ["std"]
 std = ["concordium-std/std"]
+crypto-utils = ["concordium-std/crypto-utils"]
 
 [lib]
 crate-type=["cdylib", "rlib"]
