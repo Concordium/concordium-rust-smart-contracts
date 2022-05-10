@@ -980,7 +980,7 @@ pub struct SignatureEd25519(pub [u8; 64]);
 #[repr(transparent)]
 pub struct SignatureEcdsaSecp256k1(pub [u8; 64]);
 
-/// Hash digest with 256 bits.
+/// Hash digest with 256 bits (32 bytes).
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
 pub struct Hash256(pub [u8; 32]);
