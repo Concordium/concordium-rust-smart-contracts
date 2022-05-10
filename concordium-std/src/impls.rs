@@ -2129,8 +2129,8 @@ impl HasCryptoUtils for ExternCryptoUtils {
     ) -> bool {
         let res = unsafe {
             prims::verify_ed25519_signature(
-                public_key.as_ptr(),
-                signature.as_ptr(),
+                public_key.0.as_ptr(),
+                signature.0.as_ptr(),
                 message.as_ptr(),
                 message.len() as u32,
             )
@@ -2142,12 +2142,12 @@ impl HasCryptoUtils for ExternCryptoUtils {
         &self,
         public_key: PublicKeyEcdsaSecp256k1,
         signature: SignatureEcdsaSecp256k1,
-        message_hash: MessageHashEcdsaSecp256k1,
+        message_hash: [u8; 32],
     ) -> bool {
         let res = unsafe {
             prims::verify_ecdsa_secp256k1_signature(
-                public_key.as_ptr(),
-                signature.as_ptr(),
+                public_key.0.as_ptr(),
+                signature.0.as_ptr(),
                 message_hash.as_ptr(),
             )
         };
@@ -2155,21 +2155,31 @@ impl HasCryptoUtils for ExternCryptoUtils {
     }
 
     fn hash_sha2_256(&self, data: &[u8]) -> Hash256 {
-        let mut output: Hash256 = [0; 32];
-        unsafe { prims::hash_sha2_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr()) }
-        output
+        let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
+        unsafe {
+            prims::hash_sha2_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr() as *mut u8);
+            Hash256(output.assume_init())
+        }
     }
 
     fn hash_sha3_256(&self, data: &[u8]) -> Hash256 {
-        let mut output = [0; 32];
-        unsafe { prims::hash_sha3_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr()) }
-        output
+        let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
+        unsafe {
+            prims::hash_sha3_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr() as *mut u8);
+            Hash256(output.assume_init())
+        }
     }
 
     fn hash_keccak_256(&self, data: &[u8]) -> Hash256 {
-        let mut output = [0; 32];
-        unsafe { prims::hash_keccak_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr()) }
-        output
+        let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
+        unsafe {
+            prims::hash_keccak_256(
+                data.as_ptr(),
+                data.len() as u32,
+                output.as_mut_ptr() as *mut u8,
+            );
+            Hash256(output.assume_init())
+        }
     }
 }
 
@@ -2655,4 +2665,54 @@ where
     V: Serial + DeserialWithState<S> + Deletable,
 {
     fn delete(mut self) { self.clear(); }
+}
+
+impl Serial for PublicKeyEd25519 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for PublicKeyEd25519 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(PublicKeyEd25519(Deserial::deserial(source)?))
+    }
+}
+
+impl Serial for PublicKeyEcdsaSecp256k1 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for PublicKeyEcdsaSecp256k1 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(PublicKeyEcdsaSecp256k1(Deserial::deserial(source)?))
+    }
+}
+
+impl Serial for SignatureEd25519 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for SignatureEd25519 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(SignatureEd25519(Deserial::deserial(source)?))
+    }
+}
+
+impl Serial for SignatureEcdsaSecp256k1 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for SignatureEcdsaSecp256k1 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(SignatureEcdsaSecp256k1(Deserial::deserial(source)?))
+    }
+}
+
+impl Serial for Hash256 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for Hash256 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(Hash256(Deserial::deserial(source)?))
+    }
 }

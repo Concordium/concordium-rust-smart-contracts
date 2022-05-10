@@ -691,9 +691,8 @@ type MockFnVerifyEd25519 = Box<dyn FnMut(PublicKeyEd25519, SignatureEd25519, &[u
 /// A closure used in tests for mocking calls to
 /// [`HasCryptoUtils::verify_ecdsa_secp256k1_signature`].
 #[cfg(not(feature = "crypto-utils"))]
-type MockFnEcdsaSecp256k1 = Box<
-    dyn FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, MessageHashEcdsaSecp256k1) -> bool,
->;
+type MockFnEcdsaSecp256k1 =
+    Box<dyn FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, [u8; 32]) -> bool>;
 
 /// A closure used in tests for mocking calls to
 /// [`HasCryptoUtils::hash_sha2_256`], [`HasCryptoUtils::hash_sha3_256`], or
@@ -741,7 +740,7 @@ impl TestCryptoUtils {
             hash_keccak_256_mock:                  RefCell::new(None),
         };
         #[cfg(feature = "crypto-utils")]
-        return Self {};
+        Self {}
     }
 
     #[cfg(not(feature = "crypto-utils"))]
@@ -765,12 +764,8 @@ impl TestCryptoUtils {
     /// [link]: HasCryptoUtils::verify_ecdsa_secp256k1_signature
     pub fn setup_verify_ecdsa_secp256k1_signature_mock<F>(&self, mock: F)
     where
-        F: FnMut(
-                PublicKeyEcdsaSecp256k1,
-                SignatureEcdsaSecp256k1,
-                MessageHashEcdsaSecp256k1,
-            ) -> bool
-            + 'static, {
+        F: FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, [u8; 32]) -> bool + 'static,
+    {
         *self.verify_ecdsa_secp256k1_signature_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -834,8 +829,8 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use std::convert::TryFrom;
-            let signature = ed25519_zebra::Signature::try_from(&signature[..]);
-            let public_key = ed25519_zebra::VerificationKey::try_from(&public_key[..]);
+            let signature = ed25519_zebra::Signature::try_from(&signature.0[..]);
+            let public_key = ed25519_zebra::VerificationKey::try_from(&public_key.0[..]);
             match (signature, public_key) {
                 (Ok(ref signature), Ok(public_key)) => {
                     return public_key.verify(signature, message).is_ok()
@@ -857,12 +852,12 @@ impl HasCryptoUtils for TestCryptoUtils {
         &self,
         public_key: PublicKeyEcdsaSecp256k1,
         signature: SignatureEcdsaSecp256k1,
-        message_hash: MessageHashEcdsaSecp256k1,
+        message_hash: [u8; 32],
     ) -> bool {
         #[cfg(feature = "crypto-utils")]
         {
-            let signature = secp256k1::ecdsa::Signature::from_compact(&signature[..]);
-            let public_key = secp256k1::PublicKey::from_slice(&public_key[..]);
+            let signature = secp256k1::ecdsa::Signature::from_compact(&signature.0[..]);
+            let public_key = secp256k1::PublicKey::from_slice(&public_key.0[..]);
             let message_hash = secp256k1::Message::from_slice(&message_hash[..]);
             match (signature, public_key, message_hash) {
                 (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
@@ -886,10 +881,7 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use sha2::Digest;
-            sha2::Sha256::digest(data)
-                .as_slice()
-                .try_into()
-                .expect_report("Digest had the wrong size")
+            Hash256(sha2::Sha256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-utils"))]
         {
@@ -905,10 +897,7 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use sha3::Digest;
-            sha3::Sha3_256::digest(data)
-                .as_slice()
-                .try_into()
-                .expect_report("Digest had the wrong size")
+            Hash256(sha3::Sha3_256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-utils"))]
         {
@@ -924,10 +913,7 @@ impl HasCryptoUtils for TestCryptoUtils {
         #[cfg(feature = "crypto-utils")]
         {
             use sha3::Digest;
-            sha3::Keccak256::digest(data)
-                .as_slice()
-                .try_into()
-                .expect_report("Digest had the wrong size")
+            Hash256(sha3::Keccak256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-utils"))]
         {

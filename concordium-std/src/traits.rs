@@ -6,9 +6,9 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    CallContractResult, EntryRaw, Hash256, Key, MessageHashEcdsaSecp256k1, OccupiedEntryRaw,
-    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
-    SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
+    CallContractResult, EntryRaw, Hash256, Key, OccupiedEntryRaw, PublicKeyEcdsaSecp256k1,
+    PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1, SignatureEd25519,
+    StateBuilder, TransferResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -417,14 +417,11 @@ pub trait HasCryptoUtils {
 
     /// Verify an ecdsa signature over secp256k1 with the bitcoin-core
     /// implementation.
-    ///
-    /// **The message must be a cryptographically safe hash. Otheriwse, the
-    /// signature may leak.**
     fn verify_ecdsa_secp256k1_signature(
         &self,
         public_key: PublicKeyEcdsaSecp256k1,
         signature: SignatureEcdsaSecp256k1,
-        message_hash: MessageHashEcdsaSecp256k1,
+        message_hash: [u8; 32],
     ) -> bool;
 
     /// Hash the data using the SHA2-256 algorithm.
