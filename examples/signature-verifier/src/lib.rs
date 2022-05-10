@@ -56,8 +56,8 @@ mod tests {
         let crypto_utils = TestCryptoUtils::new();
 
         let param = VerificationParameter {
-            public_key: [0; 32],
-            signature:  [1; 64],
+            public_key: PublicKeyEd25519([0; 32]),
+            signature:  SignatureEd25519([1; 64]),
             message:    vec![2; 100],
         };
         let param_bytes = to_bytes(&param);
@@ -77,16 +77,16 @@ mod tests {
         let crypto_utils = TestCryptoUtils::new();
 
         let param = VerificationParameter {
-            public_key: [
+            public_key: PublicKeyEd25519([
                 53, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234,
                 165, 234, 138, 118, 62, 147, 74, 134, 113, 205, 126, 68, 100, 153,
-            ],
-            signature:  [
+            ]),
+            signature:  SignatureEd25519([
                 170, 242, 191, 224, 247, 247, 70, 49, 133, 3, 112, 66, 33, 24, 243, 14, 135, 135,
                 197, 113, 122, 74, 21, 82, 122, 94, 29, 15, 252, 121, 27, 102, 59, 21, 9, 177, 33,
                 2, 46, 242, 96, 134, 179, 120, 89, 0, 29, 9, 100, 38, 116, 250, 59, 226, 1, 247,
                 217, 220, 39, 8, 245, 230, 236, 2,
-            ],
+            ]),
             message:    b"Concordium".to_vec(),
         };
         let param_bytes = to_bytes(&param);

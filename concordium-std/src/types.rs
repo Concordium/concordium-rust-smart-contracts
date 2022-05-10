@@ -959,12 +959,30 @@ impl<S> StateBuilder<S> {
 #[doc(hidden)]
 pub struct ExternCryptoUtils;
 
-pub type PublicKeyEd25519 = [u8; 32];
-pub type PublicKeyEcdsaSecp256k1 = [u8; 33];
-pub type SignatureEd25519 = [u8; 64];
-pub type SignatureEcdsaSecp256k1 = [u8; 64];
-pub type MessageHashEcdsaSecp256k1 = [u8; 32];
-pub type Hash256 = [u8; 32];
+/// Public key for Ed25519.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct PublicKeyEd25519(pub [u8; 32]);
+
+/// Public key for ECDSA over Secp256k1.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct PublicKeyEcdsaSecp256k1(pub [u8; 33]);
+
+/// Signature for a Ed25519 message.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct SignatureEd25519(pub [u8; 64]);
+
+/// Signature for a ECDSA (over Secp256k1) message.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct SignatureEcdsaSecp256k1(pub [u8; 64]);
+
+/// Hash digest with 256 bits.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct Hash256(pub [u8; 32]);
 
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]
