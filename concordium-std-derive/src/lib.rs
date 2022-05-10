@@ -41,19 +41,19 @@ fn attach_error<A>(mut v: syn::Result<A>, msg: &str) -> syn::Result<A> {
 /// smart contract.
 struct OptionalArguments {
     /// If set, the contract can receive CCD.
-    pub(crate) payable:       bool,
+    pub(crate) payable:           bool,
     /// If enabled, the function has access to logging facilities.
-    pub(crate) enable_logger: bool,
+    pub(crate) enable_logger:     bool,
     /// The function is a low-level one, with direct access to contract memory.
-    pub(crate) low_level:     bool,
+    pub(crate) low_level:         bool,
     /// Which type, if any, is the parameter type of the contract.
     /// This is used when generating schemas.
-    pub(crate) parameter:     Option<syn::LitStr>,
+    pub(crate) parameter:         Option<syn::LitStr>,
     /// Which type, if any, is the return value of the contract.
     /// This is used when generating schemas.
-    pub(crate) return_value:  Option<syn::LitStr>,
-    /// If enabled, the function has access to crypto utility functions.
-    pub(crate) crypto_utils:  bool,
+    pub(crate) return_value:      Option<syn::LitStr>,
+    /// If enabled, the function has access to cryptographic primitives.
+    pub(crate) crypto_primitives: bool,
 }
 
 /// Attributes that can be attached to the initialization method.
@@ -234,7 +234,7 @@ const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
 const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
-const INIT_ATTRIBUTE_CRYPTO_UTILS: &str = "crypto_utils";
+const INIT_ATTRIBUTE_CRYPTO_PRIMITIVES: &str = "crypto_primitives";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
@@ -259,7 +259,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             "The 'return_value' attribute is currently not supported for init methods.",
         ));
     }
-    let crypto_utils = attributes.extract_flag(INIT_ATTRIBUTE_CRYPTO_UTILS).is_some();
+    let crypto_primitives = attributes.extract_flag(INIT_ATTRIBUTE_CRYPTO_PRIMITIVES).is_some();
 
     // Make sure that there are no unrecognized attributes. These would typically be
     // there due to an error. An improvement would be to find the nearest valid one
@@ -273,7 +273,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             low_level,
             parameter,
             return_value: None, // Return values are currently not supported on init methods.
-            crypto_utils,
+            crypto_primitives,
         },
     })
 }
@@ -289,7 +289,7 @@ const RECEIVE_ATTRIBUTE_PAYABLE: &str = "payable";
 const RECEIVE_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const RECEIVE_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
 const RECEIVE_ATTRIBUTE_MUTABLE: &str = "mutable";
-const RECEIVE_ATTRIBUTE_CRYPTO_UTILS: &str = "crypto_utils";
+const RECEIVE_ATTRIBUTE_CRYPTO_PRIMITIVES: &str = "crypto_primitives";
 
 fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attrs: I,
@@ -306,7 +306,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER).is_some();
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
     let mutable = attributes.extract_flag(RECEIVE_ATTRIBUTE_MUTABLE);
-    let crypto_utils = attributes.extract_flag(RECEIVE_ATTRIBUTE_CRYPTO_UTILS).is_some();
+    let crypto_primitives = attributes.extract_flag(RECEIVE_ATTRIBUTE_CRYPTO_PRIMITIVES).is_some();
 
     if let (Some(mutable), Some(low_level)) = (&mutable, &low_level) {
         let mut error = syn::Error::new(
@@ -349,7 +349,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 low_level: low_level.is_some(),
                 parameter,
                 return_value,
-                crypto_utils,
+                crypto_primitives,
             },
             mutable: mutable.is_some(), /* This is also optional, but does not belong in
                                          * OptionalArguments, as
@@ -366,7 +366,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                         low_level: low_level.is_some(),
                         parameter,
                         return_value,
-                        crypto_utils,
+                        crypto_primitives,
                     },
                     mutable: mutable.is_some(), /* TODO: This is also optional, but does not
                                                  * belong in
@@ -482,18 +482,18 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// #[init(contract = "my_contract", parameter = "MyParam")]
 /// ```
 ///
-/// ## `crypto_utils`: Function can access crypto utility functions
-/// Setting the `crypto_utils` attribute changes the required signature to
-/// include an extra argument `&impl HasCryptoUtils`, which provides crypto
-/// utility functions such as verifying signatures and hashing data.
+/// ## `crypto_primitives`: Function can access cryptographic primitives
+/// Setting the `crypto_primitives` attribute changes the required signature to
+/// include an extra argument `&impl HasCryptoPrimitives`, which provides
+/// cryptographic primitives such as verifying signatures and hashing data.
 ///
 /// ### Example
 /// ```ignore
-/// #[init(contract = "my_contract", crypto_utils)]
+/// #[init(contract = "my_contract", crypto_primitives)]
 /// fn some_init<S: HasStateApi>(
 ///     ctx: &impl HasInitContext,
 ///     state_build: StateBuilder<S>,
-///     crypto_utils: &impl HasCryptoUtils,
+///     crypto_primitives: &impl HasCryptoPrimitives,
 /// ) -> InitResult<MyState> {...}
 /// ```
 #[proc_macro_attribute]
@@ -774,18 +774,18 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///     // ...
 /// }
 /// ```
-/// ## `crypto_utils`: Function can access crypto utility functions
-/// Setting the `crypto_utils` attribute changes the required signature to
-/// include an extra argument `&impl HasCryptoUtils`, which provides crypto
-/// utility functions such as verifying signatures and hashing data.
+/// ## `crypto_primitives`: Function can access cryptographic primitives
+/// Setting the `crypto_primitives` attribute changes the required signature to
+/// include an extra argument `&impl HasCryptoPrimitives`, which provides
+/// cryptographic primitives such as verifying signatures and hashing data.
 ///
 /// ### Example
 /// ```ignore
-/// #[receive(contract = "my_contract", name = "some_receive", crypto_utils)]
+/// #[receive(contract = "my_contract", name = "some_receive", crypto_primitives)]
 /// fn some_receive<S: HasStateApi>(
 ///     ctx: &impl HasReceiveContext,
 ///     host: &impl HasHost<MyState, StateApiType = S>,
-///     crypto_utils: &impl HasCryptoUtils,
+///     crypto_primitives: &impl HasCryptoPrimitives,
 /// ) -> ReceiveResult<MyReturnValue> {...}
 /// ```
 #[proc_macro_attribute]
@@ -988,11 +988,12 @@ fn contract_function_optional_args_tokens(
         fn_args.push(quote!(&mut #logger_ident));
     }
 
-    if optional.crypto_utils {
-        required_args.push("crypto_utils: &impl HasCryptoUtils");
-        let crypto_utils_ident = format_ident!("crypto_utils");
-        setup_fn_args.extend(quote!(let #crypto_utils_ident = concordium_std::ExternCryptoUtils;));
-        fn_args.push(quote!(&#crypto_utils_ident));
+    if optional.crypto_primitives {
+        required_args.push("crypto_primitives: &impl HasCryptoPrimitives");
+        let crypto_primitives_ident = format_ident!("crypto_primitives");
+        setup_fn_args
+            .extend(quote!(let #crypto_primitives_ident = concordium_std::ExternCryptoPrimitives;));
+        fn_args.push(quote!(&#crypto_primitives_ident));
     }
 
     (setup_fn_args, fn_args)

@@ -99,8 +99,8 @@
 //!   receive method
 //! - [HasStateApi] for operations possible on the contract state
 //! - [HasHost] for invoking operations on the host and accessing the state
-//! - [HasCryptoUtils] for calling cryptographic utility functions such as
-//!   hashing and verifying signatures.
+//! - [HasCryptoPrimitives] for using cryptographic primitives such as hashing
+//!   and signature verification.
 //!
 //! # Signalling errors
 //! On the Wasm level contracts can signal errors by returning a negative i32

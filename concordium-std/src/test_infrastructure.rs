@@ -684,54 +684,56 @@ impl TestStateBuilder {
 }
 
 /// A closure used in tests for mocking calls to
-/// [`HasCryptoUtils::verify_ed25519_signature`].
-#[cfg(not(feature = "crypto-utils"))]
+/// [`HasCryptoPrimitives::verify_ed25519_signature`].
+#[cfg(not(feature = "crypto-primitives"))]
 type MockFnVerifyEd25519 = Box<dyn FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool>;
 
 /// A closure used in tests for mocking calls to
-/// [`HasCryptoUtils::verify_ecdsa_secp256k1_signature`].
-#[cfg(not(feature = "crypto-utils"))]
+/// [`HasCryptoPrimitives::verify_ecdsa_secp256k1_signature`].
+#[cfg(not(feature = "crypto-primitives"))]
 type MockFnEcdsaSecp256k1 =
     Box<dyn FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, [u8; 32]) -> bool>;
 
 /// A closure used in tests for mocking calls to
-/// [`HasCryptoUtils::hash_sha2_256`], [`HasCryptoUtils::hash_sha3_256`], or
-/// [`HasCryptoUtils::hash_keccak_256`].
-#[cfg(not(feature = "crypto-utils"))]
+/// [`HasCryptoPrimitives::hash_sha2_256`],
+/// [`HasCryptoPrimitives::hash_sha3_256`], or [`HasCryptoPrimitives::
+/// hash_keccak_256`].
+#[cfg(not(feature = "crypto-primitives"))]
 type MockFnHash256 = Box<dyn FnMut(&[u8]) -> Hash256>;
 
-/// A [`HasCryptoUtils`] implementation used for unit testing smart contracts.
+/// A [`HasCryptoPrimitives`] implementation used for unit testing smart
+/// contracts.
 ///
-/// You can test smart contracts that use the cryptographic utility methods in
+/// You can test smart contracts that use the cryptographic primitives in
 /// two different ways:
 ///
-/// 1. By setting up mock responses for the utility
-/// functions you need, for example with the
-/// [`setup_hash_sha_256_mock`](Self::setup_hash_sha2_256_mock) method.
+/// 1. By setting up mock responses for the functions you need, for example with
+/// the [`setup_hash_sha_256_mock`](Self::setup_hash_sha2_256_mock) method.
 /// 2. Or, by using the actual implementations. For this, you need to enable the
-/// "crypto-utils" feature.
-pub struct TestCryptoUtils {
-    #[cfg(not(feature = "crypto-utils"))]
+/// "crypto-primitives" feature.
+pub struct TestCryptoPrimitives {
+    #[cfg(not(feature = "crypto-primitives"))]
     verify_ed25519_signature_mock:         RefCell<Option<MockFnVerifyEd25519>>,
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     verify_ecdsa_secp256k1_signature_mock: RefCell<Option<MockFnEcdsaSecp256k1>>,
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     hash_sha2_256_mock:                    RefCell<Option<MockFnHash256>>,
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     hash_sha3_256_mock:                    RefCell<Option<MockFnHash256>>,
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     hash_keccak_256_mock:                  RefCell<Option<MockFnHash256>>,
 }
 
-/// Create a new [`TestCryptoUtils`], for which no mocks has been set up.
-impl Default for TestCryptoUtils {
+/// Create a new [`TestCryptoPrimitives`], for which no mocks has been set up.
+impl Default for TestCryptoPrimitives {
     fn default() -> Self { Self::new() }
 }
 
-impl TestCryptoUtils {
-    /// Create a new [`TestCryptoUtils`], for which no mocks has been set up.
+impl TestCryptoPrimitives {
+    /// Create a new [`TestCryptoPrimitives`], for which no mocks has been set
+    /// up.
     pub fn new() -> Self {
-        #[cfg(not(feature = "crypto-utils"))]
+        #[cfg(not(feature = "crypto-primitives"))]
         return Self {
             verify_ed25519_signature_mock:         RefCell::new(None),
             verify_ecdsa_secp256k1_signature_mock: RefCell::new(None),
@@ -739,29 +741,32 @@ impl TestCryptoUtils {
             hash_sha3_256_mock:                    RefCell::new(None),
             hash_keccak_256_mock:                  RefCell::new(None),
         };
-        #[cfg(feature = "crypto-utils")]
+        #[cfg(feature = "crypto-primitives")]
         Self {}
     }
 
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     /// Set up a mock for
-    /// [`verify_ed25519_signature`](HasCryptoUtils::verify_ed25519_signature).
+    /// [`verify_ed25519_signature`](HasCryptoPrimitives::
+    /// verify_ed25519_signature).
     ///
-    /// This is not available if the "crypto-utils" feature is enabled. For more
-    /// information on why, see the documentation of [`TestCryptoUtils`].
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
     pub fn setup_verify_ed25519_signature_mock<F>(&self, mock: F)
     where
         F: FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool + 'static, {
         *self.verify_ed25519_signature_mock.borrow_mut() = Some(Box::new(mock));
     }
 
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     /// Set up a mock for [`verify_ecdsa_secp256k1_signature`][link].
     ///
-    /// This is not available if the "crypto-utils" feature is enabled. For more
-    /// information on why, see the documentation of [`TestCryptoUtils`].
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
     ///
-    /// [link]: HasCryptoUtils::verify_ecdsa_secp256k1_signature
+    /// [link]: HasCryptoPrimitives::verify_ecdsa_secp256k1_signature
     pub fn setup_verify_ecdsa_secp256k1_signature_mock<F>(&self, mock: F)
     where
         F: FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, [u8; 32]) -> bool + 'static,
@@ -769,36 +774,39 @@ impl TestCryptoUtils {
         *self.verify_ecdsa_secp256k1_signature_mock.borrow_mut() = Some(Box::new(mock));
     }
 
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     /// Set up a mock for
-    /// [`hash_sha2_256`](HasCryptoUtils::hash_sha2_256).
+    /// [`hash_sha2_256`](HasCryptoPrimitives::hash_sha2_256).
     ///
-    /// This is not available if the "crypto-utils" feature is enabled. For more
-    /// information on why, see the documentation of [`TestCryptoUtils`].
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
     pub fn setup_hash_sha2_256_mock<F>(&self, mock: F)
     where
         F: FnMut(&[u8]) -> Hash256 + 'static, {
         *self.hash_sha2_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     /// Set up a mock for
-    /// [`hash_sha3_256`](HasCryptoUtils::hash_sha3_256).
+    /// [`hash_sha3_256`](HasCryptoPrimitives::hash_sha3_256).
     ///
-    /// This is not available if the "crypto-utils" feature is enabled. For more
-    /// information on why, see the documentation of [`TestCryptoUtils`].
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
     pub fn setup_hash_sha3_256_mock<F>(&self, mock: F)
     where
         F: FnMut(&[u8]) -> Hash256 + 'static, {
         *self.hash_sha3_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     /// Set up a mock for
-    /// [`hash_keccak_256`](HasCryptoUtils::hash_keccak_256).
+    /// [`hash_keccak_256`](HasCryptoPrimitives::hash_keccak_256).
     ///
-    /// This is not available if the "crypto-utils" feature is enabled. For more
-    /// information on why, see the documentation of [`TestCryptoUtils`].
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
     pub fn setup_hash_keccak_256_mock<F>(&self, mock: F)
     where
         F: FnMut(&[u8]) -> Hash256 + 'static, {
@@ -806,27 +814,27 @@ impl TestCryptoUtils {
     }
 
     /// Fail with an error message that tells you to set up mocks
-    /// OR enable the crypto-utils feature.
-    #[cfg(not(feature = "crypto-utils"))]
-    fn fail_with_crypto_utils_error(method_name: &str) -> ! {
+    /// OR enable the crypto-primitives feature.
+    #[cfg(not(feature = "crypto-primitives"))]
+    fn fail_with_crypto_primitives_error(method_name: &str) -> ! {
         fail!(
-            "To use {}, you need to either enable the \"concordium-std/crypto-utils\" feature, \
-             which makes it use an actual implemenation, or set up a mock with the setup_{}_mock \
-             method on TestCryptoUtils.",
+            "To use {}, you need to either enable the \"concordium-std/crypto-primitives\" \
+             feature, which makes it use an actual implemenation, or set up a mock with the \
+             setup_{}_mock method on TestCryptoPrimitives.",
             method_name,
             method_name
         )
     }
 }
 
-impl HasCryptoUtils for TestCryptoUtils {
+impl HasCryptoPrimitives for TestCryptoPrimitives {
     fn verify_ed25519_signature(
         &self,
         public_key: PublicKeyEd25519,
         signature: SignatureEd25519,
         message: &[u8],
     ) -> bool {
-        #[cfg(feature = "crypto-utils")]
+        #[cfg(feature = "crypto-primitives")]
         {
             use std::convert::TryFrom;
             let signature = ed25519_zebra::Signature::try_from(&signature.0[..]);
@@ -838,12 +846,12 @@ impl HasCryptoUtils for TestCryptoUtils {
                 _ => return false,
             }
         }
-        #[cfg(not(feature = "crypto-utils"))]
+        #[cfg(not(feature = "crypto-primitives"))]
         {
             if let Some(ref mut mock) = *self.verify_ed25519_signature_mock.borrow_mut() {
                 mock(public_key, signature, message)
             } else {
-                Self::fail_with_crypto_utils_error("verify_ed25519_signature")
+                Self::fail_with_crypto_primitives_error("verify_ed25519_signature")
             }
         }
     }
@@ -854,7 +862,7 @@ impl HasCryptoUtils for TestCryptoUtils {
         signature: SignatureEcdsaSecp256k1,
         message_hash: [u8; 32],
     ) -> bool {
-        #[cfg(feature = "crypto-utils")]
+        #[cfg(feature = "crypto-primitives")]
         {
             let signature = secp256k1::ecdsa::Signature::from_compact(&signature.0[..]);
             let public_key = secp256k1::PublicKey::from_slice(&public_key.0[..]);
@@ -867,60 +875,60 @@ impl HasCryptoUtils for TestCryptoUtils {
                 _ => return false,
             }
         }
-        #[cfg(not(feature = "crypto-utils"))]
+        #[cfg(not(feature = "crypto-primitives"))]
         {
             if let Some(ref mut mock) = *self.verify_ecdsa_secp256k1_signature_mock.borrow_mut() {
                 mock(public_key, signature, message_hash)
             } else {
-                Self::fail_with_crypto_utils_error("verify_ecdsa_secp256k1")
+                Self::fail_with_crypto_primitives_error("verify_ecdsa_secp256k1")
             }
         }
     }
 
     fn hash_sha2_256(&self, data: &[u8]) -> Hash256 {
-        #[cfg(feature = "crypto-utils")]
+        #[cfg(feature = "crypto-primitives")]
         {
             use sha2::Digest;
             Hash256(sha2::Sha256::digest(data).into())
         }
-        #[cfg(not(feature = "crypto-utils"))]
+        #[cfg(not(feature = "crypto-primitives"))]
         {
             if let Some(ref mut mock) = *self.hash_sha2_256_mock.borrow_mut() {
                 mock(data)
             } else {
-                Self::fail_with_crypto_utils_error("hash_sha2_256")
+                Self::fail_with_crypto_primitives_error("hash_sha2_256")
             }
         }
     }
 
     fn hash_sha3_256(&self, data: &[u8]) -> Hash256 {
-        #[cfg(feature = "crypto-utils")]
+        #[cfg(feature = "crypto-primitives")]
         {
             use sha3::Digest;
             Hash256(sha3::Sha3_256::digest(data).into())
         }
-        #[cfg(not(feature = "crypto-utils"))]
+        #[cfg(not(feature = "crypto-primitives"))]
         {
             if let Some(ref mut mock) = *self.hash_sha3_256_mock.borrow_mut() {
                 mock(data)
             } else {
-                Self::fail_with_crypto_utils_error("hash_sha3_256")
+                Self::fail_with_crypto_primitives_error("hash_sha3_256")
             }
         }
     }
 
     fn hash_keccak_256(&self, data: &[u8]) -> Hash256 {
-        #[cfg(feature = "crypto-utils")]
+        #[cfg(feature = "crypto-primitives")]
         {
             use sha3::Digest;
             Hash256(sha3::Keccak256::digest(data).into())
         }
-        #[cfg(not(feature = "crypto-utils"))]
+        #[cfg(not(feature = "crypto-primitives"))]
         {
             if let Some(ref mut mock) = *self.hash_keccak_256_mock.borrow_mut() {
                 mock(data)
             } else {
-                Self::fail_with_crypto_utils_error("hash_keccak_256")
+                Self::fail_with_crypto_primitives_error("hash_keccak_256")
             }
         }
     }

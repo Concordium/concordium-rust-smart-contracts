@@ -33,7 +33,7 @@ default = ["std"]
 std = ["concordium-contracts-common/std"]
 wasm-test = ["concordium-std-derive/wasm-test"]
 build-schema = ["concordium-std-derive/build-schema"]
-crypto-utils = ["sha2", "sha3", "secp256k1", "ed25519-zebra"]
+crypto-primitives = ["sha2", "sha3", "secp256k1", "ed25519-zebra"]
 
 [lib]
 crate-type = ["rlib"]

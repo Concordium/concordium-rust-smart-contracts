@@ -1,9 +1,9 @@
 //! # Signature Verifier contract for Ed25519
 //!
 //! This contract has a single receive function, which verifies a Ed25519
-//! signature. It shows off how to use the `crypto_utils` attribute, which gives
-//! the function access to cryptographic utility functions from the
-//! [`HasCryptoUtils`] trait.
+//! signature. It shows off how to use the `crypto_primitives` attribute, which
+//! gives the function access to the cryptographic primitives from the
+//! [`HasCryptoPrimitives`] trait.
 use concordium_std::*;
 
 type State = ();
@@ -28,18 +28,21 @@ fn contract_init<S: HasStateApi>(
 #[receive(
     contract = "signature-verifier",
     name = "verify",
-    crypto_utils,
+    crypto_primitives,
     parameter = "VerificationParameter",
     return_value = "bool"
 )]
 fn contract_receive<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     _host: &impl HasHost<State, StateApiType = S>,
-    crypto_utils: &impl HasCryptoUtils,
+    crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<bool> {
     let param: VerificationParameter = ctx.parameter_cursor().get()?;
-    let is_valid =
-        crypto_utils.verify_ed25519_signature(param.public_key, param.signature, &param.message);
+    let is_valid = crypto_primitives.verify_ed25519_signature(
+        param.public_key,
+        param.signature,
+        &param.message,
+    );
     Ok(is_valid)
 }
 
@@ -49,11 +52,11 @@ mod tests {
     use concordium_std::test_infrastructure::*;
 
     #[concordium_test]
-    #[cfg(not(feature = "crypto-utils"))]
+    #[cfg(not(feature = "crypto-primitives"))]
     fn test_receive_with_mocks() {
         let mut ctx = TestReceiveContext::empty();
         let host = TestHost::new((), TestStateBuilder::new());
-        let crypto_utils = TestCryptoUtils::new();
+        let crypto_primitives = TestCryptoPrimitives::new();
 
         let param = VerificationParameter {
             public_key: PublicKeyEd25519([0; 32]),
@@ -63,18 +66,18 @@ mod tests {
         let param_bytes = to_bytes(&param);
         ctx.set_parameter(&param_bytes);
 
-        crypto_utils.setup_verify_ed25519_signature_mock(|_, _, _| true);
+        crypto_primitives.setup_verify_ed25519_signature_mock(|_, _, _| true);
 
-        let res = contract_receive(&ctx, &host, &crypto_utils);
+        let res = contract_receive(&ctx, &host, &crypto_primitives);
         claim_eq!(res, Ok(true))
     }
 
     #[concordium_test]
-    #[cfg(feature = "crypto-utils")]
+    #[cfg(feature = "crypto-primitives")]
     fn test_receive() {
         let mut ctx = TestReceiveContext::empty();
         let host = TestHost::new((), TestStateBuilder::new());
-        let crypto_utils = TestCryptoUtils::new();
+        let crypto_primitives = TestCryptoPrimitives::new();
 
         let param = VerificationParameter {
             public_key: PublicKeyEd25519([
@@ -92,7 +95,7 @@ mod tests {
         let param_bytes = to_bytes(&param);
         ctx.set_parameter(&param_bytes);
 
-        let res = contract_receive(&ctx, &host, &crypto_utils);
+        let res = contract_receive(&ctx, &host, &crypto_primitives);
         claim_eq!(res, Ok(true))
     }
 }
