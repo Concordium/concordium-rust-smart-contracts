@@ -140,6 +140,7 @@ fn auction_bid<S: HasStateApi>(
     Ok(())
 }
 
+/// View function that returns the contents of the state except the map of individual bids.
 #[receive(contract = "auction", name = "view", return_value = "ViewableState")]
 fn view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
