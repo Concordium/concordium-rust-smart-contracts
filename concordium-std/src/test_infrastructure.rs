@@ -746,13 +746,13 @@ impl TestCryptoPrimitives {
     }
 
     #[cfg(not(feature = "crypto-primitives"))]
-    /// Set up a mock for
-    /// [`verify_ed25519_signature`](HasCryptoPrimitives::
-    /// verify_ed25519_signature).
+    /// Set up a mock for [`verify_ed25519_signature`][link].
     ///
     /// This is not available if the "crypto-primitives" feature is enabled. For
     /// more information on why, see the documentation of
     /// [`TestCryptoPrimitives`].
+    ///
+    /// [link]: HasCryptoPrimitives::verify_ed25519_signature
     pub fn setup_verify_ed25519_signature_mock<F>(&self, mock: F)
     where
         F: FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool + 'static, {
