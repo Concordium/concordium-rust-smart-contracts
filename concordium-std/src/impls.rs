@@ -1,4 +1,5 @@
 use crate::{
+    boxed,
     cell::UnsafeCell,
     collections::{BTreeMap, BTreeSet},
     convert::{self, TryInto},
@@ -2679,7 +2680,7 @@ impl Deserial for PublicKeyEd25519 {
 
 impl schema::SchemaType for PublicKeyEd25519 {
     fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(32, Box::new(schema::Type::U8))
+        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
     }
 }
 
@@ -2695,7 +2696,7 @@ impl Deserial for PublicKeyEcdsaSecp256k1 {
 
 impl schema::SchemaType for PublicKeyEcdsaSecp256k1 {
     fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(33, Box::new(schema::Type::U8))
+        schema::Type::Array(33, boxed::Box::new(schema::Type::U8))
     }
 }
 
@@ -2711,7 +2712,7 @@ impl Deserial for SignatureEd25519 {
 
 impl schema::SchemaType for SignatureEd25519 {
     fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(64, Box::new(schema::Type::U8))
+        schema::Type::Array(64, boxed::Box::new(schema::Type::U8))
     }
 }
 
@@ -2727,7 +2728,7 @@ impl Deserial for SignatureEcdsaSecp256k1 {
 
 impl schema::SchemaType for SignatureEcdsaSecp256k1 {
     fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(64, Box::new(schema::Type::U8))
+        schema::Type::Array(64, boxed::Box::new(schema::Type::U8))
     }
 }
 
@@ -2743,6 +2744,6 @@ impl Deserial for Hash256 {
 
 impl schema::SchemaType for Hash256 {
     fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(32, Box::new(schema::Type::U8))
+        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
     }
 }
