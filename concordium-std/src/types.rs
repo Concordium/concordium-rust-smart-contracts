@@ -959,22 +959,23 @@ impl<S> StateBuilder<S> {
 #[doc(hidden)]
 pub struct ExternCryptoPrimitives;
 
-/// Public key for Ed25519.
+/// Public key for Ed25519. Must be 32 bytes long.
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
 pub struct PublicKeyEd25519(pub [u8; 32]);
 
-/// Public key for ECDSA over Secp256k1.
+/// Public key for ECDSA over Secp256k1. Must be 33 bytes long.
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
 pub struct PublicKeyEcdsaSecp256k1(pub [u8; 33]);
 
-/// Signature for a Ed25519 message.
+/// Signature for a Ed25519 message. Must be 64 bytes long.
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
 pub struct SignatureEd25519(pub [u8; 64]);
 
-/// Signature for a ECDSA (over Secp256k1) message.
+/// Signature for a ECDSA (over Secp256k1) message. Must be 64 bytes longs
+/// (serialized in compressed format).
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
 pub struct SignatureEcdsaSecp256k1(pub [u8; 64]);
