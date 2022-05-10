@@ -405,8 +405,8 @@ pub trait HasLogger {
     }
 }
 
-/// Objects which provide cryptographic utility functions.
-pub trait HasCryptoUtils {
+/// Objects which provide cryptographic primitives.
+pub trait HasCryptoPrimitives {
     /// Verify an ed25519 signature.
     fn verify_ed25519_signature(
         &self,

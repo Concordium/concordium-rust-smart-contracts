@@ -2120,7 +2120,7 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
     }
 }
 
-impl HasCryptoUtils for ExternCryptoUtils {
+impl HasCryptoPrimitives for ExternCryptoPrimitives {
     fn verify_ed25519_signature(
         &self,
         public_key: PublicKeyEd25519,
