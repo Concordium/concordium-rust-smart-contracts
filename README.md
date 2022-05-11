@@ -13,6 +13,11 @@ while the `concordium-std` library exposes a high-level API that smart contract
 writers can use when writing contracts, alleviating them from the need to deal
 with low-level details of how the interaction with the chain works.
 
+## Versions
+
+- `concordium-std` **prior to** version 3 supported version 0 contracts
+- `concordium-std` version 3 only supports building version 1 contracts
+
 ## Examples
 
 The [examples](./examples) directory contains some smart contracts that are used
