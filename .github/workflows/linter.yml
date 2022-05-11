@@ -17,8 +17,8 @@ jobs:
     strategy:
       matrix:
         crates:
-          - concordium-std/Cargo.toml
           - concordium-std-derive/Cargo.toml
+          - concordium-std/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis1-multi/Cargo.toml
           - examples/cis1-nft/Cargo.toml
@@ -34,6 +34,7 @@ jobs:
           - examples/proxy/Cargo.toml
           - examples/proxy/Cargo.toml
           - examples/recorder/Cargo.toml
+          - examples/signature-verifier/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
 
     steps:
@@ -205,6 +206,41 @@ jobs:
           command: build
           args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }}
 
+  check-crypto-examples:
+    name: Check crypto examples
+    runs-on: ubuntu-latest
+    needs: [rustfmt, clippy-schema]
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - wasm32-unknown-unknown
+
+        features:
+          - crypto-primitives
+
+        crates:
+          - examples/signature-verifier/Cargo.toml
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.53
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo build with crypto-primitives feature
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} --lib
 
   clippy-schema:
     name: Clippy on examples
@@ -231,6 +267,7 @@ jobs:
           - examples/proxy/Cargo.toml
           - examples/proxy/Cargo.toml
           - examples/recorder/Cargo.toml
+          - examples/signature-verifier/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
 
     steps:
@@ -315,6 +352,7 @@ jobs:
           - examples/proxy/Cargo.toml
           - examples/proxy/Cargo.toml
           - examples/recorder/Cargo.toml
+          - examples/signature-verifier/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
 
     steps:

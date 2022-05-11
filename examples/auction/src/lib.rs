@@ -20,7 +20,7 @@ use core::fmt::Debug;
 /// winner gets their money back.
 
 /// The state in which an auction can be.
-#[derive(Debug, Serialize, SchemaType, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Serialize, SchemaType, Eq, PartialEq, PartialOrd, Clone)]
 pub enum AuctionState {
     /// The auction is either
     /// - still accepting bids or
@@ -37,6 +37,15 @@ pub enum AuctionState {
 #[derive(Debug, Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
+    /// The part of the state that can be viewed
+    viewable_state: ViewableState,
+    /// Keeping track of which account bid how much money
+    bids:           StateMap<AccountAddress, Amount, S>,
+}
+
+/// The part of the state to be viewed using `concordium-client contract invoke`
+#[derive(Debug, Serialize, SchemaType, Clone)]
+pub struct ViewableState {
     /// Has the item been sold?
     auction_state: AuctionState,
     /// The highest bid so far (stored explicitly so that bidders can quickly
@@ -47,8 +56,6 @@ pub struct State<S> {
     /// Expiration time of the auction at which bids will be closed (to be
     /// displayed to the auction participants)
     expiry:        Timestamp,
-    /// Keeping track of which account bid how much money
-    bids:          StateMap<AccountAddress, Amount, S>,
 }
 
 /// Type of the parameter to the `init` function.
@@ -87,12 +94,15 @@ fn auction_init<S: HasStateApi>(
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
-    let state = State {
+    let viewable_state = ViewableState {
         auction_state: AuctionState::NotSoldYet,
         highest_bid:   Amount::zero(),
         item:          parameter.item,
         expiry:        parameter.expiry,
-        bids:          state_builder.new_map(),
+    };
+    let state = State {
+        viewable_state,
+        bids: state_builder.new_map(),
     };
     Ok(state)
 }
@@ -105,10 +115,16 @@ fn auction_bid<S: HasStateApi>(
     amount: Amount,
 ) -> Result<(), BidError> {
     let state = host.state_mut();
-    ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionFinalized);
+    ensure!(
+        state.viewable_state.auction_state == AuctionState::NotSoldYet,
+        BidError::AuctionFinalized
+    );
 
     let slot_time = ctx.metadata().slot_time();
-    ensure!(slot_time <= state.expiry, BidError::BidsOverWaitingForAuctionFinalization);
+    ensure!(
+        slot_time <= state.viewable_state.expiry,
+        BidError::BidsOverWaitingForAuctionFinalization
+    );
 
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(BidError::ContractSender),
@@ -117,11 +133,21 @@ fn auction_bid<S: HasStateApi>(
     let mut bid_to_update = state.bids.entry(sender_address).or_insert(Amount::zero());
     *bid_to_update += amount;
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(*bid_to_update > state.highest_bid, BidError::BidTooLow);
+    ensure!(*bid_to_update > state.viewable_state.highest_bid, BidError::BidTooLow);
 
-    state.highest_bid = *bid_to_update;
+    state.viewable_state.highest_bid = *bid_to_update;
 
     Ok(())
+}
+
+/// View function that returns the contents of the state except the map of
+/// individual bids.
+#[receive(contract = "auction", name = "view", return_value = "ViewableState")]
+fn view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<ViewableState> {
+    Ok(host.state().viewable_state.clone())
 }
 
 /// Receive function used to finalize the auction, returning all bids to their
@@ -132,10 +158,13 @@ fn auction_finalize<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), FinalizeError> {
     let state = host.state();
-    ensure!(state.auction_state == AuctionState::NotSoldYet, FinalizeError::AuctionFinalized);
+    ensure!(
+        state.viewable_state.auction_state == AuctionState::NotSoldYet,
+        FinalizeError::AuctionFinalized
+    );
 
     let slot_time = ctx.metadata().slot_time();
-    ensure!(slot_time > state.expiry, FinalizeError::AuctionStillActive);
+    ensure!(slot_time > state.viewable_state.expiry, FinalizeError::AuctionStillActive);
 
     let owner = ctx.owner();
 
@@ -143,13 +172,13 @@ fn auction_finalize<S: HasStateApi>(
     if balance == Amount::zero() {
         Ok(())
     } else {
-        if host.invoke_transfer(&owner, state.highest_bid).is_err() {
+        if host.invoke_transfer(&owner, state.viewable_state.highest_bid).is_err() {
             bail!(FinalizeError::BidMapError);
         }
         let mut remaining_bid = None;
         // Return bids that are smaller than highest
         for (addr, amnt) in state.bids.iter() {
-            if *amnt < state.highest_bid {
+            if *amnt < state.viewable_state.highest_bid {
                 if host.invoke_transfer(&*addr, *amnt).is_err() {
                     bail!(FinalizeError::BidMapError);
                 }
@@ -161,8 +190,8 @@ fn auction_finalize<S: HasStateApi>(
         // Ensure that the only bidder left in the map is the one with the highest bid
         match remaining_bid {
             Some((addr, amount)) => {
-                ensure!(*amount == state.highest_bid, FinalizeError::BidMapError);
-                host.state_mut().auction_state = AuctionState::Sold(*addr);
+                ensure!(*amount == state.viewable_state.highest_bid, FinalizeError::BidMapError);
+                host.state_mut().viewable_state.auction_state = AuctionState::Sold(*addr);
                 Ok(())
             }
             None => bail!(FinalizeError::BidMapError),
@@ -304,8 +333,8 @@ mod tests {
         finres2.expect_report("Finalizing auction should work");
         let transfers = host.get_transfers();
         claim_eq!(&transfers[..], &[(carol, winning_amount), (alice, amount + amount)]);
-        claim_eq!(host.state().auction_state, AuctionState::Sold(bob));
-        claim_eq!(host.state().highest_bid, winning_amount);
+        claim_eq!(host.state().viewable_state.auction_state, AuctionState::Sold(bob));
+        claim_eq!(host.state().viewable_state.highest_bid, winning_amount);
 
         // attempting to finalize auction again should fail
         let finres3 = auction_finalize(&ctx5, &mut host);

@@ -683,6 +683,257 @@ impl TestStateBuilder {
     pub fn new() -> Self { Self::open(TestStateApi::new()) }
 }
 
+/// A closure used in tests for mocking calls to
+/// [`HasCryptoPrimitives::verify_ed25519_signature`].
+#[cfg(not(feature = "crypto-primitives"))]
+type MockFnVerifyEd25519 = Box<dyn FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool>;
+
+/// A closure used in tests for mocking calls to
+/// [`HasCryptoPrimitives::verify_ecdsa_secp256k1_signature`].
+#[cfg(not(feature = "crypto-primitives"))]
+type MockFnEcdsaSecp256k1 =
+    Box<dyn FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, [u8; 32]) -> bool>;
+
+/// A closure used in tests for mocking calls to
+/// [`HasCryptoPrimitives::hash_sha2_256`],
+/// [`HasCryptoPrimitives::hash_sha3_256`], or [`HasCryptoPrimitives::
+/// hash_keccak_256`].
+#[cfg(not(feature = "crypto-primitives"))]
+type MockFnHash256 = Box<dyn FnMut(&[u8]) -> Hash256>;
+
+/// A [`HasCryptoPrimitives`] implementation used for unit testing smart
+/// contracts.
+///
+/// You can test smart contracts that use the cryptographic primitives in
+/// two different ways:
+///
+/// 1. By setting up mock responses for the functions you need, for example with
+/// the [`setup_hash_sha_256_mock`](Self::setup_hash_sha2_256_mock) method.
+/// 2. Or, by using the actual implementations. For this, you need to enable the
+/// "crypto-primitives" feature.
+pub struct TestCryptoPrimitives {
+    #[cfg(not(feature = "crypto-primitives"))]
+    verify_ed25519_signature_mock:         RefCell<Option<MockFnVerifyEd25519>>,
+    #[cfg(not(feature = "crypto-primitives"))]
+    verify_ecdsa_secp256k1_signature_mock: RefCell<Option<MockFnEcdsaSecp256k1>>,
+    #[cfg(not(feature = "crypto-primitives"))]
+    hash_sha2_256_mock:                    RefCell<Option<MockFnHash256>>,
+    #[cfg(not(feature = "crypto-primitives"))]
+    hash_sha3_256_mock:                    RefCell<Option<MockFnHash256>>,
+    #[cfg(not(feature = "crypto-primitives"))]
+    hash_keccak_256_mock:                  RefCell<Option<MockFnHash256>>,
+}
+
+/// Create a new [`TestCryptoPrimitives`], for which no mocks has been set up.
+impl Default for TestCryptoPrimitives {
+    fn default() -> Self { Self::new() }
+}
+
+impl TestCryptoPrimitives {
+    /// Create a new [`TestCryptoPrimitives`], for which no mocks has been set
+    /// up.
+    pub fn new() -> Self {
+        #[cfg(not(feature = "crypto-primitives"))]
+        return Self {
+            verify_ed25519_signature_mock:         RefCell::new(None),
+            verify_ecdsa_secp256k1_signature_mock: RefCell::new(None),
+            hash_sha2_256_mock:                    RefCell::new(None),
+            hash_sha3_256_mock:                    RefCell::new(None),
+            hash_keccak_256_mock:                  RefCell::new(None),
+        };
+        #[cfg(feature = "crypto-primitives")]
+        Self {}
+    }
+
+    #[cfg(not(feature = "crypto-primitives"))]
+    /// Set up a mock for [`verify_ed25519_signature`][link].
+    ///
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
+    ///
+    /// [link]: HasCryptoPrimitives::verify_ed25519_signature
+    pub fn setup_verify_ed25519_signature_mock<F>(&self, mock: F)
+    where
+        F: FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool + 'static, {
+        *self.verify_ed25519_signature_mock.borrow_mut() = Some(Box::new(mock));
+    }
+
+    #[cfg(not(feature = "crypto-primitives"))]
+    /// Set up a mock for [`verify_ecdsa_secp256k1_signature`][link].
+    ///
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
+    ///
+    /// [link]: HasCryptoPrimitives::verify_ecdsa_secp256k1_signature
+    pub fn setup_verify_ecdsa_secp256k1_signature_mock<F>(&self, mock: F)
+    where
+        F: FnMut(PublicKeyEcdsaSecp256k1, SignatureEcdsaSecp256k1, [u8; 32]) -> bool + 'static,
+    {
+        *self.verify_ecdsa_secp256k1_signature_mock.borrow_mut() = Some(Box::new(mock));
+    }
+
+    #[cfg(not(feature = "crypto-primitives"))]
+    /// Set up a mock for
+    /// [`hash_sha2_256`](HasCryptoPrimitives::hash_sha2_256).
+    ///
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
+    pub fn setup_hash_sha2_256_mock<F>(&self, mock: F)
+    where
+        F: FnMut(&[u8]) -> Hash256 + 'static, {
+        *self.hash_sha2_256_mock.borrow_mut() = Some(Box::new(mock));
+    }
+
+    #[cfg(not(feature = "crypto-primitives"))]
+    /// Set up a mock for
+    /// [`hash_sha3_256`](HasCryptoPrimitives::hash_sha3_256).
+    ///
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
+    pub fn setup_hash_sha3_256_mock<F>(&self, mock: F)
+    where
+        F: FnMut(&[u8]) -> Hash256 + 'static, {
+        *self.hash_sha3_256_mock.borrow_mut() = Some(Box::new(mock));
+    }
+
+    #[cfg(not(feature = "crypto-primitives"))]
+    /// Set up a mock for
+    /// [`hash_keccak_256`](HasCryptoPrimitives::hash_keccak_256).
+    ///
+    /// This is not available if the "crypto-primitives" feature is enabled. For
+    /// more information on why, see the documentation of
+    /// [`TestCryptoPrimitives`].
+    pub fn setup_hash_keccak_256_mock<F>(&self, mock: F)
+    where
+        F: FnMut(&[u8]) -> Hash256 + 'static, {
+        *self.hash_keccak_256_mock.borrow_mut() = Some(Box::new(mock));
+    }
+
+    /// Fail with an error message that tells you to set up mocks
+    /// OR enable the crypto-primitives feature.
+    #[cfg(not(feature = "crypto-primitives"))]
+    fn fail_with_crypto_primitives_error(method_name: &str) -> ! {
+        fail!(
+            "To use {}, you need to either enable the \"concordium-std/crypto-primitives\" \
+             feature, which makes it use an actual implemenation, or set up a mock with the \
+             setup_{}_mock method on TestCryptoPrimitives.",
+            method_name,
+            method_name
+        )
+    }
+}
+
+impl HasCryptoPrimitives for TestCryptoPrimitives {
+    fn verify_ed25519_signature(
+        &self,
+        public_key: PublicKeyEd25519,
+        signature: SignatureEd25519,
+        message: &[u8],
+    ) -> bool {
+        #[cfg(feature = "crypto-primitives")]
+        {
+            use std::convert::TryFrom;
+            let signature = ed25519_zebra::Signature::try_from(&signature.0[..]);
+            let public_key = ed25519_zebra::VerificationKey::try_from(&public_key.0[..]);
+            match (signature, public_key) {
+                (Ok(ref signature), Ok(public_key)) => {
+                    return public_key.verify(signature, message).is_ok()
+                }
+                _ => return false,
+            }
+        }
+        #[cfg(not(feature = "crypto-primitives"))]
+        {
+            if let Some(ref mut mock) = *self.verify_ed25519_signature_mock.borrow_mut() {
+                mock(public_key, signature, message)
+            } else {
+                Self::fail_with_crypto_primitives_error("verify_ed25519_signature")
+            }
+        }
+    }
+
+    fn verify_ecdsa_secp256k1_signature(
+        &self,
+        public_key: PublicKeyEcdsaSecp256k1,
+        signature: SignatureEcdsaSecp256k1,
+        message_hash: [u8; 32],
+    ) -> bool {
+        #[cfg(feature = "crypto-primitives")]
+        {
+            let signature = secp256k1::ecdsa::Signature::from_compact(&signature.0[..]);
+            let public_key = secp256k1::PublicKey::from_slice(&public_key.0[..]);
+            let message_hash = secp256k1::Message::from_slice(&message_hash[..]);
+            match (signature, public_key, message_hash) {
+                (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
+                    let verifier = secp256k1::Secp256k1::verification_only();
+                    return verifier.verify_ecdsa(&message_hash, &signature, &public_key).is_ok();
+                }
+                _ => return false,
+            }
+        }
+        #[cfg(not(feature = "crypto-primitives"))]
+        {
+            if let Some(ref mut mock) = *self.verify_ecdsa_secp256k1_signature_mock.borrow_mut() {
+                mock(public_key, signature, message_hash)
+            } else {
+                Self::fail_with_crypto_primitives_error("verify_ecdsa_secp256k1")
+            }
+        }
+    }
+
+    fn hash_sha2_256(&self, data: &[u8]) -> Hash256 {
+        #[cfg(feature = "crypto-primitives")]
+        {
+            use sha2::Digest;
+            Hash256(sha2::Sha256::digest(data).into())
+        }
+        #[cfg(not(feature = "crypto-primitives"))]
+        {
+            if let Some(ref mut mock) = *self.hash_sha2_256_mock.borrow_mut() {
+                mock(data)
+            } else {
+                Self::fail_with_crypto_primitives_error("hash_sha2_256")
+            }
+        }
+    }
+
+    fn hash_sha3_256(&self, data: &[u8]) -> Hash256 {
+        #[cfg(feature = "crypto-primitives")]
+        {
+            use sha3::Digest;
+            Hash256(sha3::Sha3_256::digest(data).into())
+        }
+        #[cfg(not(feature = "crypto-primitives"))]
+        {
+            if let Some(ref mut mock) = *self.hash_sha3_256_mock.borrow_mut() {
+                mock(data)
+            } else {
+                Self::fail_with_crypto_primitives_error("hash_sha3_256")
+            }
+        }
+    }
+
+    fn hash_keccak_256(&self, data: &[u8]) -> Hash256 {
+        #[cfg(feature = "crypto-primitives")]
+        {
+            use sha3::Digest;
+            Hash256(sha3::Keccak256::digest(data).into())
+        }
+        #[cfg(not(feature = "crypto-primitives"))]
+        {
+            if let Some(ref mut mock) = *self.hash_keccak_256_mock.borrow_mut() {
+                mock(data)
+            } else {
+                Self::fail_with_crypto_primitives_error("hash_keccak_256")
+            }
+        }
+    }
+}
+
 impl HasStateEntry for TestStateEntry {
     type Error = TestStateError;
     type StateEntryData = Rc<RefCell<TestStateEntryData>>;
@@ -1125,8 +1376,10 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
     /// This can be set with `set_self_balance` and defaults to 0.
     fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
 
+    /// Get the state builder.
     fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
 
+    /// Get the state and the state builder.
     fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>) {
         (&mut self.state, &mut self.state_builder)
     }

@@ -2,21 +2,6 @@
 //! for the Concordium blockchain. It aims to provide safe wrappers around the
 //! core primitives exposed by the chain and accessible to smart contracts.
 //!
-//! By default the library will be linked with the
-//! [std](https://doc.rust-lang.org/std/) crate, the rust standard library,
-//! however to minimize code size this library supports toggling compilation
-//! with the `#![no_std]` attribute via the feature `std` which is enabled by
-//! default. Compilation without the `std` feature requires a nightly version of
-//! rust.
-//!
-//! To use this library without the `std` feature you have to disable it, which
-//! can be done, for example, as follows.
-//! ```toml
-//! [dependencies.concordium-std]
-//! default-features = false
-//! ```
-//! In your project's `Cargo.toml` file.
-//!
 //! The library is meant to be used as a standard library for developing smart
 //! contracts. For this reason it re-exports a number of definitions from other
 //! libraries.
@@ -40,7 +25,34 @@
 //! `unreachable` instruction, which triggers a runtime failure, aborting
 //! execution of the program.
 //!
-//! # Build for generating a module schema
+//! # Features
+//!
+//! This library has the following features:
+//! [`std`](#std-build-with-the-rust-standard-library),
+//! [`build-schema`](#build-schema-build-for-generating-a-module-schema),
+//! [`wasm-test`](#wasm-test-build-for-testing-in-wasm), and
+//! [`crypto-primitives`][crypto-feature].
+//!
+//! [crypto-feature]:
+//! #crypto-primitives-for-testing-crypto-with-actual-implementations
+//!
+//! ## `std`: Build with the Rust standard library
+//! By default this library will be linked with the
+//! [std](https://doc.rust-lang.org/std/) crate, the rust standard library,
+//! however to minimize code size this library supports toggling compilation
+//! with the `#![no_std]` attribute via the feature `std` which is enabled by
+//! default. Compilation without the `std` feature requires a nightly version of
+//! rust.
+//!
+//! To use this library without the `std` feature you have to disable it, which
+//! can be done, for example, as follows.
+//! ```toml
+//! [dependencies.concordium-std]
+//! default-features = false
+//! ```
+//! In your project's `Cargo.toml` file.
+//!
+//! ## `build-schema`: Build for generating a module schema
 //! **WARNING** Building with this feature enabled is meant for tooling, and the
 //! result is not intended to be deployed on chain.
 //!
@@ -56,7 +68,7 @@
 //! **Note** This feature is used by `cargo-concordium`, when building with
 //! schema and for most cases this feature should not be set manually.
 //!
-//! # Build for testing in Wasm
+//! ## `wasm-test`: Build for testing in Wasm
 //! **WARNING** Building with this feature enabled is meant for tooling, and the
 //! result is not intended to be deployed on chain.
 //!
@@ -77,6 +89,15 @@
 //!
 //! **Note** This feature is used by `cargo-concordium`, when building for
 //! testing and for most cases this feature should not be set manually.
+//!
+//! ## `crypto-primitives`: For testing crypto with actual implementations
+//! Build with this feature if you want to run smart contract tests with actual
+//! (i.e., not mock) implementations of the cryptographic primitives from
+//! [`HasCryptoPrimitives`].
+//!
+//! **WARNING**: It is not possible to build this crate on macOS with the
+//! `crypto-primitives` feature when targeting `wasm32-unknown-unknown`.
+//! The issue arises when compiling the [`secp256k1`](https://docs.rs/secp256k1/latest/secp256k1/) crate.
 //!
 //! # Traits
 //! To support testing of smart contracts most of the functionality is
@@ -99,6 +120,8 @@
 //!   receive method
 //! - [HasStateApi] for operations possible on the contract state
 //! - [HasHost] for invoking operations on the host and accessing the state
+//! - [HasCryptoPrimitives] for using cryptographic primitives such as hashing
+//!   and signature verification.
 //!
 //! # Signalling errors
 //! On the Wasm level contracts can signal errors by returning a negative i32
@@ -148,7 +171,6 @@
 //! | [CallContractError::LogicReject] | `-2147483628` |
 //! | [CallContractError::Trap] | `-2147483627` |
 //!
-//! [MIN]: https://doc.rust-lang.org/std/primitive.i32.html#associatedconstant.MIN
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
