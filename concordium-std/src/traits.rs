@@ -6,9 +6,9 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    CallContractResult, EntryRaw, Hash256, Key, OccupiedEntryRaw, PublicKeyEcdsaSecp256k1,
-    PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1, SignatureEd25519,
-    StateBuilder, TransferResult, VacantEntryRaw,
+    CallContractResult, EntryRaw, HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
+    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
+    SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -425,13 +425,13 @@ pub trait HasCryptoPrimitives {
     ) -> bool;
 
     /// Hash the data using the SHA2-256 algorithm.
-    fn hash_sha2_256(&self, data: &[u8]) -> Hash256;
+    fn hash_sha2_256(&self, data: &[u8]) -> HashSha2256;
 
     /// Hash the data using the SHA3-256 algorithm.
-    fn hash_sha3_256(&self, data: &[u8]) -> Hash256;
+    fn hash_sha3_256(&self, data: &[u8]) -> HashSha3256;
 
     /// Hash the data using the Keccak-256 algorithm.
-    fn hash_keccak_256(&self, data: &[u8]) -> Hash256;
+    fn hash_keccak_256(&self, data: &[u8]) -> HashKeccak256;
 }
 
 /// Add optimized unwrap behaviour that aborts the process instead of

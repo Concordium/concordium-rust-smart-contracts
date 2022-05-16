@@ -980,10 +980,20 @@ pub struct SignatureEd25519(pub [u8; 64]);
 #[repr(transparent)]
 pub struct SignatureEcdsaSecp256k1(pub [u8; 64]);
 
-/// Hash digest with 256 bits (32 bytes).
+/// Sha2 digest with 256 bits (32 bytes).
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
-pub struct Hash256(pub [u8; 32]);
+pub struct HashSha2256(pub [u8; 32]);
+
+/// Sha3 digest with 256 bits (32 bytes).
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct HashSha3256(pub [u8; 32]);
+
+/// Keccak digest with 256 bits (32 bytes).
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(transparent)]
+pub struct HashKeccak256(pub [u8; 32]);
 
 #[derive(Debug, Clone, Default)]
 #[doc(hidden)]

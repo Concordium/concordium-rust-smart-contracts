@@ -699,7 +699,7 @@ type MockFnEcdsaSecp256k1 =
 /// [`HasCryptoPrimitives::hash_sha3_256`], or [`HasCryptoPrimitives::
 /// hash_keccak_256`].
 #[cfg(not(feature = "crypto-primitives"))]
-type MockFnHash256 = Box<dyn FnMut(&[u8]) -> Hash256>;
+type MockFnHash<T> = Box<dyn FnMut(&[u8]) -> T>;
 
 /// A [`HasCryptoPrimitives`] implementation used for unit testing smart
 /// contracts.
@@ -717,11 +717,11 @@ pub struct TestCryptoPrimitives {
     #[cfg(not(feature = "crypto-primitives"))]
     verify_ecdsa_secp256k1_signature_mock: RefCell<Option<MockFnEcdsaSecp256k1>>,
     #[cfg(not(feature = "crypto-primitives"))]
-    hash_sha2_256_mock:                    RefCell<Option<MockFnHash256>>,
+    hash_sha2_256_mock:                    RefCell<Option<MockFnHash<HashSha2256>>>,
     #[cfg(not(feature = "crypto-primitives"))]
-    hash_sha3_256_mock:                    RefCell<Option<MockFnHash256>>,
+    hash_sha3_256_mock:                    RefCell<Option<MockFnHash<HashSha3256>>>,
     #[cfg(not(feature = "crypto-primitives"))]
-    hash_keccak_256_mock:                  RefCell<Option<MockFnHash256>>,
+    hash_keccak_256_mock:                  RefCell<Option<MockFnHash<HashKeccak256>>>,
 }
 
 /// Create a new [`TestCryptoPrimitives`], for which no mocks has been set up.
@@ -783,7 +783,7 @@ impl TestCryptoPrimitives {
     /// [`TestCryptoPrimitives`].
     pub fn setup_hash_sha2_256_mock<F>(&self, mock: F)
     where
-        F: FnMut(&[u8]) -> Hash256 + 'static, {
+        F: FnMut(&[u8]) -> HashSha2256 + 'static, {
         *self.hash_sha2_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -796,7 +796,7 @@ impl TestCryptoPrimitives {
     /// [`TestCryptoPrimitives`].
     pub fn setup_hash_sha3_256_mock<F>(&self, mock: F)
     where
-        F: FnMut(&[u8]) -> Hash256 + 'static, {
+        F: FnMut(&[u8]) -> HashSha3256 + 'static, {
         *self.hash_sha3_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -809,7 +809,7 @@ impl TestCryptoPrimitives {
     /// [`TestCryptoPrimitives`].
     pub fn setup_hash_keccak_256_mock<F>(&self, mock: F)
     where
-        F: FnMut(&[u8]) -> Hash256 + 'static, {
+        F: FnMut(&[u8]) -> HashKeccak256 + 'static, {
         *self.hash_keccak_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -885,11 +885,11 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
         }
     }
 
-    fn hash_sha2_256(&self, data: &[u8]) -> Hash256 {
+    fn hash_sha2_256(&self, data: &[u8]) -> HashSha2256 {
         #[cfg(feature = "crypto-primitives")]
         {
             use sha2::Digest;
-            Hash256(sha2::Sha256::digest(data).into())
+            Hash256Sha2(sha2::Sha256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-primitives"))]
         {
@@ -901,11 +901,11 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
         }
     }
 
-    fn hash_sha3_256(&self, data: &[u8]) -> Hash256 {
+    fn hash_sha3_256(&self, data: &[u8]) -> HashSha3256 {
         #[cfg(feature = "crypto-primitives")]
         {
             use sha3::Digest;
-            Hash256(sha3::Sha3_256::digest(data).into())
+            Hash256Sha3(sha3::Sha3_256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-primitives"))]
         {
@@ -917,11 +917,11 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
         }
     }
 
-    fn hash_keccak_256(&self, data: &[u8]) -> Hash256 {
+    fn hash_keccak_256(&self, data: &[u8]) -> HashKeccak256 {
         #[cfg(feature = "crypto-primitives")]
         {
             use sha3::Digest;
-            Hash256(sha3::Keccak256::digest(data).into())
+            Hash256Keccak(sha3::Keccak256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-primitives"))]
         {
