@@ -2155,23 +2155,23 @@ impl HasCryptoPrimitives for ExternCryptoPrimitives {
         res == 1
     }
 
-    fn hash_sha2_256(&self, data: &[u8]) -> Hash256 {
+    fn hash_sha2_256(&self, data: &[u8]) -> HashSha2256 {
         let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
         unsafe {
             prims::hash_sha2_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr() as *mut u8);
-            Hash256(output.assume_init())
+            HashSha2256(output.assume_init())
         }
     }
 
-    fn hash_sha3_256(&self, data: &[u8]) -> Hash256 {
+    fn hash_sha3_256(&self, data: &[u8]) -> HashSha3256 {
         let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
         unsafe {
             prims::hash_sha3_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr() as *mut u8);
-            Hash256(output.assume_init())
+            HashSha3256(output.assume_init())
         }
     }
 
-    fn hash_keccak_256(&self, data: &[u8]) -> Hash256 {
+    fn hash_keccak_256(&self, data: &[u8]) -> HashKeccak256 {
         let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
         unsafe {
             prims::hash_keccak_256(
@@ -2179,7 +2179,7 @@ impl HasCryptoPrimitives for ExternCryptoPrimitives {
                 data.len() as u32,
                 output.as_mut_ptr() as *mut u8,
             );
-            Hash256(output.assume_init())
+            HashKeccak256(output.assume_init())
         }
     }
 }
@@ -2732,17 +2732,49 @@ impl schema::SchemaType for SignatureEcdsaSecp256k1 {
     }
 }
 
-impl Serial for Hash256 {
+impl Serial for HashSha2256 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
 }
 
-impl Deserial for Hash256 {
+impl Deserial for HashSha2256 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        Ok(Hash256(Deserial::deserial(source)?))
+        Ok(HashSha2256(Deserial::deserial(source)?))
     }
 }
 
-impl schema::SchemaType for Hash256 {
+impl schema::SchemaType for HashSha2256 {
+    fn get_type() -> concordium_contracts_common::schema::Type {
+        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
+    }
+}
+
+impl Serial for HashSha3256 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for HashSha3256 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(HashSha3256(Deserial::deserial(source)?))
+    }
+}
+
+impl schema::SchemaType for HashSha3256 {
+    fn get_type() -> concordium_contracts_common::schema::Type {
+        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
+    }
+}
+
+impl Serial for HashKeccak256 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+}
+
+impl Deserial for HashKeccak256 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(HashKeccak256(Deserial::deserial(source)?))
+    }
+}
+
+impl schema::SchemaType for HashKeccak256 {
     fn get_type() -> concordium_contracts_common::schema::Type {
         schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
     }
