@@ -841,9 +841,9 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
             let public_key = ed25519_zebra::VerificationKey::try_from(&public_key.0[..]);
             match (signature, public_key) {
                 (Ok(ref signature), Ok(public_key)) => {
-                    return public_key.verify(signature, message).is_ok()
+                    public_key.verify(signature, message).is_ok()
                 }
-                _ => return false,
+                _ => false,
             }
         }
         #[cfg(not(feature = "crypto-primitives"))]
@@ -870,9 +870,9 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
             match (signature, public_key, message_hash) {
                 (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
                     let verifier = secp256k1::Secp256k1::verification_only();
-                    return verifier.verify_ecdsa(&message_hash, &signature, &public_key).is_ok();
+                    verifier.verify_ecdsa(&message_hash, &signature, &public_key).is_ok()
                 }
-                _ => return false,
+                _ => false,
             }
         }
         #[cfg(not(feature = "crypto-primitives"))]

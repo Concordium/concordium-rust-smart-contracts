@@ -96,6 +96,44 @@ jobs:
           command: clippy
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
+  clippy-crypto-primitives:
+    name: Clippy concordium-std with crypto-primitives
+    runs-on: ubuntu-latest
+    needs: rustfmt
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+          - x86_64-unknown-linux-gnu
+
+        lib-crates:
+          - concordium-std/Cargo.toml
+
+        features:
+          - crypto-primitives
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install toolchain with clippy available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.53
+          target: ${{ matrix.target }}
+          override: true
+          components: clippy
+
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
+
+
   clippy-wasm32-only:
     name: Clippy Wasm32
     runs-on: ubuntu-latest
