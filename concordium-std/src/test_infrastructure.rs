@@ -889,7 +889,7 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
         #[cfg(feature = "crypto-primitives")]
         {
             use sha2::Digest;
-            Hash256Sha2(sha2::Sha256::digest(data).into())
+            HashSha2256(sha2::Sha256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-primitives"))]
         {
@@ -905,7 +905,7 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
         #[cfg(feature = "crypto-primitives")]
         {
             use sha3::Digest;
-            Hash256Sha3(sha3::Sha3_256::digest(data).into())
+            HashSha3256(sha3::Sha3_256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-primitives"))]
         {
@@ -921,7 +921,7 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
         #[cfg(feature = "crypto-primitives")]
         {
             use sha3::Digest;
-            Hash256Keccak(sha3::Keccak256::digest(data).into())
+            HashKeccak256(sha3::Keccak256::digest(data).into())
         }
         #[cfg(not(feature = "crypto-primitives"))]
         {
