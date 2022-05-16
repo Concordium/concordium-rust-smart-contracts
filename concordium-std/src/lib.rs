@@ -6,6 +6,14 @@
 //! contracts. For this reason it re-exports a number of definitions from other
 //! libraries.
 //!
+//! # Versions
+//! The concordium blockchain at present supports two variants of smart
+//! contracts. The original V0 contracts that use message-passing for
+//! communication and have limited state, and V1 contracts which use synchronous
+//! calls, and have extended state. Versions 1 and 2 of `concordium-std`
+//! **support only V0 contracts**. Version 3 and later of `concordium-std`
+//! **supports only V1 contracts**.
+//!
 //! # Global allocator
 //! Importing this library has a side-effect of setting  the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
 //! which is a memory allocator aimed at small code footprint.
