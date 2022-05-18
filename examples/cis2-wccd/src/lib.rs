@@ -1,4 +1,4 @@
-//! wCCD: An example implementation of CIS1 for a single fungible token.
+//! wCCD: An example implementation of CIS2 for a single fungible token.
 //!
 //! # Description
 //! The token in this contract is a wrapped CCD (wCCD), meaning it holds a one
@@ -7,13 +7,13 @@
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
-//! As follows from the CIS1 specification, the contract has a `transfer`
+//! As follows from the CIS2 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some token owner address is allowed
 //! to transfer any tokens of the owner.
 //!
-//! Besides the contract functions required CIS1, this contract implements a
+//! Besides the contract functions required CIS2, this contract implements a
 //! function `wrap` for converting CCD into wCCD tokens. It accepts an amount of
 //! CCD and mints this amount of wCCD. The function takes a receiving address as
 //! the parameter and transfers the amount of tokens.
@@ -25,7 +25,7 @@
 //! CCD is sent to the receiver.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_cis1::*;
+use concordium_cis2::*;
 use concordium_std::*;
 
 /// The id of the wCCD token in this contract.
@@ -103,7 +103,7 @@ enum CustomContractError {
     InvokeTransferError,
 }
 
-type ContractError = Cis1Error<CustomContractError>;
+type ContractError = Cis2Error<CustomContractError>;
 
 type ContractResult<A> = Result<A, ContractError>;
 
@@ -129,7 +129,7 @@ impl From<TransferError> for CustomContractError {
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self { Cis1Error::Custom(c) }
+    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
 impl<S: HasStateApi> State<S> {
@@ -256,7 +256,7 @@ impl<S: HasStateApi> State<S> {
 
 /// Initialize contract instance with no initial tokens.
 /// Logs a `Mint` event for the single token id with no amounts.
-#[init(contract = "CIS1-wCCD", enable_logger)]
+#[init(contract = "CIS2-wCCD", enable_logger)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -267,14 +267,14 @@ fn contract_init<S: HasStateApi>(
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
-    logger.log(&Cis1Event::Mint(MintEvent {
+    logger.log(&Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
         amount:   0,
         owner:    invoker,
     }))?;
 
     // Log event for where to find metadata for the token
-    logger.log(&Cis1Event::TokenMetadata(TokenMetadataEvent {
+    logger.log(&Cis2Event::TokenMetadata(TokenMetadataEvent {
         token_id:     TOKEN_ID_WCCD,
         metadata_url: MetadataUrl {
             url:  String::from(TOKEN_METADATA_URL),
@@ -288,7 +288,7 @@ fn contract_init<S: HasStateApi>(
 /// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
 /// is not the receiver.
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "wrap",
     parameter = "WrapParams",
     enable_logger,
@@ -312,7 +312,7 @@ fn contract_wrap<S: HasStateApi>(
     state.mint(&TOKEN_ID_WCCD, amount.micro_ccd, &receive_address, state_builder)?;
 
     // Log the newly minted tokens.
-    logger.log(&Cis1Event::Mint(MintEvent {
+    logger.log(&Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
         amount:   amount.micro_ccd,
         owner:    sender,
@@ -320,7 +320,7 @@ fn contract_wrap<S: HasStateApi>(
 
     // Only log a transfer event if receiver is not the one who payed for this.
     if sender != receive_address {
-        logger.log(&Cis1Event::Transfer(TransferEvent {
+        logger.log(&Cis2Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WCCD,
             amount:   amount.micro_ccd,
             from:     sender,
@@ -330,11 +330,11 @@ fn contract_wrap<S: HasStateApi>(
 
     // Send message to the receiver of the tokens.
     if let Receiver::Contract(address, function) = params.to {
-        let parameter = OnReceivingCis1Params {
+        let parameter = OnReceivingCis2Params {
             token_id:      TOKEN_ID_WCCD,
             amount:        amount.micro_ccd,
             from:          sender,
-            contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-wCCD")),
+            contract_name: OwnedContractName::new_unchecked(String::from("init_CIS2-wCCD")),
             data:          params.data,
         };
         host.invoke_contract(
@@ -352,7 +352,7 @@ fn contract_wrap<S: HasStateApi>(
 
 /// Unwrap an amount of wCCD tokens into CCD
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "unwrap",
     parameter = "UnwrapParams",
     enable_logger,
@@ -376,7 +376,7 @@ fn contract_unwrap<S: HasStateApi>(
     state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
-    logger.log(&Cis1Event::Burn(BurnEvent {
+    logger.log(&Cis2Event::Burn(BurnEvent {
         token_id: TOKEN_ID_WCCD,
         amount:   params.amount,
         owner:    params.owner,
@@ -399,7 +399,7 @@ fn contract_unwrap<S: HasStateApi>(
     Ok(())
 }
 
-// Contract functions required by CIS1
+// Contract functions required by CIS2
 
 #[allow(dead_code)]
 type TransferParameter = TransferParams<ContractTokenId>;
@@ -421,7 +421,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 /// - Any of the messages sent to contracts receiving a transfer choose to
 ///   reject.
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "transfer",
     parameter = "TransferParameter",
     enable_logger,
@@ -456,7 +456,7 @@ fn contract_transfer<S: HasStateApi>(
         state.transfer(&token_id, amount, &from, &to_address, state_builder)?;
 
         // Log transfer event
-        logger.log(&Cis1Event::Transfer(TransferEvent {
+        logger.log(&Cis2Event::Transfer(TransferEvent {
             token_id,
             amount,
             from,
@@ -465,11 +465,11 @@ fn contract_transfer<S: HasStateApi>(
 
         // If the receiver is a contract, we invoke it.
         if let Receiver::Contract(address, function) = to {
-            let parameter = OnReceivingCis1Params {
+            let parameter = OnReceivingCis2Params {
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS1-Multi")),
+                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS2-Multi")),
                 data,
             };
             host.invoke_contract(
@@ -492,7 +492,7 @@ fn contract_transfer<S: HasStateApi>(
 /// - The operator address is the same as the sender address.
 /// - Fails to log event.
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     enable_logger,
@@ -517,7 +517,7 @@ fn contract_update_operator<S: HasStateApi>(
         }
 
         // Log the appropriate event
-        logger.log(&Cis1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+        logger.log(&Cis2Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
             owner:    sender,
             operator: param.operator,
             update:   param.update,
@@ -527,35 +527,29 @@ fn contract_update_operator<S: HasStateApi>(
     Ok(())
 }
 
-/// Parameter type for the CIS-1 function `balanceOf` specialized to the subset
+/// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
 // This type is pub to silence the dead_code warning, as this type is only used
 // for when generating the schema.
 pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
-/// Get the balance of given token IDs and addresses. It takes a contract
-/// address plus contract function to invoke with the result.
+/// Get the balance of given token IDs and addresses.
 ///
 /// It rejects if:
 /// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
-/// - Message sent back with the result rejects.
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
-    mutable
+    return_value = "BalanceOfQueryResponse"
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<BalanceOfQueryResponse> {
     let mut cursor = ctx.parameter_cursor();
-    // Parse the contract address to receive the result.
-    let result_contract: ContractAddress = cursor.get()?;
-    // Parse the contract function name to call with the result.
-    let result_hook: OwnedReceiveName = cursor.get()?;
     // Parse the number of queries.
     let queries_length: u8 = cursor.get()?;
 
@@ -566,36 +560,27 @@ fn contract_balance_of<S: HasStateApi>(
         let query: BalanceOfQuery<ContractTokenId> = ctx.parameter_cursor().get()?;
         // Query the state for balance.
         let amount = host.state().balance(&query.token_id, &query.address)?;
-        response.push((query, amount));
+        response.push(amount);
     }
-    // Send back the response.
-    host.invoke_contract(
-        &result_contract,
-        &BalanceOfQueryResponse::from(response),
-        result_hook.as_receive_name().entrypoint_name(),
-        Amount::zero(),
-    )
-    .unwrap_abort();
-    Ok(())
+    let result = BalanceOfQueryResponse::from(response);
+    Ok(result)
 }
 
 /// Takes a list of queries. Each query is an owner address and some address to
-/// check as an operator of the owner address. It takes a contract address plus
-/// contract function to invoke with the result.
+/// check as an operator of the owner address.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Message sent back with the result rejects.
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
-    mutable
+    return_value = "OperatorOfQueryResponse"
 )]
 fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
@@ -603,47 +588,34 @@ fn contract_operator_of<S: HasStateApi>(
     for query in params.queries {
         // Query the state for address being an operator of owner.
         let is_operator = host.state().is_operator(&query.owner, &query.address);
-        response.push((query, is_operator));
+        response.push(is_operator);
     }
-    // Send back the response.
-    host.invoke_contract(
-        &params.result_contract,
-        &OperatorOfQueryResponse::from(response),
-        params.result_function.as_receive_name().entrypoint_name(),
-        Amount::zero(),
-    )
-    .unwrap_abort();
-    Ok(())
+    let result = OperatorOfQueryResponse::from(response);
+    Ok(result)
 }
 
-/// Parameter type for the CIS-1 function `tokenMetadata` specialized to the
+/// Parameter type for the CIS-2 function `tokenMetadata` specialized to the
 /// subset of TokenIDs used by this contract.
 // This type is pub to silence the dead_code warning, as this type is only used
 // for when generating the schema.
 pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
 
-/// Get the token metadata URLs and checksums given a list of token IDs. It
-/// takes a contract address plus contract function to invoke with the result.
+/// Get the token metadata URLs and checksums given a list of token IDs.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
-/// - Message sent back with the result rejects.
 #[receive(
-    contract = "CIS1-wCCD",
+    contract = "CIS2-wCCD",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
-    mutable
+    return_value = "TokenMetadataQueryResponse"
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<TokenMetadataQueryResponse> {
     let mut cursor = ctx.parameter_cursor();
-    // Parse the contract address to receive the result.
-    let result_contract: ContractAddress = cursor.get()?;
-    // Parse the contract function name to call with the result.
-    let result_hook: OwnedReceiveName = cursor.get()?;
     // Parse the number of queries.
     let queries_length: u8 = cursor.get()?;
 
@@ -658,17 +630,10 @@ fn contract_token_metadata<S: HasStateApi>(
             url:  TOKEN_METADATA_URL.to_string(),
             hash: None,
         };
-        response.push((token_id, metadata_url));
+        response.push(metadata_url);
     }
-    // Send back the response.
-    host.invoke_contract(
-        &result_contract,
-        &TokenMetadataQueryResponse::from(response),
-        result_hook.as_receive_name().entrypoint_name(),
-        Amount::zero(),
-    )
-    .unwrap_abort();
-    Ok(())
+    let result = TokenMetadataQueryResponse::from(response);
+    Ok(result)
 }
 
 // Tests
@@ -719,7 +684,7 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Cis1Event::Mint(MintEvent {
+            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_ID_WCCD,
                 amount:   0,
@@ -727,7 +692,7 @@ mod tests {
             "Missing event for minting the token"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cis1Event::TokenMetadata(TokenMetadataEvent {
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata(TokenMetadataEvent {
                 token_id:     TOKEN_ID_WCCD,
                 metadata_url: MetadataUrl {
                     url:  String::from(TOKEN_METADATA_URL),
@@ -794,7 +759,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis1Event::Transfer(TransferEvent {
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WCCD,
@@ -888,7 +853,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis1Event::Transfer(TransferEvent {
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WCCD,
@@ -932,7 +897,7 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis1Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
+            to_bytes(&Cis2Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
                 owner:    ADDRESS_0,
                 operator: ADDRESS_1,
                 update:   OperatorUpdate::Add,
