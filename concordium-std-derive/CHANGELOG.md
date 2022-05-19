@@ -1,5 +1,9 @@
 # Changelog
 
+## unpublished changes
+- Add a `#[concordium_quickcheck]` macro which is to `#[quickcheck]` what `#[concordium_test]`
+ is to `#[test]`. It is enabled by the `concordium-quickcheck` feature.
+ 
 ## concordium-std-derive 3.0.0 (2022-05-17)
 
 - Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.

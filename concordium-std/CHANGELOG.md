@@ -1,5 +1,8 @@
 # Changelog
 
+## unpublished changes
+- When `concordium-quickcheck` is enabled: enables the `#[concordium_quickcheck]` macro and re-exports a quickcheck function.
+
 ## concordium-std 3.0.0 (2022-05-17)
 - Remove support for v0 smart contracts and add support for v1:
   - Replace message passing with synchronous calls:
