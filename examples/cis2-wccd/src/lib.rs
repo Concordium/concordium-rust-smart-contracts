@@ -3,7 +3,6 @@
 //! # Description
 //! The token in this contract is a wrapped CCD (wCCD), meaning it holds a one
 //! to one correspondence with the CCD.
-//!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
@@ -331,18 +330,13 @@ fn contract_wrap<S: HasStateApi>(
     // Send message to the receiver of the tokens.
     if let Receiver::Contract(address, function) = params.to {
         let parameter = OnReceivingCis2Params {
-            token_id:      TOKEN_ID_WCCD,
-            amount:        amount.micro_ccd,
-            from:          sender,
-            data:          params.data,
+            token_id: TOKEN_ID_WCCD,
+            amount:   amount.micro_ccd,
+            from:     sender,
+            data:     params.data,
         };
-        host.invoke_contract(
-            &address,
-            &parameter,
-            function.as_entrypoint_name(),
-            Amount::zero(),
-        )
-        .unwrap_abort();
+        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
+            .unwrap_abort();
         Ok(())
     } else {
         Ok(())

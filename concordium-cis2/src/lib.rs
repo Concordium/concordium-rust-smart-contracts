@@ -919,11 +919,11 @@ impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct OnReceivingCis2Params<T: IsTokenId> {
     /// The ID of the token received.
-    pub token_id:      T,
+    pub token_id: T,
     /// The amount of tokens received.
-    pub amount:        TokenAmount,
+    pub amount:   TokenAmount,
     /// The previous owner of the tokens.
-    pub from:          Address,
+    pub from:     Address,
     /// Some extra information which where sent as part of the transfer.
-    pub data:          AdditionalData,
+    pub data:     AdditionalData,
 }
