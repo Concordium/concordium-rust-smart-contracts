@@ -1,5 +1,5 @@
-/// Maximum size of the contract state in bytes.
-pub const MAX_CONTRACT_STATE_SIZE: u32 = 16384;
+//! Chain constants that impose limits on various aspects of smart contract
+//! execution.
 
 /// Maximum log size.
 pub const MAX_LOG_SIZE: usize = 512;

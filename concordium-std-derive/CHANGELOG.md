@@ -1,10 +1,21 @@
 # Changelog
 
-## Unreleased changes
+## concordium-std-derive 3.0.0 (2022-05-17)
+
+- Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.
+- Add `derive(Deletable)` macro for deriving the `Deletable` trait.
+- Add `derive(DeserialWithState)` macro.
+- Change `receive` and `init` macros to support the new V1 contract state and
+  sync calls.
 
 ## concordium-std-derive 2.0.0 (2022-01-05)
 
 - Update references to token to match token name (CCD).
+- Remove support for v0 smart contracts and add support for v1:
+  - Update the code generated with `init` and `receive` attributes for v1.
+  - Remove `contract_state` annotation.
+  - Add `return_value` to the `init` and `receive` attributes.
+    - It describes the schema for the return_value (similar to `parameter`).
 
 ## concordium-std-derive 1.0.0 (2021-10-05)
 

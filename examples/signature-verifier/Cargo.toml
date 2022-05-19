@@ -1,5 +1,5 @@
 [package]
-name = "auction-smart-contract"
+name = "signature-verifier"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
@@ -8,8 +8,12 @@ license = "MPL-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# concordium-std = "*"
 concordium-std = {path = "../../concordium-std"}
+
+[features]
+default = ["std"]
+std = ["concordium-std/std"]
+crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [lib]
 crate-type=["cdylib", "rlib"]
