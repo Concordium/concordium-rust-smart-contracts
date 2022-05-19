@@ -546,7 +546,7 @@ mod tests {
             "The transfer should be subtracted from the reserved balance"
         );
     }
-    
+
     #[concordium_test]
     fn test_quickcheck() {
         /// Support a request triggering the transfer
