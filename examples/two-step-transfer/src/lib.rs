@@ -617,4 +617,66 @@ mod tests {
                 as fn(AccountAddress, AccountAddress, AccountAddress, AccountAddress, Amount) -> (),
         );
     }
+
+    // The same test as above, but using a concordium version of the quickcheck
+    // macro to generate the quickcheck boilerplate.
+    #[concordium_quickcheck]
+    fn prop_receive_support_transfer(
+        account1: AccountAddress,
+        account2: AccountAddress,
+        account3: AccountAddress,
+        target_account: AccountAddress,
+        transfer_amount: Amount,
+    ) {
+        // Setup context
+        let request_id = 0;
+        let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
+        let parameter_bytes = to_bytes(&parameter);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_parameter(&parameter_bytes);
+        ctx.set_sender(Address::Account(account2));
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
+
+        // Setup state
+        let mut account_holders = BTreeSet::new();
+        account_holders.insert(account1);
+        account_holders.insert(account2);
+        account_holders.insert(account3);
+        let init_params = InitParams {
+            account_holders,
+            transfer_agreement_threshold: 2,
+            transfer_request_ttl: TransferRequestTimeToLiveMilliseconds::from_millis(10),
+        };
+        let mut supporters = BTreeSet::new();
+        supporters.insert(account1);
+        let request = TransferRequest {
+            supporters,
+            target_account,
+            times_out_at: Timestamp::from_timestamp_millis(10),
+            transfer_amount,
+        };
+
+        let mut state_builder = TestStateBuilder::new();
+        let mut requests = state_builder.new_map();
+        requests.insert(request_id, request);
+        let state = State {
+            init_params,
+            requests,
+        };
+
+        let mut host = TestHost::new(state, state_builder);
+        host.set_self_balance(transfer_amount);
+
+        // Execution
+        let res: ContractResult<()> =
+            contract_receive_message(&ctx, &mut host, Amount::from_ccd(0));
+
+        claim!(res.is_ok(), "Contract receive support failed, but it should not have.");
+        claim_eq!(
+            sum_reserved_balance(host.state()),
+            Amount::from_micro_ccd(0),
+            "The transfer should be subtracted from the reserved balance"
+        );
+    }
 }

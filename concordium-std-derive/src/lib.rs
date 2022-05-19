@@ -13,10 +13,15 @@ use std::collections::HashMap;
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
+    mem,
     ops::Neg,
 };
 use syn::{
-    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
+    parse::{Parse, Parser},
+    parse_macro_input, parse_quote,
+    punctuated::*,
+    spanned::Spanned,
+    DataEnum, Ident, Meta, Token,
 };
 
 /// A helper to report meaningful compilation errors
@@ -2124,38 +2129,60 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 #[proc_macro_attribute]
 /// Derive the appropriate export for an annotated quickcheck function, when
 /// feature "wasm-test" is enabled, otherwise behaves like `#[quickcheck]`.
-pub fn concordium_quickcheck(attr: TokenStream, item: TokenStream) -> TokenStream {
-    unwrap_or_report(concordium_quickcheck_worker(attr, item))
-}
+pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let output = match syn::Item::parse.parse(input.clone()) {
+        Ok(syn::Item::Fn(mut item_fn)) => {
+            let mut inputs = syn::punctuated::Punctuated::new();
+            let mut errors = Vec::new();
 
-#[cfg(feature = "wasm-test")]
-fn concordium_quickcheck_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let quickcheck_fn_ast: syn::ItemFn = attach_error(
-        syn::parse(item),
-        "#[concordium_quickcheck] can only be applied to functions.",
-    )?;
+            item_fn.sig.inputs.iter().for_each(|input| match *input {
+                syn::FnArg::Typed(syn::PatType {
+                    ref ty,
+                    ..
+                }) => {
+                    inputs.push(parse_quote!(_: #ty));
+                }
+                _ => errors.push(syn::parse::Error::new(
+                    input.span(),
+                    "unsupported kind of function argument",
+                )),
+            });
 
-    // todo use quickcheck with wasm32
-    let quickcheck_fn = quote! {
-        #[quickcheck]
-        #quickcheck_fn_ast
+            if errors.is_empty() {
+                let attrs = mem::take(&mut item_fn.attrs);
+                let name = &item_fn.sig.ident;
+                let fn_type = syn::TypeBareFn {
+                    lifetimes: None,
+                    unsafety: item_fn.sig.unsafety,
+                    abi: item_fn.sig.abi.clone(),
+                    fn_token: <syn::Token![fn]>::default(),
+                    paren_token: syn::token::Paren::default(),
+                    inputs,
+                    variadic: item_fn.sig.variadic.clone(),
+                    output: item_fn.sig.output.clone(),
+                };
+
+                quote! {
+                    #[concordium_test]
+                    #(#attrs)*
+                    fn #name() {
+                        #item_fn
+                       ::quickcheck::quickcheck(#name as #fn_type)
+                    }
+                }
+            } else {
+                errors.iter().map(syn::parse::Error::to_compile_error).collect()
+            }
+        }
+        _ => {
+            let span = proc_macro2::TokenStream::from(input).span();
+            let msg = "#[concordium_quickcheck] can only be applied to functions.";
+
+            syn::parse::Error::new(span, msg).to_compile_error()
+        }
     };
-    Ok(quickcheck_fn.into())
-}
 
-#[cfg(not(feature = "wasm-test"))]
-fn concordium_quickcheck_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let quickcheck_fn_ast: syn::ItemFn = attach_error(
-        syn::parse(item),
-        "#[concordium_quickcheck] can only be applied to functions.",
-    )?;
-
-    // todo import quickcheck macro
-    let quickcheck_fn = quote! {
-        #[quickcheck]
-        #quickcheck_fn_ast
-    };
-    Ok(quickcheck_fn.into())
+    output.into()
 }
 
 /// Sets the cfg for testing targeting either Wasm and native.
