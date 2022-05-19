@@ -373,9 +373,8 @@ type TransferParameter = TransferParams<ContractTokenId>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
-/// Logs a `Transfer` event for each transfer in the list.
-/// Produces an action which sends a message to each contract which was the
-/// receiver of a transfer.
+/// Logs a `Transfer` event and invoke a receive hook function for every
+/// transfer in the list.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -385,8 +384,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 ///       specific `token_id` and `from` address.
 ///     - The token is not owned by the `from`.
 /// - Fails to log event.
-/// - Any of the messages sent to contracts receiving a transfer choose to
-///   reject.
+/// - Any of the receive hook function calls rejects.
 #[receive(
     contract = "CIS2-Multi",
     name = "transfer",

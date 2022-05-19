@@ -361,9 +361,8 @@ type TransferParameter = TransferParams<ContractTokenId>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
-/// Logs a `Transfer` event for each transfer in the list.
-/// Produces an action which sends a message to each contract which are the
-/// receiver of a transfer.
+/// Logs a `Transfer` event and invoke a receive hook function for every
+/// transfer in the list.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -373,8 +372,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 ///       specific `token_id` and `from` address.
 ///     - The token is not owned by the `from`.
 /// - Fails to log event.
-/// - Any of the messages sent to contracts receiving a transfer choose to
-///   reject.
+/// - Any of the receive hook function calls rejects.
 #[receive(
     contract = "CIS2-NFT",
     name = "transfer",
@@ -415,8 +413,7 @@ fn contract_transfer<S: HasStateApi>(
             to: to_address,
         }))?;
 
-        // If the receiver is a contract, we add sending it a message to the list of
-        // actions.
+        // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCis2Params {
                 token_id,
