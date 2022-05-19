@@ -428,18 +428,17 @@ fn contract_transfer<S: HasStateApi>(
         }))?;
 
         // If the receiver is a contract we invoke it.
-        if let Receiver::Contract(address, function) = to {
+        if let Receiver::Contract(address, entrypoint_name) = to {
             let parameter = OnReceivingCis2Params {
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS2-Multi")),
                 data,
             };
             host.invoke_contract(
                 &address,
                 &parameter,
-                function.as_receive_name().entrypoint_name(),
+                entrypoint_name.as_entrypoint_name(),
                 Amount::zero(),
             )?;
         }
@@ -633,17 +632,11 @@ fn contract_on_cis2_received<S: HasStateApi>(
 
     let parameter = TransferParams::from(vec![transfer]);
 
-    // Construct the Cis2 function name for transfer.
-    let receive_name = OwnedReceiveName::construct(
-        params.contract_name.as_contract_name(),
-        EntrypointName::new("transfer")?,
-    )?;
-
     // Send back a transfer
     host.invoke_contract_read_only(
         &sender,
         &parameter,
-        receive_name.as_receive_name().entrypoint_name(),
+        EntrypointName::new("transfer")?,
         Amount::zero(),
     )?;
     Ok(())

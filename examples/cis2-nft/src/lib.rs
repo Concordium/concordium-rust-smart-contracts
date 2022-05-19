@@ -422,13 +422,12 @@ fn contract_transfer<S: HasStateApi>(
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS2-NFT")),
                 data,
             };
             host.invoke_contract(
                 &address,
                 &parameter,
-                function.as_receive_name().entrypoint_name(),
+                function.as_entrypoint_name(),
                 Amount::zero(),
             )?;
         }

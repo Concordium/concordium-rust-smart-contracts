@@ -678,7 +678,7 @@ pub enum Receiver {
         /// The receiving address.
         ContractAddress,
         /// The function to call on the receiving contract.
-        OwnedReceiveName,
+        OwnedEntrypointName,
     ),
 }
 
@@ -687,7 +687,7 @@ impl Receiver {
     pub fn from_account(address: AccountAddress) -> Self { Receiver::Account(address) }
 
     /// Construct a receiver from a contract address.
-    pub fn from_contract(address: ContractAddress, function: OwnedReceiveName) -> Self {
+    pub fn from_contract(address: ContractAddress, function: OwnedEntrypointName) -> Self {
         Receiver::Contract(address, function)
     }
 
@@ -924,9 +924,6 @@ pub struct OnReceivingCis2Params<T: IsTokenId> {
     pub amount:        TokenAmount,
     /// The previous owner of the tokens.
     pub from:          Address,
-    /// The name of the token contract which is tracking the token and
-    /// implements CIS2.
-    pub contract_name: OwnedContractName,
     /// Some extra information which where sent as part of the transfer.
     pub data:          AdditionalData,
 }

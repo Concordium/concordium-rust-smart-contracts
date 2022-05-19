@@ -334,13 +334,12 @@ fn contract_wrap<S: HasStateApi>(
             token_id:      TOKEN_ID_WCCD,
             amount:        amount.micro_ccd,
             from:          sender,
-            contract_name: OwnedContractName::new_unchecked(String::from("init_CIS2-wCCD")),
             data:          params.data,
         };
         host.invoke_contract(
             &address,
             &parameter,
-            function.as_receive_name().entrypoint_name(),
+            function.as_entrypoint_name(),
             Amount::zero(),
         )
         .unwrap_abort();
@@ -390,7 +389,7 @@ fn contract_unwrap<S: HasStateApi>(
             host.invoke_contract(
                 &address,
                 &params.data,
-                function.as_receive_name().entrypoint_name(),
+                function.as_entrypoint_name(),
                 unwrapped_amount,
             )?;
         }
@@ -469,13 +468,12 @@ fn contract_transfer<S: HasStateApi>(
                 token_id,
                 amount,
                 from,
-                contract_name: OwnedContractName::new_unchecked(String::from("init_CIS2-Multi")),
                 data,
             };
             host.invoke_contract(
                 &address,
                 &parameter,
-                function.as_receive_name().entrypoint_name(),
+                function.as_entrypoint_name(),
                 Amount::zero(),
             )
             .unwrap_abort();
