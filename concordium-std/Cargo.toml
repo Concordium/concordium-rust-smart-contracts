@@ -17,6 +17,7 @@ sha2 = { version = "0.10", optional = true }
 sha3 = { version = "0.10", optional = true }
 secp256k1 = { version = "0.22", optional = true }
 ed25519-zebra = { version = "2.2", optional = true }
+quickcheck = {version = "1", optional = true }
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"
@@ -34,6 +35,7 @@ std = ["concordium-contracts-common/std"]
 wasm-test = ["concordium-std-derive/wasm-test"]
 build-schema = ["concordium-std-derive/build-schema"]
 crypto-primitives = ["sha2", "sha3", "secp256k1", "ed25519-zebra"]
+concordium-quickcheck = ["concordium-std-derive/concordium-quickcheck", "quickcheck"]
 
 [lib]
 crate-type = ["rlib"]

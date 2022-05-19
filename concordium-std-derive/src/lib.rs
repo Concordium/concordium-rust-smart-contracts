@@ -10,18 +10,17 @@ use proc_macro2::Span;
 use quote::ToTokens;
 #[cfg(feature = "build-schema")]
 use std::collections::HashMap;
+#[cfg(feature = "concordium-quickcheck")]
+use std::mem;
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
-    mem,
     ops::Neg,
 };
+#[cfg(feature = "concordium-quickcheck")]
+use syn::{parse::Parse, parse_quote};
 use syn::{
-    parse::{Parse, Parser},
-    parse_macro_input, parse_quote,
-    punctuated::*,
-    spanned::Spanned,
-    DataEnum, Ident, Meta, Token,
+    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
 
 /// A helper to report meaningful compilation errors
@@ -2126,6 +2125,7 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
     Ok(test_fn.into())
 }
 
+#[cfg(feature = "concordium-quickcheck")]
 #[proc_macro_attribute]
 /// Derive the appropriate export for an annotated quickcheck function, when
 /// feature "wasm-test" is enabled, otherwise behaves like `#[quickcheck]`.
@@ -2167,7 +2167,7 @@ pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStr
                     #(#attrs)*
                     fn #name() {
                         #item_fn
-                       ::quickcheck::quickcheck(#name as #fn_type)
+                       ::concordium_std::quickcheck(#name as #fn_type)
                     }
                 }
             } else {

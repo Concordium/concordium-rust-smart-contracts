@@ -12,10 +12,7 @@ readme = "../README.md"
 [features]
 default = ["std"]
 
-std = ["concordium-std/std", "quickcheck"]
-
-[dependencies]
-quickcheck = {version = "1", optional = true }
+std = ["concordium-std/std", "concordium-std/concordium-quickcheck"]
 
 [dependencies.concordium-std]
 # git = "https://github.com/Concordium/concordium-std.git"
