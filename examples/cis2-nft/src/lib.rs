@@ -361,7 +361,7 @@ type TransferParameter = TransferParams<ContractTokenId>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
-/// Logs a `Transfer` event and invoke a receive hook function for every
+/// Logs a `Transfer` event and invokes a receive hook function for every
 /// transfer in the list.
 ///
 /// It rejects if:
@@ -437,7 +437,6 @@ fn contract_transfer<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The operator address is the same as the sender address.
 /// - Fails to log event.
 #[receive(
     contract = "CIS2-NFT",
