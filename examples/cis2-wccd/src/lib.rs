@@ -423,28 +423,25 @@ fn contract_transfer<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let mut cursor = ctx.parameter_cursor();
-    // Parse the number of transfers.
-    let transfers_length: u16 = cursor.get()?;
+    // Parse the parameter.
+    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    // Loop over the number of transfers.
-    for _ in 0..transfers_length {
-        // Parse one of the transfers.
-        let Transfer {
-            token_id,
-            amount,
-            from,
-            to,
-            data,
-        } = cursor.get()?;
-        let (state, state_builder) = host.state_and_builder();
+    for Transfer {
+        token_id,
+        amount,
+        from,
+        to,
+        data,
+    } in transfers
+    {
+        let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
         ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
         let to_address = to.address();
         // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address, state_builder)?;
+        state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
         // Log transfer event
         logger.log(&Cis2Event::Transfer(TransferEvent {
@@ -454,7 +451,7 @@ fn contract_transfer<S: HasStateApi>(
             to: to_address,
         }))?;
 
-        // If the receiver is a contract, we invoke it.
+        // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCis2Params {
                 token_id,
@@ -467,8 +464,7 @@ fn contract_transfer<S: HasStateApi>(
                 &parameter,
                 function.as_entrypoint_name(),
                 Amount::zero(),
-            )
-            .unwrap_abort();
+            )?;
         }
     }
     Ok(())
@@ -538,15 +534,11 @@ fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<BalanceOfQueryResponse> {
-    let mut cursor = ctx.parameter_cursor();
-    // Parse the number of queries.
-    let queries_length: u8 = cursor.get()?;
-
+    // Parse the parameter.
+    let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
-    let mut response = Vec::with_capacity(queries_length.into());
-    for _ in 0..queries_length {
-        // Parse one of the queries.
-        let query: BalanceOfQuery<ContractTokenId> = ctx.parameter_cursor().get()?;
+    let mut response = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
         // Query the state for balance.
         let amount = host.state().balance(&query.token_id, &query.address)?;
         response.push(amount);
@@ -604,14 +596,12 @@ fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     _host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
-    let mut cursor = ctx.parameter_cursor();
-    // Parse the number of queries.
-    let queries_length: u8 = cursor.get()?;
+    // Parse the parameter.
+    let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
 
     // Build the response.
-    let mut response = Vec::with_capacity(queries_length.into());
-    for _ in 0..queries_length {
-        let token_id: ContractTokenId = cursor.get()?;
+    let mut response = Vec::with_capacity(params.queries.len());
+    for token_id in params.queries {
         // Check the token exists.
         ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
