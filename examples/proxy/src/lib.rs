@@ -83,7 +83,7 @@ fn receive_reconfigure<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<()> {
-    claim_eq!(ctx.owner(), ctx.invoker());
+    ensure!(ctx.sender().matches_account(&ctx.owner()));
     *host.state_mut() = ctx.parameter_cursor().get()?;
     Ok(())
 }
