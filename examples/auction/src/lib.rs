@@ -47,15 +47,15 @@ pub struct State<S> {
 #[derive(Debug, Serialize, SchemaType, Clone)]
 pub struct ViewableState {
     /// Has the item been sold?
-    auction_state: AuctionState,
+    auction_state:  AuctionState,
     /// The highest bid so far (stored explicitly so that bidders can quickly
     /// see it)
-    highest_bid:   Amount,
+    highest_bidder: Option<AccountAddress>,
     /// The sold item (to be displayed to the auction participants).
-    item:          String,
+    item:           String,
     /// Expiration time of the auction at which bids will be closed (to be
     /// displayed to the auction participants)
-    expiry:        Timestamp,
+    expiry:         Timestamp,
 }
 
 /// Type of the parameter to the `init` function.
@@ -76,6 +76,8 @@ enum BidError {
     BidsOverWaitingForAuctionFinalization, // raised if bid is placed after auction expiry time
     AuctionFinalized,                      /* raised if bid is placed after auction has been
                                             * finalized */
+
+    RefundError,
 }
 
 /// For errors in which the `finalize` function can result
@@ -95,10 +97,10 @@ fn auction_init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
     let viewable_state = ViewableState {
-        auction_state: AuctionState::NotSoldYet,
-        highest_bid:   Amount::zero(),
-        item:          parameter.item,
-        expiry:        parameter.expiry,
+        auction_state:  AuctionState::NotSoldYet,
+        highest_bidder: None,
+        item:           parameter.item,
+        expiry:         parameter.expiry,
     };
     let state = State {
         viewable_state,
@@ -114,6 +116,7 @@ fn auction_bid<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
 ) -> Result<(), BidError> {
+    let balance = host.self_balance();
     let state = host.state_mut();
     ensure!(
         state.viewable_state.auction_state == AuctionState::NotSoldYet,
@@ -130,13 +133,21 @@ fn auction_bid<S: HasStateApi>(
         Address::Contract(_) => bail!(BidError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut bid_to_update = state.bids.entry(sender_address).or_insert(Amount::zero());
-    *bid_to_update += amount;
+
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(*bid_to_update > state.viewable_state.highest_bid, BidError::BidTooLow);
+    ensure!(amount > balance, BidError::BidTooLow);
 
-    state.viewable_state.highest_bid = *bid_to_update;
-
+    match state.viewable_state.highest_bidder {
+        Some(account_address) => {
+            state.viewable_state.highest_bidder = Some(sender_address);
+            if host.invoke_transfer(&account_address, balance).is_err() {
+                bail!(BidError::RefundError);
+            }
+        }
+        None => {
+            state.viewable_state.highest_bidder = Some(sender_address);
+        }
+    }
     Ok(())
 }
 
@@ -150,8 +161,8 @@ fn view<S: HasStateApi>(
     Ok(host.state().viewable_state.clone())
 }
 
-/// Receive function used to finalize the auction, returning all bids to their
-/// senders, except for the winning bid
+/// Receive function used to finalize the auction. It sends the highest bid (the
+/// current balance of this smart contract) to the owner of this smart contract.
 #[receive(contract = "auction", name = "finalize", mutable)]
 fn auction_finalize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -166,35 +177,24 @@ fn auction_finalize<S: HasStateApi>(
     let slot_time = ctx.metadata().slot_time();
     ensure!(slot_time > state.viewable_state.expiry, FinalizeError::AuctionStillActive);
 
-    let owner = ctx.owner();
-
     let balance = host.self_balance();
     if balance == Amount::zero() {
         Ok(())
     } else {
-        if host.invoke_transfer(&owner, state.viewable_state.highest_bid).is_err() {
+        let owner = ctx.owner();
+
+        // Sends the highest bid to the owner
+        if host.invoke_transfer(&owner, balance).is_err() {
             bail!(FinalizeError::BidMapError);
-        }
-        let mut remaining_bid = None;
-        // Return bids that are smaller than highest
-        for (addr, amnt) in state.bids.iter() {
-            if *amnt < state.viewable_state.highest_bid {
-                if host.invoke_transfer(&*addr, *amnt).is_err() {
-                    bail!(FinalizeError::BidMapError);
+        } else {
+            match state.viewable_state.highest_bidder {
+                Some(account_address) => {
+                    host.state_mut().viewable_state.auction_state =
+                        AuctionState::Sold(account_address);
+                    Ok(())
                 }
-            } else {
-                ensure!(remaining_bid.is_none(), FinalizeError::BidMapError);
-                remaining_bid = Some((addr, amnt));
+                None => bail!(FinalizeError::BidMapError),
             }
-        }
-        // Ensure that the only bidder left in the map is the one with the highest bid
-        match remaining_bid {
-            Some((addr, amount)) => {
-                ensure!(*amount == state.viewable_state.highest_bid, FinalizeError::BidMapError);
-                host.state_mut().viewable_state.auction_state = AuctionState::Sold(*addr);
-                Ok(())
-            }
-            None => bail!(FinalizeError::BidMapError),
         }
     }
 }
@@ -303,11 +303,13 @@ mod tests {
         let (alice, alice_ctx) = new_account_ctx();
         verify_bid(&mut host, alice, &alice_ctx, amount, &mut bid_map, amount);
 
+        host.set_self_balance(amount);
         // 2nd bid: account1 bids `amount` again
         // should work even though it's the same amount because account1 simply
         // increases their bid
-        verify_bid(&mut host, alice, &alice_ctx, amount, &mut bid_map, amount + amount);
+        verify_bid(&mut host, alice, &alice_ctx, amount + amount, &mut bid_map, amount + amount);
 
+        host.set_self_balance(amount + amount);
         // 3rd bid: second account
         let (bob, bob_ctx) = new_account_ctx();
         verify_bid(&mut host, bob, &bob_ctx, winning_amount, &mut bid_map, winning_amount);
@@ -328,13 +330,17 @@ mod tests {
         let carol = new_account();
         let dave = new_account();
         let ctx5 = new_ctx(carol, dave, AUCTION_END + 1);
-        host.set_self_balance(winning_amount + amount + amount);
+        host.set_self_balance(winning_amount);
         let finres2 = auction_finalize(&ctx5, &mut host);
         finres2.expect_report("Finalizing auction should work");
         let transfers = host.get_transfers();
-        claim_eq!(&transfers[..], &[(carol, winning_amount), (alice, amount + amount)]);
+        claim_eq!(&transfers[..], &[
+            (alice, amount),
+            (alice, amount + amount),
+            (carol, winning_amount),
+        ]);
         claim_eq!(host.state().viewable_state.auction_state, AuctionState::Sold(bob));
-        claim_eq!(host.state().viewable_state.highest_bid, winning_amount);
+        claim_eq!(host.state().viewable_state.highest_bidder, Some(bob));
 
         // attempting to finalize auction again should fail
         let finres3 = auction_finalize(&ctx5, &mut host);
@@ -388,6 +394,7 @@ mod tests {
         // 1st bid: account1 bids amount1
         verify_bid(&mut host, account1, &ctx1, amount, &mut bid_map, amount);
 
+        host.set_self_balance(Amount::from_micro_ccd(100));
         // 2nd bid: account2 bids amount1
         // should fail because amount is equal to highest bid
         let res2 = auction_bid(&ctx2, &mut host, amount);
