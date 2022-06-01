@@ -27,9 +27,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 #[cfg(not(feature = "std"))]
-use core::fmt;
+use core::{fmt, ops};
 #[cfg(feature = "std")]
-use std::fmt;
+use std::{fmt, ops};
 
 use convert::TryFrom;
 
@@ -69,14 +69,24 @@ impl schema::SchemaType for MetadataUrl {
 }
 
 /// Trait for marking types as CIS2 token IDs.
-/// For a type to be a valid CIS2 token ID it must implement serialization and
-/// schema type, such that the first byte indicates how many bytes is used to
+/// For a type to be a valid CIS2 token ID it must implement SchemaType and
+/// Serialize, such that the first byte indicates how many bytes is used to
 /// represent the token ID, followed by this many bytes for the token ID.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
 /// token ID using Vec<u8> is to allow smart contracts to use specialized token
 /// ID implementations avoiding allocations.
 pub trait IsTokenId: Serialize + schema::SchemaType {}
+
+/// Trait for marking types as CIS2 token amounts.
+/// For a type to be a valid CIS2 token amount it must implement SchemaType and
+/// Serialize, using the LEB128 unsigned integer encoding constrained to at most
+/// 37 bytes.
+///
+/// Note: The reason for introducing such a trait instead of representing every
+/// token amount using [u8; 37] is to allow smart contracts to use specialized
+/// token amount implementations avoiding doing arithmetics of large integers.
+pub trait IsTokenAmount: Serialize + schema::SchemaType {}
 
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
@@ -444,19 +454,481 @@ impl Deserial for TokenIdUnit {
     }
 }
 
-/// An amount of a specific token type.
-pub type TokenAmount = u64;
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub struct TokenAmountU128(pub u128);
+
+impl ops::Add<Self> for TokenAmountU128 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 + rhs.0) }
+}
+
+impl ops::AddAssign for TokenAmountU128 {
+    fn add_assign(&mut self, other: Self) { *self = *self + other; }
+}
+
+impl ops::Sub<Self> for TokenAmountU128 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 - rhs.0) }
+}
+
+impl ops::SubAssign for TokenAmountU128 {
+    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+}
+
+impl ops::Mul<Self> for TokenAmountU128 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 * rhs.0) }
+}
+
+impl ops::MulAssign for TokenAmountU128 {
+    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
+}
+
+impl ops::Div<Self> for TokenAmountU128 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 / rhs.0) }
+}
+
+impl ops::DivAssign for TokenAmountU128 {
+    fn div_assign(&mut self, other: Self) { *self = *self / other; }
+}
+
+impl IsTokenAmount for TokenAmountU128 {}
+
+impl schema::SchemaType for TokenAmountU128 {
+    // TODO Fix the schema when supporting LEB128
+    fn get_type() -> schema::Type { schema::Type::Array(19, Box::new(schema::Type::U8)) }
+}
+
+impl Serial for TokenAmountU128 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let mut value = self.0;
+        loop {
+            let mut byte = (value as u8) & 0b0111_1111;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0b1000_0000;
+            }
+            out.write_u8(byte)?;
+
+            if value == 0 {
+                return Ok(());
+            }
+        }
+    }
+}
+
+impl Deserial for TokenAmountU128 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let mut result = 0u128;
+        let mut shift = 0u32;
+        loop {
+            let byte = source.read_u8()?;
+            let value_byte = (byte & 0b0111_1111) as u128;
+            result |= value_byte << shift;
+            shift += 7;
+
+            if byte & 0b1000_0000 == 0 {
+                return Ok(TokenAmountU128(result));
+            }
+        }
+    }
+}
+
+impl From<u128> for TokenAmountU128 {
+    fn from(v: u128) -> TokenAmountU128 { TokenAmountU128(v) }
+}
+
+impl From<TokenAmountU128> for u128 {
+    fn from(v: TokenAmountU128) -> u128 { v.0 }
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub struct TokenAmountU64(pub u64);
+
+impl ops::Add<Self> for TokenAmountU64 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 + rhs.0) }
+}
+
+impl ops::AddAssign for TokenAmountU64 {
+    fn add_assign(&mut self, other: Self) { *self = *self + other; }
+}
+
+impl ops::Sub<Self> for TokenAmountU64 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 - rhs.0) }
+}
+
+impl ops::SubAssign for TokenAmountU64 {
+    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+}
+
+impl ops::Mul<Self> for TokenAmountU64 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 * rhs.0) }
+}
+
+impl ops::MulAssign for TokenAmountU64 {
+    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
+}
+
+impl ops::Div<Self> for TokenAmountU64 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 / rhs.0) }
+}
+
+impl ops::DivAssign for TokenAmountU64 {
+    fn div_assign(&mut self, other: Self) { *self = *self / other; }
+}
+
+impl IsTokenAmount for TokenAmountU64 {}
+
+impl schema::SchemaType for TokenAmountU64 {
+    // TODO Fix the schema when supporting LEB128
+    fn get_type() -> schema::Type { schema::Type::Array(10, Box::new(schema::Type::U8)) }
+}
+
+impl Serial for TokenAmountU64 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let mut value = self.0;
+        loop {
+            let mut byte = (value as u8) & 0b0111_1111;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0b1000_0000;
+            }
+            out.write_u8(byte)?;
+
+            if value == 0 {
+                return Ok(());
+            }
+        }
+    }
+}
+
+impl Deserial for TokenAmountU64 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let mut result = 0u64;
+        let mut shift = 0u32;
+        loop {
+            let byte = source.read_u8()?;
+            let value_byte = (byte & 0b0111_1111) as u64;
+            result |= value_byte << shift;
+            shift += 7;
+
+            if byte & 0b1000_0000 == 0 {
+                return Ok(TokenAmountU64(result));
+            }
+        }
+    }
+}
+
+impl From<u64> for TokenAmountU64 {
+    fn from(v: u64) -> TokenAmountU64 { TokenAmountU64(v) }
+}
+
+impl From<TokenAmountU64> for u64 {
+    fn from(v: TokenAmountU64) -> u64 { v.0 }
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub struct TokenAmountU32(pub u32);
+
+impl ops::Add<Self> for TokenAmountU32 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 + rhs.0) }
+}
+
+impl ops::AddAssign for TokenAmountU32 {
+    fn add_assign(&mut self, other: Self) { *self = *self + other; }
+}
+
+impl ops::Sub<Self> for TokenAmountU32 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 - rhs.0) }
+}
+
+impl ops::SubAssign for TokenAmountU32 {
+    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+}
+
+impl ops::Mul<Self> for TokenAmountU32 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 * rhs.0) }
+}
+
+impl ops::MulAssign for TokenAmountU32 {
+    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
+}
+
+impl ops::Div<Self> for TokenAmountU32 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 / rhs.0) }
+}
+
+impl ops::DivAssign for TokenAmountU32 {
+    fn div_assign(&mut self, other: Self) { *self = *self / other; }
+}
+
+impl IsTokenAmount for TokenAmountU32 {}
+
+impl schema::SchemaType for TokenAmountU32 {
+    // TODO Fix the schema when supporting LEB128
+    fn get_type() -> schema::Type { schema::Type::Array(5, Box::new(schema::Type::U8)) }
+}
+
+impl Serial for TokenAmountU32 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let mut value = self.0;
+        loop {
+            let mut byte = (value as u8) & 0b0111_1111;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0b1000_0000;
+            }
+            out.write_u8(byte)?;
+
+            if value == 0 {
+                return Ok(());
+            }
+        }
+    }
+}
+
+impl Deserial for TokenAmountU32 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let mut result = 0u32;
+        let mut shift = 0u32;
+        loop {
+            let byte = source.read_u8()?;
+            let value_byte = (byte & 0b0111_1111) as u32;
+            result |= value_byte << shift;
+            shift += 7;
+
+            if byte & 0b1000_0000 == 0 {
+                return Ok(TokenAmountU32(result));
+            }
+        }
+    }
+}
+
+impl From<u32> for TokenAmountU32 {
+    fn from(v: u32) -> TokenAmountU32 { TokenAmountU32(v) }
+}
+
+impl From<TokenAmountU32> for u32 {
+    fn from(v: TokenAmountU32) -> u32 { v.0 }
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub struct TokenAmountU16(pub u16);
+
+impl ops::Add<Self> for TokenAmountU16 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 + rhs.0) }
+}
+
+impl ops::AddAssign for TokenAmountU16 {
+    fn add_assign(&mut self, other: Self) { *self = *self + other; }
+}
+
+impl ops::Sub<Self> for TokenAmountU16 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 - rhs.0) }
+}
+
+impl ops::SubAssign for TokenAmountU16 {
+    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+}
+
+impl ops::Mul<Self> for TokenAmountU16 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 * rhs.0) }
+}
+
+impl ops::MulAssign for TokenAmountU16 {
+    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
+}
+
+impl ops::Div<Self> for TokenAmountU16 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 / rhs.0) }
+}
+
+impl ops::DivAssign for TokenAmountU16 {
+    fn div_assign(&mut self, other: Self) { *self = *self / other; }
+}
+
+impl IsTokenAmount for TokenAmountU16 {}
+
+impl schema::SchemaType for TokenAmountU16 {
+    // TODO Fix the schema when supporting LEB128
+    fn get_type() -> schema::Type { schema::Type::Array(3, Box::new(schema::Type::U8)) }
+}
+
+impl Serial for TokenAmountU16 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let mut value = self.0;
+        loop {
+            let mut byte = (value as u8) & 0b0111_1111;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0b1000_0000;
+            }
+            out.write_u8(byte)?;
+
+            if value == 0 {
+                return Ok(());
+            }
+        }
+    }
+}
+
+impl Deserial for TokenAmountU16 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let mut result = 0u16;
+        let mut shift = 0u32;
+        loop {
+            let byte = source.read_u8()?;
+            let value_byte = (byte & 0b0111_1111) as u16;
+            result |= value_byte << shift;
+            shift += 7;
+
+            if byte & 0b1000_0000 == 0 {
+                return Ok(TokenAmountU16(result));
+            }
+        }
+    }
+}
+
+impl From<u16> for TokenAmountU16 {
+    fn from(v: u16) -> TokenAmountU16 { TokenAmountU16(v) }
+}
+
+impl From<TokenAmountU16> for u16 {
+    fn from(v: TokenAmountU16) -> u16 { v.0 }
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub struct TokenAmountU8(pub u8);
+
+impl ops::Add<Self> for TokenAmountU8 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 + rhs.0) }
+}
+
+impl ops::AddAssign for TokenAmountU8 {
+    fn add_assign(&mut self, other: Self) { *self = *self + other; }
+}
+
+impl ops::Sub<Self> for TokenAmountU8 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 - rhs.0) }
+}
+
+impl ops::SubAssign for TokenAmountU8 {
+    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+}
+
+impl ops::Mul<Self> for TokenAmountU8 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 * rhs.0) }
+}
+
+impl ops::MulAssign for TokenAmountU8 {
+    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
+}
+
+impl ops::Div<Self> for TokenAmountU8 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 / rhs.0) }
+}
+
+impl ops::DivAssign for TokenAmountU8 {
+    fn div_assign(&mut self, other: Self) { *self = *self / other; }
+}
+
+impl IsTokenAmount for TokenAmountU8 {}
+
+impl schema::SchemaType for TokenAmountU8 {
+    // TODO Fix the schema when supporting LEB128
+    fn get_type() -> schema::Type { schema::Type::Array(2, Box::new(schema::Type::U8)) }
+}
+
+impl Serial for TokenAmountU8 {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let mut value = self.0;
+        loop {
+            let mut byte = (value as u8) & 0b0111_1111;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0b1000_0000;
+            }
+            out.write_u8(byte)?;
+
+            if value == 0 {
+                return Ok(());
+            }
+        }
+    }
+}
+
+impl Deserial for TokenAmountU8 {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let mut result = 0u8;
+        let mut shift = 0u32;
+        loop {
+            let byte = source.read_u8()?;
+            let value_byte = (byte & 0b0111_1111) as u8;
+            result |= value_byte << shift;
+            shift += 7;
+
+            if byte & 0b1000_0000 == 0 {
+                return Ok(TokenAmountU8(result));
+            }
+        }
+    }
+}
+
+impl From<u8> for TokenAmountU8 {
+    fn from(v: u8) -> TokenAmountU8 { TokenAmountU8(v) }
+}
+
+impl From<TokenAmountU8> for u8 {
+    fn from(v: TokenAmountU8) -> u8 { v.0 }
+}
 
 /// An untagged event of a transfer of some amount of tokens from one address to
 /// another. For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct TransferEvent<T: IsTokenId> {
+pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
     /// The amount of tokens being transferred.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The address owning these tokens before the transfer.
     pub from:     Address,
     /// The address to receive these tokens after the transfer.
@@ -469,11 +941,11 @@ pub struct TransferEvent<T: IsTokenId> {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct MintEvent<T: IsTokenId> {
+pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: T,
     /// The number of tokens being minted, this is allowed to be 0 as well.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The initial owner of these newly minted amount of tokens.
     pub owner:    Address,
 }
@@ -483,11 +955,11 @@ pub struct MintEvent<T: IsTokenId> {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct BurnEvent<T: IsTokenId> {
+pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token where an amount is being burned.
     pub token_id: T,
     /// The amount of tokens being burned.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The owner of the tokens being burned.
     pub owner:    Address,
 }
@@ -520,21 +992,21 @@ pub struct TokenMetadataEvent<T: IsTokenId> {
 
 /// Tagged CIS2 event to be serialized for the event log.
 #[derive(Debug)]
-pub enum Cis2Event<T: IsTokenId> {
+pub enum Cis2Event<T: IsTokenId, A: IsTokenAmount> {
     /// A transfer between two addresses of some amount of tokens.
-    Transfer(TransferEvent<T>),
+    Transfer(TransferEvent<T, A>),
     /// Creation of new tokens, could be both adding some amounts to an existing
     /// token or introduce an entirely new token ID.
-    Mint(MintEvent<T>),
+    Mint(MintEvent<T, A>),
     /// Destruction of tokens removing some amounts of a token.
-    Burn(BurnEvent<T>),
+    Burn(BurnEvent<T, A>),
     /// Updates to an operator for a specific address and token id.
     UpdateOperator(UpdateOperatorEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent<T>),
 }
 
-impl<T: IsTokenId> Serial for Cis2Event<T> {
+impl<T: IsTokenId, A: IsTokenAmount> Serial for Cis2Event<T, A> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
             Cis2Event::Transfer(event) => {
@@ -561,13 +1033,13 @@ impl<T: IsTokenId> Serial for Cis2Event<T> {
     }
 }
 
-impl<T: IsTokenId> Deserial for Cis2Event<T> {
+impl<T: IsTokenId, A: IsTokenAmount> Deserial for Cis2Event<T, A> {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let tag = source.read_u8()?;
         match tag {
-            TRANSFER_EVENT_TAG => TransferEvent::<T>::deserial(source).map(Cis2Event::Transfer),
-            MINT_EVENT_TAG => MintEvent::<T>::deserial(source).map(Cis2Event::Mint),
-            BURN_EVENT_TAG => BurnEvent::<T>::deserial(source).map(Cis2Event::Burn),
+            TRANSFER_EVENT_TAG => TransferEvent::<T, A>::deserial(source).map(Cis2Event::Transfer),
+            MINT_EVENT_TAG => MintEvent::<T, A>::deserial(source).map(Cis2Event::Mint),
+            BURN_EVENT_TAG => BurnEvent::<T, A>::deserial(source).map(Cis2Event::Burn),
             UPDATE_OPERATOR_EVENT_TAG => {
                 UpdateOperatorEvent::deserial(source).map(Cis2Event::UpdateOperator)
             }
@@ -755,11 +1227,11 @@ impl AsRef<[u8]> for AdditionalData {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize)]
-pub struct Transfer<T: IsTokenId> {
+pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
     /// The amount of tokens being transferred.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The address owning the tokens being transferred.
     pub from:     Address,
     /// The address receiving the tokens being transferred.
@@ -769,11 +1241,11 @@ pub struct Transfer<T: IsTokenId> {
     pub data:     AdditionalData,
 }
 
-impl<T: IsTokenId> schema::SchemaType for Transfer<T> {
+impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Transfer<T, A> {
     fn get_type() -> schema::Type {
         schema::Type::Struct(schema::Fields::Named(vec![
             (String::from("token_id"), T::get_type()),
-            (String::from("amount"), TokenAmount::get_type()),
+            (String::from("amount"), A::get_type()),
             (String::from("from"), Address::get_type()),
             (String::from("to"), Receiver::get_type()),
             (String::from("data"), AdditionalData::get_type()),
@@ -783,20 +1255,22 @@ impl<T: IsTokenId> schema::SchemaType for Transfer<T> {
 
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize)]
-pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 2)] pub Vec<Transfer<T>>);
+pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
+    #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
+);
 
-impl<T: IsTokenId> schema::SchemaType for TransferParams<T> {
+impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for TransferParams<T, A> {
     fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T>::get_type()))
+        schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T, A>::get_type()))
     }
 }
 
-impl<T: IsTokenId> From<Vec<Transfer<T>>> for TransferParams<T> {
-    fn from(transfers: Vec<Transfer<T>>) -> Self { TransferParams(transfers) }
+impl<T: IsTokenId, A: IsTokenAmount> From<Vec<Transfer<T, A>>> for TransferParams<T, A> {
+    fn from(transfers: Vec<Transfer<T, A>>) -> Self { TransferParams(transfers) }
 }
 
-impl<T: IsTokenId> AsRef<[Transfer<T>]> for TransferParams<T> {
-    fn as_ref(&self) -> &[Transfer<T>] { &self.0 }
+impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<T, A> {
+    fn as_ref(&self) -> &[Transfer<T, A>] { &self.0 }
 }
 
 /// The update to an the operator.
@@ -891,20 +1365,20 @@ impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
 /// `balanceOf`.
 /// It consists of the list of queries paired with their corresponding result.
 #[derive(Debug, Serialize)]
-pub struct BalanceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<TokenAmount>);
+pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
-impl schema::SchemaType for BalanceOfQueryResponse {
+impl<A: IsTokenAmount> schema::SchemaType for BalanceOfQueryResponse<A> {
     fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(TokenAmount::get_type()))
+        schema::Type::List(schema::SizeLength::U16, Box::new(A::get_type()))
     }
 }
 
-impl From<Vec<TokenAmount>> for BalanceOfQueryResponse {
-    fn from(results: Vec<TokenAmount>) -> Self { BalanceOfQueryResponse(results) }
+impl<A: IsTokenAmount> From<Vec<A>> for BalanceOfQueryResponse<A> {
+    fn from(results: Vec<A>) -> Self { BalanceOfQueryResponse(results) }
 }
 
-impl AsRef<[TokenAmount]> for BalanceOfQueryResponse {
-    fn as_ref(&self) -> &[TokenAmount] { &self.0 }
+impl<A: IsTokenAmount> AsRef<[A]> for BalanceOfQueryResponse<A> {
+    fn as_ref(&self) -> &[A] { &self.0 }
 }
 
 /// A query for the operator of a given address for a given token.
@@ -1002,11 +1476,11 @@ impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct OnReceivingCis2Params<T: IsTokenId> {
+pub struct OnReceivingCis2Params<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token received.
     pub token_id: T,
     /// The amount of tokens received.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The previous owner of the tokens.
     pub from:     Address,
     /// Some extra information which where sent as part of the transfer.

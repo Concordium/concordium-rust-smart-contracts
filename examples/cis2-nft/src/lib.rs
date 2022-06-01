@@ -31,9 +31,13 @@ const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 // Types
 
 /// Contract token ID type.
-/// To save bytes we use a small token ID type, but is limited to be represented
-/// by a `u8`.
-type ContractTokenId = TokenIdU8;
+/// To save bytes we use a token ID type limited to a `u32`.
+type ContractTokenId = TokenIdU32;
+
+/// Contract token amount.
+/// Since the tokens are non-fungible the total supply of any token will be at
+/// most 1 and it is fine to use a small type for representing token amounts.
+type ContractTokenAmount = TokenAmountU8;
 
 /// The parameter for the contract function `mint` which mints a number of
 /// tokens to a given address.
@@ -158,7 +162,7 @@ impl<S: HasStateApi> State<S> {
         &self,
         token_id: &ContractTokenId,
         address: &Address,
-    ) -> ContractResult<TokenAmount> {
+    ) -> ContractResult<ContractTokenAmount> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         let balance = self
             .state
@@ -171,7 +175,7 @@ impl<S: HasStateApi> State<S> {
                 }
             })
             .unwrap_or(0);
-        Ok(balance)
+        Ok(balance.into())
     }
 
     /// Check if a given address is an operator of a given owner address.
@@ -188,20 +192,20 @@ impl<S: HasStateApi> State<S> {
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
-        amount: TokenAmount,
+        amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
-        if amount == 0 {
+        if amount == 0.into() {
             return Ok(());
         }
         // Since this contract only contains NFTs, no one will have an amount greater
         // than 1. And since the amount cannot be the zero at this point, the
         // address must have insufficient funds for any amount other than 1.
-        ensure_eq!(amount, 1, ContractError::InsufficientFunds);
+        ensure_eq!(amount, 1.into(), ContractError::InsufficientFunds);
 
         {
             let mut from_address_state =
@@ -341,12 +345,12 @@ fn contract_mint<S: HasStateApi>(
         // Event for minted NFT.
         logger.log(&Cis2Event::Mint(MintEvent {
             token_id,
-            amount: 1,
+            amount: ContractTokenAmount::from(1),
             owner: params.owner,
         }))?;
 
         // Metadata URL for the NFT.
-        logger.log(&Cis2Event::TokenMetadata(TokenMetadataEvent {
+        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
             token_id,
             metadata_url: MetadataUrl {
                 url:  build_token_metadata_url(&token_id),
@@ -357,7 +361,7 @@ fn contract_mint<S: HasStateApi>(
     Ok(())
 }
 
-type TransferParameter = TransferParams<ContractTokenId>;
+type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
@@ -463,11 +467,13 @@ fn contract_update_operator<S: HasStateApi>(
         }
 
         // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
-            owner:    sender,
-            operator: param.operator,
-            update:   param.update,
-        }))?;
+        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+            UpdateOperatorEvent {
+                owner:    sender,
+                operator: param.operator,
+                update:   param.update,
+            },
+        ))?;
     }
 
     Ok(())
@@ -504,6 +510,9 @@ fn contract_operator_of<S: HasStateApi>(
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
 type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+/// Response type for the CIS-2 function `balanceOf` specialized to the subset
+/// of TokenAmounts used by this contract.
+type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 ///
@@ -514,12 +523,12 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
     contract = "CIS2-NFT",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
-    return_value = "BalanceOfQueryResponse"
+    return_value = "ContractBalanceOfQueryResponse"
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<BalanceOfQueryResponse> {
+) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
@@ -529,7 +538,7 @@ fn contract_balance_of<S: HasStateApi>(
         let amount = host.state().balance(&query.token_id, &query.address)?;
         response.push(amount);
     }
-    let result = BalanceOfQueryResponse::from(response);
+    let result = ContractBalanceOfQueryResponse::from(response);
     Ok(result)
 }
 
@@ -581,9 +590,9 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const TOKEN_0: ContractTokenId = TokenIdU8(0);
-    const TOKEN_1: ContractTokenId = TokenIdU8(42);
-    const TOKEN_2: ContractTokenId = TokenIdU8(43);
+    const TOKEN_0: ContractTokenId = TokenIdU32(0);
+    const TOKEN_1: ContractTokenId = TokenIdU32(42);
+    const TOKEN_2: ContractTokenId = TokenIdU32(43);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
@@ -653,22 +662,22 @@ mod tests {
 
         let balance0 =
             host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 1, "Tokens should be owned by the given address 0");
+        claim_eq!(balance0, 1.into(), "Tokens should be owned by the given address 0");
 
         let balance1 =
             host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance1, 1, "Tokens should be owned by the given address 0");
+        claim_eq!(balance1, 1.into(), "Tokens should be owned by the given address 0");
 
         let balance2 =
             host.state().balance(&TOKEN_2, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance2, 1, "Tokens should be owned by the given address 0");
+        claim_eq!(balance2, 1.into(), "Tokens should be owned by the given address 0");
 
         // Check the logs
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
-                amount:   1,
+                amount:   ContractTokenAmount::from(1),
             }))),
             "Expected an event for minting TOKEN_0"
         );
@@ -676,28 +685,32 @@ mod tests {
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_1,
-                amount:   1,
+                amount:   ContractTokenAmount::from(1),
             }))),
             "Expected an event for minting TOKEN_1"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata(TokenMetadataEvent {
-                token_id:     TOKEN_0,
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/00".to_string(),
-                    hash: None,
-                },
-            }))),
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_0,
+                    metadata_url: MetadataUrl {
+                        url:  "https://some.example/token/00000000".to_string(),
+                        hash: None,
+                    },
+                }
+            ))),
             "Expected an event for token metadata for TOKEN_0"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata(TokenMetadataEvent {
-                token_id:     TOKEN_1,
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/2A".to_string(),
-                    hash: None,
-                },
-            }))),
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_1,
+                    metadata_url: MetadataUrl {
+                        url:  "https://some.example/token/2A000000".to_string(),
+                        hash: None,
+                    },
+                }
+            ))),
             "Expected an event for token metadata for TOKEN_1"
         );
     }
@@ -712,7 +725,7 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             token_id: TOKEN_0,
-            amount:   1,
+            amount:   ContractTokenAmount::from(1),
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
             data:     AdditionalData::empty(),
@@ -738,13 +751,21 @@ mod tests {
             host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
         let balance2 =
             host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 0, "Token owner balance should be decreased by the transferred amount");
+        claim_eq!(
+            balance0,
+            0.into(),
+            "Token owner balance should be decreased by the transferred amount"
+        );
         claim_eq!(
             balance1,
-            1,
+            1.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
-        claim_eq!(balance2, 1, "Token receiver balance for token 1 should be the same as before");
+        claim_eq!(
+            balance2,
+            1.into(),
+            "Token receiver balance for token 1 should be the same as before"
+        );
 
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
@@ -754,7 +775,7 @@ mod tests {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   1,
+                amount:   ContractTokenAmount::from(1),
             })),
             "Incorrect event emitted"
         )
@@ -773,7 +794,7 @@ mod tests {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount:   1,
+            amount:   ContractTokenAmount::from(1),
             data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
@@ -805,7 +826,7 @@ mod tests {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount:   1,
+            amount:   ContractTokenAmount::from(1),
             data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
@@ -832,10 +853,14 @@ mod tests {
             .state_mut()
             .balance(&TOKEN_0, &ADDRESS_1)
             .expect_report("Token is expected to exist");
-        claim_eq!(balance0, 0, "Token owner balance should be decreased by the transferred amount");
+        claim_eq!(
+            balance0,
+            0.into(),
+            "Token owner balance should be decreased by the transferred amount"
+        );
         claim_eq!(
             balance1,
-            1,
+            1.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
 
@@ -847,7 +872,7 @@ mod tests {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   1,
+                amount:   ContractTokenAmount::from(1),
             })),
             "Incorrect event emitted"
         )
@@ -888,11 +913,13 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis2Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
-                owner:    ADDRESS_0,
-                operator: ADDRESS_1,
-                update:   OperatorUpdate::Add,
-            })),
+            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner:    ADDRESS_0,
+                    operator: ADDRESS_1,
+                    update:   OperatorUpdate::Add,
+                }
+            )),
             "Incorrect event emitted"
         )
     }

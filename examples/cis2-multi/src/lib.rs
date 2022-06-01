@@ -40,6 +40,9 @@ const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 /// by a `u8`.
 type ContractTokenId = TokenIdU8;
 
+/// Contract token amount type.
+type ContractTokenAmount = TokenAmountU64;
+
 /// The parameter for the contract function `mint` which mints a number of
 /// token types and/or amounts of tokens to a given address.
 #[derive(Serial, Deserial, SchemaType)]
@@ -47,7 +50,7 @@ struct MintParams {
     /// Owner of the newly minted tokens.
     owner:  Address,
     /// A collection of tokens to mint.
-    tokens: collections::BTreeMap<ContractTokenId, TokenAmount>,
+    tokens: collections::BTreeMap<ContractTokenId, ContractTokenAmount>,
 }
 
 /// The state for each address.
@@ -55,7 +58,7 @@ struct MintParams {
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The amount of tokens owned by this address.
-    balances:  StateMap<ContractTokenId, TokenAmount, S>,
+    balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
     /// The address which are currently enabled as operators for this address.
     operators: StateSet<Address, S>,
 }
@@ -145,14 +148,14 @@ impl<S: HasStateApi> State<S> {
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
-        amount: TokenAmount,
+        amount: ContractTokenAmount,
         owner: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
         self.tokens.insert(*token_id);
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
-        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0);
+        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
         *owner_balance += amount;
     }
 
@@ -166,12 +169,11 @@ impl<S: HasStateApi> State<S> {
         &self,
         token_id: &ContractTokenId,
         address: &Address,
-    ) -> ContractResult<TokenAmount> {
+    ) -> ContractResult<ContractTokenAmount> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
-        let balance = self
-            .state
-            .get(address)
-            .map_or(0, |address_state| address_state.balances.get(token_id).map_or(0, |x| *x));
+        let balance = self.state.get(address).map_or(0.into(), |address_state| {
+            address_state.balances.get(token_id).map_or(0.into(), |x| *x)
+        });
         Ok(balance)
     }
 
@@ -189,14 +191,14 @@ impl<S: HasStateApi> State<S> {
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
-        amount: TokenAmount,
+        amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
-        if amount == 0 {
+        if amount == 0.into() {
             return Ok(());
         }
 
@@ -216,7 +218,7 @@ impl<S: HasStateApi> State<S> {
 
         let mut to_address_state =
             self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
-        let mut to_address_balance = to_address_state.balances.entry(*token_id).or_insert(0);
+        let mut to_address_balance = to_address_state.balances.entry(*token_id).or_insert(0.into());
         *to_address_balance += amount;
 
         Ok(())
@@ -267,7 +269,7 @@ fn contract_init<S: HasStateApi>(
 
 #[derive(Serialize, SchemaType)]
 struct ViewAddressState {
-    balances:  Vec<(ContractTokenId, TokenAmount)>,
+    balances:  Vec<(ContractTokenId, ContractTokenAmount)>,
     operators: Vec<Address>,
 }
 
@@ -358,7 +360,7 @@ fn contract_mint<S: HasStateApi>(
         }))?;
 
         // Metadata URL for the token.
-        logger.log(&Cis2Event::TokenMetadata(TokenMetadataEvent {
+        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
             token_id,
             metadata_url: MetadataUrl {
                 url:  build_token_metadata_url(&token_id),
@@ -369,7 +371,7 @@ fn contract_mint<S: HasStateApi>(
     Ok(())
 }
 
-type TransferParameter = TransferParams<ContractTokenId>;
+type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
@@ -476,11 +478,13 @@ fn contract_update_operator<S: HasStateApi>(
         }
 
         // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
-            owner:    sender,
-            operator: param.operator,
-            update:   param.update,
-        }))?;
+        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+            UpdateOperatorEvent {
+                owner:    sender,
+                operator: param.operator,
+                update:   param.update,
+            },
+        ))?;
     }
     Ok(())
 }
@@ -488,6 +492,10 @@ fn contract_update_operator<S: HasStateApi>(
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
 type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+
+/// Response type for the CIS-2 function `balanceOf` specialized to the subset
+/// of TokenAmounts used by this contract.
+type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 ///
@@ -498,12 +506,12 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
     contract = "CIS2-Multi",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
-    return_value = "BalanceOfQueryResponse"
+    return_value = "ContractBalanceOfQueryResponse"
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<BalanceOfQueryResponse> {
+) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
@@ -513,7 +521,7 @@ fn contract_balance_of<S: HasStateApi>(
         let amount = host.state().balance(&query.token_id, &query.address)?;
         response.push(amount);
     }
-    let result = BalanceOfQueryResponse::from(response);
+    let result = ContractBalanceOfQueryResponse::from(response);
     Ok(result)
 }
 
@@ -615,7 +623,8 @@ fn contract_on_cis2_received<S: HasStateApi>(
     };
 
     // Parse the parameter.
-    let params: OnReceivingCis2Params<ContractTokenId> = ctx.parameter_cursor().get()?;
+    let params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
+        ctx.parameter_cursor().get()?;
 
     // Build the transfer from this contract to the contract owner.
     let transfer = Transfer {
@@ -656,8 +665,8 @@ mod tests {
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
     fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         let mut state = State::empty(state_builder);
-        state.mint(&TOKEN_0, 400, &ADDRESS_0, state_builder);
-        state.mint(&TOKEN_1, 1, &ADDRESS_0, state_builder);
+        state.mint(&TOKEN_0, 400.into(), &ADDRESS_0, state_builder);
+        state.mint(&TOKEN_1, 1.into(), &ADDRESS_0, state_builder);
         state
     }
 
@@ -689,8 +698,8 @@ mod tests {
 
         // and parameter.
         let mut tokens = collections::BTreeMap::new();
-        tokens.insert(TOKEN_0, 400);
-        tokens.insert(TOKEN_1, 1);
+        tokens.insert(TOKEN_0, 400.into());
+        tokens.insert(TOKEN_1, 1.into());
         let parameter = MintParams {
             owner: ADDRESS_0,
             tokens,
@@ -713,11 +722,11 @@ mod tests {
         claim_eq!(host.state().tokens.iter().count(), 2, "Only one token is initialized");
         let balance0 =
             host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 400, "Initial tokens are owned by the contract instantiater");
+        claim_eq!(balance0, 400.into(), "Initial tokens are owned by the contract instantiater");
 
         let balance1 =
             host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance1, 1, "Initial tokens are owned by the contract instantiater");
+        claim_eq!(balance1, 1.into(), "Initial tokens are owned by the contract instantiater");
 
         // Check the logs
         claim_eq!(logger.logs.len(), 4, "Exactly four events should be logged");
@@ -725,7 +734,7 @@ mod tests {
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_0,
-                amount:   400,
+                amount:   ContractTokenAmount::from(400),
             }))),
             "Expected an event for minting TOKEN_0"
         );
@@ -733,28 +742,32 @@ mod tests {
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_1,
-                amount:   1,
+                amount:   ContractTokenAmount::from(1),
             }))),
             "Expected an event for minting TOKEN_1"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata(TokenMetadataEvent {
-                token_id:     TOKEN_0,
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/02".to_string(),
-                    hash: None,
-                },
-            }))),
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_0,
+                    metadata_url: MetadataUrl {
+                        url:  "https://some.example/token/02".to_string(),
+                        hash: None,
+                    },
+                }
+            ))),
             "Expected an event for token metadata for TOKEN_0"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata(TokenMetadataEvent {
-                token_id:     TOKEN_1,
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/2A".to_string(),
-                    hash: None,
-                },
-            }))),
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_1,
+                    metadata_url: MetadataUrl {
+                        url:  "https://some.example/token/2A".to_string(),
+                        hash: None,
+                    },
+                }
+            ))),
             "Expected an event for token metadata for TOKEN_1"
         );
     }
@@ -769,7 +782,7 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             token_id: TOKEN_0,
-            amount:   100,
+            amount:   ContractTokenAmount::from(100),
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
             data:     AdditionalData::empty(),
@@ -795,12 +808,12 @@ mod tests {
             host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
-            300,
+            300.into(),
             "Token owner balance should be decreased by the transferred amount."
         );
         claim_eq!(
             balance1,
-            100,
+            100.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
 
@@ -812,7 +825,7 @@ mod tests {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   100,
+                amount:   ContractTokenAmount::from(100),
             })),
             "Incorrect event emitted"
         )
@@ -831,7 +844,7 @@ mod tests {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount:   100,
+            amount:   ContractTokenAmount::from(100),
             data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
@@ -863,7 +876,7 @@ mod tests {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount:   100,
+            amount:   ContractTokenAmount::from(100),
             data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
@@ -889,12 +902,12 @@ mod tests {
             host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
-            300,
+            300.into(),
             "Token owner balance should be decreased by the transferred amount"
         );
         claim_eq!(
             balance1,
-            100,
+            100.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
 
@@ -906,7 +919,7 @@ mod tests {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   100,
+                amount:   ContractTokenAmount::from(100),
             })),
             "Incorrect event emitted"
         )
@@ -947,11 +960,13 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis2Event::<ContractTokenId>::UpdateOperator(UpdateOperatorEvent {
-                owner:    ADDRESS_0,
-                operator: ADDRESS_1,
-                update:   OperatorUpdate::Add,
-            })),
+            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner:    ADDRESS_0,
+                    operator: ADDRESS_1,
+                    update:   OperatorUpdate::Add,
+                }
+            )),
             "Incorrect event emitted"
         )
     }
