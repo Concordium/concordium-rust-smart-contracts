@@ -19,6 +19,7 @@ jobs:
         crates:
           - concordium-std-derive/Cargo.toml
           - concordium-std/Cargo.toml
+          - concordium-cis2/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
@@ -179,6 +180,7 @@ jobs:
 
         crates:
           - concordium-std/Cargo.toml
+          - concordium-cis2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -331,6 +333,7 @@ jobs:
 
         lib-crates:
           - concordium-std/Cargo.toml
+          - concordium-cis2/Cargo.toml
 
         features:
           -

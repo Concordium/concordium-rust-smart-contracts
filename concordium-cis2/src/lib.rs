@@ -525,17 +525,16 @@ impl Serial for TokenAmountU128 {
 impl Deserial for TokenAmountU128 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let mut result = 0u128;
-        let mut shift = 0u32;
-        loop {
+        for i in 0..37 {
             let byte = source.read_u8()?;
             let value_byte = (byte & 0b0111_1111) as u128;
-            result |= value_byte << shift;
-            shift += 7;
+            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
 
             if byte & 0b1000_0000 == 0 {
                 return Ok(TokenAmountU128(result));
             }
         }
+        Err(ParseError {})
     }
 }
 
@@ -618,17 +617,16 @@ impl Serial for TokenAmountU64 {
 impl Deserial for TokenAmountU64 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let mut result = 0u64;
-        let mut shift = 0u32;
-        loop {
+        for i in 0..37 {
             let byte = source.read_u8()?;
             let value_byte = (byte & 0b0111_1111) as u64;
-            result |= value_byte << shift;
-            shift += 7;
+            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
 
             if byte & 0b1000_0000 == 0 {
                 return Ok(TokenAmountU64(result));
             }
         }
+        Err(ParseError {})
     }
 }
 
@@ -711,17 +709,16 @@ impl Serial for TokenAmountU32 {
 impl Deserial for TokenAmountU32 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let mut result = 0u32;
-        let mut shift = 0u32;
-        loop {
+        for i in 0..37 {
             let byte = source.read_u8()?;
             let value_byte = (byte & 0b0111_1111) as u32;
-            result |= value_byte << shift;
-            shift += 7;
+            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
 
             if byte & 0b1000_0000 == 0 {
                 return Ok(TokenAmountU32(result));
             }
         }
+        Err(ParseError {})
     }
 }
 
@@ -804,17 +801,16 @@ impl Serial for TokenAmountU16 {
 impl Deserial for TokenAmountU16 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let mut result = 0u16;
-        let mut shift = 0u32;
-        loop {
+        for i in 0..37 {
             let byte = source.read_u8()?;
             let value_byte = (byte & 0b0111_1111) as u16;
-            result |= value_byte << shift;
-            shift += 7;
+            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
 
             if byte & 0b1000_0000 == 0 {
                 return Ok(TokenAmountU16(result));
             }
         }
+        Err(ParseError {})
     }
 }
 
@@ -897,17 +893,16 @@ impl Serial for TokenAmountU8 {
 impl Deserial for TokenAmountU8 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let mut result = 0u8;
-        let mut shift = 0u32;
-        loop {
+        for i in 0..37 {
             let byte = source.read_u8()?;
             let value_byte = (byte & 0b0111_1111) as u8;
-            result |= value_byte << shift;
-            shift += 7;
+            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
 
             if byte & 0b1000_0000 == 0 {
                 return Ok(TokenAmountU8(result));
             }
         }
+        Err(ParseError {})
     }
 }
 
@@ -1485,4 +1480,150 @@ pub struct OnReceivingCis2Params<T: IsTokenId, A: IsTokenAmount> {
     pub from:     Address,
     /// Some extra information which where sent as part of the transfer.
     pub data:     AdditionalData,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn serial_token_amount128_127_test() {
+        let amount = TokenAmountU128::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount128_max_test() {
+        let amount = TokenAmountU128::from(u128::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 0b00000011
+        ])
+    }
+
+    #[test]
+    fn deserial_token_amount128_127_test() {
+        let amount: TokenAmountU128 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU128::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount128_max_test() {
+        let amount: TokenAmountU128 = from_bytes(&[
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 0b00000011,
+        ])
+        .expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU128::from(u128::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount64_127_test() {
+        let amount = TokenAmountU64::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount64_max_test() {
+        let amount = TokenAmountU64::from(u64::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 255, 255, 255, 255, 255, 255, 255, 255, 0b00000001])
+    }
+
+    #[test]
+    fn deserial_token_amount64_127_test() {
+        let amount: TokenAmountU64 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU64::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount64_max_test() {
+        let amount: TokenAmountU64 =
+            from_bytes(&[255, 255, 255, 255, 255, 255, 255, 255, 255, 0b00000001])
+                .expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU64::from(u64::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount32_127_test() {
+        let amount = TokenAmountU32::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount32_max_test() {
+        let amount = TokenAmountU32::from(u32::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 255, 255, 255, 0b00001111])
+    }
+
+    #[test]
+    fn deserial_token_amount32_127_test() {
+        let amount: TokenAmountU32 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU32::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount32_max_test() {
+        let amount: TokenAmountU32 =
+            from_bytes(&[255, 255, 255, 255, 0b00001111]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU32::from(u32::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount16_127_test() {
+        let amount = TokenAmountU16::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount16_max_test() {
+        let amount = TokenAmountU16::from(u16::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 255, 0b00000011])
+    }
+
+    #[test]
+    fn deserial_token_amount16_127_test() {
+        let amount: TokenAmountU16 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU16::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount16_max_test() {
+        let amount: TokenAmountU16 =
+            from_bytes(&[255, 255, 0b00000011]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU16::from(u16::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount8_127_test() {
+        let amount = TokenAmountU8::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount8_max_test() {
+        let amount = TokenAmountU8::from(u8::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 0b00000001])
+    }
+
+    #[test]
+    fn deserial_token_amount8_127_test() {
+        let amount: TokenAmountU8 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU8::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount8_max_test() {
+        let amount: TokenAmountU8 = from_bytes(&[255, 0b00000001]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU8::from(u8::MAX))
+    }
 }
