@@ -1,7 +1,7 @@
 //! # Implementation of an auction smart contract
 //!
-//! Account addresses can call the bid function to participate in the auction.
-//! An account address has to send some CCD when calling the bid function.
+//! Accounts can invoke the bid function to participate in the auction.
+//! An account has to send some CCD when invoking the bid function.
 //! This CCD amount has to exceed the current highest bid to be accepted by the
 //! smart contract.
 //!
@@ -16,6 +16,10 @@
 //! After the auction ends, any account can finalize the auction. The owner of
 //! the smart contract instance receives the highest bid (the balance of this
 //! contract) when the auction is finalized. This can be done only once.
+//!
+//! Terminology: `Accounts` are derived from a public/private key pair.
+//! `Contract` instances are created by deploying a smart contract
+//! module and initializing it.
 use concordium_std::*;
 use core::fmt::Debug;
 
@@ -35,16 +39,8 @@ pub enum AuctionState {
 /// The state of the smart contract.
 /// This state can be viewed by querying the node with the command
 /// `concordium-client contract invoke` using the `view` function as entrypoint.
-#[derive(Debug, Serial, Deserial)]
-pub struct State {
-    /// The part of the state that can be viewed
-    viewable_state: ViewableState,
-}
-
-/// This part of the state can be viewed by querying the node with the command
-/// `concordium-client contract invoke` using the `view` function as entrypoint.
 #[derive(Debug, Serialize, SchemaType, Clone)]
-pub struct ViewableState {
+pub struct State {
     /// State of the auction
     auction_state:  AuctionState,
     /// The highest bidder so far; The variant `None` represents
@@ -68,7 +64,7 @@ struct InitParameter {
 /// `bid` function errors
 #[derive(Debug, PartialEq, Eq, Clone, Reject)]
 enum BidError {
-    /// Raised when a contract address tries to bid; Only account addresses
+    /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
     ContractSender,
     /// Raised when new bid amount is lower than current highest bid
@@ -96,21 +92,17 @@ fn auction_init<S: HasStateApi>(
 ) -> InitResult<State> {
     // Getting input parameters
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
-    // Creating `ViewableState`
-    let viewable_state = ViewableState {
+    // Creating `State`
+    let state = State {
         auction_state:  AuctionState::NotSoldYet,
         highest_bidder: None,
         item:           parameter.item,
         end:            parameter.end,
     };
-    // Creating `State`
-    let state = State {
-        viewable_state,
-    };
     Ok(state)
 }
 
-/// Receive function for account addresses to place a bid in the auction
+/// Receive function for accounts to place a bid in the auction
 #[receive(contract = "auction", name = "bid", payable, mutable)]
 fn auction_bid<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -120,16 +112,13 @@ fn auction_bid<S: HasStateApi>(
     let balance = host.self_balance();
     let state = host.state_mut();
     // Ensure the auction has not been finalized yet
-    ensure!(
-        state.viewable_state.auction_state == AuctionState::NotSoldYet,
-        BidError::AuctionFinalized
-    );
+    ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
-    ensure!(slot_time <= state.viewable_state.end, BidError::BidsOverWaitingForAuctionFinalization);
+    ensure!(slot_time <= state.end, BidError::BidsOverWaitingForAuctionFinalization);
 
-    // Ensure that only account addresses can place a bid
+    // Ensure that only accounts can place a bid
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(BidError::ContractSender),
         Address::Account(account_address) => account_address,
@@ -138,24 +127,24 @@ fn auction_bid<S: HasStateApi>(
     // Ensure that the new bid exceeds the highest bid so far
     ensure!(amount > balance, BidError::BidTooLow);
 
-    if let Some(account_address) = state.viewable_state.highest_bidder.replace(sender_address) {
+    if let Some(account_address) = state.highest_bidder.replace(sender_address) {
         // Refunding old highest bidder;
         // This transfer (given enough NRG of course) always succeeds because the
         // `account_address` exists since it was recorded when it placed a bid.
         // If an `account_address` exists, and the contract has the funds then the
         // transfer will always succeed.
-        if host.invoke_transfer(&account_address, balance).is_err() {}
+        let _ = host.invoke_transfer(&account_address, balance);
     }
     Ok(())
 }
 
 /// View function that returns the content of the state
-#[receive(contract = "auction", name = "view", return_value = "ViewableState")]
+#[receive(contract = "auction", name = "view", return_value = "State")]
 fn view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<ViewableState> {
-    Ok(host.state().viewable_state.clone())
+) -> ReceiveResult<State> {
+    Ok(host.state().clone())
 }
 
 /// Receive function used to finalize the auction. It sends the highest bid (the
@@ -168,27 +157,24 @@ fn auction_finalize<S: HasStateApi>(
 ) -> Result<(), FinalizeError> {
     let state = host.state();
     // Ensure the auction has not been finalized yet
-    ensure!(
-        state.viewable_state.auction_state == AuctionState::NotSoldYet,
-        FinalizeError::AuctionFinalized
-    );
+    ensure!(state.auction_state == AuctionState::NotSoldYet, FinalizeError::AuctionFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has ended already
-    ensure!(slot_time > state.viewable_state.end, FinalizeError::AuctionStillActive);
+    ensure!(slot_time > state.end, FinalizeError::AuctionStillActive);
 
-    if let Some(account_address) = state.viewable_state.highest_bidder {
+    if let Some(account_address) = state.highest_bidder {
         // Marking the highest bid (the last bidder) as winner of the auction
-        host.state_mut().viewable_state.auction_state = AuctionState::Sold(account_address);
+        host.state_mut().auction_state = AuctionState::Sold(account_address);
         let owner = ctx.owner();
         let balance = host.self_balance();
         // Sending the highest bid (the balance of this contract) to the owner of the
         // smart contract instance;
         // This transfer (given enough NRG of course) always succeeds because the
         // `owner` exists since it deployed the smart contract instance.
-        // If an account address exists, and the contract has the funds then the
+        // If an account exists, and the contract has the funds then the
         // transfer will always succeed.
-        if host.invoke_transfer(&owner, balance).is_err() {}
+        let _ = host.invoke_transfer(&owner, balance);
     }
     Ok(())
 }
@@ -199,7 +185,7 @@ mod tests {
     use std::sync::atomic::{AtomicU8, Ordering};
     use test_infrastructure::*;
 
-    // A counter for generating new account addresses
+    // A counter for generating new accounts
     static ADDRESS_COUNTER: AtomicU8 = AtomicU8::new(0);
     const AUCTION_END: u64 = 1;
     const ITEM: &str = "Starry night by Van Gogh";
@@ -334,12 +320,12 @@ mod tests {
             "Transferring CCD to Alice/Carol should work"
         );
         claim_eq!(
-            host.state().viewable_state.auction_state,
+            host.state().auction_state,
             AuctionState::Sold(bob),
             "Finalizing the auction should change the auction state to `Sold(bob)`"
         );
         claim_eq!(
-            host.state().viewable_state.highest_bidder,
+            host.state().highest_bidder,
             Some(bob),
             "Finalizing the auction should mark bob as highest bidder"
         );
