@@ -454,465 +454,118 @@ impl Deserial for TokenIdUnit {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub struct TokenAmountU128(pub u128);
+macro_rules! token_amount_wrapper {
+    ($name:ident, $wrapped:ty, $size:literal) => {
+        #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
+        #[repr(transparent)]
+        pub struct $name(pub $wrapped);
 
-impl ops::Add<Self> for TokenAmountU128 {
-    type Output = Self;
+        impl ops::Add<Self> for $name {
+            type Output = Self;
 
-    fn add(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 + rhs.0) }
-}
+            fn add(self, rhs: Self) -> Self::Output { $name(self.0 + rhs.0) }
+        }
 
-impl ops::AddAssign for TokenAmountU128 {
-    fn add_assign(&mut self, other: Self) { *self = *self + other; }
-}
+        impl ops::AddAssign for $name {
+            fn add_assign(&mut self, other: Self) { *self = *self + other; }
+        }
 
-impl ops::Sub<Self> for TokenAmountU128 {
-    type Output = Self;
+        impl ops::Sub<Self> for $name {
+            type Output = Self;
 
-    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 - rhs.0) }
-}
+            fn sub(self, rhs: Self) -> Self::Output { $name(self.0 - rhs.0) }
+        }
 
-impl ops::SubAssign for TokenAmountU128 {
-    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
-}
+        impl ops::SubAssign for $name {
+            fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+        }
 
-impl ops::Mul<Self> for TokenAmountU128 {
-    type Output = Self;
+        impl ops::Mul<$wrapped> for $name {
+            type Output = Self;
 
-    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 * rhs.0) }
-}
+            fn mul(self, rhs: $wrapped) -> Self::Output { $name(self.0 * rhs) }
+        }
 
-impl ops::MulAssign for TokenAmountU128 {
-    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
-}
+        impl ops::Mul<$name> for $wrapped {
+            type Output = $name;
 
-impl ops::Div<Self> for TokenAmountU128 {
-    type Output = Self;
+            fn mul(self, rhs: $name) -> Self::Output { $name(self * rhs.0) }
+        }
 
-    fn div(self, rhs: Self) -> Self::Output { TokenAmountU128(self.0 / rhs.0) }
-}
+        impl ops::MulAssign<$wrapped> for $name {
+            fn mul_assign(&mut self, other: $wrapped) { *self = *self * other; }
+        }
 
-impl ops::DivAssign for TokenAmountU128 {
-    fn div_assign(&mut self, other: Self) { *self = *self / other; }
-}
+        impl ops::Rem<$wrapped> for $name {
+            type Output = Self;
 
-impl IsTokenAmount for TokenAmountU128 {}
+            fn rem(self, other: $wrapped) -> Self::Output { $name(self.0 % other) }
+        }
 
-impl schema::SchemaType for TokenAmountU128 {
-    // TODO Fix the schema when supporting LEB128
-    fn get_type() -> schema::Type { schema::Type::Array(19, Box::new(schema::Type::U8)) }
-}
+        impl ops::RemAssign<$wrapped> for $name {
+            fn rem_assign(&mut self, other: $wrapped) { *self = *self % other; }
+        }
 
-impl Serial for TokenAmountU128 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        let mut value = self.0;
-        loop {
-            let mut byte = (value as u8) & 0b0111_1111;
-            value >>= 7;
-            if value != 0 {
-                byte |= 0b1000_0000;
-            }
-            out.write_u8(byte)?;
+        impl iter::Sum for $name {
+            fn sum<I: Iterator<Item = Self>>(iter: I) -> Self { iter.fold($name(0), ops::Add::add) }
+        }
 
-            if value == 0 {
-                return Ok(());
+        impl IsTokenAmount for $name {}
+
+        impl schema::SchemaType for $name {
+            // TODO Fix the schema when supporting LEB128
+            fn get_type() -> schema::Type { schema::Type::Array($size, Box::new(schema::Type::U8)) }
+        }
+
+        impl Serial for $name {
+            fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+                let mut value = self.0;
+                loop {
+                    let mut byte = (value as u8) & 0b0111_1111;
+                    value >>= 7;
+                    if value != 0 {
+                        byte |= 0b1000_0000;
+                    }
+                    out.write_u8(byte)?;
+
+                    if value == 0 {
+                        return Ok(());
+                    }
+                }
             }
         }
-    }
-}
 
-impl Deserial for TokenAmountU128 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let mut result = 0u128;
-        for i in 0..37 {
-            let byte = source.read_u8()?;
-            let value_byte = (byte & 0b0111_1111) as u128;
-            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
+        impl Deserial for $name {
+            fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+                let mut result: $wrapped = 0;
+                for i in 0..37 {
+                    let byte = source.read_u8()?;
+                    let value_byte = (byte & 0b0111_1111) as $wrapped;
+                    result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
 
-            if byte & 0b1000_0000 == 0 {
-                return Ok(TokenAmountU128(result));
+                    if byte & 0b1000_0000 == 0 {
+                        return Ok($name(result));
+                    }
+                }
+                Err(ParseError {})
             }
         }
-        Err(ParseError {})
-    }
-}
 
-impl From<u128> for TokenAmountU128 {
-    fn from(v: u128) -> TokenAmountU128 { TokenAmountU128(v) }
-}
-
-impl From<TokenAmountU128> for u128 {
-    fn from(v: TokenAmountU128) -> u128 { v.0 }
-}
-
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub struct TokenAmountU64(pub u64);
-
-impl ops::Add<Self> for TokenAmountU64 {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 + rhs.0) }
-}
-
-impl ops::AddAssign for TokenAmountU64 {
-    fn add_assign(&mut self, other: Self) { *self = *self + other; }
-}
-
-impl ops::Sub<Self> for TokenAmountU64 {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 - rhs.0) }
-}
-
-impl ops::SubAssign for TokenAmountU64 {
-    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
-}
-
-impl ops::Mul<Self> for TokenAmountU64 {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 * rhs.0) }
-}
-
-impl ops::MulAssign for TokenAmountU64 {
-    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
-}
-
-impl ops::Div<Self> for TokenAmountU64 {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output { TokenAmountU64(self.0 / rhs.0) }
-}
-
-impl ops::DivAssign for TokenAmountU64 {
-    fn div_assign(&mut self, other: Self) { *self = *self / other; }
-}
-
-impl IsTokenAmount for TokenAmountU64 {}
-
-impl schema::SchemaType for TokenAmountU64 {
-    // TODO Fix the schema when supporting LEB128
-    fn get_type() -> schema::Type { schema::Type::Array(10, Box::new(schema::Type::U8)) }
-}
-
-impl Serial for TokenAmountU64 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        let mut value = self.0;
-        loop {
-            let mut byte = (value as u8) & 0b0111_1111;
-            value >>= 7;
-            if value != 0 {
-                byte |= 0b1000_0000;
-            }
-            out.write_u8(byte)?;
-
-            if value == 0 {
-                return Ok(());
-            }
+        impl From<$wrapped> for $name {
+            fn from(v: $wrapped) -> $name { $name(v) }
         }
-    }
-}
 
-impl Deserial for TokenAmountU64 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let mut result = 0u64;
-        for i in 0..37 {
-            let byte = source.read_u8()?;
-            let value_byte = (byte & 0b0111_1111) as u64;
-            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
-
-            if byte & 0b1000_0000 == 0 {
-                return Ok(TokenAmountU64(result));
-            }
+        impl From<$name> for $wrapped {
+            fn from(v: $name) -> $wrapped { v.0 }
         }
-        Err(ParseError {})
-    }
+    };
 }
 
-impl From<u64> for TokenAmountU64 {
-    fn from(v: u64) -> TokenAmountU64 { TokenAmountU64(v) }
-}
-
-impl From<TokenAmountU64> for u64 {
-    fn from(v: TokenAmountU64) -> u64 { v.0 }
-}
-
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub struct TokenAmountU32(pub u32);
-
-impl ops::Add<Self> for TokenAmountU32 {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 + rhs.0) }
-}
-
-impl ops::AddAssign for TokenAmountU32 {
-    fn add_assign(&mut self, other: Self) { *self = *self + other; }
-}
-
-impl ops::Sub<Self> for TokenAmountU32 {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 - rhs.0) }
-}
-
-impl ops::SubAssign for TokenAmountU32 {
-    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
-}
-
-impl ops::Mul<Self> for TokenAmountU32 {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 * rhs.0) }
-}
-
-impl ops::MulAssign for TokenAmountU32 {
-    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
-}
-
-impl ops::Div<Self> for TokenAmountU32 {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output { TokenAmountU32(self.0 / rhs.0) }
-}
-
-impl ops::DivAssign for TokenAmountU32 {
-    fn div_assign(&mut self, other: Self) { *self = *self / other; }
-}
-
-impl IsTokenAmount for TokenAmountU32 {}
-
-impl schema::SchemaType for TokenAmountU32 {
-    // TODO Fix the schema when supporting LEB128
-    fn get_type() -> schema::Type { schema::Type::Array(5, Box::new(schema::Type::U8)) }
-}
-
-impl Serial for TokenAmountU32 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        let mut value = self.0;
-        loop {
-            let mut byte = (value as u8) & 0b0111_1111;
-            value >>= 7;
-            if value != 0 {
-                byte |= 0b1000_0000;
-            }
-            out.write_u8(byte)?;
-
-            if value == 0 {
-                return Ok(());
-            }
-        }
-    }
-}
-
-impl Deserial for TokenAmountU32 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let mut result = 0u32;
-        for i in 0..37 {
-            let byte = source.read_u8()?;
-            let value_byte = (byte & 0b0111_1111) as u32;
-            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
-
-            if byte & 0b1000_0000 == 0 {
-                return Ok(TokenAmountU32(result));
-            }
-        }
-        Err(ParseError {})
-    }
-}
-
-impl From<u32> for TokenAmountU32 {
-    fn from(v: u32) -> TokenAmountU32 { TokenAmountU32(v) }
-}
-
-impl From<TokenAmountU32> for u32 {
-    fn from(v: TokenAmountU32) -> u32 { v.0 }
-}
-
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub struct TokenAmountU16(pub u16);
-
-impl ops::Add<Self> for TokenAmountU16 {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 + rhs.0) }
-}
-
-impl ops::AddAssign for TokenAmountU16 {
-    fn add_assign(&mut self, other: Self) { *self = *self + other; }
-}
-
-impl ops::Sub<Self> for TokenAmountU16 {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 - rhs.0) }
-}
-
-impl ops::SubAssign for TokenAmountU16 {
-    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
-}
-
-impl ops::Mul<Self> for TokenAmountU16 {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 * rhs.0) }
-}
-
-impl ops::MulAssign for TokenAmountU16 {
-    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
-}
-
-impl ops::Div<Self> for TokenAmountU16 {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output { TokenAmountU16(self.0 / rhs.0) }
-}
-
-impl ops::DivAssign for TokenAmountU16 {
-    fn div_assign(&mut self, other: Self) { *self = *self / other; }
-}
-
-impl IsTokenAmount for TokenAmountU16 {}
-
-impl schema::SchemaType for TokenAmountU16 {
-    // TODO Fix the schema when supporting LEB128
-    fn get_type() -> schema::Type { schema::Type::Array(3, Box::new(schema::Type::U8)) }
-}
-
-impl Serial for TokenAmountU16 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        let mut value = self.0;
-        loop {
-            let mut byte = (value as u8) & 0b0111_1111;
-            value >>= 7;
-            if value != 0 {
-                byte |= 0b1000_0000;
-            }
-            out.write_u8(byte)?;
-
-            if value == 0 {
-                return Ok(());
-            }
-        }
-    }
-}
-
-impl Deserial for TokenAmountU16 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let mut result = 0u16;
-        for i in 0..37 {
-            let byte = source.read_u8()?;
-            let value_byte = (byte & 0b0111_1111) as u16;
-            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
-
-            if byte & 0b1000_0000 == 0 {
-                return Ok(TokenAmountU16(result));
-            }
-        }
-        Err(ParseError {})
-    }
-}
-
-impl From<u16> for TokenAmountU16 {
-    fn from(v: u16) -> TokenAmountU16 { TokenAmountU16(v) }
-}
-
-impl From<TokenAmountU16> for u16 {
-    fn from(v: TokenAmountU16) -> u16 { v.0 }
-}
-
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub struct TokenAmountU8(pub u8);
-
-impl ops::Add<Self> for TokenAmountU8 {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 + rhs.0) }
-}
-
-impl ops::AddAssign for TokenAmountU8 {
-    fn add_assign(&mut self, other: Self) { *self = *self + other; }
-}
-
-impl ops::Sub<Self> for TokenAmountU8 {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 - rhs.0) }
-}
-
-impl ops::SubAssign for TokenAmountU8 {
-    fn sub_assign(&mut self, other: Self) { *self = *self - other; }
-}
-
-impl ops::Mul<Self> for TokenAmountU8 {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 * rhs.0) }
-}
-
-impl ops::MulAssign for TokenAmountU8 {
-    fn mul_assign(&mut self, other: Self) { *self = *self * other; }
-}
-
-impl ops::Div<Self> for TokenAmountU8 {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output { TokenAmountU8(self.0 / rhs.0) }
-}
-
-impl ops::DivAssign for TokenAmountU8 {
-    fn div_assign(&mut self, other: Self) { *self = *self / other; }
-}
-
-impl IsTokenAmount for TokenAmountU8 {}
-
-impl schema::SchemaType for TokenAmountU8 {
-    // TODO Fix the schema when supporting LEB128
-    fn get_type() -> schema::Type { schema::Type::Array(2, Box::new(schema::Type::U8)) }
-}
-
-impl Serial for TokenAmountU8 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        let mut value = self.0;
-        loop {
-            let mut byte = (value as u8) & 0b0111_1111;
-            value >>= 7;
-            if value != 0 {
-                byte |= 0b1000_0000;
-            }
-            out.write_u8(byte)?;
-
-            if value == 0 {
-                return Ok(());
-            }
-        }
-    }
-}
-
-impl Deserial for TokenAmountU8 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let mut result = 0u8;
-        for i in 0..37 {
-            let byte = source.read_u8()?;
-            let value_byte = (byte & 0b0111_1111) as u8;
-            result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
-
-            if byte & 0b1000_0000 == 0 {
-                return Ok(TokenAmountU8(result));
-            }
-        }
-        Err(ParseError {})
-    }
-}
-
-impl From<u8> for TokenAmountU8 {
-    fn from(v: u8) -> TokenAmountU8 { TokenAmountU8(v) }
-}
-
-impl From<TokenAmountU8> for u8 {
-    fn from(v: TokenAmountU8) -> u8 { v.0 }
-}
+token_amount_wrapper!(TokenAmountU128, u128, 19);
+token_amount_wrapper!(TokenAmountU64, u64, 10);
+token_amount_wrapper!(TokenAmountU32, u32, 5);
+token_amount_wrapper!(TokenAmountU16, u16, 3);
+token_amount_wrapper!(TokenAmountU8, u8, 2);
 
 /// An untagged event of a transfer of some amount of tokens from one address to
 /// another. For a tagged version, use `Cis2Event`.
