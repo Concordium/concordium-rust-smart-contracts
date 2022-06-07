@@ -66,13 +66,13 @@ struct InitParameter {
 enum BidError {
     /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
-    ContractSender,
+    OnlyAccount,
     /// Raised when new bid amount is lower than current highest bid
     BidTooLow,
     /// Raised when bid is placed after auction end time passed
-    BidsOverWaitingForAuctionFinalization,
+    BidTooLate,
     /// Raised when bid is placed after auction has been finalized
-    AuctionFinalized,
+    AuctionAlreadyFinalized,
 }
 
 /// `finalize` function errors
@@ -81,7 +81,7 @@ enum FinalizeError {
     /// Raised when finalizing an auction before auction end time passed
     AuctionStillActive,
     /// Raised when finalizing an auction that is already finalized
-    AuctionFinalized,
+    AuctionAlreadyFinalized,
 }
 
 /// Init function that creates a new auction
@@ -112,15 +112,15 @@ fn auction_bid<S: HasStateApi>(
     let balance = host.self_balance();
     let state = host.state_mut();
     // Ensure the auction has not been finalized yet
-    ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionFinalized);
+    ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
-    ensure!(slot_time <= state.end, BidError::BidsOverWaitingForAuctionFinalization);
+    ensure!(slot_time <= state.end, BidError::BidTooLate);
 
     // Ensure that only accounts can place a bid
     let sender_address = match ctx.sender() {
-        Address::Contract(_) => bail!(BidError::ContractSender),
+        Address::Contract(_) => bail!(BidError::OnlyAccount),
         Address::Account(account_address) => account_address,
     };
 
@@ -133,6 +133,9 @@ fn auction_bid<S: HasStateApi>(
         // `account_address` exists since it was recorded when it placed a bid.
         // If an `account_address` exists, and the contract has the funds then the
         // transfer will always succeed.
+        // Please consider using a pull-over-push pattern when expanding this smart
+        // contract to allow smart contract instances to participate in the auction as
+        // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
         let _ = host.invoke_transfer(&account_address, balance);
     }
     Ok(())
@@ -157,7 +160,10 @@ fn auction_finalize<S: HasStateApi>(
 ) -> Result<(), FinalizeError> {
     let state = host.state();
     // Ensure the auction has not been finalized yet
-    ensure!(state.auction_state == AuctionState::NotSoldYet, FinalizeError::AuctionFinalized);
+    ensure!(
+        state.auction_state == AuctionState::NotSoldYet,
+        FinalizeError::AuctionAlreadyFinalized
+    );
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has ended already
@@ -334,7 +340,7 @@ mod tests {
         let finres3 = auction_finalize(&ctx5, &mut host);
         expect_error(
             finres3,
-            FinalizeError::AuctionFinalized,
+            FinalizeError::AuctionAlreadyFinalized,
             "Finalizing the auction a second time should fail",
         );
 
@@ -342,7 +348,7 @@ mod tests {
         let res4 = auction_bid(&bob_ctx, &mut host, big_amount);
         expect_error(
             res4,
-            BidError::AuctionFinalized,
+            BidError::AuctionAlreadyFinalized,
             "Bidding should fail because the auction is finalized",
         );
     }
