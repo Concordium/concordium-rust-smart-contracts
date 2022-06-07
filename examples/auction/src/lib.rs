@@ -112,7 +112,7 @@ fn auction_bid<S: HasStateApi>(
     let balance = host.self_balance();
     let state = host.state_mut();
     // Ensure the auction has not been finalized yet
-    ensure!(state.auction_state == AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
+    ensure_eq!(state.auction_state, AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
@@ -136,18 +136,18 @@ fn auction_bid<S: HasStateApi>(
         // Please consider using a pull-over-push pattern when expanding this smart
         // contract to allow smart contract instances to participate in the auction as
         // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        let _ = host.invoke_transfer(&account_address, balance);
+        host.invoke_transfer(&account_address, balance).unwrap_abort();
     }
     Ok(())
 }
 
 /// View function that returns the content of the state
 #[receive(contract = "auction", name = "view", return_value = "State")]
-fn view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<State> {
-    Ok(host.state().clone())
+fn view<'a, 'b, S: HasStateApi>(
+    _ctx: &'a impl HasReceiveContext,
+    host: &'b impl HasHost<State, StateApiType = S>,
+) -> ReceiveResult<&'b State> {
+    Ok(host.state())
 }
 
 /// Receive function used to finalize the auction. It sends the highest bid (the
@@ -160,8 +160,9 @@ fn auction_finalize<S: HasStateApi>(
 ) -> Result<(), FinalizeError> {
     let state = host.state();
     // Ensure the auction has not been finalized yet
-    ensure!(
-        state.auction_state == AuctionState::NotSoldYet,
+    ensure_eq!(
+        state.auction_state,
+        AuctionState::NotSoldYet,
         FinalizeError::AuctionAlreadyFinalized
     );
 
@@ -180,7 +181,7 @@ fn auction_finalize<S: HasStateApi>(
         // `owner` exists since it deployed the smart contract instance.
         // If an account exists, and the contract has the funds then the
         // transfer will always succeed.
-        let _ = host.invoke_transfer(&owner, balance);
+        host.invoke_transfer(&owner, balance).unwrap_abort();
     }
     Ok(())
 }
