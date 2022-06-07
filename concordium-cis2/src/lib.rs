@@ -1,11 +1,11 @@
 //! This library provides types and functions for working with the [Concordium
-//! Token Standard CIS1](https://proposals.concordium.software/CIS/cis-1.html).
+//! Token Standard CIS2](https://proposals.concordium.software/CIS/cis-2.html).
 //!
 //! It contains types for the parameters for each of the contract functions and
 //! types for each event. Each type have implemented serialization according to
-//! CIS1.
-//! Additionally the crate exports an CIS1Error wrapper type which can be used
-//! to wrap and extend a custom error type. This will ensure the CIS1 errors
+//! CIS2.
+//! Additionally the crate exports an CIS2Error wrapper type which can be used
+//! to wrap and extend a custom error type. This will ensure the CIS2 errors
 //! have the correct error codes.
 //!
 //! # Example using `TransferParams`
@@ -27,30 +27,30 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 #[cfg(not(feature = "std"))]
-use core::fmt;
+use core::{fmt, ops};
 #[cfg(feature = "std")]
-use std::fmt;
+use std::{fmt, ops};
 
 use convert::TryFrom;
 
-/// Tag for the CIS1 Transfer event.
+/// Tag for the CIS2 Transfer event.
 pub const TRANSFER_EVENT_TAG: u8 = u8::MAX;
-/// Tag for the CIS1 Mint event.
+/// Tag for the CIS2 Mint event.
 pub const MINT_EVENT_TAG: u8 = u8::MAX - 1;
-/// Tag for the CIS1 Burn event.
+/// Tag for the CIS2 Burn event.
 pub const BURN_EVENT_TAG: u8 = u8::MAX - 2;
-/// Tag for the CIS1 UpdateOperator event.
+/// Tag for the CIS2 UpdateOperator event.
 pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
-/// Tag for the CIS1 TokenMetadata event.
+/// Tag for the CIS2 TokenMetadata event.
 pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
 
 /// Sha256 digest
 pub type Sha256 = [u8; 32];
 
 /// The location of the metadata and an optional hash of the content.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct MetadataUrl {
     /// The URL following the specification RFC1738.
     #[concordium(size_length = 2)]
@@ -59,15 +59,34 @@ pub struct MetadataUrl {
     pub hash: Option<Sha256>,
 }
 
-/// Trait for marking types as CIS1 token IDs.
-/// For a type to be a valid CIS1 token ID it must implement serialization and
-/// schema type, such that the first byte indicates how many bytes is used to
+impl schema::SchemaType for MetadataUrl {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            ("url".to_string(), schema::Type::String(schema::SizeLength::U16)),
+            ("hash".to_string(), Option::<Sha256>::get_type()),
+        ]))
+    }
+}
+
+/// Trait for marking types as CIS2 token IDs.
+/// For a type to be a valid CIS2 token ID it must implement SchemaType and
+/// Serialize, such that the first byte indicates how many bytes is used to
 /// represent the token ID, followed by this many bytes for the token ID.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
 /// token ID using Vec<u8> is to allow smart contracts to use specialized token
 /// ID implementations avoiding allocations.
 pub trait IsTokenId: Serialize + schema::SchemaType {}
+
+/// Trait for marking types as CIS2 token amounts.
+/// For a type to be a valid CIS2 token amount it must implement SchemaType and
+/// Serialize, using the LEB128 unsigned integer encoding constrained to at most
+/// 37 bytes.
+///
+/// Note: The reason for introducing such a trait instead of representing every
+/// token amount using [u8; 37] is to allow smart contracts to use specialized
+/// token amount implementations avoiding doing arithmetics of large integers.
+pub trait IsTokenAmount: Serialize + schema::SchemaType {}
 
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
@@ -76,7 +95,7 @@ pub trait IsTokenId: Serialize + schema::SchemaType {}
 /// allocating a Vec. Using a fixed size token ID type (such as `TokenIdFixed`)
 /// will avoid this.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but
 /// unless the bytes have some significant meaning, it is most likely better to
 /// use a smaller fixed size token ID such as `TokenIdU8`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Serialize)]
@@ -103,7 +122,7 @@ impl fmt::Display for TokenIdVec {
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but for
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but for
 /// most cases using a smaller token ID is fine and can reduce contract energy
 /// costs.
 ///
@@ -167,7 +186,7 @@ impl<const N: usize> fmt::Display for TokenIdFixed<N> {
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but for
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but for
 /// most cases using a smaller token ID is fine and can reduce contract energy
 /// costs.
 ///
@@ -225,7 +244,7 @@ impl fmt::Display for TokenIdU64 {
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but for
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but for
 /// most cases using a smaller token ID is fine and can reduce contract energy
 /// costs.
 ///
@@ -283,7 +302,7 @@ impl fmt::Display for TokenIdU32 {
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but for
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but for
 /// most cases using a smaller token ID is fine and can reduce contract energy
 /// costs.
 ///
@@ -341,7 +360,7 @@ impl fmt::Display for TokenIdU16 {
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but for
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but for
 /// most cases using a smaller token ID is fine and can reduce contract energy
 /// costs.
 ///
@@ -399,7 +418,7 @@ impl fmt::Display for TokenIdU8 {
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
-/// The CIS1 specification allows for up to 255 bytes for the token ID, but for
+/// The CIS2 specification allows for up to 255 bytes for the token ID, but for
 /// most cases using a smaller token ID is fine and can reduce contract energy
 /// costs.
 ///
@@ -435,19 +454,129 @@ impl Deserial for TokenIdUnit {
     }
 }
 
-/// An amount of a specific token type.
-pub type TokenAmount = u64;
+macro_rules! token_amount_wrapper {
+    ($name:ident, $wrapped:ty, $size:literal) => {
+        #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
+        #[repr(transparent)]
+        pub struct $name(pub $wrapped);
+
+        impl ops::Add<Self> for $name {
+            type Output = Self;
+
+            fn add(self, rhs: Self) -> Self::Output { $name(self.0 + rhs.0) }
+        }
+
+        impl ops::AddAssign for $name {
+            fn add_assign(&mut self, other: Self) { *self = *self + other; }
+        }
+
+        impl ops::Sub<Self> for $name {
+            type Output = Self;
+
+            fn sub(self, rhs: Self) -> Self::Output { $name(self.0 - rhs.0) }
+        }
+
+        impl ops::SubAssign for $name {
+            fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+        }
+
+        impl ops::Mul<$wrapped> for $name {
+            type Output = Self;
+
+            fn mul(self, rhs: $wrapped) -> Self::Output { $name(self.0 * rhs) }
+        }
+
+        impl ops::Mul<$name> for $wrapped {
+            type Output = $name;
+
+            fn mul(self, rhs: $name) -> Self::Output { $name(self * rhs.0) }
+        }
+
+        impl ops::MulAssign<$wrapped> for $name {
+            fn mul_assign(&mut self, other: $wrapped) { *self = *self * other; }
+        }
+
+        impl ops::Rem<$wrapped> for $name {
+            type Output = Self;
+
+            fn rem(self, other: $wrapped) -> Self::Output { $name(self.0 % other) }
+        }
+
+        impl ops::RemAssign<$wrapped> for $name {
+            fn rem_assign(&mut self, other: $wrapped) { *self = *self % other; }
+        }
+
+        impl iter::Sum for $name {
+            fn sum<I: Iterator<Item = Self>>(iter: I) -> Self { iter.fold($name(0), ops::Add::add) }
+        }
+
+        impl IsTokenAmount for $name {}
+
+        impl schema::SchemaType for $name {
+            // TODO Fix the schema when supporting LEB128
+            fn get_type() -> schema::Type { schema::Type::Array($size, Box::new(schema::Type::U8)) }
+        }
+
+        impl Serial for $name {
+            fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+                let mut value = self.0;
+                loop {
+                    let mut byte = (value as u8) & 0b0111_1111;
+                    value >>= 7;
+                    if value != 0 {
+                        byte |= 0b1000_0000;
+                    }
+                    out.write_u8(byte)?;
+
+                    if value == 0 {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        impl Deserial for $name {
+            fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+                let mut result: $wrapped = 0;
+                for i in 0..37 {
+                    let byte = source.read_u8()?;
+                    let value_byte = (byte & 0b0111_1111) as $wrapped;
+                    result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
+
+                    if byte & 0b1000_0000 == 0 {
+                        return Ok($name(result));
+                    }
+                }
+                Err(ParseError {})
+            }
+        }
+
+        impl From<$wrapped> for $name {
+            fn from(v: $wrapped) -> $name { $name(v) }
+        }
+
+        impl From<$name> for $wrapped {
+            fn from(v: $name) -> $wrapped { v.0 }
+        }
+    };
+}
+
+token_amount_wrapper!(TokenAmountU128, u128, 19);
+token_amount_wrapper!(TokenAmountU64, u64, 10);
+token_amount_wrapper!(TokenAmountU32, u32, 5);
+token_amount_wrapper!(TokenAmountU16, u16, 3);
+token_amount_wrapper!(TokenAmountU8, u8, 2);
 
 /// An untagged event of a transfer of some amount of tokens from one address to
-/// another. For a tagged version, use `Cis1Event`.
-// Note: For the serialization to be derived according to the CIS1
+/// another. For a tagged version, use `Cis2Event`.
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct TransferEvent<T: IsTokenId> {
+pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
     /// The amount of tokens being transferred.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The address owning these tokens before the transfer.
     pub from:     Address,
     /// The address to receive these tokens after the transfer.
@@ -456,36 +585,36 @@ pub struct TransferEvent<T: IsTokenId> {
 
 /// An untagged event of tokens being minted, could be a new token type or
 /// extending the total supply of existing token.
-/// For a tagged version, use `Cis1Event`.
-// Note: For the serialization to be derived according to the CIS1
+/// For a tagged version, use `Cis2Event`.
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct MintEvent<T: IsTokenId> {
+pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: T,
     /// The number of tokens being minted, this is allowed to be 0 as well.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The initial owner of these newly minted amount of tokens.
     pub owner:    Address,
 }
 
 /// An untagged event of some amount of a token type being burned.
-/// For a tagged version, use `Cis1Event`.
-// Note: For the serialization to be derived according to the CIS1
+/// For a tagged version, use `Cis2Event`.
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct BurnEvent<T: IsTokenId> {
+pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token where an amount is being burned.
     pub token_id: T,
     /// The amount of tokens being burned.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The owner of the tokens being burned.
     pub owner:    Address,
 }
 
 /// An untagged event of an update to an operator address for an owner address.
-/// For a tagged version, use `Cis1Event`.
-// Note: For the serialization to be derived according to the CIS1
+/// For a tagged version, use `Cis2Event`.
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct UpdateOperatorEvent {
@@ -498,8 +627,8 @@ pub struct UpdateOperatorEvent {
 }
 
 /// An untagged event for setting the metadata for a token.
-/// For a tagged version, use `Cis1Event`.
-// Note: For the serialization to be derived according to the CIS1
+/// For a tagged version, use `Cis2Event`.
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct TokenMetadataEvent<T: IsTokenId> {
@@ -509,42 +638,42 @@ pub struct TokenMetadataEvent<T: IsTokenId> {
     pub metadata_url: MetadataUrl,
 }
 
-/// Tagged CIS1 event to be serialized for the event log.
+/// Tagged CIS2 event to be serialized for the event log.
 #[derive(Debug)]
-pub enum Cis1Event<T: IsTokenId> {
+pub enum Cis2Event<T: IsTokenId, A: IsTokenAmount> {
     /// A transfer between two addresses of some amount of tokens.
-    Transfer(TransferEvent<T>),
+    Transfer(TransferEvent<T, A>),
     /// Creation of new tokens, could be both adding some amounts to an existing
     /// token or introduce an entirely new token ID.
-    Mint(MintEvent<T>),
+    Mint(MintEvent<T, A>),
     /// Destruction of tokens removing some amounts of a token.
-    Burn(BurnEvent<T>),
+    Burn(BurnEvent<T, A>),
     /// Updates to an operator for a specific address and token id.
     UpdateOperator(UpdateOperatorEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent<T>),
 }
 
-impl<T: IsTokenId> Serial for Cis1Event<T> {
+impl<T: IsTokenId, A: IsTokenAmount> Serial for Cis2Event<T, A> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
-            Cis1Event::Transfer(event) => {
+            Cis2Event::Transfer(event) => {
                 out.write_u8(TRANSFER_EVENT_TAG)?;
                 event.serial(out)
             }
-            Cis1Event::Mint(event) => {
+            Cis2Event::Mint(event) => {
                 out.write_u8(MINT_EVENT_TAG)?;
                 event.serial(out)
             }
-            Cis1Event::Burn(event) => {
+            Cis2Event::Burn(event) => {
                 out.write_u8(BURN_EVENT_TAG)?;
                 event.serial(out)
             }
-            Cis1Event::UpdateOperator(event) => {
+            Cis2Event::UpdateOperator(event) => {
                 out.write_u8(UPDATE_OPERATOR_EVENT_TAG)?;
                 event.serial(out)
             }
-            Cis1Event::TokenMetadata(event) => {
+            Cis2Event::TokenMetadata(event) => {
                 out.write_u8(TOKEN_METADATA_EVENT_TAG)?;
                 event.serial(out)
             }
@@ -552,18 +681,18 @@ impl<T: IsTokenId> Serial for Cis1Event<T> {
     }
 }
 
-impl<T: IsTokenId> Deserial for Cis1Event<T> {
+impl<T: IsTokenId, A: IsTokenAmount> Deserial for Cis2Event<T, A> {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let tag = source.read_u8()?;
         match tag {
-            TRANSFER_EVENT_TAG => TransferEvent::<T>::deserial(source).map(Cis1Event::Transfer),
-            MINT_EVENT_TAG => MintEvent::<T>::deserial(source).map(Cis1Event::Mint),
-            BURN_EVENT_TAG => BurnEvent::<T>::deserial(source).map(Cis1Event::Burn),
+            TRANSFER_EVENT_TAG => TransferEvent::<T, A>::deserial(source).map(Cis2Event::Transfer),
+            MINT_EVENT_TAG => MintEvent::<T, A>::deserial(source).map(Cis2Event::Mint),
+            BURN_EVENT_TAG => BurnEvent::<T, A>::deserial(source).map(Cis2Event::Burn),
             UPDATE_OPERATOR_EVENT_TAG => {
-                UpdateOperatorEvent::deserial(source).map(Cis1Event::UpdateOperator)
+                UpdateOperatorEvent::deserial(source).map(Cis2Event::UpdateOperator)
             }
             TOKEN_METADATA_EVENT_TAG => {
-                TokenMetadataEvent::<T>::deserial(source).map(Cis1Event::TokenMetadata)
+                TokenMetadataEvent::<T>::deserial(source).map(Cis2Event::TokenMetadata)
             }
             _ => Err(ParseError::default()),
         }
@@ -572,7 +701,7 @@ impl<T: IsTokenId> Deserial for Cis1Event<T> {
 
 /// The different errors the contract can produce.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Cis1Error<R> {
+pub enum Cis2Error<R> {
     /// Invalid token id (Error code: -42000001).
     InvalidTokenId,
     /// The balance of the token owner is insufficient for the transfer (Error
@@ -584,21 +713,21 @@ pub enum Cis1Error<R> {
     Custom(R),
 }
 
-/// Convert Cis1Error into a reject with error code:
+/// Convert Cis2Error into a reject with error code:
 /// - InvalidTokenId: -42000001
 /// - InsufficientFunds: -42000002
 /// - Unauthorized: -42000003
-impl<R: Into<Reject>> From<Cis1Error<R>> for Reject {
-    fn from(err: Cis1Error<R>) -> Self {
+impl<R: Into<Reject>> From<Cis2Error<R>> for Reject {
+    fn from(err: Cis2Error<R>) -> Self {
         let error_code = match err {
-            Cis1Error::InvalidTokenId => unsafe {
+            Cis2Error::InvalidTokenId => unsafe {
                 crate::num::NonZeroI32::new_unchecked(-42000001)
             },
-            Cis1Error::InsufficientFunds => unsafe {
+            Cis2Error::InsufficientFunds => unsafe {
                 crate::num::NonZeroI32::new_unchecked(-42000002)
             },
-            Cis1Error::Unauthorized => unsafe { crate::num::NonZeroI32::new_unchecked(-42000003) },
-            Cis1Error::Custom(reject) => reject.into().error_code,
+            Cis2Error::Unauthorized => unsafe { crate::num::NonZeroI32::new_unchecked(-42000003) },
+            Cis2Error::Custom(reject) => reject.into().error_code,
         };
         Self {
             error_code,
@@ -607,63 +736,63 @@ impl<R: Into<Reject>> From<Cis1Error<R>> for Reject {
     }
 }
 
-impl<X> From<LogError> for Cis1Error<X>
+impl<X> From<LogError> for Cis2Error<X>
 where
     X: From<LogError>,
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: LogError) -> Self { Cis1Error::Custom(X::from(err)) }
+    fn from(err: LogError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
-impl<X> From<ParseError> for Cis1Error<X>
+impl<X> From<ParseError> for Cis2Error<X>
 where
     X: From<ParseError>,
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: ParseError) -> Self { Cis1Error::Custom(X::from(err)) }
+    fn from(err: ParseError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
-impl<T, X> From<CallContractError<T>> for Cis1Error<X>
+impl<T, X> From<CallContractError<T>> for Cis2Error<X>
 where
     X: From<CallContractError<T>>,
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: CallContractError<T>) -> Self { Cis1Error::Custom(X::from(err)) }
+    fn from(err: CallContractError<T>) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
-impl<X> From<TransferError> for Cis1Error<X>
+impl<X> From<TransferError> for Cis2Error<X>
 where
     X: From<TransferError>,
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: TransferError) -> Self { Cis1Error::Custom(X::from(err)) }
+    fn from(err: TransferError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
-impl<X> From<NewReceiveNameError> for Cis1Error<X>
+impl<X> From<NewReceiveNameError> for Cis2Error<X>
 where
     X: From<NewReceiveNameError>,
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: NewReceiveNameError) -> Self { Cis1Error::Custom(X::from(err)) }
+    fn from(err: NewReceiveNameError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
-impl<X> From<NewContractNameError> for Cis1Error<X>
+impl<X> From<NewContractNameError> for Cis2Error<X>
 where
     X: From<NewContractNameError>,
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: NewContractNameError) -> Self { Cis1Error::Custom(X::from(err)) }
+    fn from(err: NewContractNameError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
 /// The receiving address for a transfer, similar to the Address type, but
 /// contains extra information when the receiver address is a contract.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants and the order of their fields
 // cannot be changed.
 #[derive(Debug, Serialize)]
@@ -678,7 +807,7 @@ pub enum Receiver {
         /// The receiving address.
         ContractAddress,
         /// The function to call on the receiving contract.
-        OwnedReceiveName,
+        OwnedEntrypointName,
     ),
 }
 
@@ -687,7 +816,7 @@ impl Receiver {
     pub fn from_account(address: AccountAddress) -> Self { Receiver::Account(address) }
 
     /// Construct a receiver from a contract address.
-    pub fn from_contract(address: ContractAddress, function: OwnedReceiveName) -> Self {
+    pub fn from_contract(address: ContractAddress, function: OwnedEntrypointName) -> Self {
         Receiver::Contract(address, function)
     }
 
@@ -743,14 +872,14 @@ impl AsRef<[u8]> for AdditionalData {
 }
 
 /// A single transfer of some amount of a token.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize)]
-pub struct Transfer<T: IsTokenId> {
+pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
     /// The amount of tokens being transferred.
-    pub amount:   TokenAmount,
+    pub amount:   A,
     /// The address owning the tokens being transferred.
     pub from:     Address,
     /// The address receiving the tokens being transferred.
@@ -760,11 +889,11 @@ pub struct Transfer<T: IsTokenId> {
     pub data:     AdditionalData,
 }
 
-impl<T: IsTokenId> schema::SchemaType for Transfer<T> {
+impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Transfer<T, A> {
     fn get_type() -> schema::Type {
         schema::Type::Struct(schema::Fields::Named(vec![
             (String::from("token_id"), T::get_type()),
-            (String::from("amount"), TokenAmount::get_type()),
+            (String::from("amount"), A::get_type()),
             (String::from("from"), Address::get_type()),
             (String::from("to"), Receiver::get_type()),
             (String::from("data"), AdditionalData::get_type()),
@@ -774,26 +903,28 @@ impl<T: IsTokenId> schema::SchemaType for Transfer<T> {
 
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize)]
-pub struct TransferParams<T: IsTokenId>(#[concordium(size_length = 2)] pub Vec<Transfer<T>>);
+pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
+    #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
+);
 
-impl<T: IsTokenId> schema::SchemaType for TransferParams<T> {
+impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for TransferParams<T, A> {
     fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T>::get_type()))
+        schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T, A>::get_type()))
     }
 }
 
-impl<T: IsTokenId> From<Vec<Transfer<T>>> for TransferParams<T> {
-    fn from(transfers: Vec<Transfer<T>>) -> Self { TransferParams(transfers) }
+impl<T: IsTokenId, A: IsTokenAmount> From<Vec<Transfer<T, A>>> for TransferParams<T, A> {
+    fn from(transfers: Vec<Transfer<T, A>>) -> Self { TransferParams(transfers) }
 }
 
-impl<T: IsTokenId> AsRef<[Transfer<T>]> for TransferParams<T> {
-    fn as_ref(&self) -> &[Transfer<T>] { &self.0 }
+impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<T, A> {
+    fn as_ref(&self) -> &[Transfer<T, A>] { &self.0 }
 }
 
 /// The update to an the operator.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -801,10 +932,19 @@ pub enum OperatorUpdate {
     Add,
 }
 
+impl schema::SchemaType for OperatorUpdate {
+    fn get_type() -> schema::Type {
+        schema::Type::Enum(vec![
+            ("Remove".to_string(), schema::Fields::None),
+            ("Add".to_string(), schema::Fields::None),
+        ])
+    }
+}
+
 /// A single update of an operator.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,
@@ -814,14 +954,29 @@ pub struct UpdateOperator {
     pub operator: Address,
 }
 
+impl schema::SchemaType for UpdateOperator {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            ("update".to_string(), OperatorUpdate::get_type()),
+            ("operator".to_string(), Address::get_type()),
+        ]))
+    }
+}
+
 /// The parameter type for the contract function `updateOperator`.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
 
+impl schema::SchemaType for UpdateOperatorParams {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(UpdateOperator::get_type()))
+    }
+}
+
 /// A query for the balance of a given address for a given token.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct BalanceOfQuery<T: IsTokenId> {
     /// The ID of the token for which to query the balance of.
     pub token_id: T,
@@ -829,43 +984,55 @@ pub struct BalanceOfQuery<T: IsTokenId> {
     pub address:  Address,
 }
 
-/// The parameter type for the contract function `balanceOf`.
-// Note: For the serialization to be derived according to the CIS1
-// specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct BalanceOfQueryParams<T: IsTokenId> {
-    /// The contract to trigger with the results of the queries.
-    pub result_contract: ContractAddress,
-    /// The contract function to trigger with the results of the queries.
-    pub result_function: OwnedReceiveName,
-    /// List of balance queries.
-    #[concordium(size_length = 2)]
-    pub queries:         Vec<BalanceOfQuery<T>>,
+impl<T: IsTokenId> schema::SchemaType for BalanceOfQuery<T> {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            ("token_id".to_string(), T::get_type()),
+            ("address".to_string(), Address::get_type()),
+        ]))
+    }
 }
 
-/// BalanceOf query with the result of the query.
-pub type BalanceOfQueryResult<T> = (BalanceOfQuery<T>, TokenAmount);
+/// The parameter type for the contract function `balanceOf`.
+// Note: For the serialization to be derived according to the CIS2
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize)]
+pub struct BalanceOfQueryParams<T: IsTokenId> {
+    /// List of balance queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<BalanceOfQuery<T>>,
+}
+
+impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(BalanceOfQuery::<T>::get_type()))
+    }
+}
 
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
 /// It consists of the list of queries paired with their corresponding result.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct BalanceOfQueryResponse<T: IsTokenId>(
-    #[concordium(size_length = 2)] Vec<BalanceOfQueryResult<T>>,
-);
+#[derive(Debug, Serialize)]
+pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
-impl<T: IsTokenId> From<Vec<BalanceOfQueryResult<T>>> for BalanceOfQueryResponse<T> {
-    fn from(results: Vec<BalanceOfQueryResult<T>>) -> Self { BalanceOfQueryResponse(results) }
+impl<A: IsTokenAmount> schema::SchemaType for BalanceOfQueryResponse<A> {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(A::get_type()))
+    }
 }
 
-impl<T: IsTokenId> AsRef<[BalanceOfQueryResult<T>]> for BalanceOfQueryResponse<T> {
-    fn as_ref(&self) -> &[BalanceOfQueryResult<T>] { &self.0 }
+impl<A: IsTokenAmount> From<Vec<A>> for BalanceOfQueryResponse<A> {
+    fn from(results: Vec<A>) -> Self { BalanceOfQueryResponse(results) }
+}
+
+impl<A: IsTokenAmount> AsRef<[A]> for BalanceOfQueryResponse<A> {
+    fn as_ref(&self) -> &[A] { &self.0 }
 }
 
 /// A query for the operator of a given address for a given token.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct OperatorOfQuery {
     /// The ID of the token for which to query the balance of.
     pub owner:   Address,
@@ -873,86 +1040,243 @@ pub struct OperatorOfQuery {
     pub address: Address,
 }
 
-/// The parameter type for the contract function `operatorOf`.
-// Note: For the serialization to be derived according to the CIS1
-// specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct OperatorOfQueryParams {
-    /// The contract to trigger with the results of the queries.
-    pub result_contract: ContractAddress,
-    /// The contract function to trigger with the results of the queries.
-    pub result_function: OwnedReceiveName,
-    /// List of operatorOf queries.
-    #[concordium(size_length = 2)]
-    pub queries:         Vec<OperatorOfQuery>,
+impl schema::SchemaType for OperatorOfQuery {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            ("owner".to_string(), Address::get_type()),
+            ("address".to_string(), Address::get_type()),
+        ]))
+    }
 }
 
-/// OperatorOf query with the result of the query.
-pub type OperatorOfQueryResult = (OperatorOfQuery, bool);
+/// The parameter type for the contract function `operatorOf`.
+#[derive(Debug, Serialize)]
+pub struct OperatorOfQueryParams {
+    /// List of operatorOf queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<OperatorOfQuery>,
+}
+
+impl schema::SchemaType for OperatorOfQueryParams {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(OperatorOfQuery::get_type()))
+    }
+}
 
 /// The response which is sent back when calling the contract function
 /// `operatorOf`.
-/// It consists of the list of queries paired with their corresponding result.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] Vec<OperatorOfQueryResult>);
+/// It consists of the list of result in the same order and length as the
+/// queries in the parameter.
+#[derive(Debug, Serialize)]
+pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] pub Vec<bool>);
 
-impl From<Vec<OperatorOfQueryResult>> for OperatorOfQueryResponse {
-    fn from(results: Vec<OperatorOfQueryResult>) -> Self { OperatorOfQueryResponse(results) }
+impl schema::SchemaType for OperatorOfQueryResponse {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(bool::get_type()))
+    }
 }
 
-impl AsRef<[OperatorOfQueryResult]> for OperatorOfQueryResponse {
-    fn as_ref(&self) -> &[OperatorOfQueryResult] { &self.0 }
+impl From<Vec<bool>> for OperatorOfQueryResponse {
+    fn from(results: Vec<bool>) -> Self { OperatorOfQueryResponse(results) }
+}
+
+impl AsRef<[bool]> for OperatorOfQueryResponse {
+    fn as_ref(&self) -> &[bool] { &self.0 }
 }
 
 /// The parameter type for the contract function `tokenMetadata`.
-// Note: For the serialization to be derived according to the CIS1
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize)]
 pub struct TokenMetadataQueryParams<T: IsTokenId> {
-    /// The contract to trigger with the results of the queries.
-    pub result_contract: ContractAddress,
-    /// The contract function to trigger with the results of the queries.
-    pub result_function: OwnedReceiveName,
     /// List of balance queries.
     #[concordium(size_length = 2)]
-    pub queries:         Vec<T>,
+    pub queries: Vec<T>,
 }
 
-/// TokenMetadata query with the result of the query.
-pub type TokenMetadataQueryResult<T> = (T, MetadataUrl);
+impl<T: IsTokenId> schema::SchemaType for TokenMetadataQueryParams<T> {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(T::get_type()))
+    }
+}
 
 /// The response which is sent back when calling the contract function
 /// `tokenMetadata`.
 /// It consists of the list of queries paired with their corresponding result.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct TokenMetadataQueryResponse<T: IsTokenId>(
-    #[concordium(size_length = 2)] Vec<TokenMetadataQueryResult<T>>,
-);
+#[derive(Debug, Serialize)]
+pub struct TokenMetadataQueryResponse(#[concordium(size_length = 2)] pub Vec<MetadataUrl>);
 
-impl<T: IsTokenId> From<Vec<TokenMetadataQueryResult<T>>> for TokenMetadataQueryResponse<T> {
-    fn from(results: Vec<TokenMetadataQueryResult<T>>) -> Self {
-        TokenMetadataQueryResponse(results)
+impl schema::SchemaType for TokenMetadataQueryResponse {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(MetadataUrl::get_type()))
     }
 }
 
-impl<T: IsTokenId> AsRef<[TokenMetadataQueryResult<T>]> for TokenMetadataQueryResponse<T> {
-    fn as_ref(&self) -> &[TokenMetadataQueryResult<T>] { &self.0 }
+impl From<Vec<MetadataUrl>> for TokenMetadataQueryResponse {
+    fn from(results: Vec<MetadataUrl>) -> Self { TokenMetadataQueryResponse(results) }
 }
 
-/// The parameter type for a contract function which receives CIS1 tokens.
-// Note: For the serialization to be derived according to the CIS1
+impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
+    fn as_ref(&self) -> &[MetadataUrl] { &self.0 }
+}
+
+/// The parameter type for a contract function which receives CIS2 tokens.
+// Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct OnReceivingCis1Params<T: IsTokenId> {
+pub struct OnReceivingCis2Params<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token received.
-    pub token_id:      T,
+    pub token_id: T,
     /// The amount of tokens received.
-    pub amount:        TokenAmount,
+    pub amount:   A,
     /// The previous owner of the tokens.
-    pub from:          Address,
-    /// The name of the token contract which is tracking the token and
-    /// implements CIS1.
-    pub contract_name: OwnedContractName,
+    pub from:     Address,
     /// Some extra information which where sent as part of the transfer.
-    pub data:          AdditionalData,
+    pub data:     AdditionalData,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn serial_token_amount128_127_test() {
+        let amount = TokenAmountU128::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount128_max_test() {
+        let amount = TokenAmountU128::from(u128::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 0b00000011
+        ])
+    }
+
+    #[test]
+    fn deserial_token_amount128_127_test() {
+        let amount: TokenAmountU128 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU128::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount128_max_test() {
+        let amount: TokenAmountU128 = from_bytes(&[
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 0b00000011,
+        ])
+        .expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU128::from(u128::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount64_127_test() {
+        let amount = TokenAmountU64::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount64_max_test() {
+        let amount = TokenAmountU64::from(u64::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 255, 255, 255, 255, 255, 255, 255, 255, 0b00000001])
+    }
+
+    #[test]
+    fn deserial_token_amount64_127_test() {
+        let amount: TokenAmountU64 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU64::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount64_max_test() {
+        let amount: TokenAmountU64 =
+            from_bytes(&[255, 255, 255, 255, 255, 255, 255, 255, 255, 0b00000001])
+                .expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU64::from(u64::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount32_127_test() {
+        let amount = TokenAmountU32::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount32_max_test() {
+        let amount = TokenAmountU32::from(u32::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 255, 255, 255, 0b00001111])
+    }
+
+    #[test]
+    fn deserial_token_amount32_127_test() {
+        let amount: TokenAmountU32 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU32::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount32_max_test() {
+        let amount: TokenAmountU32 =
+            from_bytes(&[255, 255, 255, 255, 0b00001111]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU32::from(u32::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount16_127_test() {
+        let amount = TokenAmountU16::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount16_max_test() {
+        let amount = TokenAmountU16::from(u16::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 255, 0b00000011])
+    }
+
+    #[test]
+    fn deserial_token_amount16_127_test() {
+        let amount: TokenAmountU16 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU16::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount16_max_test() {
+        let amount: TokenAmountU16 =
+            from_bytes(&[255, 255, 0b00000011]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU16::from(u16::MAX))
+    }
+
+    #[test]
+    fn serial_token_amount8_127_test() {
+        let amount = TokenAmountU8::from(127);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![127])
+    }
+
+    #[test]
+    fn serial_token_amount8_max_test() {
+        let amount = TokenAmountU8::from(u8::MAX);
+        let bytes = to_bytes(&amount);
+        assert_eq!(bytes, vec![255, 0b00000001])
+    }
+
+    #[test]
+    fn deserial_token_amount8_127_test() {
+        let amount: TokenAmountU8 = from_bytes(&[127]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU8::from(127))
+    }
+
+    #[test]
+    fn deserial_token_amount8_max_test() {
+        let amount: TokenAmountU8 = from_bytes(&[255, 0b00000001]).expect("Failed to parse bytes");
+        assert_eq!(amount, TokenAmountU8::from(u8::MAX))
+    }
 }
