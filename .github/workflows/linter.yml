@@ -19,19 +19,16 @@ jobs:
         crates:
           - concordium-std-derive/Cargo.toml
           - concordium-std/Cargo.toml
+          - concordium-cis2/Cargo.toml
           - examples/auction/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-single-nft/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/erc721/Cargo.toml
+          - examples/cis2-multi/Cargo.toml
+          - examples/cis2-nft/Cargo.toml
+          - examples/cis2-wccd/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
-          - examples/listing-cis1/Cargo.toml
           - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
-          - examples/proxy/Cargo.toml
           - examples/proxy/Cargo.toml
           - examples/recorder/Cargo.toml
           - examples/signature-verifier/Cargo.toml
@@ -183,6 +180,7 @@ jobs:
 
         crates:
           - concordium-std/Cargo.toml
+          - concordium-cis2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -215,10 +213,9 @@ jobs:
 
         crates:
           - examples/two-step-transfer/Cargo.toml
-          - examples/erc721/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
+          - examples/cis2-wccd/Cargo.toml
+          - examples/cis2-nft/Cargo.toml
+          - examples/cis2-multi/Cargo.toml
 
         features:
           -
@@ -291,18 +288,14 @@ jobs:
 
         crates:
           - examples/auction/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-single-nft/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/erc721/Cargo.toml
+          - examples/cis2-multi/Cargo.toml
+          - examples/cis2-nft/Cargo.toml
+          - examples/cis2-wccd/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
-          - examples/listing-cis1/Cargo.toml
           - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
-          - examples/proxy/Cargo.toml
           - examples/proxy/Cargo.toml
           - examples/recorder/Cargo.toml
           - examples/signature-verifier/Cargo.toml
@@ -340,6 +333,7 @@ jobs:
 
         lib-crates:
           - concordium-std/Cargo.toml
+          - concordium-cis2/Cargo.toml
 
         features:
           -
@@ -376,18 +370,14 @@ jobs:
 
         crates:
           - examples/auction/Cargo.toml
-          - examples/cis1-multi/Cargo.toml
-          - examples/cis1-nft/Cargo.toml
-          - examples/cis1-single-nft/Cargo.toml
-          - examples/cis1-wccd/Cargo.toml
-          - examples/erc721/Cargo.toml
+          - examples/cis2-multi/Cargo.toml
+          - examples/cis2-nft/Cargo.toml
+          - examples/cis2-wccd/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
-          - examples/listing-cis1/Cargo.toml
           - examples/memo/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
-          - examples/proxy/Cargo.toml
           - examples/proxy/Cargo.toml
           - examples/recorder/Cargo.toml
           - examples/signature-verifier/Cargo.toml

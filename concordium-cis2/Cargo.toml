@@ -1,10 +1,10 @@
 [package]
-name = "concordium-cis1"
+name = "concordium-cis2"
 version = "0.1.2"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
-description = "A collection of types for implementing CIS-1 Concordium Token Standard."
+description = "A collection of types for implementing CIS-2 Concordium Token Standard."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
 repository = "https://github.com/Concordium/concordium-rust-smart-contracts/"
 readme = "./README.md"

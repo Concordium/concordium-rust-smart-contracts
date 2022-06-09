@@ -1,25 +1,29 @@
+//! # Implementation of an auction smart contract
+//!
+//! Accounts can invoke the bid function to participate in the auction.
+//! An account has to send some CCD when invoking the bid function.
+//! This CCD amount has to exceed the current highest bid to be accepted by the
+//! smart contract.
+//!
+//! The smart contract keeps track of the current highest bidder as well as
+//! the CCD amount of the highest bid. The CCD balance of the smart contract
+//! represents the highest bid. When a new highest bid is accepted by the smart
+//! contract, the smart contract refunds the old highest bidder.
+//!
+//! Bids have to be placed before the auction ends. The participant with the
+//! highest bid (the last bidder) wins the auction.
+//!
+//! After the auction ends, any account can finalize the auction. The owner of
+//! the smart contract instance receives the highest bid (the balance of this
+//! contract) when the auction is finalized. This can be done only once.
+//!
+//! Terminology: `Accounts` are derived from a public/private key pair.
+//! `Contract` instances are created by deploying a smart contract
+//! module and initializing it.
 use concordium_std::*;
 use core::fmt::Debug;
 
-/// # Implementation of an auction smart contract
-///
-/// To bid, participants send CCD using the bid function.
-/// The participant with the highest bid wins the auction.
-/// Bids are to be placed before the auction end. After that, bids are refused.
-/// Only bids that exceed the highest bid are accepted.
-/// Bids are placed incrementally, i.e., an account's bid is considered
-/// to be the **sum** of all bids.
-///
-/// Example: if Alice first bid 1 CCD and then bid 2 CCD, her total
-/// bid is 3 CCD. The bidding will only go through if 3 CCD is higher than
-/// the currently highest bid.
-///
-/// After the auction end, any account can finalize the auction.
-/// The auction can be finalized only once.
-/// When the auction is finalized, every participant except the
-/// winner gets their money back.
-
-/// The state in which an auction can be.
+/// The state of the auction.
 #[derive(Debug, Serialize, SchemaType, Eq, PartialEq, PartialOrd, Clone)]
 pub enum AuctionState {
     /// The auction is either
@@ -27,186 +31,168 @@ pub enum AuctionState {
     /// - not accepting bids because it's past the auction end, but nobody has
     ///   finalized the auction yet.
     NotSoldYet,
-    /// The auction is over and the item has been sold to the indicated address.
-    Sold(AccountAddress), // winning account's address
+    /// The auction has been finalized and the item has been sold to the
+    /// winning `AccountAddress`.
+    Sold(AccountAddress),
 }
 
 /// The state of the smart contract.
-/// This is the state that will be shown when the contract is queried using
-/// `concordium-client contract show`.
-#[derive(Debug, Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-pub struct State<S> {
-    /// The part of the state that can be viewed
-    viewable_state: ViewableState,
-    /// Keeping track of which account bid how much money
-    bids:           StateMap<AccountAddress, Amount, S>,
-}
-
-/// The part of the state to be viewed using `concordium-client contract invoke`
+/// This state can be viewed by querying the node with the command
+/// `concordium-client contract invoke` using the `view` function as entrypoint.
 #[derive(Debug, Serialize, SchemaType, Clone)]
-pub struct ViewableState {
-    /// Has the item been sold?
-    auction_state: AuctionState,
-    /// The highest bid so far (stored explicitly so that bidders can quickly
-    /// see it)
-    highest_bid:   Amount,
-    /// The sold item (to be displayed to the auction participants).
-    item:          String,
-    /// Expiration time of the auction at which bids will be closed (to be
-    /// displayed to the auction participants)
-    expiry:        Timestamp,
+pub struct State {
+    /// State of the auction
+    auction_state:  AuctionState,
+    /// The highest bidder so far; The variant `None` represents
+    /// that no bidder has taken part in the auction yet.
+    highest_bidder: Option<AccountAddress>,
+    /// The item to be sold (to be displayed by the front-end)
+    item:           String,
+    /// Time when auction ends (to be displayed by the front-end)
+    end:            Timestamp,
 }
 
-/// Type of the parameter to the `init` function.
+/// Type of the parameter to the `init` function
 #[derive(Serialize, SchemaType)]
 struct InitParameter {
-    /// The item to be sold.
-    item:   String,
-    /// Time of the auction end in the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
-    expiry: Timestamp,
+    /// The item to be sold
+    item: String,
+    /// Time when auction ends using the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
+    end:  Timestamp,
 }
 
-/// For errors in which the `bid` function can result
+/// `bid` function errors
 #[derive(Debug, PartialEq, Eq, Clone, Reject)]
 enum BidError {
-    ContractSender, // raised if a contract, as opposed to account, tries to bid
-    BidTooLow,      /* { bid: Amount, highest_bid: Amount } */
-    // raised if bid is lower than highest amount
-    BidsOverWaitingForAuctionFinalization, // raised if bid is placed after auction expiry time
-    AuctionFinalized,                      /* raised if bid is placed after auction has been
-                                            * finalized */
+    /// Raised when a contract tries to bid; Only accounts
+    /// are allowed to bid.
+    OnlyAccount,
+    /// Raised when new bid amount is lower than current highest bid
+    BidTooLow,
+    /// Raised when bid is placed after auction end time passed
+    BidTooLate,
+    /// Raised when bid is placed after auction has been finalized
+    AuctionAlreadyFinalized,
 }
 
-/// For errors in which the `finalize` function can result
+/// `finalize` function errors
 #[derive(Debug, PartialEq, Eq, Clone, Reject)]
 enum FinalizeError {
-    BidMapError,        /* raised if there is a mistake in the bid map that keeps track of all
-                         * accounts' bids */
-    AuctionStillActive, // raised if there is an attempt to finalize the auction before its expiry
-    AuctionFinalized,   // raised if there is an attempt to finalize an already finalized auction
+    /// Raised when finalizing an auction before auction end time passed
+    AuctionStillActive,
+    /// Raised when finalizing an auction that is already finalized
+    AuctionAlreadyFinalized,
 }
 
 /// Init function that creates a new auction
 #[init(contract = "auction", parameter = "InitParameter")]
 fn auction_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
-) -> InitResult<State<S>> {
+    _state_builder: &mut StateBuilder<S>,
+) -> InitResult<State> {
+    // Getting input parameters
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
-    let viewable_state = ViewableState {
-        auction_state: AuctionState::NotSoldYet,
-        highest_bid:   Amount::zero(),
-        item:          parameter.item,
-        expiry:        parameter.expiry,
-    };
+    // Creating `State`
     let state = State {
-        viewable_state,
-        bids: state_builder.new_map(),
+        auction_state:  AuctionState::NotSoldYet,
+        highest_bidder: None,
+        item:           parameter.item,
+        end:            parameter.end,
     };
     Ok(state)
 }
 
-/// Receive function in which accounts can bid before the auction end time
+/// Receive function for accounts to place a bid in the auction
 #[receive(contract = "auction", name = "bid", payable, mutable)]
 fn auction_bid<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State, StateApiType = S>,
     amount: Amount,
 ) -> Result<(), BidError> {
+    let balance = host.self_balance();
     let state = host.state_mut();
-    ensure!(
-        state.viewable_state.auction_state == AuctionState::NotSoldYet,
-        BidError::AuctionFinalized
-    );
+    // Ensure the auction has not been finalized yet
+    ensure_eq!(state.auction_state, AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
 
     let slot_time = ctx.metadata().slot_time();
-    ensure!(
-        slot_time <= state.viewable_state.expiry,
-        BidError::BidsOverWaitingForAuctionFinalization
-    );
+    // Ensure the auction has not ended yet
+    ensure!(slot_time <= state.end, BidError::BidTooLate);
 
+    // Ensure that only accounts can place a bid
     let sender_address = match ctx.sender() {
-        Address::Contract(_) => bail!(BidError::ContractSender),
+        Address::Contract(_) => bail!(BidError::OnlyAccount),
         Address::Account(account_address) => account_address,
     };
-    let mut bid_to_update = state.bids.entry(sender_address).or_insert(Amount::zero());
-    *bid_to_update += amount;
+
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(*bid_to_update > state.viewable_state.highest_bid, BidError::BidTooLow);
+    ensure!(amount > balance, BidError::BidTooLow);
 
-    state.viewable_state.highest_bid = *bid_to_update;
-
+    if let Some(account_address) = state.highest_bidder.replace(sender_address) {
+        // Refunding old highest bidder;
+        // This transfer (given enough NRG of course) always succeeds because the
+        // `account_address` exists since it was recorded when it placed a bid.
+        // If an `account_address` exists, and the contract has the funds then the
+        // transfer will always succeed.
+        // Please consider using a pull-over-push pattern when expanding this smart
+        // contract to allow smart contract instances to participate in the auction as
+        // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
+        host.invoke_transfer(&account_address, balance).unwrap_abort();
+    }
     Ok(())
 }
 
-/// View function that returns the contents of the state except the map of
-/// individual bids.
-#[receive(contract = "auction", name = "view", return_value = "ViewableState")]
-fn view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ReceiveResult<ViewableState> {
-    Ok(host.state().viewable_state.clone())
+/// View function that returns the content of the state
+#[receive(contract = "auction", name = "view", return_value = "State")]
+fn view<'a, 'b, S: HasStateApi>(
+    _ctx: &'a impl HasReceiveContext,
+    host: &'b impl HasHost<State, StateApiType = S>,
+) -> ReceiveResult<&'b State> {
+    Ok(host.state())
 }
 
-/// Receive function used to finalize the auction, returning all bids to their
-/// senders, except for the winning bid
+/// Receive function used to finalize the auction. It sends the highest bid (the
+/// current balance of this smart contract) to the owner of the smart contract
+/// instance.
 #[receive(contract = "auction", name = "finalize", mutable)]
 fn auction_finalize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State, StateApiType = S>,
 ) -> Result<(), FinalizeError> {
     let state = host.state();
-    ensure!(
-        state.viewable_state.auction_state == AuctionState::NotSoldYet,
-        FinalizeError::AuctionFinalized
+    // Ensure the auction has not been finalized yet
+    ensure_eq!(
+        state.auction_state,
+        AuctionState::NotSoldYet,
+        FinalizeError::AuctionAlreadyFinalized
     );
 
     let slot_time = ctx.metadata().slot_time();
-    ensure!(slot_time > state.viewable_state.expiry, FinalizeError::AuctionStillActive);
+    // Ensure the auction has ended already
+    ensure!(slot_time > state.end, FinalizeError::AuctionStillActive);
 
-    let owner = ctx.owner();
-
-    let balance = host.self_balance();
-    if balance == Amount::zero() {
-        Ok(())
-    } else {
-        if host.invoke_transfer(&owner, state.viewable_state.highest_bid).is_err() {
-            bail!(FinalizeError::BidMapError);
-        }
-        let mut remaining_bid = None;
-        // Return bids that are smaller than highest
-        for (addr, amnt) in state.bids.iter() {
-            if *amnt < state.viewable_state.highest_bid {
-                if host.invoke_transfer(&*addr, *amnt).is_err() {
-                    bail!(FinalizeError::BidMapError);
-                }
-            } else {
-                ensure!(remaining_bid.is_none(), FinalizeError::BidMapError);
-                remaining_bid = Some((addr, amnt));
-            }
-        }
-        // Ensure that the only bidder left in the map is the one with the highest bid
-        match remaining_bid {
-            Some((addr, amount)) => {
-                ensure!(*amount == state.viewable_state.highest_bid, FinalizeError::BidMapError);
-                host.state_mut().viewable_state.auction_state = AuctionState::Sold(*addr);
-                Ok(())
-            }
-            None => bail!(FinalizeError::BidMapError),
-        }
+    if let Some(account_address) = state.highest_bidder {
+        // Marking the highest bid (the last bidder) as winner of the auction
+        host.state_mut().auction_state = AuctionState::Sold(account_address);
+        let owner = ctx.owner();
+        let balance = host.self_balance();
+        // Sending the highest bid (the balance of this contract) to the owner of the
+        // smart contract instance;
+        // This transfer (given enough NRG of course) always succeeds because the
+        // `owner` exists since it deployed the smart contract instance.
+        // If an account exists, and the contract has the funds then the
+        // transfer will always succeed.
+        host.invoke_transfer(&owner, balance).unwrap_abort();
     }
+    Ok(())
 }
 
 #[concordium_cfg_test]
 mod tests {
     use super::*;
-    use concordium_std::collections::BTreeMap;
     use std::sync::atomic::{AtomicU8, Ordering};
     use test_infrastructure::*;
 
-    // A counter for generating new account addresses
+    // A counter for generating new accounts
     static ADDRESS_COUNTER: AtomicU8 = AtomicU8::new(0);
     const AUCTION_END: u64 = 1;
     const ITEM: &str = "Starry night by Van Gogh";
@@ -215,14 +201,14 @@ mod tests {
     where
         E: Eq + Debug,
         T: Debug, {
-        let actual = expr.expect_err(msg);
-        assert_eq!(actual, err);
+        let actual = expr.expect_err_report(msg);
+        claim_eq!(actual, err);
     }
 
-    fn item_expiry_parameter() -> InitParameter {
+    fn item_end_parameter() -> InitParameter {
         InitParameter {
-            item:   ITEM.into(),
-            expiry: Timestamp::from_timestamp_millis(AUCTION_END),
+            item: ITEM.into(),
+            end:  Timestamp::from_timestamp_millis(AUCTION_END),
         }
     }
 
@@ -262,7 +248,7 @@ mod tests {
     /// Test that the smart-contract initialization sets the state correctly
     /// (no bids, active state, indicated auction-end time and item name).
     fn test_init() {
-        let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
+        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
         let ctx = parametrized_init_ctx(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
@@ -275,15 +261,17 @@ mod tests {
     /// Test a sequence of bids and finalizations:
     /// 0. Auction is initialized.
     /// 1. Alice successfully bids 0.1 CCD.
-    /// 2. Alice successfully bids another 0.1 CCD, highest bid becomes 0.2 CCD
-    /// (the sum of her two bids). 3. Bob successfully bids 0.3 CCD, highest
-    /// bid becomes 0.3 CCD. 4. Someone tries to finalize the auction before
-    /// its end time. Attempt fails. 5. Dave successfully finalizes the
-    /// auction after its end time.    Alice gets her money back, while
+    /// 2. Alice successfully bids 0.2 CCD, highest
+    /// bid becomes 0.2 CCD. Alice gets her 0.1 CCD refunded.
+    /// 3. Bob successfully bids 0.3 CCD, highest
+    /// bid becomes 0.3 CCD. Alice gets her 0.2 CCD refunded.
+    /// 4. Someone tries to finalize the auction before
+    /// its end time. Attempt fails.
+    /// 5. Dave successfully finalizes the auction after its end time.
     /// Carol (the owner of the contract) collects the highest bid amount.
     /// 6. Attempts to subsequently bid or finalize fail.
     fn test_auction_bid_and_finalize() {
-        let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
+        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
         let ctx0 = parametrized_init_ctx(&parameter_bytes);
 
         let amount = Amount::from_micro_ccd(100);
@@ -291,105 +279,114 @@ mod tests {
         let big_amount = Amount::from_micro_ccd(500);
 
         let mut state_builder = TestStateBuilder::new();
-        let mut bid_map = BTreeMap::new();
 
-        // initializing auction
+        // Initializing auction
         let initial_state =
             auction_init(&ctx0, &mut state_builder).expect("Initialization should pass");
 
         let mut host = TestHost::new(initial_state, state_builder);
 
-        // 1st bid: account1 bids amount1
+        // 1st bid: Alice bids `amount`.
         let (alice, alice_ctx) = new_account_ctx();
-        verify_bid(&mut host, alice, &alice_ctx, amount, &mut bid_map, amount);
+        verify_bid(&mut host, &alice_ctx, amount);
 
-        // 2nd bid: account1 bids `amount` again
-        // should work even though it's the same amount because account1 simply
-        // increases their bid
-        verify_bid(&mut host, alice, &alice_ctx, amount, &mut bid_map, amount + amount);
+        // 2nd bid: Alice bids `amount + amount`.
+        // Alice gets her initial bid refunded.
+        verify_bid(&mut host, &alice_ctx, amount + amount);
 
-        // 3rd bid: second account
+        // 3rd bid: Bob bids `winning_amount`.
+        // Alice gets refunded.
         let (bob, bob_ctx) = new_account_ctx();
-        verify_bid(&mut host, bob, &bob_ctx, winning_amount, &mut bid_map, winning_amount);
+        verify_bid(&mut host, &bob_ctx, winning_amount);
 
-        // trying to finalize auction that is still active
-        // (specifically, the bid is submitted at the last moment, at the AUCTION_END
-        // time)
+        // Trying to finalize auction that is still active
+        // (specifically, the tx is submitted at the last moment,
+        // at the AUCTION_END time)
         let mut ctx4 = TestReceiveContext::empty();
         ctx4.set_metadata_slot_time(Timestamp::from_timestamp_millis(AUCTION_END));
         let finres = auction_finalize(&ctx4, &mut host);
         expect_error(
             finres,
             FinalizeError::AuctionStillActive,
-            "Finalizing auction should fail when it's before auction-end time",
+            "Finalizing the auction should fail when it's before auction end time",
         );
 
-        // finalizing auction
+        // Finalizing auction
         let carol = new_account();
         let dave = new_account();
         let ctx5 = new_ctx(carol, dave, AUCTION_END + 1);
-        host.set_self_balance(winning_amount + amount + amount);
-        let finres2 = auction_finalize(&ctx5, &mut host);
-        finres2.expect_report("Finalizing auction should work");
-        let transfers = host.get_transfers();
-        claim_eq!(&transfers[..], &[(carol, winning_amount), (alice, amount + amount)]);
-        claim_eq!(host.state().viewable_state.auction_state, AuctionState::Sold(bob));
-        claim_eq!(host.state().viewable_state.highest_bid, winning_amount);
 
-        // attempting to finalize auction again should fail
+        let finres2 = auction_finalize(&ctx5, &mut host);
+        finres2.expect_report("Finalizing the auction should work");
+        let transfers = host.get_transfers();
+        // The input arguments of all executed `host.invoke_transfer`
+        // functions are checked here.
+        claim_eq!(
+            &transfers[..],
+            &[(alice, amount), (alice, amount + amount), (carol, winning_amount),],
+            "Transferring CCD to Alice/Carol should work"
+        );
+        claim_eq!(
+            host.state().auction_state,
+            AuctionState::Sold(bob),
+            "Finalizing the auction should change the auction state to `Sold(bob)`"
+        );
+        claim_eq!(
+            host.state().highest_bidder,
+            Some(bob),
+            "Finalizing the auction should mark bob as highest bidder"
+        );
+
+        // Attempting to finalize auction again should fail.
         let finres3 = auction_finalize(&ctx5, &mut host);
         expect_error(
             finres3,
-            FinalizeError::AuctionFinalized,
-            "Finalizing auction a second time should fail",
+            FinalizeError::AuctionAlreadyFinalized,
+            "Finalizing the auction a second time should fail",
         );
 
-        // attempting to bid again should fail
+        // Attempting to bid again should fail.
         let res4 = auction_bid(&bob_ctx, &mut host, big_amount);
         expect_error(
             res4,
-            BidError::AuctionFinalized,
+            BidError::AuctionAlreadyFinalized,
             "Bidding should fail because the auction is finalized",
         );
     }
 
     fn verify_bid(
-        host: &mut TestHost<State<TestStateApi>>,
-        account: AccountAddress,
+        host: &mut TestHost<State>,
         ctx: &TestContext<TestReceiveOnlyData>,
         amount: Amount,
-        bid_map: &mut BTreeMap<AccountAddress, Amount>,
-        highest_bid: Amount,
     ) {
         auction_bid(ctx, host, amount).expect_report("Bidding should pass.");
-        bid_map.insert(account, highest_bid);
+        host.set_self_balance(amount);
     }
 
     #[concordium_test]
     /// Bids for amounts lower or equal to the highest bid should be rejected.
     fn test_auction_bid_repeated_bid() {
-        let (account1, ctx1) = new_account_ctx();
+        let ctx1 = new_account_ctx().1;
         let ctx2 = new_account_ctx().1;
 
-        let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
+        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
         let ctx0 = parametrized_init_ctx(&parameter_bytes);
 
         let amount = Amount::from_micro_ccd(100);
 
         let mut state_builder = TestStateBuilder::new();
-        let mut bid_map = BTreeMap::new();
 
-        // initializing auction
+        // Initializing auction
         let initial_state =
             auction_init(&ctx0, &mut state_builder).expect("Initialization should succeed.");
 
         let mut host = TestHost::new(initial_state, state_builder);
 
-        // 1st bid: account1 bids amount1
-        verify_bid(&mut host, account1, &ctx1, amount, &mut bid_map, amount);
+        // 1st bid: Account1 bids `amount`.
+        verify_bid(&mut host, &ctx1, amount);
 
-        // 2nd bid: account2 bids amount1
-        // should fail because amount is equal to highest bid
+        // 2nd bid: Account2 bids `amount` (should fail
+        // because amount is equal to highest bid).
         let res2 = auction_bid(&ctx2, &mut host, amount);
         expect_error(
             res2,
@@ -402,7 +399,7 @@ mod tests {
     /// Bids for 0 CCD should be rejected.
     fn test_auction_bid_zero() {
         let ctx1 = new_account_ctx().1;
-        let parameter_bytes = create_parameter_bytes(&item_expiry_parameter());
+        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
         let ctx = parametrized_init_ctx(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();

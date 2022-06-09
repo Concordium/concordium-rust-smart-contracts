@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased changes
+## concordium-std-derive 3.0.0 (2022-05-17)
 
 - Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.
 - Add `derive(Deletable)` macro for deriving the `Deletable` trait.
