@@ -104,9 +104,7 @@ pub struct TokenIdVec(#[concordium(size_length = 1)] pub Vec<u8>);
 impl IsTokenId for TokenIdVec {}
 
 impl schema::SchemaType for TokenIdVec {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 /// Display the token ID as a uppercase hex string
@@ -199,9 +197,7 @@ pub struct TokenIdU64(pub u64);
 impl IsTokenId for TokenIdU64 {}
 
 impl schema::SchemaType for TokenIdU64 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u64> for TokenIdU64 {
@@ -257,9 +253,7 @@ pub struct TokenIdU32(pub u32);
 impl IsTokenId for TokenIdU32 {}
 
 impl schema::SchemaType for TokenIdU32 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u32> for TokenIdU32 {
@@ -315,9 +309,7 @@ pub struct TokenIdU16(pub u16);
 impl IsTokenId for TokenIdU16 {}
 
 impl schema::SchemaType for TokenIdU16 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u16> for TokenIdU16 {
@@ -373,9 +365,7 @@ pub struct TokenIdU8(pub u8);
 impl IsTokenId for TokenIdU8 {}
 
 impl schema::SchemaType for TokenIdU8 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u8> for TokenIdU8 {
@@ -431,9 +421,7 @@ pub struct TokenIdUnit();
 impl IsTokenId for TokenIdUnit {}
 
 impl schema::SchemaType for TokenIdUnit {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 /// The `TokenIdUnit` is serialized with one byte with the value 0.
