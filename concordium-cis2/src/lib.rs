@@ -513,8 +513,7 @@ macro_rules! token_amount_wrapper {
         impl IsTokenAmount for $name {}
 
         impl schema::SchemaType for $name {
-            // TODO Fix the schema when supporting LEB128
-            fn get_type() -> schema::Type { schema::Type::Array($size, Box::new(schema::Type::U8)) }
+            fn get_type() -> schema::Type { schema::Type::ULeb128(37) }
         }
 
         impl Serial for $name {
