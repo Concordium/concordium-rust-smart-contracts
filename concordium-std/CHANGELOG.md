@@ -1,5 +1,7 @@
 # Changelog
 
+- Change SchemaType implementation for cryptographic primitives to ByteArray.
+
 ## concordium-std 3.0.0 (2022-05-17)
 - Remove support for v0 smart contracts and add support for v1:
   - Replace message passing with synchronous calls:

@@ -104,9 +104,7 @@ pub struct TokenIdVec(#[concordium(size_length = 1)] pub Vec<u8>);
 impl IsTokenId for TokenIdVec {}
 
 impl schema::SchemaType for TokenIdVec {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 /// Display the token ID as a uppercase hex string
@@ -137,9 +135,7 @@ pub struct TokenIdFixed<const N: usize>(pub [u8; N]);
 impl<const N: usize> IsTokenId for TokenIdFixed<N> {}
 
 impl<const N: usize> schema::SchemaType for TokenIdFixed<N> {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl<const N: usize> From<[u8; N]> for TokenIdFixed<N> {
@@ -199,9 +195,7 @@ pub struct TokenIdU64(pub u64);
 impl IsTokenId for TokenIdU64 {}
 
 impl schema::SchemaType for TokenIdU64 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u64> for TokenIdU64 {
@@ -257,9 +251,7 @@ pub struct TokenIdU32(pub u32);
 impl IsTokenId for TokenIdU32 {}
 
 impl schema::SchemaType for TokenIdU32 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u32> for TokenIdU32 {
@@ -315,9 +307,7 @@ pub struct TokenIdU16(pub u16);
 impl IsTokenId for TokenIdU16 {}
 
 impl schema::SchemaType for TokenIdU16 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u16> for TokenIdU16 {
@@ -373,9 +363,7 @@ pub struct TokenIdU8(pub u8);
 impl IsTokenId for TokenIdU8 {}
 
 impl schema::SchemaType for TokenIdU8 {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 impl From<u8> for TokenIdU8 {
@@ -431,9 +419,7 @@ pub struct TokenIdUnit();
 impl IsTokenId for TokenIdUnit {}
 
 impl schema::SchemaType for TokenIdUnit {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U8, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
 }
 
 /// The `TokenIdUnit` is serialized with one byte with the value 0.
@@ -455,7 +441,7 @@ impl Deserial for TokenIdUnit {
 }
 
 macro_rules! token_amount_wrapper {
-    ($name:ident, $wrapped:ty, $size:literal) => {
+    ($name:ident, $wrapped:ty) => {
         #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
         #[repr(transparent)]
         pub struct $name(pub $wrapped);
@@ -513,8 +499,7 @@ macro_rules! token_amount_wrapper {
         impl IsTokenAmount for $name {}
 
         impl schema::SchemaType for $name {
-            // TODO Fix the schema when supporting LEB128
-            fn get_type() -> schema::Type { schema::Type::Array($size, Box::new(schema::Type::U8)) }
+            fn get_type() -> schema::Type { schema::Type::ULeb128(37) }
         }
 
         impl Serial for $name {
@@ -561,11 +546,11 @@ macro_rules! token_amount_wrapper {
     };
 }
 
-token_amount_wrapper!(TokenAmountU128, u128, 19);
-token_amount_wrapper!(TokenAmountU64, u64, 10);
-token_amount_wrapper!(TokenAmountU32, u32, 5);
-token_amount_wrapper!(TokenAmountU16, u16, 3);
-token_amount_wrapper!(TokenAmountU8, u8, 2);
+token_amount_wrapper!(TokenAmountU128, u128);
+token_amount_wrapper!(TokenAmountU64, u64);
+token_amount_wrapper!(TokenAmountU32, u32);
+token_amount_wrapper!(TokenAmountU16, u16);
+token_amount_wrapper!(TokenAmountU8, u8);
 
 /// An untagged event of a transfer of some amount of tokens from one address to
 /// another. For a tagged version, use `Cis2Event`.
@@ -853,9 +838,7 @@ impl From<AccountAddress> for Receiver {
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
 
 impl schema::SchemaType for AdditionalData {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(schema::Type::U8))
-    }
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U16) }
 }
 
 impl AdditionalData {
