@@ -1,6 +1,6 @@
 # Changelog
 
-- Change SchemaType implementation for cryptographic primitives to ByteArray.
+- Change SchemaType implementation for cryptographic primitives to ByteArray, meaning the primitives are now supplied as hex strings in JSON.
 
 ## concordium-std 3.0.0 (2022-05-17)
 - Remove support for v0 smart contracts and add support for v1:
