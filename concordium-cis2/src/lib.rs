@@ -498,6 +498,8 @@ macro_rules! token_amount_wrapper {
 
         impl IsTokenAmount for $name {}
 
+        /// Uses the ULeb128 encoding with up to 37 bytes for the encoding as
+        /// according to CIS-2 specification.
         impl schema::SchemaType for $name {
             fn get_type() -> schema::Type { schema::Type::ULeb128(37) }
         }
