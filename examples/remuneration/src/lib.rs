@@ -1,0 +1,1037 @@
+//! An example implementation of remuneration contract.
+
+#![cfg_attr(not(feature = "std"), no_std)]
+use concordium_cis2::*;
+use concordium_std::*;
+
+/// The id of the wCCD token in this contract.
+const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
+
+/// The metadata url for the wCCD token.
+const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
+
+// Types
+
+/// Contract token ID type.
+/// Since this contract will only ever contain this one token type, we use the
+/// smallest possible token ID.
+type ContractTokenId = TokenIdUnit;
+
+/// Contract token amount type.
+/// Since this contract is wrapping the CCD and the CCD can be represented as a
+/// u64, we can specialize the token amount to u64 reducing module size and cost
+/// of arithmetics.
+type ContractTokenAmount = TokenAmountU64;
+
+/// The state tracked for each address.
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+struct AddressState<S> {
+    /// The number of tokens owned by this address.
+    balance:   ContractTokenAmount,
+    /// The address which are currently enabled as operators for this token and
+    /// this address.
+    operators: StateSet<Address, S>,
+}
+
+/// The contract state,
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct State<S> {
+    /// The state the one token.
+    token: StateMap<Address, AddressState<S>, S>,
+}
+
+#[derive(Serialize, SchemaType)]
+struct RemunerationState {
+    w_ccd: ContractAddress,
+    hot_wallet_account_company: Address,
+}
+
+/// The parameter type for the contract function `unwrap`.
+/// Takes an amount of tokens and unwrap the CCD and send it to a receiver.
+#[derive(Serialize, SchemaType)]
+struct UnwrapParams {
+    /// The amount of tokens to unwrap.
+    amount:   ContractTokenAmount,
+    /// The owner of the tokens.
+    owner:    Address,
+    /// The address to receive these unwrapped CCD.
+    receiver: Receiver,
+    /// Some additional bytes to include in the transfer.
+    data:     AdditionalData,
+}
+
+/// The parameter type for the contract function `wrap`.
+///
+/// The receiver for the wrapped CCD tokens.
+#[derive(Serialize, SchemaType)]
+struct WrapParams {
+    /// The address to receive these tokens.
+    /// If the receiver is the sender of the message wrapping the tokens, it
+    /// will not log a transfer.
+    to:   Receiver,
+    /// Some additional bytes to include in a transfer.
+    data: AdditionalData,
+}
+
+/// The different errors the contract can produce.
+#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+enum CustomContractError {
+    /// Failed parsing the parameter.
+    #[from(ParseError)]
+    ParseParams,
+    /// Failed logging: Log is full.
+    LogFull,
+    /// Failed logging: Log is malformed.
+    LogMalformed,
+    /// Failed to invoke a contract.
+    InvokeContractError,
+    /// Failed to invoke a transfer.
+    InvokeTransferError,
+}
+
+/// `remuneration` function errors
+#[derive(Debug, PartialEq, Eq, Clone, Reject)]
+enum RemunerationError {
+    /// Only accounts are allowed to claim.
+    OnlyAccount,
+}
+
+type ContractError = Cis2Error<CustomContractError>;
+
+type ContractResult<A> = Result<A, ContractError>;
+
+/// Mapping the logging errors to ContractError.
+impl From<LogError> for CustomContractError {
+    fn from(le: LogError) -> Self {
+        match le {
+            LogError::Full => Self::LogFull,
+            LogError::Malformed => Self::LogMalformed,
+        }
+    }
+}
+
+/// Mapping errors related to contract invocations to CustomContractError.
+impl<T> From<CallContractError<T>> for CustomContractError {
+    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+}
+
+/// Mapping errors related to contract invocations to CustomContractError.
+impl From<TransferError> for CustomContractError {
+    fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
+}
+
+/// Mapping CustomContractError to ContractError
+impl From<CustomContractError> for ContractError {
+    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
+}
+
+impl<S: HasStateApi> State<S> {
+    /// Creates a new state with no one owning any tokens by default.
+    fn new(state_builder: &mut StateBuilder<S>) -> Self {
+        State {
+            token: state_builder.new_map(),
+        }
+    }
+
+    /// Get the current balance of a given token id for a given address.
+    /// Results in an error if the token id does not exist in the state.
+    fn balance(
+        &self,
+        token_id: &ContractTokenId,
+        address: &Address,
+    ) -> ContractResult<ContractTokenAmount> {
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
+        Ok(self.token.get(address).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
+    }
+
+    /// Check is an address is an operator of a specific owner address.
+    /// Results in an error if the token id does not exist in the state.
+    fn is_operator(&self, address: &Address, owner: &Address) -> bool {
+        self.token
+            .get(owner)
+            .map(|address_state| address_state.operators.contains(address))
+            .unwrap_or(false)
+    }
+
+    /// Update the state with a transfer.
+    /// Results in an error if the token id does not exist in the state or if
+    /// the from address have insufficient tokens to do the transfer.
+    fn transfer(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        from: &Address,
+        to: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) -> ContractResult<()> {
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
+        if amount == 0u64.into() {
+            return Ok(());
+        }
+        {
+            let mut from_state =
+                self.token.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
+            ensure!(from_state.balance >= amount, ContractError::InsufficientFunds);
+            from_state.balance -= amount;
+        }
+        let mut to_state = self.token.entry(*to).or_insert_with(|| AddressState {
+            balance:   0u64.into(),
+            operators: state_builder.new_set(),
+        });
+        to_state.balance += amount;
+
+        Ok(())
+    }
+
+    /// Update the state adding a new operator for a given token id and address.
+    /// Results in an error if the token id does not exist in the state.
+    /// Succeeds even if the `operator` is already an operator for this
+    /// `token_id` and `address`.
+    fn add_operator(
+        &mut self,
+        owner: &Address,
+        operator: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) {
+        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
+            balance:   0u64.into(),
+            operators: state_builder.new_set(),
+        });
+        owner_state.operators.insert(*operator);
+    }
+
+    /// Update the state removing an operator for a given token id and address.
+    /// Results in an error if the token id does not exist in the state.
+    /// Succeeds even if the `operator` is not an operator for this `token_id`
+    /// and `address`.
+    fn remove_operator(&mut self, owner: &Address, operator: &Address) {
+        self.token.entry(*owner).and_modify(|address_state| {
+            address_state.operators.remove(operator);
+        });
+    }
+
+    fn mint(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        owner: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) -> ContractResult<()> {
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
+        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
+            balance:   0u64.into(),
+            operators: state_builder.new_set(),
+        });
+
+        owner_state.balance += amount;
+        Ok(())
+    }
+
+    fn burn(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        owner: &Address,
+    ) -> ContractResult<()> {
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
+        if amount == 0u64.into() {
+            return Ok(());
+        }
+
+        let mut from_state = self.token.get_mut(owner).ok_or(ContractError::InsufficientFunds)?;
+        ensure!(from_state.balance >= amount, ContractError::InsufficientFunds);
+        from_state.balance -= amount;
+
+        Ok(())
+    }
+}
+
+// Contract functions
+
+/// Initialize contract instance with no initial tokens.
+/// Logs a `Mint` event for the single token id with no amounts.
+#[init(contract = "CIS2-wCCD", enable_logger)]
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    state_builder: &mut StateBuilder<S>,
+    logger: &mut impl HasLogger,
+) -> InitResult<State<S>> {
+    // Construct the initial contract state.
+    let state = State::new(state_builder);
+    // Get the instantiater of this contract instance.
+    let invoker = Address::Account(ctx.init_origin());
+    // Log event for the newly minted token.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   ContractTokenAmount::from(0u64),
+        owner:    invoker,
+    }))?;
+
+    // Log event for where to find metadata for the token
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+        token_id:     TOKEN_ID_WCCD,
+        metadata_url: MetadataUrl {
+            url:  String::from(TOKEN_METADATA_URL),
+            hash: None,
+        },
+    }))?;
+
+    Ok(state)
+}
+
+/// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
+/// is not the receiver.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "wrap",
+    parameter = "WrapParams",
+    enable_logger,
+    mutable,
+    payable
+)]
+fn contract_wrap<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    amount: Amount,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    let params: WrapParams = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    let receive_address = params.to.address();
+
+    let (state, state_builder) = host.state_and_builder();
+    // Update the state.
+    state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
+
+    // Log the newly minted tokens.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   ContractTokenAmount::from(amount.micro_ccd),
+        owner:    sender,
+    }))?;
+
+    // Only log a transfer event if receiver is not the one who payed for this.
+    if sender != receive_address {
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(amount.micro_ccd),
+            from:     sender,
+            to:       receive_address,
+        }))?;
+    }
+
+    // If the receiver is a contract: invoke the receive hook function.
+    if let Receiver::Contract(address, function) = params.to {
+        let parameter = OnReceivingCis2Params {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(amount.micro_ccd),
+            from:     sender,
+            data:     params.data,
+        };
+        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
+            .unwrap_abort();
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+/// Unwrap an amount of wCCD tokens into CCD
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "unwrap",
+    parameter = "UnwrapParams",
+    enable_logger,
+    mutable
+)]
+fn contract_unwrap<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    let params: UnwrapParams = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    let state = host.state_mut();
+    ensure!(
+        sender == params.owner || state.is_operator(&sender, &params.owner),
+        ContractError::Unauthorized
+    );
+
+    // Update the state.
+    state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
+
+    // Log the burning of tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   params.amount,
+        owner:    params.owner,
+    }))?;
+
+    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
+
+    match params.receiver {
+        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
+        Receiver::Contract(address, function) => {
+            host.invoke_contract(
+                &address,
+                &params.data,
+                function.as_entrypoint_name(),
+                unwrapped_amount,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+// Contract functions required by CIS2
+
+#[allow(dead_code)]
+type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+
+/// Execute a list of token transfers, in the order of the list.
+///
+/// Logs a `Transfer` event and invokes a receive hook function for every
+/// transfer in the list.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Any of the transfers fail to be executed, which could be if:
+///     - The `token_id` does not exist.
+///     - The sender is not the owner of the token, or an operator for this
+///       specific `token_id` and `from` address.
+///     - The token is not owned by the `from`.
+/// - Fails to log event.
+/// - Any of the receive hook function calls rejects.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "transfer",
+    parameter = "TransferParameter",
+    enable_logger,
+    mutable
+)]
+fn contract_transfer<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    for Transfer {
+        token_id,
+        amount,
+        from,
+        to,
+        data,
+    } in transfers
+    {
+        let (state, builder) = host.state_and_builder();
+        // Authenticate the sender for this transfer
+        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        let to_address = to.address();
+        // Update the contract state
+        state.transfer(&token_id, amount, &from, &to_address, builder)?;
+
+        // Log transfer event
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id,
+            amount,
+            from,
+            to: to_address,
+        }))?;
+
+        // If the receiver is a contract: invoke the receive hook function.
+        if let Receiver::Contract(address, function) = to {
+            let parameter = OnReceivingCis2Params {
+                token_id,
+                amount,
+                from,
+                data,
+            };
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_entrypoint_name(),
+                Amount::zero(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Enable or disable addresses as operators of the sender address.
+/// Logs an `UpdateOperator` event.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Fails to log event.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "updateOperator",
+    parameter = "UpdateOperatorParams",
+    enable_logger,
+    mutable
+)]
+fn contract_update_operator<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    let (state, state_builder) = host.state_and_builder();
+    for param in params {
+        // Update the operator in the state.
+        match param.update {
+            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, state_builder),
+            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
+        }
+
+        // Log the appropriate event
+        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+            UpdateOperatorEvent {
+                owner:    sender,
+                operator: param.operator,
+                update:   param.update,
+            },
+        ))?;
+    }
+
+    Ok(())
+}
+
+/// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
+/// of TokenIDs used by this contract.
+type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+
+type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+
+/// Get the balance of given token IDs and addresses.
+///
+/// It rejects if:
+/// - Sender is not a contract.
+/// - It fails to parse the parameter.
+/// - Any of the queried `token_id` does not exist.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "balanceOf",
+    parameter = "ContractBalanceOfQueryParams",
+    return_value = "ContractBalanceOfQueryResponse"
+)]
+fn contract_balance_of<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<ContractBalanceOfQueryResponse> {
+    // Parse the parameter.
+    let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
+        // Query the state for balance.
+        let amount = host.state().balance(&query.token_id, &query.address)?;
+        response.push(amount);
+    }
+    let result = ContractBalanceOfQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Takes a list of queries. Each query is an owner address and some address to
+/// check as an operator of the owner address.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "operatorOf",
+    parameter = "OperatorOfQueryParams",
+    return_value = "OperatorOfQueryResponse"
+)]
+fn contract_operator_of<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<OperatorOfQueryResponse> {
+    // Parse the parameter.
+    let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
+        // Query the state for address being an operator of owner.
+        let is_operator = host.state().is_operator(&query.owner, &query.address);
+        response.push(is_operator);
+    }
+    let result = OperatorOfQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Parameter type for the CIS-2 function `tokenMetadata` specialized to the
+/// subset of TokenIDs used by this contract.
+// This type is pub to silence the dead_code warning, as this type is only used
+// for when generating the schema.
+pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
+
+/// Get the token metadata URLs and checksums given a list of token IDs.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Any of the queried `token_id` does not exist.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "tokenMetadata",
+    parameter = "ContractTokenMetadataQueryParams",
+    return_value = "TokenMetadataQueryResponse"
+)]
+fn contract_token_metadata<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<TokenMetadataQueryResponse> {
+    // Parse the parameter.
+    let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for token_id in params.queries {
+        // Check the token exists.
+        ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
+
+        let metadata_url = MetadataUrl {
+            url:  TOKEN_METADATA_URL.to_string(),
+            hash: None,
+        };
+        response.push(metadata_url);
+    }
+    let result = TokenMetadataQueryResponse::from(response);
+    Ok(result)
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[init(contract = "remuneration", parameter = "ContractAddress")]
+fn remuneration_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    _state_builder: &mut StateBuilder<S>,
+) -> InitResult<RemunerationState> {
+    let (w_ccd, hot_wallet_account_company) = ctx.parameter_cursor().get()?;
+    Ok(RemunerationState {
+        w_ccd,
+        hot_wallet_account_company,
+    })
+}
+
+/// An employee can claim its remuneration every month.
+#[receive(contract = "remuneration", name = "remuneration_claim", mutable)]
+fn remuneration_claim<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<RemunerationState, StateApiType = S>,
+) -> Result<(), RemunerationError> {
+    // TODO: check if sender is employee
+    // TODO: check employee has not claimed this month yet
+    //  let _ = ctx.metadata().slot_time();
+    // TODO: calculate remuneration
+    let payout = ContractTokenAmount::from(400);
+
+    // Execute payout
+
+    let sender_account = match ctx.sender() {
+        Address::Account(account_address) => account_address,
+        _ => bail!(RemunerationError::OnlyAccount),
+    };
+
+    let hot_wallet_account_company = host.state().hot_wallet_account_company;
+
+    let transfer = Transfer {
+        token_id: TOKEN_ID_WCCD,
+        amount:   payout,
+        from:     hot_wallet_account_company,
+        to:       concordium_cis2::Receiver::Account(sender_account),
+        data:     AdditionalData::empty(),
+    };
+
+    let parameter = TransferParams::from(vec![transfer]);
+    let parameter_bytes = to_bytes(&parameter);
+
+    let w_ccd = host.state().w_ccd;
+
+    let _result = host.invoke_contract_raw(
+        &w_ccd,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("transfer"),
+        Amount::zero(),
+    );
+
+    Ok(())
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Tests
+
+#[concordium_cfg_test]
+mod tests {
+    use super::*;
+    use test_infrastructure::*;
+
+    const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
+    const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
+    const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
+    const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
+    const EMPLOYEE_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
+    const EMPLOYEE_ADDRESS: Address = Address::Account(EMPLOYEE_ACCOUNT);
+    const HOT_WALLET_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
+    const HOT_WALLET_ADDRESS: Address = Address::Account(HOT_WALLET_ACCOUNT);
+    const OWNER_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
+    const W_CCD_CONTRACT_ADDRESS: ContractAddress = ContractAddress {
+        index:    1,
+        subindex: 0,
+    };
+
+    /// Test helper function which creates a contract state where ADDRESS_0 owns
+    /// 400 tokens.
+    fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
+        let mut state = State::new(state_builder);
+        state
+            .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
+            .expect_report("Failed to setup state");
+        state
+    }
+
+    /// Test initialization succeeds and the tokens are owned by the contract
+    /// instantiater and the appropriate events are logged.
+    #[concordium_test]
+    fn test_init() {
+        // Setup the context
+        let mut ctx = TestInitContext::empty();
+        ctx.set_init_origin(ACCOUNT_0);
+
+        let mut logger = TestLogger::init();
+        let mut builder = TestStateBuilder::new();
+
+        // Call the contract function.
+        let result = contract_init(&ctx, &mut builder, &mut logger);
+
+        // Check the result
+        let state = result.expect_report("Contract initialization failed");
+
+        // Check the state
+        claim_eq!(state.token.iter().count(), 0, "Only one token is initialized");
+        let balance0 =
+            state.balance(&TOKEN_ID_WCCD, &ADDRESS_0).expect_report("Token is expected to exist");
+        claim_eq!(
+            balance0,
+            0u64.into(),
+            "No initial tokens are owned by the contract instantiater"
+        );
+
+        // Check the logs
+        claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
+        claim!(
+            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
+                owner:    ADDRESS_0,
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(0),
+            }))),
+            "Missing event for minting the token"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_ID_WCCD,
+                    metadata_url: MetadataUrl {
+                        url:  String::from(TOKEN_METADATA_URL),
+                        hash: None,
+                    },
+                }
+            ))),
+            "Missing event with metadata for the token"
+        );
+    }
+
+    /// Test transfer succeeds, when `from` is the sender.
+    #[concordium_test]
+    fn test_transfer_account() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+
+        // and parameter.
+        let transfer = Transfer {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(100),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
+        };
+        let parameter = TransferParams::from(vec![transfer]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = State::new(&mut state_builder);
+        state
+            .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
+            .expect_report("Failed to setup state");
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        let balance0 = host
+            .state()
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
+            .expect_report("Token is expected to exist");
+        let balance1 = host
+            .state()
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
+            .expect_report("Token is expected to exist");
+        claim_eq!(
+            balance0,
+            300.into(),
+            "Token owner balance should be decreased by the transferred amount"
+        );
+        claim_eq!(
+            balance1,
+            100.into(),
+            "Token receiver balance should be increased by the transferred amount"
+        );
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(100),
+            })),
+            "Incorrect event emitted"
+        )
+    }
+
+    /// Test transfer token fails, when sender is neither the owner or an
+    /// operator of the owner.
+    #[concordium_test]
+    fn test_transfer_not_authorized() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+
+        // and parameter.
+        let transfer = Transfer {
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(100),
+            data:     AdditionalData::empty(),
+        };
+        let parameter = TransferParams::from(vec![transfer]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        // Check the result.
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
+    }
+
+    /// Test transfer succeeds when sender is not the owner, but is an operator
+    /// of the owner.
+    #[concordium_test]
+    fn test_operator_transfer() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+
+        // and parameter.
+        let transfer = Transfer {
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(100),
+            data:     AdditionalData::empty(),
+        };
+        let parameter = TransferParams::from(vec![transfer]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = initial_state(&mut state_builder);
+        state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        let balance0 = host
+            .state()
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
+            .expect_report("Token is expected to exist");
+        let balance1 = host
+            .state()
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
+            .expect_report("Token is expected to exist");
+        claim_eq!(balance0, 300.into()); //, "Token owner balance should be decreased by the transferred amount");
+        claim_eq!(
+            balance1,
+            100.into(),
+            "Token receiver balance should be increased by the transferred amount"
+        );
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(100),
+            })),
+            "Incorrect event emitted"
+        )
+    }
+
+    /// Test adding an operator succeeds and the appropriate event is logged.
+    #[concordium_test]
+    fn test_add_operator() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+
+        // and parameter.
+        let update = UpdateOperator {
+            operator: ADDRESS_1,
+            update:   OperatorUpdate::Add,
+        };
+        let parameter = UpdateOperatorParams(vec![update]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        claim!(host.state().is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be an operator");
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "One event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner:    ADDRESS_0,
+                    operator: ADDRESS_1,
+                    update:   OperatorUpdate::Add,
+                }
+            )),
+            "Incorrect event emitted"
+        )
+    }
+
+    /// Test employee can claim payment
+    #[concordium_test]
+    fn test_employee_claims() {
+        // Setup the context
+        let mut ctx_w_ccd = TestReceiveContext::empty();
+        ctx_w_ccd.set_sender(ADDRESS_0);
+
+        // Setup the parameter
+        let transfer = Transfer {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(100),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
+        };
+        let parameter = TransferParams::from(vec![transfer]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx_w_ccd.set_parameter(&parameter_bytes);
+
+        // Set up w_ccd state
+        let mut state_builder_w_ccd = TestStateBuilder::new();
+        let mut state_w_ccd = State::new(&mut state_builder_w_ccd);
+        state_w_ccd
+            .mint(&TOKEN_ID_WCCD, 400.into(), &HOT_WALLET_ADDRESS, &mut state_builder_w_ccd)
+            .expect_report("Failed to setup state_w_ccd");
+
+        // Set up remuneration state
+        let mut ctx = TestReceiveContext::empty();
+        let state = RemunerationState {
+            w_ccd: W_CCD_CONTRACT_ADDRESS,
+            hot_wallet_account_company: HOT_WALLET_ADDRESS,
+        };
+        let mut host = TestHost::new(state, TestStateBuilder::new());
+
+        // Set up context
+        ctx.set_owner(OWNER_ACCOUNT);
+        ctx.set_sender(EMPLOYEE_ADDRESS);
+
+        let mut mock_transfer = || {
+            state_w_ccd
+                .mint(&TOKEN_ID_WCCD, 400.into(), &EMPLOYEE_ADDRESS, &mut state_builder_w_ccd)
+                .expect_report("Failed to mint tokens to employee");
+
+            state_w_ccd
+                .burn(&TOKEN_ID_WCCD, 400.into(), &HOT_WALLET_ADDRESS)
+                .expect_report("Failed to burn tokens on hot wallet")
+        };
+
+        // Set up a mock invocation for the wccd contract.
+        host.setup_mock_entrypoint(
+            W_CCD_CONTRACT_ADDRESS,
+            OwnedEntrypointName::new_unchecked("transfer".into()),
+            MockFn::returning_ok(mock_transfer()),
+        );
+
+        // Act
+        remuneration_claim(&ctx, &mut host).expect_report("Remuneration claim failed.");
+
+        let host_w_ccd = TestHost::new(state_w_ccd, state_builder_w_ccd);
+        // Check balance of hot wallet
+        let balance_hot_wallet = host_w_ccd
+            .state()
+            .balance(&TOKEN_ID_WCCD, &HOT_WALLET_ADDRESS)
+            .expect_report("wCCD tokens are expected to be transferred to employee");
+        claim_eq!(balance_hot_wallet, 0.into());
+
+        // Check balance of employee
+        let balance_employee = host_w_ccd
+            .state()
+            .balance(&TOKEN_ID_WCCD, &EMPLOYEE_ADDRESS)
+            .expect_report("wCCD tokens are expected to be transferred to employee");
+        claim_eq!(balance_employee, 400.into());
+    }
+}
