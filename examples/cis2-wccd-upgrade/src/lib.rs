@@ -1,7 +1,9 @@
 //! upgradable wCCD token
 
 #![cfg_attr(not(feature = "std"), no_std)]
-use crate::CustomContractError::{ContractPaused, OutOfBound};
+use crate::CustomContractError::{
+    AlreadyInitialized, ContractPaused, OnlyImplementation, OnlyState, OutOfBound, StateInvokeError,
+};
 use concordium_cis2::*;
 use concordium_std::*;
 use core::fmt::Debug;
@@ -36,14 +38,42 @@ struct AddressState<S> {
     operators: StateSet<Address, S>,
 }
 
-/// The contract state,
+/// The contract state.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
-    /// The state the one token.
-    token:        StateMap<Address, AddressState<S>, S>,
+    /// Address of the w_ccd proxy contract.
+    proxy_address:          Option<ContractAddress>,
+    /// Address of the w_ccd implementation contract.
+    implementation_address: Option<ContractAddress>,
+    /// FALSE if proxy and implementation addresses have not been set yet.
+    /// TRUE if proxy and implementation addresses have been set.
+    initialized:            bool,
+    /// The state of the one token.
+    token:                  StateMap<Address, AddressState<S>, S>,
+    /// Timestamp when contract is unpaused.
+    unpause_time:           Timestamp,
+}
+
+/// The implementation contract state.
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct StateImplementation<S> {
     /// The admin address can pause/unpause the contract.
-    admin:        Address,
+    admin:         Address,
+    /// Address of the w_ccd proxy contract.
+    proxy_address: Option<ContractAddress>,
+    /// Address of the w_ccd state contract.
+    state_address: Option<ContractAddress>,
+    /// FALSE if proxy and state addresses have not been set yet.
+    /// TRUE if proxy and state addresses have been set.
+    initialized:   bool,
+
+    /// TODO: These state variables will be removed out of this
+    /// `StateImplementation` struct once the getter/setter functions are
+    /// set up between the State contract and the Implementation contract.
+    /// The state of the one token.
+    token:        StateMap<Address, AddressState<S>, S>,
     /// Timestamp when contract is unpaused.
     unpause_time: Timestamp,
 }
@@ -75,6 +105,24 @@ struct WrapParams {
     data: AdditionalData,
 }
 
+/// The parameter type for the state contract function `initialize`.
+#[derive(Serialize, SchemaType)]
+struct InitializeStateParams {
+    /// Address of the w_ccd proxy contract.
+    proxy_address:          Option<ContractAddress>,
+    /// Address of the w_ccd implementation contract.
+    implementation_address: Option<ContractAddress>,
+}
+
+/// The parameter type for the implementation contract function `initialize`.
+#[derive(Serialize, SchemaType)]
+struct InitializeImplementationParams {
+    /// Address of the w_ccd proxy contract.
+    proxy_address: Option<ContractAddress>,
+    /// Address of the w_ccd state contract.
+    state_address: Option<ContractAddress>,
+}
+
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject)]
 enum CustomContractError {
@@ -93,6 +141,16 @@ enum CustomContractError {
     OutOfBound,
     /// Contract is paused.
     ContractPaused,
+    // Contract already initialized.
+    AlreadyInitialized,
+    // Only implementation contract.
+    OnlyImplementation,
+    // Only proxy contract.
+    OnlyProxy,
+    // Only state contract.
+    OnlyState,
+    // Raised when implementation can not invoke state contract.
+    StateInvokeError,
 }
 
 type ContractError = Cis2Error<CustomContractError>;
@@ -126,11 +184,50 @@ impl From<CustomContractError> for ContractError {
 
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(admin: Address, state_builder: &mut StateBuilder<S>) -> Self {
+    fn new(state_builder: &mut StateBuilder<S>) -> Self {
+        // Setup state.
         State {
-            token: state_builder.new_map(),
+            proxy_address:          None,
+            implementation_address: None,
+            initialized:            false,
+            token:                  state_builder.new_map(),
+            unpause_time:           Timestamp::from_timestamp_millis(0),
+        }
+    }
+
+    /// TODO: This function should be removed in the end. It is still here
+    /// because the tests are not re-written to work without this mint function
+    /// when setting up the state.
+    fn mint(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        owner: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) -> ContractResult<()> {
+        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
+        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
+            balance:   0u64.into(),
+            operators: state_builder.new_set(),
+        });
+
+        owner_state.balance += amount;
+        Ok(())
+    }
+}
+
+impl<S: HasStateApi> StateImplementation<S> {
+    /// Creates a new state with no one owning any tokens by default.
+    fn new(admin: Address, state_builder: &mut StateBuilder<S>) -> Self {
+        // Setup state.
+        StateImplementation {
             admin,
-            unpause_time: Timestamp::from_timestamp_millis(0),
+            proxy_address: None,
+            state_address: None,
+            initialized: false,
+            token: state_builder.new_map(), // TODO: This variable will be moved 'state' contract.
+            unpause_time: Timestamp::from_timestamp_millis(0), /* TODO: This variable will be
+                                                                * moved 'state' contract. */
         }
     }
 
@@ -164,10 +261,8 @@ impl<S: HasStateApi> State<S> {
         from: &Address,
         to: &Address,
         state_builder: &mut StateBuilder<S>,
-        slot_time: Timestamp,
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        ensure!(slot_time >= self.unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
         if amount == 0u64.into() {
             return Ok(());
         }
@@ -195,9 +290,7 @@ impl<S: HasStateApi> State<S> {
         owner: &Address,
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
-        slot_time: Timestamp,
     ) -> ContractResult<()> {
-        ensure!(slot_time >= self.unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
         let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
             balance:   0u64.into(),
             operators: state_builder.new_set(),
@@ -210,13 +303,7 @@ impl<S: HasStateApi> State<S> {
     /// Results in an error if the token id does not exist in the state.
     /// Succeeds even if the `operator` is not an operator for this `token_id`
     /// and `address`.
-    fn remove_operator(
-        &mut self,
-        owner: &Address,
-        operator: &Address,
-        slot_time: Timestamp,
-    ) -> ContractResult<()> {
-        ensure!(slot_time >= self.unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
+    fn remove_operator(&mut self, owner: &Address, operator: &Address) -> ContractResult<()> {
         self.token.entry(*owner).and_modify(|address_state| {
             address_state.operators.remove(operator);
         });
@@ -229,10 +316,8 @@ impl<S: HasStateApi> State<S> {
         amount: ContractTokenAmount,
         owner: &Address,
         state_builder: &mut StateBuilder<S>,
-        slot_time: Timestamp,
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        ensure!(slot_time >= self.unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
         let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
             balance:   0u64.into(),
             operators: state_builder.new_set(),
@@ -247,10 +332,8 @@ impl<S: HasStateApi> State<S> {
         token_id: &ContractTokenId,
         amount: ContractTokenAmount,
         owner: &Address,
-        slot_time: Timestamp,
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        ensure!(slot_time >= self.unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
         if amount == 0u64.into() {
             return Ok(());
         }
@@ -265,18 +348,19 @@ impl<S: HasStateApi> State<S> {
 
 // Contract functions
 
-/// Initialize contract instance with no initial tokens.
+/// Initialize the state contract instance with no initial tokens.
 /// Logs a `Mint` event for the single token id with no amounts.
-#[init(contract = "CIS2-wCCD", enable_logger)]
-fn contract_init<S: HasStateApi>(
+/// TODO: move event logs to proxy
+#[init(contract = "CIS2-wCCD-State", enable_logger)]
+fn contract_state_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
+    // Construct the initial contract state.
+    let state = State::new(state_builder);
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
-    // Construct the initial contract state.
-    let state = State::new(invoker, state_builder);
     // Log event for the newly minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
@@ -296,6 +380,124 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
+/// Initialzes the state of the w_ccd contract with the proxy and the
+/// implementation addresses.
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "initialize",
+    parameter = "InitializeStateParams",
+    mutable
+)]
+fn contract_state_initialize<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    ensure!(!host.state().initialized, concordium_cis2::Cis2Error::Custom(AlreadyInitialized));
+    // Set proxy and implementation addresses.
+    let params: InitializeStateParams = ctx.parameter_cursor().get()?;
+    host.state_mut().proxy_address = params.proxy_address;
+    host.state_mut().implementation_address = params.implementation_address;
+    // Set the w_ccd_state contract as initialized.
+    host.state_mut().initialized = true;
+    Ok(())
+}
+
+// Getter and setter functions of state contract.
+
+fn only_implementation(
+    implementation: Option<ContractAddress>,
+    sender: Address,
+) -> ContractResult<()> {
+    match implementation {
+        Some(implementation_address) => {
+            ensure_eq!(
+                sender,
+                Address::Contract(implementation_address),
+                concordium_cis2::Cis2Error::Custom(OnlyImplementation)
+            );
+        }
+        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyImplementation)),
+    };
+    Ok(())
+}
+
+/// Set unpause_time.
+#[receive(contract = "CIS2-wCCD-State", name = "set_unpause_time", mutable)]
+fn contract_state_set_unpause_time<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Only implementation can set state.
+    only_implementation(host.state().implementation_address, ctx.sender())?;
+
+    // Set unpause_time.
+    let unpause_time = ctx.parameter_cursor().get()?;
+    host.state_mut().unpause_time = unpause_time;
+    Ok(())
+}
+
+#[receive(contract = "CIS2-wCCD-State", name = "get_unpause_time", return_value = "UnpauseTime")]
+fn contract_state_get_unpause_time<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<Timestamp> {
+    Ok(host.state().unpause_time)
+}
+
+/// Initialize contract instance with no initial tokens.
+/// Logs a `Mint` event for the single token id with no amounts.
+/// TODO: Move event logs to proxy
+#[init(contract = "CIS2-wCCD", enable_logger)]
+fn contract_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    state_builder: &mut StateBuilder<S>,
+    logger: &mut impl HasLogger,
+) -> InitResult<StateImplementation<S>> {
+    // Get the instantiater of this contract instance.
+    let invoker = Address::Account(ctx.init_origin());
+    // Construct the initial contract state.
+    let state = StateImplementation::new(invoker, state_builder);
+    // Log event for the newly minted token.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   ContractTokenAmount::from(0u64),
+        owner:    invoker,
+    }))?;
+
+    // Log event for where to find metadata for the token
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+        token_id:     TOKEN_ID_WCCD,
+        metadata_url: MetadataUrl {
+            url:  String::from(TOKEN_METADATA_URL),
+            hash: None,
+        },
+    }))?;
+
+    Ok(state)
+}
+
+/// Initialzes the implementation of the w_ccd contract with the proxy and the
+/// state addresses.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "initialize",
+    parameter = "InitializeImplementationParams",
+    mutable
+)]
+fn contract_initialize<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    ensure!(!host.state().initialized, concordium_cis2::Cis2Error::Custom(AlreadyInitialized));
+    // Set proxy and storage addresses.
+    let params: InitializeImplementationParams = ctx.parameter_cursor().get()?;
+    host.state_mut().proxy_address = params.proxy_address;
+    host.state_mut().state_address = params.state_address;
+    // Set the w_ccd_implementation contract as initialized.
+    host.state_mut().initialized = true;
+    Ok(())
+}
+
 /// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
 /// is not the receiver.
 #[receive(
@@ -308,57 +510,81 @@ fn contract_init<S: HasStateApi>(
 )]
 fn contract_wrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     amount: Amount,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let params: WrapParams = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-
-    let receive_address = params.to.address();
-
-    let (state, state_builder) = host.state_and_builder();
     let slot_time = ctx.metadata().slot_time();
-    // Update the state.
-    state.mint(
-        &TOKEN_ID_WCCD,
-        amount.micro_ccd.into(),
-        &receive_address,
-        state_builder,
-        slot_time,
-    )?;
 
-    // Log the newly minted tokens.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(amount.micro_ccd),
-        owner:    sender,
-    }))?;
+    match host.state().state_address {
+        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
 
-    // Only log a transfer event if receiver is not the one who payed for this.
-    if sender != receive_address {
-        logger.log(&Cis2Event::Transfer(TransferEvent {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            to:       receive_address,
-        }))?;
-    }
+        Some(state_address) => {
+            let unpause_time = host
+                .invoke_contract_raw(
+                    &state_address,
+                    Parameter(&[]),
+                    EntrypointName::new_unchecked("get_unpause_time"),
+                    Amount::zero(),
+                )?
+                .1;
 
-    // If the receiver is a contract: invoke the receive hook function.
-    if let Receiver::Contract(address, function) = params.to {
-        let parameter = OnReceivingCis2Params {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            data:     params.data,
-        };
-        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
-            .unwrap_abort();
-        Ok(())
-    } else {
-        Ok(())
+            let unpause_time = if let Some(mut unpause_time) = unpause_time {
+                unpause_time.get()?
+            } else {
+                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
+            };
+
+            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
+
+            let params: WrapParams = ctx.parameter_cursor().get()?;
+            // Get the sender who invoked this contract function.
+            let sender = ctx.sender();
+
+            let receive_address = params.to.address();
+
+            let (state, state_builder) = host.state_and_builder();
+
+            // Update the state.
+            state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
+
+            // Log the newly minted tokens.
+            logger.log(&Cis2Event::Mint(MintEvent {
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(amount.micro_ccd),
+                owner:    sender,
+            }))?;
+
+            // Only log a transfer event if receiver is not the one who payed for this.
+            if sender != receive_address {
+                logger.log(&Cis2Event::Transfer(TransferEvent {
+                    token_id: TOKEN_ID_WCCD,
+                    amount:   ContractTokenAmount::from(amount.micro_ccd),
+                    from:     sender,
+                    to:       receive_address,
+                }))?;
+            }
+
+            // If the receiver is a contract: invoke the receive hook function.
+            if let Receiver::Contract(address, function) = params.to {
+                let parameter = OnReceivingCis2Params {
+                    token_id: TOKEN_ID_WCCD,
+                    amount:   ContractTokenAmount::from(amount.micro_ccd),
+                    from:     sender,
+                    data:     params.data,
+                };
+                host.invoke_contract(
+                    &address,
+                    &parameter,
+                    function.as_entrypoint_name(),
+                    Amount::zero(),
+                )
+                .unwrap_abort();
+                Ok(())
+            } else {
+                Ok(())
+            }
+        }
     }
 }
 
@@ -372,44 +598,67 @@ fn contract_wrap<S: HasStateApi>(
 )]
 fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let params: UnwrapParams = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-    let state = host.state_mut();
-    ensure!(
-        sender == params.owner || state.is_operator(&sender, &params.owner),
-        ContractError::Unauthorized
-    );
-
     let slot_time = ctx.metadata().slot_time();
-    // Update the state.
-    state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner, slot_time)?;
 
-    // Log the burning of tokens.
-    logger.log(&Cis2Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   params.amount,
-        owner:    params.owner,
-    }))?;
+    match host.state().state_address {
+        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
 
-    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
+        Some(state_address) => {
+            let unpause_time = host
+                .invoke_contract_raw(
+                    &state_address,
+                    Parameter(&[]),
+                    EntrypointName::new_unchecked("get_unpause_time"),
+                    Amount::zero(),
+                )?
+                .1;
 
-    match params.receiver {
-        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
-        Receiver::Contract(address, function) => {
-            host.invoke_contract(
-                &address,
-                &params.data,
-                function.as_entrypoint_name(),
-                unwrapped_amount,
-            )?;
+            let unpause_time = if let Some(mut unpause_time) = unpause_time {
+                unpause_time.get()?
+            } else {
+                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
+            };
+
+            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
+            let params: UnwrapParams = ctx.parameter_cursor().get()?;
+            // Get the sender who invoked this contract function.
+            let sender = ctx.sender();
+            let state = host.state_mut();
+            ensure!(
+                sender == params.owner || state.is_operator(&sender, &params.owner),
+                ContractError::Unauthorized
+            );
+
+            // Update the state.
+            state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
+
+            // Log the burning of tokens.
+            logger.log(&Cis2Event::Burn(BurnEvent {
+                token_id: TOKEN_ID_WCCD,
+                amount:   params.amount,
+                owner:    params.owner,
+            }))?;
+
+            let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
+
+            match params.receiver {
+                Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
+                Receiver::Contract(address, function) => {
+                    host.invoke_contract(
+                        &address,
+                        &params.data,
+                        function.as_entrypoint_name(),
+                        unwrapped_amount,
+                    )?;
+                }
+            }
+
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 // Contract functions required by CIS2
@@ -440,55 +689,81 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 )]
 fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Parse the parameter.
-    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
+    let slot_time = ctx.metadata().slot_time();
 
-    for Transfer {
-        token_id,
-        amount,
-        from,
-        to,
-        data,
-    } in transfers
-    {
-        let (state, builder) = host.state_and_builder();
-        // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
-        let to_address = to.address();
-        // Update the contract state
-        let slot_time = ctx.metadata().slot_time();
-        state.transfer(&token_id, amount, &from, &to_address, builder, slot_time)?;
+    match host.state().state_address {
+        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
 
-        // Log transfer event
-        logger.log(&Cis2Event::Transfer(TransferEvent {
-            token_id,
-            amount,
-            from,
-            to: to_address,
-        }))?;
+        Some(state_address) => {
+            let unpause_time = host
+                .invoke_contract_raw(
+                    &state_address,
+                    Parameter(&[]),
+                    EntrypointName::new_unchecked("get_unpause_time"),
+                    Amount::zero(),
+                )?
+                .1;
 
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = to {
-            let parameter = OnReceivingCis2Params {
+            let unpause_time = if let Some(mut unpause_time) = unpause_time {
+                unpause_time.get()?
+            } else {
+                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
+            };
+
+            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
+            // Parse the parameter.
+            let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
+            // Get the sender who invoked this contract function.
+            let sender = ctx.sender();
+
+            for Transfer {
                 token_id,
                 amount,
                 from,
+                to,
                 data,
-            };
-            host.invoke_contract(
-                &address,
-                &parameter,
-                function.as_entrypoint_name(),
-                Amount::zero(),
-            )?;
+            } in transfers
+            {
+                let (state, builder) = host.state_and_builder();
+                // Authenticate the sender for this transfer
+                ensure!(
+                    from == sender || state.is_operator(&sender, &from),
+                    ContractError::Unauthorized
+                );
+                let to_address = to.address();
+                // Update the contract state
+                state.transfer(&token_id, amount, &from, &to_address, builder)?;
+
+                // Log transfer event
+                logger.log(&Cis2Event::Transfer(TransferEvent {
+                    token_id,
+                    amount,
+                    from,
+                    to: to_address,
+                }))?;
+
+                // If the receiver is a contract: invoke the receive hook function.
+                if let Receiver::Contract(address, function) = to {
+                    let parameter = OnReceivingCis2Params {
+                        token_id,
+                        amount,
+                        from,
+                        data,
+                    };
+                    host.invoke_contract(
+                        &address,
+                        &parameter,
+                        function.as_entrypoint_name(),
+                        Amount::zero(),
+                    )?;
+                }
+            }
+            Ok(())
         }
     }
-    Ok(())
 }
 
 /// Enable or disable addresses as operators of the sender address.
@@ -506,43 +781,66 @@ fn contract_transfer<S: HasStateApi>(
 )]
 fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Parse the parameter.
-    let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-
-    let (state, state_builder) = host.state_and_builder();
     let slot_time = ctx.metadata().slot_time();
-    for param in params {
-        // Update the operator in the state.
 
-        match param.update {
-            OperatorUpdate::Add => {
-                state.add_operator(&sender, &param.operator, state_builder, slot_time)?
+    match host.state().state_address {
+        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
+
+        Some(state_address) => {
+            let unpause_time = host
+                .invoke_contract_raw(
+                    &state_address,
+                    Parameter(&[]),
+                    EntrypointName::new_unchecked("get_unpause_time"),
+                    Amount::zero(),
+                )?
+                .1;
+
+            let unpause_time = if let Some(mut unpause_time) = unpause_time {
+                unpause_time.get()?
+            } else {
+                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
+            };
+
+            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
+            // Parse the parameter.
+            let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
+            // Get the sender who invoked this contract function.
+            let sender = ctx.sender();
+
+            let (state, state_builder) = host.state_and_builder();
+            for param in params {
+                // Update the operator in the state.
+
+                match param.update {
+                    OperatorUpdate::Add => {
+                        state.add_operator(&sender, &param.operator, state_builder)?
+                    }
+                    OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator)?,
+                };
+
+                // Log the appropriate event
+                logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                    UpdateOperatorEvent {
+                        owner:    sender,
+                        operator: param.operator,
+                        update:   param.update,
+                    },
+                ))?;
             }
-            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator, slot_time)?,
-        };
 
-        // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
-        ))?;
+            Ok(())
+        }
     }
-
-    Ok(())
 }
 
 #[receive(contract = "CIS2-wCCD", name = "update_admin", parameter = "NewAdmin", mutable)]
 fn contract_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the old admin is authorized to update the admin address.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -556,7 +854,7 @@ fn contract_update_admin<S: HasStateApi>(
 #[receive(contract = "CIS2-wCCD", name = "pause", parameter = "UnpauseTime", mutable)]
 fn contract_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the current admin can pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -578,7 +876,7 @@ fn contract_pause<S: HasStateApi>(
 #[receive(contract = "CIS2-wCCD", name = "un_pause", mutable)]
 fn contract_un_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the current admin can un_pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -609,7 +907,7 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -637,7 +935,7 @@ fn contract_balance_of<S: HasStateApi>(
 )]
 fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -671,7 +969,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<State<S>, StateApiType = S>,
+    _host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -708,6 +1006,19 @@ mod tests {
     const NEW_ADMIN_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
     const NEW_ADMIN_ADDRESS: Address = Address::Account(NEW_ADMIN_ACCOUNT);
 
+    const IMPLEMENTATION: ContractAddress = ContractAddress {
+        index:    1,
+        subindex: 0,
+    };
+    const PROXY: ContractAddress = ContractAddress {
+        index:    2,
+        subindex: 0,
+    };
+    const STATE: ContractAddress = ContractAddress {
+        index:    3,
+        subindex: 0,
+    };
+
     fn expect_error<E, T>(expr: Result<T, E>, err: E, msg: &str)
     where
         E: Eq + Debug,
@@ -716,20 +1027,171 @@ mod tests {
         claim_eq!(actual, err);
     }
 
-    /// Test helper function which creates a contract state where ADDRESS_0 owns
-    /// 400 tokens.
-    fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        let mut state = State::new(ADMIN_ADDRESS, state_builder);
+    /// Test helper function which creates a w_ccd_implementation contract state
+    /// where ADDRESS_0 owns 400 tokens.
+    fn initial_state_implementation<S: HasStateApi>(
+        state_builder: &mut StateBuilder<S>,
+    ) -> StateImplementation<S> {
+        let mut state = StateImplementation::new(ADMIN_ADDRESS, state_builder);
         state
-            .mint(
-                &TOKEN_ID_WCCD,
-                400u64.into(),
-                &ADDRESS_0,
-                state_builder,
-                Timestamp::from_timestamp_millis(0),
-            )
+            .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
             .expect_report("Failed to setup state");
         state
+    }
+
+    /// Test helper function which creates a w_ccd_state contract state where
+    /// ADDRESS_0 owns 400 tokens.
+    fn initial_state_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
+        let mut state = State::new(state_builder);
+        state
+            .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
+            .expect_report("Failed to setup state");
+        state
+    }
+
+    /// Test w_ccd state initialization works.
+    #[concordium_test]
+    fn test_state_init() {
+        // Setup the context
+        let mut ctx = TestInitContext::empty();
+        ctx.set_init_origin(ACCOUNT_0);
+
+        let mut logger = TestLogger::init();
+        let mut builder = TestStateBuilder::new();
+
+        // Call the contract function.
+        let result = contract_state_init(&ctx, &mut builder, &mut logger);
+
+        // Check the result
+        let state = result.expect_report("Contract w_ccd state initialization failed");
+
+        // Check the state
+        claim_eq!(state.proxy_address, None, "Proxy address should not be initialized");
+        claim_eq!(
+            state.implementation_address,
+            None,
+            "Implementation address should not be initialized"
+        );
+        claim_eq!(state.initialized, false, "State contract should NOT be initialized");
+
+        let mut host = TestHost::new(state, builder);
+
+        // Setup parameter.
+        let initialize_state_params = InitializeStateParams {
+            proxy_address:          Some(PROXY),
+            implementation_address: Some(IMPLEMENTATION),
+        };
+
+        let parameter = InitializeStateParams::from(initialize_state_params);
+
+        let parameter_bytes = to_bytes(&parameter);
+
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the state contract.
+
+        let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        claim_eq!(host.state().proxy_address, Some(PROXY), "Proxy address should now be set");
+        claim_eq!(
+            host.state().implementation_address,
+            Some(IMPLEMENTATION),
+            "Implementation address should now be set"
+        );
+        claim_eq!(host.state().initialized, true, "State contract should be initialized");
+
+        // Can not initialize again.
+        let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
+        // Check that invoke failed.
+        expect_error(
+            result,
+            concordium_cis2::Cis2Error::Custom(AlreadyInitialized),
+            "Can not initialize again",
+        );
+    }
+
+    /// Test set unpause time in state contract.
+    #[concordium_test]
+    fn test_set_unpause_time() {
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Setup the context.
+        let mut ctx = TestReceiveContext::empty();
+
+        // Setup parameter.
+        let initialize_state_params = InitializeStateParams {
+            proxy_address:          Some(PROXY),
+            implementation_address: Some(IMPLEMENTATION),
+        };
+        let parameter = InitializeStateParams::from(initialize_state_params);
+        let parameter_bytes = to_bytes(&parameter);
+
+        ctx.set_parameter(&parameter_bytes);
+        ctx.set_sender(concordium_std::Address::Contract(IMPLEMENTATION));
+
+        // Initialize the state contract.
+        let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Setup the parameter.
+        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Check unpause_time.
+        claim_eq!(
+            host.state().unpause_time,
+            Timestamp::from_timestamp_millis(0),
+            "Unpause time should be 0"
+        );
+
+        // Check return value of the get_unpause_time function
+        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &mut host);
+        claim_eq!(
+            timestamp,
+            Ok(Timestamp::from_timestamp_millis(0)),
+            "Getter function should return 0 as unpause_time"
+        );
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_state_set_unpause_time(&ctx, &mut host);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check unpause_time.
+        claim_eq!(
+            host.state().unpause_time,
+            Timestamp::from_timestamp_millis(100),
+            "Unpause time should be updated to 100"
+        );
+
+        // Check return value of the get_unpause_time function
+        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &mut host);
+        claim_eq!(
+            timestamp,
+            Ok(Timestamp::from_timestamp_millis(100)),
+            "Getter function should return 100 as unpause_time"
+        );
+
+        // Can NOT set_unpause_time from an address other than the implementation
+        ctx.set_sender(ADDRESS_0);
+        let result: ContractResult<()> = contract_state_set_unpause_time(&ctx, &mut host);
+        // Check that invoke failed.
+        expect_error(
+            result,
+            concordium_cis2::Cis2Error::Custom(OnlyImplementation),
+            "Only implemnentation can call setter functions",
+        );
     }
 
     /// Test initialization succeeds and the tokens are owned by the contract
@@ -791,7 +1253,36 @@ mod tests {
         ctx.set_sender(ADDRESS_0);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
-        // and parameter.
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
+        state
+            .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
+            .expect_report("Failed to setup state");
+        let mut host = TestHost::new(state, state_builder);
+
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Setup parameter.
         let transfer = Transfer {
             token_id: TOKEN_ID_WCCD,
             amount:   ContractTokenAmount::from(100),
@@ -802,20 +1293,6 @@ mod tests {
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let mut state = State::new(ADMIN_ADDRESS, &mut state_builder);
-        state
-            .mint(
-                &TOKEN_ID_WCCD,
-                400.into(),
-                &ADDRESS_0,
-                &mut state_builder,
-                Timestamp::from_timestamp_millis(0),
-            )
-            .expect_report("Failed to setup state");
-        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -863,8 +1340,35 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_1);
+        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
-        // and parameter.
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Setup parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
@@ -875,11 +1379,6 @@ mod tests {
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -897,7 +1396,40 @@ mod tests {
         ctx.set_sender(ADDRESS_1);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
-        // and parameter.
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = initial_state_implementation(&mut state_builder);
+
+        let result: ContractResult<()> =
+            state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        let mut host = TestHost::new(state, state_builder);
+
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Setup the parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
             to:       Receiver::from_account(ACCOUNT_1),
@@ -908,22 +1440,6 @@ mod tests {
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let mut state = initial_state(&mut state_builder);
-
-        let result: ContractResult<()> = state.add_operator(
-            &ADDRESS_0,
-            &ADDRESS_1,
-            &mut state_builder,
-            Timestamp::from_timestamp_millis(0),
-        );
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
@@ -969,7 +1485,33 @@ mod tests {
         ctx.set_sender(ADDRESS_0);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
-        // and parameter.
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Setup parameter.
         let update = UpdateOperator {
             operator: ADDRESS_1,
             update:   OperatorUpdate::Add,
@@ -977,11 +1519,6 @@ mod tests {
         let parameter = UpdateOperatorParams(vec![update]);
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
@@ -1020,7 +1557,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // Check unpause_time.
@@ -1058,7 +1595,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // Check unpause_time.
@@ -1094,7 +1631,7 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // UnPausing contract
@@ -1121,7 +1658,7 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // UnPausing contract.
@@ -1154,23 +1691,31 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
-        // Pause contract
-        let result: ContractResult<()> = contract_pause(&ctx, &mut host);
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
 
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(200),
-            "Unpause time should be updated to 200"
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
-        // Set up parameter.
+        // Setup parameter.
         let wrap_params = WrapParams {
             to:   Receiver::from_account(ACCOUNT_1),
             data: AdditionalData::empty(),
@@ -1183,8 +1728,8 @@ mod tests {
         let mut logger = TestLogger::init();
         let amount = Amount::from_micro_ccd(100);
 
-        // Trying to invoke the wrap entrypoint. It will revert because the mint
-        // function is paused.
+        // Trying to invoke the wrap entrypoint. It will revert because the function is
+        // paused.
         let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount, &mut logger);
         // Check that contract is paused.
         expect_error(
@@ -1203,10 +1748,31 @@ mod tests {
         ctx.set_sender(ADDRESS_1);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
-        // Set up parameter.
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Setup parameter.
         let wrap_params = WrapParams {
             to:   Receiver::from_account(ACCOUNT_1),
             data: AdditionalData::empty(),
@@ -1229,22 +1795,14 @@ mod tests {
         let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
         ctx.set_parameter(&parameter_bytes);
 
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        // Pause contract
-        let result: ContractResult<()> = contract_pause(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(200),
-            "Unpause time should be updated to 200"
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
-        // Set up parameter.
+        // Setup parameter.
         let un_wrap_params = UnwrapParams {
             amount:   ContractTokenAmount::from(100),
             owner:    ADDRESS_1,
@@ -1261,8 +1819,8 @@ mod tests {
 
         ctx.set_sender(ADDRESS_1);
 
-        // Trying to invoke the un_wrap entrypoint. It will revert because the burn
-        // function is paused.
+        // Trying to invoke the un_wrap entrypoint. It will revert because the function
+        // is paused.
         let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
         // Check that contract is paused.
         expect_error(
@@ -1282,33 +1840,31 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let mut state = State::new(ADMIN_ADDRESS, &mut state_builder);
+        let mut state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
         state
-            .mint(
-                &TOKEN_ID_WCCD,
-                400.into(),
-                &ADDRESS_0,
-                &mut state_builder,
-                Timestamp::from_timestamp_millis(0),
-            )
+            .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
             .expect_report("Failed to setup state");
         let mut host = TestHost::new(state, state_builder);
 
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        // Pause contract
-        let result: ContractResult<()> = contract_pause(&ctx, &mut host);
-
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(200),
-            "Unpause time should be updated to 200"
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
         // Setup the parameter.
@@ -1358,27 +1914,31 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
-        // Pause contract
-        let result: ContractResult<()> = contract_pause(&ctx, &mut host);
-
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(200),
-            "Unpause time should be updated to 200"
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
-        // Set up parameter.
+        // Setup parameter.
         let update = UpdateOperator {
             operator: ADDRESS_1,
             update:   OperatorUpdate::Add,
@@ -1419,7 +1979,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // Check the admin state.
@@ -1449,7 +2009,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
+        let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // Check the admin state.
