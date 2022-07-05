@@ -1,12 +1,38 @@
-//! upgradable wCCD token
-
+//! upgradable wCCD: Canonical wCCD implementation following the CIS2 standard.
+//! Compared to the other wCCD example in this repo, this smart contract
+//! can be paused/unpaused and upgraded by admin addresses.
+//!
+//! # Description
+//! The token in this contract is a wrapped CCD (wCCD), meaning it holds a one
+//! to one correspondence with the CCD.
+//! Note: The word 'address' refers to either an account address or a
+//! contract address.
+//!
+//! As follows from the CIS2 specification, the contract has a `transfer`
+//! function for transferring an amount of a specific token type from one
+//! address to another address. An address can enable and disable one or more
+//! addresses as operators. An operator of some token owner address is allowed
+//! to transfer any tokens of the owner.
+//!
+//! Besides the contract functions required CIS2, this contract implements a
+//! function `wrap` for converting CCD into wCCD tokens. It accepts an amount of
+//! CCD and mints this amount of wCCD. The function takes a receiving address as
+//! the parameter and transfers the amount of tokens.
+//!
+//! The contract also implements a contract function `unwrap` for converting
+//! wCCD back into CCD. The function takes the amount of tokens to unwrap, the
+//! address owning these wCCD and a receiver for the CCD. If the sender is the
+//! owner or an operator of the owner, the wCCD are burned and the amount of
+//! CCD is sent to the receiver.
+//!
+//! The protocol consists of three smart contracts (`proxy`, `implementation`,
+//! and `state`). All functions are invoked on the proxy. The admin address on
+//! the `proxy` can upgrade the protocol to a new `implementation` contract. The
+//! admin address on the `implementation` can pause/unpause the protocol.
 #![cfg_attr(not(feature = "std"), no_std)]
-use crate::CustomContractError::{
-    AlreadyInitialized, ContractPaused, OnlyImplementation, OnlyState, OutOfBound, StateInvokeError,
-};
+
 use concordium_cis2::*;
-use concordium_std::*;
-use core::fmt::Debug;
+use concordium_std::{fmt::Debug, *};
 
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
@@ -46,9 +72,6 @@ struct State<S> {
     proxy_address:          Option<ContractAddress>,
     /// Address of the w_ccd implementation contract.
     implementation_address: Option<ContractAddress>,
-    /// FALSE if proxy and implementation addresses have not been set yet.
-    /// TRUE if proxy and implementation addresses have been set.
-    initialized:            bool,
     /// The state of the one token.
     token:                  StateMap<Address, AddressState<S>, S>,
     /// Timestamp when contract is unpaused.
@@ -65,17 +88,12 @@ struct StateImplementation<S> {
     proxy_address: Option<ContractAddress>,
     /// Address of the w_ccd state contract.
     state_address: Option<ContractAddress>,
-    /// FALSE if proxy and state addresses have not been set yet.
-    /// TRUE if proxy and state addresses have been set.
-    initialized:   bool,
 
     /// TODO: These state variables will be removed out of this
     /// `StateImplementation` struct once the getter/setter functions are
     /// set up between the State contract and the Implementation contract.
     /// The state of the one token.
-    token:        StateMap<Address, AddressState<S>, S>,
-    /// Timestamp when contract is unpaused.
-    unpause_time: Timestamp,
+    token: StateMap<Address, AddressState<S>, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -121,6 +139,27 @@ struct InitializeImplementationParams {
     proxy_address: Option<ContractAddress>,
     /// Address of the w_ccd state contract.
     state_address: Option<ContractAddress>,
+}
+
+/// The parameter type for the implementation contract function `pause`.
+#[derive(Serialize, SchemaType)]
+struct SetUnpauseParams {
+    /// Amount of seconds until the contract becomes unpaused.
+    seconds: Duration,
+}
+
+/// The parameter type for the state contract function `set_unpause_time`.
+#[derive(Serialize, SchemaType)]
+struct SetUnpauseTimeParams {
+    /// Timestamp when contract becomes unpaused.
+    unpause_time: Timestamp,
+}
+
+/// The return type for the state contract function `get_unpause_time`.
+#[derive(Serialize, SchemaType)]
+struct ReturnUnpauseTime {
+    /// Timestamp when the contract becomes unpaused.
+    unpause_time: Timestamp,
 }
 
 /// The different errors the contract can produce.
@@ -189,7 +228,6 @@ impl<S: HasStateApi> State<S> {
         State {
             proxy_address:          None,
             implementation_address: None,
-            initialized:            false,
             token:                  state_builder.new_map(),
             unpause_time:           Timestamp::from_timestamp_millis(0),
         }
@@ -198,6 +236,7 @@ impl<S: HasStateApi> State<S> {
     /// TODO: This function should be removed in the end. It is still here
     /// because the tests are not re-written to work without this mint function
     /// when setting up the state.
+    #[allow(dead_code)]
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
@@ -224,10 +263,7 @@ impl<S: HasStateApi> StateImplementation<S> {
             admin,
             proxy_address: None,
             state_address: None,
-            initialized: false,
             token: state_builder.new_map(), // TODO: This variable will be moved 'state' contract.
-            unpause_time: Timestamp::from_timestamp_millis(0), /* TODO: This variable will be
-                                                                * moved 'state' contract. */
         }
     }
 
@@ -242,18 +278,17 @@ impl<S: HasStateApi> StateImplementation<S> {
         Ok(self.token.get(address).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
     }
 
-    /// Check is an address is an operator of a specific owner address.
+    /// Check if an address is an operator of a specific owner address.
     /// Results in an error if the token id does not exist in the state.
     fn is_operator(&self, address: &Address, owner: &Address) -> bool {
         self.token
             .get(owner)
-            .map(|address_state| address_state.operators.contains(address))
-            .unwrap_or(false)
+            .map_or(false, |address_state| address_state.operators.contains(address))
     }
 
     /// Update the state with a transfer.
     /// Results in an error if the token id does not exist in the state or if
-    /// the from address have insufficient tokens to do the transfer.
+    /// the from address has insufficient tokens to do the transfer.
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
@@ -380,8 +415,9 @@ fn contract_state_init<S: HasStateApi>(
     Ok(state)
 }
 
-/// Initialzes the state of the w_ccd contract with the proxy and the
-/// implementation addresses.
+/// Initializes the state of the w_ccd contract with the proxy and the
+/// implementation addresses. Both addresses have to be set together by calling
+/// this function. This function can only be called once.
 #[receive(
     contract = "CIS2-wCCD-State",
     name = "initialize",
@@ -392,13 +428,14 @@ fn contract_state_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    ensure!(!host.state().initialized, concordium_cis2::Cis2Error::Custom(AlreadyInitialized));
+    ensure!(
+        !host.state().proxy_address.is_some() && !host.state().implementation_address.is_some(),
+        concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
+    );
     // Set proxy and implementation addresses.
     let params: InitializeStateParams = ctx.parameter_cursor().get()?;
     host.state_mut().proxy_address = params.proxy_address;
     host.state_mut().implementation_address = params.implementation_address;
-    // Set the w_ccd_state contract as initialized.
-    host.state_mut().initialized = true;
     Ok(())
 }
 
@@ -408,21 +445,23 @@ fn only_implementation(
     implementation: Option<ContractAddress>,
     sender: Address,
 ) -> ContractResult<()> {
-    match implementation {
-        Some(implementation_address) => {
-            ensure_eq!(
-                sender,
-                Address::Contract(implementation_address),
-                concordium_cis2::Cis2Error::Custom(OnlyImplementation)
-            );
-        }
-        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyImplementation)),
-    };
+    let implementation_address = implementation
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation))?;
+    ensure!(
+        sender.matches_contract(&implementation_address),
+        concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation)
+    );
+
     Ok(())
 }
 
 /// Set unpause_time.
-#[receive(contract = "CIS2-wCCD-State", name = "set_unpause_time", mutable)]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "set_unpause_time",
+    parameter = "SetUnpauseTimeParams",
+    mutable
+)]
 fn contract_state_set_unpause_time<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
@@ -431,12 +470,16 @@ fn contract_state_set_unpause_time<S: HasStateApi>(
     only_implementation(host.state().implementation_address, ctx.sender())?;
 
     // Set unpause_time.
-    let unpause_time = ctx.parameter_cursor().get()?;
-    host.state_mut().unpause_time = unpause_time;
+    let params: SetUnpauseTimeParams = ctx.parameter_cursor().get()?;
+    host.state_mut().unpause_time = params.unpause_time;
     Ok(())
 }
 
-#[receive(contract = "CIS2-wCCD-State", name = "get_unpause_time", return_value = "UnpauseTime")]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "get_unpause_time",
+    return_value = "ReturnUnpauseTime"
+)]
 fn contract_state_get_unpause_time<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -476,8 +519,9 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
-/// Initialzes the implementation of the w_ccd contract with the proxy and the
-/// state addresses.
+/// Initializes the implementation of the w_ccd contract with the proxy and the
+/// state addresses. Both addresses have to be set together by calling this
+/// function. This function can only be called once.
 #[receive(
     contract = "CIS2-wCCD",
     name = "initialize",
@@ -488,13 +532,44 @@ fn contract_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    ensure!(!host.state().initialized, concordium_cis2::Cis2Error::Custom(AlreadyInitialized));
+    ensure!(
+        !host.state().proxy_address.is_some() && !host.state().state_address.is_some(),
+        concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
+    );
     // Set proxy and storage addresses.
     let params: InitializeImplementationParams = ctx.parameter_cursor().get()?;
     host.state_mut().proxy_address = params.proxy_address;
     host.state_mut().state_address = params.state_address;
-    // Set the w_ccd_implementation contract as initialized.
-    host.state_mut().initialized = true;
+    Ok(())
+}
+
+fn when_not_paused<S>(
+    slot_time: Timestamp,
+    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+    let unpause_time = host.invoke_contract_raw_read_only(
+        &state_address,
+        Parameter(&[]),
+        EntrypointName::new_unchecked("get_unpause_time"),
+        Amount::zero(),
+    )?;
+
+    // It is expected that this contract is initialized with the w_ccd_state
+    // contract (a V1 contract). In that case, the unpause_time variable can be
+    // queried from the state contract without error.
+    let unpause_time = unpause_time
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+        .get()?;
+    // Check that contrac is not paused.
+    ensure!(
+        slot_time >= unpause_time,
+        concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused)
+    );
     Ok(())
 }
 
@@ -514,78 +589,50 @@ fn contract_wrap<S: HasStateApi>(
     amount: Amount,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    // Check that contract is not paused.
     let slot_time = ctx.metadata().slot_time();
+    when_not_paused(slot_time, host)?;
 
-    match host.state().state_address {
-        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
+    let params: WrapParams = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
 
-        Some(state_address) => {
-            let unpause_time = host
-                .invoke_contract_raw(
-                    &state_address,
-                    Parameter(&[]),
-                    EntrypointName::new_unchecked("get_unpause_time"),
-                    Amount::zero(),
-                )?
-                .1;
+    let receive_address = params.to.address();
 
-            let unpause_time = if let Some(mut unpause_time) = unpause_time {
-                unpause_time.get()?
-            } else {
-                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
-            };
+    let (state, state_builder) = host.state_and_builder();
 
-            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
+    // Update the state.
+    state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
 
-            let params: WrapParams = ctx.parameter_cursor().get()?;
-            // Get the sender who invoked this contract function.
-            let sender = ctx.sender();
+    // Log the newly minted tokens.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   ContractTokenAmount::from(amount.micro_ccd),
+        owner:    sender,
+    }))?;
 
-            let receive_address = params.to.address();
-
-            let (state, state_builder) = host.state_and_builder();
-
-            // Update the state.
-            state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
-
-            // Log the newly minted tokens.
-            logger.log(&Cis2Event::Mint(MintEvent {
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(amount.micro_ccd),
-                owner:    sender,
-            }))?;
-
-            // Only log a transfer event if receiver is not the one who payed for this.
-            if sender != receive_address {
-                logger.log(&Cis2Event::Transfer(TransferEvent {
-                    token_id: TOKEN_ID_WCCD,
-                    amount:   ContractTokenAmount::from(amount.micro_ccd),
-                    from:     sender,
-                    to:       receive_address,
-                }))?;
-            }
-
-            // If the receiver is a contract: invoke the receive hook function.
-            if let Receiver::Contract(address, function) = params.to {
-                let parameter = OnReceivingCis2Params {
-                    token_id: TOKEN_ID_WCCD,
-                    amount:   ContractTokenAmount::from(amount.micro_ccd),
-                    from:     sender,
-                    data:     params.data,
-                };
-                host.invoke_contract(
-                    &address,
-                    &parameter,
-                    function.as_entrypoint_name(),
-                    Amount::zero(),
-                )
-                .unwrap_abort();
-                Ok(())
-            } else {
-                Ok(())
-            }
-        }
+    // Only log a transfer event if receiver is not the one who payed for this.
+    if sender != receive_address {
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(amount.micro_ccd),
+            from:     sender,
+            to:       receive_address,
+        }))?;
     }
+
+    // If the receiver is a contract: invoke the receive hook function.
+    if let Receiver::Contract(address, function) = params.to {
+        let parameter = OnReceivingCis2Params {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(amount.micro_ccd),
+            from:     sender,
+            data:     params.data,
+        };
+        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
+            .unwrap_abort();
+    }
+    Ok(())
 }
 
 /// Unwrap an amount of wCCD tokens into CCD
@@ -601,70 +648,49 @@ fn contract_unwrap<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    // Check that contract is not paused.
     let slot_time = ctx.metadata().slot_time();
+    when_not_paused(slot_time, host)?;
 
-    match host.state().state_address {
-        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
+    let params: UnwrapParams = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    let state = host.state_mut();
+    ensure!(
+        sender == params.owner || state.is_operator(&sender, &params.owner),
+        ContractError::Unauthorized
+    );
 
-        Some(state_address) => {
-            let unpause_time = host
-                .invoke_contract_raw(
-                    &state_address,
-                    Parameter(&[]),
-                    EntrypointName::new_unchecked("get_unpause_time"),
-                    Amount::zero(),
-                )?
-                .1;
+    // Update the state.
+    state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
 
-            let unpause_time = if let Some(mut unpause_time) = unpause_time {
-                unpause_time.get()?
-            } else {
-                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
-            };
+    // Log the burning of tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   params.amount,
+        owner:    params.owner,
+    }))?;
 
-            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
-            let params: UnwrapParams = ctx.parameter_cursor().get()?;
-            // Get the sender who invoked this contract function.
-            let sender = ctx.sender();
-            let state = host.state_mut();
-            ensure!(
-                sender == params.owner || state.is_operator(&sender, &params.owner),
-                ContractError::Unauthorized
-            );
+    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
 
-            // Update the state.
-            state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
-
-            // Log the burning of tokens.
-            logger.log(&Cis2Event::Burn(BurnEvent {
-                token_id: TOKEN_ID_WCCD,
-                amount:   params.amount,
-                owner:    params.owner,
-            }))?;
-
-            let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
-
-            match params.receiver {
-                Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
-                Receiver::Contract(address, function) => {
-                    host.invoke_contract(
-                        &address,
-                        &params.data,
-                        function.as_entrypoint_name(),
-                        unwrapped_amount,
-                    )?;
-                }
-            }
-
-            Ok(())
+    match params.receiver {
+        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
+        Receiver::Contract(address, function) => {
+            host.invoke_contract(
+                &address,
+                &params.data,
+                function.as_entrypoint_name(),
+                unwrapped_amount,
+            )?;
         }
     }
+
+    Ok(())
 }
 
 // Contract functions required by CIS2
 
-#[allow(dead_code)]
-type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
@@ -692,78 +718,55 @@ fn contract_transfer<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    // Check that contract is not paused.
     let slot_time = ctx.metadata().slot_time();
+    when_not_paused(slot_time, host)?;
 
-    match host.state().state_address {
-        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
+    // Parse the parameter.
+    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
 
-        Some(state_address) => {
-            let unpause_time = host
-                .invoke_contract_raw(
-                    &state_address,
-                    Parameter(&[]),
-                    EntrypointName::new_unchecked("get_unpause_time"),
-                    Amount::zero(),
-                )?
-                .1;
+    for Transfer {
+        token_id,
+        amount,
+        from,
+        to,
+        data,
+    } in transfers
+    {
+        let (state, builder) = host.state_and_builder();
+        // Authenticate the sender for this transfer
+        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        let to_address = to.address();
+        // Update the contract state
+        state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
-            let unpause_time = if let Some(mut unpause_time) = unpause_time {
-                unpause_time.get()?
-            } else {
-                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
-            };
+        // Log transfer event
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id,
+            amount,
+            from,
+            to: to_address,
+        }))?;
 
-            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
-            // Parse the parameter.
-            let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
-            // Get the sender who invoked this contract function.
-            let sender = ctx.sender();
-
-            for Transfer {
+        // If the receiver is a contract: invoke the receive hook function.
+        if let Receiver::Contract(address, function) = to {
+            let parameter = OnReceivingCis2Params {
                 token_id,
                 amount,
                 from,
-                to,
                 data,
-            } in transfers
-            {
-                let (state, builder) = host.state_and_builder();
-                // Authenticate the sender for this transfer
-                ensure!(
-                    from == sender || state.is_operator(&sender, &from),
-                    ContractError::Unauthorized
-                );
-                let to_address = to.address();
-                // Update the contract state
-                state.transfer(&token_id, amount, &from, &to_address, builder)?;
-
-                // Log transfer event
-                logger.log(&Cis2Event::Transfer(TransferEvent {
-                    token_id,
-                    amount,
-                    from,
-                    to: to_address,
-                }))?;
-
-                // If the receiver is a contract: invoke the receive hook function.
-                if let Receiver::Contract(address, function) = to {
-                    let parameter = OnReceivingCis2Params {
-                        token_id,
-                        amount,
-                        from,
-                        data,
-                    };
-                    host.invoke_contract(
-                        &address,
-                        &parameter,
-                        function.as_entrypoint_name(),
-                        Amount::zero(),
-                    )?;
-                }
-            }
-            Ok(())
+            };
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_entrypoint_name(),
+                Amount::zero(),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Enable or disable addresses as operators of the sender address.
@@ -784,60 +787,38 @@ fn contract_update_operator<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    // Check that contract is not paused.
     let slot_time = ctx.metadata().slot_time();
+    when_not_paused(slot_time, host)?;
 
-    match host.state().state_address {
-        None => bail!(concordium_cis2::Cis2Error::Custom(OnlyState)),
+    // Parse the parameter.
+    let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
 
-        Some(state_address) => {
-            let unpause_time = host
-                .invoke_contract_raw(
-                    &state_address,
-                    Parameter(&[]),
-                    EntrypointName::new_unchecked("get_unpause_time"),
-                    Amount::zero(),
-                )?
-                .1;
+    let (state, state_builder) = host.state_and_builder();
+    for param in params {
+        // Update the operator in the state.
 
-            let unpause_time = if let Some(mut unpause_time) = unpause_time {
-                unpause_time.get()?
-            } else {
-                return Err(concordium_cis2::Cis2Error::Custom(StateInvokeError));
-            };
+        match param.update {
+            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, state_builder)?,
+            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator)?,
+        };
 
-            ensure!(slot_time >= unpause_time, concordium_cis2::Cis2Error::Custom(ContractPaused));
-            // Parse the parameter.
-            let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
-            // Get the sender who invoked this contract function.
-            let sender = ctx.sender();
-
-            let (state, state_builder) = host.state_and_builder();
-            for param in params {
-                // Update the operator in the state.
-
-                match param.update {
-                    OperatorUpdate::Add => {
-                        state.add_operator(&sender, &param.operator, state_builder)?
-                    }
-                    OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator)?,
-                };
-
-                // Log the appropriate event
-                logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                    UpdateOperatorEvent {
-                        owner:    sender,
-                        operator: param.operator,
-                        update:   param.update,
-                    },
-                ))?;
-            }
-
-            Ok(())
-        }
+        // Log the appropriate event
+        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+            UpdateOperatorEvent {
+                owner:    sender,
+                operator: param.operator,
+                update:   param.update,
+            },
+        ))?;
     }
+
+    Ok(())
 }
 
-#[receive(contract = "CIS2-wCCD", name = "update_admin", parameter = "NewAdmin", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "update_admin", mutable)]
 fn contract_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
@@ -851,7 +832,10 @@ fn contract_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "CIS2-wCCD", name = "pause", parameter = "UnpauseTime", mutable)]
+/// It adds some `seconds` to the `unpause_time`. The smart contract will
+/// automatically unpause when it reaches the `unpause_time`. Only the admin of
+/// the implementation can call this function.
+#[receive(contract = "CIS2-wCCD", name = "pause", parameter = "SetUnpauseParams", mutable)]
 fn contract_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
@@ -859,17 +843,27 @@ fn contract_pause<S: HasStateApi>(
     // Check that only the current admin can pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
     // Parse the parameter.
-    let unpause_time = ctx.parameter_cursor().get()?;
+    let params: SetUnpauseParams = ctx.parameter_cursor().get()?;
     let slot_time = ctx.metadata().slot_time();
     // Update unpause_time.
-    match slot_time.checked_add(unpause_time) {
-        Some(new_unpause_time) => {
-            host.state_mut().unpause_time = new_unpause_time;
-        }
-        None => {
-            bail!(concordium_cis2::Cis2Error::Custom(OutOfBound))
-        }
-    }
+    let unpause_time = slot_time
+        .checked_add(params.seconds)
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OutOfBound))?;
+
+    let parameter_bytes = to_bytes(&unpause_time);
+
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("set_unpause_time"),
+        Amount::zero(),
+    )?;
+
     Ok(())
 }
 
@@ -881,9 +875,23 @@ fn contract_un_pause<S: HasStateApi>(
     // Check that only the current admin can un_pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
-    let slot_time = ctx.metadata().slot_time();
-    // Update unpause_time to current slot time.
-    host.state_mut().unpause_time = slot_time;
+    // Update unpause_time to 0.
+    let unpause_time = Timestamp::from_timestamp_millis(0);
+
+    let parameter_bytes = to_bytes(&unpause_time);
+
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("set_unpause_time"),
+        Amount::zero(),
+    )?;
+
     Ok(())
 }
 
@@ -1072,7 +1080,6 @@ mod tests {
             None,
             "Implementation address should not be initialized"
         );
-        claim_eq!(state.initialized, false, "State contract should NOT be initialized");
 
         let mut host = TestHost::new(state, builder);
 
@@ -1104,14 +1111,13 @@ mod tests {
             Some(IMPLEMENTATION),
             "Implementation address should now be set"
         );
-        claim_eq!(host.state().initialized, true, "State contract should be initialized");
 
         // Can not initialize again.
         let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
         // Check that invoke failed.
         expect_error(
             result,
-            concordium_cis2::Cis2Error::Custom(AlreadyInitialized),
+            concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized),
             "Can not initialize again",
         );
     }
@@ -1147,13 +1153,6 @@ mod tests {
         let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
         ctx.set_parameter(&parameter_bytes);
 
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(0),
-            "Unpause time should be 0"
-        );
-
         // Check return value of the get_unpause_time function
         let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &mut host);
         claim_eq!(
@@ -1167,13 +1166,6 @@ mod tests {
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
-
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(100),
-            "Unpause time should be updated to 100"
-        );
 
         // Check return value of the get_unpause_time function
         let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &mut host);
@@ -1189,7 +1181,7 @@ mod tests {
         // Check that invoke failed.
         expect_error(
             result,
-            concordium_cis2::Cis2Error::Custom(OnlyImplementation),
+            concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation),
             "Only implemnentation can call setter functions",
         );
     }
@@ -1552,33 +1544,40 @@ mod tests {
         ctx.set_sender(ADMIN_ADDRESS);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
-        ctx.set_parameter(&parameter_bytes);
-
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(0),
-            "Unpause time should be 0"
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("set_unpause_time".into()),
+            MockFn::returning_ok(()),
         );
+
+        // Setup the parameter.
+        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
+        ctx.set_parameter(&parameter_bytes);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_pause(&ctx, &mut host);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
-
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(200),
-            "Unpause time should be updated to 200"
-        );
     }
 
     /// Test that only the current admin can update the unpause time.
@@ -1598,13 +1597,6 @@ mod tests {
         let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(0),
-            "Unpause time should be 0"
-        );
-
         // Call the contract function.
         let result: ContractResult<()> = contract_pause(&ctx, &mut host);
         // Check that invoke failed.
@@ -1612,13 +1604,6 @@ mod tests {
             result,
             ContractError::Unauthorized,
             "Pause should fail because not the current admin tries to invoke it",
-        );
-
-        // Check unpause_time is still the same.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(0),
-            "Unpause time should be still the same"
         );
     }
 
@@ -1628,24 +1613,37 @@ mod tests {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state_implementation(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
+
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("set_unpause_time".into()),
+            MockFn::returning_ok(()),
+        );
 
         // UnPausing contract
         let result: ContractResult<()> = contract_un_pause(&ctx, &mut host);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
-
-        // Check unpause_time.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(100),
-            "Unpause time should be updated to 100"
-        );
     }
 
     /// Test that only the current admin can un_pause.
@@ -1669,16 +1667,9 @@ mod tests {
             ContractError::Unauthorized,
             "Un_pause should fail because not the current admin tries to invoke it",
         );
-
-        // Check unpause_time was not updated.
-        claim_eq!(
-            host.state().unpause_time,
-            Timestamp::from_timestamp_millis(0),
-            "Unpause time should still be 0"
-        );
     }
 
-    /// Test can NOT wrap when contract is paused.
+    /// Test that one can NOT wrap when contract is paused.
     #[concordium_test]
     fn test_no_wrap_when_paused() {
         // Setup the context.
@@ -1734,12 +1725,12 @@ mod tests {
         // Check that contract is paused.
         expect_error(
             result,
-            concordium_cis2::Cis2Error::Custom(ContractPaused),
+            concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused),
             "Wrap should fail because contract is paused",
         );
     }
 
-    /// Test can NOT un_wrap when contract is paused.
+    /// Test that one can NOT un_wrap when contract is paused.
     #[concordium_test]
     fn test_no_un_wrap_when_paused() {
         // Setup the context.
@@ -1825,12 +1816,12 @@ mod tests {
         // Check that contract is paused.
         expect_error(
             result,
-            concordium_cis2::Cis2Error::Custom(ContractPaused),
+            concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused),
             "Un_wrap should fail because contract is paused",
         );
     }
 
-    /// Test can NOT transfer when contract is paused.
+    /// Test that one can NOT transfer when contract is paused.
     #[concordium_test]
     fn test_no_transfer_when_paused() {
         // Setup the context
@@ -1887,7 +1878,7 @@ mod tests {
         // Check that contract is paused.
         expect_error(
             result,
-            concordium_cis2::Cis2Error::Custom(ContractPaused),
+            concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused),
             "Transfer should fail because contract is paused",
         );
 
@@ -1904,7 +1895,7 @@ mod tests {
         claim_eq!(balance1, 0.into(), "Token receiver balance should be still the same");
     }
 
-    /// Test can NOT update operator when contract is paused.
+    /// Test that one can NOT update operator when contract is paused.
     #[concordium_test]
     fn test_no_add_operator_when_paused() {
         // Setup the context
@@ -1955,14 +1946,13 @@ mod tests {
         // Check that contract is paused.
         expect_error(
             result,
-            concordium_cis2::Cis2Error::Custom(ContractPaused),
+            concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused),
             "Update_operator should fail because contract is paused",
         );
 
         // Check the state.
-        claim_eq!(
-            host.state().is_operator(&ADDRESS_1, &ADDRESS_0),
-            false,
+        claim!(
+            !host.state().is_operator(&ADDRESS_1, &ADDRESS_0),
             "Account should not be an operator"
         );
     }

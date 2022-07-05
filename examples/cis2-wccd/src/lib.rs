@@ -61,7 +61,7 @@ struct AddressState<S> {
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
-    /// The state the one token.
+    /// The state of the one token.
     token: StateMap<Address, AddressState<S>, S>,
 }
 
@@ -156,18 +156,17 @@ impl<S: HasStateApi> State<S> {
         Ok(self.token.get(address).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
     }
 
-    /// Check is an address is an operator of a specific owner address.
+    /// Check if an address is an operator of a specific owner address.
     /// Results in an error if the token id does not exist in the state.
     fn is_operator(&self, address: &Address, owner: &Address) -> bool {
         self.token
             .get(owner)
-            .map(|address_state| address_state.operators.contains(address))
-            .unwrap_or(false)
+            .map_or(false, |address_state| address_state.operators.contains(address))
     }
 
     /// Update the state with a transfer.
     /// Results in an error if the token id does not exist in the state or if
-    /// the from address have insufficient tokens to do the transfer.
+    /// the from address has insufficient tokens to do the transfer.
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
@@ -344,10 +343,8 @@ fn contract_wrap<S: HasStateApi>(
         };
         host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
             .unwrap_abort();
-        Ok(())
-    } else {
-        Ok(())
     }
+    Ok(())
 }
 
 /// Unwrap an amount of wCCD tokens into CCD
@@ -401,8 +398,7 @@ fn contract_unwrap<S: HasStateApi>(
 
 // Contract functions required by CIS2
 
-#[allow(dead_code)]
-type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
