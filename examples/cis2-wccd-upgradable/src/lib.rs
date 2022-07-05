@@ -429,7 +429,7 @@ fn contract_state_initialize<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     ensure!(
-        !host.state().proxy_address.is_some() && !host.state().implementation_address.is_some(),
+        host.state().proxy_address.is_none() && host.state().implementation_address.is_none(),
         concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
     );
     // Set proxy and implementation addresses.
@@ -533,7 +533,7 @@ fn contract_initialize<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     ensure!(
-        !host.state().proxy_address.is_some() && !host.state().state_address.is_some(),
+        host.state().proxy_address.is_none() && host.state().state_address.is_none(),
         concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
     );
     // Set proxy and storage addresses.
@@ -1088,10 +1088,7 @@ mod tests {
             proxy_address:          Some(PROXY),
             implementation_address: Some(IMPLEMENTATION),
         };
-
-        let parameter = InitializeStateParams::from(initialize_state_params);
-
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_state_params);
 
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
@@ -1137,8 +1134,7 @@ mod tests {
             proxy_address:          Some(PROXY),
             implementation_address: Some(IMPLEMENTATION),
         };
-        let parameter = InitializeStateParams::from(initialize_state_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_state_params);
 
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(concordium_std::Address::Contract(IMPLEMENTATION));
@@ -1154,7 +1150,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         // Check return value of the get_unpause_time function
-        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &mut host);
+        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &host);
         claim_eq!(
             timestamp,
             Ok(Timestamp::from_timestamp_millis(0)),
@@ -1168,7 +1164,7 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check return value of the get_unpause_time function
-        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &mut host);
+        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &host);
         claim_eq!(
             timestamp,
             Ok(Timestamp::from_timestamp_millis(100)),
@@ -1258,8 +1254,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1344,8 +1339,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1405,8 +1399,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1487,8 +1480,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1553,8 +1545,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1623,8 +1614,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1690,8 +1680,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1711,9 +1700,7 @@ mod tests {
             to:   Receiver::from_account(ACCOUNT_1),
             data: AdditionalData::empty(),
         };
-
-        let parameter = WrapParams::from(wrap_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&wrap_params);
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
@@ -1747,8 +1734,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1769,8 +1755,7 @@ mod tests {
             data: AdditionalData::empty(),
         };
 
-        let parameter = WrapParams::from(wrap_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&wrap_params);
         ctx.set_parameter(&parameter_bytes);
 
         let mut logger = TestLogger::init();
@@ -1800,9 +1785,7 @@ mod tests {
             receiver: Receiver::from_account(ACCOUNT_1),
             data:     AdditionalData::empty(),
         };
-
-        let parameter = UnwrapParams::from(un_wrap_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&un_wrap_params);
         ctx.set_parameter(&parameter_bytes);
 
         host.set_self_balance(amount);
@@ -1842,8 +1825,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
@@ -1913,8 +1895,7 @@ mod tests {
             proxy_address: Some(PROXY),
             state_address: Some(STATE),
         };
-        let parameter = InitializeImplementationParams::from(initialize_implementation_params);
-        let parameter_bytes = to_bytes(&parameter);
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
 
         // Initialize the implementation contract.
