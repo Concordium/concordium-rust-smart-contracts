@@ -24,6 +24,7 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/cis2-wccd-upgradable/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
@@ -253,6 +254,7 @@ jobs:
         crates:
           - examples/two-step-transfer/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/cis2-wccd-upgradable/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-multi/Cargo.toml
 
@@ -330,6 +332,7 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/cis2-wccd-upgradable/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
@@ -450,6 +453,7 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/cis2-wccd-upgradable/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
