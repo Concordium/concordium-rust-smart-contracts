@@ -1206,7 +1206,7 @@ impl<State> MockFn<State> {
 /// were affected.
 pub struct TestHost<State> {
     /// Functions that mock responses to calls.
-    mocking_fns:      BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
+    mocking_fns:      Rc<RefCell<BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>>>,
     /// Transfers the contract has made during its execution.
     transfers:        RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
@@ -1220,7 +1220,7 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
+impl<State: Serial + DeserialWithState<TestStateApi> + Clone> HasHost<State> for TestHost<State> {
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -1267,7 +1267,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType> {
         self.commit_state();
-        let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
+        let mocking_fns = self.mocking_fns.clone();
+        let mut mocking_fns_mut = mocking_fns.borrow_mut();
+        let handler = match mocking_fns_mut.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
@@ -1280,24 +1282,36 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         if amount.micro_ccd > 0 && *self.contract_balance.borrow() < amount {
             return Err(CallContractError::AmountTooLarge);
         }
+
+        let host_checkpoint = self.checkpoint();
+
         // Invoke the handler.
-        let (state_modified, res) = (handler.f)(
+        let invocation_res = (handler.f)(
             parameter,
             amount,
             &mut self.contract_balance.borrow_mut(),
             &mut self.state,
-        )?;
+        );
 
-        // Update the contract balance if the invocation succeeded.
-        if amount.micro_ccd > 0 {
-            *self.contract_balance.borrow_mut() -= amount;
+        match invocation_res {
+            Err(error) => {
+                // Roll back host.
+                *self = host_checkpoint;
+                Err(error)
+            }
+            Ok((state_modified, res)) => {
+                // Update the contract balance if the invocation succeeded.
+                if amount.micro_ccd > 0 {
+                    *self.contract_balance.borrow_mut() -= amount;
+                }
+                // since the caller only modified (in principle) the in-memory state,
+                // we make sure to persist it to reflect what happens in actual calls
+                if state_modified {
+                    self.commit_state();
+                }
+                Ok((state_modified, res))
+            }
         }
-        // since the caller only modified (in principle) the in-memory state,
-        // we make sure to persist it to reflect what happens in actual calls
-        if state_modified {
-            self.commit_state();
-        }
-        Ok((state_modified, res))
     }
 
     /// Invoke a contract entrypoint.
@@ -1312,7 +1326,8 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         method: EntrypointName,
         amount: Amount,
     ) -> ReadOnlyCallContractResult<Self::ReturnValueType> {
-        let handler = match self.mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
+        let mocking_fns = self.mocking_fns.borrow();
+        let handler = match mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
@@ -1397,7 +1412,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
             .expect_report("TestHost::new: Could not store state root.");
         state.serial(&mut root_entry).expect_report("TestHost::new: cannot serialize state.");
         Self {
-            mocking_fns: BTreeMap::new(),
+            mocking_fns: Rc::new(RefCell::new(BTreeMap::new())),
             transfers: RefCell::new(Vec::new()),
             contract_balance: RefCell::new(Amount::zero()),
             state_builder,
@@ -1419,7 +1434,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         method: OwnedEntrypointName,
         handler: MockFn<State>,
     ) {
-        self.mocking_fns.insert((to, method), handler);
+        self.mocking_fns.borrow_mut().insert((to, method), handler);
     }
 
     /// Set the contract balance.
@@ -1488,6 +1503,35 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     pub fn make_account_missing(&mut self, account: AccountAddress) {
         self.missing_accounts.insert(account);
     }
+}
+
+impl<State: Clone> TestHost<State> {
+    fn checkpoint(&self) -> Self {
+        Self {
+            mocking_fns:      self.mocking_fns.clone(),
+            transfers:        RefCell::new(self.transfers.borrow().clone()),
+            contract_balance: RefCell::new(*self.contract_balance.borrow()),
+            state_builder:    StateBuilder {
+                state_api: self.state_builder.state_api.clone(),
+            },
+            state:            self.state.clone(),
+            missing_accounts: self.missing_accounts.clone(),
+        }
+    }
+}
+
+// TODO: Should this be a method on TestHost?
+pub fn with_rollback<R, E, S: Clone>(
+    call: impl FnOnce(&mut TestHost<S>) -> Result<R, E>,
+    host: &mut TestHost<S>,
+) -> Result<R, E> {
+    let checkpoint = host.checkpoint();
+    let res = call(host);
+    // Handle rollback on errors.
+    if res.is_err() {
+        *host = checkpoint;
+    }
+    res
 }
 
 #[cfg(test)]
