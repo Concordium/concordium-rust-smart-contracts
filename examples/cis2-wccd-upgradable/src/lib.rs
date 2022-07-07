@@ -64,6 +64,18 @@ struct AddressState<S> {
     operators: StateSet<Address, S>,
 }
 
+/// TODO: will be removed once operators have moved to state contract
+/// The state tracked for each address.
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+struct AddressStateImplementation<S> {
+    /// The number of tokens owned by this address.
+    // balance:   ContractTokenAmount,
+    /// The address which are currently enabled as operators for this token and
+    /// this address.
+    operators: StateSet<Address, S>,
+}
+
 /// The contract state.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
@@ -93,7 +105,7 @@ struct StateImplementation<S> {
     /// `StateImplementation` struct once the getter/setter functions are
     /// set up between the State contract and the Implementation contract.
     /// The state of the one token.
-    token: StateMap<Address, AddressState<S>, S>,
+    token: StateMap<Address, AddressStateImplementation<S>, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -111,8 +123,7 @@ struct UnwrapParams {
 }
 
 /// The parameter type for the contract function `wrap`.
-///
-/// The receiver for the wrapped CCD tokens.
+/// It includes the receiver for the wrapped CCD tokens.
 #[derive(Serialize, SchemaType)]
 struct WrapParams {
     /// The address to receive these tokens.
@@ -160,6 +171,35 @@ struct SetUnpauseTimeParams {
 struct ReturnUnpauseTime {
     /// Timestamp when the contract becomes unpaused.
     unpause_time: Timestamp,
+}
+
+/// Token balance amount update.
+#[derive(Debug, Serialize)]
+pub enum BalanceUpdate {
+    /// Remove the amount from the balance of the owner.
+    Remove,
+    /// Add the amount from the balance of the owner.
+    Add,
+}
+
+/// The parameter type for the state contract function `set_balance`.
+#[derive(Serialize, SchemaType)]
+struct SetBalanceParams {
+    /// Owner of the tokens.
+    owner:  Address,
+    /// Amount of tokens that the balance of the owner is updated.
+    amount: ContractTokenAmount,
+    /// Add or remove the amount from the balance of the owner.
+    update: BalanceUpdate,
+}
+
+impl schema::SchemaType for BalanceUpdate {
+    fn get_type() -> schema::Type {
+        schema::Type::Enum(vec![
+            ("Remove".to_string(), schema::Fields::None),
+            ("Add".to_string(), schema::Fields::None),
+        ])
+    }
 }
 
 /// The different errors the contract can produce.
@@ -232,27 +272,6 @@ impl<S: HasStateApi> State<S> {
             unpause_time:           Timestamp::from_timestamp_millis(0),
         }
     }
-
-    /// TODO: This function should be removed in the end. It is still here
-    /// because the tests are not re-written to work without this mint function
-    /// when setting up the state.
-    #[allow(dead_code)]
-    fn mint(
-        &mut self,
-        token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
-        owner: &Address,
-        state_builder: &mut StateBuilder<S>,
-    ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
-            operators: state_builder.new_set(),
-        });
-
-        owner_state.balance += amount;
-        Ok(())
-    }
 }
 
 impl<S: HasStateApi> StateImplementation<S> {
@@ -272,10 +291,34 @@ impl<S: HasStateApi> StateImplementation<S> {
     fn balance(
         &self,
         token_id: &ContractTokenId,
-        address: &Address,
+        owner: &Address,
+        host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
     ) -> ContractResult<ContractTokenAmount> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        Ok(self.token.get(address).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
+
+        // Setup parameter.
+        let parameter_bytes = to_bytes(owner);
+
+        let state_address = host
+            .state()
+            .state_address
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+        let balance = host.invoke_contract_raw_read_only(
+            &state_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("get_balance"),
+            Amount::zero(),
+        )?;
+
+        // It is expected that this contract is initialized with the w_ccd_state
+        // contract (a V1 contract). In that case, the balance variable can be
+        // queried from the state contract without error.
+        let balance = balance
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+            .get()?;
+
+        Ok(balance)
     }
 
     /// Check if an address is an operator of a specific owner address.
@@ -284,36 +327,6 @@ impl<S: HasStateApi> StateImplementation<S> {
         self.token
             .get(owner)
             .map_or(false, |address_state| address_state.operators.contains(address))
-    }
-
-    /// Update the state with a transfer.
-    /// Results in an error if the token id does not exist in the state or if
-    /// the from address has insufficient tokens to do the transfer.
-    fn transfer(
-        &mut self,
-        token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
-        from: &Address,
-        to: &Address,
-        state_builder: &mut StateBuilder<S>,
-    ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        if amount == 0u64.into() {
-            return Ok(());
-        }
-        {
-            let mut from_state =
-                self.token.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
-            ensure!(from_state.balance >= amount, ContractError::InsufficientFunds);
-            from_state.balance -= amount;
-        }
-        let mut to_state = self.token.entry(*to).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
-            operators: state_builder.new_set(),
-        });
-        to_state.balance += amount;
-
-        Ok(())
     }
 
     /// Update the state adding a new operator for a given token id and address.
@@ -326,10 +339,12 @@ impl<S: HasStateApi> StateImplementation<S> {
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
-        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
-            operators: state_builder.new_set(),
-        });
+        let mut owner_state =
+            self.token.entry(*owner).or_insert_with(|| AddressStateImplementation {
+                // TODO: the below line will be add in state contract
+                // balance:   0u64.into(),
+                operators: state_builder.new_set(),
+            });
         owner_state.operators.insert(*operator);
         Ok(())
     }
@@ -342,41 +357,6 @@ impl<S: HasStateApi> StateImplementation<S> {
         self.token.entry(*owner).and_modify(|address_state| {
             address_state.operators.remove(operator);
         });
-        Ok(())
-    }
-
-    fn mint(
-        &mut self,
-        token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
-        owner: &Address,
-        state_builder: &mut StateBuilder<S>,
-    ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
-            operators: state_builder.new_set(),
-        });
-
-        owner_state.balance += amount;
-        Ok(())
-    }
-
-    fn burn(
-        &mut self,
-        token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
-        owner: &Address,
-    ) -> ContractResult<()> {
-        ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        if amount == 0u64.into() {
-            return Ok(());
-        }
-
-        let mut from_state = self.token.get_mut(owner).ok_or(ContractError::InsufficientFunds)?;
-        ensure!(from_state.balance >= amount, ContractError::InsufficientFunds);
-        from_state.balance -= amount;
-
         Ok(())
     }
 }
@@ -439,7 +419,7 @@ fn contract_state_initialize<S: HasStateApi>(
     Ok(())
 }
 
-// Getter and setter functions of state contract.
+// Getter and setter functions of the state contract.
 
 fn only_implementation(
     implementation: Option<ContractAddress>,
@@ -485,6 +465,48 @@ fn contract_state_get_unpause_time<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<Timestamp> {
     Ok(host.state().unpause_time)
+}
+
+/// Set balance.
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "set_balance",
+    parameter = "SetBalanceParams",
+    mutable
+)]
+fn contract_state_set_balance<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Only implementation can set state.
+    only_implementation(host.state().implementation_address, ctx.sender())?;
+
+    let (state, state_builder) = host.state_and_builder();
+
+    // Set balance.
+    let params: SetBalanceParams = ctx.parameter_cursor().get()?;
+
+    let mut owner_state = state.token.entry(params.owner).or_insert_with(|| AddressState {
+        balance:   0u64.into(),
+        operators: state_builder.new_set(),
+    });
+
+    match params.update {
+        BalanceUpdate::Add => owner_state.balance += params.amount,
+        BalanceUpdate::Remove => owner_state.balance -= params.amount,
+    };
+
+    Ok(())
+}
+
+#[receive(contract = "CIS2-wCCD-State", name = "get_balance")]
+fn contract_state_get_balance<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<ContractTokenAmount> {
+    let owner: Address = ctx.parameter_cursor().get()?;
+
+    Ok(host.state().token.get(&owner).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
 }
 
 /// Initialize contract instance with no initial tokens.
@@ -592,6 +614,9 @@ fn contract_wrap<S: HasStateApi>(
     // Check that contract is not paused.
     let slot_time = ctx.metadata().slot_time();
     when_not_paused(slot_time, host)?;
+    if amount == Amount::zero() {
+        return Ok(());
+    }
 
     let params: WrapParams = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
@@ -599,10 +624,28 @@ fn contract_wrap<S: HasStateApi>(
 
     let receive_address = params.to.address();
 
-    let (state, state_builder) = host.state_and_builder();
-
     // Update the state.
-    state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
+    let owner = receive_address;
+
+    let set_balance_params = SetBalanceParams {
+        owner,
+        amount: amount.micro_ccd.into(),
+        update: BalanceUpdate::Add,
+    };
+
+    let parameter_bytes = to_bytes(&set_balance_params);
+
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("set_balance"),
+        Amount::zero(),
+    )?;
 
     // Log the newly minted tokens.
     logger.log(&Cis2Event::Mint(MintEvent {
@@ -653,6 +696,10 @@ fn contract_unwrap<S: HasStateApi>(
     when_not_paused(slot_time, host)?;
 
     let params: UnwrapParams = ctx.parameter_cursor().get()?;
+
+    if params.amount == 0u64.into() {
+        return Ok(());
+    }
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
     let state = host.state_mut();
@@ -662,7 +709,30 @@ fn contract_unwrap<S: HasStateApi>(
     );
 
     // Update the state.
-    state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
+
+    let token_balance = host.state().balance(&TOKEN_ID_WCCD, &params.owner, host)?;
+
+    ensure!(token_balance >= params.amount, ContractError::InsufficientFunds);
+
+    let set_balance_params = SetBalanceParams {
+        owner:  params.owner,
+        amount: params.amount,
+        update: BalanceUpdate::Remove,
+    };
+
+    let parameter_bytes = to_bytes(&set_balance_params);
+
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("set_balance"),
+        Amount::zero(),
+    )?;
 
     // Log the burning of tokens.
     logger.log(&Cis2Event::Burn(BurnEvent {
@@ -735,12 +805,60 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
-        let (state, builder) = host.state_and_builder();
+        let (state, _) = host.state_and_builder();
         // Authenticate the sender for this transfer
         ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
         let to_address = to.address();
         // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address, builder)?;
+
+        if amount == 0u64.into() {
+            return Ok(());
+        }
+
+        let token_balance = host.state().balance(&TOKEN_ID_WCCD, &from, host)?;
+
+        ensure!(token_balance >= amount, ContractError::InsufficientFunds);
+        {
+            let set_balance_params = SetBalanceParams {
+                owner: from,
+                amount,
+                update: BalanceUpdate::Remove,
+            };
+
+            let parameter_bytes = to_bytes(&set_balance_params);
+
+            let state_address = host
+                .state()
+                .state_address
+                .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+            host.invoke_contract_raw(
+                &state_address,
+                Parameter(&parameter_bytes),
+                EntrypointName::new_unchecked("set_balance"),
+                Amount::zero(),
+            )?;
+        }
+
+        let set_balance_params = SetBalanceParams {
+            owner: to_address,
+            amount,
+            update: BalanceUpdate::Add,
+        };
+
+        let parameter_bytes = to_bytes(&set_balance_params);
+
+        let state_address = host
+            .state()
+            .state_address
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+        host.invoke_contract_raw(
+            &state_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("set_balance"),
+            Amount::zero(),
+        )?;
 
         // Log transfer event
         logger.log(&Cis2Event::Transfer(TransferEvent {
@@ -923,7 +1041,7 @@ fn contract_balance_of<S: HasStateApi>(
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
         // Query the state for balance.
-        let amount = host.state().balance(&query.token_id, &query.address)?;
+        let amount = host.state().balance(&query.token_id, &query.address, host)?;
         response.push(amount);
     }
     let result = ContractBalanceOfQueryResponse::from(response);
@@ -1036,25 +1154,15 @@ mod tests {
     }
 
     /// Test helper function which creates a w_ccd_implementation contract state
-    /// where ADDRESS_0 owns 400 tokens.
     fn initial_state_implementation<S: HasStateApi>(
         state_builder: &mut StateBuilder<S>,
     ) -> StateImplementation<S> {
-        let mut state = StateImplementation::new(ADMIN_ADDRESS, state_builder);
-        state
-            .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
-            .expect_report("Failed to setup state");
-        state
+        StateImplementation::new(ADMIN_ADDRESS, state_builder)
     }
 
-    /// Test helper function which creates a w_ccd_state contract state where
-    /// ADDRESS_0 owns 400 tokens.
+    /// Test helper function which creates a w_ccd_state contract state
     fn initial_state_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        let mut state = State::new(state_builder);
-        state
-            .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
-            .expect_report("Failed to setup state");
-        state
+        State::new(state_builder)
     }
 
     /// Test w_ccd state initialization works.
@@ -1196,18 +1304,8 @@ mod tests {
         // Call the contract function.
         let result = contract_init(&ctx, &mut builder, &mut logger);
 
-        // Check the result
-        let state = result.expect_report("Contract initialization failed");
-
-        // Check the state
-        claim_eq!(state.token.iter().count(), 0, "Only one token is initialized");
-        let balance0 =
-            state.balance(&TOKEN_ID_WCCD, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            0u64.into(),
-            "No initial tokens are owned by the contract instantiater"
-        );
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
 
         // Check the logs
         claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
@@ -1243,10 +1341,8 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let mut state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
-        state
-            .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
-            .expect_report("Failed to setup state");
+        let state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
+
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1269,6 +1365,27 @@ mod tests {
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
         );
 
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(400)),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(400)),
+        );
+
         // Setup parameter.
         let transfer = Transfer {
             token_id: TOKEN_ID_WCCD,
@@ -1287,13 +1404,23 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the state.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(300)),
+        );
         let balance0 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_0, &host)
             .expect_report("Token is expected to exist");
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(100)),
+        );
         let balance1 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_1, &host)
             .expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
@@ -1414,6 +1541,20 @@ mod tests {
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
         );
 
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(400)),
+        );
+
         // Setup the parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
@@ -1432,14 +1573,26 @@ mod tests {
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(300)),
+        );
         // Check the state.
         let balance0 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_0, &host)
             .expect_report("Token is expected to exist");
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(100)),
+        );
         let balance1 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_1, &host)
             .expect_report("Token is expected to exist");
         claim_eq!(balance0, 300.into()); //, "Token owner balance should be decreased by the transferred amount");
         claim_eq!(
@@ -1749,6 +1902,13 @@ mod tests {
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
         );
 
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            MockFn::returning_ok(()),
+        );
+
         // Setup parameter.
         let wrap_params = WrapParams {
             to:   Receiver::from_account(ACCOUNT_1),
@@ -1814,11 +1974,15 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let mut state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
-        state
-            .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
-            .expect_report("Failed to setup state");
+        let state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
         let mut host = TestHost::new(state, state_builder);
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(400)),
+        );
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
@@ -1838,6 +2002,13 @@ mod tests {
             STATE,
             OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
 
         // Setup the parameter.
@@ -1864,14 +2035,26 @@ mod tests {
             "Transfer should fail because contract is paused",
         );
 
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(400)),
+        );
         // Check the state.
         let balance0 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_0, &host)
             .expect_report("Token is expected to exist");
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(0)),
+        );
         let balance1 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
+            .balance(&TOKEN_ID_WCCD, &ADDRESS_1, &host)
             .expect_report("Token is expected to exist");
         claim_eq!(balance0, 400.into(), "Token owner balance should be still the same");
         claim_eq!(balance1, 0.into(), "Token receiver balance should be still the same");
@@ -1908,6 +2091,13 @@ mod tests {
             STATE,
             OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            MockFn::returning_ok(()),
         );
 
         // Setup parameter.
