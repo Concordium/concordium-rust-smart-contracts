@@ -64,18 +64,6 @@ struct AddressState<S> {
     operators: StateSet<Address, S>,
 }
 
-/// TODO: will be removed once operators have moved to state contract
-/// The state tracked for each address.
-#[derive(Serial, DeserialWithState, Deletable)]
-#[concordium(state_parameter = "S")]
-struct AddressStateImplementation<S> {
-    /// The number of tokens owned by this address.
-    // balance:   ContractTokenAmount,
-    /// The address which are currently enabled as operators for this token and
-    /// this address.
-    operators: StateSet<Address, S>,
-}
-
 /// The contract state.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
@@ -91,21 +79,14 @@ struct State<S> {
 }
 
 /// The implementation contract state.
-#[derive(Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-struct StateImplementation<S> {
+#[derive(Serial, Deserial)]
+struct StateImplementation {
     /// The admin address can pause/unpause the contract.
     admin:         Address,
     /// Address of the w_ccd proxy contract.
     proxy_address: Option<ContractAddress>,
     /// Address of the w_ccd state contract.
     state_address: Option<ContractAddress>,
-
-    /// TODO: These state variables will be removed out of this
-    /// `StateImplementation` struct once the getter/setter functions are
-    /// set up between the State contract and the Implementation contract.
-    /// The state of the one token.
-    token: StateMap<Address, AddressStateImplementation<S>, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -159,14 +140,41 @@ struct SetUnpauseParams {
     seconds: Duration,
 }
 
-/// The parameter type for the state contract function `set_unpause_time`.
+/// The parameter type for the state contract function `getBalance`.
+#[derive(Serialize, SchemaType)]
+struct GetBalanceParams {
+    /// Owner of the tokens.
+    owner: Address,
+}
+
+/// The parameter type for the state contract function `getOperator`.
+#[derive(Serialize, SchemaType)]
+struct GetOperatorParams {
+    /// Owner of the tokens.
+    owner:   Address,
+    /// Address that will be checked if it is an operator to the above owner.
+    address: Address,
+}
+
+/// The parameter type for the state contract function `setOperator`.
+#[derive(Serialize, SchemaType)]
+struct SetOperatorParams {
+    /// Owner of the tokens.
+    owner:    Address,
+    /// Address that will be set/unset to be an operator to the above owner.
+    operator: Address,
+    /// Add or remove an operator.
+    update:   Update,
+}
+
+/// The parameter type for the state contract function `setUnpauseTime`.
 #[derive(Serialize, SchemaType)]
 struct SetUnpauseTimeParams {
     /// Timestamp when contract becomes unpaused.
     unpause_time: Timestamp,
 }
 
-/// The return type for the state contract function `get_unpause_time`.
+/// The return type for the state contract function `getUnpauseTime`.
 #[derive(Serialize, SchemaType)]
 struct ReturnUnpauseTime {
     /// Timestamp when the contract becomes unpaused.
@@ -175,14 +183,14 @@ struct ReturnUnpauseTime {
 
 /// Token balance amount update.
 #[derive(Debug, Serialize)]
-pub enum BalanceUpdate {
+pub enum Update {
     /// Remove the amount from the balance of the owner.
     Remove,
     /// Add the amount from the balance of the owner.
     Add,
 }
 
-/// The parameter type for the state contract function `set_balance`.
+/// The parameter type for the state contract function `setBalance`.
 #[derive(Serialize, SchemaType)]
 struct SetBalanceParams {
     /// Owner of the tokens.
@@ -190,10 +198,10 @@ struct SetBalanceParams {
     /// Amount of tokens that the balance of the owner is updated.
     amount: ContractTokenAmount,
     /// Add or remove the amount from the balance of the owner.
-    update: BalanceUpdate,
+    update: Update,
 }
 
-impl schema::SchemaType for BalanceUpdate {
+impl schema::SchemaType for Update {
     fn get_type() -> schema::Type {
         schema::Type::Enum(vec![
             ("Remove".to_string(), schema::Fields::None),
@@ -274,25 +282,24 @@ impl<S: HasStateApi> State<S> {
     }
 }
 
-impl<S: HasStateApi> StateImplementation<S> {
+impl StateImplementation {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(admin: Address, state_builder: &mut StateBuilder<S>) -> Self {
+    fn new(admin: Address) -> Self {
         // Setup state.
         StateImplementation {
             admin,
             proxy_address: None,
             state_address: None,
-            token: state_builder.new_map(), // TODO: This variable will be moved 'state' contract.
         }
     }
 
     /// Get the current balance of a given token id for a given address.
     /// Results in an error if the token id does not exist in the state.
-    fn balance(
+    fn balance<S>(
         &self,
         token_id: &ContractTokenId,
         owner: &Address,
-        host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
+        host: &impl HasHost<StateImplementation, StateApiType = S>,
     ) -> ContractResult<ContractTokenAmount> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
@@ -307,7 +314,7 @@ impl<S: HasStateApi> StateImplementation<S> {
         let balance = host.invoke_contract_raw_read_only(
             &state_address,
             Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("get_balance"),
+            EntrypointName::new_unchecked("getBalance"),
             Amount::zero(),
         )?;
 
@@ -323,41 +330,38 @@ impl<S: HasStateApi> StateImplementation<S> {
 
     /// Check if an address is an operator of a specific owner address.
     /// Results in an error if the token id does not exist in the state.
-    fn is_operator(&self, address: &Address, owner: &Address) -> bool {
-        self.token
-            .get(owner)
-            .map_or(false, |address_state| address_state.operators.contains(address))
-    }
-
-    /// Update the state adding a new operator for a given token id and address.
-    /// Results in an error if the token id does not exist in the state.
-    /// Succeeds even if the `operator` is already an operator for this
-    /// `token_id` and `address`.
-    fn add_operator(
-        &mut self,
-        owner: &Address,
+    fn is_operator<S>(
+        &self,
         operator: &Address,
-        state_builder: &mut StateBuilder<S>,
-    ) -> ContractResult<()> {
-        let mut owner_state =
-            self.token.entry(*owner).or_insert_with(|| AddressStateImplementation {
-                // TODO: the below line will be add in state contract
-                // balance:   0u64.into(),
-                operators: state_builder.new_set(),
-            });
-        owner_state.operators.insert(*operator);
-        Ok(())
-    }
-
-    /// Update the state removing an operator for a given token id and address.
-    /// Results in an error if the token id does not exist in the state.
-    /// Succeeds even if the `operator` is not an operator for this `token_id`
-    /// and `address`.
-    fn remove_operator(&mut self, owner: &Address, operator: &Address) -> ContractResult<()> {
-        self.token.entry(*owner).and_modify(|address_state| {
-            address_state.operators.remove(operator);
+        owner: &Address,
+        host: &impl HasHost<StateImplementation, StateApiType = S>,
+    ) -> ContractResult<bool> {
+        // Setup parameter.
+        let parameter_bytes = to_bytes(&GetOperatorParams {
+            owner:   *owner,
+            address: *operator,
         });
-        Ok(())
+
+        let state_address = host
+            .state()
+            .state_address
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+        let is_operator = host.invoke_contract_raw_read_only(
+            &state_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("getOperator"),
+            Amount::zero(),
+        )?;
+
+        // It is expected that this contract is initialized with the w_ccd_state
+        // contract (a V1 contract). In that case, the balance variable can be
+        // queried from the state contract without error.
+        let is_operator = is_operator
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+            .get()?;
+
+        Ok(is_operator)
     }
 }
 
@@ -438,7 +442,7 @@ fn only_implementation(
 /// Set unpause_time.
 #[receive(
     contract = "CIS2-wCCD-State",
-    name = "set_unpause_time",
+    name = "setUnpauseTime",
     parameter = "SetUnpauseTimeParams",
     mutable
 )]
@@ -457,7 +461,7 @@ fn contract_state_set_unpause_time<S: HasStateApi>(
 
 #[receive(
     contract = "CIS2-wCCD-State",
-    name = "get_unpause_time",
+    name = "getUnpauseTime",
     return_value = "ReturnUnpauseTime"
 )]
 fn contract_state_get_unpause_time<S: HasStateApi>(
@@ -470,7 +474,7 @@ fn contract_state_get_unpause_time<S: HasStateApi>(
 /// Set balance.
 #[receive(
     contract = "CIS2-wCCD-State",
-    name = "set_balance",
+    name = "setBalance",
     parameter = "SetBalanceParams",
     mutable
 )]
@@ -492,21 +496,72 @@ fn contract_state_set_balance<S: HasStateApi>(
     });
 
     match params.update {
-        BalanceUpdate::Add => owner_state.balance += params.amount,
-        BalanceUpdate::Remove => owner_state.balance -= params.amount,
+        Update::Add => owner_state.balance += params.amount,
+        Update::Remove => owner_state.balance -= params.amount,
     };
 
     Ok(())
 }
 
-#[receive(contract = "CIS2-wCCD-State", name = "get_balance")]
+#[receive(contract = "CIS2-wCCD-State", name = "getBalance", parameter = "GetBalanceParams")]
 fn contract_state_get_balance<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ContractTokenAmount> {
-    let owner: Address = ctx.parameter_cursor().get()?;
+    let params: GetBalanceParams = ctx.parameter_cursor().get()?;
 
-    Ok(host.state().token.get(&owner).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
+    Ok(host.state().token.get(&params.owner).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
+}
+
+/// Set operator.
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "setOperator",
+    parameter = "SetOperatorParams",
+    mutable
+)]
+fn contract_state_set_operator<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Only implementation can set state.
+    only_implementation(host.state().implementation_address, ctx.sender())?;
+
+    // Set balance.
+    let params: SetOperatorParams = ctx.parameter_cursor().get()?;
+
+    match params.update {
+        Update::Add => {
+            let (state, state_builder) = host.state_and_builder();
+
+            let mut owner_state = state.token.entry(params.owner).or_insert_with(|| AddressState {
+                balance:   0u64.into(),
+                operators: state_builder.new_set(),
+            });
+            owner_state.operators.insert(params.operator);
+        }
+        Update::Remove => {
+            host.state_mut().token.entry(params.owner).and_modify(|address_state| {
+                address_state.operators.remove(&params.operator);
+            });
+        }
+    };
+
+    Ok(())
+}
+
+#[receive(contract = "CIS2-wCCD-State", name = "getOperator", parameter = "GetOperatorParams")]
+fn contract_state_get_operator<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<bool> {
+    let params: GetOperatorParams = ctx.parameter_cursor().get()?;
+
+    Ok(host
+        .state()
+        .token
+        .get(&params.owner)
+        .map_or(false, |address_state| address_state.operators.contains(&params.address)))
 }
 
 /// Initialize contract instance with no initial tokens.
@@ -515,13 +570,13 @@ fn contract_state_get_balance<S: HasStateApi>(
 #[init(contract = "CIS2-wCCD", enable_logger)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
+    _state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
-) -> InitResult<StateImplementation<S>> {
+) -> InitResult<StateImplementation> {
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Construct the initial contract state.
-    let state = StateImplementation::new(invoker, state_builder);
+    let state = StateImplementation::new(invoker);
     // Log event for the newly minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
@@ -552,7 +607,7 @@ fn contract_init<S: HasStateApi>(
 )]
 fn contract_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     ensure!(
         host.state().proxy_address.is_none() && host.state().state_address.is_none(),
@@ -567,7 +622,7 @@ fn contract_initialize<S: HasStateApi>(
 
 fn when_not_paused<S>(
     slot_time: Timestamp,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     let state_address = host
         .state()
@@ -577,7 +632,7 @@ fn when_not_paused<S>(
     let unpause_time = host.invoke_contract_raw_read_only(
         &state_address,
         Parameter(&[]),
-        EntrypointName::new_unchecked("get_unpause_time"),
+        EntrypointName::new_unchecked("getUnpauseTime"),
         Amount::zero(),
     )?;
 
@@ -607,7 +662,7 @@ fn when_not_paused<S>(
 )]
 fn contract_wrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     amount: Amount,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
@@ -630,7 +685,7 @@ fn contract_wrap<S: HasStateApi>(
     let set_balance_params = SetBalanceParams {
         owner,
         amount: amount.micro_ccd.into(),
-        update: BalanceUpdate::Add,
+        update: Update::Add,
     };
 
     let parameter_bytes = to_bytes(&set_balance_params);
@@ -643,7 +698,7 @@ fn contract_wrap<S: HasStateApi>(
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("set_balance"),
+        EntrypointName::new_unchecked("setBalance"),
         Amount::zero(),
     )?;
 
@@ -688,7 +743,7 @@ fn contract_wrap<S: HasStateApi>(
 )]
 fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
@@ -702,9 +757,13 @@ fn contract_unwrap<S: HasStateApi>(
     }
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-    let state = host.state_mut();
+    //  let state = host.state_mut();
     ensure!(
-        sender == params.owner || state.is_operator(&sender, &params.owner),
+        sender == params.owner
+            || host
+                .state()
+                .is_operator(&sender, &params.owner, host)
+                .map_or(false, |is_operator| is_operator),
         ContractError::Unauthorized
     );
 
@@ -717,7 +776,7 @@ fn contract_unwrap<S: HasStateApi>(
     let set_balance_params = SetBalanceParams {
         owner:  params.owner,
         amount: params.amount,
-        update: BalanceUpdate::Remove,
+        update: Update::Remove,
     };
 
     let parameter_bytes = to_bytes(&set_balance_params);
@@ -730,7 +789,7 @@ fn contract_unwrap<S: HasStateApi>(
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("set_balance"),
+        EntrypointName::new_unchecked("setBalance"),
         Amount::zero(),
     )?;
 
@@ -785,7 +844,7 @@ pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount
 )]
 fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
@@ -805,9 +864,15 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
-        let (state, _) = host.state_and_builder();
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        ensure!(
+            from == sender
+                || host
+                    .state()
+                    .is_operator(&sender, &from, host)
+                    .map_or(false, |is_operator| is_operator),
+            ContractError::Unauthorized
+        );
         let to_address = to.address();
         // Update the contract state
 
@@ -822,7 +887,7 @@ fn contract_transfer<S: HasStateApi>(
             let set_balance_params = SetBalanceParams {
                 owner: from,
                 amount,
-                update: BalanceUpdate::Remove,
+                update: Update::Remove,
             };
 
             let parameter_bytes = to_bytes(&set_balance_params);
@@ -835,7 +900,7 @@ fn contract_transfer<S: HasStateApi>(
             host.invoke_contract_raw(
                 &state_address,
                 Parameter(&parameter_bytes),
-                EntrypointName::new_unchecked("set_balance"),
+                EntrypointName::new_unchecked("setBalance"),
                 Amount::zero(),
             )?;
         }
@@ -843,7 +908,7 @@ fn contract_transfer<S: HasStateApi>(
         let set_balance_params = SetBalanceParams {
             owner: to_address,
             amount,
-            update: BalanceUpdate::Add,
+            update: Update::Add,
         };
 
         let parameter_bytes = to_bytes(&set_balance_params);
@@ -856,7 +921,7 @@ fn contract_transfer<S: HasStateApi>(
         host.invoke_contract_raw(
             &state_address,
             Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("set_balance"),
+            EntrypointName::new_unchecked("setBalance"),
             Amount::zero(),
         )?;
 
@@ -902,7 +967,7 @@ fn contract_transfer<S: HasStateApi>(
 )]
 fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
@@ -914,13 +979,53 @@ fn contract_update_operator<S: HasStateApi>(
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    let (state, state_builder) = host.state_and_builder();
     for param in params {
         // Update the operator in the state.
 
         match param.update {
-            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, state_builder)?,
-            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator)?,
+            OperatorUpdate::Add => {
+                let set_operator_params = SetOperatorParams {
+                    owner:    sender,
+                    operator: param.operator,
+                    update:   Update::Add,
+                };
+
+                let parameter_bytes = to_bytes(&set_operator_params);
+
+                let state_address = host
+                    .state()
+                    .state_address
+                    .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+                host.invoke_contract_raw(
+                    &state_address,
+                    Parameter(&parameter_bytes),
+                    EntrypointName::new_unchecked("setOperator"),
+                    Amount::zero(),
+                )?;
+            }
+
+            OperatorUpdate::Remove => {
+                let set_operator_params = SetOperatorParams {
+                    owner:    sender,
+                    operator: param.operator,
+                    update:   Update::Remove,
+                };
+
+                let parameter_bytes = to_bytes(&set_operator_params);
+
+                let state_address = host
+                    .state()
+                    .state_address
+                    .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+
+                host.invoke_contract_raw(
+                    &state_address,
+                    Parameter(&parameter_bytes),
+                    EntrypointName::new_unchecked("setOperator"),
+                    Amount::zero(),
+                )?;
+            }
         };
 
         // Log the appropriate event
@@ -939,7 +1044,7 @@ fn contract_update_operator<S: HasStateApi>(
 #[receive(contract = "CIS2-wCCD", name = "update_admin", mutable)]
 fn contract_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the old admin is authorized to update the admin address.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -956,7 +1061,7 @@ fn contract_update_admin<S: HasStateApi>(
 #[receive(contract = "CIS2-wCCD", name = "pause", parameter = "SetUnpauseParams", mutable)]
 fn contract_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the current admin can pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -978,7 +1083,7 @@ fn contract_pause<S: HasStateApi>(
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("set_unpause_time"),
+        EntrypointName::new_unchecked("setUnpauseTime"),
         Amount::zero(),
     )?;
 
@@ -988,7 +1093,7 @@ fn contract_pause<S: HasStateApi>(
 #[receive(contract = "CIS2-wCCD", name = "un_pause", mutable)]
 fn contract_un_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the current admin can un_pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -1006,7 +1111,7 @@ fn contract_un_pause<S: HasStateApi>(
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("set_unpause_time"),
+        EntrypointName::new_unchecked("setUnpauseTime"),
         Amount::zero(),
     )?;
 
@@ -1033,7 +1138,7 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -1061,7 +1166,7 @@ fn contract_balance_of<S: HasStateApi>(
 )]
 fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -1069,7 +1174,10 @@ fn contract_operator_of<S: HasStateApi>(
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
         // Query the state for address being an operator of owner.
-        let is_operator = host.state().is_operator(&query.owner, &query.address);
+        let is_operator = host
+            .state()
+            .is_operator(&query.address, &query.owner, host)
+            .map_or(false, |is_operator| is_operator);
         response.push(is_operator);
     }
     let result = OperatorOfQueryResponse::from(response);
@@ -1095,7 +1203,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<StateImplementation<S>, StateApiType = S>,
+    _host: &impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -1154,10 +1262,8 @@ mod tests {
     }
 
     /// Test helper function which creates a w_ccd_implementation contract state
-    fn initial_state_implementation<S: HasStateApi>(
-        state_builder: &mut StateBuilder<S>,
-    ) -> StateImplementation<S> {
-        StateImplementation::new(ADMIN_ADDRESS, state_builder)
+    fn initial_state_implementation() -> StateImplementation {
+        StateImplementation::new(ADMIN_ADDRESS)
     }
 
     /// Test helper function which creates a w_ccd_state contract state
@@ -1340,8 +1446,8 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = StateImplementation::new(ADMIN_ADDRESS);
 
         let mut host = TestHost::new(state, state_builder);
 
@@ -1361,28 +1467,28 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            OwnedEntrypointName::new_unchecked("setBalance".into()),
             MockFn::returning_ok(()),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
 
@@ -1406,7 +1512,7 @@ mod tests {
         // Check the state.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(300)),
         );
         let balance0 = host
@@ -1415,7 +1521,7 @@ mod tests {
             .expect_report("Token is expected to exist");
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(100)),
         );
         let balance1 = host
@@ -1457,8 +1563,8 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1477,8 +1583,15 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getOperator".into()),
+            MockFn::returning_ok(false),
         );
 
         // Setup parameter.
@@ -1506,18 +1619,12 @@ mod tests {
     fn test_operator_transfer() {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
+        ctx.set_sender(ADDRESS_0);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let mut state = initial_state_implementation(&mut state_builder);
-
-        let result: ContractResult<()> =
-            state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
 
         let mut host = TestHost::new(state, state_builder);
 
@@ -1537,23 +1644,53 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            OwnedEntrypointName::new_unchecked("setBalance".into()),
             MockFn::returning_ok(()),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("setOperator".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getOperator".into()),
+            MockFn::returning_ok(true),
+        );
+
+        // Setup parameter.
+        let update = UpdateOperator {
+            operator: concordium_std::Address::Contract(PROXY),
+            update:   OperatorUpdate::Add,
+        };
+        let parameter = UpdateOperatorParams(vec![update]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        ctx.set_sender(ADDRESS_1);
 
         // Setup the parameter.
         let transfer = Transfer {
@@ -1576,7 +1713,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(300)),
         );
         // Check the state.
@@ -1587,7 +1724,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(100)),
         );
         let balance1 = host
@@ -1602,9 +1739,9 @@ mod tests {
         );
 
         // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
+        claim_eq!(logger.logs.len(), 2, "Only one event should be logged");
         claim_eq!(
-            logger.logs[0],
+            logger.logs[1],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
@@ -1624,8 +1761,8 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1644,8 +1781,22 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getOperator".into()),
+            MockFn::returning_ok(true),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("setOperator".into()),
+            MockFn::returning_ok(()),
         );
 
         // Setup parameter.
@@ -1664,7 +1815,12 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the state.
-        claim!(host.state().is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be an operator");
+        claim!(
+            host.state()
+                .is_operator(&ADDRESS_1, &ADDRESS_0, &host)
+                .map_or(false, |is_operator| is_operator),
+            "Account should be an operator"
+        );
 
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
@@ -1689,8 +1845,8 @@ mod tests {
         ctx.set_sender(ADMIN_ADDRESS);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1709,7 +1865,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("set_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("setUnpauseTime".into()),
             MockFn::returning_ok(()),
         );
 
@@ -1737,8 +1893,8 @@ mod tests {
         let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
@@ -1758,8 +1914,8 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1778,7 +1934,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("set_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("setUnpauseTime".into()),
             MockFn::returning_ok(()),
         );
 
@@ -1798,8 +1954,8 @@ mod tests {
         ctx.set_sender(NEW_ADMIN_ADDRESS);
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // UnPausing contract.
@@ -1824,8 +1980,8 @@ mod tests {
         let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1844,7 +2000,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
@@ -1878,8 +2034,8 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(ADDRESS_1);
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -1898,14 +2054,14 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            OwnedEntrypointName::new_unchecked("setBalance".into()),
             MockFn::returning_ok(()),
         );
 
@@ -1934,7 +2090,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
@@ -1973,14 +2129,14 @@ mod tests {
         ctx.set_sender(ADMIN_ADDRESS);
 
         let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = StateImplementation::new(ADMIN_ADDRESS, &mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = StateImplementation::new(ADMIN_ADDRESS);
         let mut host = TestHost::new(state, state_builder);
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
 
@@ -2000,14 +2156,14 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
 
@@ -2038,7 +2194,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
         // Check the state.
@@ -2049,7 +2205,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_balance".into()),
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
             MockFn::returning_ok(ContractTokenAmount::from(0)),
         );
         let balance1 = host
@@ -2069,8 +2225,8 @@ mod tests {
         ctx.set_sender(ADMIN_ADDRESS);
 
         let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Setup parameter.
@@ -2089,14 +2245,28 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("get_unpause_time".into()),
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
             MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
         );
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("set_balance".into()),
+            OwnedEntrypointName::new_unchecked("getOperator".into()),
+            MockFn::returning_ok(false),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getOperator".into()),
+            MockFn::returning_ok(false),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("setBalance".into()),
             MockFn::returning_ok(()),
         );
 
@@ -2123,7 +2293,10 @@ mod tests {
 
         // Check the state.
         claim!(
-            !host.state().is_operator(&ADDRESS_1, &ADDRESS_0),
+            !host
+                .state()
+                .is_operator(&ADDRESS_1, &ADDRESS_0, &host)
+                .map_or(false, |is_operator| is_operator),
             "Account should not be an operator"
         );
     }
@@ -2139,8 +2312,8 @@ mod tests {
         let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Check the admin state.
@@ -2169,8 +2342,8 @@ mod tests {
         let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
         ctx.set_parameter(&parameter_bytes);
 
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_implementation(&mut state_builder);
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
 
         // Check the admin state.
