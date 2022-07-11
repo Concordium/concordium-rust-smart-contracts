@@ -67,6 +67,8 @@
 //!     }
 //! }
 //! ```
+use std::{borrow::Borrow, cell::UnsafeCell};
+
 use crate::*;
 
 use self::trie::StateTrie;
@@ -553,7 +555,7 @@ impl From<TestStateError> for ParseError {
     fn from(_: TestStateError) -> Self { ParseError::default() }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A wrapper for the data stored in [`TestStateEntry`], which is used to match
 /// the semantics of the host functions. Specifically, it is used to ensure that
 /// interactions with a deleted entry result in a error.
@@ -617,7 +619,7 @@ impl TestStateEntry {
 }
 
 #[derive(Debug, Clone)]
-/// A state api used for testing. Implement [`HasStateApi`].
+/// A state api used for testing. Implements [`HasStateApi`].
 pub struct TestStateApi {
     trie: Rc<RefCell<StateTrie>>,
 }
@@ -666,6 +668,13 @@ impl TestStateApi {
     pub fn new() -> Self {
         Self {
             trie: Rc::new(RefCell::new(StateTrie::new())),
+        }
+    }
+
+    /// Make a deep clone of the state. Used for rollbacks.
+    pub(crate) fn clone_deep(&self) -> Self {
+        Self {
+            trie: Rc::new(RefCell::new(self.trie.borrow().clone_deep())),
         }
     }
 }
@@ -1220,7 +1229,7 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi> + Clone> HasHost<State> for TestHost<State> {
+impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -1283,7 +1292,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + Clone> HasHost<State> for
             return Err(CallContractError::AmountTooLarge);
         }
 
-        let host_checkpoint = self.checkpoint();
+        // let host_checkpoint = //self.checkpoint();
 
         // Invoke the handler.
         let invocation_res = (handler.f)(
@@ -1296,7 +1305,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + Clone> HasHost<State> for
         match invocation_res {
             Err(error) => {
                 // Roll back host.
-                *self = host_checkpoint;
+                // *self = host_checkpoint;
                 Err(error)
             }
             Ok((state_modified, res)) => {
@@ -1505,23 +1514,24 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-impl<State: Clone> TestHost<State> {
+impl<State: StateClone<TestStateApi>> TestHost<State> {
     fn checkpoint(&self) -> Self {
+        let state_deep_clone = self.state_builder.state_api.clone_deep();
         Self {
             mocking_fns:      self.mocking_fns.clone(),
             transfers:        RefCell::new(self.transfers.borrow().clone()),
             contract_balance: RefCell::new(*self.contract_balance.borrow()),
             state_builder:    StateBuilder {
-                state_api: self.state_builder.state_api.clone(),
+                state_api: state_deep_clone.clone(),
             },
-            state:            self.state.clone(),
+            state:            self.state.clone_state(state_deep_clone),
             missing_accounts: self.missing_accounts.clone(),
         }
     }
 }
 
 // TODO: Should this be a method on TestHost?
-pub fn with_rollback<R, E, S: Clone>(
+pub fn with_rollback<R, E, S: StateClone<TestStateApi>>(
     call: impl FnOnce(&mut TestHost<S>) -> Result<R, E>,
     host: &mut TestHost<S>,
 ) -> Result<R, E> {
@@ -1532,6 +1542,47 @@ pub fn with_rollback<R, E, S: Clone>(
         *host = checkpoint;
     }
     res
+}
+
+impl<T: Clone> StateClone<TestStateApi> for StateSet<T, TestStateApi> {
+    fn clone_state(&self, state_api: TestStateApi) -> Self {
+        Self {
+            _marker: self._marker,
+            prefix: self.prefix,
+            state_api,
+        }
+    }
+}
+
+impl<T: Clone + Serial> StateClone<TestStateApi> for StateBox<T, TestStateApi> {
+    fn clone_state(&self, state_api: TestStateApi) -> Self {
+        let inner_value = match self.inner.get() as &StateBoxInner<T, TestStateApi> {
+            StateBoxInner::Loaded {
+                entry,
+                modified,
+                value,
+            } => {
+                // Get an entry from the cloned state.
+                let new_entry = state_api.lookup_entry(&entry.key).unwrap_abort();
+
+                StateBoxInner::Loaded {
+                    entry:    new_entry,
+                    modified: *modified,
+                    value:    value.clone(),
+                }
+            }
+            StateBoxInner::Reference {
+                prefix,
+            } => StateBoxInner::Reference {
+                prefix: prefix.clone(),
+            },
+        };
+
+        Self {
+            state_api,
+            inner: UnsafeCell::new(inner_value),
+        }
+    }
 }
 
 #[cfg(test)]

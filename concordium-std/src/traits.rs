@@ -560,3 +560,7 @@ where
         source: &mut R,
     ) -> ParseResult<Self>;
 }
+
+pub trait StateClone<S> {
+    fn clone_state(&self, state_api: S) -> Self;
+}

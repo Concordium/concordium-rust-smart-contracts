@@ -10,23 +10,46 @@ impl From<ParseError> for ContractError {
     fn from(_: ParseError) -> Self { ContractError::ParseError }
 }
 
-type State = u32;
+// type State<S> = StateBox<u32, S>;
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct State<S: HasStateApi> {
+    my_box: StateBox<u32, S>,
+    my_num: u32,
+}
+
+impl<S: HasStateApi> StateClone<S> for State<S> {
+    fn clone_state(&self, _state_api: S) -> Self { todo!() }
+}
+
+impl<S: HasStateApi> State<S> {
+    #[cfg(test)]
+    fn get_values(&self) -> (u32, u32) { (*self.my_box.get(), self.my_num) }
+
+    fn increment(&mut self) {
+        self.my_box.update(|v| *v += 1);
+        self.my_num += 1;
+    }
+}
 
 #[init(contract = "test-host-rollback")]
 fn init<S: HasStateApi>(
     _: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
-    Ok(0)
+    state_builder: &mut StateBuilder<S>,
+) -> InitResult<State<S>> {
+    Ok(State {
+        my_box: state_builder.new_box(0),
+        my_num: 0,
+    })
 }
 
 #[receive(mutable, contract = "test-host-rollback", name = "update")]
 fn contract_update<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     // Always increment state.
-    *host.state_mut() += 1;
+    host.state_mut().increment();
 
     let invoke_and_succeed = ctx.parameter_cursor().get()?;
 
@@ -55,7 +78,7 @@ mod tests {
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
         let mut host = TestHost::new(state, state_builder);
 
-        claim_eq!(*host.state(), 0);
+        claim_eq!(host.state().get_values(), (0, 0));
 
         let mut ctx_rcv = TestReceiveContext::default();
         let parameter = to_bytes(&false);
@@ -66,7 +89,7 @@ mod tests {
         claim_eq!(result, Err(ContractError::Error));
 
         // The state should be 0, as the update failed.
-        claim_eq!(*host.state(), 0);
+        claim_eq!(host.state().get_values(), (0, 0));
     }
 
     #[concordium_test]
@@ -76,7 +99,7 @@ mod tests {
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
         let mut host = TestHost::new(state, state_builder);
 
-        claim_eq!(*host.state(), 0);
+        claim_eq!(host.state().get_values(), (0, 0));
 
         let mut ctx_rcv = TestReceiveContext::default();
         let parameter = to_bytes(&true);
@@ -90,8 +113,8 @@ mod tests {
         host.setup_mock_entrypoint(
             self_address,
             OwnedEntrypointName::new_unchecked("update".to_string()),
-            MockFn::new_v1::<(), _>(|_, _, _, state: &mut State| {
-                *state += 1;
+            MockFn::new_v1::<(), _>(|_, _, _, state: &mut State<TestStateApi>| {
+                state.increment();
                 Err(CallContractError::Trap)
             }),
         );
@@ -102,6 +125,6 @@ mod tests {
 
         // The state should be 1, as the outer receive worked, but the inner invoke
         // failed.
-        claim_eq!(*host.state(), 1);
+        claim_eq!(host.state().get_values(), (1, 1));
     }
 }
