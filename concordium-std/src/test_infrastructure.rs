@@ -1556,7 +1556,7 @@ impl<T: Clone> StateClone<TestStateApi> for StateSet<T, TestStateApi> {
 
 impl<T: Clone + Serial> StateClone<TestStateApi> for StateBox<T, TestStateApi> {
     fn clone_state(&self, state_api: TestStateApi) -> Self {
-        let inner_value = match self.inner.get() as &StateBoxInner<T, TestStateApi> {
+        let inner_value = match unsafe { &*self.inner.get() } {
             StateBoxInner::Loaded {
                 entry,
                 modified,
