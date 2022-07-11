@@ -500,7 +500,7 @@ fn contract_operator_of<S: HasStateApi>(
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
         // Query the state for address being an operator of owner.
-        let is_operator = host.state().is_operator(&query.owner, &query.address);
+        let is_operator = host.state().is_operator(&query.address, &query.owner);
         response.push(is_operator);
     }
     let result = OperatorOfQueryResponse::from(response);
