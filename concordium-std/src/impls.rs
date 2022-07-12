@@ -2667,10 +2667,6 @@ where
     fn delete(mut self) { self.clear(); }
 }
 
-impl<T: Clone, S> StateClone<S> for T {
-    fn clone_state(&self, _state_api: S) -> Self { self.clone() }
-}
-
 impl Serial for PublicKeyEd25519 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
 }

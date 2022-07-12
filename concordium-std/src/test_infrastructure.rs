@@ -1227,7 +1227,7 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
+impl<State: Serial + DeserialWithState<TestStateApi> + StateClone> HasHost<State>
     for TestHost<State>
 {
     type ReturnValueType = Cursor<Vec<u8>>;
@@ -1514,7 +1514,15 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-impl<State: StateClone<TestStateApi>> TestHost<State> {
+pub trait StateClone {
+    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self;
+}
+
+impl<T: Clone> StateClone for T {
+    fn clone_state(&self, _cloned_state_api: TestStateApi) -> Self { self.clone() }
+}
+
+impl<State: StateClone> TestHost<State> {
     fn checkpoint(&self) -> Self {
         let state_deep_clone = self.state_builder.state_api.clone_deep();
         Self {
@@ -1531,7 +1539,7 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
 }
 
 // TODO: Should this be a method on TestHost?
-pub fn with_rollback<R, E, S: StateClone<TestStateApi>>(
+pub fn with_rollback<R, E, S: StateClone>(
     call: impl FnOnce(&mut TestHost<S>) -> Result<R, E>,
     host: &mut TestHost<S>,
 ) -> Result<R, E> {
@@ -1544,7 +1552,7 @@ pub fn with_rollback<R, E, S: StateClone<TestStateApi>>(
     res
 }
 
-impl<T: Clone> StateClone<TestStateApi> for StateSet<T, TestStateApi> {
+impl<T: Clone> StateClone for StateSet<T, TestStateApi> {
     fn clone_state(&self, state_api: TestStateApi) -> Self {
         Self {
             _marker: self._marker,
@@ -1554,7 +1562,7 @@ impl<T: Clone> StateClone<TestStateApi> for StateSet<T, TestStateApi> {
     }
 }
 
-impl<T: Clone + Serial> StateClone<TestStateApi> for StateBox<T, TestStateApi> {
+impl<T: Clone + Serial> StateClone for StateBox<T, TestStateApi> {
     fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         let inner_value = match unsafe { &*self.inner.get() } {
             StateBoxInner::Loaded {

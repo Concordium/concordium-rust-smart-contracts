@@ -33,7 +33,7 @@ mod test_impls {
     use super::*;
     use concordium_std::test_infrastructure::*;
 
-    impl StateClone<TestStateApi> for State<TestStateApi> {
+    impl StateClone for State<TestStateApi> {
         fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
             Self {
                 my_boxed_num: StateBox::clone_state(&self.my_boxed_num, cloned_state_api),
