@@ -16,15 +16,27 @@ impl From<ParseError> for ContractError {
 struct State<S: HasStateApi> {
     my_boxed_num: StateBox<u32, S>,
     my_num:       u32,
+    my_set:       StateSet<u32, S>,
+    my_map:       StateMap<u32, StateBox<u32, S>, S>,
 }
 
 impl<S: HasStateApi> State<S> {
     #[cfg(test)]
-    fn get_values(&self) -> (u32, u32) { (*self.my_boxed_num.get(), self.my_num) }
+    fn get_values(&self) -> (u32, u32, Vec<u32>, Vec<(u32, u32)>) {
+        let set: Vec<u32> = self.my_set.iter().map(|v| *v).collect();
+        let map: Vec<(u32, u32)> = self.my_map.iter().map(|(k, v)| (*k, v.get().clone())).collect();
+        (*self.my_boxed_num.get(), self.my_num, set, map)
+    }
 
     fn increment(&mut self) {
         self.my_boxed_num.update(|v| *v += 1);
         self.my_num += 1;
+    }
+
+    fn add_to_set(&mut self) { self.my_set.insert(self.my_num); }
+
+    fn add_to_map(&mut self, state_builder: &mut StateBuilder<S>) {
+        self.my_map.insert(self.my_num, state_builder.new_box(self.my_num));
     }
 }
 
@@ -36,8 +48,10 @@ mod test_impls {
     impl StateClone for State<TestStateApi> {
         fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
             Self {
-                my_boxed_num: StateBox::clone_state(&self.my_boxed_num, cloned_state_api),
+                my_boxed_num: StateBox::clone_state(&self.my_boxed_num, cloned_state_api.clone()),
                 my_num:       self.my_num,
+                my_set:       self.my_set.clone_state(cloned_state_api.clone()),
+                my_map:       self.my_map.clone_state(cloned_state_api),
             }
         }
     }
@@ -51,6 +65,8 @@ fn init<S: HasStateApi>(
     Ok(State {
         my_boxed_num: state_builder.new_box(0),
         my_num:       0,
+        my_set:       state_builder.new_set(),
+        my_map:       state_builder.new_map(),
     })
 }
 
@@ -60,7 +76,10 @@ fn contract_update<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     // Always increment state.
-    host.state_mut().increment();
+    let (state, state_builder) = host.state_and_builder();
+    state.increment();
+    state.add_to_set();
+    state.add_to_map(state_builder);
 
     let invoke_and_succeed = ctx.parameter_cursor().get()?;
 
@@ -89,7 +108,7 @@ mod tests {
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
         let mut host = TestHost::new(state, state_builder);
 
-        claim_eq!(host.state().get_values(), (0, 0));
+        claim_eq!(host.state().get_values(), (0, 0, vec![], vec![]));
 
         let mut ctx_rcv = TestReceiveContext::default();
         let parameter = to_bytes(&false);
@@ -100,7 +119,7 @@ mod tests {
         claim_eq!(result, Err(ContractError::Error));
 
         // The state should be 0, as the update failed.
-        claim_eq!(host.state().get_values(), (0, 0));
+        claim_eq!(host.state().get_values(), (0, 0, vec![], vec![]));
     }
 
     #[concordium_test]
@@ -110,7 +129,7 @@ mod tests {
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
         let mut host = TestHost::new(state, state_builder);
 
-        claim_eq!(host.state().get_values(), (0, 0));
+        claim_eq!(host.state().get_values(), (0, 0, vec![], vec![]));
 
         let mut ctx_rcv = TestReceiveContext::default();
         let parameter = to_bytes(&true);
@@ -126,6 +145,7 @@ mod tests {
             OwnedEntrypointName::new_unchecked("update".to_string()),
             MockFn::new_v1::<(), _>(|_, _, _, state: &mut State<TestStateApi>| {
                 state.increment();
+                state.add_to_set();
                 Err(CallContractError::Trap)
             }),
         );
@@ -136,7 +156,7 @@ mod tests {
 
         // The state should be 1, as the outer receive worked, but the inner invoke
         // failed.
-        claim_eq!(host.state().get_values(), (1, 1));
+        claim_eq!(host.state().get_values(), (1, 1, vec![1], vec![(1, 1)]));
     }
 
     #[concordium_test]
@@ -146,7 +166,7 @@ mod tests {
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
         let mut host = TestHost::new(state, state_builder);
 
-        claim_eq!(host.state().get_values(), (0, 0));
+        claim_eq!(host.state().get_values(), (0, 0, vec![], vec![]));
 
         let mut ctx_rcv = TestReceiveContext::default();
         let parameter = to_bytes(&true);
@@ -162,6 +182,8 @@ mod tests {
             OwnedEntrypointName::new_unchecked("update".to_string()),
             MockFn::new_v1::<(), _>(|_, _, _, state: &mut State<TestStateApi>| {
                 state.increment();
+                state.add_to_set();
+                // NOTE: Cannot get StateBuilder for calling add_to_map.
                 Ok((true, ()))
             }),
         );
@@ -171,6 +193,6 @@ mod tests {
         claim_eq!(result, Ok(()));
 
         // The state should be (2,2), as both the inner and outer call succeeded.
-        claim_eq!(host.state().get_values(), (2, 2));
+        claim_eq!(host.state().get_values(), (2, 2, vec![1, 2], vec![(1, 1)]));
     }
 }

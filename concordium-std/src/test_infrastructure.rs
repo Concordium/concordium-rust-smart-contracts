@@ -1552,16 +1552,28 @@ pub fn with_rollback<R, E, S: StateClone>(
     res
 }
 
-impl<T: Clone> StateClone for StateSet<T, TestStateApi> {
-    fn clone_state(&self, state_api: TestStateApi) -> Self {
+impl<T> StateClone for StateSet<T, TestStateApi> {
+    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         Self {
-            _marker: self._marker,
-            prefix: self.prefix,
-            state_api,
+            _marker:   self._marker,
+            prefix:    self.prefix,
+            state_api: cloned_state_api,
         }
     }
 }
 
+impl<T, V> StateClone for StateMap<T, V, TestStateApi> {
+    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
+        Self {
+            _marker_key:   self._marker_key,
+            _marker_value: self._marker_value,
+            prefix:        self.prefix,
+            state_api:     cloned_state_api,
+        }
+    }
+}
+
+// TODO: Could load value from state and avoid Clone constraint.
 impl<T: Clone + Serial> StateClone for StateBox<T, TestStateApi> {
     fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         let inner_value = match unsafe { &*self.inner.get() } {
