@@ -67,18 +67,16 @@
 //!     }
 //! }
 //! ```
-use std::{borrow::Borrow, cell::UnsafeCell};
-
-use crate::*;
 
 use self::trie::StateTrie;
 use crate::{
     boxed::Box,
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     cmp,
     collections::{BTreeMap, BTreeSet},
     num,
     rc::Rc,
+    *,
 };
 use convert::TryInto;
 
@@ -1229,7 +1227,9 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
+impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
+    for TestHost<State>
+{
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -1292,7 +1292,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
             return Err(CallContractError::AmountTooLarge);
         }
 
-        // let host_checkpoint = //self.checkpoint();
+        let host_checkpoint = self.checkpoint();
 
         // Invoke the handler.
         let invocation_res = (handler.f)(
@@ -1305,7 +1305,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         match invocation_res {
             Err(error) => {
                 // Roll back host.
-                // *self = host_checkpoint;
+                *self = host_checkpoint;
                 Err(error)
             }
             Ok((state_modified, res)) => {
@@ -1555,15 +1555,15 @@ impl<T: Clone> StateClone<TestStateApi> for StateSet<T, TestStateApi> {
 }
 
 impl<T: Clone + Serial> StateClone<TestStateApi> for StateBox<T, TestStateApi> {
-    fn clone_state(&self, state_api: TestStateApi) -> Self {
+    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         let inner_value = match unsafe { &*self.inner.get() } {
             StateBoxInner::Loaded {
                 entry,
                 modified,
                 value,
             } => {
-                // Get an entry from the cloned state.
-                let new_entry = state_api.lookup_entry(&entry.key).unwrap_abort();
+                // Get a new entry from the cloned state.
+                let new_entry = cloned_state_api.lookup_entry(&entry.key).unwrap_abort();
 
                 StateBoxInner::Loaded {
                     entry:    new_entry,
@@ -1579,8 +1579,8 @@ impl<T: Clone + Serial> StateClone<TestStateApi> for StateBox<T, TestStateApi> {
         };
 
         Self {
-            state_api,
-            inner: UnsafeCell::new(inner_value),
+            state_api: cloned_state_api,
+            inner:     UnsafeCell::new(inner_value),
         }
     }
 }

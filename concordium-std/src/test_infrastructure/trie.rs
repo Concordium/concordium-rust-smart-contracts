@@ -5,6 +5,7 @@ use crate::{
     rc::Rc,
     Box, StateEntryId, StateError, Vec,
 };
+use core::convert::TryInto;
 
 const BRANCHING_FACTOR: usize = 16;
 
@@ -346,7 +347,16 @@ impl Node {
                 Some(ref d) => Some(Rc::new(RefCell::new(d.borrow().clone()))),
                 None => None,
             },
-            children: self.children.clone(),
+            children: self
+                .children
+                .iter()
+                .map(|child| match child {
+                    Some(child) => Some(Box::new(child.clone_deep())),
+                    None => None,
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(), // This is safe because we know it has the right size and type.
         }
     }
 }

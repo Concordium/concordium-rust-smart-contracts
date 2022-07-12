@@ -14,21 +14,32 @@ impl From<ParseError> for ContractError {
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
-    my_box: StateBox<u32, S>,
-    my_num: u32,
-}
-
-impl<S: HasStateApi> StateClone<S> for State<S> {
-    fn clone_state(&self, _state_api: S) -> Self { todo!() }
+    my_boxed_num: StateBox<u32, S>,
+    my_num:       u32,
 }
 
 impl<S: HasStateApi> State<S> {
     #[cfg(test)]
-    fn get_values(&self) -> (u32, u32) { (*self.my_box.get(), self.my_num) }
+    fn get_values(&self) -> (u32, u32) { (*self.my_boxed_num.get(), self.my_num) }
 
     fn increment(&mut self) {
-        self.my_box.update(|v| *v += 1);
+        self.my_boxed_num.update(|v| *v += 1);
         self.my_num += 1;
+    }
+}
+
+#[concordium_cfg_test]
+mod test_impls {
+    use super::*;
+    use concordium_std::test_infrastructure::*;
+
+    impl StateClone<TestStateApi> for State<TestStateApi> {
+        fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
+            Self {
+                my_boxed_num: StateBox::clone_state(&self.my_boxed_num, cloned_state_api),
+                my_num:       self.my_num,
+            }
+        }
     }
 }
 
@@ -38,8 +49,8 @@ fn init<S: HasStateApi>(
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
     Ok(State {
-        my_box: state_builder.new_box(0),
-        my_num: 0,
+        my_boxed_num: state_builder.new_box(0),
+        my_num:       0,
     })
 }
 
