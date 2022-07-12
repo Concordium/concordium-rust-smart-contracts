@@ -1268,6 +1268,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone> HasHost<State
     /// This uses the mock entrypoints set up with
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
+    ///
+    /// TODO: Explain the rollback.
     fn invoke_contract_raw(
         &mut self,
         to: &ContractAddress,
@@ -1514,12 +1516,28 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-pub trait StateClone {
-    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self;
+/// Types that can be cloned along with the state.
+///
+/// Used for rolling back the test state when errors occur in a receive
+/// function. See [`with_rollback`] and [`TestHost::invoke_contract_raw`].
+///
+/// *Unsafe*: Marked unsafe because special care should be taken when
+/// implementing this trait. In particular, one should only use the supplied
+/// `cloned_state_api`, or clones thereof. Creating a new [`TestStateApi`] will
+/// lead to an inconsistent state and undefined behaviour.
+pub unsafe trait StateClone {
+    /// Make a clone of the type while using the `cloned_state_api`.
+    ///
+    /// *Unsafe*: Marked unsafe because this function *should not* be called
+    /// directly. It is only used within generated code and in the test
+    /// infrastructure.
+    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self;
 }
 
-impl<T: Clone> StateClone for T {
-    fn clone_state(&self, _cloned_state_api: TestStateApi) -> Self { self.clone() }
+/// Blanket implementation for all cloneable, flat types that don't have
+/// references to items in the state.
+unsafe impl<T: Clone> StateClone for T {
+    unsafe fn clone_state(&self, _cloned_state_api: TestStateApi) -> Self { self.clone() }
 }
 
 impl<State: StateClone> TestHost<State> {
@@ -1532,7 +1550,7 @@ impl<State: StateClone> TestHost<State> {
             state_builder:    StateBuilder {
                 state_api: state_deep_clone.clone(),
             },
-            state:            self.state.clone_state(state_deep_clone),
+            state:            unsafe { self.state.clone_state(state_deep_clone) },
             missing_accounts: self.missing_accounts.clone(),
         }
     }
@@ -1552,8 +1570,8 @@ pub fn with_rollback<R, E, S: StateClone>(
     res
 }
 
-impl<T> StateClone for StateSet<T, TestStateApi> {
-    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
+unsafe impl<T> StateClone for StateSet<T, TestStateApi> {
+    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         Self {
             _marker:   self._marker,
             prefix:    self.prefix,
@@ -1562,8 +1580,8 @@ impl<T> StateClone for StateSet<T, TestStateApi> {
     }
 }
 
-impl<T, V> StateClone for StateMap<T, V, TestStateApi> {
-    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
+unsafe impl<T, V> StateClone for StateMap<T, V, TestStateApi> {
+    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         Self {
             _marker_key:   self._marker_key,
             _marker_value: self._marker_value,
@@ -1574,9 +1592,9 @@ impl<T, V> StateClone for StateMap<T, V, TestStateApi> {
 }
 
 // TODO: Could load value from state and avoid Clone constraint.
-impl<T: Clone + Serial> StateClone for StateBox<T, TestStateApi> {
-    fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
-        let inner_value = match unsafe { &*self.inner.get() } {
+unsafe impl<T: Clone + Serial> StateClone for StateBox<T, TestStateApi> {
+    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
+        let inner_value = match &*self.inner.get() {
             StateBoxInner::Loaded {
                 entry,
                 modified,
