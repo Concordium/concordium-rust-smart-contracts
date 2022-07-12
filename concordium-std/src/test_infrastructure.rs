@@ -1591,8 +1591,8 @@ unsafe impl<T, V> StateClone for StateMap<T, V, TestStateApi> {
     }
 }
 
-// TODO: Could load value from state and avoid Clone constraint.
-unsafe impl<T: Clone + Serial> StateClone for StateBox<T, TestStateApi> {
+// TODO: Could load value from state and avoid StateClone constraint.
+unsafe impl<T: StateClone + Serial> StateClone for StateBox<T, TestStateApi> {
     unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
         let inner_value = match &*self.inner.get() {
             StateBoxInner::Loaded {
@@ -1606,7 +1606,7 @@ unsafe impl<T: Clone + Serial> StateClone for StateBox<T, TestStateApi> {
                 StateBoxInner::Loaded {
                     entry:    new_entry,
                     modified: *modified,
-                    value:    value.clone(),
+                    value:    value.clone_state(cloned_state_api.clone()),
                 }
             }
             StateBoxInner::Reference {

@@ -2304,3 +2304,146 @@ pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenSt
     };
     out.into()
 }
+
+/// TODO: Update
+/// Derive the Deletable trait.
+/// See the documentation of
+/// [`derive(Deletable)`](./derive.Deletable.html) for details and limitations.
+///
+/// The trait should be derived for types which have not implemented the
+/// `Serialize` trait. That is, Deletable should be derived for types with a
+/// non-trivial state.
+/// Non-trivial state here means when you have a type `MyState` which has one or
+/// more fields comprised of
+/// [`StateBox`](../concordium_std/struct.StateBox.html),
+/// [`StateSet`](../concordium_std/struct.StateSet.html), or
+/// [`StateMap`](../concordium_std/struct.StateMap.html).
+///
+/// Please note that it is
+/// necessary to specify the generic parameter name for the
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
+/// To do so, use the `#[concordium(state_parameter =
+/// "NameOfGenericParameter")]` attribute on the type you are deriving
+/// `Deletable` for.
+///
+/// # Example
+/// ``` ignore
+/// #[derive(Serial, DeserialWithState, Deletable)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S> {
+///    my_state_map: StateMap<SomeType, SomeOtherType, S>,
+/// }
+/// ```
+#[proc_macro_derive(StateClone)]
+pub fn state_clone_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input);
+    unwrap_or_report(impl_state_clone(&ast))
+}
+
+fn impl_state_clone_field(ident: &syn::Ident) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(quote!(let #ident = self.#ident.clone_state(cloned_state_api.clone());))
+}
+
+fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let data_name = &ast.ident;
+    // let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+    //     Some(state_param) => state_param,
+    //     None => {
+    //         return Err(syn::Error::new(
+    //             Span::call_site(),
+    //             "Deletable requires the attribute #[concordium(state_parameter =
+    // \"S\")], where \              \"S\" should be the HasStateApi generic
+    // parameter.",         ))
+    //     }
+    // };
+
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    let where_predicates = where_clauses.map(|c| c.predicates.clone());
+    let body_tokens = match ast.data {
+        syn::Data::Struct(ref data) => {
+            let mut field_names = proc_macro2::TokenStream::new();
+            let mut field_tokens = proc_macro2::TokenStream::new();
+            let return_tokens = match data.fields {
+                syn::Fields::Named(_) => {
+                    for field in data.fields.iter() {
+                        let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                        field_tokens.extend(impl_state_clone_field(&field_ident));
+                        field_names.extend(quote!(#field_ident,));
+                    }
+                    quote!(Ok(#data_name{#field_names}))
+                }
+                syn::Fields::Unnamed(_) => {
+                    for i in 0..data.fields.len() {
+                        let field_ident = format_ident!("x_{}", i); // TODO: Why "x_" ?
+                        field_tokens.extend(impl_state_clone_field(&field_ident));
+                        field_names.extend(quote!(#field_ident,)) // TODO: Does
+                                                                  // this
+                                                                  // work?
+                    }
+                    quote!(Ok(#data_name{#field_names}))
+                }
+                syn::Fields::Unit => quote!(Ok(#data_name{})),
+            };
+            quote! {
+                #field_tokens
+                #return_tokens
+            }
+        }
+        // syn::Data::Enum(ref data) => todo!()
+        // {
+        //     let mut matches_tokens = proc_macro2::TokenStream::new();
+        //     for (_, variant) in data.variants.iter().enumerate() {
+        //         let (field_names, pattern) = match variant.fields {
+        //             syn::Fields::Named(_) => {
+        //                 let field_names: Vec<_> = variant
+        //                     .fields
+        //                     .iter()
+        //                     .map(|field| field.ident.clone().unwrap())
+        //                     .collect();
+        //                 (field_names.clone(), quote! { {#(#field_names),*} })
+        //             }
+        //             syn::Fields::Unnamed(_) => {
+        //                 let field_names: Vec<_> = variant
+        //                     .fields
+        //                     .iter()
+        //                     .enumerate()
+        //                     .map(|(i, _)| format_ident!("x_{}", i))
+        //                     .collect();
+        //                 (field_names.clone(), quote! { (#(#field_names),*) })
+        //             }
+        //             syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
+        //         };
+        //         let field_tokens: proc_macro2::TokenStream = field_names
+        //             .iter()
+        //             .zip(variant.fields.iter())
+        //             .map(|(name, _)| impl_state_clone_field(&quote!(#name)))
+        //             .collect::<syn::Result<_>>()?;
+        //         let variant_ident = &variant.ident;
+
+        //         matches_tokens.extend(quote! {
+        //             #data_name::#variant_ident#pattern => {
+        //                 #field_tokens
+        //             },
+        //         })
+        //     }
+        //     quote! {
+        //         match self {
+        //             #matches_tokens
+        //         }
+        //     }
+        // }
+        _ => unimplemented!("#[derive(StateClone)] is not implemented for union."),
+    };
+
+    let gen = quote! {
+        #[automatically_derived]
+        use concordium_std::test_infrastructure::{StateClone, TestStateApi};
+        unsafe impl #impl_generics StateClone for #data_name #ty_generics where #where_predicates {
+            unsafe fn clone_state(&self, cloned_state_api: TestStateApi) {
+                #body_tokens
+            }
+        }
+    };
+
+    Ok(gen.into())
+}

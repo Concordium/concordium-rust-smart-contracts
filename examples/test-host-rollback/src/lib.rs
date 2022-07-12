@@ -10,8 +10,7 @@ impl From<ParseError> for ContractError {
     fn from(_: ParseError) -> Self { ContractError::ParseError }
 }
 
-// type State<S> = StateBox<u32, S>;
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     my_boxed_num: StateBox<u32, S>,
@@ -40,22 +39,22 @@ impl<S: HasStateApi> State<S> {
     }
 }
 
-#[concordium_cfg_test]
-mod test_impls {
-    use super::*;
-    use concordium_std::test_infrastructure::*;
+// #[concordium_cfg_test]
+// mod test_impls {
+//     use super::*;
+//     use concordium_std::test_infrastructure::*;
 
-    unsafe impl StateClone for State<TestStateApi> {
-        unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
-            Self {
-                my_boxed_num: StateBox::clone_state(&self.my_boxed_num, cloned_state_api.clone()),
-                my_num:       self.my_num,
-                my_set:       self.my_set.clone_state(cloned_state_api.clone()),
-                my_map:       self.my_map.clone_state(cloned_state_api),
-            }
-        }
-    }
-}
+//     unsafe impl StateClone for State<TestStateApi> {
+//         unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self
+// {             Self {
+//                 my_boxed_num: StateBox::clone_state(&self.my_boxed_num,
+// cloned_state_api.clone()),                 my_num:       self.my_num,
+//                 my_set:
+// self.my_set.clone_state(cloned_state_api.clone()),                 my_map:
+// self.my_map.clone_state(cloned_state_api),             }
+//         }
+//     }
+// }
 
 #[init(contract = "test-host-rollback")]
 fn init<S: HasStateApi>(
