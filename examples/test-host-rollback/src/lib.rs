@@ -83,7 +83,7 @@ mod tests {
     use concordium_std::test_infrastructure::*;
 
     #[concordium_test]
-    fn test_increment_and_fail() {
+    fn test_rollback_immediately() {
         let ctx_init = TestInitContext::empty();
         let mut state_builder = TestStateBuilder::new();
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[concordium_test]
-    fn test_increment_invoke_and_succeed() {
+    fn test_rollback_inner_call_only() {
         let ctx_init = TestInitContext::empty();
         let mut state_builder = TestStateBuilder::new();
         let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
@@ -137,5 +137,40 @@ mod tests {
         // The state should be 1, as the outer receive worked, but the inner invoke
         // failed.
         claim_eq!(host.state().get_values(), (1, 1));
+    }
+
+    #[concordium_test]
+    fn test_no_rollback() {
+        let ctx_init = TestInitContext::empty();
+        let mut state_builder = TestStateBuilder::new();
+        let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
+        let mut host = TestHost::new(state, state_builder);
+
+        claim_eq!(host.state().get_values(), (0, 0));
+
+        let mut ctx_rcv = TestReceiveContext::default();
+        let parameter = to_bytes(&true);
+        ctx_rcv.set_parameter(&parameter); // Invoke and then return success.
+        let self_address = ContractAddress {
+            index:    0,
+            subindex: 0,
+        };
+        ctx_rcv.set_self_address(self_address);
+
+        host.setup_mock_entrypoint(
+            self_address,
+            OwnedEntrypointName::new_unchecked("update".to_string()),
+            MockFn::new_v1::<(), _>(|_, _, _, state: &mut State<TestStateApi>| {
+                state.increment();
+                Ok((true, ()))
+            }),
+        );
+
+        // Call update function.
+        let result = with_rollback(|host| contract_update(&ctx_rcv, host), &mut host);
+        claim_eq!(result, Ok(()));
+
+        // The state should be (2,2), as both the inner and outer call succeeded.
+        claim_eq!(host.state().get_values(), (2, 2));
     }
 }
