@@ -19,7 +19,7 @@ use concordium_contracts_common::*;
 ///
 /// The reuse of `Read` methods is the reason for the slightly strange choice of
 /// methods of this trait.
-pub trait HasParameter: Read {
+pub trait HasParameter: Read + Seek {
     /// Get the size of the parameter to the method.
     fn size(&self) -> u32;
 }

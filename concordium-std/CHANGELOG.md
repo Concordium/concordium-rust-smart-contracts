@@ -1,6 +1,8 @@
 # Changelog
 
 - Change SchemaType implementation for cryptographic primitives to ByteArray, meaning that the primitives(e.g., hashes and signatures) are now supplied as hex strings in JSON.
+- Add `Seek` requirement for `HasParameter`.
+- Implement `Seek` for `ExternParameter`.
 
 ## concordium-std 3.0.0 (2022-05-17)
 - Remove support for v0 smart contracts and add support for v1:
