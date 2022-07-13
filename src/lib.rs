@@ -95,9 +95,9 @@ fn contract_receive_deposit<S: HasStateApi>(
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut balance = *host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero());
-    balance += amount;
-    host.state_mut().balance_sheet.insert(sender_address,balance);
+    let mut balance = host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero());
+    *balance += amount;
+    
     Ok(())
 }
 
@@ -128,13 +128,15 @@ fn contract_receive_withdraw<S: HasStateApi>(
             }
         }
     }
+    
+    {
+        // ensure that user has sufficient funds even in the worst case if all expenses are deducted and nothing is added
+        let mut balance = host.state_mut().balance_sheet.entry(sender_address).occupied_or(ReceiveError::InsufficientFunds)?;
+        ensure!(*balance >= expenses + payout, ReceiveError::InsufficientFunds);
 
-    // ensure that user has sufficient funds even in the worst case if all expenses are deducted and nothing is added
-    let mut balance = *host.state_mut().balance_sheet.entry(sender_address).occupied_or(ReceiveError::InsufficientFunds)?;
-    ensure!(balance >= expenses + payout, ReceiveError::InsufficientFunds);
-
-    // execute transfer
-    balance -= payout;
+        // execute transfer
+        *balance -= payout;
+    }
     host.invoke_transfer(&sender_address, payout).unwrap_abort();
 
     Ok(())
