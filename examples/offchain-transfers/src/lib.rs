@@ -88,7 +88,7 @@ fn contract_receive_deposit<S: HasStateApi>(
     };
     let mut balance = *host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero());
     balance += amount;
-
+    host.state_mut().balance_sheet.insert(sender_address,balance);
     Ok(())
 }
 
@@ -187,6 +187,8 @@ mod tests {
         let account2 = AccountAddress([2u8; 32]); //Judge
         let account3 = AccountAddress([3u8; 32]); //Caller
 
+        let deposit = Amount::from_ccd(100);
+
         //Initial State
         let mut host = get_test_state(
             ContractConfig{
@@ -196,15 +198,25 @@ mod tests {
             }
         );
 
-        //Try to deposit money
+        //Test 1: Try to deposit money for new user
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut()
             .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account3));
 
-        let receive_amount = Amount::from_ccd(100);
-        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, receive_amount);
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
 
         claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+
+        let balance = *host.state().balance_sheet.get(&account3).unwrap();
+        claim_eq!(
+            balance,
+            deposit,
+            "Balance should match deposit"
+        );
+
+        //Test 2: Try to deposit money for existing user
+
+
     }
 }
