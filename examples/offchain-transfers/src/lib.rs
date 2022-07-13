@@ -637,4 +637,67 @@ mod tests {
         
         claim_eq!(host.state().settlements.len(),3, "This should not change the number of settlements.")
     }
+
+    #[concordium_test]
+    fn test_add_settlement() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+        let account3 = AccountAddress([3u8; 32]); //Random caller
+
+        //Adding settlement should work even with an empty balance sheet and no CCDs in the contract
+        let balance = Amount::from_ccd(0);
+
+        //Initial State
+        let mut host = get_test_state(
+            ContractConfig {
+                validator: account1,
+                judge: account2,
+                time_to_finality: Duration::from_seconds(600),
+            },
+            balance,
+        );
+        
+        //Test 1: Random caller tries to add valid settlement
+        let good_transfer = Transfer {
+            send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(100)}],
+            receive_transfers: vec![AddressAmount{address: account2, amount:Amount::from_ccd(50)}, AddressAmount{address: account1, amount:Amount::from_ccd(50)}],
+            meta_data: Vec::new(),
+        };
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(Address::Account(account3));
+        let parameter_bytes = to_bytes(&good_transfer);
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::NotAValidator),
+            "Should fail with NotAValidator"
+        );
+
+        //Test 2: Validator tries to add valid settlement
+        ctx.set_sender(Address::Account(account1));
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow validator to add settlement."
+        );
+
+        let strange_but_ok_transfer = Transfer {
+            send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(100)},AddressAmount{address: account3, amount:Amount::zero()}],
+            receive_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}, AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
+            meta_data: vec![1u8,2u8,3u8],
+        };
+
+        let bad_transfer = Transfer {
+            send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
+            receive_transfers: vec![AddressAmount{address: account1, amount:Amount::from_ccd(50)}, AddressAmount{address: account1, amount:Amount::from_ccd(50)}],
+            meta_data: Vec::new(),
+        };
+    }
 }
