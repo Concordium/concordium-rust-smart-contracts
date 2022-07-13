@@ -6,29 +6,32 @@ type SettlementID = u64;
 
 #[derive(Clone, Serialize, SchemaType)]
 struct AddressAmount {
-    address : AccountAddress,
-    amount : Amount
+    address: AccountAddress,
+    amount: Amount,
 }
 
 // A transfer consisting of possibly multiple inputs with different amounts and several receivers
 #[derive(Clone, Serialize, SchemaType)]
 struct Transfer {
     send_transfers: Vec<AddressAmount>,
-    receive_transfers: Vec<AddressAmount>
+    receive_transfers: Vec<AddressAmount>,
+    //This is not used directly by the smart contract
+    //it could contain information relevant to the judge
+    meta_data: Vec<u8>,
 }
 
-#[derive(Clone,Serialize, SchemaType)]
+#[derive(Clone, Serialize, SchemaType)]
 struct Settlement {
-    id : SettlementID,
+    id: SettlementID,
     transfer: Transfer,
-    finality_time: Timestamp
+    finality_time: Timestamp,
 }
 
 #[derive(Serialize, SchemaType)]
 struct ContractConfig {
     validator: AccountAddress,
     judge: AccountAddress,
-    time_to_finality: Duration
+    time_to_finality: Duration,
 }
 
 #[derive(Serial, DeserialWithState)]
@@ -45,7 +48,6 @@ pub struct State<S> {
 
     // Balance sheet
     balance_sheet: StateMap<AccountAddress, Amount, S>,
-    
 }
 
 #[derive(Debug, PartialEq, Eq, Reject)]
@@ -61,30 +63,32 @@ enum ReceiveError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
-    // Sender cannot be a contract,
+    /// Sender cannot be a contract,
     ContractSender,
-    // Not enough funds
+    /// Not enough funds
     InsufficientFunds,
-    // Invalid settlement
+    /// Invalid settlement
     InvalidTransfer,
-    Overflow
+    /// End time is not expressible, i.e., would overflow.
+    Overflow,
+    /// Not authorized as validator
+    NotValidator,
 }
 type ContractResult<A> = Result<A, ReceiveError>;
-
 
 // Initialize contract with empty balance sheet and no settlements
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>
-)-> InitResult<State<S>>{
+    state_builder: &mut StateBuilder<S>,
+) -> InitResult<State<S>> {
     let config: ContractConfig = ctx.parameter_cursor().get()?;
     let state = State {
         config,
-        next_id: 0.into(),
+        next_id: 0u64,
         settlements: Vec::new(),
-        balance_sheet: state_builder.new_map()
+        balance_sheet: state_builder.new_map(),
     };
 
     Ok(state)
@@ -98,14 +102,17 @@ fn contract_receive_deposit<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
-
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut balance = host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero());
+    let mut balance = host
+        .state_mut()
+        .balance_sheet
+        .entry(sender_address)
+        .or_insert(Amount::zero());
     *balance += amount;
-    
+
     Ok(())
 }
 
@@ -113,13 +120,17 @@ fn contract_receive_deposit<S: HasStateApi>(
 // Only possible if the the user has sufficient funds in the worst case,
 // i.e., even if all outstanding payments to that user get cancelled and all payments from that user are valid,
 // there should be enough funds left to withdraw the requested payout.
-#[receive(contract = "offchain-transfers", name = "withdraw", mutable, parameter = "Amount")]
+#[receive(
+    contract = "offchain-transfers",
+    name = "withdraw",
+    mutable,
+    parameter = "Amount"
+)]
 #[inline(always)]
 fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
@@ -136,11 +147,18 @@ fn contract_receive_withdraw<S: HasStateApi>(
             }
         }
     }
-    
+
     {
         // ensure that user has sufficient funds even in the worst case if all expenses are deducted and nothing is added
-        let mut balance = host.state_mut().balance_sheet.entry(sender_address).occupied_or(ReceiveError::InsufficientFunds)?;
-        ensure!(*balance >= expenses + payout, ReceiveError::InsufficientFunds);
+        let mut balance = host
+            .state_mut()
+            .balance_sheet
+            .entry(sender_address)
+            .occupied_or(ReceiveError::InsufficientFunds)?;
+        ensure!(
+            *balance >= expenses + payout,
+            ReceiveError::InsufficientFunds
+        );
 
         // execute transfer
         *balance -= payout;
@@ -150,8 +168,8 @@ fn contract_receive_withdraw<S: HasStateApi>(
     Ok(())
 }
 
-// Checks whether a transfer is synatically valid.
-// That is, it checks that the sent and received amounts match
+/// Checks whether a transfer is synatically valid.
+/// That is, it checks that the sent and received amounts match
 fn is_settlement_transfer(transfer: &Transfer) -> bool {
     let mut send_amount = Amount::zero();
     let mut receive_amount = Amount::zero();
@@ -167,20 +185,47 @@ fn is_settlement_transfer(transfer: &Transfer) -> bool {
     send_amount == receive_amount
 }
 
-// Given a transfer adds the corresponding settlement to the list of outstanding settlements
-#[receive(contract = "offchain-transfers", name = "transfer", mutable, parameter = "Transfer")]
+/// Allows the validator to add new settlements.
+/// The validator provides the Transfer part while the smart contracts add the id and the finality time.
+/// The call is lazy in the sense that it does not check whether the settlement could be applied to the current balance sheet
+#[receive(
+    contract = "offchain-transfers",
+    name = "add-settlement",
+    mutable,
+    parameter = "Transfer"
+)]
 #[inline(always)]
 fn contract_receive_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let transfer: Settlement = ctx.parameter_cursor().get()?;
-    ensure!(is_settlement_transfer(&transfer), ReceiveError::InvalidTransfer);
-    let settlement = Settlement{
+    let sender = ctx.sender();
+    //Only the validator may call this function
+    ensure!(
+        sender.matches_account(&host.state().config.validator),
+        ReceiveError::NotValidator
+    );
+
+    let transfer: Transfer = ctx.parameter_cursor().get()?;
+
+    //Syntactically verify transfer information
+    ensure!(
+        is_settlement_transfer(&transfer),
+        ReceiveError::InvalidTransfer
+    );
+
+    //Create a new settlement
+    let now = ctx.metadata().slot_time();
+    let settlement = Settlement {
         id: host.state().next_id,
         transfer,
-        finality_time: now.checked_add(host.state().config.time_to_finality).ok_or(ReceiveError::Overflow)?, 
+        finality_time: now
+            .checked_add(host.state().config.time_to_finality)
+            .ok_or(ReceiveError::Overflow)?,
     };
+    //Increase ID counter
+    host.state_mut().next_id += 1;
+    //Add settlement
     host.state_mut().settlements.push(settlement);
     Ok(())
 }
@@ -198,13 +243,13 @@ fn contract_receive_veto<S: HasStateApi>(
 
     // delete all settlements with the given ID from the list
     host.state_mut().settlements.retain(|s| s.id != s_id);
-    
+
     Ok(())
 }
 
 fn is_settlement_valid<S: HasStateApi>(
     settlement: &Settlement,
-    balance_sheet: &StateMap<AccountAddress, Amount, S>
+    balance_sheet: &StateMap<AccountAddress, Amount, S>,
 ) -> bool {
     // check whether all senders have sufficient funds with respect to the updated state
     // first get set of all senders (to avoid duplicate checks) and then check for each sender in set
@@ -218,7 +263,7 @@ fn is_settlement_valid<S: HasStateApi>(
         if let Some(sender_amount) = balance_sheet.get(&sender_address) {
             sender_balance = *sender_amount;
         }
-        
+
         // get total amount of outgoing transactions
         let mut outgoing_amount = Amount::zero();
         for sender in settlement.transfer.send_transfers.iter() {
@@ -244,7 +289,12 @@ fn is_settlement_valid<S: HasStateApi>(
 }
 
 // Execute all settlements with passed finality_time.
-#[receive(contract = "offchain-transfers", name = "execute-settlements", payable, mutable)]
+#[receive(
+    contract = "offchain-transfers",
+    name = "execute-settlements",
+    payable,
+    mutable
+)]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -263,12 +313,12 @@ fn contract_receive_execute_settlements<S: HasStateApi>(
     }
 
     // remove all settlements for which finality time has passed from list
-    host.state_mut().settlements.retain(|s| current_time < s.finality_time);
+    host.state_mut()
+        .settlements
+        .retain(|s| current_time < s.finality_time);
 
     Ok(())
 }
-
-
 
 // Tests //
 
@@ -277,14 +327,11 @@ mod tests {
     use super::*;
     use concordium_std::test_infrastructure::*;
 
-    fn get_test_state(
-        config: ContractConfig,
-        amount: Amount,
-    ) -> TestHost<State<TestStateApi>> {
+    fn get_test_state(config: ContractConfig, amount: Amount) -> TestHost<State<TestStateApi>> {
         let mut state_builder = TestStateBuilder::new();
         let state = State {
             config,
-            next_id : 0.into(),
+            next_id: 0u64,
             settlements: Vec::new(),
             balance_sheet: state_builder.new_map(),
         };
@@ -304,12 +351,12 @@ mod tests {
 
         //Initial State
         let mut host = get_test_state(
-            ContractConfig{
+            ContractConfig {
                 validator: account1,
                 judge: account2,
-                time_to_finality: Duration::from_seconds(600)      
+                time_to_finality: Duration::from_seconds(600),
             },
-            Amount::zero()
+            Amount::zero(),
         );
 
         //Test 1: Try to deposit money for new account holder
@@ -323,24 +370,18 @@ mod tests {
         claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
 
         let balance = *host.state().balance_sheet.get(&account3).unwrap();
-        claim_eq!(
-            balance,
-            deposit,
-            "Balance should match deposit"
-        );
+        claim_eq!(balance, deposit, "Balance should match deposit");
 
         //Test 2: Try to deposit money for existing account holder
         let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
 
-        claim!(res.is_ok(), "Should allow existing account holder to deposit CCDs");
-
-        let balance = *host.state().balance_sheet.get(&account3).unwrap();
-        claim_eq!(
-            balance,
-            2*deposit,
-            "Balance should match 2*deposit"
+        claim!(
+            res.is_ok(),
+            "Should allow existing account holder to deposit CCDs"
         );
 
+        let balance = *host.state().balance_sheet.get(&account3).unwrap();
+        claim_eq!(balance, 2 * deposit, "Balance should match 2*deposit");
     }
 
     #[concordium_test]
@@ -356,15 +397,15 @@ mod tests {
 
         //Initial State
         let mut host = get_test_state(
-            ContractConfig{
+            ContractConfig {
                 validator: account1,
                 judge: account2,
-                time_to_finality: Duration::from_seconds(600)      
+                time_to_finality: Duration::from_seconds(600),
             },
-            balance
+            balance,
         );
         //Set account3 balance
-        host.state_mut().balance_sheet.insert(account3,balance);
+        host.state_mut().balance_sheet.insert(account3, balance);
 
         //Test 1: Try to withdraw too much money from Account 3
         let mut ctx = TestReceiveContext::empty();
@@ -386,8 +427,11 @@ mod tests {
         let parameter_bytes = to_bytes(&payout);
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-    
-        claim!(res.is_ok(), "Should allow account holder withdraw CCDs from balance.");
+
+        claim!(
+            res.is_ok(),
+            "Should allow account holder withdraw CCDs from balance."
+        );
 
         let new_balance = *host.state().balance_sheet.get(&account3).unwrap();
         claim_eq!(
@@ -398,13 +442,7 @@ mod tests {
 
         let transfers = host.get_transfers();
         claim_eq!(transfers.len(), 1, "There should be one transfers");
-        claim_eq!(
-            transfers[0].0,
-            account3,
-            "Should be sent to account3"
-        );
+        claim_eq!(transfers[0].0, account3, "Should be sent to account3");
         claim_eq!(transfers[0].1, payout, "payout CCDs should have been sents");
-
-
     }
 }
