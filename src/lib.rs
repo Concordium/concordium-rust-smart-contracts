@@ -310,14 +310,12 @@ fn is_settlement_valid<S: HasStateApi>(
 #[receive(
     contract = "offchain-transfers",
     name = "execute-settlements",
-    payable,
     mutable
 )]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    _amount: Amount,
+    host: &mut impl HasHost<State<S>, StateApiType = S>
 ) -> ContractResult<()> {
     let current_time = ctx.metadata().slot_time();
 
@@ -698,5 +696,156 @@ mod tests {
             receive_transfers: vec![AddressAmount{address: account1, amount:Amount::from_ccd(50)}, AddressAmount{address: account1, amount:Amount::from_ccd(50)}],
             meta_data: Vec::new(),
         };
+    }
+
+    #[concordium_test]
+    fn test_execute_settlements() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+
+        let alice = AccountAddress([3u8; 32]);
+        let bob = AccountAddress([4u8; 32]);
+        let charlie = AccountAddress([5u8; 32]);
+
+        //Balances
+        let alice_balance = Amount::from_ccd(100);
+        let bob_balance = Amount::from_ccd(100);
+        let charlie_balance = Amount::from_ccd(100);
+
+        //Initial State
+        let mut host = get_test_state(
+            ContractConfig {
+                validator: account1,
+                judge: account2,
+                time_to_finality: Duration::from_seconds(600),
+            },
+            //Total balance of all user
+            alice_balance + bob_balance + charlie_balance,
+        );
+        
+        //Set balance sheet
+        host.state_mut().balance_sheet.insert(alice, alice_balance);
+        host.state_mut().balance_sheet.insert(bob, bob_balance);
+        host.state_mut()
+            .balance_sheet
+            .insert(charlie, charlie_balance);
+
+        // First settlement is fine and with past finality
+        let settlement1 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(50),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(25),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(75),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement1);
+
+        // Second settlement tries to withdraw more from Alice than available after first settlement and should be skipped
+        let settlement2 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(60),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(5),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(65),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement2);
+
+        // Thid settlement is fine but with future finality and should thus also be skipped
+        let settlement3 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(1),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(1),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(1),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 800),
+        };
+        host.state_mut().settlements.push(settlement3);
+
+        // Fourth settlement is fine and with past finality and should thus be executed
+        let settlement4 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(50),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(5),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(55),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement4);
+
+
+        // Test execution
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(1000 * 700));
+        ctx.set_sender(Address::Account(account1));
+        
+        let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            Ok(()),
+            "Execution should succeed."
+        );
+
+        claim_eq!(
+            *host.state().balance_sheet.get(&alice).unwrap(),
+            Amount::from_ccd(0),
+            "Alice has incorrect amount."
+        );
+
+        claim_eq!(
+            *host.state().balance_sheet.get(&bob).unwrap(),
+            Amount::from_ccd(70),
+            "Bob has incorrect amount."
+        );
+
+        claim_eq!(
+            *host.state().balance_sheet.get(&charlie).unwrap(),
+            Amount::from_ccd(230),
+            "Charlie has incorrect amount."
+        );
     }
 }
