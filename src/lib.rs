@@ -36,6 +36,9 @@ pub struct State<S> {
     // The initial configuration of the contract
     config: ContractConfig,
 
+    // The next settlement id
+    next_id: SettlementID,
+
     // Proposed settlements
     settlements: Vec<Settlement>,
 
@@ -62,7 +65,8 @@ enum ReceiveError {
     // Not enough funds
     InsufficientFunds,
     // Invalid settlement
-    SettlementInvalid
+    InvalidTransfer,
+    Overflow
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -77,6 +81,7 @@ fn contract_init<S: HasStateApi>(
     let config: ContractConfig = ctx.parameter_cursor().get()?;
     let state = State {
         config,
+        next_id: 0.into(),
         settlements: Vec::new(),
         balance_sheet: state_builder.new_map()
     };
@@ -144,16 +149,16 @@ fn contract_receive_withdraw<S: HasStateApi>(
     Ok(())
 }
 
-// Checks whether a settlement is valid.
-// This consists of checking that the sum of sent amount matches the sum of received amounts.
-fn is_settlement_valid(settlement: &Settlement) -> bool {
+// Checks whether a transfer is synatically valid.
+// That is, it checks that the sent and received amounts match
+fn is_settlement_transfer(transfer: &Transfer) -> bool {
     let mut send_amount = Amount::zero();
     let mut receive_amount = Amount::zero();
 
-    for send_transfer in &settlement.transfer.send_transfers {
+    for send_transfer in &transfer.send_transfers {
         send_amount += send_transfer.amount;
     }
-    for receive_transfer in &settlement.transfer.receive_transfers {
+    for receive_transfer in &transfer.receive_transfers {
         receive_amount += receive_transfer.amount;
     }
 
@@ -161,20 +166,21 @@ fn is_settlement_valid(settlement: &Settlement) -> bool {
     send_amount == receive_amount
 }
 
-// Add a settlement to the list of outstanding settlements.
-// Checks validity of settlement and then adds it to the list of outstanding settlements.
-#[receive(contract = "offchain-transfers", name = "settle", payable, mutable)]
+// Given a transfer adds the corresponding settlement to the list of outstanding settlements
+#[receive(contract = "offchain-transfers", name = "transfer", mutable, parameter = "Transfer")]
 #[inline(always)]
-fn contract_receive_settle<S: HasStateApi>(
+fn contract_receive_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
-    _amount: Amount,
 ) -> ContractResult<()> {
-    let settlement: Settlement = ctx.parameter_cursor().get()?;
-    ensure!(is_settlement_valid(&settlement), ReceiveError::SettlementInvalid);
-    
+    let transfer: Settlement = ctx.parameter_cursor().get()?;
+    ensure!(is_settlement_transfer(&transfer), ReceiveError::InvalidTransfer);
+    let settlement = Settlement{
+        id: host.state().next_id,
+        transfer,
+        finality_time: now.checked_add(host.state().config.time_to_finality).ok_or(ReceiveError::Overflow)?, 
+    };
     host.state_mut().settlements.push(settlement);
-
     Ok(())
 }
 
@@ -189,6 +195,9 @@ fn contract_receive_veto<S: HasStateApi>(
 ) -> ContractResult<()> {
     Ok(())
 }
+
+
+fn 
 
 // Execute all settlements with passed finality_time.
 #[receive(contract = "offchain-transfers", name = "execute-settlements", payable, mutable)]
@@ -217,6 +226,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let state = State {
             config,
+            next_id : 0.into(),
             settlements: Vec::new(),
             balance_sheet: state_builder.new_map(),
         };
