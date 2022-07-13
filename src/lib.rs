@@ -192,7 +192,7 @@ fn is_settlement_transfer(transfer: &Transfer) -> bool {
 /// Allows the validator to add new settlements.
 /// The validator provides the Transfer part while the smart contracts add the id and the finality time.
 /// The call is lazy in the sense that it does not check whether the settlement could be applied to the current balance sheet
-/// We use an increasing 
+/// We use an increasing
 #[receive(
     contract = "offchain-transfers",
     name = "add-settlement",
@@ -229,7 +229,10 @@ fn contract_receive_add_settlement<S: HasStateApi>(
             .ok_or(ReceiveError::TimeOverflow)?,
     };
     //Increase ID counter
-    host.state_mut().next_id.checked_add(1).ok_or(ReceiveError::CounterOverflow);
+    host.state_mut()
+        .next_id
+        .checked_add(1)
+        .ok_or(ReceiveError::CounterOverflow);
     //Add settlement
     host.state_mut().settlements.push(settlement);
     Ok(())
@@ -314,25 +317,35 @@ fn contract_receive_execute_settlements<S: HasStateApi>(
 ) -> ContractResult<()> {
     let current_time = ctx.metadata().slot_time();
 
-    for settlement in host.state().settlements.iter() {
+    let state_mut = host.state_mut();
+
+    for settlement in state_mut.settlements.iter() {
         // only execute settlements for which finality time has passed and if they are valid
-        if current_time >= settlement.finality_time && is_settlement_valid(settlement, &host.state().balance_sheet) {
+        if current_time >= settlement.finality_time
+            && is_settlement_valid(settlement, &state_mut.balance_sheet)
+        {
             // first add balances of all receivers and then subtract of senders
             // together with the validity of settlements, this implies nonnegative amounts for all accounts
             for receive_transfer in settlement.transfer.receive_transfers.iter() {
-                let mut receiver_balance = host.state_mut().balance_sheet.entry(receive_transfer.address).or_insert(Amount::zero());
+                let mut receiver_balance = state_mut
+                    .balance_sheet
+                    .entry(receive_transfer.address)
+                    .or_insert(Amount::zero());
                 *receiver_balance += receive_transfer.amount;
             }
-            
+
             for send_transfer in settlement.transfer.send_transfers.iter() {
-                let mut sender_balance = host.state_mut().balance_sheet.entry(send_transfer.address).or_insert(Amount::zero());
+                let mut sender_balance = state_mut
+                    .balance_sheet
+                    .entry(send_transfer.address)
+                    .or_insert(Amount::zero());
                 *sender_balance -= send_transfer.amount;
             }
         }
     }
 
     // remove all settlements for which finality time has passed from list
-    host.state_mut()
+    state_mut
         .settlements
         .retain(|s| current_time < s.finality_time);
 
