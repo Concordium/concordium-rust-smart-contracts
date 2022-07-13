@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::{collections::*, *};
+use std::collections::HashSet;
 
 type SettlementID = u64;
 
@@ -201,23 +202,75 @@ fn contract_receive_veto<S: HasStateApi>(
     Ok(())
 }
 
+fn is_settlement_valid<S: HasStateApi>(
+    settlement: &Settlement,
+    balance_sheet: &StateMap<AccountAddress, Amount, S>
+) -> bool {
+    // check whether all senders have sufficient funds with respect to the updated state
+    // first get set of all senders (to avoid duplicate checks) and then check for each sender in set
+    let mut sender_addresses = HashSet::new();
+    for sender in settlement.transfer.send_transfers.iter() {
+        sender_addresses.insert(sender.address);
+    }
+    for sender_address in sender_addresses {
+        // get current balance of sender
+        let mut sender_balance = Amount::zero();
+        if let Some(sender_amount) = balance_sheet.get(&sender_address) {
+            sender_balance = *sender_amount;
+        }
+        
+        // get total amount of outgoing transactions
+        let mut outgoing_amount = Amount::zero();
+        for sender in settlement.transfer.send_transfers.iter() {
+            if sender_address == sender.address {
+                outgoing_amount += sender.amount;
+            }
+        }
 
-fn 
+        // get total amount of incoming transactions
+        let mut incoming_amount = Amount::zero();
+        for receiver in settlement.transfer.receive_transfers.iter() {
+            if sender_address == receiver.address {
+                incoming_amount += receiver.amount;
+            }
+        }
+
+        if sender_balance + incoming_amount < outgoing_amount {
+            return false;
+        }
+    }
+
+    true
+}
 
 // Execute all settlements with passed finality_time.
 #[receive(contract = "offchain-transfers", name = "execute-settlements", payable, mutable)]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+    let current_time = ctx.metadata().slot_time();
+
+    for settlement in host.state().settlements.iter() {
+        // only execute settlements for which finality time has passed
+        if current_time >= settlement.finality_time {
+            if is_settlement_valid(settlement, &host.state().balance_sheet) {
+                // TODO
+            }
+        }
+    }
+
+    // remove all settlements for which finality time has passed from list
+    host.state_mut().settlements.retain(|s| current_time < s.finality_time);
+
     Ok(())
 }
 
 
 
-
+// Tests //
 
 #[concordium_cfg_test]
 mod tests {
