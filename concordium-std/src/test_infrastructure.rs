@@ -71,7 +71,7 @@
 use self::trie::StateTrie;
 use crate::{
     boxed::Box,
-    cell::{RefCell, UnsafeCell},
+    cell::RefCell,
     cmp,
     collections::{BTreeMap, BTreeSet},
     num,
@@ -1227,7 +1227,8 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi> + StateClone> HasHost<State>
+// TODO: Only require StateClone when necessary.
+impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
     for TestHost<State>
 {
     type ReturnValueType = Cursor<Vec<u8>>;
@@ -1516,31 +1517,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-/// Types that can be cloned along with the state.
-///
-/// Used for rolling back the test state when errors occur in a receive
-/// function. See [`with_rollback`] and [`TestHost::invoke_contract_raw`].
-///
-/// *Unsafe*: Marked unsafe because special care should be taken when
-/// implementing this trait. In particular, one should only use the supplied
-/// `cloned_state_api`, or clones thereof. Creating a new [`TestStateApi`] will
-/// lead to an inconsistent state and undefined behaviour.
-pub unsafe trait StateClone {
-    /// Make a clone of the type while using the `cloned_state_api`.
-    ///
-    /// *Unsafe*: Marked unsafe because this function *should not* be called
-    /// directly. It is only used within generated code and in the test
-    /// infrastructure.
-    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self;
-}
-
-/// Blanket implementation for all cloneable, flat types that don't have
-/// references to items in the state.
-unsafe impl<T: Clone> StateClone for T {
-    unsafe fn clone_state(&self, _cloned_state_api: TestStateApi) -> Self { self.clone() }
-}
-
-impl<State: StateClone> TestHost<State> {
+impl<State: StateClone<TestStateApi>> TestHost<State> {
     fn checkpoint(&self) -> Self {
         let state_deep_clone = self.state_builder.state_api.clone_deep();
         Self {
@@ -1557,7 +1534,7 @@ impl<State: StateClone> TestHost<State> {
 }
 
 // TODO: Should this be a method on TestHost?
-pub fn with_rollback<R, E, S: StateClone>(
+pub fn with_rollback<R, E, S: StateClone<TestStateApi>>(
     call: impl FnOnce(&mut TestHost<S>) -> Result<R, E>,
     host: &mut TestHost<S>,
 ) -> Result<R, E> {
@@ -1568,59 +1545,6 @@ pub fn with_rollback<R, E, S: StateClone>(
         *host = checkpoint;
     }
     res
-}
-
-unsafe impl<T> StateClone for StateSet<T, TestStateApi> {
-    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
-        Self {
-            _marker:   self._marker,
-            prefix:    self.prefix,
-            state_api: cloned_state_api,
-        }
-    }
-}
-
-unsafe impl<T, V> StateClone for StateMap<T, V, TestStateApi> {
-    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
-        Self {
-            _marker_key:   self._marker_key,
-            _marker_value: self._marker_value,
-            prefix:        self.prefix,
-            state_api:     cloned_state_api,
-        }
-    }
-}
-
-// TODO: Could load value from state and avoid StateClone constraint.
-unsafe impl<T: StateClone + Serial> StateClone for StateBox<T, TestStateApi> {
-    unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self {
-        let inner_value = match &*self.inner.get() {
-            StateBoxInner::Loaded {
-                entry,
-                modified,
-                value,
-            } => {
-                // Get a new entry from the cloned state.
-                let new_entry = cloned_state_api.lookup_entry(&entry.key).unwrap_abort();
-
-                StateBoxInner::Loaded {
-                    entry:    new_entry,
-                    modified: *modified,
-                    value:    value.clone_state(cloned_state_api.clone()),
-                }
-            }
-            StateBoxInner::Reference {
-                prefix,
-            } => StateBoxInner::Reference {
-                prefix: prefix.clone(),
-            },
-        };
-
-        Self {
-            state_api: cloned_state_api,
-            inner:     UnsafeCell::new(inner_value),
-        }
-    }
 }
 
 #[cfg(test)]

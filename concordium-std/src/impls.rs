@@ -2764,3 +2764,62 @@ impl Deserial for HashKeccak256 {
 impl schema::SchemaType for HashKeccak256 {
     fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
+
+unsafe impl<T, S> StateClone<S> for StateSet<T, S> {
+    unsafe fn clone_state(&self, cloned_state_api: S) -> Self {
+        Self {
+            _marker:   self._marker,
+            prefix:    self.prefix,
+            state_api: cloned_state_api,
+        }
+    }
+}
+
+unsafe impl<T, V, S> StateClone<S> for StateMap<T, V, S> {
+    unsafe fn clone_state(&self, cloned_state_api: S) -> Self {
+        Self {
+            _marker_key:   self._marker_key,
+            _marker_value: self._marker_value,
+            prefix:        self.prefix,
+            state_api:     cloned_state_api,
+        }
+    }
+}
+
+// TODO: Could load value from state and avoid StateClone constraint on T.
+unsafe impl<T: StateClone<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
+    unsafe fn clone_state(&self, cloned_state_api: S) -> Self {
+        let inner_value = match &*self.inner.get() {
+            StateBoxInner::Loaded {
+                entry,
+                modified,
+                value,
+            } => {
+                // Get a new entry from the cloned state.
+                let new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
+
+                StateBoxInner::Loaded {
+                    entry:    new_entry,
+                    modified: *modified,
+                    value:    value.clone_state(cloned_state_api.clone()),
+                }
+            }
+            StateBoxInner::Reference {
+                prefix,
+            } => StateBoxInner::Reference {
+                prefix: prefix.clone(),
+            },
+        };
+
+        Self {
+            state_api: cloned_state_api,
+            inner:     UnsafeCell::new(inner_value),
+        }
+    }
+}
+
+/// Blanket implementation for all cloneable, flat types that don't have
+/// references to items in the state.
+unsafe impl<T: Clone, S> StateClone<S> for T {
+    unsafe fn clone_state(&self, _cloned_state_api: S) -> Self { self.clone() }
+}
