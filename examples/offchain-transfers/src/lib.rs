@@ -20,7 +20,7 @@ struct BalanceInfo {
 }
 
 #[derive(Serialize, SchemaType)]
-struct InitParams {
+struct ContractConfig {
     validator: AccountAddress,
     judge: AccountAddress,
     time_to_finality: Timestamp
@@ -30,10 +30,10 @@ struct InitParams {
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
     // The initial configuration of the contract
-    init_params: InitParams,
+    config: ContractConfig,
 
     // Proposed settlements
-    settelments: StateMap<SettlementID, Settlement, S>,
+    settlements: StateMap<SettlementID, Settlement, S>,
 
     // Balance sheet
     balance_sheet: StateMap<AccountAddress, BalanceInfo, S>,
@@ -46,7 +46,6 @@ enum InitError {
     #[from(ParseError)]
     ParseParams,
 }
-
 type InitResult<A> = Result<A, InitError>;
 
 #[derive(Debug, PartialEq, Eq, Reject)]
@@ -54,17 +53,26 @@ enum ReceiveError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
+    // Sender cannot be a contract,
+    ContractSender
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
-#[init(contract = "offchain-transfers", parameter = "InitParams", payable)]
+#[init(contract = "offchain-transfers", parameter = "ContractConfig", payable)]
 #[inline(always)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
     _amount: Amount,
-)-> InitResult<()>{
-    Ok(())
+)-> InitResult<State<S>>{
+    let config: ContractConfig = ctx.parameter_cursor().get()?;
+    let state = State {
+        config,
+        settlements: state_builder.new_map(),
+        balance_sheet: state_builder.new_map()
+    };
+
+    Ok(state)
 }
 
 #[receive(contract = "bilateral-transfers", name = "deposit", payable)]
@@ -74,6 +82,13 @@ fn contract_receive_deposit<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+
+    let sender_address = match ctx.sender() {
+        Address::Contract(_) => bail!(ReceiveError::ContractSender),
+        Address::Account(account_address) => account_address,
+    };
+
+
     Ok(())
 }
 
@@ -82,8 +97,13 @@ fn contract_receive_deposit<S: HasStateApi>(
 fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-    _amount: Amount,
+    amount: Amount,
 ) -> ContractResult<()> {
+
+    let sender_address = match ctx.sender() {
+        Address::Contract(_) => bail!(ReceiveError::ContractSender),
+        Address::Account(account_address) => account_address,
+    };
     Ok(())
 }
 
