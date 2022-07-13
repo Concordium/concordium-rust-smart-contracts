@@ -176,7 +176,7 @@ fn contract_receive_withdraw<S: HasStateApi>(
     Ok(())
 }
 
-/// Checks whether a transfer is synatically valid.
+/// Checks whether a transfer is syntactically valid.
 /// That is, it checks that the sent and received amounts match
 fn is_settlement_transfer(transfer: &Transfer) -> bool {
     let mut send_amount = Amount::zero();
@@ -1039,5 +1039,71 @@ mod tests {
         
         claim_eq!(host.state().settlements.len(),1,"There should one settlement.");
 
+    }
+
+    // test using all functions
+    #[concordium_test]
+    fn test_lifecycle() {
+        let validator_address = AccountAddress([1u8; 32]);
+        let judge_address = AccountAddress([2u8; 32]);
+        let alice_address = AccountAddress([3u8; 32]);
+        let bob_address = AccountAddress([4u8; 32]);
+        let charlie_address = AccountAddress([5u8; 32]);
+        
+        // first initialize contract
+        let mut ctx = TestInitContext::empty();
+        let mut state_builder = TestStateBuilder::new();
+        
+        let parameter = ContractConfig {
+            validator: validator_address,
+            judge: judge_address,
+            time_to_finality: Duration::from_seconds(600),
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let init_result = contract_init(&ctx, &mut state_builder);
+        let state = match init_result {
+            Ok(s) => s,
+            Err(_) => fail!("Contract initialization failed."),
+        };
+
+        let mut host = TestHost::new(state, state_builder);
+
+        // next let participants deposit some CCD
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(Address::Account(alice_address));
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
+        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(120));
+        ctx.set_sender(Address::Account(bob_address));
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
+        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(130));
+        ctx.set_sender(Address::Account(charlie_address));
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
+        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+
+        // try to withdraw too much from Bob
+        let parameter_bytes = to_bytes(&Amount::from_ccd(120));
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(180));
+        ctx.set_sender(Address::Account(bob_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(!res.is_ok(), "Should not allow to withdraw more than balance.");
+
+        // withdraw valid amount from Bob
+        let parameter_bytes = to_bytes(&Amount::from_ccd(40));
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(190));
+        ctx.set_sender(Address::Account(bob_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(res.is_ok(), "Should allow to withdraw amount.");
+
+
+        // TODO add more here
     }
 }
