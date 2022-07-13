@@ -680,22 +680,50 @@ mod tests {
         ctx.set_sender(Address::Account(account1));
 
         let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
+
         claim!(
             res.is_ok(),
             "Should allow validator to add settlement."
         );
 
+        claim_eq!(host.state().settlements.len(),1,"There should be one settlement");
+        claim_eq!(host.state().balance_sheet.iter().count(),0,"There should be no change to the balance sheet");
+
+        //Test 3: Validator tries to add strange but valid settlement
         let strange_but_ok_transfer = Transfer {
             send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(100)},AddressAmount{address: account3, amount:Amount::zero()}],
             receive_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}, AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
             meta_data: vec![1u8,2u8,3u8],
         };
+        let parameter_bytes = to_bytes(&strange_but_ok_transfer);
+        ctx.set_parameter(&parameter_bytes);
 
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);     
+          
+        claim!(
+            res.is_ok(),
+            "Should allow validator to add settlement."
+        );
+
+        claim_eq!(host.state().settlements.len(),2,"There should be two settlements");
+        claim_eq!(host.state().balance_sheet.iter().count(),0,"There should be no change to the balance sheet");
+
+        //Test 4: Validator tries to add invalid settlement
         let bad_transfer = Transfer {
             send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
             receive_transfers: vec![AddressAmount{address: account1, amount:Amount::from_ccd(50)}, AddressAmount{address: account1, amount:Amount::from_ccd(50)}],
             meta_data: Vec::new(),
         };
+        let parameter_bytes = to_bytes(&bad_transfer);
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host); 
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InvalidTransfer),
+            "Should fail with InvalidTransfer"
+        );
     }
 
     #[concordium_test]
