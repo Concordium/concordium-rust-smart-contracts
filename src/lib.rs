@@ -306,14 +306,12 @@ fn is_settlement_valid<S: HasStateApi>(
 #[receive(
     contract = "offchain-transfers",
     name = "execute-settlements",
-    payable,
     mutable
 )]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    _amount: Amount,
+    host: &mut impl HasHost<State<S>, StateApiType = S>
 ) -> ContractResult<()> {
     let current_time = ctx.metadata().slot_time();
 
@@ -725,14 +723,15 @@ mod tests {
     }
 
     #[concordium_test]
-    fn test_veto() {
+    fn test_execute_settlements() {
         //Accounts
         let account1 = AccountAddress([1u8; 32]); //Validator
         let account2 = AccountAddress([2u8; 32]); //Judge
-                                                //User
+
         let alice = AccountAddress([3u8; 32]);
         let bob = AccountAddress([4u8; 32]);
         let charlie = AccountAddress([5u8; 32]);
+
         //Balances
         let alice_balance = Amount::from_ccd(100);
         let bob_balance = Amount::from_ccd(100);
@@ -748,6 +747,7 @@ mod tests {
             //Total balance of all user
             alice_balance + bob_balance + charlie_balance,
         );
+        
         //Set balance sheet
         host.state_mut().balance_sheet.insert(alice, alice_balance);
         host.state_mut().balance_sheet.insert(bob, bob_balance);
@@ -755,7 +755,7 @@ mod tests {
             .balance_sheet
             .insert(charlie, charlie_balance);
 
-        //Define settlements
+        // First settlement is fine and with past finality
         let settlement1 = Settlement {
             id: 1,
             transfer: Transfer {
@@ -773,69 +773,103 @@ mod tests {
                 meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
-        };  
-        host.state_mut().settlements.push(settlement1); 
+        };
+        host.state_mut().settlements.push(settlement1);
+
+        // Second settlement tries to withdraw more from Alice than available after first settlement and should be skipped
         let settlement2 = Settlement {
-            id: 2,
+            id: 1,
             transfer: Transfer {
                 send_transfers: vec![AddressAmount {
-                    address: charlie,
-                    amount: Amount::from_ccd(20),
-                },AddressAmount {
                     address: alice,
-                    amount: Amount::from_ccd(10),
+                    amount: Amount::from_ccd(60),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(5),
                 }],
                 receive_transfers: vec![AddressAmount {
-                    address: bob,
-                    amount: Amount::from_ccd(30),
+                    address: charlie,
+                    amount: Amount::from_ccd(65),
                 }],
                 meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
-        host.state_mut().settlements.push(settlement2);   
-        
-        //Test 1 NonJudge trying to veto settlement
+        host.state_mut().settlements.push(settlement2);
+
+        // Thid settlement is fine but with future finality and should thus also be skipped
+        let settlement3 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(1),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(1),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(1),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 800),
+        };
+        host.state_mut().settlements.push(settlement3);
+
+        // Fourth settlement is fine and with past finality and should thus be executed
+        let settlement4 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(50),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(5),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(55),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement4);
+
+
+        // Test execution
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut()
-            .set_slot_time(Timestamp::from_timestamp_millis(100));
-        ctx.set_sender(Address::Account(account1)); //Use a validator instead
-        let id_bytes = to_bytes(&1u64);
-        ctx.set_parameter(&id_bytes);
-
-        let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);  
+            .set_slot_time(Timestamp::from_timestamp_millis(1000 * 700));
+        ctx.set_sender(Address::Account(account1));
         
+        let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
+
         claim_eq!(
             res,
-            ContractResult::Err(ReceiveError::NotAJudge),
-            "Should fail with NotAJudge"
-        );    
-        
-        //Test 2 judge trying to veto non-existing settlement (THIS IS FINE)
-        ctx.set_sender(Address::Account(account2)); //Use a validator instead
-        let id_bytes = to_bytes(&42u64);
-        ctx.set_parameter(&id_bytes);  
+            Ok(()),
+            "Execution should succeed."
+        );
 
-        let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);  
-        claim!(
-            res.is_ok(),
-            "Should allow judge to veto not existing settlement."
-        );  
-        
-        claim_eq!(host.state().settlements.len(),2,"There should still be two settlements.");
+        claim_eq!(
+            *host.state().balance_sheet.get(&alice).unwrap(),
+            Amount::from_ccd(0),
+            "Alice has incorrect amount."
+        );
 
-        //Test 3 judge vetoes existing settlement
-        ctx.set_sender(Address::Account(account2)); //Use a validator instead
-        let id_bytes = to_bytes(&1u64);
-        ctx.set_parameter(&id_bytes);  
+        claim_eq!(
+            *host.state().balance_sheet.get(&bob).unwrap(),
+            Amount::from_ccd(70),
+            "Bob has incorrect amount."
+        );
 
-        let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);  
-        claim!(
-            res.is_ok(),
-            "Should allow judge to veto existing settlement."
-        );  
-        
-        claim_eq!(host.state().settlements.len(),1,"There should one settlement.");
-
+        claim_eq!(
+            *host.state().balance_sheet.get(&charlie).unwrap(),
+            Amount::from_ccd(230),
+            "Charlie has incorrect amount."
+        );
     }
 }
