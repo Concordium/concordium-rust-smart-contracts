@@ -77,6 +77,8 @@ enum ReceiveError {
     NotAValidator,
     /// Not authorized as judge
     NotAJudge,
+    /// Cannot withdraw 0 CCDs
+    ZeroWithdrawal,
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -141,6 +143,8 @@ fn contract_receive_withdraw<S: HasStateApi>(
     };
 
     let payout: Amount = ctx.parameter_cursor().get()?;
+    // The payout needs to be strictly positive
+    ensure!(payout > Amount::zero(), ReceiveError::ZeroWithdrawal);
 
     // get expenses that the user has in the balance sheet
     let mut expenses = Amount::zero();
@@ -417,7 +421,7 @@ mod tests {
     }
 
     #[concordium_test]
-    fn test_withdrawl() {
+    fn test_withdrawal_simple() {
         //Accounts
         let account1 = AccountAddress([1u8; 32]); //Validator
         let account2 = AccountAddress([2u8; 32]); //Judge
@@ -455,7 +459,18 @@ mod tests {
             "Should fail with InsufficientFunds"
         );
 
-        //Test 2: Try to withdraw money from Account 3
+        //Test 3: Try to withdraw 0 from Account 3
+        let parameter_bytes = to_bytes(&Amount::zero());
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::ZeroWithdrawal),
+            "Should fail with ZeroWithdrawal"
+        );
+
+        //Test 3: Try to withdraw money from Account 3
         let parameter_bytes = to_bytes(&payout);
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
@@ -476,5 +491,213 @@ mod tests {
         claim_eq!(transfers.len(), 1, "There should be one transfers");
         claim_eq!(transfers[0].0, account3, "Should be sent to account3");
         claim_eq!(transfers[0].1, payout, "payout CCDs should have been sents");
+
+        //Test 4: Try to withdraw money from non-existing account (1)
+        ctx.set_sender(Address::Account(account1));
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InsufficientFunds),
+            "Should fail with InsufficientFunds"
+        );
+    }
+
+    #[concordium_test]
+    fn test_withdrawal_complex() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+                                                  //User
+        let alice = AccountAddress([3u8; 32]);
+        let bob = AccountAddress([3u8; 32]);
+        let charlie = AccountAddress([3u8; 32]);
+        //Balances
+        let alice_balance = Amount::from_ccd(100);
+        let bob_balance = Amount::from_ccd(100);
+        let charlie_balance = Amount::from_ccd(100);
+
+        //Initial State
+        let mut host = get_test_state(
+            ContractConfig {
+                validator: account1,
+                judge: account2,
+                time_to_finality: Duration::from_seconds(600),
+            },
+            //Total balance of all user
+            alice_balance + bob_balance + charlie_balance,
+        );
+        //Set balance sheet
+        host.state_mut().balance_sheet.insert(alice, alice_balance);
+        host.state_mut().balance_sheet.insert(bob, bob_balance);
+        host.state_mut()
+            .balance_sheet
+            .insert(charlie, charlie_balance);
+
+        //Define settlements
+        let settlement1 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(50),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(25),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(75),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement1);
+        let settlement2 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(20),
+                },AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(10),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(30),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement2);
+        let settlement3 = Settlement {
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(10),
+                },AddressAmount {
+                    address: bob,
+                    amount: Amount::from_ccd(5),
+                }],
+                receive_transfers: vec![AddressAmount {
+                    address: alice,
+                    amount: Amount::from_ccd(15),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+        };
+        host.state_mut().settlements.push(settlement3);
+
+        //Test 1: Alice should have 40 CCDs available -> Try to withdraw 41
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(Address::Account(alice));
+        let parameter_bytes = to_bytes(&Amount::from_ccd(41));
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InsufficientFunds),
+            "Should fail with InsufficientFunds"
+        );
+
+        //Test 2: Bob should have 70 CCDs available -> Try to withdraw 70
+        let payout = Amount::from_ccd(70);
+        ctx.set_sender(Address::Account(bob));
+        let parameter_bytes = to_bytes(&payout);
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);  
+
+        claim!(
+            res.is_ok(),
+            "Should allow account holder withdraw CCDs from balance."
+        );
+
+        let new_balance = *host.state().balance_sheet.get(&bob).unwrap();
+        claim_eq!(
+            new_balance,
+            bob_balance - payout,
+            "New balance should match balance - payout"
+        );
+
+        let transfers = host.get_transfers();
+        claim_eq!(transfers.len(), 1, "There should be one transfers");
+        claim_eq!(transfers[0].0, bob, "Should be sent to account3");
+        claim_eq!(transfers[0].1, payout, "payout CCDs should have been sents");
+        
+        claim_eq!(host.state().settlements.len(),3, "This should not change the number of settlements.")
+    }
+
+    #[concordium_test]
+    fn test_add_settlement() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+        let account3 = AccountAddress([3u8; 32]); //Random caller
+
+        //Adding settlement should work even with an empty balance sheet and no CCDs in the contract
+        let balance = Amount::from_ccd(0);
+
+        //Initial State
+        let mut host = get_test_state(
+            ContractConfig {
+                validator: account1,
+                judge: account2,
+                time_to_finality: Duration::from_seconds(600),
+            },
+            balance,
+        );
+        
+        //Test 1: Random caller tries to add valid settlement
+        let good_transfer = Transfer {
+            send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(100)}],
+            receive_transfers: vec![AddressAmount{address: account2, amount:Amount::from_ccd(50)}, AddressAmount{address: account1, amount:Amount::from_ccd(50)}],
+            meta_data: Vec::new(),
+        };
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(Address::Account(account3));
+        let parameter_bytes = to_bytes(&good_transfer);
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::NotAValidator),
+            "Should fail with NotAValidator"
+        );
+
+        //Test 2: Validator tries to add valid settlement
+        ctx.set_sender(Address::Account(account1));
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow validator to add settlement."
+        );
+
+        let strange_but_ok_transfer = Transfer {
+            send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(100)},AddressAmount{address: account3, amount:Amount::zero()}],
+            receive_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}, AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
+            meta_data: vec![1u8,2u8,3u8],
+        };
+
+        let bad_transfer = Transfer {
+            send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
+            receive_transfers: vec![AddressAmount{address: account1, amount:Amount::from_ccd(50)}, AddressAmount{address: account1, amount:Amount::from_ccd(50)}],
+            meta_data: Vec::new(),
+        };
     }
 }
