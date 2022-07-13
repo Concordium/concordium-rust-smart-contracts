@@ -19,6 +19,21 @@ struct State<S: HasStateApi> {
     my_map:       StateMap<u32, StateBox<u32, S>, S>,
 }
 
+#[derive(StateClone, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct Something<S: HasStateApi>(u32, StateSet<u32, S>, StateMap<u32, StateBox<u32, S>, S>);
+
+#[derive(StateClone)]
+#[concordium(state_parameter = "S")]
+enum Letter<S: HasStateApi> {
+    A,
+    B(u32, StateBox<u32, S>),
+    C {
+        c_1: u32,
+        c_2: StateSet<u32, S>,
+    },
+}
+
 impl<S: HasStateApi> State<S> {
     #[cfg(test)]
     fn get_values(&self) -> (u32, u32, Vec<u32>, Vec<(u32, u32)>) {
@@ -38,23 +53,6 @@ impl<S: HasStateApi> State<S> {
         self.my_map.insert(self.my_num, state_builder.new_box(self.my_num));
     }
 }
-
-// #[concordium_cfg_test]
-// mod test_impls {
-//     use super::*;
-//     use concordium_std::test_infrastructure::*;
-
-//     unsafe impl StateClone for State<TestStateApi> {
-//         unsafe fn clone_state(&self, cloned_state_api: TestStateApi) -> Self
-// {             Self {
-//                 my_boxed_num: StateBox::clone_state(&self.my_boxed_num,
-// cloned_state_api.clone()),                 my_num:       self.my_num,
-//                 my_set:
-// self.my_set.clone_state(cloned_state_api.clone()),                 my_map:
-// self.my_map.clone_state(cloned_state_api),             }
-//         }
-//     }
-// }
 
 #[init(contract = "test-host-rollback")]
 fn init<S: HasStateApi>(
@@ -125,7 +123,7 @@ mod tests {
     fn test_rollback_inner_call_only() {
         let ctx_init = TestInitContext::empty();
         let mut state_builder = TestStateBuilder::new();
-        let state = init(&ctx_init, &mut state_builder).expect_report("Failed to initialize");
+        let state = init(&ctx_init, &mut state_builder).expect_report("Failedto initialize");
         let mut host = TestHost::new(state, state_builder);
 
         claim_eq!(host.state().get_values(), (0, 0, vec![], vec![]));
