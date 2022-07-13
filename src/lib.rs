@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_std::{collections::*, *};
+use concordium_std::*;
 use std::collections::HashSet;
 
 type SettlementID = u64;
