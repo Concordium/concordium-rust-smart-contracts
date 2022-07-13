@@ -9,14 +9,21 @@ struct Transfer {
     receivers: Vec<(AccountAddress,Amount)>,
 }
 
+#[derive(Clone,Serialize, SchemaType)]
 struct Settlement {
     transfer: Transfer,
     finality_time: Duration
 }
 
+#[derive(Clone,Serialize, SchemaType)]
 struct BalanceInfo {
     real_balance: Amount,
     optimistic_balance: Amount
+}
+impl BalanceInfo {
+    fn new(x: u64) -> BalanceInfo {
+        BalanceInfo { real_balance: Amount::from_micro_ccd(x), optimistic_balance: Amount::from_micro_ccd(x) }
+    }
 }
 
 #[derive(Serialize, SchemaType)]
@@ -58,12 +65,11 @@ enum ReceiveError {
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
-#[init(contract = "offchain-transfers", parameter = "ContractConfig", payable)]
+#[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
-    _amount: Amount,
+    state_builder: &mut StateBuilder<S>
 )-> InitResult<State<S>>{
     let config: ContractConfig = ctx.parameter_cursor().get()?;
     let state = State {
@@ -75,24 +81,27 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
-#[receive(contract = "bilateral-transfers", name = "deposit", payable)]
+
+#[receive(contract = "bilateral-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
 fn contract_receive_deposit<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-    _amount: Amount,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    amount: Amount,
 ) -> ContractResult<()> {
 
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-
-
+    let mut balance_info = host.state_mut().balance_sheet.entry(sender_address).or_insert(BalanceInfo::new(0));
+    balance_info.real_balance.checked_add(amount);
+    balance_info.real_balance.checked_add(amount);
+    //TODO: Reinsert
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "withdraw", payable)]
+#[receive(contract = "bilateral-transfers", name = "withdraw", payable, mutable)]
 #[inline(always)]
 fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -107,7 +116,7 @@ fn contract_receive_withdraw<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "settle", payable)]
+#[receive(contract = "bilateral-transfers", name = "settle", payable, mutable)]
 #[inline(always)]
 fn contract_receive_settle<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -117,7 +126,7 @@ fn contract_receive_settle<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "veto", payable)]
+#[receive(contract = "bilateral-transfers", name = "veto", payable, mutable)]
 #[inline(always)]
 fn contract_receive_veto<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -127,7 +136,7 @@ fn contract_receive_veto<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "execute-settlements", payable)]
+#[receive(contract = "bilateral-transfers", name = "execute-settlements", payable, mutable)]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
