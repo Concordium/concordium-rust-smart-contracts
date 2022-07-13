@@ -188,7 +188,7 @@ struct SetImplementationAddressParams {
 #[derive(Serialize, SchemaType)]
 struct TransferCCDParams {
     /// Amount of CCD to transfer to implementation.
-    amount: Amount,
+    amount: ContractTokenAmount,
 }
 
 /// The parameter type for the implementation contract function `pause`.
@@ -745,7 +745,7 @@ fn contract_proxy_init<S: HasStateApi>(
     Ok(state)
 }
 
-#[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", mutable, payable)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", payable)]
 fn contract_proxy_recieve_ccd<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     _host: &impl HasHost<StateProxy, StateApiType = S>,
@@ -754,7 +754,7 @@ fn contract_proxy_recieve_ccd<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "CIS2-wCCD", name = "receiveCCD", mutable, payable)]
+#[receive(contract = "CIS2-wCCD", name = "receiveCCD", payable)]
 fn contract_implementation_recieve_ccd<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     _host: &impl HasHost<StateImplementation, StateApiType = S>,
@@ -779,11 +779,11 @@ fn contract_proxy_transfer_ccd<S: HasStateApi>(
     let params: TransferCCDParams = ctx.parameter_cursor().get()?;
 
     let implementation = host.state().implementation_address;
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &implementation,
-        &Parameter(&[]),
+        Parameter(&[]),
         EntrypointName::new_unchecked("receiveCCD"),
-        params.amount,
+        Amount::from_micro_ccd(params.amount.into()),
     )?;
 
     Ok(())
@@ -928,6 +928,13 @@ fn contract_wrap<S: HasStateApi>(
         return Ok(());
     }
 
+    let params: WrapParams = ctx.parameter_cursor().get()?;
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    let receive_address = params.to.address();
+
+    // Update the state.
     let proxy_address = host
         .state()
         .proxy_address
@@ -940,13 +947,6 @@ fn contract_wrap<S: HasStateApi>(
         amount,
     )?;
 
-    let params: WrapParams = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-
-    let receive_address = params.to.address();
-
-    // Update the state.
     let owner = receive_address;
 
     let set_balance_params = SetBalanceParams {
@@ -1022,25 +1022,6 @@ fn contract_unwrap<S: HasStateApi>(
     if params.amount == 0u64.into() {
         return Ok(());
     }
-    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
-
-    let params2: TransferCCDParams = TransferCCDParams {
-        amount: unwrapped_amount,
-    };
-
-    let parameter_bytes = to_bytes(&params2);
-
-    let proxy_address = host
-        .state()
-        .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
-
-    host.invoke_contract(
-        &proxy_address,
-        &Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("transferCCD"),
-        Amount::zero(),
-    )?;
 
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
@@ -1080,12 +1061,25 @@ fn contract_unwrap<S: HasStateApi>(
         Amount::zero(),
     )?;
 
-    // Log the burning of tokens.
-    logger.log(&Cis2Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   params.amount,
-        owner:    params.owner,
-    }))?;
+    let params2: TransferCCDParams = TransferCCDParams {
+        amount: params.amount,
+    };
+
+    let parameter_bytes = to_bytes(&params2);
+
+    let proxy_address = host
+        .state()
+        .proxy_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
+
+    host.invoke_contract_raw(
+        &proxy_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("transferCCD"),
+        Amount::zero(),
+    )?;
+
+    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
 
     match params.receiver {
         Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
@@ -1098,6 +1092,13 @@ fn contract_unwrap<S: HasStateApi>(
             )?;
         }
     }
+
+    // Log the burning of tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   params.amount,
+        owner:    params.owner,
+    }))?;
 
     Ok(())
 }
