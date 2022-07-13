@@ -11,19 +11,9 @@ struct Transfer {
 
 #[derive(Clone,Serialize, SchemaType)]
 struct Settlement {
+    id : SettlementID,
     transfer: Transfer,
     finality_time: Duration
-}
-
-#[derive(Clone,Serialize, SchemaType)]
-struct BalanceInfo {
-    real_balance: Amount,
-    optimistic_balance: Amount
-}
-impl BalanceInfo {
-    fn new(x: u64) -> BalanceInfo {
-        BalanceInfo { real_balance: Amount::from_micro_ccd(x), optimistic_balance: Amount::from_micro_ccd(x) }
-    }
 }
 
 #[derive(Serialize, SchemaType)]
@@ -40,10 +30,10 @@ pub struct State<S> {
     config: ContractConfig,
 
     // Proposed settlements
-    settlements: StateMap<SettlementID, Settlement, S>,
+    settlements: Vec<Settlement>,
 
     // Balance sheet
-    balance_sheet: StateMap<AccountAddress, BalanceInfo, S>,
+    balance_sheet: StateMap<AccountAddress, Amount, S>,
     
 }
 
@@ -74,7 +64,7 @@ fn contract_init<S: HasStateApi>(
     let config: ContractConfig = ctx.parameter_cursor().get()?;
     let state = State {
         config,
-        settlements: state_builder.new_map(),
+        settlements: Vec::new(),
         balance_sheet: state_builder.new_map()
     };
 
@@ -94,9 +84,8 @@ fn contract_receive_deposit<S: HasStateApi>(
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut balance_info = host.state_mut().balance_sheet.entry(sender_address).or_insert(BalanceInfo::new(0));
-    balance_info.real_balance.checked_add(amount);
-    balance_info.real_balance.checked_add(amount);
+    let mut balance = host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::from_micro_ccd(0));
+    balance.checked_add(amount);
     //TODO: Reinsert
     Ok(())
 }
@@ -113,6 +102,7 @@ fn contract_receive_withdraw<S: HasStateApi>(
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
+
     Ok(())
 }
 
