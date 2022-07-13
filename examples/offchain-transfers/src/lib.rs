@@ -110,8 +110,8 @@ fn contract_receive_withdraw<S: HasStateApi>(
     let mut expenses = Amount::zero();
     for settlement in host.state().settlements.iter() {
         for sender in settlement.transfer.senders.iter() {
-            if let (sender_address, value) = sender {
-                expenses += *value;
+            if sender_address == sender.0 {
+                expenses += sender.1;
             }
         }
     }
