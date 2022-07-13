@@ -211,7 +211,8 @@ mod tests {
     use concordium_std::test_infrastructure::*;
 
     fn get_test_state(
-        config: ContractConfig
+        config: ContractConfig,
+        amount: Amount,
     ) -> TestHost<State<TestStateApi>> {
         let mut state_builder = TestStateBuilder::new();
         let state = State {
@@ -220,7 +221,7 @@ mod tests {
             balance_sheet: state_builder.new_map(),
         };
         let mut host = TestHost::new(state, state_builder);
-        host.set_self_balance(Amount::zero());
+        host.set_self_balance(amount);
         host
     }
 
@@ -239,10 +240,11 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600)      
-            }
+            },
+            Amount::zero()
         );
 
-        //Test 1: Try to deposit money for new user
+        //Test 1: Try to deposit money for new account holder
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut()
             .set_slot_time(Timestamp::from_timestamp_millis(100));
@@ -259,7 +261,81 @@ mod tests {
             "Balance should match deposit"
         );
 
-        //Test 2: Try to deposit money for existing user
+        //Test 2: Try to deposit money for existing account holder
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
+
+        claim!(res.is_ok(), "Should allow existing account holder to deposit CCDs");
+
+        let balance = *host.state().balance_sheet.get(&account3).unwrap();
+        claim_eq!(
+            balance,
+            2*deposit,
+            "Balance should match 2*deposit"
+        );
+
+    }
+
+    #[concordium_test]
+    fn test_withdrawl() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+        let account3 = AccountAddress([3u8; 32]); //Caller
+
+        let balance = Amount::from_ccd(100);
+        let toobig_payout = Amount::from_ccd(120);
+        let payout = Amount::from_ccd(90);
+
+        //Initial State
+        let mut host = get_test_state(
+            ContractConfig{
+                validator: account1,
+                judge: account2,
+                time_to_finality: Duration::from_seconds(600)      
+            },
+            balance
+        );
+        //Set account3 balance
+        host.state_mut().balance_sheet.insert(account3,balance);
+
+        //Test 1: Try to withdraw too much money from Account 3
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(Address::Account(account3));
+        let parameter_bytes = to_bytes(&toobig_payout);
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InsufficientFunds),
+            "Should fail with InsufficientFunds"
+        );
+
+        //Test 2: Try to withdraw money from Account 3
+        let parameter_bytes = to_bytes(&payout);
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+    
+        claim!(res.is_ok(), "Should allow account holder withdraw CCDs from balance.");
+
+        let new_balance = *host.state().balance_sheet.get(&account3).unwrap();
+        claim_eq!(
+            new_balance,
+            balance - payout,
+            "New balance should match balance - payout"
+        );
+
+        let transfers = host.get_transfers();
+        claim_eq!(transfers.len(), 1, "There should be one transfers");
+        claim_eq!(
+            transfers[0].0,
+            account3,
+            "Should be sent to account3"
+        );
+        claim_eq!(transfers[0].1, payout, "payout CCDs should have been sents");
 
 
     }
