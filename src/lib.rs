@@ -371,6 +371,59 @@ mod tests {
     }
 
     #[concordium_test]
+    fn test_init() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+        let time_to_finality = Duration::from_seconds(666);
+
+        let parameter = ContractConfig {
+            validator: account1,
+            judge: account2,
+            time_to_finality,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+
+        let mut ctx = TestInitContext::empty();
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut state_builder = TestStateBuilder::new();
+
+        let result = contract_init(&ctx, &mut state_builder);
+
+        let state = match result {
+            Ok(s) => s,
+            Err(_) => fail!("Contract initialization failed."),
+        };
+
+        claim_eq!(
+            state.config.validator,
+            account1,
+            "Account 1 should be validator"
+        );
+        claim_eq!(
+            state.config.judge,
+            account2,
+            "Account 1 should be judge"
+        ); 
+        claim_eq!(
+            state.config.time_to_finality,
+            time_to_finality,
+            "time to finality should be time_to_finality"
+        ); 
+        claim_eq!(
+            state.balance_sheet.iter().count(),
+            0,
+            "No balances should exist"
+        );               
+        claim_eq!(
+            state.settlements.len(),
+            0,
+            "No settlements should exist"
+        );     
+    }
+
+    #[concordium_test]
     fn test_deposit() {
         //Accounts
         let account1 = AccountAddress([1u8; 32]); //Validator
@@ -872,7 +925,7 @@ mod tests {
             "Charlie has incorrect amount."
         );
     }
-    
+
     #[concordium_test]
     fn test_veto() {
         //Accounts
