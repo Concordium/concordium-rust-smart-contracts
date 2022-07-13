@@ -4,9 +4,16 @@ use concordium_std::{collections::*, *};
 type SettlementID = u64;
 
 #[derive(Clone, Serialize, SchemaType)]
+struct AddressAmount {
+    address : AccountAddress,
+    amount : Amount
+}
+
+// A transfer consisting of possibly multiple inputs with different amounts and several receivers
+#[derive(Clone, Serialize, SchemaType)]
 struct Transfer {
-    senders: Vec<(AccountAddress,Amount)>,
-    receivers: Vec<(AccountAddress,Amount)>,
+    send_transfers: Vec<AddressAmount>,
+    receive_transfers: Vec<AddressAmount>
 }
 
 #[derive(Clone,Serialize, SchemaType)]
@@ -57,6 +64,8 @@ enum ReceiveError {
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
+
+// Initialize contract with empty balance sheet and no settlements
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
 fn contract_init<S: HasStateApi>(
@@ -73,7 +82,7 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
-
+// Deposit amount of CCD to the smart contract and add amount to balance sheet of sender
 #[receive(contract = "offchain-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
 fn contract_receive_deposit<S: HasStateApi>(
@@ -92,6 +101,10 @@ fn contract_receive_deposit<S: HasStateApi>(
     Ok(())
 }
 
+// Withdraw amount from smart contract.
+// Only possible if the the user has sufficient funds in the worst case,
+// i.e., even if all outstanding payments to that user get cancelled and all payments from that user are valid,
+// there should be enough funds left to withdraw the requested payout.
 #[receive(contract = "offchain-transfers", name = "withdraw", mutable, parameter = "Amount")]
 #[inline(always)]
 fn contract_receive_withdraw<S: HasStateApi>(
@@ -109,9 +122,9 @@ fn contract_receive_withdraw<S: HasStateApi>(
     // get expenses that the user has in the balance sheet
     let mut expenses = Amount::zero();
     for settlement in host.state().settlements.iter() {
-        for sender in settlement.transfer.senders.iter() {
-            if sender_address == sender.0 {
-                expenses += sender.1;
+        for sender in settlement.transfer.send_transfers.iter() {
+            if sender_address == sender.address {
+                expenses += sender.amount;
             }
         }
     }
@@ -127,6 +140,25 @@ fn contract_receive_withdraw<S: HasStateApi>(
     Ok(())
 }
 
+// Checks whether a settlement is valid.
+// This consists of checking that the sum of sent amount matches the sum of received amounts.
+fn is_settlement_valid(settlement: Settlement) -> bool {
+    let mut send_amount = Amount::zero();
+    let mut receive_amount = Amount::zero();
+
+    for send_transfer in settlement.transfer.send_transfers {
+        send_amount += send_transfer.amount;
+    }
+    for receive_transfer in settlement.transfer.receive_transfers {
+        receive_amount += receive_transfer.amount;
+    }
+
+    // settlement is valid if sent and received amounts match
+    send_amount == receive_amount
+}
+
+// Add a settlement to the list of outstanding settlements.
+// Checks validity of settlement and then adds it to the list of outstanding settlements.
 #[receive(contract = "offchain-transfers", name = "settle", payable, mutable)]
 #[inline(always)]
 fn contract_receive_settle<S: HasStateApi>(
@@ -137,6 +169,8 @@ fn contract_receive_settle<S: HasStateApi>(
     Ok(())
 }
 
+// Veto a settlement. Removes this settlement from the list of outstanding settlements.
+// Only the judge is allowed to call this function. Furthermore, it must be called before the finality_time of the settlement.
 #[receive(contract = "offchain-transfers", name = "veto", payable, mutable)]
 #[inline(always)]
 fn contract_receive_veto<S: HasStateApi>(
@@ -147,6 +181,7 @@ fn contract_receive_veto<S: HasStateApi>(
     Ok(())
 }
 
+// Execute all settlements with passed finality_time.
 #[receive(contract = "offchain-transfers", name = "execute-settlements", payable, mutable)]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
