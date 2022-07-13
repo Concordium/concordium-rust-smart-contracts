@@ -328,7 +328,7 @@ fn contract_receive_execute_settlements<S: HasStateApi>(
         {
             // first add balances of all receivers and then subtract of senders
             // together with the validity of settlements, this implies nonnegative amounts for all accounts
-            for receive_transfer in settlement.transfer.receive_transfers.iter() {
+            for receive_transfer in settlement.transfer.receive_transfers.iter() {                
                 let mut receiver_balance = host
                     .state_mut()
                     .balance_sheet
@@ -511,8 +511,8 @@ mod tests {
         let account2 = AccountAddress([2u8; 32]); //Judge
                                                   //User
         let alice = AccountAddress([3u8; 32]);
-        let bob = AccountAddress([3u8; 32]);
-        let charlie = AccountAddress([3u8; 32]);
+        let bob = AccountAddress([4u8; 32]);
+        let charlie = AccountAddress([5u8; 32]);
         //Balances
         let alice_balance = Amount::from_ccd(100);
         let bob_balance = Amount::from_ccd(100);
@@ -578,11 +578,11 @@ mod tests {
             id: 1,
             transfer: Transfer {
                 send_transfers: vec![AddressAmount {
-                    address: charlie,
-                    amount: Amount::from_ccd(10),
-                },AddressAmount {
                     address: bob,
                     amount: Amount::from_ccd(5),
+                },AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(10),
                 }],
                 receive_transfers: vec![AddressAmount {
                     address: alice,
@@ -617,7 +617,6 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);  
-
         claim!(
             res.is_ok(),
             "Should allow account holder withdraw CCDs from balance."
@@ -671,7 +670,7 @@ mod tests {
         let parameter_bytes = to_bytes(&good_transfer);
         ctx.set_parameter(&parameter_bytes);
 
-        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
 
         claim_eq!(
             res,
@@ -682,7 +681,7 @@ mod tests {
         //Test 2: Validator tries to add valid settlement
         ctx.set_sender(Address::Account(account1));
 
-        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
         claim!(
             res.is_ok(),
             "Should allow validator to add settlement."
