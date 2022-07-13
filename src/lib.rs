@@ -20,14 +20,14 @@ struct Transfer {
 struct Settlement {
     id : SettlementID,
     transfer: Transfer,
-    finality_time: Duration
+    finality_time: Timestamp
 }
 
 #[derive(Serialize, SchemaType)]
 struct ContractConfig {
     validator: AccountAddress,
     judge: AccountAddress,
-    time_to_finality: Timestamp
+    time_to_finality: Duration
 }
 
 #[derive(Serial, DeserialWithState)]
@@ -177,11 +177,51 @@ fn contract_receive_execute_settlements<S: HasStateApi>(
 
 
 
-#[cfg(test)]
+
+#[concordium_cfg_test]
 mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
+    use super::*;
+    use concordium_std::test_infrastructure::*;
+
+    fn get_test_state(
+        config: ContractConfig
+    ) -> TestHost<State<TestStateApi>> {
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            config,
+            settlements: Vec::new(),
+            balance_sheet: state_builder.new_map(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+        host.set_self_balance(Amount::zero());
+        host
+    }
+
+    #[concordium_test]
+    fn test_deposit() {
+        //Accounts
+        let account1 = AccountAddress([1u8; 32]); //Validator
+        let account2 = AccountAddress([2u8; 32]); //Judge
+        let account3 = AccountAddress([3u8; 32]); //Caller
+
+        //Initial State
+        let mut host = get_test_state(
+            ContractConfig{
+                validator: account1,
+                judge: account2,
+                time_to_finality: Duration::from_seconds(600)      
+            }
+        );
+
+        //Try to deposit money
+        let mut ctx = TestReceiveContext::empty();
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(Address::Account(account3));
+
+        let receive_amount = Amount::from_ccd(100);
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, receive_amount);
+
+        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
     }
 }
