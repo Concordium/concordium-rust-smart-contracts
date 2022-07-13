@@ -84,9 +84,9 @@ fn contract_receive_deposit<S: HasStateApi>(
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut balance = host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::from_micro_ccd(0));
-    balance.checked_add(amount);
-    //TODO: Reinsert
+    let mut balance = *host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero());
+    balance += amount;
+
     Ok(())
 }
 
