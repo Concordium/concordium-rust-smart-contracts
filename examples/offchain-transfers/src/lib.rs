@@ -70,9 +70,13 @@ enum ReceiveError {
     /// Invalid settlement
     InvalidTransfer,
     /// End time is not expressible, i.e., would overflow.
-    Overflow,
+    TimeOverflow,
+    /// We have reached the end of our IDs (unlikely to happe)
+    CounterOverflow,
     /// Not authorized as validator
-    NotValidator,
+    NotAValidator,
+    /// Not authorized as judge
+    NotAJudge,
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -188,6 +192,7 @@ fn is_settlement_transfer(transfer: &Transfer) -> bool {
 /// Allows the validator to add new settlements.
 /// The validator provides the Transfer part while the smart contracts add the id and the finality time.
 /// The call is lazy in the sense that it does not check whether the settlement could be applied to the current balance sheet
+/// We use an increasing 
 #[receive(
     contract = "offchain-transfers",
     name = "add-settlement",
@@ -195,7 +200,7 @@ fn is_settlement_transfer(transfer: &Transfer) -> bool {
     parameter = "Transfer"
 )]
 #[inline(always)]
-fn contract_receive_transfer<S: HasStateApi>(
+fn contract_receive_add_settlement<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
@@ -203,7 +208,7 @@ fn contract_receive_transfer<S: HasStateApi>(
     //Only the validator may call this function
     ensure!(
         sender.matches_account(&host.state().config.validator),
-        ReceiveError::NotValidator
+        ReceiveError::NotAValidator
     );
 
     let transfer: Transfer = ctx.parameter_cursor().get()?;
@@ -221,10 +226,10 @@ fn contract_receive_transfer<S: HasStateApi>(
         transfer,
         finality_time: now
             .checked_add(host.state().config.time_to_finality)
-            .ok_or(ReceiveError::Overflow)?,
+            .ok_or(ReceiveError::TimeOverflow)?,
     };
     //Increase ID counter
-    host.state_mut().next_id += 1;
+    host.state_mut().next_id.checked_add(1).ok_or(ReceiveError::CounterOverflow);
     //Add settlement
     host.state_mut().settlements.push(settlement);
     Ok(())
@@ -239,6 +244,12 @@ fn contract_receive_veto<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+    let sender = ctx.sender();
+    //Only the validator may call this function
+    ensure!(
+        sender.matches_account(&host.state().config.validator),
+        ReceiveError::NotAJudge
+    );
     let s_id: SettlementID = ctx.parameter_cursor().get()?;
 
     // delete all settlements with the given ID from the list
