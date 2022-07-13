@@ -12,8 +12,8 @@ struct AddressAmount {
 // A transfer consisting of possibly multiple inputs with different amounts and several receivers
 #[derive(Clone, Serialize, SchemaType)]
 struct Transfer {
-    senders: Vec<AddressAmount>,
-    receivers: Vec<AddressAmount>
+    send_transfers: Vec<AddressAmount>,
+    receive_transfers: Vec<AddressAmount>
 }
 
 #[derive(Clone,Serialize, SchemaType)]
@@ -122,7 +122,7 @@ fn contract_receive_withdraw<S: HasStateApi>(
     // get expenses that the user has in the balance sheet
     let mut expenses = Amount::zero();
     for settlement in host.state().settlements.iter() {
-        for sender in settlement.transfer.senders.iter() {
+        for sender in settlement.transfer.send_transfers.iter() {
             if sender_address == sender.address {
                 expenses += sender.amount;
             }
@@ -140,7 +140,25 @@ fn contract_receive_withdraw<S: HasStateApi>(
     Ok(())
 }
 
-// Add a settlement to the list of outstanding settlements
+// Checks whether a settlement is valid.
+// This consists of checking that the sum of sent amount matches the sum of received amounts.
+fn is_settlement_valid(settlement: Settlement) -> bool {
+    let mut send_amount = Amount::zero();
+    let mut receive_amount = Amount::zero();
+
+    for send_transfer in settlement.transfer.send_transfers {
+        send_amount += send_transfer.amount;
+    }
+    for receive_transfer in settlement.transfer.receive_transfers {
+        receive_amount += receive_transfer.amount;
+    }
+
+    // settlement is valid if sent and received amounts match
+    send_amount == receive_amount
+}
+
+// Add a settlement to the list of outstanding settlements.
+// Checks validity of settlement and then adds it to the list of outstanding settlements.
 #[receive(contract = "offchain-transfers", name = "settle", payable, mutable)]
 #[inline(always)]
 fn contract_receive_settle<S: HasStateApi>(
