@@ -1659,7 +1659,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
 
     let source_ident = Ident::new("________________source", Span::call_site());
 
-    let state_ident = Ident::new("_______________________________STATE", Span::call_site());
+    let state_ident = Ident::new("_______________________________state", Span::call_site());
     let body_tokens = match ast.data {
         syn::Data::Struct(ref data) => {
             let mut names = proc_macro2::TokenStream::new();
@@ -1713,7 +1713,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                     "[derive(DeserialWithState)]: Too many variants. Maximum 65536 are supported.",
                 ));
             };
-            let state_ident = Ident::new("_______________________________STATE", Span::call_site());
+            let state_ident = Ident::new("_______________________________state", Span::call_site());
             for (i, variant) in data.variants.iter().enumerate() {
                 let (field_names, pattern) = match variant.fields {
                     syn::Fields::Named(_) => {
