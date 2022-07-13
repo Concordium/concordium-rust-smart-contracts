@@ -16,8 +16,6 @@ std = ["concordium-std/std"]
 byteorder = "1.3"
 
 [dependencies.concordium-std]
-git = "https://github.com/Concordium/concordium-std.git"
-branch = "main"
 version = "3.0"
 default-features = false
 
