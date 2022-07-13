@@ -53,6 +53,20 @@ type ContractTokenId = TokenIdUnit;
 /// of arithmetics.
 type ContractTokenAmount = TokenAmountU64;
 
+/// Needed for the custom serial instance, which doesn't include the `Option`
+/// tag and the length of the vector.
+#[derive(PartialEq, Eq, Debug)]
+struct RawReturnValue(Option<Vec<u8>>);
+
+impl Serial for RawReturnValue {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match &self.0 {
+            Some(rv) => out.write_all(rv),
+            None => Ok(()),
+        }
+    }
+}
+
 /// The state tracked for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
@@ -79,7 +93,7 @@ struct State<S> {
 }
 
 /// The implementation contract state.
-#[derive(Serial, Deserial)]
+#[derive(Serial, Deserial, SchemaType)]
 struct StateImplementation {
     /// The admin address can pause/unpause the contract.
     admin:         Address,
@@ -87,6 +101,26 @@ struct StateImplementation {
     proxy_address: Option<ContractAddress>,
     /// Address of the w_ccd state contract.
     state_address: Option<ContractAddress>,
+}
+
+/// The proxy contract state.
+#[derive(Serial, Deserial, SchemaType)]
+struct StateProxy {
+    /// The admin address can upgrade the implementation contract.
+    admin:                  Address,
+    /// Address of the w_ccd implementation contract.
+    implementation_address: ContractAddress,
+    /// Address of the w_ccd state contract.
+    state_address:          ContractAddress,
+}
+
+/// The return type for the state contract function `view`.
+#[derive(Serialize, SchemaType)]
+struct BasicState {
+    /// Address of the w_ccd proxy contract.
+    proxy_address:          Option<ContractAddress>,
+    /// Address of the w_ccd implementation contract.
+    implementation_address: Option<ContractAddress>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -131,6 +165,30 @@ struct InitializeImplementationParams {
     proxy_address: Option<ContractAddress>,
     /// Address of the w_ccd state contract.
     state_address: Option<ContractAddress>,
+}
+
+/// The parameter type for the proxy contract function `init`.
+#[derive(Serialize, SchemaType)]
+struct InitProxyParams {
+    /// Address of the w_ccd implementation contract.
+    implementation_address: ContractAddress,
+    /// Address of the w_ccd state contract.
+    state_address:          ContractAddress,
+}
+
+/// The parameter type for the state contract function
+/// `set_implementation_address`.
+#[derive(Serialize, SchemaType)]
+struct SetImplementationAddressParams {
+    /// Address of the w_ccd implementation contract.
+    implementation_address: ContractAddress,
+}
+
+/// The parameter type for the proxy contract function `transferCCD`.
+#[derive(Serialize, SchemaType)]
+struct TransferCCDParams {
+    /// Amount of CCD to transfer to implementation.
+    amount: Amount,
 }
 
 /// The parameter type for the implementation contract function `pause`.
@@ -332,14 +390,14 @@ impl StateImplementation {
     /// Results in an error if the token id does not exist in the state.
     fn is_operator<S>(
         &self,
-        operator: &Address,
+        address: &Address,
         owner: &Address,
         host: &impl HasHost<StateImplementation, StateApiType = S>,
     ) -> ContractResult<bool> {
         // Setup parameter.
         let parameter_bytes = to_bytes(&GetOperatorParams {
             owner:   *owner,
-            address: *operator,
+            address: *address,
         });
 
         let state_address = host
@@ -423,6 +481,37 @@ fn contract_state_initialize<S: HasStateApi>(
     Ok(())
 }
 
+/// The fallback method, which redirects the invocations to the implementation.
+#[receive(contract = "CIS2-wCCD-Proxy", fallback, mutable, payable)]
+fn receive_fallback<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    amount: Amount,
+) -> ReceiveResult<RawReturnValue> {
+    let entrypoint = ctx.named_entrypoint();
+    let implementation = host.state().implementation_address;
+    let mut parameter_buffer = vec![0; ctx.parameter_cursor().size() as usize];
+    ctx.parameter_cursor().read_exact(&mut parameter_buffer)?;
+
+    let return_value = host
+        .invoke_contract_raw(
+            &implementation,
+            Parameter(&parameter_buffer[..]),
+            entrypoint.as_entrypoint_name(),
+            amount,
+        )?
+        .1;
+
+    match return_value {
+        Some(mut rv) => {
+            let mut rv_buffer = vec![0; rv.size() as usize];
+            rv.read_exact(&mut rv_buffer)?;
+            Ok(RawReturnValue(Some(rv_buffer)))
+        }
+        None => Ok(RawReturnValue(None)),
+    }
+}
+
 // Getter and setter functions of the state contract.
 
 fn only_implementation(
@@ -434,6 +523,17 @@ fn only_implementation(
     ensure!(
         sender.matches_contract(&implementation_address),
         concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation)
+    );
+
+    Ok(())
+}
+
+fn only_proxy(proxy: Option<ContractAddress>, sender: Address) -> ContractResult<()> {
+    let proxy_address =
+        proxy.ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
+    ensure!(
+        sender.matches_contract(&proxy_address),
+        concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy)
     );
 
     Ok(())
@@ -456,6 +556,26 @@ fn contract_state_set_unpause_time<S: HasStateApi>(
     // Set unpause_time.
     let params: SetUnpauseTimeParams = ctx.parameter_cursor().get()?;
     host.state_mut().unpause_time = params.unpause_time;
+    Ok(())
+}
+
+/// Set implementation_address.
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "setImplementationAddress",
+    parameter = "SetImplementationAddressParams",
+    mutable
+)]
+fn contract_state_set_implementation_address<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Only proxy can update the implementation address.
+    only_proxy(host.state().proxy_address, ctx.sender())?;
+
+    // Set implementation address.
+    let params: SetImplementationAddressParams = ctx.parameter_cursor().get()?;
+    host.state_mut().implementation_address = Some(params.implementation_address);
     Ok(())
 }
 
@@ -503,7 +623,12 @@ fn contract_state_set_balance<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "CIS2-wCCD-State", name = "getBalance", parameter = "GetBalanceParams")]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "getBalance",
+    parameter = "GetBalanceParams",
+    return_value = "ContractTokenAmount"
+)]
 fn contract_state_get_balance<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -596,6 +721,136 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
+/// Initializes the state of the w_ccd proxy contract with the state and the
+/// implementation addresses. Both addresses have to be set together by calling
+/// this function.
+#[init(contract = "CIS2-wCCD-Proxy", parameter = "InitProxyParams", enable_logger)]
+fn contract_proxy_init<S: HasStateApi>(
+    ctx: &impl HasInitContext,
+    _state_builder: &mut StateBuilder<S>,
+    _logger: &mut impl HasLogger,
+) -> InitResult<StateProxy> {
+    // Set state and implementation addresses.
+    let params: InitProxyParams = ctx.parameter_cursor().get()?;
+
+    // Get the instantiater of this contract instance.
+    let invoker = Address::Account(ctx.init_origin());
+    // Construct the initial proxy contract state.
+    let state = StateProxy {
+        admin:                  invoker,
+        state_address:          params.state_address,
+        implementation_address: params.implementation_address,
+    };
+
+    Ok(state)
+}
+
+#[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", mutable, payable)]
+fn contract_proxy_recieve_ccd<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<StateProxy, StateApiType = S>,
+    _amount: Amount,
+) -> ContractResult<()> {
+    Ok(())
+}
+
+#[receive(contract = "CIS2-wCCD", name = "receiveCCD", mutable, payable)]
+fn contract_implementation_recieve_ccd<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<StateImplementation, StateApiType = S>,
+    _amount: Amount,
+) -> ContractResult<()> {
+    Ok(())
+}
+
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    parameter = "TransferCCDParams",
+    name = "transferCCD",
+    mutable
+)]
+fn contract_proxy_transfer_ccd<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<()> {
+    // Only implementation can access ccds on proxy.
+    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+
+    let params: TransferCCDParams = ctx.parameter_cursor().get()?;
+
+    let implementation = host.state().implementation_address;
+    host.invoke_contract(
+        &implementation,
+        &Parameter(&[]),
+        EntrypointName::new_unchecked("receiveCCD"),
+        params.amount,
+    )?;
+
+    Ok(())
+}
+
+#[receive(contract = "CIS2-wCCD-Proxy", name = "viewBalance", return_value = "Amount")]
+fn contract_proxy_view_balance<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<Amount> {
+    Ok(host.self_balance())
+}
+
+#[receive(contract = "CIS2-wCCD", name = "viewBalance", return_value = "Amount")]
+fn contract_view_balance<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<Amount> {
+    Ok(host.self_balance())
+}
+
+#[receive(contract = "CIS2-wCCD-State", name = "viewBalance", return_value = "Amount")]
+fn contract_state_view_balance<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<Amount> {
+    Ok(host.self_balance())
+}
+
+#[receive(contract = "CIS2-wCCD-Proxy", name = "view", return_value = "StateProxy")]
+fn contract_proxy_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<StateProxy> {
+    let state_proxy = StateProxy {
+        admin:                  host.state().admin,
+        implementation_address: host.state().implementation_address,
+        state_address:          host.state().state_address,
+    };
+    Ok(state_proxy)
+}
+
+#[receive(contract = "CIS2-wCCD", name = "view", return_value = "StateImplementation")]
+fn contract_implementation_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<StateImplementation> {
+    let state_implementation = StateImplementation {
+        admin:         host.state().admin,
+        proxy_address: host.state().proxy_address,
+        state_address: host.state().state_address,
+    };
+    Ok(state_implementation)
+}
+
+#[receive(contract = "CIS2-wCCD-State", name = "view", return_value = "BasicState")]
+fn contract_state_view<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<BasicState> {
+    let state = BasicState {
+        proxy_address:          host.state().proxy_address,
+        implementation_address: host.state().implementation_address,
+    };
+    Ok(state)
+}
+
 /// Initializes the implementation of the w_ccd contract with the proxy and the
 /// state addresses. Both addresses have to be set together by calling this
 /// function. This function can only be called once.
@@ -672,6 +927,18 @@ fn contract_wrap<S: HasStateApi>(
     if amount == Amount::zero() {
         return Ok(());
     }
+
+    let proxy_address = host
+        .state()
+        .proxy_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
+
+    host.invoke_contract_raw(
+        &proxy_address,
+        Parameter(&[]),
+        EntrypointName::new_unchecked("receiveCCD"),
+        amount,
+    )?;
 
     let params: WrapParams = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
@@ -755,6 +1022,26 @@ fn contract_unwrap<S: HasStateApi>(
     if params.amount == 0u64.into() {
         return Ok(());
     }
+    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
+
+    let params2: TransferCCDParams = TransferCCDParams {
+        amount: unwrapped_amount,
+    };
+
+    let parameter_bytes = to_bytes(&params2);
+
+    let proxy_address = host
+        .state()
+        .proxy_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
+
+    host.invoke_contract(
+        &proxy_address,
+        &Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("transferCCD"),
+        Amount::zero(),
+    )?;
+
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
     //  let state = host.state_mut();
@@ -799,8 +1086,6 @@ fn contract_unwrap<S: HasStateApi>(
         amount:   params.amount,
         owner:    params.owner,
     }))?;
-
-    let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
 
     match params.receiver {
         Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
@@ -1042,7 +1327,7 @@ fn contract_update_operator<S: HasStateApi>(
 }
 
 #[receive(contract = "CIS2-wCCD", name = "update_admin", mutable)]
-fn contract_update_admin<S: HasStateApi>(
+fn contract_implementation_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
@@ -1052,6 +1337,56 @@ fn contract_update_admin<S: HasStateApi>(
     let new_admin = ctx.parameter_cursor().get()?;
     // Update admin.
     host.state_mut().admin = new_admin;
+    Ok(())
+}
+
+#[receive(contract = "CIS2-wCCD-Proxy", name = "update_admin", mutable)]
+fn contract_proxy_update_admin<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<()> {
+    // Check that only the old admin is authorized to update the admin address.
+    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    // Parse the parameter.
+    let new_admin = ctx.parameter_cursor().get()?;
+    // Update admin.
+    host.state_mut().admin = new_admin;
+    Ok(())
+}
+
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    name = "updateImplementation",
+    parameter = "SetImplementationAddressParams",
+    mutable
+)]
+fn contract_update_implementation<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<()> {
+    // Check that only the proxy admin is authorized to update the implementation
+    // address.
+    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: SetImplementationAddressParams = ctx.parameter_cursor().get()?;
+    // Update implementation.
+    host.state_mut().implementation_address = params.implementation_address;
+
+    let set_implementation_address_params = SetImplementationAddressParams {
+        implementation_address: params.implementation_address,
+    };
+
+    let parameter_bytes = to_bytes(&set_implementation_address_params);
+
+    let state_address = host.state().state_address;
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("setImplementationAddress"),
+        Amount::zero(),
+    )?;
+
     Ok(())
 }
 
@@ -1252,6 +1587,10 @@ mod tests {
         index:    3,
         subindex: 0,
     };
+    const NEW_IMPLEMENTATION: ContractAddress = ContractAddress {
+        index:    4,
+        subindex: 0,
+    };
 
     fn expect_error<E, T>(expr: Result<T, E>, err: E, msg: &str)
     where
@@ -1259,6 +1598,15 @@ mod tests {
         T: Debug, {
         let actual = expr.expect_err_report(msg);
         claim_eq!(actual, err);
+    }
+
+    /// Test helper function which creates a w_ccd_proxy contract state
+    fn initial_state_proxy() -> StateProxy {
+        StateProxy {
+            admin:                  ADMIN_ADDRESS,
+            implementation_address: IMPLEMENTATION,
+            state_address:          STATE,
+        }
     }
 
     /// Test helper function which creates a w_ccd_implementation contract state
@@ -1822,6 +2170,30 @@ mod tests {
             "Account should be an operator"
         );
 
+        // Checking that `ADDRESS_1` is an operator in the query response of the
+        // `contract_operator_of` function as well.
+        // Setup parameter.
+        let operator_of_query = OperatorOfQuery {
+            address: ADDRESS_1,
+            owner:   ADDRESS_0,
+        };
+
+        let operator_of_query_vector = OperatorOfQueryParams {
+            queries: vec![operator_of_query],
+        };
+        let parameter_bytes = to_bytes(&operator_of_query_vector);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        // Checking the return value of the `contract_operator_of` function
+        let result: ContractResult<OperatorOfQueryResponse> = contract_operator_of(&ctx, &host);
+
+        claim_eq!(
+            result.expect_report("Failed getting result value").0,
+            [true],
+            "Account should be an operator in the query response"
+        );
+
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
@@ -2026,6 +2398,117 @@ mod tests {
         );
     }
 
+    /// Test un_wrap.
+    #[concordium_test]
+    fn test_un_wrap() {
+        // Setup the context.
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.set_sender(ADDRESS_1);
+
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_implementation();
+        let mut host = TestHost::new(state, state_builder);
+
+        // Setup parameter.
+        let initialize_implementation_params = InitializeImplementationParams {
+            proxy_address: Some(PROXY),
+            state_address: Some(STATE),
+        };
+        let parameter_bytes = to_bytes(&initialize_implementation_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Initialize the implementation contract.
+        let result: ContractResult<()> = contract_initialize(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("receiveCCD".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("transferCCD".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("setBalance".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getBalance".into()),
+            MockFn::returning_ok(ContractTokenAmount::from(100)),
+        );
+
+        // Setup parameter.
+        let wrap_params = WrapParams {
+            to:   Receiver::from_account(ACCOUNT_1),
+            data: AdditionalData::empty(),
+        };
+
+        let parameter_bytes = to_bytes(&wrap_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let amount = Amount::from_micro_ccd(100);
+        host.set_self_balance(amount);
+
+        // Account_1 wraps some CCD.
+        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Setup the parameter.
+        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
+            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+        );
+
+        // Setup parameter.
+        let un_wrap_params = UnwrapParams {
+            amount:   ContractTokenAmount::from(100),
+            owner:    ADDRESS_1,
+            receiver: Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
+        };
+        let parameter_bytes = to_bytes(&un_wrap_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        host.set_self_balance(amount);
+        let mut logger = TestLogger::init();
+
+        ctx.set_sender(ADDRESS_1);
+
+        // Trying to invoke the un_wrap entrypoint.
+        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+    }
+
     /// Test that one can NOT un_wrap when contract is paused.
     #[concordium_test]
     fn test_no_un_wrap_when_paused() {
@@ -2060,6 +2543,13 @@ mod tests {
 
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("receiveCCD".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
             STATE,
             OwnedEntrypointName::new_unchecked("setBalance".into()),
             MockFn::returning_ok(()),
@@ -2076,6 +2566,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let amount = Amount::from_micro_ccd(100);
+        host.set_self_balance(amount);
 
         // Account_1 wraps some CCD.
         let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount, &mut logger);
@@ -2301,9 +2792,9 @@ mod tests {
         );
     }
 
-    /// Test updating to new admin address.
+    /// Test updating to new admin address on the implementation contract.
     #[concordium_test]
-    fn test_update_admin() {
+    fn test_implementation_update_admin() {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
@@ -2320,7 +2811,7 @@ mod tests {
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host);
+        let result: ContractResult<()> = contract_implementation_update_admin(&ctx, &mut host);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -2329,9 +2820,38 @@ mod tests {
         claim_eq!(host.state().admin, NEW_ADMIN_ADDRESS, "Admin should be the new admin address");
     }
 
-    /// Test that only the current admin can update the admin address.
+    /// Test updating to new admin address on the proxy contract.
     #[concordium_test]
-    fn test_update_admin_not_authorized() {
+    fn test_proxy_update_admin() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADMIN_ADDRESS);
+
+        // Setup the parameter.
+        let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
+        ctx.set_parameter(&parameter_bytes);
+
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_proxy();
+        let mut host = TestHost::new(state, state_builder);
+
+        // Check the admin state.
+        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the admin state.
+        claim_eq!(host.state().admin, NEW_ADMIN_ADDRESS, "Admin should be the new admin address");
+    }
+
+    /// Test that only the current admin can update the admin address on the
+    /// implementation contract.
+    #[concordium_test]
+    fn test_implementation_update_admin_not_authorized() {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
         // NEW_ADMIN is not the current admin but tries to update the admin variable to
@@ -2350,7 +2870,7 @@ mod tests {
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host);
+        let result: ContractResult<()> = contract_implementation_update_admin(&ctx, &mut host);
         // Check that invoke failed.
         expect_error(
             result,
@@ -2360,5 +2880,82 @@ mod tests {
 
         // Check the admin state.
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be still the old admin address");
+    }
+
+    /// Test that only the current admin can update the admin address on the
+    /// proxy contract.
+    #[concordium_test]
+    fn test_proxy_update_admin_not_authorized() {
+        // Setup the context.
+        let mut ctx = TestReceiveContext::empty();
+        // NEW_ADMIN is not the current admin but tries to update the admin variable to
+        // its own address.
+        ctx.set_sender(NEW_ADMIN_ADDRESS);
+
+        // Setup the parameter.
+        let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
+        ctx.set_parameter(&parameter_bytes);
+
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_proxy();
+        let mut host = TestHost::new(state, state_builder);
+
+        // Check the admin state.
+        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host);
+        // Check that invoke failed.
+        expect_error(
+            result,
+            ContractError::Unauthorized,
+            "Update admin should fail because not the current admin tries to update",
+        );
+
+        // Check the admin state.
+        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be still the old admin address");
+    }
+
+    /// Test updating to new admin address on the proxy contract.
+    #[concordium_test]
+    fn test_contract_update_implementation() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADMIN_ADDRESS);
+
+        // Setup the parameter.
+        let parameter_bytes = to_bytes(&[NEW_IMPLEMENTATION]);
+        ctx.set_parameter(&parameter_bytes);
+
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_proxy();
+        let mut host = TestHost::new(state, state_builder);
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("setImplementationAddress".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Check the admin state.
+        claim_eq!(
+            host.state().implementation_address,
+            IMPLEMENTATION,
+            "Implementation should be the old implementation address"
+        );
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_update_implementation(&ctx, &mut host);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the admin state.
+        claim_eq!(
+            host.state().implementation_address,
+            NEW_IMPLEMENTATION,
+            "Implementation should be the new implementation address"
+        );
     }
 }
