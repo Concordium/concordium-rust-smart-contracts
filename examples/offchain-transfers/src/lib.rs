@@ -60,7 +60,9 @@ enum ReceiveError {
     // Sender cannot be a contract,
     ContractSender,
     // Not enough funds
-    InsufficientFunds
+    InsufficientFunds,
+    // Invalid settlement
+    SettlementInvalid
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -144,14 +146,14 @@ fn contract_receive_withdraw<S: HasStateApi>(
 
 // Checks whether a settlement is valid.
 // This consists of checking that the sum of sent amount matches the sum of received amounts.
-fn is_settlement_valid(settlement: Settlement) -> bool {
+fn is_settlement_valid(settlement: &Settlement) -> bool {
     let mut send_amount = Amount::zero();
     let mut receive_amount = Amount::zero();
 
-    for send_transfer in settlement.transfer.send_transfers {
+    for send_transfer in &settlement.transfer.send_transfers {
         send_amount += send_transfer.amount;
     }
-    for receive_transfer in settlement.transfer.receive_transfers {
+    for receive_transfer in &settlement.transfer.receive_transfers {
         receive_amount += receive_transfer.amount;
     }
 
@@ -165,9 +167,14 @@ fn is_settlement_valid(settlement: Settlement) -> bool {
 #[inline(always)]
 fn contract_receive_settle<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+    let settlement: Settlement = ctx.parameter_cursor().get()?;
+    ensure!(is_settlement_valid(&settlement), ReceiveError::SettlementInvalid);
+    
+    host.state_mut().settlements.push(settlement);
+
     Ok(())
 }
 
