@@ -2166,7 +2166,7 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
 ///    my_state_map: StateMap<SomeType, SomeOtherType, S>,
 /// }
 /// ```
-#[proc_macro_derive(Deletable)]
+#[proc_macro_derive(Deletable, attributes(concordium))]
 pub fn deletable_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input);
     unwrap_or_report(impl_deletable(&ast))
