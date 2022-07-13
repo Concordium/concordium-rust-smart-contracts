@@ -184,9 +184,14 @@ fn contract_receive_settle<S: HasStateApi>(
 #[inline(always)]
 fn contract_receive_veto<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+    let s_id: SettlementID = ctx.parameter_cursor().get()?;
+
+    // delete all settlements with the given ID from the list
+    host.state_mut().settlements.retain(|s| s.id != s_id);
+    
     Ok(())
 }
 
