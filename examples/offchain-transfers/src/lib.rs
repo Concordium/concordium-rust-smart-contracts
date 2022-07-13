@@ -51,7 +51,9 @@ enum ReceiveError {
     #[from(ParseError)]
     ParseParams,
     // Sender cannot be a contract,
-    ContractSender
+    ContractSender,
+    // Not enough funds
+    InsufficientFunds
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -72,7 +74,7 @@ fn contract_init<S: HasStateApi>(
 }
 
 
-#[receive(contract = "bilateral-transfers", name = "deposit", payable, mutable)]
+#[receive(contract = "offchain-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
 fn contract_receive_deposit<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -90,12 +92,11 @@ fn contract_receive_deposit<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "withdraw", payable, mutable)]
+#[receive(contract = "offchain-transfers", name = "withdraw", mutable, parameter = "Amount")]
 #[inline(always)]
 fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-    amount: Amount,
+    host: &mut impl HasHost<State<S>, StateApiType = S>
 ) -> ContractResult<()> {
 
     let sender_address = match ctx.sender() {
@@ -103,10 +104,30 @@ fn contract_receive_withdraw<S: HasStateApi>(
         Address::Account(account_address) => account_address,
     };
 
+    let payout: Amount = ctx.parameter_cursor().get()?;
+
+    // get expenses that the user has in the balance sheet
+    let mut expenses = Amount::zero();
+    for settlement in host.state().settlements.iter() {
+        for sender in settlement.transfer.senders.iter() {
+            if let (sender_address, value) = sender {
+                expenses += *value;
+            }
+        }
+    }
+
+    // ensure that user has sufficient funds even in the worst case if all expenses are deducted and nothing is added
+    let mut balance = *host.state_mut().balance_sheet.entry(sender_address).occupied_or(ReceiveError::InsufficientFunds)?;
+    ensure!(balance >= expenses + payout, ReceiveError::InsufficientFunds);
+
+    // execute transfer
+    balance -= payout;
+    host.invoke_transfer(&sender_address, payout).unwrap_abort();
+
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "settle", payable, mutable)]
+#[receive(contract = "offchain-transfers", name = "settle", payable, mutable)]
 #[inline(always)]
 fn contract_receive_settle<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -116,7 +137,7 @@ fn contract_receive_settle<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "veto", payable, mutable)]
+#[receive(contract = "offchain-transfers", name = "veto", payable, mutable)]
 #[inline(always)]
 fn contract_receive_veto<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -126,7 +147,7 @@ fn contract_receive_veto<S: HasStateApi>(
     Ok(())
 }
 
-#[receive(contract = "bilateral-transfers", name = "execute-settlements", payable, mutable)]
+#[receive(contract = "offchain-transfers", name = "execute-settlements", payable, mutable)]
 #[inline(always)]
 fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
