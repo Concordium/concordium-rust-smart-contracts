@@ -222,21 +222,18 @@ fn contract_receive_add_settlement<S: HasStateApi>(
         is_settlement_transfer(&transfer),
         ReceiveError::InvalidTransfer
     );
-
+    let id = host.state().next_id;
     //Create a new settlement
     let now = ctx.metadata().slot_time();
     let settlement = Settlement {
-        id: host.state().next_id,
+        id,
         transfer,
         finality_time: now
             .checked_add(host.state().config.time_to_finality)
             .ok_or(ReceiveError::TimeOverflow)?,
     };
     //Increase ID counter
-    host.state_mut()
-        .next_id
-        .checked_add(1)
-        .ok_or(ReceiveError::CounterOverflow);
+    host.state_mut().next_id = id.checked_add(1).ok_or(ReceiveError::CounterOverflow)?;
     //Add settlement
     host.state_mut().settlements.push(settlement);
     Ok(())
@@ -689,7 +686,7 @@ mod tests {
 
         claim_eq!(host.state().settlements.len(),1,"There should be one settlement");
         claim_eq!(host.state().balance_sheet.iter().count(),0,"There should be no change to the balance sheet");
-
+        claim_eq!(host.state().next_id,1,"The ID should be increased");
         //Test 3: Validator tries to add strange but valid settlement
         let strange_but_ok_transfer = Transfer {
             send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(100)},AddressAmount{address: account3, amount:Amount::zero()}],
@@ -708,7 +705,7 @@ mod tests {
 
         claim_eq!(host.state().settlements.len(),2,"There should be two settlements");
         claim_eq!(host.state().balance_sheet.iter().count(),0,"There should be no change to the balance sheet");
-
+        claim_eq!(host.state().next_id,2,"The ID should be increased");
         //Test 4: Validator tries to add invalid settlement
         let bad_transfer = Transfer {
             send_transfers: vec![AddressAmount{address: account3, amount:Amount::from_ccd(50)}],
