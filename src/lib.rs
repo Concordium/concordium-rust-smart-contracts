@@ -254,8 +254,8 @@ fn is_settlement_valid<S: HasStateApi>(
     // check whether all senders have sufficient funds with respect to the updated state
     // first get set of all senders (to avoid duplicate checks) and then check for each sender in set
     let mut sender_addresses = HashSet::new();
-    for sender in settlement.transfer.send_transfers.iter() {
-        sender_addresses.insert(sender.address);
+    for send_transfer in settlement.transfer.send_transfers.iter() {
+        sender_addresses.insert(send_transfer.address);
     }
     for sender_address in sender_addresses {
         // get current balance of sender
@@ -304,10 +304,18 @@ fn contract_receive_execute_settlements<S: HasStateApi>(
     let current_time = ctx.metadata().slot_time();
 
     for settlement in host.state().settlements.iter() {
-        // only execute settlements for which finality time has passed
-        if current_time >= settlement.finality_time {
-            if is_settlement_valid(settlement, &host.state().balance_sheet) {
-                // TODO
+        // only execute settlements for which finality time has passed and if they are valid
+        if current_time >= settlement.finality_time && is_settlement_valid(settlement, &host.state().balance_sheet) {
+            // first add balances of all receivers and then subtract of senders
+            // together with the validity of settlements, this implies nonnegative amounts for all accounts
+            for receive_transfer in settlement.transfer.receive_transfers.iter() {
+                let mut receiver_balance = host.state_mut().balance_sheet.entry(receive_transfer.address).or_insert(Amount::zero());
+                *receiver_balance += receive_transfer.amount;
+            }
+            
+            for send_transfer in settlement.transfer.send_transfers.iter() {
+                let mut sender_balance = host.state_mut().balance_sheet.entry(send_transfer.address).or_insert(Amount::zero());
+                *sender_balance -= send_transfer.amount;
             }
         }
     }
