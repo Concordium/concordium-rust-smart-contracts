@@ -1,33 +1,57 @@
+/*!
+ * An example implementation of an optimistic settlement layer for off-chain transactions.
+ * 
+ * #Description
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ */
+
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 use std::collections::HashSet;
 use std::convert::TryInto;
 
+/// Unique identifier for settlements
 type SettlementID = u64;
 
+/// A tuple describing either a sender or reicer in a transfer
 #[derive(Clone, Serialize, SchemaType)]
 struct AddressAmount {
+    /// The sender or receiver
     address: AccountAddress,
+    /// The sent/received amount
     amount: Amount,
 }
 
-// A transfer consisting of possibly multiple inputs with different amounts and several receivers
+/// A transfer consisting of possibly multiple inputs with different amounts and several receivers
+/// A transfer is synatically valid if the sent amounts match the received amounts
 #[derive(Clone, Serialize, SchemaType)]
 struct Transfer {
+    /// The list of senders
     send_transfers: Vec<AddressAmount>,
+    /// The list of receivers
     receive_transfers: Vec<AddressAmount>,
-    //This is not used directly by the smart contract
-    //it could contain information relevant to the judge
+    /// The meta-data is not used by the smart contract
+    /// it could contain information relevant to the judge
     meta_data: Vec<u8>,
 }
 
+/// A settlement defines a (potential) update to the balance sheet
 #[derive(Clone, Serialize, SchemaType)]
 struct Settlement {
+    /// Unique ID
     id: SettlementID,
+    /// The update described as a transfer
     transfer: Transfer,
+    /// Point in time when the settlement becomes final
     finality_time: Timestamp,
 }
 
+/// The configuration of the smart contract
 #[derive(Serialize, SchemaType)]
 struct ContractConfig {
     /// The validator's address
@@ -45,30 +69,36 @@ struct ContractConfig {
     settlement_limit: u32,
 }
 
+/// The smart contract state
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
-    /// The initial configuration of the contract
+    /// The configuration of the contract
     config: ContractConfig,
 
-    /// The next settlement id
+    /// The next settlement id, starts at 0
     next_id: SettlementID,
 
     /// Proposed settlements
+    /// 
+    /// Note that the settlement queue could be implemented with a more efficient data structure
     settlements: Vec<Settlement>,
 
     /// Balance sheet
     balance_sheet: StateMap<AccountAddress, Amount, S>,
 }
 
+/// The different errors the initialization can produce.
 #[derive(Debug, PartialEq, Eq, Reject)]
 enum InitError {
     /// Failed parsing the parameter
     #[from(ParseError)]
     ParseParams,
 }
+/// The result type for smart contract initalization
 type InitResult<A> = Result<A, InitError>;
 
+/// The different errors the smart contract calls can produce.
 #[derive(Debug, PartialEq, Eq, Reject)]
 enum ReceiveError {
     /// Failed parsing the parameter.
@@ -91,11 +121,27 @@ enum ReceiveError {
     /// Cannot withdraw 0 CCDs
     ZeroWithdrawal,
     /// Settlement queue full,
-    SettlementQueueFull
+    SettlementQueueFull,
+    /// Invalid receiver when invoking a transfer.
+    InvokeTransferMissingAccount,
+    /// Insufficient funds when invoking a transfer.
+    InvokeTransferInsufficientFunds,
 }
+
+/// Mapping errors related to transfer invocations to CustomContractError.
+impl From<TransferError> for ReceiveError {
+    fn from(te: TransferError) -> Self {
+        match te {
+            TransferError::AmountTooLarge => Self::InvokeTransferInsufficientFunds,
+            TransferError::MissingAccount => Self::InvokeTransferMissingAccount,
+        }
+    }
+}
+
+/// The result type for smart contract calls
 type ContractResult<A> = Result<A, ReceiveError>;
 
-// Initialize contract with empty balance sheet and no settlements
+/// Initialize contract with empty balance sheet and no settlements
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
 fn contract_init<S: HasStateApi>(
