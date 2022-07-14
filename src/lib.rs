@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 use std::collections::HashSet;
+use std::convert::TryInto;
 
 type SettlementID = u64;
 
@@ -41,7 +42,7 @@ struct ContractConfig {
     time_to_finality: Duration,
     
     /// Bound on the amount of pending settlements 
-    settlement_limit: usize,
+    settlement_limit: u32,
 }
 
 #[derive(Serial, DeserialWithState)]
@@ -229,7 +230,7 @@ fn contract_receive_add_settlement<S: HasStateApi>(
 
     //Ensure there is space for the incoming settlement
     ensure!(
-        host.state().settlements.len() < host.state().config.settlement_limit,
+        host.state().settlements.len() < host.state().config.settlement_limit.try_into().unwrap(),
         ReceiveError::SettlementQueueFull
     );
 
@@ -726,7 +727,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600),
-                settlement_limit: 1000,
+                settlement_limit: 2,
             },
             balance,
         );
@@ -782,7 +783,37 @@ mod tests {
             "There should be no change to the balance sheet"
         );
         claim_eq!(host.state().next_id, 1, "The ID should be increased");
-        //Test 3: Validator tries to add strange but valid settlement
+
+        //Test 3: Validator tries to add invalid settlement
+        let bad_transfer = Transfer {
+            send_transfers: vec![AddressAmount {
+                address: account3,
+                amount: Amount::from_ccd(50),
+            }],
+            receive_transfers: vec![
+                AddressAmount {
+                    address: account1,
+                    amount: Amount::from_ccd(50),
+                },
+                AddressAmount {
+                    address: account1,
+                    amount: Amount::from_ccd(50),
+                },
+            ],
+            meta_data: Vec::new(),
+        };
+        let parameter_bytes = to_bytes(&bad_transfer);
+        ctx.set_parameter(&parameter_bytes);
+
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InvalidTransfer),
+            "Should fail with InvalidTransfer"
+        );
+
+        //Test 4: Validator tries to add strange but valid settlement
         let strange_but_ok_transfer = Transfer {
             send_transfers: vec![
                 AddressAmount {
@@ -824,33 +855,17 @@ mod tests {
             "There should be no change to the balance sheet"
         );
         claim_eq!(host.state().next_id, 2, "The ID should be increased");
-        //Test 4: Validator tries to add invalid settlement
-        let bad_transfer = Transfer {
-            send_transfers: vec![AddressAmount {
-                address: account3,
-                amount: Amount::from_ccd(50),
-            }],
-            receive_transfers: vec![
-                AddressAmount {
-                    address: account1,
-                    amount: Amount::from_ccd(50),
-                },
-                AddressAmount {
-                    address: account1,
-                    amount: Amount::from_ccd(50),
-                },
-            ],
-            meta_data: Vec::new(),
-        };
-        let parameter_bytes = to_bytes(&bad_transfer);
+
+        //Test 5: Validator tries to add to a full quueue
+        let parameter_bytes = to_bytes(&good_transfer);
         ctx.set_parameter(&parameter_bytes);
 
         let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
 
         claim_eq!(
             res,
-            ContractResult::Err(ReceiveError::InvalidTransfer),
-            "Should fail with InvalidTransfer"
+            ContractResult::Err(ReceiveError::SettlementQueueFull),
+            "Should fail with SettlementQueueFull"
         );
     }
 
