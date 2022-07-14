@@ -675,7 +675,7 @@ mod tests {
         let transfers = host.get_transfers();
         claim_eq!(transfers.len(), 1, "There should be one transfers");
         claim_eq!(transfers[0].0, account3, "Should be sent to account3");
-        claim_eq!(transfers[0].1, payout, "payout CCDs should have been sents");
+        claim_eq!(transfers[0].1, payout, "payout CCDs should have been sent");
 
         //Test 4: Try to withdraw money from non-existing account (1)
         ctx.set_sender(Address::Account(account1));
@@ -694,11 +694,11 @@ mod tests {
         //Accounts
         let account1 = AccountAddress([1u8; 32]); //Validator
         let account2 = AccountAddress([2u8; 32]); //Judge
-                                                  //User
-        let alice = AccountAddress([3u8; 32]);
-        let bob = AccountAddress([4u8; 32]);
-        let charlie = AccountAddress([5u8; 32]);
-        //Balances
+
+        let alice = AccountAddress([3u8; 32]); //User
+        let bob = AccountAddress([4u8; 32]); //User
+        let charlie = AccountAddress([5u8; 32]); //User
+                                                 //Balances
         let alice_balance = Amount::from_ccd(100);
         let bob_balance = Amount::from_ccd(100);
         let charlie_balance = Amount::from_ccd(100);
@@ -827,7 +827,7 @@ mod tests {
         let transfers = host.get_transfers();
         claim_eq!(transfers.len(), 1, "There should be one transfers");
         claim_eq!(transfers[0].0, bob, "Should be sent to account3");
-        claim_eq!(transfers[0].1, payout, "payout CCDs should have been sents");
+        claim_eq!(transfers[0].1, payout, "payout CCDs should have been sent");
 
         claim_eq!(
             host.state().settlements.len(),
@@ -878,7 +878,7 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut()
             .set_slot_time(Timestamp::from_timestamp_millis(100));
-        ctx.set_sender(Address::Account(account3));
+        ctx.set_sender(Address::Account(account2));
         let parameter_bytes = to_bytes(&good_transfer);
         ctx.set_parameter(&parameter_bytes);
 
@@ -981,7 +981,7 @@ mod tests {
         );
         claim_eq!(host.state().next_id, 2, "The ID should be increased");
 
-        //Test 5: Validator tries to add to a full quueue
+        //Test 5: Validator tries to add to a full queue
         let parameter_bytes = to_bytes(&good_transfer);
         ctx.set_parameter(&parameter_bytes);
 
@@ -1176,6 +1176,12 @@ mod tests {
             Amount::from_ccd(50),
             "Doris has incorrect amount."
         );
+
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should be one settlement left."
+        );
     }
 
     #[concordium_test]
@@ -1183,11 +1189,11 @@ mod tests {
         //Accounts
         let account1 = AccountAddress([1u8; 32]); //Validator
         let account2 = AccountAddress([2u8; 32]); //Judge
-                                                  //User
-        let alice = AccountAddress([3u8; 32]);
-        let bob = AccountAddress([4u8; 32]);
-        let charlie = AccountAddress([5u8; 32]);
-        //Balances
+
+        let alice = AccountAddress([3u8; 32]); //User
+        let bob = AccountAddress([4u8; 32]); //User
+        let charlie = AccountAddress([5u8; 32]); //User
+                                                 //Balances
         let alice_balance = Amount::from_ccd(100);
         let bob_balance = Amount::from_ccd(100);
         let charlie_balance = Amount::from_ccd(100);
