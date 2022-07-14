@@ -1,12 +1,16 @@
 /*!
  * An example implementation of an optimistic settlement layer for off-chain transactions.
  * 
- * #Description
+ *  **Warning**
+ *  This contract is is **UNSUITABLE FOR DEPLOYMENT**, and **PROVIDED FOR TESTING ONLY**.
+ * 
+ * # Description
  * 
  * 
+ * # Limitations
  * 
- * 
- * 
+ *  * The `settlement_limit` in [ContractConfig] needs to be set such that both `contract_receive_veto` and `contract_receive_execute_settlements` can run on a full settlement queue given the energy limit of a single block. 
+ *  * The data structures have not been optimized for deployment.
  * 
  */
 
@@ -20,7 +24,7 @@ type SettlementID = u64;
 
 /// A tuple describing either a sender or reicer in a transfer
 #[derive(Clone, Serialize, SchemaType)]
-struct AddressAmount {
+pub struct AddressAmount {
     /// The sender or receiver
     address: AccountAddress,
     /// The sent/received amount
@@ -30,14 +34,14 @@ struct AddressAmount {
 /// A transfer consisting of possibly multiple inputs with different amounts and several receivers
 /// A transfer is synatically valid if the sent amounts match the received amounts
 #[derive(Clone, Serialize, SchemaType)]
-struct Transfer {
+pub struct Transfer {
     /// The list of senders
-    send_transfers: Vec<AddressAmount>,
+    pub send_transfers: Vec<AddressAmount>,
     /// The list of receivers
-    receive_transfers: Vec<AddressAmount>,
+    pub receive_transfers: Vec<AddressAmount>,
     /// The meta-data is not used by the smart contract
     /// it could contain information relevant to the judge
-    meta_data: Vec<u8>,
+    pub meta_data: Vec<u8>,
 }
 
 /// A settlement defines a (potential) update to the balance sheet
@@ -53,20 +57,20 @@ struct Settlement {
 
 /// The configuration of the smart contract
 #[derive(Serialize, SchemaType)]
-struct ContractConfig {
+pub struct ContractConfig {
     /// The validator's address
     /// In an application, this should be replaced by a committee of validators (with approval threshold)
     /// See the two-stage transfer example on how to implement such a validator committee
-    validator: AccountAddress,
+    pub validator: AccountAddress,
 
     /// The judge's address 
-    judge: AccountAddress,
+    pub judge: AccountAddress,
 
     /// Time until a settlement becomes final
-    time_to_finality: Duration,
+    pub time_to_finality: Duration,
     
     /// Bound on the amount of pending settlements 
-    settlement_limit: u32,
+    pub settlement_limit: u32,
 }
 
 /// The smart contract state
