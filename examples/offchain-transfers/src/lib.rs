@@ -79,6 +79,8 @@ enum ReceiveError {
     NotAJudge,
     /// Cannot withdraw 0 CCDs
     ZeroWithdrawal,
+    /// Cannot veto finalized settlements
+    FinalizedSettlement,
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -1060,7 +1062,7 @@ mod tests {
             ContractConfig {
                 validator: account1,
                 judge: account2,
-                time_to_finality: Duration::from_seconds(600),
+                time_to_finality: Duration::from_millis(100),
             },
             //Total balance of all user
             alice_balance + bob_balance + charlie_balance,
@@ -1089,7 +1091,7 @@ mod tests {
                 }],
                 meta_data: Vec::new(),
             },
-            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+            finality_time: Timestamp::from_timestamp_millis(100),
         };  
         host.state_mut().settlements.push(settlement1); 
         let settlement2 = Settlement {
@@ -1108,14 +1110,14 @@ mod tests {
                 }],
                 meta_data: Vec::new(),
             },
-            finality_time: Timestamp::from_timestamp_millis(1000 * 600),
+            finality_time: Timestamp::from_timestamp_millis(110),
         };
         host.state_mut().settlements.push(settlement2);   
         
         //Test 1 NonJudge trying to veto settlement
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut()
-            .set_slot_time(Timestamp::from_timestamp_millis(100));
+            .set_slot_time(Timestamp::from_timestamp_millis(90));
         ctx.set_sender(Address::Account(account1)); //Use a validator instead
         let id_bytes = to_bytes(&1u64);
         ctx.set_parameter(&id_bytes);
@@ -1136,13 +1138,13 @@ mod tests {
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);  
         claim!(
             res.is_ok(),
-            "Should allow judge to veto not existing settlement."
+            "Should allow judge to veto non-existing settlement."
         );  
         
         claim_eq!(host.state().settlements.len(),2,"There should still be two settlements.");
 
         //Test 3 judge vetoes existing settlement
-        ctx.set_sender(Address::Account(account2)); //Use a validator instead
+        ctx.set_sender(Address::Account(account2)); 
         let id_bytes = to_bytes(&1u64);
         ctx.set_parameter(&id_bytes);  
 
@@ -1154,6 +1156,19 @@ mod tests {
         
         claim_eq!(host.state().settlements.len(),1,"There should one settlement.");
 
+        //Test 4 judge tries to veto existing settlement after finality
+        ctx.set_sender(Address::Account(account2)); 
+        let id_bytes = to_bytes(&2u64);
+        ctx.set_parameter(&id_bytes);
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(120));    
+
+        let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host); 
+
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::FinalizedSettlement),
+            "Should fail with FinalizedSettlement"
+        );   
     }
 
     // test using all functions
@@ -1172,7 +1187,7 @@ mod tests {
         let parameter = ContractConfig {
             validator: validator_address,
             judge: judge_address,
-            time_to_finality: Duration::from_seconds(600),
+            time_to_finality: Duration::from_millis(100),
         };
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
@@ -1219,18 +1234,80 @@ mod tests {
             ContractResult::Err(ReceiveError::InsufficientFunds),
             "Should fail with InsufficientFunds"
         );    
-        
+
         // withdraw valid amount from Bob
-        let parameter_bytes = to_bytes(&Amount::from_ccd(40));
+        let payout = Amount::from_ccd(40);
+        let parameter_bytes = to_bytes(&payout);
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(190));
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
 
-        claim!(res.is_ok(), "Should allow to withdraw amount.");
+        claim!(res.is_ok(), "Should allow Bob to withdraw amount.");
 
+        //Add settlements
+        let transfer1 = Transfer {
+            send_transfers: vec![AddressAmount {
+                address: alice_address,
+                amount: Amount::from_ccd(50),
+            },AddressAmount {
+                address: charlie_address,
+                amount: Amount::from_ccd(20),
+            }],
+            receive_transfers: vec![AddressAmount {
+                address: charlie_address,
+                amount: Amount::from_ccd(70),
+            }],
+            meta_data: Vec::new(),
+        };
+        let parameter_bytes = to_bytes(&transfer1);
+        ctx.set_parameter(&parameter_bytes);
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(200));
+        ctx.set_sender(Address::Account(validator_address));
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
+        claim!(res.is_ok(), "Should allow the validator to add settlement.");
 
+        // withdraw too much from Alice (reserved balance)
+        let parameter_bytes = to_bytes(&Amount::from_ccd(60));
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(210));
+        ctx.set_sender(Address::Account(alice_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InsufficientFunds),
+            "Should fail with InsufficientFunds"
+        );    
+        
+        //Add another settlement
+        let transfer2 = Transfer {
+            send_transfers: vec![AddressAmount {
+                address: charlie_address,
+                amount: Amount::from_ccd(90),
+            }],
+            receive_transfers: vec![AddressAmount {
+                address: alice_address,
+                amount: Amount::from_ccd(50),
+            },AddressAmount {
+                address: bob_address,
+                amount: Amount::from_ccd(40),
+            }],
+            meta_data: Vec::new(),
+        };
+        let parameter_bytes = to_bytes(&transfer2);
+        ctx.set_parameter(&parameter_bytes);
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(220));
+        ctx.set_sender(Address::Account(validator_address));
+        let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
+        claim!(res.is_ok(), "Should allow the validator to add settlement.");  
+        
+        // Veto one
 
-        // TODO add more here
+        // Withdraw now
+
+        // Execute
+
+        // Withdraw final
+    
     }
 }
