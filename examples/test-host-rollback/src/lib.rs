@@ -112,7 +112,7 @@ mod tests {
         ctx_rcv.set_parameter(&parameter); // Don't invoke, just increment and then return Err.
 
         // Call update function.
-        let result = with_rollback(|host| contract_update(&ctx_rcv, host), &mut host);
+        let result = host.invoke_with_rollback(|host| contract_update(&ctx_rcv, host));
         claim_eq!(result, Err(ContractError::Error));
 
         // The state should be 0, as the update failed.
@@ -148,7 +148,7 @@ mod tests {
         );
 
         // Call update function.
-        let result = with_rollback(|host| contract_update(&ctx_rcv, host), &mut host);
+        let result = host.invoke_with_rollback(|host| contract_update(&ctx_rcv, host));
         claim_eq!(result, Ok(()));
 
         // The state should be 1, as the outer receive worked, but the inner invoke
@@ -186,7 +186,7 @@ mod tests {
         );
 
         // Call update function.
-        let result = with_rollback(|host| contract_update(&ctx_rcv, host), &mut host);
+        let result = host.invoke_with_rollback(|host| contract_update(&ctx_rcv, host));
         claim_eq!(result, Ok(()));
 
         // The state should be (2,2), as both the inner and outer call succeeded.

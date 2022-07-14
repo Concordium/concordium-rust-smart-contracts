@@ -1230,7 +1230,6 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-// TODO: Only require StateClone when necessary.
 impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
     for TestHost<State>
 {
@@ -1273,7 +1272,9 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
     ///
-    /// TODO: Explain the rollback.
+    /// If the invocation results in `Err(_)`, the host and state will be rolled
+    /// back. This means that the state and the logs of, e.g., transactions will
+    /// look as if the invocation never occurred.
     fn invoke_contract_raw(
         &mut self,
         to: &ContractAddress,
@@ -1298,6 +1299,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             return Err(CallContractError::AmountTooLarge);
         }
 
+        // Save a checkpoint for rolling back on errors.
+        // TODO: Is it only necessary to clone the state here?
         let host_checkpoint = self.checkpoint();
 
         // Invoke the handler.
@@ -1310,7 +1313,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
 
         match invocation_res {
             Err(error) => {
-                // Roll back host.
+                // Roll back the host.
                 *self = host_checkpoint;
                 Err(error)
             }
@@ -1334,6 +1337,10 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     /// This uses the mock entrypoints set up with
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
+    ///
+    /// If the invocation results in `Err(_)`, the host and state will be rolled
+    /// back. This means that the state and the logs of, e.g., transactions will
+    /// look as if the invocation never occurred.
     fn invoke_contract_raw_read_only(
         &self,
         to: &ContractAddress,
@@ -1367,6 +1374,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             Ok(state) => state,
             Err(e) => fail!("Failed to deserialize state: {:?}", e),
         };
+
+        // TODO: Checkpoint + rollback needed here?
 
         // Invoke the handler.
         let (state_modified, res) =
@@ -1521,6 +1530,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
 }
 
 impl<State: StateClone<TestStateApi>> TestHost<State> {
+    /// Make a deep clone of the host, including the whole state and all
+    /// references to the state. Used for rolling back the host and state,
+    /// fx when using [`invoke_with_rollback`].
     fn checkpoint(&self) -> Self {
         let cloned_state_api = self.state_builder.state_api.clone_deep();
         Self {
@@ -1534,20 +1546,23 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
             missing_accounts: self.missing_accounts.clone(),
         }
     }
-}
 
-// TODO: Should this be a method on TestHost?
-pub fn with_rollback<R, E, S: StateClone<TestStateApi>>(
-    call: impl FnOnce(&mut TestHost<S>) -> Result<R, E>,
-    host: &mut TestHost<S>,
-) -> Result<R, E> {
-    let checkpoint = host.checkpoint();
-    let res = call(host);
-    // Handle rollback on errors.
-    if res.is_err() {
-        *host = checkpoint;
+    /// Helper function for invoking receive methods that respects the
+    /// transactional nature of invocations. That is, if the invocation
+    /// returns `Err(_)`, then the host and state is rolled back to a
+    /// checkpoint just before the invocation.
+    pub fn invoke_with_rollback<R, E>(
+        &mut self,
+        call: impl FnOnce(&mut TestHost<State>) -> Result<R, E>,
+    ) -> Result<R, E> {
+        let checkpoint = self.checkpoint();
+        let res = call(self);
+        // Roll back on errors.
+        if res.is_err() {
+            *self = checkpoint;
+        }
+        res
     }
-    res
 }
 
 #[cfg(test)]
