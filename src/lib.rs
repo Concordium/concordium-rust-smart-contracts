@@ -1284,11 +1284,108 @@ mod tests {
         claim!(res.is_ok(), "Should allow the validator to add settlement.");
 
         // Veto one
+        ctx.set_sender(Address::Account(judge_address));
+        let id_bytes = to_bytes(&0u64);
+        ctx.set_parameter(&id_bytes);
+        let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow judge to veto existing settlement."
+        );
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should one settlement."
+        );
 
-        // Withdraw now
+        // Withdraw now 
+        let parameter_bytes = to_bytes(&Amount::from_ccd(60));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(230));
+        ctx.set_sender(Address::Account(alice_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow Alice to withdraw funds."
+        );
 
-        // Execute
+        // Execute settlement too early
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(310));
+        ctx.set_sender(Address::Account(bob_address));
+        let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow Bob to execute all final settlement."
+        );
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should one settlement."
+        );
+
+        // Execute settlement
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(320));
+        ctx.set_sender(Address::Account(bob_address));
+        let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow Bob to execute settlement."
+        );
+        claim_eq!(
+            host.state().settlements.len(),
+            0,
+            "There should one settlement."
+        );
 
         // Withdraw final
+        let parameter_bytes = to_bytes(&Amount::from_ccd(90));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(330));
+        ctx.set_sender(Address::Account(alice_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow Alice to withdraw funds."
+        );
+        let balance = *host.state().balance_sheet.get(&alice_address).unwrap();
+        claim_eq!(balance,Amount::zero(),"Alice should have no money left.");
+
+        let parameter_bytes = to_bytes(&Amount::from_ccd(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(340));
+        ctx.set_sender(Address::Account(bob_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow Bob to withdraw funds."
+        );
+        let balance = *host.state().balance_sheet.get(&bob_address).unwrap();
+        claim_eq!(balance,Amount::zero(),"Bob should have no money left.");
+
+        let parameter_bytes = to_bytes(&Amount::from_ccd(10));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(330));
+        ctx.set_sender(Address::Account(charlie_address));
+        ctx.set_parameter(&parameter_bytes);
+        let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+        claim!(
+            res.is_ok(),
+            "Should allow Charlie to withdraw funds."
+        );
+        let balance = *host.state().balance_sheet.get(&charlie_address).unwrap();
+        claim_eq!(balance,Amount::zero(),"Charlie should have no money left.");
+        
+        //There should be no money left in the contract
+        claim_eq!(
+            host.self_balance(),
+            Amount::zero(),
+            "Contract should contain no money."
+        );
+
     }
 }
