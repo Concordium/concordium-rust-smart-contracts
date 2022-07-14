@@ -150,6 +150,15 @@ impl From<TransferError> for ReceiveError {
 type ContractResult<A> = Result<A, ReceiveError>;
 
 /// Initialize contract with empty balance sheet and no settlements
+/// 
+/// # Parameter
+/// 
+/// [ContractConfig] - the contract configuration
+/// 
+/// # Description
+/// 
+/// Creates a new instance of the smart contract from the given configuration.
+/// The balance sheet and the settlement queue are initially empty.
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
 pub fn contract_init<S: HasStateApi>(
@@ -167,7 +176,13 @@ pub fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
-// Deposit amount of CCD to the smart contract and add amount to balance sheet of sender
+/// Deposit funds in smart contract
+/// 
+/// # Description
+/// 
+/// Allow the user (the caller) to deposit `amount` CCDs to the smart contract.
+/// The amount is added to their balance sheet. 
+/// A new entry is created if the user did not exist before.
 #[receive(contract = "offchain-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
 pub fn contract_receive_deposit<S: HasStateApi>(
@@ -190,9 +205,13 @@ pub fn contract_receive_deposit<S: HasStateApi>(
 }
 
 /// Withdraw funds from smart contract.
+/// 
+/// # Parameter
+/// 
+/// [Amount] - the requested `payout` .
 ///
 /// # Description
-/// Allow the user to withdraw funds from the settlement contract. 
+/// Allow the user (the caller) to withdraw funds from the settlement contract. 
 /// This is only possible if the user has sufficient funds in the worst case,
 /// i.e., even if all outstanding payments to that user get cancelled and all 
 /// payments from that user are valid, there should be enough funds left to 
