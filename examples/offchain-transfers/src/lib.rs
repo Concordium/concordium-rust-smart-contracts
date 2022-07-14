@@ -329,13 +329,13 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let sender = ctx.sender();
-    //Only the validator may call this function
+    // Only the validator may call this function
     ensure!(
         sender.matches_account(&host.state().config.validator),
         ReceiveError::NotAValidator
     );
 
-    //Ensure there is space for the incoming settlement
+    // Ensure there is space for the incoming settlement
     ensure!(
         host.state().settlements.len() < host.state().config.settlement_limit.try_into().unwrap(),
         ReceiveError::SettlementQueueFull
@@ -343,7 +343,7 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 
     let transfer: Transfer = ctx.parameter_cursor().get()?;
 
-    //Syntactically verify transfer information
+    // Syntactically verify transfer information
     ensure!(
         is_transfer_valid(&transfer),
         ReceiveError::InvalidTransfer
