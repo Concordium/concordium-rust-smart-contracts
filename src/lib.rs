@@ -29,24 +29,34 @@ struct Settlement {
 
 #[derive(Serialize, SchemaType)]
 struct ContractConfig {
+    /// The validator's address
+    /// In an application, this should be replaced by a committee of validators (with approval threshold)
+    /// See the two-stage transfer example on how to implement such a validator committee
     validator: AccountAddress,
+
+    /// The judge's address 
     judge: AccountAddress,
+
+    /// Time until a settlement becomes final
     time_to_finality: Duration,
+    
+    /// Bound on the amount of pending settlements 
+    settlement_limit: usize,
 }
 
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
-    // The initial configuration of the contract
+    /// The initial configuration of the contract
     config: ContractConfig,
 
-    // The next settlement id
+    /// The next settlement id
     next_id: SettlementID,
 
-    // Proposed settlements
+    /// Proposed settlements
     settlements: Vec<Settlement>,
 
-    // Balance sheet
+    /// Balance sheet
     balance_sheet: StateMap<AccountAddress, Amount, S>,
 }
 
@@ -79,6 +89,8 @@ enum ReceiveError {
     NotAJudge,
     /// Cannot withdraw 0 CCDs
     ZeroWithdrawal,
+    /// Settlement queue full,
+    SettlementQueueFull
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -213,6 +225,12 @@ fn contract_receive_add_settlement<S: HasStateApi>(
     ensure!(
         sender.matches_account(&host.state().config.validator),
         ReceiveError::NotAValidator
+    );
+
+    //Ensure there is space for the incoming settlement
+    ensure!(
+        host.state().settlements.len() < host.state().config.settlement_limit,
+        ReceiveError::SettlementQueueFull
     );
 
     let transfer: Transfer = ctx.parameter_cursor().get()?;
@@ -380,6 +398,7 @@ mod tests {
             validator: account1,
             judge: account2,
             time_to_finality,
+            settlement_limit: 1000,
         };
         let parameter_bytes = to_bytes(&parameter);
 
@@ -429,6 +448,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600),
+                settlement_limit: 1000,
             },
             Amount::zero(),
         );
@@ -475,6 +495,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600),
+                settlement_limit: 1000,
             },
             balance,
         );
@@ -562,6 +583,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600),
+                settlement_limit: 1000,
             },
             //Total balance of all user
             alice_balance + bob_balance + charlie_balance,
@@ -704,6 +726,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600),
+                settlement_limit: 1000,
             },
             balance,
         );
@@ -852,6 +875,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_seconds(600),
+                settlement_limit: 1000,
             },
             //Total balance of all user
             alice_balance + bob_balance + charlie_balance,
@@ -1009,6 +1033,7 @@ mod tests {
                 validator: account1,
                 judge: account2,
                 time_to_finality: Duration::from_millis(100),
+                settlement_limit: 1000,
             },
             //Total balance of all user
             alice_balance + bob_balance + charlie_balance,
@@ -1150,6 +1175,7 @@ mod tests {
             validator: validator_address,
             judge: judge_address,
             time_to_finality: Duration::from_millis(100),
+            settlement_limit: 1000,
         };
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
