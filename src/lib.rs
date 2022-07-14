@@ -1071,21 +1071,27 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // next let participants deposit some CCD
+        let deposit = Amount::from_ccd(100);
+        host.set_self_balance(deposit); //The host balance is not updated automatically
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(alice_address));
-        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
-        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+        let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
+        claim!(res.is_ok(), "Should allow Alice to deposit CCDs");
 
+        host.set_self_balance(host.self_balance()+deposit);
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(120));
         ctx.set_sender(Address::Account(bob_address));
         let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
-        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+        claim!(res.is_ok(), "Should allow Bob holder to deposit CCDs");
 
+        host.set_self_balance(host.self_balance()+deposit);
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(130));
         ctx.set_sender(Address::Account(charlie_address));
         let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
-        claim!(res.is_ok(), "Should allow account holder to deposit CCDs");
+        claim!(res.is_ok(), "Should allow Charlie holder to deposit CCDs");
+
+        claim_eq!(host.self_balance(),3*deposit,"Test should be written consistently.");
 
         // try to withdraw too much from Bob
         let parameter_bytes = to_bytes(&Amount::from_ccd(120));
@@ -1093,15 +1099,21 @@ mod tests {
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-        claim!(!res.is_ok(), "Should not allow to withdraw more than balance.");
-
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::InsufficientFunds),
+            "Should fail with InsufficientFunds"
+        );    
+        
         // withdraw valid amount from Bob
         let parameter_bytes = to_bytes(&Amount::from_ccd(40));
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(190));
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
+
         claim!(res.is_ok(), "Should allow to withdraw amount.");
+
 
 
         // TODO add more here
