@@ -295,6 +295,40 @@ pub struct TestReceiveOnlyData {
     pub(crate) named_entrypoint: Option<OwnedEntrypointName>,
 }
 
+/// Test parameter cursor.
+/// Should not be constructed directly, use [TestReceiveContext] or
+/// [TestInitContext].
+pub struct TestParameterCursor<'a> {
+    cursor: Cursor<&'a [u8]>,
+}
+
+impl<'a> TestParameterCursor<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        TestParameterCursor {
+            cursor: Cursor::new(data),
+        }
+    }
+}
+
+impl<'a> AsRef<[u8]> for TestParameterCursor<'a> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u8] { self.cursor.as_ref() }
+}
+
+impl<'a> Seek for TestParameterCursor<'a> {
+    type Err = ();
+
+    #[inline(always)]
+    fn seek(&mut self, seek: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(seek) }
+}
+
+impl<'a> Read for TestParameterCursor<'a> {
+    #[inline(always)]
+    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
+}
+
+impl<'a> HasParameter for TestParameterCursor<'a> {}
+
 // Setters for testing-context
 impl TestChainMeta {
     /// Create an `TestChainMeta` where every field is unset, and getting any of
@@ -426,12 +460,12 @@ impl HasPolicy for TestPolicy {
 
 impl<'a, C> HasCommonData for TestContext<'a, C> {
     type MetadataType = TestChainMeta;
-    type ParamType = Cursor<&'a [u8]>;
+    type ParamType = TestParameterCursor<'a>;
     type PolicyIteratorType = crate::vec::IntoIter<TestPolicy>;
     type PolicyType = TestPolicy;
 
     fn parameter_cursor(&self) -> Self::ParamType {
-        Cursor::new(unwrap_ctx_field(self.common.parameter, "parameter"))
+        TestParameterCursor::new(unwrap_ctx_field(self.common.parameter, "parameter"))
     }
 
     fn metadata(&self) -> &Self::MetadataType { &self.common.metadata }
@@ -469,10 +503,6 @@ impl<'a> HasReceiveContext for TestReceiveContext<'a> {
     fn named_entrypoint(&self) -> OwnedEntrypointName {
         unwrap_ctx_field(self.custom.named_entrypoint.clone(), "named_entrypoint")
     }
-}
-
-impl<'a> HasParameter for Cursor<&'a [u8]> {
-    fn size(&self) -> u32 { self.data.len() as u32 }
 }
 
 /// A logger that simply accumulates all the logged items to be inspected at the

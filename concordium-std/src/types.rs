@@ -1,4 +1,6 @@
-use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Serial, Vec};
+use crate::{
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+};
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -528,12 +530,16 @@ pub enum Entry<'a, K, V: Serial, S: HasStateApi> {
     Occupied(OccupiedEntry<'a, K, V, S>),
 }
 
-#[derive(Default)]
+/// Zero-sized placeholder for the parameter data, only used internally by
+/// [ExternParameter].
+#[doc(hidden)]
+pub(crate) struct ExternParameterDataPlaceholder {}
+
 /// A type representing the parameter to init and receive methods.
 /// Its trait implementations are backed by host functions.
 #[doc(hidden)]
 pub struct ExternParameter {
-    pub(crate) current_position: u32,
+    pub(crate) cursor: Cursor<ExternParameterDataPlaceholder>,
 }
 
 /// A type representing the return value of contract invocation.
