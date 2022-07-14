@@ -493,6 +493,75 @@ pub fn contract_receive_execute_settlements<S: HasStateApi>(
     Ok(())
 }
 
+/// Get the balance of given address.
+///
+/// # Description
+/// 
+/// Gets the currently available balance of a given address. 
+/// This is the amount that could be withdrawn by the
+/// given address.
+#[receive(
+    contract = "offchain-transfers",
+    name = "settled-balance-of",
+    parameter = "AccountAddress",
+    return_value = "Amount"
+)]
+pub fn contract_available_balance_of<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<Amount> {
+    // Parse the parameter.
+    let query_address: AccountAddress = ctx.parameter_cursor().get()?;
+    // Build the response.
+    // Add up liabilities that the user has in the pending settlements
+    let mut liabilities = Amount::zero();
+    for settlement in host.state().settlements.iter() {
+        for sender in settlement.transfer.send_transfers.iter() {
+            if query_address == sender.address {
+                liabilities += sender.amount;
+            }
+        }
+    }
+    let balance = host.state().balance_sheet.get(&query_address);
+    let balance = match balance {
+        None => Amount::zero(),
+        Some(value) => *value,
+    };
+    let mut result = Amount::zero();
+    if balance-liabilities > Amount::zero(){
+        result = balance-liabilities;
+    }
+    Ok(result)
+}
+
+/// Get a settlement from a given ID
+///
+/// # Description
+/// 
+/// Looks up the settlement for a given ID. Returns
+/// None if none exists.
+#[receive(
+    contract = "offchain-transfers",
+    name = "get-settlement",
+    parameter = "SettlementID",
+    return_value = "Settlement"
+)]
+pub fn contract_get_settlement<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<Option<Settlement>> {
+    // Parse the parameter.
+    let id: SettlementID = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let result = host.state().settlements.iter().find(|s| s.id != id);
+    
+    match result  {
+        None => Ok(None),
+        Some(settlement) => Ok(Some(settlement.clone())),
+    }
+    
+}
+
 // Tests //
 
 #[concordium_cfg_test]
