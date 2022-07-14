@@ -2364,7 +2364,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 syn::Fields::Named(_) => {
                     for field in data.fields.iter() {
                         let field_ident = field.ident.clone().unwrap(); // safe since named fields.
-                        field_tokens.extend(quote!(let #field_ident = self.#field_ident.clone_state(cloned_state_api.clone());));
+                        field_tokens.extend(quote!(let #field_ident = self.#field_ident.clone_state(cloned_state_api);));
                         field_names.extend(quote!(#field_ident,));
                     }
                     quote!(Self{#field_names})
@@ -2374,7 +2374,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                         let field_index = syn::Index::from(i);
                         let variable_ident = format_ident!("x_{}", i);
                         field_tokens
-                            .extend(quote!(let #variable_ident = self.#field_index.clone_state(cloned_state_api.clone());));
+                            .extend(quote!(let #variable_ident = self.#field_index.clone_state(cloned_state_api);));
                         field_names.extend(quote!(#variable_ident,))
                     }
                     quote!(Self(#field_names))
@@ -2397,7 +2397,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Named(_) => {
                         for field in variant.fields.iter() {
                             let field_ident = field.ident.clone().unwrap(); // safe since named fields.
-                            field_tokens.extend(quote!(let #field_ident = #field_ident.clone_state(cloned_state_api.clone());));
+                            field_tokens.extend(quote!(let #field_ident = #field_ident.clone_state(cloned_state_api);));
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!({#field_names});
@@ -2406,7 +2406,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Unnamed(_) => {
                         for i in 0..variant.fields.len() {
                             let field_ident = format_ident!("x_{}", i);
-                            field_tokens.extend(quote!(let #field_ident = #field_ident.clone_state(cloned_state_api.clone());));
+                            field_tokens.extend(quote!(let #field_ident = #field_ident.clone_state(cloned_state_api);));
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!((#field_names));
@@ -2434,12 +2434,11 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         }
         _ => unimplemented!("#[derive(StateClone)] is not implemented for union."),
     };
-    // TODO: implement only for teststateapi?
 
     let gen = quote! {
         #[automatically_derived]
         unsafe impl #impl_generics StateClone<#state_parameter> for #data_name #ty_generics where #state_parameter: HasStateApi, #where_predicates {
-            unsafe fn clone_state(&self, cloned_state_api: #state_parameter) -> Self {
+            unsafe fn clone_state(&self, cloned_state_api: &#state_parameter) -> Self {
                 #body_tokens
             }
         }

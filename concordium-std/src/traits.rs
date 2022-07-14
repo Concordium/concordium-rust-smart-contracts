@@ -571,8 +571,9 @@ where
 ///
 /// *Unsafe*: Marked unsafe because special care should be taken when
 /// implementing this trait. In particular, one should only use the supplied
-/// `cloned_state_api`, or clones thereof. Creating a new [`TestStateApi`] will
-/// lead to an inconsistent state and undefined behaviour.
+/// `cloned_state_api`, or (shallow) clones thereof. Creating a new
+/// [`HasStateApi`] or using a `deep_clone` will lead to an inconsistent state
+/// and undefined behaviour.
 ///
 /// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
 pub unsafe trait StateClone<S> {
@@ -581,5 +582,5 @@ pub unsafe trait StateClone<S> {
     /// *Unsafe*: Marked unsafe because this function *should not* be called
     /// directly. It is only used within generated code and in the test
     /// infrastructure.
-    unsafe fn clone_state(&self, cloned_state_api: S) -> Self;
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self;
 }

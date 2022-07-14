@@ -1522,15 +1522,15 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
 
 impl<State: StateClone<TestStateApi>> TestHost<State> {
     fn checkpoint(&self) -> Self {
-        let state_deep_clone = self.state_builder.state_api.clone_deep();
+        let cloned_state_api = self.state_builder.state_api.clone_deep();
         Self {
             mocking_fns:      self.mocking_fns.clone(),
             transfers:        RefCell::new(self.transfers.borrow().clone()),
             contract_balance: RefCell::new(*self.contract_balance.borrow()),
             state_builder:    StateBuilder {
-                state_api: state_deep_clone.clone(),
+                state_api: cloned_state_api.clone(),
             },
-            state:            unsafe { self.state.clone_state(state_deep_clone) },
+            state:            unsafe { self.state.clone_state(&cloned_state_api) },
             missing_accounts: self.missing_accounts.clone(),
         }
     }
