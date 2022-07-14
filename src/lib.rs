@@ -5,12 +5,16 @@
  *  This contract is is **UNSUITABLE FOR DEPLOYMENT**, and **PROVIDED FOR TESTING ONLY**.
  * 
  * # Description
- * 
+ * This contract implements a simple settlement mechanism for off-chain payments. It is an example of so-called "rollups" since it allows to roll multiple off-chain transaction up into a single on-chain settlement transaction (and thereby save transaction fees).
+ * The intended use of the contract is as follows:
+ *  * The smart contract is initialized by appointing a "judge" and a "validator", and setting a "time to finality" duration.
+ *  * Users deposit a collateral to the smart contract using the [contract_receive_deposit] function. This adds the deposited amount to the available balance in the balance sheet of the smart contract.
+ *  * 
  * 
  * # Limitations
  * 
  *  * The `settlement_limit` in [ContractConfig] needs to be set such that both `contract_receive_veto` and `contract_receive_execute_settlements` can run on a full settlement queue given the energy limit of a single block. 
- *  * The data structures have not been optimized for deployment.
+ *  * The data structures have not been optimized for deployment. In particular, the use of `Vec` in the smart contract state can degrade performance.
  * 
  */
 
@@ -32,7 +36,7 @@ pub struct AddressAmount {
 }
 
 /// A transfer consisting of possibly multiple inputs with different amounts and several receivers
-/// A transfer is synatically valid if the sent amounts match the received amounts
+/// A transfer is syntactically valid if the sent amounts match the received amounts
 #[derive(Clone, Serialize, SchemaType)]
 pub struct Transfer {
     /// The list of senders
