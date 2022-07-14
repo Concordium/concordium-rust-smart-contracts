@@ -313,7 +313,7 @@ fn is_transfer_valid(transfer: &Transfer) -> bool {
 /// The validator provides the [Transfer] part which describes 
 /// the effect of the settlement in the form of a multi input-output
 /// transfer. 
-/// The transfer is synatically valid if it does not generate or delete funds.
+/// The transfer is syntactically valid if it does not generate or delete funds.
 /// 
 /// To form the [Settlement] the smart contracts adds and a unique id 
 /// and the finality time. The finality time is computed from the timestamp
@@ -435,7 +435,13 @@ fn is_settlement_valid<S: HasStateApi>(
     true
 }
 
-// Execute all settlements with passed finality_time.
+/// Execute all settlements with passed finality_time.
+/// 
+/// # Description
+/// This function can periodically be called by everyone. It goes over the list of settlements in the order in which they have been received and for those whose finality time has passed, it does the following:
+/// * Check whether the settlement is semantically valid. That means all senders have sufficient funds to pay for the outgoing transfers. For this, the updated funds including previous settlements are considered.
+/// * If the settlement is valid, add the contained amounts to the corresponding receivers and deduct them from the senders.
+/// * Finally, all settlements with passed finality time (valid or not) are removed from the list of outstanding settlements.
 #[receive(contract = "offchain-transfers", name = "execute-settlements", mutable)]
 #[inline(always)]
 pub fn contract_receive_execute_settlements<S: HasStateApi>(
