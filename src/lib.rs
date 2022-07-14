@@ -321,11 +321,6 @@ fn is_transfer_valid(transfer: &Transfer) -> bool {
 /// 
 /// The call is lazy in the sense that it does not check whether the 
 /// settlement could be applied to the current balance sheet. 
-/// 
-/// # Remarks
-/// 
-/// This call could be extended to check if the new settlement is
-/// semantically valid after processing the current settlement queue.
 #[receive(
     contract = "offchain-transfers",
     name = "add-settlement",
@@ -387,16 +382,6 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 /// 
 /// The call is lazy in the sense that it does not check whether the 
 /// new settlement queuue could be applied to the current balance sheet. 
-/// 
-/// # Remarks
-/// 
-/// This call could be extended to remove settlements in the queue 
-/// that are no longer semantically valid after the removal of the
-/// vetoed settlement.
-/// 
-/// This change would also require that the [contract_receive_add_settlement]
-/// call checks if a new settlement would be semantically valid after
-/// processing the settlement queue.
 #[receive(contract = "offchain-transfers", name = "veto", mutable)]
 #[inline(always)]
 pub fn contract_receive_veto<S: HasStateApi>(
