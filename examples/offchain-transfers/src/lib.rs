@@ -2,7 +2,7 @@
  * An example implementation of an optimistic settlement layer for off-chain transactions.
  *
  *  **Warning**
- *  This contract is is **UNSUITABLE FOR DEPLOYMENT**, and **PROVIDED FOR TESTING ONLY**.
+ *  This contract is is **UNSUITABLE FOR DEPLOYMENT**, and **PROVIDED AS Proof-Of-Concept ONLY**.
  *
  * # Description
  * This contract implements a simple settlement mechanism for off-chain payments. It is an example of so-called "rollups" since it allows to roll multiple off-chain transaction up into a single on-chain settlement transaction (and thereby save transaction fees).
