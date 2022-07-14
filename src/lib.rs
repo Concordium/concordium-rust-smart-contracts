@@ -1,9 +1,9 @@
 /*!
  * An example implementation of an optimistic settlement layer for off-chain transactions.
- * 
+ *
  *  **Warning**
  *  This contract is is **UNSUITABLE FOR DEPLOYMENT**, and **PROVIDED FOR TESTING ONLY**.
- * 
+ *
  * # Description
  * This contract implements a simple settlement mechanism for off-chain payments. It is an example of so-called "rollups" since it allows to roll multiple off-chain transaction up into a single on-chain settlement transaction (and thereby save transaction fees).
  * The intended use of the contract is as follows:
@@ -16,11 +16,11 @@
  *  * Settlements that have not been vetoed for the "time to finality" duration become finalized and cannot be reverted anymore.
  *  * The function [contract_receive_execute_settlements] executes all finalized settlements and updates the balance sheet accordingly. Everyone can call this function periodically.
  *  * Users can withdraw funds from the smart contract using [contract_receive_withdraw]. The maximal allowed amount to withdraw corresponds to the worst-case amount that is guaranteed to be available no matter which outstanding settlements are vetoed.
- * 
+ *
  * # Limitations
- *  * The `settlement_limit` in [ContractConfig] needs to be set such that both `contract_receive_veto` and `contract_receive_execute_settlements` can run on a full settlement queue given the energy limit of a single block. 
+ *  * The `settlement_limit` in [ContractConfig] needs to be set such that both `contract_receive_veto` and `contract_receive_execute_settlements` can run on a full settlement queue given the energy limit of a single block.
  *  * The data structures have not been optimized for deployment. In particular, the use of `Vec` in the smart contract state can degrade performance.
- * 
+ *
  */
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -72,13 +72,13 @@ pub struct ContractConfig {
     /// See the two-stage transfer example on how to implement such a validator committee
     pub validator: AccountAddress,
 
-    /// The judge's address 
+    /// The judge's address
     pub judge: AccountAddress,
 
     /// Time until a settlement becomes final
     pub time_to_finality: Duration,
-    
-    /// Bound on the amount of pending settlements 
+
+    /// Bound on the amount of pending settlements
     pub settlement_limit: u32,
 }
 
@@ -93,7 +93,7 @@ pub struct State<S> {
     next_id: SettlementID,
 
     /// Proposed settlements
-    /// 
+    ///
     /// Note that the settlement queue could be implemented with a more efficient data structure
     settlements: Vec<Settlement>,
 
@@ -155,13 +155,13 @@ impl From<TransferError> for ReceiveError {
 type ContractResult<A> = Result<A, ReceiveError>;
 
 /// Initialize contract with empty balance sheet and no settlements
-/// 
+///
 /// # Parameter
-/// 
+///
 /// [ContractConfig] - the contract configuration
-/// 
+///
 /// # Description
-/// 
+///
 /// Creates a new instance of the smart contract from the given configuration.
 /// The balance sheet and the settlement queue are initially empty.
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
@@ -182,11 +182,11 @@ pub fn contract_init<S: HasStateApi>(
 }
 
 /// Deposit funds in smart contract
-/// 
+///
 /// # Description
-/// 
+///
 /// Allow the user (the caller) to deposit `amount` CCDs to the smart contract.
-/// The amount is added to their balance sheet. 
+/// The amount is added to their balance sheet.
 /// A new entry is created if the user did not exist before.
 #[receive(contract = "offchain-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
@@ -211,22 +211,22 @@ pub fn contract_receive_deposit<S: HasStateApi>(
 }
 
 /// Withdraw funds from smart contract.
-/// 
+///
 /// # Parameter
-/// 
+///
 /// [Amount] - the requested `payout` .
 ///
 /// # Description
-/// Allow the user (the caller) to withdraw funds from the settlement contract. 
+/// Allow the user (the caller) to withdraw funds from the settlement contract.
 /// This is only possible if the user has sufficient funds in the worst case,
-/// i.e., even if all outstanding payments to that user get cancelled and all 
-/// payments from that user are valid, there should be enough funds left to 
+/// i.e., even if all outstanding payments to that user get cancelled and all
+/// payments from that user are valid, there should be enough funds left to
 /// withdraw the requested payout.
-/// 
+///
 /// In short, a user as sufficient funds to withdraw `payout` CCDs if:
 /// > balance - outstanding liabilities >= payout
-/// 
-/// This defensive payout mechanism ensures that that user balance sheet 
+///
+/// This defensive payout mechanism ensures that that user balance sheet
 /// stays positive for any possible finalization of (a subset) outstanding
 /// settlements.   
 #[receive(
@@ -261,14 +261,14 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
     }
 
     {
-        // ensure that user has sufficient funds even in the worst case 
+        // ensure that user has sufficient funds even in the worst case
         // where all liabilities are deducted and no credit is added
         let mut balance = host
             .state_mut()
             .balance_sheet
             .entry(sender_address)
             .occupied_or(ReceiveError::InsufficientFunds)?;
-        
+
         ensure!(
             *balance >= liabilities + payout,
             ReceiveError::InsufficientFunds
@@ -302,25 +302,25 @@ fn is_transfer_valid(transfer: &Transfer) -> bool {
 }
 
 /// Add new settlements to the contract.
-/// 
+///
 /// # Parameter
-/// 
+///
 /// [Transfer] - the transfer describing the settlement
-/// 
+///
 /// # Description
-/// 
-/// Allows the validator to add a new settlement to the queue. 
-/// The validator provides the [Transfer] part which describes 
+///
+/// Allows the validator to add a new settlement to the queue.
+/// The validator provides the [Transfer] part which describes
 /// the effect of the settlement in the form of a multi input-output
-/// transfer. 
+/// transfer.
 /// The transfer is syntactically valid if it does not generate or delete funds.
-/// 
-/// To form the [Settlement] the smart contracts adds and a unique id 
+///
+/// To form the [Settlement] the smart contracts adds and a unique id
 /// and the finality time. The finality time is computed from the timestamp
 /// of the call and the `finality_time` in the smart contract config
-/// 
-/// The call is lazy in the sense that it does not check whether the 
-/// settlement could be applied to the current balance sheet. 
+///
+/// The call is lazy in the sense that it does not check whether the
+/// settlement could be applied to the current balance sheet.
 #[receive(
     contract = "offchain-transfers",
     name = "add-settlement",
@@ -348,10 +348,7 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
     let transfer: Transfer = ctx.parameter_cursor().get()?;
 
     // Syntactically verify transfer information
-    ensure!(
-        is_transfer_valid(&transfer),
-        ReceiveError::InvalidTransfer
-    );
+    ensure!(is_transfer_valid(&transfer), ReceiveError::InvalidTransfer);
     let id = host.state().next_id;
     //Create a new settlement
     let now = ctx.metadata().slot_time();
@@ -370,18 +367,18 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 }
 
 /// Veto settlement to remove it from the list of outstanding settlements.
-/// 
+///
 /// # Parameter
-/// 
+///
 /// [SettlementID]  - the ID of the vetoed settlement
-/// 
+///
 /// # Description
-/// 
-/// Allows the judge to remove a *non-final* settlement from the list of 
-/// outstanding settlements. 
-/// 
-/// The call is lazy in the sense that it does not check whether the 
-/// new settlement queuue could be applied to the current balance sheet. 
+///
+/// Allows the judge to remove a *non-final* settlement from the list of
+/// outstanding settlements.
+///
+/// The call is lazy in the sense that it does not check whether the
+/// new settlement queuue could be applied to the current balance sheet.
 #[receive(contract = "offchain-transfers", name = "veto", mutable)]
 #[inline(always)]
 pub fn contract_receive_veto<S: HasStateApi>(
@@ -448,7 +445,7 @@ fn is_settlement_valid<S: HasStateApi>(
 }
 
 /// Execute all settlements with passed finality_time.
-/// 
+///
 /// # Description
 /// This function can periodically be called by everyone. It goes over the list of settlements in the order in which they have been received and for those whose finality time has passed, it does the following:
 /// * Check whether the settlement is semantically valid. That means all senders have sufficient funds to pay for the outgoing transfers. For this, the updated funds including previous settlements are considered.
@@ -1128,17 +1125,14 @@ mod tests {
         };
         host.state_mut().settlements.push(settlement4);
 
-
         // Fifth settlement is fine and with past finality and should thus be executed
         let settlement5 = Settlement {
             id: 5,
             transfer: Transfer {
-                send_transfers: vec![
-                    AddressAmount {
-                        address: charlie,
-                        amount: Amount::from_ccd(50),
-                    }
-                ],
+                send_transfers: vec![AddressAmount {
+                    address: charlie,
+                    amount: Amount::from_ccd(50),
+                }],
                 receive_transfers: vec![AddressAmount {
                     address: doris,
                     amount: Amount::from_ccd(50),
@@ -1182,7 +1176,6 @@ mod tests {
             Amount::from_ccd(50),
             "Doris has incorrect amount."
         );
-
     }
 
     #[concordium_test]
@@ -1496,17 +1489,14 @@ mod tests {
             "There should one settlement."
         );
 
-        // Withdraw now 
+        // Withdraw now
         let parameter_bytes = to_bytes(&Amount::from_ccd(60));
         ctx.metadata_mut()
             .set_slot_time(Timestamp::from_timestamp_millis(230));
         ctx.set_sender(Address::Account(alice_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-        claim!(
-            res.is_ok(),
-            "Should allow Alice to withdraw funds."
-        );
+        claim!(res.is_ok(), "Should allow Alice to withdraw funds.");
 
         // Execute settlement too early
         ctx.metadata_mut()
@@ -1528,10 +1518,7 @@ mod tests {
             .set_slot_time(Timestamp::from_timestamp_millis(320));
         ctx.set_sender(Address::Account(bob_address));
         let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
-        claim!(
-            res.is_ok(),
-            "Should allow Bob to execute settlement."
-        );
+        claim!(res.is_ok(), "Should allow Bob to execute settlement.");
         claim_eq!(
             host.state().settlements.len(),
             0,
@@ -1545,12 +1532,9 @@ mod tests {
         ctx.set_sender(Address::Account(alice_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-        claim!(
-            res.is_ok(),
-            "Should allow Alice to withdraw funds."
-        );
+        claim!(res.is_ok(), "Should allow Alice to withdraw funds.");
         let balance = *host.state().balance_sheet.get(&alice_address).unwrap();
-        claim_eq!(balance,Amount::zero(),"Alice should have no money left.");
+        claim_eq!(balance, Amount::zero(), "Alice should have no money left.");
 
         let parameter_bytes = to_bytes(&Amount::from_ccd(100));
         ctx.metadata_mut()
@@ -1558,12 +1542,9 @@ mod tests {
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-        claim!(
-            res.is_ok(),
-            "Should allow Bob to withdraw funds."
-        );
+        claim!(res.is_ok(), "Should allow Bob to withdraw funds.");
         let balance = *host.state().balance_sheet.get(&bob_address).unwrap();
-        claim_eq!(balance,Amount::zero(),"Bob should have no money left.");
+        claim_eq!(balance, Amount::zero(), "Bob should have no money left.");
 
         let parameter_bytes = to_bytes(&Amount::from_ccd(10));
         ctx.metadata_mut()
@@ -1571,19 +1552,19 @@ mod tests {
         ctx.set_sender(Address::Account(charlie_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-        claim!(
-            res.is_ok(),
-            "Should allow Charlie to withdraw funds."
-        );
+        claim!(res.is_ok(), "Should allow Charlie to withdraw funds.");
         let balance = *host.state().balance_sheet.get(&charlie_address).unwrap();
-        claim_eq!(balance,Amount::zero(),"Charlie should have no money left.");
-        
+        claim_eq!(
+            balance,
+            Amount::zero(),
+            "Charlie should have no money left."
+        );
+
         //There should be no money left in the contract
         claim_eq!(
             host.self_balance(),
             Amount::zero(),
             "Contract should contain no money."
         );
-
     }
 }
