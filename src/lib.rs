@@ -55,7 +55,7 @@ pub struct Transfer {
 
 /// A settlement defines a (potential) update to the balance sheet
 #[derive(Clone, Serialize, SchemaType)]
-struct Settlement {
+pub struct Settlement {
     /// Unique ID
     id: SettlementID,
     /// The update described as a transfer
@@ -155,6 +155,15 @@ impl From<TransferError> for ReceiveError {
 type ContractResult<A> = Result<A, ReceiveError>;
 
 /// Initialize contract with empty balance sheet and no settlements
+/// 
+/// # Parameter
+/// 
+/// [ContractConfig] - the contract configuration
+/// 
+/// # Description
+/// 
+/// Creates a new instance of the smart contract from the given configuration.
+/// The balance sheet and the settlement queue are initially empty.
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
 pub fn contract_init<S: HasStateApi>(
@@ -172,7 +181,13 @@ pub fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
-// Deposit amount of CCD to the smart contract and add amount to balance sheet of sender
+/// Deposit funds in smart contract
+/// 
+/// # Description
+/// 
+/// Allow the user (the caller) to deposit `amount` CCDs to the smart contract.
+/// The amount is added to their balance sheet. 
+/// A new entry is created if the user did not exist before.
 #[receive(contract = "offchain-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
 pub fn contract_receive_deposit<S: HasStateApi>(
@@ -180,6 +195,7 @@ pub fn contract_receive_deposit<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
+    // Smart contracts are not allowed to call this function
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
@@ -188,16 +204,20 @@ pub fn contract_receive_deposit<S: HasStateApi>(
         .state_mut()
         .balance_sheet
         .entry(sender_address)
-        .or_insert(Amount::zero());
+        .or_insert(Amount::zero()); //if the sender does not exist
     *balance += amount;
 
     Ok(())
 }
 
 /// Withdraw funds from smart contract.
+/// 
+/// # Parameter
+/// 
+/// [Amount] - the requested `payout` .
 ///
 /// # Description
-/// Allow the user to withdraw funds from the settlement contract. 
+/// Allow the user (the caller) to withdraw funds from the settlement contract. 
 /// This is only possible if the user has sufficient funds in the worst case,
 /// i.e., even if all outstanding payments to that user get cancelled and all 
 /// payments from that user are valid, there should be enough funds left to 
@@ -220,40 +240,45 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    // Smart contracts are not allowed to call this function
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-
+    // Get request payout
     let payout: Amount = ctx.parameter_cursor().get()?;
     // The payout needs to be strictly positive
     ensure!(payout > Amount::zero(), ReceiveError::ZeroWithdrawal);
 
-    // get expenses that the user has in the balance sheet
-    let mut expenses = Amount::zero();
+    // Add up liabilities that the user has in the pending settlements
+    let mut liabilities = Amount::zero();
     for settlement in host.state().settlements.iter() {
         for sender in settlement.transfer.send_transfers.iter() {
             if sender_address == sender.address {
-                expenses += sender.amount;
+                liabilities += sender.amount;
             }
         }
     }
 
     {
-        // ensure that user has sufficient funds even in the worst case if all expenses are deducted and nothing is added
+        // ensure that user has sufficient funds even in the worst case 
+        // where all liabilities are deducted and no credit is added
         let mut balance = host
             .state_mut()
             .balance_sheet
             .entry(sender_address)
             .occupied_or(ReceiveError::InsufficientFunds)?;
+        
         ensure!(
-            *balance >= expenses + payout,
+            *balance >= liabilities + payout,
             ReceiveError::InsufficientFunds
         );
 
-        // execute transfer
+        // deduct payout
         *balance -= payout;
     }
+
+    // If all ok, send the funds
     host.invoke_transfer(&sender_address, payout).unwrap_abort();
 
     Ok(())
@@ -276,10 +301,26 @@ fn is_transfer_valid(transfer: &Transfer) -> bool {
     send_amount == receive_amount
 }
 
-/// Allows the validator to add new settlements.
-/// The validator provides the Transfer part while the smart contracts add the id and the finality time.
-/// The call is lazy in the sense that it does not check whether the settlement could be applied to the current balance sheet
-/// We use an increasing
+/// Add new settlements to the contract.
+/// 
+/// # Parameter
+/// 
+/// [Transfer] - the transfer describing the settlement
+/// 
+/// # Description
+/// 
+/// Allows the validator to add a new settlement to the queue. 
+/// The validator provides the [Transfer] part which describes 
+/// the effect of the settlement in the form of a multi input-output
+/// transfer. 
+/// The transfer is synatically valid if it does not generate or delete funds.
+/// 
+/// To form the [Settlement] the smart contracts adds and a unique id 
+/// and the finality time. The finality time is computed from the timestamp
+/// of the call and the `finality_time` in the smart contract config
+/// 
+/// The call is lazy in the sense that it does not check whether the 
+/// settlement could be applied to the current balance sheet. 
 #[receive(
     contract = "offchain-transfers",
     name = "add-settlement",
