@@ -196,6 +196,10 @@ pub fn contract_receive_deposit<S: HasStateApi>(
 /// 
 /// In short, a user as sufficient funds to withdraw `payout` CCDs if:
 /// > balance - outstanding liabilities >= payout
+/// 
+/// This defensive payout mechanism ensures that that user balance sheet 
+/// stays positive for any possible finalization of (a subset) outstanding
+/// settlements.   
 #[receive(
     contract = "offchain-transfers",
     name = "withdraw",
