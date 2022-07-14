@@ -1006,6 +1006,7 @@ mod tests {
         let alice = AccountAddress([3u8; 32]);
         let bob = AccountAddress([4u8; 32]);
         let charlie = AccountAddress([5u8; 32]);
+        let doris = AccountAddress([6u8; 32]); //Not in the balance sheet!
 
         //Balances
         let alice_balance = Amount::from_ccd(100);
@@ -1057,7 +1058,7 @@ mod tests {
 
         // Second settlement tries to withdraw more from Alice than available after first settlement and should be skipped
         let settlement2 = Settlement {
-            id: 1,
+            id: 2,
             transfer: Transfer {
                 send_transfers: vec![
                     AddressAmount {
@@ -1079,9 +1080,9 @@ mod tests {
         };
         host.state_mut().settlements.push(settlement2);
 
-        // Thid settlement is fine but with future finality and should thus also be skipped
+        // Third settlement is fine but with future finality and should thus also be skipped
         let settlement3 = Settlement {
-            id: 1,
+            id: 3,
             transfer: Transfer {
                 send_transfers: vec![
                     AddressAmount {
@@ -1105,7 +1106,7 @@ mod tests {
 
         // Fourth settlement is fine and with past finality and should thus be executed
         let settlement4 = Settlement {
-            id: 1,
+            id: 4,
             transfer: Transfer {
                 send_transfers: vec![
                     AddressAmount {
@@ -1126,6 +1127,27 @@ mod tests {
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
         host.state_mut().settlements.push(settlement4);
+
+
+        // Fifth settlement is fine and with past finality and should thus be executed
+        let settlement5 = Settlement {
+            id: 5,
+            transfer: Transfer {
+                send_transfers: vec![
+                    AddressAmount {
+                        address: charlie,
+                        amount: Amount::from_ccd(50),
+                    }
+                ],
+                receive_transfers: vec![AddressAmount {
+                    address: doris,
+                    amount: Amount::from_ccd(50),
+                }],
+                meta_data: Vec::new(),
+            },
+            finality_time: Timestamp::from_timestamp_millis(1000 * 601),
+        };
+        host.state_mut().settlements.push(settlement5);
 
         // Test execution
         let mut ctx = TestReceiveContext::empty();
@@ -1151,9 +1173,16 @@ mod tests {
 
         claim_eq!(
             *host.state().balance_sheet.get(&charlie).unwrap(),
-            Amount::from_ccd(230),
+            Amount::from_ccd(180),
             "Charlie has incorrect amount."
         );
+
+        claim_eq!(
+            *host.state().balance_sheet.get(&doris).unwrap(),
+            Amount::from_ccd(50),
+            "Doris has incorrect amount."
+        );
+
     }
 
     #[concordium_test]
