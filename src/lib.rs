@@ -210,6 +210,19 @@ pub fn contract_receive_deposit<S: HasStateApi>(
     Ok(())
 }
 
+/// Compute liabilities from given settlements for a sender address
+fn get_liabilities(settlements: &Vec<Settlement>, sender_address:AccountAddress) -> Amount{
+    let mut liabilities = Amount::zero();
+    for settlement in settlements.iter() {
+        for sender in settlement.transfer.send_transfers.iter() {
+            if sender_address == sender.address {
+                liabilities += sender.amount;
+            }
+        }
+    }
+    liabilities
+}
+
 /// Withdraw funds from smart contract.
 ///
 /// # Parameter
@@ -251,14 +264,7 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
     ensure!(payout > Amount::zero(), ReceiveError::ZeroWithdrawal);
 
     // Add up liabilities that the user has in the pending settlements
-    let mut liabilities = Amount::zero();
-    for settlement in host.state().settlements.iter() {
-        for sender in settlement.transfer.send_transfers.iter() {
-            if sender_address == sender.address {
-                liabilities += sender.amount;
-            }
-        }
-    }
+    let liabilities = get_liabilities(&host.state().settlements, sender_address);
 
     {
         // ensure that user has sufficient funds even in the worst case
@@ -514,14 +520,7 @@ pub fn contract_available_balance_of<S: HasStateApi>(
     let query_address: AccountAddress = ctx.parameter_cursor().get()?;
     // Build the response.
     // Add up liabilities that the user has in the pending settlements
-    let mut liabilities = Amount::zero();
-    for settlement in host.state().settlements.iter() {
-        for sender in settlement.transfer.send_transfers.iter() {
-            if query_address == sender.address {
-                liabilities += sender.amount;
-            }
-        }
-    }
+    let liabilities = get_liabilities(&host.state().settlements, query_address);
     let balance = host.state().balance_sheet.get(&query_address);
     let balance = match balance {
         None => Amount::zero(),
