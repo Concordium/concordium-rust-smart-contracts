@@ -203,6 +203,9 @@ impl HasStateEntry for StateEntry {
     fn move_to_start(&mut self) { self.current_position = 0; }
 
     #[inline(always)]
+    fn get_cursor_position(&self) -> u32 { self.current_position }
+
+    #[inline(always)]
     fn size(&self) -> Result<u32, Self::Error> {
         let res = unsafe { prims::state_entry_size(self.state_entry_id) };
         match res {
@@ -2786,22 +2789,27 @@ unsafe impl<T, V, S> StateClone<S> for StateMap<T, V, S> {
     }
 }
 
-// TODO: Could load value from state and avoid StateClone constraint on T.
-unsafe impl<T: StateClone<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
+unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
     unsafe fn clone_state(&self, cloned_state_api: S) -> Self {
         let inner_value = match &*self.inner.get() {
             StateBoxInner::Loaded {
                 entry,
                 modified,
-                value,
+                value: _,
             } => {
                 // Get a new entry from the cloned state.
-                let new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
+                let mut new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
+                let new_value =
+                    T::deserial_with_state(&cloned_state_api, &mut new_entry).unwrap_abort();
+
+                // Set position of new entry to match the old entry.
+                let old_entry_position = entry.get_cursor_position();
+                new_entry.seek(SeekFrom::Start(old_entry_position)).unwrap_abort();
 
                 StateBoxInner::Loaded {
                     entry:    new_entry,
                     modified: *modified,
-                    value:    value.clone_state(cloned_state_api.clone()),
+                    value:    new_value,
                 }
             }
             StateBoxInner::Reference {

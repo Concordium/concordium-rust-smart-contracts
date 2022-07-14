@@ -949,6 +949,9 @@ impl HasStateEntry for TestStateEntry {
     #[inline(always)]
     fn move_to_start(&mut self) { self.cursor.offset = 0; }
 
+    #[inline(always)]
+    fn get_cursor_position(&self) -> u32 { self.cursor.offset as u32 }
+
     /// Get the size of the data in the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
     fn size(&self) -> Result<u32, Self::Error> {
