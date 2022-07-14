@@ -1650,7 +1650,7 @@ mod tests {
         claim_eq!(
             host.state().settlements.len(),
             0,
-            "There should one settlement."
+            "There should no settlement."
         );
 
         // Withdraw final
