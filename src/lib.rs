@@ -29,7 +29,7 @@ use std::collections::HashSet;
 use std::convert::TryInto;
 
 /// Unique identifier for settlements
-type SettlementID = u64;
+pub type SettlementID = u64;
 
 /// A tuple describing either a sender or receiver with an amount in a transfer
 #[derive(Clone, Serialize, SchemaType)]
@@ -321,6 +321,11 @@ fn is_transfer_valid(transfer: &Transfer) -> bool {
 /// 
 /// The call is lazy in the sense that it does not check whether the 
 /// settlement could be applied to the current balance sheet. 
+/// 
+/// # Remarks
+/// 
+/// This call could be extended to check if the new settlement is
+/// semantically valid after processing the current settlement queue.
 #[receive(
     contract = "offchain-transfers",
     name = "add-settlement",
@@ -369,8 +374,29 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
     Ok(())
 }
 
-/// Veto a settlement. Removes this settlement from the list of outstanding settlements.
-/// Only the judge is allowed to call this function. Furthermore, it must be called before the finality_time of the settlement.
+/// Veto settlement to remove it from the list of outstanding settlements.
+/// 
+/// # Parameter
+/// 
+/// [SettlementID]  - the ID of the vetoed settlement
+/// 
+/// # Description
+/// 
+/// Allows the judge to remove a *non-final* settlement from the list of 
+/// outstanding settlements. 
+/// 
+/// The call is lazy in the sense that it does not check whether the 
+/// new settlement queuue could be applied to the current balance sheet. 
+/// 
+/// # Remarks
+/// 
+/// This call could be extended to remove settlements in the queue 
+/// that are no longer semantically valid after the removal of the
+/// vetoed settlement.
+/// 
+/// This change would also require that the [contract_receive_add_settlement]
+/// call checks if a new settlement would be semantically valid after
+/// processing the settlement queue.
 #[receive(contract = "offchain-transfers", name = "veto", mutable)]
 #[inline(always)]
 pub fn contract_receive_veto<S: HasStateApi>(
