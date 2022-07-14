@@ -9,7 +9,8 @@
  * The intended use of the contract is as follows:
  *  * The smart contract is initialized by appointing a "judge" and a "validator", and setting a "time to finality" duration.
  *  * Users deposit a collateral to the smart contract using the [contract_receive_deposit] function. This adds the deposited amount to the available balance in the balance sheet of the smart contract.
- *  * 
+ *  * Afterwards, users can transact off-chain using their deposited collateral as balance.
+ *  * Once users are done with their off-chain transactions, the validator can settle the transactions by adding a settlement to the chain using [contract_receive_add_settlement].
  * 
  * # Limitations
  * 
@@ -275,7 +276,7 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
 
 /// Checks whether a transfer is syntactically valid.
 /// That is, it checks that the sent and received amounts match
-fn is_settlement_transfer(transfer: &Transfer) -> bool {
+fn is_transfer_valid(transfer: &Transfer) -> bool {
     let mut send_amount = Amount::zero();
     let mut receive_amount = Amount::zero();
 
@@ -322,7 +323,7 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 
     //Syntactically verify transfer information
     ensure!(
-        is_settlement_transfer(&transfer),
+        is_transfer_valid(&transfer),
         ReceiveError::InvalidTransfer
     );
     let id = host.state().next_id;
