@@ -404,15 +404,16 @@ pub fn contract_receive_veto<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let sender = ctx.sender();
-    //Only the validator may call this function
+    // Only the validator may call this function
     ensure!(
         sender.matches_account(&host.state().config.judge),
         ReceiveError::NotAJudge
     );
+    // Get the ID
     let s_id: SettlementID = ctx.parameter_cursor().get()?;
-    let now = ctx.metadata().slot_time();
+    let now = ctx.metadata().slot_time(); //and time
 
-    // delete all settlements with the given ID from the list that are not final
+    // Delete all settlements with the given ID from the list that are not final
     host.state_mut()
         .settlements
         .retain(|s| s.id != s_id || s.finality_time <= now);
@@ -475,7 +476,6 @@ pub fn contract_receive_execute_settlements<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let current_time = ctx.metadata().slot_time();
-
     let state_mut = host.state_mut();
 
     for settlement in state_mut.settlements.iter() {
