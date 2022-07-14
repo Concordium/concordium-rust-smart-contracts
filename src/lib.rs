@@ -79,8 +79,6 @@ enum ReceiveError {
     NotAJudge,
     /// Cannot withdraw 0 CCDs
     ZeroWithdrawal,
-    /// Cannot veto finalized settlements
-    FinalizedSettlement,
 }
 type ContractResult<A> = Result<A, ReceiveError>;
 
@@ -256,9 +254,10 @@ fn contract_receive_veto<S: HasStateApi>(
         ReceiveError::NotAJudge
     );
     let s_id: SettlementID = ctx.parameter_cursor().get()?;
+    let now = ctx.metadata().slot_time();
 
-    // delete all settlements with the given ID from the list
-    host.state_mut().settlements.retain(|s| s.id != s_id);
+    // delete all settlements with the given ID from the list that are not final
+    host.state_mut().settlements.retain(|s| s.id != s_id || s.finality_time <= now);
 
     Ok(())
 }
@@ -1049,11 +1048,12 @@ mod tests {
 
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host); 
 
-        claim_eq!(
-            res,
-            ContractResult::Err(ReceiveError::FinalizedSettlement),
-            "Should fail with FinalizedSettlement"
-        );   
+        claim!(
+            res.is_ok(),
+            "Should succeed (but without effect)"
+        ); 
+        claim_eq!(host.state().settlements.len(),1,"There should still be one settlement.");
+        
     }
 
     // test using all functions
