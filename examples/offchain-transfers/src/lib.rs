@@ -94,7 +94,7 @@ pub struct State<S> {
 
 /// The different errors the initialization can produce.
 #[derive(Debug, PartialEq, Eq, Reject)]
-enum InitError {
+pub enum InitError {
     /// Failed parsing the parameter
     #[from(ParseError)]
     ParseParams,
@@ -104,7 +104,7 @@ type InitResult<A> = Result<A, InitError>;
 
 /// The different errors the smart contract calls can produce.
 #[derive(Debug, PartialEq, Eq, Reject)]
-enum ReceiveError {
+pub enum ReceiveError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
@@ -148,7 +148,7 @@ type ContractResult<A> = Result<A, ReceiveError>;
 /// Initialize contract with empty balance sheet and no settlements
 #[init(contract = "offchain-transfers", parameter = "ContractConfig")]
 #[inline(always)]
-fn contract_init<S: HasStateApi>(
+pub fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
@@ -166,7 +166,7 @@ fn contract_init<S: HasStateApi>(
 // Deposit amount of CCD to the smart contract and add amount to balance sheet of sender
 #[receive(contract = "offchain-transfers", name = "deposit", payable, mutable)]
 #[inline(always)]
-fn contract_receive_deposit<S: HasStateApi>(
+pub fn contract_receive_deposit<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
@@ -185,10 +185,17 @@ fn contract_receive_deposit<S: HasStateApi>(
     Ok(())
 }
 
-// Withdraw amount from smart contract.
-// Only possible if the the user has sufficient funds in the worst case,
-// i.e., even if all outstanding payments to that user get cancelled and all payments from that user are valid,
-// there should be enough funds left to withdraw the requested payout.
+/// Withdraw funds from smart contract.
+///
+/// # Description
+/// Allow the user to withdraw funds from the settlement contract. 
+/// This is only possible if the user has sufficient funds in the worst case,
+/// i.e., even if all outstanding payments to that user get cancelled and all 
+/// payments from that user are valid, there should be enough funds left to 
+/// withdraw the requested payout.
+/// 
+/// In short, a user as sufficient funds to withdraw `payout` CCDs if:
+/// > balance - outstanding liabilities >= payout
 #[receive(
     contract = "offchain-transfers",
     name = "withdraw",
@@ -196,7 +203,7 @@ fn contract_receive_deposit<S: HasStateApi>(
     parameter = "Amount"
 )]
 #[inline(always)]
-fn contract_receive_withdraw<S: HasStateApi>(
+pub fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
@@ -267,7 +274,7 @@ fn is_settlement_transfer(transfer: &Transfer) -> bool {
     parameter = "Transfer"
 )]
 #[inline(always)]
-fn contract_receive_add_settlement<S: HasStateApi>(
+pub fn contract_receive_add_settlement<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
@@ -312,7 +319,7 @@ fn contract_receive_add_settlement<S: HasStateApi>(
 /// Only the judge is allowed to call this function. Furthermore, it must be called before the finality_time of the settlement.
 #[receive(contract = "offchain-transfers", name = "veto", mutable)]
 #[inline(always)]
-fn contract_receive_veto<S: HasStateApi>(
+pub fn contract_receive_veto<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
@@ -377,7 +384,7 @@ fn is_settlement_valid<S: HasStateApi>(
 // Execute all settlements with passed finality_time.
 #[receive(contract = "offchain-transfers", name = "execute-settlements", mutable)]
 #[inline(always)]
-fn contract_receive_execute_settlements<S: HasStateApi>(
+pub fn contract_receive_execute_settlements<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
