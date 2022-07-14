@@ -1548,7 +1548,6 @@ impl HasSize for ExternParameterDataPlaceholder {
 
 impl HasSize for ExternParameter {
     #[inline(always)]
-    // parameter 0 always exists so this is correct
     fn size(&self) -> u32 { self.cursor.data.size() }
 }
 

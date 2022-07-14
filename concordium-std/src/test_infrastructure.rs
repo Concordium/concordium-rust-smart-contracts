@@ -311,16 +311,19 @@ impl<'a> TestParameterCursor<'a> {
 }
 
 impl<'a> AsRef<[u8]> for TestParameterCursor<'a> {
+    #[inline(always)]
     fn as_ref(&self) -> &[u8] { self.cursor.as_ref() }
 }
 
 impl<'a> Seek for TestParameterCursor<'a> {
     type Err = ();
 
+    #[inline(always)]
     fn seek(&mut self, seek: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(seek) }
 }
 
 impl<'a> Read for TestParameterCursor<'a> {
+    #[inline(always)]
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
 }
 
