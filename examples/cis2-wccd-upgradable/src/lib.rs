@@ -283,9 +283,9 @@ struct ReturnUnpauseTime {
 #[derive(Serialize, SchemaType)]
 struct ReturnBasicState {
     /// Address of the w_ccd proxy contract.
-    proxy_address:          Option<ContractAddress>,
+    proxy_address:          ContractAddress,
     /// Address of the w_ccd implementation contract.
-    implementation_address: Option<ContractAddress>,
+    implementation_address: ContractAddress,
 }
 
 /// Update struct.
@@ -315,17 +315,19 @@ enum CustomContractError {
     OutOfBound,
     /// Contract is paused.
     ContractPaused,
-    // Contract already initialized.
+    /// Contract already initialized.
     AlreadyInitialized,
-    // Only implementation contract.
+    /// Contract not initialized.
+    NotInitialized,
+    /// Only implementation contract.
     OnlyImplementation,
-    // Only proxy contract.
+    /// Only proxy contract.
     OnlyProxy,
-    // Only state contract.
+    /// Only state contract.
     OnlyState,
-    // Raised when implementation can not invoke state contract.
+    /// Raised when implementation can not invoke state contract.
     StateInvokeError,
-    // Raised when implementation can not invoke proxy contract.
+    /// Raised when implementation can not invoke proxy contract.
     ProxyInvokeError,
 }
 
@@ -896,7 +898,10 @@ fn contract_set_current_sender<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to receive CCD on the implementation.
+/// Function to receive CCD on the implementation. All CCDs are held by the
+/// proxy contract. Nonetheless, during the `unwrap` function the proxy should
+/// send some CCD amount back to the implementation which then goes through
+/// additional logic to deal with sending the CCD to the receiver address.
 #[receive(contract = "CIS2-wCCD", name = "receiveCCD", payable)]
 fn contract_implementation_recieve_ccd<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -906,7 +911,8 @@ fn contract_implementation_recieve_ccd<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to receive CCD on the proxy.
+/// Function to receive CCD on the proxy. All CCDs are held by the
+/// proxy contract.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", payable)]
 fn contract_proxy_recieve_ccd<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -1031,9 +1037,19 @@ fn contract_state_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ReturnBasicState> {
+    let proxy_address = host
+        .state()
+        .proxy_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+
+    let implementation_address = host
+        .state()
+        .implementation_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+
     let state = ReturnBasicState {
-        proxy_address:          host.state().proxy_address,
-        implementation_address: host.state().implementation_address,
+        proxy_address,
+        implementation_address,
     };
     Ok(state)
 }
@@ -1067,7 +1083,7 @@ fn contract_proxy_view<S: HasStateApi>(
     Ok(state_proxy)
 }
 
-// Helper function to ensure contract is not paused.
+/// Helper function to ensure contract is not paused.
 fn when_not_paused<S>(
     slot_time: Timestamp,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
