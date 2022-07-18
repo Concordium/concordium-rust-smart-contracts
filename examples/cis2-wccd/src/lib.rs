@@ -47,7 +47,7 @@ type ContractTokenId = TokenIdUnit;
 type ContractTokenAmount = TokenAmountU64;
 
 /// The state tracked for each address.
-#[derive(Serial, DeserialWithState, Deletable)]
+#[derive(Serial, DeserialWithState, Deletable, StateClone)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The number of tokens owned by this address.
@@ -58,7 +58,7 @@ struct AddressState<S> {
 }
 
 /// The contract state,
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state the one token.
@@ -900,5 +900,44 @@ mod tests {
             )),
             "Incorrect event emitted"
         )
+    }
+
+    /// Test unwrapping to a receiver account that doesn't exist.
+    ///
+    /// This test also showcases the use of [`TestHost::invoke_with_rollback`],
+    /// which handles rolling back the state if a receive function rejects.
+    #[concordium_test]
+    fn test_unwrap_to_missing_account() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+
+        // and parameter.
+        let parameter = UnwrapParams {
+            amount:   ContractTokenAmount::from(100),
+            owner:    ADDRESS_0,
+            receiver: Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+        // Make ACCOUNT_1 missing such that transfers to it will fail.
+
+        host.make_account_missing(ACCOUNT_1);
+
+        // Call the contract function. Note the use of `invoke_with_rollback`.
+        let result: ContractResult<()> =
+            host.invoke_with_rollback(|host| contract_unwrap(&ctx, host, &mut logger));
+
+        claim_eq!(result, Err(ContractError::Custom(CustomContractError::InvokeTransferError)));
+
+        // The balance should still be 400 due to the rollback after rejecting.
+        claim_eq!(host.state().balance(&TOKEN_ID_WCCD, &ADDRESS_0), Ok(400u64.into()));
+        claim!(host.get_transfers().is_empty());
     }
 }
