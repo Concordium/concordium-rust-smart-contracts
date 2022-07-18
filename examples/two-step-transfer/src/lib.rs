@@ -622,9 +622,8 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
         host.set_self_balance(Amount::from_micro_ccd(100));
 
-        // Execution. Note the use for `invoke_with_rollback`.
-        let res =
-            host.invoke_with_rollback(|host| contract_receive_message(&ctx, host, Amount::zero()));
+        // Execution. Note the use for `with_rollback`.
+        let res = host.with_rollback(|host| contract_receive_message(&ctx, host, Amount::zero()));
         claim_eq!(res, Err(ReceiveError::RequestAlreadyExists));
 
         // Check that both initial requests still exist in the state since it was rolled

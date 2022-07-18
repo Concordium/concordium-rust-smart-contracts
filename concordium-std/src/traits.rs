@@ -567,7 +567,8 @@ where
 /// Types that can be cloned along with the state.
 ///
 /// Used for rolling back the test state when errors occur in a receive
-/// function. See [`with_rollback`] and [`TestHost::invoke_contract_raw`](icr).
+/// function. See [`TestHost::with_rollback`][iwr] and
+/// [`TestHost::invoke_contract_raw`][icr].
 ///
 /// # Safety
 ///
@@ -578,6 +579,7 @@ where
 /// and undefined behaviour.
 ///
 /// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
+/// [iwr]: crate::test_infrastructure::TestHost::with_rollback
 pub unsafe trait StateClone<S> {
     /// Make a clone of the type while using the `cloned_state_api`.
     ///

@@ -1274,7 +1274,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     ///
     /// If the invocation results in `Err(_)`, the host and state will be rolled
     /// back. This means that the state and the logs of, e.g., transactions will
-    /// look as if the invocation never occurred.
+    /// look as if the invocation never occurred. See also
+    /// [`TestHost::with_rollback`].
     fn invoke_contract_raw(
         &mut self,
         to: &ContractAddress,
@@ -1340,7 +1341,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     ///
     /// If the invocation results in `Err(_)`, the host and state will be rolled
     /// back. This means that the state and the logs of, e.g., transactions will
-    /// look as if the invocation never occurred.
+    /// look as if the invocation never occurred. See also
+    /// [`TestHost::with_rollback`].
     fn invoke_contract_raw_read_only(
         &self,
         to: &ContractAddress,
@@ -1532,7 +1534,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
 impl<State: StateClone<TestStateApi>> TestHost<State> {
     /// Make a deep clone of the host, including the whole state and all
     /// references to the state. Used for rolling back the host and state,
-    /// fx when using [`invoke_with_rollback`].
+    /// fx when using [`with_rollback`].
     fn checkpoint(&self) -> Self {
         let cloned_state_api = self.state_builder.state_api.clone_deep();
         Self {
@@ -1551,7 +1553,7 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
     /// transactional nature of invocations. That is, if the invocation
     /// returns `Err(_)`, then the host and state is rolled back to a
     /// checkpoint just before the invocation.
-    pub fn invoke_with_rollback<R, E>(
+    pub fn with_rollback<R, E>(
         &mut self,
         call: impl FnOnce(&mut TestHost<State>) -> Result<R, E>,
     ) -> Result<R, E> {

@@ -904,7 +904,7 @@ mod tests {
 
     /// Test unwrapping to a receiver account that doesn't exist.
     ///
-    /// This test also showcases the use of [`TestHost::invoke_with_rollback`],
+    /// This test also showcases the use of [`TestHost::with_rollback`],
     /// which handles rolling back the state if a receive function rejects.
     #[concordium_test]
     fn test_unwrap_to_missing_account() {
@@ -930,9 +930,9 @@ mod tests {
 
         host.make_account_missing(ACCOUNT_1);
 
-        // Call the contract function. Note the use of `invoke_with_rollback`.
+        // Call the contract function. Note the use of `with_rollback`.
         let result: ContractResult<()> =
-            host.invoke_with_rollback(|host| contract_unwrap(&ctx, host, &mut logger));
+            host.with_rollback(|host| contract_unwrap(&ctx, host, &mut logger));
 
         claim_eq!(result, Err(ContractError::Custom(CustomContractError::InvokeTransferError)));
 

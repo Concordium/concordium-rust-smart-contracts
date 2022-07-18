@@ -2310,10 +2310,11 @@ pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenSt
 /// [`derive(StateClone)`](./derive.StateClone.html) for details and
 /// limitations.
 ///
-/// The trait is used in the [`TestHost`][concordium_std::TestHost] when rolling
-/// back the state. If that functionality is needed, then this trait must be
-/// derived for types which have not implement the `Clone` trait. That is,
-/// `StateClone` should be derived for types with a non-trivial state.
+/// The trait is used in the
+/// [`TestHost`][../concordium_std/test_infrastructure/struct.TestHost.html]
+/// when rolling back the state. If that functionality is needed, then this
+/// trait must be derived for types which have not implement the `Clone` trait.
+/// That is, `StateClone` should be derived for types with a non-trivial state.
 /// Non-trivial state here means when you have a type `MyState` which has one or
 /// more fields comprised of
 /// [`StateBox`](../concordium_std/struct.StateBox.html),
