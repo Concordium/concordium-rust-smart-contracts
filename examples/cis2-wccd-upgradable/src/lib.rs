@@ -40,7 +40,8 @@
 //! Deploy the `state` and the `implementation` contract first by invoking their
 //! respective `init` functions. Then, deploy the `proxy` contract and pass
 //! the already deployed contract addresses into the proxy `init` function.
-//! Then, call the `initialize` functions on the `state` as well as on the
+//! Then, call the `initialize` function on the `proxy` contract. This function
+//! will call the `initialize` functions on the `state` as well as the
 //! `implementation` contracts to set the remaining addresses.
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -131,7 +132,7 @@ struct StateProxy {
 }
 
 /// The parameter type for the contract function `unwrap`.
-/// Takes an amount of tokens and unwrap the CCD and send it to a receiver.
+/// Takes an amount of tokens and unwraps the CCD and send it to a receiver.
 #[derive(Serialize, SchemaType)]
 struct UnwrapParams {
     /// The amount of tokens to unwrap.
@@ -140,7 +141,9 @@ struct UnwrapParams {
     owner:    Address,
     /// The address to receive these unwrapped CCD.
     receiver: Receiver,
-    /// Some additional bytes to include in the transfer.
+    /// If the `Receiver` is a contract the unwrapped CCD together with these
+    /// additional data bytes are sent to the function entrypoint specified in
+    /// the `Receiver`.
     data:     AdditionalData,
 }
 
@@ -152,7 +155,9 @@ struct WrapParams {
     /// If the receiver is the sender of the message wrapping the tokens, it
     /// will not log a transfer.
     to:   Receiver,
-    /// Some additional bytes to include in a transfer.
+    /// Some additional bytes that are used in the `OnReceivingCis2` hook. Only
+    /// if the `Receiver` is a contract the receive hook function is
+    /// executed.
     data: AdditionalData,
 }
 
@@ -160,18 +165,18 @@ struct WrapParams {
 #[derive(Serialize, SchemaType)]
 struct InitializeStateParams {
     /// Address of the w_ccd proxy contract.
-    proxy_address:          Option<ContractAddress>,
+    proxy_address:          ContractAddress,
     /// Address of the w_ccd implementation contract.
-    implementation_address: Option<ContractAddress>,
+    implementation_address: ContractAddress,
 }
 
 /// The parameter type for the implementation contract function `initialize`.
 #[derive(Serialize, SchemaType)]
 struct InitializeImplementationParams {
     /// Address of the w_ccd proxy contract.
-    proxy_address: Option<ContractAddress>,
+    proxy_address: ContractAddress,
     /// Address of the w_ccd state contract.
-    state_address: Option<ContractAddress>,
+    state_address: ContractAddress,
 }
 
 /// The parameter type for the proxy contract function `init`.
@@ -283,13 +288,6 @@ struct ReturnBasicState {
     implementation_address: Option<ContractAddress>,
 }
 
-/// The return type for the state contract function `isOperator`.
-#[derive(Serialize, SchemaType)]
-struct ReturnIsOperator {
-    /// Boolean that specifies if an address is an operator or not.
-    is_operator: bool,
-}
-
 /// Update struct.
 #[derive(Debug, Serialize)]
 pub enum Update {
@@ -370,7 +368,10 @@ impl From<CustomContractError> for ContractError {
 }
 
 impl<S: HasStateApi> State<S> {
-    /// Creates a new state with no one owning any tokens by default.
+    /// Creates the new state of the `state` contract with no one owning any
+    /// tokens by default. The proxy_address and the implementation_address
+    /// are set to None. Both addresses have to be set with the `initialize`
+    /// function after the `proxy` contract is deployed.
     fn new(state_builder: &mut StateBuilder<S>) -> Self {
         // Setup state.
         State {
@@ -383,7 +384,10 @@ impl<S: HasStateApi> State<S> {
 }
 
 impl StateImplementation {
-    /// Creates a new state with no one owning any tokens by default.
+    /// Creates the new state of the `implementation` contract. The
+    /// proxy_address and the state_address are set to None. Both addresses
+    /// have to be set with the `initialize` function after the `proxy`
+    /// contract is deployed.
     fn new(admin: Address, current_sender: Address) -> Self {
         // Setup state.
         StateImplementation {
@@ -573,8 +577,8 @@ fn contract_state_initialize<S: HasStateApi>(
     );
     // Set proxy and implementation addresses.
     let params: InitializeStateParams = ctx.parameter_cursor().get()?;
-    host.state_mut().proxy_address = params.proxy_address;
-    host.state_mut().implementation_address = params.implementation_address;
+    host.state_mut().proxy_address = Some(params.proxy_address);
+    host.state_mut().implementation_address = Some(params.implementation_address);
     Ok(())
 }
 
@@ -597,8 +601,48 @@ fn contract_initialize<S: HasStateApi>(
     );
     // Set proxy and storage addresses.
     let params: InitializeImplementationParams = ctx.parameter_cursor().get()?;
-    host.state_mut().proxy_address = params.proxy_address;
-    host.state_mut().state_address = params.state_address;
+    host.state_mut().proxy_address = Some(params.proxy_address);
+    host.state_mut().state_address = Some(params.state_address);
+    Ok(())
+}
+
+/// Initializes the `implementation` and `state` contracts by using the
+/// addresses that the `proxy` contract was set up. This function will call the
+/// `initialize` functions on the `implementation` as well as the `state`
+/// contracts.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "initialize", mutable)]
+fn contract_proxy_initialize<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<()> {
+    let state_address = host.state().state_address;
+
+    let parameter_bytes = to_bytes(&InitializeStateParams {
+        proxy_address:          ctx.self_address(),
+        implementation_address: host.state().implementation_address,
+    });
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("initialize"),
+        Amount::zero(),
+    )?;
+
+    let implementation_address = host.state().implementation_address;
+
+    let parameter_bytes = to_bytes(&InitializeImplementationParams {
+        proxy_address: ctx.self_address(),
+        state_address: host.state().state_address,
+    });
+
+    host.invoke_contract_raw(
+        &implementation_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("initialize"),
+        Amount::zero(),
+    )?;
+
     Ok(())
 }
 
@@ -814,7 +858,11 @@ fn contract_state_get_balance<S: HasStateApi>(
 ) -> ContractResult<ContractTokenAmount> {
     let params: GetBalanceParams = ctx.parameter_cursor().get()?;
 
-    Ok(host.state().token.get(&params.owner).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
+    if let Some(s) = host.state().token.get(&params.owner) {
+        Ok(s.balance)
+    } else {
+        Ok(0u64.into())
+    }
 }
 
 /// Is_operator.
@@ -822,7 +870,7 @@ fn contract_state_get_balance<S: HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "isOperator",
     parameter = "IsOperatorParams",
-    return_value = "ReturnIsOperator"
+    return_value = "bool"
 )]
 fn contract_state_get_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -1051,7 +1099,7 @@ fn when_not_paused<S>(
     let unpause_time = unpause_time
         .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
         .get()?;
-    // Check that contrac is not paused.
+    // Check that contract is not paused.
     ensure!(
         slot_time >= unpause_time,
         concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused)
@@ -1134,7 +1182,9 @@ fn contract_wrap<S: HasStateApi>(
         owner:    sender,
     }))?;
 
-    // Only log a transfer event if receiver is not the one who payed for this.
+    // Only logs a transfer event if the receiver is not the sender.
+    // Only executes the `OnReceivingCis2` hook if the receiver is not the sender
+    // and the receiver is a contract.
     if sender != receive_address {
         logger.log(&Cis2Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WCCD,
@@ -1142,18 +1192,23 @@ fn contract_wrap<S: HasStateApi>(
             from:     sender,
             to:       receive_address,
         }))?;
-    }
 
-    // If the receiver is a contract: invoke the receive hook function.
-    if let Receiver::Contract(address, function) = params.to {
-        let parameter = OnReceivingCis2Params {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            data:     params.data,
-        };
-        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
+        // If the receiver is a contract: invoke the receive hook function.
+        if let Receiver::Contract(address, function) = params.to {
+            let parameter = OnReceivingCis2Params {
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(amount.micro_ccd),
+                from:     sender,
+                data:     params.data,
+            };
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_entrypoint_name(),
+                Amount::zero(),
+            )
             .unwrap_abort();
+        }
     }
     Ok(())
 }
@@ -1829,8 +1884,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_state_params = InitializeStateParams {
-            proxy_address:          Some(PROXY),
-            implementation_address: Some(IMPLEMENTATION),
+            proxy_address:          PROXY,
+            implementation_address: IMPLEMENTATION,
         };
         let parameter_bytes = to_bytes(&initialize_state_params);
 
@@ -1875,8 +1930,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_state_params = InitializeStateParams {
-            proxy_address:          Some(PROXY),
-            implementation_address: Some(IMPLEMENTATION),
+            proxy_address:          PROXY,
+            implementation_address: IMPLEMENTATION,
         };
         let parameter_bytes = to_bytes(&initialize_state_params);
 
@@ -1983,8 +2038,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2100,8 +2155,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2162,8 +2217,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2298,8 +2353,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2407,8 +2462,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2476,8 +2531,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2538,8 +2593,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2593,8 +2648,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2703,8 +2758,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2812,8 +2867,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
@@ -2901,8 +2956,8 @@ mod tests {
 
         // Setup parameter.
         let initialize_implementation_params = InitializeImplementationParams {
-            proxy_address: Some(PROXY),
-            state_address: Some(STATE),
+            proxy_address: PROXY,
+            state_address: STATE,
         };
         let parameter_bytes = to_bytes(&initialize_implementation_params);
         ctx.set_parameter(&parameter_bytes);
