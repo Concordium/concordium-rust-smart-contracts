@@ -2815,7 +2815,7 @@ unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for 
             StateBoxInner::Reference {
                 prefix,
             } => StateBoxInner::Reference {
-                prefix: prefix.clone(),
+                prefix: *prefix,
             },
         };
 

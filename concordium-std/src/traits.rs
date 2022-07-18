@@ -569,7 +569,9 @@ where
 /// Used for rolling back the test state when errors occur in a receive
 /// function. See [`with_rollback`] and [`TestHost::invoke_contract_raw`](icr).
 ///
-/// *Unsafe*: Marked unsafe because special care should be taken when
+/// # Safety
+///
+/// Marked unsafe because special care should be taken when
 /// implementing this trait. In particular, one should only use the supplied
 /// `cloned_state_api`, or (shallow) clones thereof. Creating a new
 /// [`HasStateApi`] or using a `deep_clone` will lead to an inconsistent state
@@ -579,7 +581,9 @@ where
 pub unsafe trait StateClone<S> {
     /// Make a clone of the type while using the `cloned_state_api`.
     ///
-    /// *Unsafe*: Marked unsafe because this function *should not* be called
+    /// # Safety
+    ///
+    /// Marked unsafe because this function *should not* be called
     /// directly. It is only used within generated code and in the test
     /// infrastructure.
     unsafe fn clone_state(&self, cloned_state_api: &S) -> Self;

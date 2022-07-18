@@ -343,17 +343,11 @@ impl Node {
     /// Make a deep clone of the node. Used for rollbacks.
     fn clone_deep(&self) -> Self {
         Self {
-            data:     match self.data {
-                Some(ref d) => Some(Rc::new(RefCell::new(d.borrow().clone()))),
-                None => None,
-            },
+            data:     self.data.as_ref().map(|d| Rc::new(RefCell::new(d.borrow().clone()))),
             children: self
                 .children
                 .iter()
-                .map(|child| match child {
-                    Some(child) => Some(Box::new(child.clone_deep())),
-                    None => None,
-                })
+                .map(|child| child.as_ref().map(|child| Box::new(child.clone_deep())))
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(), // This is safe because we know it has the right size and type.
