@@ -289,21 +289,12 @@ struct ReturnBasicState {
 }
 
 /// Update struct.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub enum Update {
     /// Remove an amount or operator.
     Remove,
     /// Add an amount or operator.
     Add,
-}
-
-impl schema::SchemaType for Update {
-    fn get_type() -> schema::Type {
-        schema::Type::Enum(vec![
-            ("Remove".to_string(), schema::Fields::None),
-            ("Add".to_string(), schema::Fields::None),
-        ])
-    }
 }
 
 /// The different errors the contract can produce.
