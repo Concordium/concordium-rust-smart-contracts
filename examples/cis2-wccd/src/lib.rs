@@ -73,7 +73,7 @@ struct State<S> {
 }
 
 /// The parameter type for the contract function `unwrap`.
-/// Takes an amount of tokens and unwrap the CCD and send it to a receiver.
+/// Takes an amount of tokens and unwraps the CCD and send it to a receiver.
 #[derive(Serialize, SchemaType)]
 struct UnwrapParams {
     /// The amount of tokens to unwrap.
@@ -82,7 +82,9 @@ struct UnwrapParams {
     owner:    Address,
     /// The address to receive these unwrapped CCD.
     receiver: Receiver,
-    /// Some additional bytes to include in the transfer.
+    /// If the `Receiver` is a contract the unwrapped CCD together with these
+    /// additional data bytes are sent to the function entrypoint specified in
+    /// the `Receiver`.
     data:     AdditionalData,
 }
 
@@ -95,7 +97,9 @@ struct WrapParams {
     /// If the receiver is the sender of the message wrapping the tokens, it
     /// will not log a transfer.
     to:   Receiver,
-    /// Some additional bytes to include in a transfer.
+    /// Some additional bytes that are used in the `OnReceivingCis2` hook. Only
+    /// if the `Receiver` is a contract the receive hook function is
+    /// executed.
     data: AdditionalData,
 }
 
@@ -361,7 +365,9 @@ fn contract_wrap<S: HasStateApi>(
         owner:    sender,
     }))?;
 
-    // Only log a transfer event if receiver is not the one who payed for this.
+    // Only logs a transfer event if the receiver is not the sender.
+    // Only executes the `OnReceivingCis2` hook if the receiver is not the sender
+    // and the receiver is a contract.
     if sender != receive_address {
         logger.log(&Cis2Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WCCD,
@@ -369,18 +375,24 @@ fn contract_wrap<S: HasStateApi>(
             from:     sender,
             to:       receive_address,
         }))?;
-    }
 
-    // If the receiver is a contract: invoke the receive hook function.
-    if let Receiver::Contract(address, function) = params.to {
-        let parameter = OnReceivingCis2Params {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            data:     params.data,
-        };
-        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())
+        // If the receiver is a contract: invoke the receive hook function.
+        if let Receiver::Contract(address, function) = params.to {
+            let parameter = OnReceivingCis2Params {
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(amount.micro_ccd),
+                from:     sender,
+                data:     params.data,
+            };
+
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_entrypoint_name(),
+                Amount::zero(),
+            )
             .unwrap_abort();
+        }
     }
     Ok(())
 }
