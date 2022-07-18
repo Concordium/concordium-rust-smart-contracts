@@ -28,6 +28,10 @@ use concordium_std::*;
 /// encoding before emitted in the TokenMetadata event.
 const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
+
 // Types
 
 /// Contract token ID type.
@@ -76,9 +80,23 @@ impl<S: HasStateApi> AddressState<S> {
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state for each address.
-    state:      StateMap<Address, AddressState<S>, S>,
+    state:        StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    all_tokens: StateSet<ContractTokenId, S>,
+    all_tokens:   StateSet<ContractTokenId, S>,
+    /// Map with contract addresses providing implementations of additional
+    /// standards.
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+}
+
+/// The paramter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
 }
 
 /// The custom errors the contract can produce.
@@ -128,8 +146,9 @@ impl<S: HasStateApi> State<S> {
     /// Creates a new state with no tokens.
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         State {
-            state:      state_builder.new_map(),
-            all_tokens: state_builder.new_set(),
+            state:        state_builder.new_map(),
+            all_tokens:   state_builder.new_set(),
+            implementors: state_builder.new_map(),
         }
     }
 
@@ -243,6 +262,24 @@ impl<S: HasStateApi> State<S> {
         self.state.entry(*owner).and_modify(|address_state| {
             address_state.operators.remove(operator);
         });
+    }
+
+    /// Check if state contains any implementors for a given standard.
+    fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
+        if let Some(addresses) = self.implementors.get(std_id) {
+            SupportResult::SupportBy(addresses.to_vec())
+        } else {
+            SupportResult::NoSupport
+        }
+    }
+
+    /// Set implementors for a given standard.
+    fn set_implementors(
+        &mut self,
+        std_id: StandardIdentifierOwned,
+        implementors: Vec<ContractAddress>,
+    ) {
+        self.implementors.insert(std_id, implementors);
     }
 }
 
@@ -577,6 +614,62 @@ fn contract_token_metadata<S: HasStateApi>(
     }
     let result = TokenMetadataQueryResponse::from(response);
     Ok(result)
+}
+
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "CIS2-NFT",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse"
+)]
+fn contract_supports<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().have_implementors(&std_id));
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Set the addresses for an implementation given a standard identifier and a
+/// list of contract addresses.
+///
+/// It rejects if:
+/// - Sender is not the owner of the contract instance.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "CIS2-NFT",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    mutable
+)]
+fn contract_set_implementor<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Authorize the sender.
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+    // Update the implementors in the state
+    host.state_mut().set_implementors(params.id, params.implementors);
+    Ok(())
 }
 
 // Tests
