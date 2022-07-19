@@ -102,8 +102,8 @@ struct State<S> {
     implementation_address: Option<ContractAddress>,
     /// The state of the one token.
     token:                  StateMap<Address, AddressState<S>, S>,
-    /// Timestamp when contract is unpaused.
-    unpause_time:           Timestamp,
+    /// Contract is paused/unpaused.
+    paused:                 bool,
 }
 
 /// The `implementation` contract state.
@@ -220,11 +220,11 @@ struct SetCurrentSenderParams {
     sender: Address,
 }
 
-/// The parameter type for the implementation contract function `pause`.
+/// The parameter type for the state contract function `setPaused`.
 #[derive(Serialize, SchemaType)]
-struct SetUnpauseParams {
-    /// Amount of seconds until the contract becomes unpaused.
-    seconds: Duration,
+struct SetPausedParams {
+    /// Contract is paused/unpaused.
+    paused: bool,
 }
 
 /// The parameter type for the state contract function `setIsOperator`.
@@ -249,13 +249,6 @@ struct SetBalanceParams {
     update: Update,
 }
 
-/// The parameter type for the state contract function `setUnpauseTime`.
-#[derive(Serialize, SchemaType)]
-struct SetUnpauseTimeParams {
-    /// Timestamp when contract becomes unpaused.
-    unpause_time: Timestamp,
-}
-
 /// The parameter type for the state contract function `getBalance`.
 #[derive(Serialize, SchemaType)]
 struct GetBalanceParams {
@@ -270,13 +263,6 @@ struct IsOperatorParams {
     owner:   Address,
     /// Address that will be checked if it is an operator to the above owner.
     address: Address,
-}
-
-/// The return type for the state contract function `getUnpauseTime`.
-#[derive(Serialize, SchemaType)]
-struct ReturnUnpauseTime {
-    /// Timestamp when the contract becomes unpaused.
-    unpause_time: Timestamp,
 }
 
 /// The return type for the state contract function `view`.
@@ -311,8 +297,6 @@ enum CustomContractError {
     InvokeContractError,
     /// Failed to invoke a transfer.
     InvokeTransferError,
-    /// Value out of bound.
-    OutOfBound,
     /// Contract is paused.
     ContractPaused,
     /// Contract already initialized.
@@ -371,7 +355,7 @@ impl<S: HasStateApi> State<S> {
             proxy_address:          None,
             implementation_address: None,
             token:                  state_builder.new_map(),
-            unpause_time:           Timestamp::from_timestamp_millis(0),
+            paused:                 false,
         }
     }
 }
@@ -714,23 +698,18 @@ fn only_proxy(proxy: Option<ContractAddress>, sender: Address) -> ContractResult
 
 // Getter and setter functions
 
-/// Set unpause_time.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setUnpauseTime",
-    parameter = "SetUnpauseTimeParams",
-    mutable
-)]
-fn contract_state_set_unpause_time<S: HasStateApi>(
+/// Set paused.
+#[receive(contract = "CIS2-wCCD-State", name = "setPaused", parameter = "SetPausedParams", mutable)]
+fn contract_state_set_paused<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Only implementation can set state.
     only_implementation(host.state().implementation_address, ctx.sender())?;
 
-    // Set unpause_time.
-    let params: SetUnpauseTimeParams = ctx.parameter_cursor().get()?;
-    host.state_mut().unpause_time = params.unpause_time;
+    // Set paused.
+    let params: SetPausedParams = ctx.parameter_cursor().get()?;
+    host.state_mut().paused = params.paused;
     Ok(())
 }
 
@@ -825,17 +804,13 @@ fn contract_state_set_operator<S: HasStateApi>(
     Ok(())
 }
 
-/// Get unpause time.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "getUnpauseTime",
-    return_value = "ReturnUnpauseTime"
-)]
-fn contract_state_get_unpause_time<S: HasStateApi>(
+/// Get paused.
+#[receive(contract = "CIS2-wCCD-State", name = "getPaused", return_value = "bool")]
+fn contract_state_get_paused<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<Timestamp> {
-    Ok(host.state().unpause_time)
+) -> ContractResult<bool> {
+    Ok(host.state().paused)
 }
 
 /// Get Balance.
@@ -1085,7 +1060,6 @@ fn contract_proxy_view<S: HasStateApi>(
 
 /// Helper function to ensure contract is not paused.
 fn when_not_paused<S>(
-    slot_time: Timestamp,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     let state_address = host
@@ -1093,24 +1067,21 @@ fn when_not_paused<S>(
         .state_address
         .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?;
 
-    let unpause_time = host.invoke_contract_raw_read_only(
+    let paused = host.invoke_contract_raw_read_only(
         &state_address,
         Parameter(&[]),
-        EntrypointName::new_unchecked("getUnpauseTime"),
+        EntrypointName::new_unchecked("getPaused"),
         Amount::zero(),
     )?;
 
     // It is expected that this contract is initialized with the w_ccd_state
-    // contract (a V1 contract). In that case, the unpause_time variable can be
+    // contract (a V1 contract). In that case, the paused variable can be
     // queried from the state contract without error.
-    let unpause_time = unpause_time
+    let paused: bool = paused
         .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
         .get()?;
     // Check that contract is not paused.
-    ensure!(
-        slot_time >= unpause_time,
-        concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused)
-    );
+    ensure!(!paused, concordium_cis2::Cis2Error::Custom(CustomContractError::ContractPaused));
     Ok(())
 }
 
@@ -1134,8 +1105,7 @@ fn contract_wrap<S: HasStateApi>(
     only_proxy(host.state().proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    let slot_time = ctx.metadata().slot_time();
-    when_not_paused(slot_time, host)?;
+    when_not_paused(host)?;
     if amount == Amount::zero() {
         return Ok(());
     }
@@ -1237,8 +1207,7 @@ fn contract_unwrap<S: HasStateApi>(
     only_proxy(host.state().proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    let slot_time = ctx.metadata().slot_time();
-    when_not_paused(slot_time, host)?;
+    when_not_paused(host)?;
 
     let params: UnwrapParams = ctx.parameter_cursor().get()?;
 
@@ -1362,8 +1331,7 @@ fn contract_transfer<S: HasStateApi>(
     only_proxy(host.state().proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    let slot_time = ctx.metadata().slot_time();
-    when_not_paused(slot_time, host)?;
+    when_not_paused(host)?;
 
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
@@ -1490,8 +1458,7 @@ fn contract_update_operator<S: HasStateApi>(
     only_proxy(host.state().proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    let slot_time = ctx.metadata().slot_time();
-    when_not_paused(slot_time, host)?;
+    when_not_paused(host)?;
 
     // Parse the parameter.
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
@@ -1631,25 +1598,19 @@ fn contract_update_implementation<S: HasStateApi>(
     Ok(())
 }
 
-/// This function adds some `seconds` to the `unpause_time`. The smart contract
-/// will automatically unpause when it reaches the `unpause_time`. Only the
+/// This function pauses the contract. Only the
 /// admin of the implementation can call this function.
-#[receive(contract = "CIS2-wCCD", name = "pause", parameter = "SetUnpauseParams", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "pause", mutable)]
 fn contract_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the current admin can pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
-    // Parse the parameter.
-    let params: SetUnpauseParams = ctx.parameter_cursor().get()?;
-    let slot_time = ctx.metadata().slot_time();
-    // Update unpause_time.
-    let unpause_time = slot_time
-        .checked_add(params.seconds)
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OutOfBound))?;
 
-    let parameter_bytes = to_bytes(&unpause_time);
+    let parameter_bytes = to_bytes(&SetPausedParams {
+        paused: true,
+    });
 
     let state_address = host
         .state()
@@ -1659,7 +1620,7 @@ fn contract_pause<S: HasStateApi>(
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("setUnpauseTime"),
+        EntrypointName::new_unchecked("setPaused"),
         Amount::zero(),
     )?;
 
@@ -1675,10 +1636,9 @@ fn contract_un_pause<S: HasStateApi>(
     // Check that only the current admin can un_pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
-    // Update unpause_time to 0.
-    let unpause_time = Timestamp::from_timestamp_millis(0);
-
-    let parameter_bytes = to_bytes(&unpause_time);
+    let parameter_bytes = to_bytes(&SetPausedParams {
+        paused: false,
+    });
 
     let state_address = host
         .state()
@@ -1688,7 +1648,7 @@ fn contract_un_pause<S: HasStateApi>(
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("setUnpauseTime"),
+        EntrypointName::new_unchecked("setPaused"),
         Amount::zero(),
     )?;
 
@@ -1927,7 +1887,7 @@ mod tests {
 
     /// Test set unpause time in state contract.
     #[concordium_test]
-    fn test_set_unpause_time() {
+    fn test_set_paused() {
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state_state(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
@@ -1952,34 +1912,32 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
+        let parameter_bytes = to_bytes(&SetPausedParams {
+            paused: true,
+        });
         ctx.set_parameter(&parameter_bytes);
 
-        // Check return value of the get_unpause_time function
-        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &host);
+        // Check return value of the get_paused function
+        let paused: ContractResult<bool> = contract_state_get_paused(&ctx, &host);
         claim_eq!(
-            timestamp,
-            Ok(Timestamp::from_timestamp_millis(0)),
-            "Getter function should return 0 as unpause_time"
+            paused,
+            Ok(false),
+            "Getter function should return that the contract is not paused"
         );
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_state_set_unpause_time(&ctx, &mut host);
+        let result: ContractResult<()> = contract_state_set_paused(&ctx, &mut host);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
-        // Check return value of the get_unpause_time function
-        let timestamp: ContractResult<Timestamp> = contract_state_get_unpause_time(&ctx, &host);
-        claim_eq!(
-            timestamp,
-            Ok(Timestamp::from_timestamp_millis(100)),
-            "Getter function should return 100 as unpause_time"
-        );
+        // Check return value of the get_paused function
+        let paused: ContractResult<bool> = contract_state_get_paused(&ctx, &host);
+        claim_eq!(paused, Ok(true), "Getter function should return that contract is paused");
 
-        // Can NOT set_unpause_time from an address other than the implementation
+        // Can NOT set_paused from an address other than the implementation
         ctx.set_sender(ADDRESS_0);
-        let result: ContractResult<()> = contract_state_set_unpause_time(&ctx, &mut host);
+        let result: ContractResult<()> = contract_state_set_paused(&ctx, &mut host);
         // Check that invoke failed.
         expect_error(
             result,
@@ -2035,7 +1993,6 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
@@ -2059,8 +2016,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(false),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2153,7 +2110,6 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
@@ -2176,8 +2132,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(false),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2214,7 +2170,6 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
@@ -2238,8 +2193,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(false),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2351,7 +2306,6 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
@@ -2374,8 +2328,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(false),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2461,7 +2415,6 @@ mod tests {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation(ADDRESS_0);
@@ -2483,13 +2436,9 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("setUnpauseTime".into()),
+            OwnedEntrypointName::new_unchecked("setPaused".into()),
             MockFn::returning_ok(()),
         );
-
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
-        ctx.set_parameter(&parameter_bytes);
 
         // Call the contract function.
         let result: ContractResult<()> = contract_pause(&ctx, &mut host);
@@ -2498,18 +2447,13 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
     }
 
-    /// Test that only the current admin can update the unpause time.
+    /// Test that only the current admin can pause the contract.
     #[concordium_test]
     fn test_pause_not_authorized() {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
-        // NEW_ADMIN is not the current admin but tries to update the unpause time.
+        // NEW_ADMIN is not the current admin but tries to pause.
         ctx.set_sender(NEW_ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
-
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
-        ctx.set_parameter(&parameter_bytes);
 
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation(ADDRESS_0);
@@ -2552,7 +2496,7 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("setUnpauseTime".into()),
+            OwnedEntrypointName::new_unchecked("setPaused".into()),
             MockFn::returning_ok(()),
         );
 
@@ -2570,7 +2514,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         // NEW_ADMIN is not the current admin but tries to un_pause the contract.
         ctx.set_sender(NEW_ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation(ADDRESS_0);
@@ -2592,7 +2535,6 @@ mod tests {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
 
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation(ADDRESS_0);
@@ -2614,8 +2556,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(true),
         );
 
         // Setup parameter.
@@ -2646,7 +2588,6 @@ mod tests {
     fn test_un_wrap() {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(ADMIN_ADDRESS);
 
         let state_builder = TestStateBuilder::new();
@@ -2669,8 +2610,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(false),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2721,17 +2662,6 @@ mod tests {
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up a mock invocation for the state contract.
-        host.setup_mock_entrypoint(
-            STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
-        );
-
         // Setup parameter.
         let un_wrap_params = UnwrapParams {
             amount:   ContractTokenAmount::from(100),
@@ -2756,7 +2686,6 @@ mod tests {
     fn test_no_un_wrap_when_paused() {
         // Setup the context.
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(ADMIN_ADDRESS);
 
         let state_builder = TestStateBuilder::new();
@@ -2779,8 +2708,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(0)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(false),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2817,15 +2746,11 @@ mod tests {
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[Timestamp::from_timestamp_millis(100)]);
-        ctx.set_parameter(&parameter_bytes);
-
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(true),
         );
 
         // Setup parameter.
@@ -2857,7 +2782,6 @@ mod tests {
     fn test_no_transfer_when_paused() {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(ADMIN_ADDRESS);
 
         let mut logger = TestLogger::init();
@@ -2888,8 +2812,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(true),
         );
 
         // Set up a mock invocation for the state contract.
@@ -2953,7 +2877,6 @@ mod tests {
     fn test_no_add_operator_when_paused() {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(ADMIN_ADDRESS);
 
         let mut logger = TestLogger::init();
@@ -2977,8 +2900,8 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
-            OwnedEntrypointName::new_unchecked("getUnpauseTime".into()),
-            MockFn::returning_ok(Timestamp::from_timestamp_millis(200)),
+            OwnedEntrypointName::new_unchecked("getPaused".into()),
+            MockFn::returning_ok(true),
         );
 
         // Set up a mock invocation for the state contract.
