@@ -521,4 +521,50 @@ mod tests {
         trie.delete_prefix(&[]).unwrap();
         assert!(alias_entry.read_u8().is_err());
     }
+
+    // TODO: Do we need to invalidate handed-out entries when rollbacks occur after
+    // mock functions? Or are we saved by it requiring &mut Host?
+
+    #[test]
+    fn test_deep_clone() {
+        let mut trie = StateTrie::new();
+
+        // Create two entries
+        let mut e1 = create_entry(&mut trie, b"ab");
+        let mut e2 = create_entry(&mut trie, b"ac");
+
+        // Insert data in both
+        e1.write_u32(10001).unwrap();
+        e2.write_u64(10002).unwrap();
+
+        // Get iterator
+        let _iterator_1 = trie.iterator(b"a");
+
+        // Save stats
+        let next_entry_id = trie.next_entry_id.get();
+
+        // Clone deeply
+        let trie_clone = trie.clone_deep();
+
+        // ---------------
+        // Modify original
+        e1.write_u32(20001).unwrap(); // Also moves cursor
+        e2.write_u32(20002).unwrap(); // Also moves cursor
+        let _e3 = create_entry(&mut trie, b"qq");
+        let _iterator_2 = trie.iterator(&[]);
+        // ---------------
+
+        // Ensure that clone matches stats
+        assert_eq!(trie_clone.entry_map.borrow().len(), 4); // Only has [e1, e2, e1, e2] (the last two from the iterator)
+        assert_eq!(trie_clone.iterator_counts.borrow().len(), 1); // Only has [iterator_1]
+        assert_eq!(trie_clone.next_entry_id.get(), next_entry_id);
+
+        let mut e1_clone = trie_clone.lookup(b"ab").expect("Entry 'ab' is missing.");
+        let mut e2_clone = trie_clone.lookup(b"ac").expect("Entry 'ac' is missing.");
+
+        assert_eq!(Ok(10001), e1_clone.read_u32());
+        assert_eq!(Ok(10002), e2_clone.read_u64());
+
+        assert!(trie_clone.lookup(b"qq").is_none());
+    }
 }
