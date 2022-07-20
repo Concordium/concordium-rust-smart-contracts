@@ -99,7 +99,7 @@ struct WrapParams {
     data: AdditionalData,
 }
 
-/// The paramter type for the contract function `setImplementors`.
+/// The parameter type for the contract function `setImplementors`.
 /// Takes a standard identifier and list of contract addresses providing
 /// implementations of this standard.
 #[derive(Debug, Serialize, SchemaType)]

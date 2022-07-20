@@ -57,8 +57,8 @@ struct MintParams {
     tokens: collections::BTreeMap<ContractTokenId, ContractTokenAmount>,
 }
 
-/// The paramter type for the contract function `setImplementors`.
-/// Takes a standard identifier and list of contract addresses providing
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and a list of contract addresses providing
 /// implementations of this standard.
 #[derive(Debug, Serialize, SchemaType)]
 struct SetImplementorsParams {
