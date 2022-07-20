@@ -500,7 +500,7 @@ fn contract_operator_of<S: HasStateApi>(
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
         // Query the state for address being an operator of owner.
-        let is_operator = host.state().is_operator(&query.owner, &query.address);
+        let is_operator = host.state().is_operator(&query.address, &query.owner);
         response.push(is_operator);
     }
     let result = OperatorOfQueryResponse::from(response);
@@ -908,6 +908,30 @@ mod tests {
         // Check the state.
         let is_operator = host.state().is_operator(&ADDRESS_1, &ADDRESS_0);
         claim!(is_operator, "Account should be an operator");
+
+        // Checking that `ADDRESS_1` is an operator in the query response of the
+        // `contract_operator_of` function as well.
+        // Setup parameter.
+        let operator_of_query = OperatorOfQuery {
+            address: ADDRESS_1,
+            owner:   ADDRESS_0,
+        };
+
+        let operator_of_query_vector = OperatorOfQueryParams {
+            queries: vec![operator_of_query],
+        };
+        let parameter_bytes = to_bytes(&operator_of_query_vector);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        // Checking the return value of the `contract_operator_of` function
+        let result: ContractResult<OperatorOfQueryResponse> = contract_operator_of(&ctx, &host);
+
+        claim_eq!(
+            result.expect_report("Failed getting result value").0,
+            [true],
+            "Account should be an operator in the query response"
+        );
 
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "One event should be logged");

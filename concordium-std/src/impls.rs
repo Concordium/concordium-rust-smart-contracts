@@ -1514,7 +1514,17 @@ where
     }
 }
 
-/// # Trait implementations for Parameter
+// # Trait implementations for Parameter
+
+impl Default for ExternParameter {
+    #[inline(always)]
+    fn default() -> Self {
+        ExternParameter {
+            cursor: Cursor::new(ExternParameterDataPlaceholder {}),
+        }
+    }
+}
+
 impl Read for ExternParameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
@@ -1524,18 +1534,34 @@ impl Read for ExternParameter {
             }
         };
         let num_read = unsafe {
-            prims::get_parameter_section(0, buf.as_mut_ptr(), len, self.current_position)
+            // parameter 0 always exists, so this is safe.
+            prims::get_parameter_section(0, buf.as_mut_ptr(), len, self.cursor.offset as u32)
         };
-        self.current_position += num_read as u32; // parameter 0 always exists, so this is safe.
+
+        self.cursor.offset += num_read as usize;
         Ok(num_read as usize)
     }
 }
 
-impl HasParameter for ExternParameter {
+impl HasSize for ExternParameterDataPlaceholder {
     #[inline(always)]
     // parameter 0 always exists so this is correct
     fn size(&self) -> u32 { unsafe { prims::get_parameter_size(0) as u32 } }
 }
+
+impl HasSize for ExternParameter {
+    #[inline(always)]
+    fn size(&self) -> u32 { self.cursor.data.size() }
+}
+
+impl Seek for ExternParameter {
+    type Err = ();
+
+    #[inline(always)]
+    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(pos) }
+}
+
+impl HasParameter for ExternParameter {}
 
 /// The read implementation uses host functions to read chunks of return value
 /// on demand.
@@ -1700,11 +1726,7 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     }
 
     #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType {
-        ExternParameter {
-            current_position: 0,
-        }
-    }
+    fn parameter_cursor(&self) -> Self::ParamType { ExternParameter::default() }
 }
 
 /// Tag of the transfer operation expected by the host. See [prims::invoke].
