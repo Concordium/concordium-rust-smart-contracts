@@ -1142,8 +1142,8 @@ pub struct StandardIdentifier<'a> {
     id: &'a str,
 }
 
-/// String is invalid as standard identifier. Ensure the length is less than 256
-/// and it only contains ASCII characters.
+/// String is not a valid standard identifier. Ensure the length is less than
+/// 256 and it only contains ASCII characters.
 #[derive(Default)]
 pub struct InvalidStandardIdentifierError;
 
@@ -1182,6 +1182,7 @@ pub struct StandardIdentifierOwned {
     id: String,
 }
 
+// This is implemented manually to flatten and simplify the schema.
 impl schema::SchemaType for StandardIdentifierOwned {
     fn get_type() -> schema::Type { schema::Type::String(schema::SizeLength::U8) }
 }
@@ -1219,6 +1220,7 @@ pub struct SupportsQueryParams {
     pub queries: Vec<StandardIdentifierOwned>,
 }
 
+// This is implemented manually to flatten and simplify the schema.
 impl schema::SchemaType for SupportsQueryParams {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(StandardIdentifierOwned::get_type()))
@@ -1238,6 +1240,10 @@ pub enum SupportResult {
     SupportBy(#[concordium(size_length = 1)] Vec<ContractAddress>),
 }
 
+// This is implemented manually because another manual implementation depends on
+// this. Currently it is not practical to rely on a derived schema type in a
+// manual implemented schema type, because the derived version only generates
+// the implementation with a specific feature enabled.
 impl schema::SchemaType for SupportResult {
     fn get_type() -> schema::Type {
         schema::Type::Enum(vec![
@@ -1264,6 +1270,7 @@ pub struct SupportsQueryResponse {
     pub results: Vec<SupportResult>,
 }
 
+// This is implemented manually to flatten and simplify the schema.
 impl schema::SchemaType for SupportsQueryResponse {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(SupportResult::get_type()))
