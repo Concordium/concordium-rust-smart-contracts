@@ -522,9 +522,6 @@ mod tests {
         assert!(alias_entry.read_u8().is_err());
     }
 
-    // TODO: Do we need to invalidate handed-out entries when rollbacks occur after
-    // mock functions? Or are we saved by it requiring &mut Host?
-
     #[test]
     fn test_deep_clone() {
         let mut trie = StateTrie::new();

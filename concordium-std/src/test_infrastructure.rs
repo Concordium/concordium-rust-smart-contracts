@@ -1204,6 +1204,9 @@ impl<State> MockFn<State> {
     }
 }
 
+/// A map from contract address and entrypoints to mocking functions.
+type MockFnMap<State> = BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>;
+
 /// A [`Host`](HasHost) implementation used for unit testing smart contracts.
 ///
 /// The host provides a way to set up mock responses to transfers, and to
@@ -1216,7 +1219,9 @@ impl<State> MockFn<State> {
 /// were affected.
 pub struct TestHost<State> {
     /// Functions that mock responses to calls.
-    mocking_fns:      Rc<RefCell<BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>>>,
+    // This is Rc+RefCell because it needs to be cloneable. There might be another way to make the
+    // MockFn cloneable, but this seemed like the easiest option.
+    mocking_fns:      Rc<RefCell<MockFnMap<State>>>,
     /// Transfers the contract has made during its execution.
     transfers:        RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
@@ -1301,7 +1306,6 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
         }
 
         // Save a checkpoint for rolling back on errors.
-        // TODO: Is it only necessary to clone the state here?
         let host_checkpoint = self.checkpoint();
 
         // Invoke the handler.
@@ -1376,8 +1380,6 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             Ok(state) => state,
             Err(e) => fail!("Failed to deserialize state: {:?}", e),
         };
-
-        // TODO: Checkpoint + rollback needed here?
 
         // Invoke the handler.
         let (state_modified, res) =
