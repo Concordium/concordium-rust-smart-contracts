@@ -37,11 +37,11 @@ use convert::TryFrom;
 pub const CIS0_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
     StandardIdentifier::new_unchecked("CIS-0");
 
-/// The standard identifier for the CIS-1: Concordium Token Standard
+/// The standard identifier for the CIS-1: Concordium Token Standard.
 pub const CIS1_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
     StandardIdentifier::new_unchecked("CIS-1");
 
-/// The standard identifier for the CIS-2: Concordium Token Standard 2
+/// The standard identifier for the CIS-2: Concordium Token Standard 2.
 pub const CIS2_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
     StandardIdentifier::new_unchecked("CIS-2");
 
@@ -1008,7 +1008,7 @@ impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
 
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
-/// It consists of the list of queries paired with their corresponding result.
+/// It consists of the list of results corresponding to the list of queries.
 #[derive(Debug, Serialize)]
 pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
@@ -1133,6 +1133,9 @@ pub struct OnReceivingCis2Params<T: IsTokenId, A: IsTokenAmount> {
 }
 
 /// Identifier for a smart contract standard.
+/// Consists of a string of ASCII characters up to a length of 255.
+///
+/// See [StandardIdentifierOwned] for the owned version.
 #[derive(Debug, Serial, PartialEq, Eq)]
 pub struct StandardIdentifier<'a> {
     #[concordium(size_length = 1)]
@@ -1170,6 +1173,9 @@ impl<'a> StandardIdentifier<'a> {
 }
 
 /// Owned identifier for a smart contract standard.
+/// Consists of a string of ASCII characters up to a length of 255.
+///
+/// See [StandardIdentifier] for the borrowed version.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct StandardIdentifierOwned {
     #[concordium(size_length = 1)]
