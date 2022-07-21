@@ -71,15 +71,10 @@ type ContractTokenAmount = TokenAmountU64;
 /// Needed for the custom serial instance, which doesn't include the `Option`
 /// tag and the length of the vector.
 #[derive(PartialEq, Eq, Debug)]
-struct RawReturnValue(Option<Vec<u8>>);
+struct RawReturnValue(Vec<u8>);
 
 impl Serial for RawReturnValue {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        match &self.0 {
-            Some(rv) => out.write_all(rv),
-            None => Ok(()),
-        }
-    }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.0) }
 }
 
 type WrapParamsWithSender = ParamWithSender<WrapParams>;
@@ -677,7 +672,14 @@ fn contract_proxy_initialize<S: HasStateApi>(
 }
 
 /// The fallback method, which redirects the invocations to the implementation.
-#[receive(contract = "CIS2-wCCD-Proxy", fallback, mutable, payable, parameter = "WrapParams")]
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    fallback,
+    mutable,
+    payable,
+    parameter = "ContractBalanceOfQueryParams",
+    return_value = "ContractBalanceOfQueryResponse"
+)]
 fn receive_fallback<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -698,7 +700,7 @@ fn receive_fallback<S: HasStateApi>(
     let parameter_bytes = to_bytes(&paramter_with_sender);
 
     // Forwarding the invoke unaltered to the implementation contract.
-    let return_value = host
+    let mut return_value = host
         .invoke_contract_raw(
             &implementation,
             Parameter(&parameter_bytes),
@@ -716,16 +718,12 @@ fn receive_fallback<S: HasStateApi>(
                 r.into()
             }
         })?
-        .1;
+        .1
+        .unwrap_abort();
 
-    match return_value {
-        Some(mut rv) => {
-            let mut rv_buffer = vec![0; rv.size() as usize];
-            rv.read_exact(&mut rv_buffer)?;
-            Ok(RawReturnValue(Some(rv_buffer)))
-        }
-        None => Ok(RawReturnValue(None)),
-    }
+    let mut rv_buffer = vec![0; return_value.size() as usize];
+    return_value.read_exact(&mut rv_buffer)?;
+    Ok(RawReturnValue(rv_buffer))
 }
 
 // Simple helper functions to ensure that a call comes from the implementation
@@ -3224,7 +3222,7 @@ mod tests {
 
                 let return_value = [&rv[0..length - 33], b", world!"].concat();
 
-                Ok((false, RawReturnValue(Some(return_value))))
+                Ok((false, RawReturnValue(return_value)))
             }),
         );
 
@@ -3232,6 +3230,6 @@ mod tests {
         let result = receive_fallback(&ctx, &mut host, Amount::zero());
 
         // Assert
-        claim_eq!(result, Ok(RawReturnValue(Some(b"hello, world!".to_vec()))))
+        claim_eq!(result, Ok(RawReturnValue(b"hello, world!".to_vec())))
     }
 }
