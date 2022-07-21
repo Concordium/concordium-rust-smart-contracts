@@ -965,35 +965,6 @@ fn contract_proxy_transfer_ccd<S: HasStateApi>(
     Ok(())
 }
 
-/// This function is meant for recovering CCD tokens in the future. In case some
-/// CCD tokens are accidentally sent to the `state` contract we can upgrade the
-/// `implementation` contract to access the CCD via this function if necessary.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    parameter = "TransferCCDParams",
-    name = "transferCCD",
-    mutable
-)]
-fn contract_state_transfer_ccd<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    // Only implementation can access ccds on the state contract.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    let params: TransferCCDParams = ctx.parameter_cursor().get()?;
-
-    let implementation = host.state().implementation_address.unwrap();
-    host.invoke_contract_raw(
-        &implementation,
-        Parameter(&[]),
-        EntrypointName::new_unchecked("receiveCCD"),
-        Amount::from_micro_ccd(params.amount.into()),
-    )?;
-
-    Ok(())
-}
-
 /// This function is meant for recovering CCD tokens in the future by the admin.
 /// In case some CCD tokens are accidentally sent to the `implementation`
 /// contract the admin can access the CCD via this function if necessary.
