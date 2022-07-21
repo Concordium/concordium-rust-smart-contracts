@@ -456,6 +456,13 @@ impl HasPolicy for TestPolicy {
             None
         }
     }
+
+    fn iter<'a>(&'a mut self) -> PolicyAttributesIter<'a, Self> {
+        PolicyAttributesIter {
+            iter: self,
+            buf:  [0u8; 31],
+        }
+    }
 }
 
 impl<'a, C> HasCommonData for TestContext<'a, C> {

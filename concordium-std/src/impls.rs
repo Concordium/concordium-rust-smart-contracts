@@ -1640,6 +1640,24 @@ impl HasPolicy for Policy<AttributesCursor> {
         self.items.remaining_items -= 1;
         Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
     }
+
+    fn iter<'a>(&'a mut self) -> PolicyAttributesIter<'a, Self> {
+        PolicyAttributesIter {
+            iter: self,
+            buf:  [0u8; 31],
+        }
+    }
+}
+
+impl<P: HasPolicy> Iterator for PolicyAttributesIter<'_, P> {
+    type Item = (AttributeTag, OwnedAttributeValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next_item(&mut self.buf) {
+            Some((tag, len)) => Some((tag, self.buf[0..len.into()].into())),
+            None => None,
+        }
+    }
 }
 
 /// An iterator over policies using host functions to supply the data.

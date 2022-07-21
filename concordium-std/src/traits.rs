@@ -7,8 +7,8 @@ use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
     CallContractResult, EntryRaw, HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
-    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
-    SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
+    PolicyAttributesIter, PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult,
+    SignatureEcdsaSecp256k1, SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -44,7 +44,7 @@ pub trait HasChainMetadata {
 /// Since policies can be large this is deliberately written in a relatively
 /// low-level style to enable efficient traversal of all the attributes without
 /// any allocations.
-pub trait HasPolicy {
+pub trait HasPolicy: Sized {
     /// Identity provider who signed the identity object the credential is
     /// derived from.
     fn identity_provider(&self) -> IdentityProvider;
@@ -65,6 +65,13 @@ pub trait HasPolicy {
     /// iterate through the elements more efficiently, without any allocations,
     /// the consumer being responsible for allocating the buffer.
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
+
+    /// Get an iterator over pairs of [`AttributeTag`] and [`AttributeValue`].
+    ///
+    /// Using the iterator methods, such as [`Iterator::any`],
+    /// [`Iterator::find`], etc., is a more ergonomic way to check the policies
+    /// than via [`next_item`][Self::next_item].
+    fn iter<'a>(&'a mut self) -> PolicyAttributesIter<'a, Self>;
 }
 
 /// Common data accessible to both init and receive methods.

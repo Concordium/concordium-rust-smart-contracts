@@ -1,5 +1,6 @@
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasPolicy, HasStateApi, Serial,
+    Vec,
 };
 
 #[derive(Debug)]
@@ -643,6 +644,13 @@ pub struct AttributesCursor {
     pub(crate) current_position: u32,
     /// The number of remaining items in the policy.
     pub(crate) remaining_items:  u16,
+}
+
+/// An iterator over the attributes of a policy.
+/// The iterator returns pairs of [`AttributeTag`] and [`AttributeValue`].
+pub struct PolicyAttributesIter<'a, P: HasPolicy> {
+    pub iter: &'a mut P,
+    pub buf:  [u8; 31],
 }
 
 /// A type representing the logger.
