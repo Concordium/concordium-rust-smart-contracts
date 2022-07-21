@@ -3224,7 +3224,7 @@ mod tests {
 
                 let return_value = [&rv[0..length - 33], b", world!"].concat();
 
-                Ok((false, RawReturnValue(Some(return_value.into()))))
+                Ok((false, RawReturnValue(Some(return_value))))
             }),
         );
 
