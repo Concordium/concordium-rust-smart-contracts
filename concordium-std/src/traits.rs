@@ -71,7 +71,7 @@ pub trait HasPolicy: Sized {
     /// Using the iterator methods, such as [`Iterator::any`],
     /// [`Iterator::find`], etc., is a more ergonomic way to check the policies
     /// than via [`next_item`][Self::next_item].
-    fn iter<'a>(&'a mut self) -> PolicyAttributesIter<'a, Self>;
+    fn iter(&mut self) -> PolicyAttributesIter<Self>;
 }
 
 /// Common data accessible to both init and receive methods.

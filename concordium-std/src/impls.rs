@@ -1641,7 +1641,7 @@ impl HasPolicy for Policy<AttributesCursor> {
         Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
     }
 
-    fn iter<'a>(&'a mut self) -> PolicyAttributesIter<'a, Self> {
+    fn iter(&mut self) -> PolicyAttributesIter<Self> {
         PolicyAttributesIter {
             iter: self,
             buf:  [0u8; 31],

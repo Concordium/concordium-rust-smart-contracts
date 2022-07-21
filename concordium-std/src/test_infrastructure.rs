@@ -457,7 +457,7 @@ impl HasPolicy for TestPolicy {
         }
     }
 
-    fn iter<'a>(&'a mut self) -> PolicyAttributesIter<'a, Self> {
+    fn iter(&mut self) -> PolicyAttributesIter<Self> {
         PolicyAttributesIter {
             iter: self,
             buf:  [0u8; 31],
