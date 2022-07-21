@@ -23,7 +23,7 @@ path = "../concordium-std-derive"
 version = "3.0"
 
 [dependencies.concordium-contracts-common]
-path = "../concordium-contracts-common"
+path = "../concordium-contracts-common/concordium-contracts-common"
 version = "3.0"
 default-features = false
 
