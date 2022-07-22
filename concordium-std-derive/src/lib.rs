@@ -1907,8 +1907,10 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Note that at the moment, we can only derive fieldless enums and the return
-/// value is always [`None`][std::option::Option::None].
+/// For variants with fields, all fields are serialized into the buffer used in
+/// the return value, which is always [`Some`][std::option::Option::Some].
+/// For fieldless variants, the return value is always
+/// [`None`][std::option::Option::None].
 ///
 /// The conversion will map the first variant to error code -1, second to -2,
 /// etc.
@@ -1919,7 +1921,7 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// enum MyError {
 ///     IllegalState, // receives error code -1
 ///     WrongSender, // receives error code -2
-///     // TimeExpired(time: Timestamp), /* currently not supported */
+///     TimeExpired(time: Timestamp), // receives error code -3 (all fields must implement `Serial`)
 ///     ...
 /// }
 /// ```
@@ -1956,6 +1958,7 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     };
 
     let variant_error_conversions = generate_variant_error_conversions(enum_data, enum_ident)?;
+    let variant_matches = generate_variant_matches(enum_data, enum_ident);
 
     let gen = quote! {
         /// The from implementation maps the first variant to -1, second to -2, etc.
@@ -1965,9 +1968,8 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         impl From<#enum_ident> for Reject {
             #[inline(always)]
             fn from(e: #enum_ident) -> Self {
-                Reject {
-                    error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) },
-                    return_value: None
+                match e {
+                   #variant_matches
                 }
             }
         }
@@ -1975,6 +1977,76 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         #(#variant_error_conversions)*
     };
     Ok(gen.into())
+}
+
+/// Generate the cases for matching on the enum. For variants with fields, all
+/// fields are serialized into a buffer that is include in the return value. For
+/// fieldless variants, the return value is always `None`.
+fn generate_variant_matches(
+    enum_data: &DataEnum,
+    enum_name: &syn::Ident,
+) -> proc_macro2::TokenStream {
+    let mut match_cases = proc_macro2::TokenStream::new();
+    for (index, variant) in enum_data.variants.iter().enumerate() {
+        let variant_ident = &variant.ident;
+        match variant.fields {
+            syn::Fields::Named(_) => {
+                let field_names: Vec<_> =
+                    variant.fields.iter().map(|field| field.ident.clone().unwrap()).collect();
+                let pattern = quote! { {#(#field_names),*} };
+
+                let mut serial_fields = proc_macro2::TokenStream::new();
+                for n in field_names {
+                    serial_fields.extend(quote!(#n.serial(&mut buf);));
+                }
+
+                match_cases.extend(quote! {
+                    #enum_name::#variant_ident#pattern => Reject {
+                        error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
+                        return_value: {
+                            let mut buf = Vec::new();
+                            #serial_fields
+                            Some(buf)
+                        },
+                    },
+                });
+            }
+            syn::Fields::Unnamed(_) => {
+                let field_names: Vec<_> = variant
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| format_ident!("x_{}", i))
+                    .collect();
+                let pattern = quote! { ( #(#field_names),* ) };
+
+                let mut serial_fields = proc_macro2::TokenStream::new();
+                for n in field_names {
+                    serial_fields.extend(quote!(#n.serial(&mut buf);));
+                }
+
+                match_cases.extend(quote! {
+                    #enum_name::#variant_ident#pattern => Reject {
+                        error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
+                        return_value: {
+                            let mut buf = Vec::new();
+                            #serial_fields
+                            Some(buf)
+                        },
+                    },
+                });
+            }
+            syn::Fields::Unit => {
+                match_cases.extend(quote! {
+                    #enum_name::#variant_ident => Reject {
+                        error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
+                        return_value: None,
+                    },
+                });
+            }
+        };
+    }
+    match_cases
 }
 
 /// Generate error conversions for enum variants e.g. for converting

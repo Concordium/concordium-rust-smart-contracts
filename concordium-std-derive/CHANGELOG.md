@@ -1,5 +1,8 @@
 # Changelog
 
+- Add ability to `derive(Reject)` for enums *with fields*, where all fields
+  implement the `Serial` trait.
+
 ## concordium-std-derive 3.0.0 (2022-05-17)
 
 - Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.
