@@ -188,6 +188,46 @@ struct StateProxy {
     state_address:          ContractAddress,
 }
 
+/// The parameter type for the contract function `log_mint_event`.
+#[derive(Serialize)]
+struct MintEventParams {
+    /// The amount of tokens to be minted.
+    amount:  ContractTokenAmount,
+    // Address to receive the minted tokens.
+    address: Address,
+}
+
+/// The parameter type for the contract function `log_burn_event`.
+#[derive(Serialize)]
+struct BurnEventParams {
+    /// The amount of tokens to be burned.
+    amount:  ContractTokenAmount,
+    // Address that the tokens be burned from.
+    address: Address,
+}
+
+/// The parameter type for the contract function `log_transfer_event`.
+#[derive(Serialize)]
+struct TransferEventParams {
+    /// The amount of tokens to be transferred.
+    amount: ContractTokenAmount,
+    /// Address that the tokens be transferred from.
+    from:   Address,
+    /// Address to receive the tokens.
+    to:     Address,
+}
+
+/// The parameter type for the contract function `log_update_operator_event`.
+#[derive(Serialize)]
+struct UpdateOperatorEventParams {
+    /// The owner of the tokens.
+    owner:    Address,
+    /// The operator of the tokens.
+    operator: Address,
+    /// Add or remove an operator.
+    update:   OperatorUpdate,
+}
+
 /// The parameter type for the contract function `unwrap`.
 /// Takes an amount of tokens and unwraps the CCD and send it to a receiver.
 #[derive(Serialize, SchemaType)]
@@ -356,8 +396,6 @@ enum CustomContractError {
     OnlyImplementation,
     /// Only proxy contract.
     OnlyProxy,
-    /// Only state contract.
-    OnlyState,
     /// Raised when implementation can not invoke state contract.
     StateInvokeError,
     /// Raised when implementation can not invoke proxy contract.
@@ -439,7 +477,7 @@ impl StateImplementation {
         let state_address = host
             .state()
             .state_address
-            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?;
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
         let balance = host.invoke_contract_raw_read_only(
             &state_address,
@@ -475,7 +513,7 @@ impl StateImplementation {
         let state_address = host
             .state()
             .state_address
-            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?;
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
         let is_operator = host.invoke_contract_raw_read_only(
             &state_address,
@@ -495,66 +533,121 @@ impl StateImplementation {
     }
 }
 
+/// This function logs a mint event.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logMintEvent", mutable, enable_logger)]
+fn contract_proxy_log_mint_event<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Only implementation can log event.
+    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+
+    let params: MintEventParams = ctx.parameter_cursor().get()?;
+
+    // Log event for the newly minted tokens.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   params.amount,
+        owner:    params.address,
+    }))?;
+
+    Ok(())
+}
+
+/// This function logs a burn event.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logBurnEvent", mutable, enable_logger)]
+fn contract_proxy_log_burn_event<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Only implementation can log event.
+    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+
+    let params: BurnEventParams = ctx.parameter_cursor().get()?;
+
+    // Log the burning of tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   params.amount,
+        owner:    params.address,
+    }))?;
+
+    Ok(())
+}
+
+/// This function logs a transfer event.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logTransferEvent", mutable, enable_logger)]
+fn contract_proxy_log_transfer_event<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Only implementation can log event.
+    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+
+    let params: TransferEventParams = ctx.parameter_cursor().get()?;
+
+    // Log event for transferring the tokens.
+    logger.log(&Cis2Event::Transfer(TransferEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   params.amount,
+        from:     params.from,
+        to:       params.to,
+    }))?;
+
+    Ok(())
+}
+
+/// This function logs an updateOperator event.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logUpdateOperatorEvent", mutable, enable_logger)]
+fn contract_proxy_log_update_operator_event<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Only implementation can log event.
+    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+
+    let params: UpdateOperatorEventParams = ctx.parameter_cursor().get()?;
+
+    // Log event for the updating the operator.
+    logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+        UpdateOperatorEvent {
+            owner:    params.owner,
+            operator: params.operator,
+            update:   params.update,
+        },
+    ))?;
+
+    Ok(())
+}
+
 // Contract functions
 
 /// Initialize the state contract instance with no initial tokens.
-/// Logs a `Mint` event for the single token id with no amounts.
-#[init(contract = "CIS2-wCCD-State", enable_logger)]
+#[init(contract = "CIS2-wCCD-State")]
 fn contract_state_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
+    _ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
-    logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
     // Construct the initial contract state.
     let state = State::new(state_builder);
-    // Get the instantiater of this contract instance.
-    let invoker = Address::Account(ctx.init_origin());
-    // Log event for the newly minted token.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(0u64),
-        owner:    invoker,
-    }))?;
-
-    // Log event for where to find metadata for the token
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     TOKEN_ID_WCCD,
-        metadata_url: MetadataUrl {
-            url:  String::from(TOKEN_METADATA_URL),
-            hash: None,
-        },
-    }))?;
 
     Ok(state)
 }
 
 /// Initialize contract instance with no initial tokens.
-/// Logs a `Mint` event for the single token id with no amounts.
-#[init(contract = "CIS2-wCCD", enable_logger)]
+#[init(contract = "CIS2-wCCD")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
-    logger: &mut impl HasLogger,
 ) -> InitResult<StateImplementation> {
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Construct the initial contract state.
     let state = StateImplementation::new(invoker);
-    // Log event for the newly minted token.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(0u64),
-        owner:    invoker,
-    }))?;
-
-    // Log event for where to find metadata for the token
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     TOKEN_ID_WCCD,
-        metadata_url: MetadataUrl {
-            url:  String::from(TOKEN_METADATA_URL),
-            hash: None,
-        },
-    }))?;
 
     Ok(state)
 }
@@ -634,11 +727,13 @@ fn contract_initialize<S: HasStateApi>(
 /// Initializes the `implementation` and `state` contracts by using the
 /// addresses that the `proxy` contract was set up. This function will call the
 /// `initialize` functions on the `implementation` as well as the `state`
-/// contracts.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "initialize", mutable)]
+/// contracts. Logs a mint event with amount 0 to signal that a new CIS-2 token
+/// was deployed. Logs an event including the metadata for this token.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "initialize", enable_logger, mutable)]
 fn contract_proxy_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     let state_address = host.state().state_address;
 
@@ -667,6 +762,23 @@ fn contract_proxy_initialize<S: HasStateApi>(
         EntrypointName::new_unchecked("initialize"),
         Amount::zero(),
     )?;
+
+    // Log a `Mint` event for the single token id with 0 amount. Minting an amount
+    // of 0 is used to signal that a new token was deployed. Invoking the mint event
+    // with 0 amount in the `wrap` function is impossible.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   ContractTokenAmount::from(0u64),
+        owner:    ctx.sender(),
+    }))?;
+    // Log an event including the metadata for this token.
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+        token_id:     TOKEN_ID_WCCD,
+        metadata_url: MetadataUrl {
+            url:  String::from(TOKEN_METADATA_URL),
+            hash: None,
+        },
+    }))?;
 
     Ok(())
 }
@@ -734,7 +846,7 @@ fn only_implementation(
     sender: Address,
 ) -> ContractResult<()> {
     let implementation_address = implementation
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
     ensure!(
         sender.matches_contract(&implementation_address),
         concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation)
@@ -745,7 +857,7 @@ fn only_implementation(
 
 fn only_proxy(proxy: Option<ContractAddress>, sender: Address) -> ContractResult<()> {
     let proxy_address =
-        proxy.ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
+        proxy.ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
     ensure!(
         sender.matches_contract(&proxy_address),
         concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy)
@@ -1073,7 +1185,7 @@ fn when_not_paused<S>(
     let state_address = host
         .state()
         .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     let paused = host.invoke_contract_raw_read_only(
         &state_address,
@@ -1095,12 +1207,11 @@ fn when_not_paused<S>(
 
 /// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
 /// is not the receiver.
-#[receive(contract = "CIS2-wCCD", name = "wrap", enable_logger, mutable, payable)]
+#[receive(contract = "CIS2-wCCD", name = "wrap", mutable, payable)]
 fn contract_wrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     amount: Amount,
-    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Can be only called through the fallback function on the proxy.
     only_proxy(host.state().proxy_address, ctx.sender())?;
@@ -1144,7 +1255,7 @@ fn contract_wrap<S: HasStateApi>(
     let state_address = host
         .state()
         .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     // Update state.
     host.invoke_contract_raw(
@@ -1155,22 +1266,35 @@ fn contract_wrap<S: HasStateApi>(
     )?;
 
     // Log the newly minted tokens.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(amount.micro_ccd),
-        owner:    sender,
-    }))?;
+    let parameter_bytes = to_bytes(&MintEventParams {
+        amount:  ContractTokenAmount::from(amount.micro_ccd),
+        address: sender,
+    });
+
+    host.invoke_contract_raw(
+        &proxy_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("logMintEvent"),
+        Amount::zero(),
+    )?;
 
     // Only logs a transfer event if the receiver is not the sender.
     // Only executes the `OnReceivingCis2` hook if the receiver is not the sender
     // and the receiver is a contract.
     if sender != receive_address {
-        logger.log(&Cis2Event::Transfer(TransferEvent {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            to:       receive_address,
-        }))?;
+        // Log the transfer event.
+        let parameter_bytes = to_bytes(&TransferEventParams {
+            amount: ContractTokenAmount::from(amount.micro_ccd),
+            from:   sender,
+            to:     receive_address,
+        });
+
+        host.invoke_contract_raw(
+            &proxy_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("logTransferEvent"),
+            Amount::zero(),
+        )?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = input.params.to {
@@ -1193,11 +1317,10 @@ fn contract_wrap<S: HasStateApi>(
 }
 
 /// Unwrap an amount of wCCD tokens into CCD
-#[receive(contract = "CIS2-wCCD", name = "unwrap", enable_logger, mutable)]
+#[receive(contract = "CIS2-wCCD", name = "unwrap", mutable)]
 fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
-    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Can be only called through the fallback function on the proxy.
     only_proxy(host.state().proxy_address, ctx.sender())?;
@@ -1240,7 +1363,7 @@ fn contract_unwrap<S: HasStateApi>(
     let state_address = host
         .state()
         .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -1258,7 +1381,7 @@ fn contract_unwrap<S: HasStateApi>(
     let proxy_address = host
         .state()
         .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     // Access/Request CCD funds from proxy.
     host.invoke_contract_raw(
@@ -1283,12 +1406,18 @@ fn contract_unwrap<S: HasStateApi>(
         }
     }
 
-    // Log the burning of tokens.
-    logger.log(&Cis2Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   input.params.amount,
-        owner:    input.params.owner,
-    }))?;
+    // Log the burn event.
+    let parameter_bytes = to_bytes(&BurnEventParams {
+        amount:  input.params.amount,
+        address: input.params.owner,
+    });
+
+    host.invoke_contract_raw(
+        &proxy_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("logBurnEvent"),
+        Amount::zero(),
+    )?;
 
     Ok(())
 }
@@ -1311,11 +1440,10 @@ pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount
 ///     - The token is not owned by the `from`.
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
-#[receive(contract = "CIS2-wCCD", name = "transfer", enable_logger, mutable)]
+#[receive(contract = "CIS2-wCCD", name = "transfer", mutable)]
 fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
-    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Can be only called through the fallback function on the proxy.
     only_proxy(host.state().proxy_address, ctx.sender())?;
@@ -1327,6 +1455,16 @@ fn contract_transfer<S: HasStateApi>(
     let input: TransferParameterWithSender = ctx.parameter_cursor().get()?;
 
     let TransferParams(transfers) = input.params;
+
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+
+    let proxy_address = host
+        .state()
+        .proxy_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     for Transfer {
         token_id,
@@ -1369,11 +1507,6 @@ fn contract_transfer<S: HasStateApi>(
 
             let parameter_bytes = to_bytes(&set_balance_params);
 
-            let state_address = host
-                .state()
-                .state_address
-                .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
-
             host.invoke_contract_raw(
                 &state_address,
                 Parameter(&parameter_bytes),
@@ -1390,11 +1523,6 @@ fn contract_transfer<S: HasStateApi>(
 
         let parameter_bytes = to_bytes(&set_balance_params);
 
-        let state_address = host
-            .state()
-            .state_address
-            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
-
         host.invoke_contract_raw(
             &state_address,
             Parameter(&parameter_bytes),
@@ -1402,13 +1530,19 @@ fn contract_transfer<S: HasStateApi>(
             Amount::zero(),
         )?;
 
-        // Log transfer event
-        logger.log(&Cis2Event::Transfer(TransferEvent {
-            token_id,
+        // Log transfer event.
+        let parameter_bytes = to_bytes(&TransferEventParams {
             amount,
             from,
             to: to_address,
-        }))?;
+        });
+
+        host.invoke_contract_raw(
+            &proxy_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("logTransferEvent"),
+            Amount::zero(),
+        )?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
@@ -1435,11 +1569,10 @@ fn contract_transfer<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Fails to log event.
-#[receive(contract = "CIS2-wCCD", name = "updateOperator", enable_logger, mutable)]
+#[receive(contract = "CIS2-wCCD", name = "updateOperator", mutable)]
 fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
-    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Can be only called through the fallback function on the proxy.
     only_proxy(host.state().proxy_address, ctx.sender())?;
@@ -1451,6 +1584,16 @@ fn contract_update_operator<S: HasStateApi>(
     let input: UpdateOperatorParamsWithSender = ctx.parameter_cursor().get()?;
 
     let UpdateOperatorParams(params) = input.params;
+
+    let state_address = host
+        .state()
+        .state_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+
+    let proxy_address = host
+        .state()
+        .proxy_address
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     for param in params {
         // Get the sender who invoked this contract function.
@@ -1467,11 +1610,6 @@ fn contract_update_operator<S: HasStateApi>(
                 };
 
                 let parameter_bytes = to_bytes(&set_operator_params);
-
-                let state_address = host
-                    .state()
-                    .state_address
-                    .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
 
                 host.invoke_contract_raw(
                     &state_address,
@@ -1490,11 +1628,6 @@ fn contract_update_operator<S: HasStateApi>(
 
                 let parameter_bytes = to_bytes(&set_operator_params);
 
-                let state_address = host
-                    .state()
-                    .state_address
-                    .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
-
                 host.invoke_contract_raw(
                     &state_address,
                     Parameter(&parameter_bytes),
@@ -1504,14 +1637,19 @@ fn contract_update_operator<S: HasStateApi>(
             }
         };
 
-        // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
-        ))?;
+        // Log the update operator event.
+        let parameter_bytes = to_bytes(&UpdateOperatorEventParams {
+            owner:    sender,
+            operator: param.operator,
+            update:   param.update,
+        });
+
+        host.invoke_contract_raw(
+            &proxy_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("logUpdateOperatorEvent"),
+            Amount::zero(),
+        )?;
     }
 
     Ok(())
@@ -1605,7 +1743,7 @@ fn contract_pause<S: HasStateApi>(
     let state_address = host
         .state()
         .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -1633,7 +1771,7 @@ fn contract_un_pause<S: HasStateApi>(
     let state_address = host
         .state()
         .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyState))?;
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -1794,6 +1932,16 @@ mod tests {
         claim_eq!(actual, err);
     }
 
+    /// Test helper function which creates a w_ccd_state contract state
+    fn initial_state_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
+        State::new(state_builder)
+    }
+
+    /// Test helper function which creates a w_ccd_implementation contract state
+    fn initial_state_implementation() -> StateImplementation {
+        StateImplementation::new(ADMIN_ADDRESS)
+    }
+
     /// Test helper function which creates a w_ccd_proxy contract state
     fn initial_state_proxy() -> StateProxy {
         StateProxy {
@@ -1803,14 +1951,61 @@ mod tests {
         }
     }
 
-    /// Test helper function which creates a w_ccd_implementation contract state
-    fn initial_state_implementation() -> StateImplementation {
-        StateImplementation::new(ADMIN_ADDRESS)
-    }
+    /// Test events on proxy when contract is initialized.
+    #[concordium_test]
+    fn test_proxy_events_during_initialization() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADMIN_ADDRESS);
+        ctx.set_self_address(PROXY);
 
-    /// Test helper function which creates a w_ccd_state contract state
-    fn initial_state_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        State::new(state_builder)
+        let mut logger = TestLogger::init();
+        let state_builder = TestStateBuilder::new();
+        let state = initial_state_proxy();
+        let mut host = TestHost::new(state, state_builder);
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
+            OwnedEntrypointName::new_unchecked("initialize".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the implementation contract.
+        host.setup_mock_entrypoint(
+            IMPLEMENTATION,
+            OwnedEntrypointName::new_unchecked("initialize".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Initialize the proxy contract.
+        let result: ContractResult<()> = contract_proxy_initialize(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the logs
+        claim_eq!(logger.logs.len(), 2, "Exactly two events should be logged");
+        claim!(
+            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
+                owner:    ADMIN_ADDRESS,
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(0),
+            }))),
+            "Missing event for minting the token"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_ID_WCCD,
+                    metadata_url: MetadataUrl {
+                        url:  String::from(TOKEN_METADATA_URL),
+                        hash: None,
+                    },
+                }
+            ))),
+            "Missing event with metadata for the token"
+        );
     }
 
     /// Test w_ccd state initialization works.
@@ -1820,11 +2015,10 @@ mod tests {
         let mut ctx = TestInitContext::empty();
         ctx.set_init_origin(ACCOUNT_0);
 
-        let mut logger = TestLogger::init();
         let mut builder = TestStateBuilder::new();
 
         // Call the contract function.
-        let result = contract_state_init(&ctx, &mut builder, &mut logger);
+        let result = contract_state_init(&ctx, &mut builder);
 
         // Check the result
         let state = result.expect_report("Contract w_ccd state initialization failed");
@@ -1944,37 +2138,13 @@ mod tests {
         let mut ctx = TestInitContext::empty();
         ctx.set_init_origin(ACCOUNT_0);
 
-        let mut logger = TestLogger::init();
         let mut builder = TestStateBuilder::new();
 
         // Call the contract function.
-        let result = contract_init(&ctx, &mut builder, &mut logger);
+        let result = contract_init(&ctx, &mut builder);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
-
-        // Check the logs
-        claim_eq!(logger.logs.len(), 2, "Exactly one event should be logged");
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner:    ADDRESS_0,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(0),
-            }))),
-            "Missing event for minting the token"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
-                TokenMetadataEvent {
-                    token_id:     TOKEN_ID_WCCD,
-                    metadata_url: MetadataUrl {
-                        url:  String::from(TOKEN_METADATA_URL),
-                        hash: None,
-                    },
-                }
-            ))),
-            "Missing event with metadata for the token"
-        );
     }
 
     /// Test transfer succeeds, when `from` is the sender.
@@ -1984,7 +2154,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
         let state = StateImplementation::new(ADMIN_ADDRESS);
 
@@ -2031,6 +2200,13 @@ mod tests {
             MockFn::returning_ok(ContractTokenAmount::from(400)),
         );
 
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logTransferEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
         // Setup parameter.
         let transfer = Transfer {
             from:     ADDRESS_0,
@@ -2053,7 +2229,7 @@ mod tests {
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
@@ -2086,19 +2262,6 @@ mod tests {
             100.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(100),
-            })),
-            "Incorrect event emitted"
-        )
     }
 
     /// Test transfer token fails, when sender is neither the owner or an
@@ -2109,7 +2272,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
@@ -2164,7 +2326,7 @@ mod tests {
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host);
         // Check the result.
         let err = result.expect_err_report("Expected to fail");
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
@@ -2178,7 +2340,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation();
 
@@ -2232,6 +2393,20 @@ mod tests {
             MockFn::returning_ok(true),
         );
 
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logUpdateOperatorEvent".into()),
+            MockFn::returning_ok(true),
+        );
+
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logTransferEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
         // Setup parameter.
         let update = UpdateOperator {
             operator: concordium_std::Address::Contract(PROXY),
@@ -2252,7 +2427,7 @@ mod tests {
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
         // Initialize the implementation contract.
-        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
@@ -2276,7 +2451,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -2308,19 +2483,6 @@ mod tests {
             100.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 2, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[1],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(100),
-            })),
-            "Incorrect event emitted"
-        )
     }
 
     /// Test adding an operator succeeds and the appropriate event is logged.
@@ -2330,7 +2492,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
@@ -2369,6 +2530,13 @@ mod tests {
             MockFn::returning_ok(()),
         );
 
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logUpdateOperatorEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
         // Setup parameter.
         let update = UpdateOperator {
             operator: ADDRESS_1,
@@ -2388,7 +2556,7 @@ mod tests {
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -2423,20 +2591,6 @@ mod tests {
             result.expect_report("Failed getting result value").0,
             [true],
             "Account should be an operator in the query response"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "One event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                UpdateOperatorEvent {
-                    owner:    ADDRESS_0,
-                    operator: ADDRESS_1,
-                    update:   OperatorUpdate::Add,
-                }
-            )),
-            "Incorrect event emitted"
         );
     }
 
@@ -2604,12 +2758,11 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
-        let mut logger = TestLogger::init();
         let amount = Amount::from_micro_ccd(100);
 
         // Trying to invoke the wrap entrypoint. It will revert because the function is
         // paused.
-        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount, &mut logger);
+        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount);
         // Check that contract is paused.
         expect_error(
             result,
@@ -2677,6 +2830,20 @@ mod tests {
             MockFn::returning_ok(ContractTokenAmount::from(100)),
         );
 
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logMintEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logBurnEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
         // Setup parameter.
         let wrap_params = WrapParamsWithSender {
             params: WrapParams {
@@ -2690,12 +2857,11 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
-        let mut logger = TestLogger::init();
         let amount = Amount::from_micro_ccd(100);
         host.set_self_balance(amount);
 
         // Account_0 wraps some CCD.
-        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount, &mut logger);
+        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -2715,10 +2881,9 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         host.set_self_balance(amount);
-        let mut logger = TestLogger::init();
 
         // Trying to invoke the un_wrap entrypoint.
-        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
     }
@@ -2768,6 +2933,20 @@ mod tests {
             MockFn::returning_ok(()),
         );
 
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logMintEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
+        // Set up a mock invocation for the proxy contract.
+        host.setup_mock_entrypoint(
+            PROXY,
+            OwnedEntrypointName::new_unchecked("logTransferEvent".into()),
+            MockFn::returning_ok(()),
+        );
+
         // Setup parameter.
         let wrap_params = WrapParamsWithSender {
             params: WrapParams {
@@ -2781,12 +2960,11 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
-        let mut logger = TestLogger::init();
         let amount = Amount::from_micro_ccd(100);
         host.set_self_balance(amount);
 
         // Account_1 wraps some CCD.
-        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount, &mut logger);
+        let result: ContractResult<()> = contract_wrap(&ctx, &mut host, amount);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -2809,11 +2987,10 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         host.set_self_balance(amount);
-        let mut logger = TestLogger::init();
 
         // Trying to invoke the un_wrap entrypoint. It will revert because the function
         // is paused.
-        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host);
         // Check that contract is paused.
         expect_error(
             result,
@@ -2829,7 +3006,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
         let state = StateImplementation::new(ADMIN_ADDRESS);
         let mut host = TestHost::new(state, state_builder);
@@ -2883,7 +3059,7 @@ mod tests {
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_transfer(&ctx, &mut host);
 
         // Check that contract is paused.
         expect_error(
@@ -2924,7 +3100,6 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        let mut logger = TestLogger::init();
         let state_builder = TestStateBuilder::new();
         let state = initial_state_implementation();
         let mut host = TestHost::new(state, state_builder);
@@ -2981,7 +3156,7 @@ mod tests {
         ctx.set_sender(concordium_std::Address::Contract(PROXY));
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host);
 
         // Check that contract is paused.
         expect_error(
