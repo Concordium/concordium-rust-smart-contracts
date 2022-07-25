@@ -235,6 +235,20 @@ struct TransferEventParams {
     to:     Address,
 }
 
+/// NewAdminEvent.
+#[derive(Serial)]
+struct NewAdminEvent {
+    /// New admin address.
+    new_admin: Address,
+}
+
+/// NewImplementationEvent.
+#[derive(Serial)]
+struct NewImplementationEvent {
+    /// New implementation address.
+    new_implementation: ContractAddress,
+}
+
 /// The parameter type for the contract function `log_update_operator_event`.
 #[derive(Serialize)]
 struct UpdateOperatorEventParams {
@@ -562,7 +576,7 @@ impl StateImplementation {
 }
 
 /// This function logs a mint event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logMintEvent", mutable, enable_logger)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logMintEvent", enable_logger, mutable)]
 fn contract_proxy_log_mint_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -584,7 +598,7 @@ fn contract_proxy_log_mint_event<S: HasStateApi>(
 }
 
 /// This function logs a burn event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logBurnEvent", mutable, enable_logger)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logBurnEvent", enable_logger, mutable)]
 fn contract_proxy_log_burn_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -606,7 +620,7 @@ fn contract_proxy_log_burn_event<S: HasStateApi>(
 }
 
 /// This function logs a transfer event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logTransferEvent", mutable, enable_logger)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logTransferEvent", enable_logger, mutable)]
 fn contract_proxy_log_transfer_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -629,7 +643,7 @@ fn contract_proxy_log_transfer_event<S: HasStateApi>(
 }
 
 /// This function logs an updateOperator event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logUpdateOperatorEvent", mutable, enable_logger)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logUpdateOperatorEvent", enable_logger, mutable)]
 fn contract_proxy_log_update_operator_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -683,11 +697,10 @@ fn contract_init<S: HasStateApi>(
 /// Initializes the state of the w_ccd proxy contract with the state and the
 /// implementation addresses. Both addresses have to be set together by calling
 /// this function.
-#[init(contract = "CIS2-wCCD-Proxy", parameter = "InitProxyParams", enable_logger)]
+#[init(contract = "CIS2-wCCD-Proxy", parameter = "InitProxyParams")]
 fn contract_proxy_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
-    _logger: &mut impl HasLogger,
 ) -> InitResult<StateProxy> {
     // Set state and implementation addresses.
     let params: InitProxyParams = ctx.parameter_cursor().get()?;
@@ -811,6 +824,7 @@ fn contract_proxy_initialize<S: HasStateApi>(
         amount:   ContractTokenAmount::from(0u64),
         owner:    ctx.sender(),
     }))?;
+
     // Log an event including the metadata for this token.
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
         token_id:     TOKEN_ID_WCCD,
@@ -819,6 +833,11 @@ fn contract_proxy_initialize<S: HasStateApi>(
             hash: None,
         },
     }))?;
+
+    // Log a new implementation event.
+    logger.log(&NewImplementationEvent {
+        new_implementation: implementation_address,
+    })?;
 
     Ok(())
 }
@@ -1734,10 +1753,11 @@ fn contract_update_operator<S: HasStateApi>(
 
 /// This functions allows the admin of the implementation to transfer the
 /// address to a new admin.
-#[receive(contract = "CIS2-wCCD", name = "updateAdmin", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "updateAdmin", enable_logger, mutable)]
 fn contract_implementation_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the old admin is authorized to update the admin address.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -1745,15 +1765,22 @@ fn contract_implementation_update_admin<S: HasStateApi>(
     let new_admin = ctx.parameter_cursor().get()?;
     // Update admin.
     host.state_mut().admin = new_admin;
+
+    // Log a new admin event.
+    logger.log(&NewAdminEvent {
+        new_admin,
+    })?;
+
     Ok(())
 }
 
 /// This functions allows the admin of the proxy to transfer the address to a
 /// new admin.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "updateAdmin", mutable)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "updateAdmin", enable_logger, mutable)]
 fn contract_proxy_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the old admin is authorized to update the admin address.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
@@ -1761,6 +1788,12 @@ fn contract_proxy_update_admin<S: HasStateApi>(
     let new_admin = ctx.parameter_cursor().get()?;
     // Update admin.
     host.state_mut().admin = new_admin;
+
+    // Log a new admin event.
+    logger.log(&NewAdminEvent {
+        new_admin,
+    })?;
+
     Ok(())
 }
 
@@ -1770,11 +1803,13 @@ fn contract_proxy_update_admin<S: HasStateApi>(
     contract = "CIS2-wCCD-Proxy",
     name = "updateImplementation",
     parameter = "SetImplementationAddressParams",
+    enable_logger,
     mutable
 )]
 fn contract_update_implementation<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the proxy admin is authorized to update the implementation
     // address.
@@ -1799,6 +1834,11 @@ fn contract_update_implementation<S: HasStateApi>(
         EntrypointName::new_unchecked("setImplementationAddress"),
         Amount::zero(),
     )?;
+
+    // Log a new implementation event.
+    logger.log(&NewImplementationEvent {
+        new_implementation: params.implementation_address,
+    })?;
 
     Ok(())
 }
@@ -2072,7 +2112,7 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the logs
-        claim_eq!(logger.logs.len(), 2, "Exactly two events should be logged");
+        claim_eq!(logger.logs.len(), 3, "Exactly three events should be logged");
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADMIN_ADDRESS,
@@ -2092,6 +2132,12 @@ mod tests {
                 }
             ))),
             "Missing event with metadata for the token"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&NewImplementationEvent {
+                new_implementation: IMPLEMENTATION,
+            })),
+            "Missing event for the new implementation"
         );
     }
 
@@ -3274,6 +3320,7 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
+        let mut logger = TestLogger::init();
 
         // Setup the parameter.
         let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
@@ -3287,7 +3334,8 @@ mod tests {
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_implementation_update_admin(&ctx, &mut host);
+        let result: ContractResult<()> =
+            contract_implementation_update_admin(&ctx, &mut host, &mut logger);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -3302,6 +3350,7 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
+        let mut logger = TestLogger::init();
 
         // Setup the parameter.
         let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
@@ -3315,7 +3364,7 @@ mod tests {
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host);
+        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host, &mut logger);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -3333,6 +3382,7 @@ mod tests {
         // NEW_ADMIN is not the current admin but tries to update the admin variable to
         // its own address.
         ctx.set_sender(NEW_ADMIN_ADDRESS);
+        let mut logger = TestLogger::init();
 
         // Setup the parameter.
         let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
@@ -3346,7 +3396,8 @@ mod tests {
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_implementation_update_admin(&ctx, &mut host);
+        let result: ContractResult<()> =
+            contract_implementation_update_admin(&ctx, &mut host, &mut logger);
         // Check that invoke failed.
         expect_error(
             result,
@@ -3367,6 +3418,7 @@ mod tests {
         // NEW_ADMIN is not the current admin but tries to update the admin variable to
         // its own address.
         ctx.set_sender(NEW_ADMIN_ADDRESS);
+        let mut logger = TestLogger::init();
 
         // Setup the parameter.
         let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
@@ -3380,7 +3432,7 @@ mod tests {
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host);
+        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host, &mut logger);
         // Check that invoke failed.
         expect_error(
             result,
@@ -3398,6 +3450,7 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
+        let mut logger = TestLogger::init();
 
         // Setup the parameter.
         let parameter_bytes = to_bytes(&[NEW_IMPLEMENTATION]);
@@ -3422,7 +3475,8 @@ mod tests {
         );
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_update_implementation(&ctx, &mut host);
+        let result: ContractResult<()> =
+            contract_update_implementation(&ctx, &mut host, &mut logger);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
