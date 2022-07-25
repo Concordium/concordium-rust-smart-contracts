@@ -156,25 +156,43 @@ struct AddressState<S> {
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
-    /// Address of the w_ccd proxy contract.
-    proxy_address:          Option<ContractAddress>,
-    /// Address of the w_ccd implementation contract.
-    implementation_address: Option<ContractAddress>,
+    /// Addresses of the protocol
+    protocol_addresses: ProtocolAddressesState,
     /// The state of the one token.
-    token:                  StateMap<Address, AddressState<S>, S>,
+    token:              StateMap<Address, AddressState<S>, S>,
     /// Contract is paused/unpaused.
-    paused:                 bool,
+    paused:             bool,
+}
+
+#[derive(Serialize, PartialEq)]
+enum ProtocolAddressesState {
+    UnInitialized,
+    Initialized {
+        /// Address of the w_ccd proxy contract.
+        proxy_address:          ContractAddress,
+        /// Address of the w_ccd implementation contract.
+        implementation_address: ContractAddress,
+    },
 }
 
 /// The `implementation` contract state.
 #[derive(Serial, Deserial, SchemaType)]
 struct StateImplementation {
     /// The admin address can pause/unpause the contract.
-    admin:         Address,
-    /// Address of the w_ccd proxy contract.
-    proxy_address: Option<ContractAddress>,
-    /// Address of the w_ccd state contract.
-    state_address: Option<ContractAddress>,
+    admin:              Address,
+    /// Addresses of the protocol
+    protocol_addresses: ProtocolAddressesImplementation,
+}
+
+#[derive(SchemaType, Serialize, PartialEq)]
+enum ProtocolAddressesImplementation {
+    UnInitialized,
+    Initialized {
+        /// Address of the w_ccd proxy contract.
+        proxy_address: ContractAddress,
+        /// Address of the w_ccd state contract.
+        state_address: ContractAddress,
+    },
 }
 
 /// The `proxy` contract state.
@@ -361,6 +379,8 @@ struct ReturnBasicState {
     proxy_address:          ContractAddress,
     /// Address of the w_ccd implementation contract.
     implementation_address: ContractAddress,
+    /// Contract is paused/unpaused.
+    paused:                 bool,
 }
 
 /// Update struct.
@@ -391,7 +411,7 @@ enum CustomContractError {
     /// Contract already initialized.
     AlreadyInitialized,
     /// Contract not initialized.
-    NotInitialized,
+    UnInitialized,
     /// Only implementation contract.
     OnlyImplementation,
     /// Only proxy contract.
@@ -439,10 +459,9 @@ impl<S: HasStateApi> State<S> {
     fn new(state_builder: &mut StateBuilder<S>) -> Self {
         // Setup state.
         State {
-            proxy_address:          None,
-            implementation_address: None,
-            token:                  state_builder.new_map(),
-            paused:                 false,
+            protocol_addresses: ProtocolAddressesState::UnInitialized,
+            token:              state_builder.new_map(),
+            paused:             false,
         }
     }
 }
@@ -456,8 +475,7 @@ impl StateImplementation {
         // Setup state.
         StateImplementation {
             admin,
-            proxy_address: None,
-            state_address: None,
+            protocol_addresses: ProtocolAddressesImplementation::UnInitialized,
         }
     }
 
@@ -474,10 +492,15 @@ impl StateImplementation {
         // Setup parameter.
         let parameter_bytes = to_bytes(owner);
 
-        let state_address = host
-            .state()
-            .state_address
-            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+        let state_address = if let ProtocolAddressesImplementation::Initialized {
+            proxy_address: _,
+            state_address,
+        } = host.state().protocol_addresses
+        {
+            state_address
+        } else {
+            panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+        };
 
         let balance = host.invoke_contract_raw_read_only(
             &state_address,
@@ -510,10 +533,15 @@ impl StateImplementation {
             address: *address,
         });
 
-        let state_address = host
-            .state()
-            .state_address
-            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+        let state_address = if let ProtocolAddressesImplementation::Initialized {
+            proxy_address: _,
+            state_address,
+        } = host.state().protocol_addresses
+        {
+            state_address
+        } else {
+            panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+        };
 
         let is_operator = host.invoke_contract_raw_read_only(
             &state_address,
@@ -541,7 +569,7 @@ fn contract_proxy_log_mint_event<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Only implementation can log event.
-    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+    only_implementation(host.state().implementation_address, ctx.sender())?;
 
     let params: MintEventParams = ctx.parameter_cursor().get()?;
 
@@ -563,7 +591,7 @@ fn contract_proxy_log_burn_event<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Only implementation can log event.
-    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+    only_implementation(host.state().implementation_address, ctx.sender())?;
 
     let params: BurnEventParams = ctx.parameter_cursor().get()?;
 
@@ -585,7 +613,7 @@ fn contract_proxy_log_transfer_event<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Only implementation can log event.
-    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+    only_implementation(host.state().implementation_address, ctx.sender())?;
 
     let params: TransferEventParams = ctx.parameter_cursor().get()?;
 
@@ -608,7 +636,7 @@ fn contract_proxy_log_update_operator_event<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Only implementation can log event.
-    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+    only_implementation(host.state().implementation_address, ctx.sender())?;
 
     let params: UpdateOperatorEventParams = ctx.parameter_cursor().get()?;
 
@@ -689,14 +717,20 @@ fn contract_state_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    ensure!(
-        host.state().proxy_address.is_none() && host.state().implementation_address.is_none(),
+    ensure_eq!(
+        host.state().protocol_addresses,
+        ProtocolAddressesState::UnInitialized,
         concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
     );
+
     // Set proxy and implementation addresses.
     let params: InitializeStateParams = ctx.parameter_cursor().get()?;
-    host.state_mut().proxy_address = Some(params.proxy_address);
-    host.state_mut().implementation_address = Some(params.implementation_address);
+
+    host.state_mut().protocol_addresses = ProtocolAddressesState::Initialized {
+        proxy_address:          params.proxy_address,
+        implementation_address: params.implementation_address,
+    };
+
     Ok(())
 }
 
@@ -713,14 +747,20 @@ fn contract_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    ensure!(
-        host.state().proxy_address.is_none() && host.state().state_address.is_none(),
+    ensure_eq!(
+        host.state().protocol_addresses,
+        ProtocolAddressesImplementation::UnInitialized,
         concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
     );
+
     // Set proxy and storage addresses.
     let params: InitializeImplementationParams = ctx.parameter_cursor().get()?;
-    host.state_mut().proxy_address = Some(params.proxy_address);
-    host.state_mut().state_address = Some(params.state_address);
+
+    host.state_mut().protocol_addresses = ProtocolAddressesImplementation::Initialized {
+        proxy_address: params.proxy_address,
+        state_address: params.state_address,
+    };
+
     Ok(())
 }
 
@@ -842,11 +882,9 @@ fn receive_fallback<S: HasStateApi>(
 // or the proxy.
 
 fn only_implementation(
-    implementation: Option<ContractAddress>,
+    implementation_address: ContractAddress,
     sender: Address,
 ) -> ContractResult<()> {
-    let implementation_address = implementation
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
     ensure!(
         sender.matches_contract(&implementation_address),
         concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation)
@@ -855,9 +893,7 @@ fn only_implementation(
     Ok(())
 }
 
-fn only_proxy(proxy: Option<ContractAddress>, sender: Address) -> ContractResult<()> {
-    let proxy_address =
-        proxy.ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+fn only_proxy(proxy_address: ContractAddress, sender: Address) -> ContractResult<()> {
     ensure!(
         sender.matches_contract(&proxy_address),
         concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyProxy)
@@ -874,8 +910,18 @@ fn contract_state_set_paused<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    let implementation_address = if let ProtocolAddressesState::Initialized {
+        proxy_address: _,
+        implementation_address,
+    } = host.state().protocol_addresses
+    {
+        implementation_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Only implementation can set state.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
+    only_implementation(implementation_address, ctx.sender())?;
 
     // Set paused.
     let params: SetPausedParams = ctx.parameter_cursor().get()?;
@@ -896,12 +942,27 @@ fn contract_state_set_implementation_address<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    let proxy_address = if let ProtocolAddressesState::Initialized {
+        proxy_address,
+        implementation_address: _,
+    } = host.state().protocol_addresses
+    {
+        proxy_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Only proxy can update the implementation address.
-    only_proxy(host.state().proxy_address, ctx.sender())?;
+    only_proxy(proxy_address, ctx.sender())?;
 
     // Set implementation address.
     let params: SetImplementationAddressParams = ctx.parameter_cursor().get()?;
-    host.state_mut().implementation_address = Some(params.implementation_address);
+
+    host.state_mut().protocol_addresses = ProtocolAddressesState::Initialized {
+        proxy_address,
+        implementation_address: params.implementation_address,
+    };
+
     Ok(())
 }
 
@@ -916,8 +977,18 @@ fn contract_state_set_balance<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    let implementation_address = if let ProtocolAddressesState::Initialized {
+        proxy_address: _,
+        implementation_address,
+    } = host.state().protocol_addresses
+    {
+        implementation_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Only implementation can set state.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
+    only_implementation(implementation_address, ctx.sender())?;
 
     let (state, state_builder) = host.state_and_builder();
 
@@ -948,8 +1019,18 @@ fn contract_state_set_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    let implementation_address = if let ProtocolAddressesState::Initialized {
+        proxy_address: _,
+        implementation_address,
+    } = host.state().protocol_addresses
+    {
+        implementation_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Only implementation can set state.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
+    only_implementation(implementation_address, ctx.sender())?;
 
     // Set balance.
     let params: SetIsOperatorParams = ctx.parameter_cursor().get()?;
@@ -1060,7 +1141,7 @@ fn contract_proxy_transfer_ccd<S: HasStateApi>(
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
 ) -> ContractResult<()> {
     // Only implementation can access ccds on proxy.
-    only_implementation(Some(host.state().implementation_address), ctx.sender())?;
+    only_implementation(host.state().implementation_address, ctx.sender())?;
 
     let params: TransferCCDParams = ctx.parameter_cursor().get()?;
 
@@ -1133,59 +1214,55 @@ fn contract_state_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ReturnBasicState> {
-    let proxy_address = host
-        .state()
-        .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
-
-    let implementation_address = host
-        .state()
-        .implementation_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+    let (proxy_address, implementation_address) = if let ProtocolAddressesState::Initialized {
+        proxy_address,
+        implementation_address,
+    } = host.state().protocol_addresses
+    {
+        (proxy_address, implementation_address)
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
 
     let state = ReturnBasicState {
         proxy_address,
         implementation_address,
+        paused: host.state().paused,
     };
     Ok(state)
 }
 
 /// Function to view state of contract.
 #[receive(contract = "CIS2-wCCD", name = "view", return_value = "StateImplementation")]
-fn contract_implementation_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateImplementation, StateApiType = S>,
-) -> ContractResult<StateImplementation> {
-    let state_implementation = StateImplementation {
-        admin:         host.state().admin,
-        proxy_address: host.state().proxy_address,
-        state_address: host.state().state_address,
-    };
-    Ok(state_implementation)
+fn contract_implementation_view<'a, 'b, S: HasStateApi>(
+    _ctx: &'b impl HasReceiveContext,
+    host: &'a impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<&'a StateImplementation> {
+    Ok(host.state())
 }
 
 /// Function to view state of contract.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "view", return_value = "StateProxy")]
-fn contract_proxy_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateProxy, StateApiType = S>,
-) -> ContractResult<StateProxy> {
-    let state_proxy = StateProxy {
-        admin:                  host.state().admin,
-        implementation_address: host.state().implementation_address,
-        state_address:          host.state().state_address,
-    };
-    Ok(state_proxy)
+fn contract_proxy_view<'a, 'b, S: HasStateApi>(
+    _ctx: &'b impl HasReceiveContext,
+    host: &'a impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<&'a StateProxy> {
+    Ok(host.state())
 }
 
 /// Helper function to ensure contract is not paused.
 fn when_not_paused<S>(
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
 
     let paused = host.invoke_contract_raw_read_only(
         &state_address,
@@ -1213,8 +1290,18 @@ fn contract_wrap<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
+    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        (proxy_address, state_address)
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Can be only called through the fallback function on the proxy.
-    only_proxy(host.state().proxy_address, ctx.sender())?;
+    only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
     when_not_paused(host)?;
@@ -1228,11 +1315,6 @@ fn contract_wrap<S: HasStateApi>(
     let sender = input.sender;
 
     let receive_address = input.params.to.address();
-
-    let proxy_address = host
-        .state()
-        .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::ProxyInvokeError))?;
 
     // Proxy holds CCD funds. CCD is sent to proxy.
     host.invoke_contract_raw(
@@ -1251,11 +1333,6 @@ fn contract_wrap<S: HasStateApi>(
     };
 
     let parameter_bytes = to_bytes(&set_balance_params);
-
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     // Update state.
     host.invoke_contract_raw(
@@ -1322,8 +1399,18 @@ fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
+    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        (proxy_address, state_address)
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Can be only called through the fallback function on the proxy.
-    only_proxy(host.state().proxy_address, ctx.sender())?;
+    only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
     when_not_paused(host)?;
@@ -1360,11 +1447,6 @@ fn contract_unwrap<S: HasStateApi>(
 
     let parameter_bytes = to_bytes(&set_balance_params);
 
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
-
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
@@ -1377,11 +1459,6 @@ fn contract_unwrap<S: HasStateApi>(
     };
 
     let parameter_bytes = to_bytes(&params2);
-
-    let proxy_address = host
-        .state()
-        .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     // Access/Request CCD funds from proxy.
     host.invoke_contract_raw(
@@ -1445,8 +1522,18 @@ fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
+    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        (proxy_address, state_address)
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Can be only called through the fallback function on the proxy.
-    only_proxy(host.state().proxy_address, ctx.sender())?;
+    only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
     when_not_paused(host)?;
@@ -1455,16 +1542,6 @@ fn contract_transfer<S: HasStateApi>(
     let input: TransferParameterWithSender = ctx.parameter_cursor().get()?;
 
     let TransferParams(transfers) = input.params;
-
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
-
-    let proxy_address = host
-        .state()
-        .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     for Transfer {
         token_id,
@@ -1574,8 +1651,18 @@ fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
+    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        (proxy_address, state_address)
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Can be only called through the fallback function on the proxy.
-    only_proxy(host.state().proxy_address, ctx.sender())?;
+    only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
     when_not_paused(host)?;
@@ -1584,16 +1671,6 @@ fn contract_update_operator<S: HasStateApi>(
     let input: UpdateOperatorParamsWithSender = ctx.parameter_cursor().get()?;
 
     let UpdateOperatorParams(params) = input.params;
-
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
-
-    let proxy_address = host
-        .state()
-        .proxy_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
 
     for param in params {
         // Get the sender who invoked this contract function.
@@ -1740,10 +1817,15 @@ fn contract_pause<S: HasStateApi>(
         paused: true,
     });
 
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
 
     host.invoke_contract_raw(
         &state_address,
@@ -1768,10 +1850,15 @@ fn contract_un_pause<S: HasStateApi>(
         paused: false,
     });
 
-    let state_address = host
-        .state()
-        .state_address
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::NotInitialized))?;
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
 
     host.invoke_contract_raw(
         &state_address,
@@ -2023,13 +2110,10 @@ mod tests {
         // Check the result
         let state = result.expect_report("Contract w_ccd state initialization failed");
 
-        // Check the state
-        claim_eq!(state.proxy_address, None, "Proxy address should not be initialized");
-        claim_eq!(
-            state.implementation_address,
-            None,
-            "Implementation address should not be initialized"
-        );
+        if let ProtocolAddressesState::UnInitialized = state.protocol_addresses {
+        } else {
+            claim!(false, "Implementation address should not be initialized");
+        };
 
         let mut host = TestHost::new(state, builder);
 
@@ -2052,12 +2136,21 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the state.
-        claim_eq!(host.state().proxy_address, Some(PROXY), "Proxy address should now be set");
-        claim_eq!(
-            host.state().implementation_address,
-            Some(IMPLEMENTATION),
-            "Implementation address should now be set"
-        );
+        if let ProtocolAddressesState::Initialized {
+            implementation_address,
+            proxy_address,
+        } = host.state().protocol_addresses
+        {
+            claim_eq!(
+                implementation_address,
+                IMPLEMENTATION,
+                "Implementation address should now be set"
+            );
+
+            claim_eq!(proxy_address, PROXY, "Proxy address should now be set");
+        } else {
+            claim!(false, "Implementation address should now be set");
+        };
 
         // Can not initialize again.
         let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
