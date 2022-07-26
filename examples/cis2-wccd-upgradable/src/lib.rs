@@ -55,6 +55,10 @@ const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 /// The metadata url for the wCCD token.
 const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
+
 // Types
 
 /// Contract token ID type.
@@ -160,6 +164,9 @@ struct State<S> {
     protocol_addresses: ProtocolAddressesState,
     /// The state of the one token.
     token:              StateMap<Address, AddressState<S>, S>,
+    /// Map with contract addresses providing implementations of additional
+    /// standards.
+    implementors:       StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// Contract is paused/unpaused.
     paused:             bool,
 }
@@ -341,6 +348,17 @@ struct TransferCCDImplementationParams {
     account: AccountAddress,
 }
 
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
 /// The parameter type for the state contract function `setPaused`.
 #[derive(Serialize, SchemaType)]
 struct SetPausedParams {
@@ -375,6 +393,13 @@ struct SetBalanceParams {
 struct GetBalanceParams {
     /// Owner of the tokens.
     owner: Address,
+}
+
+/// The parameter type for the state contract function `getImplementors`.
+#[derive(Serialize, SchemaType)]
+struct GetImplementorsParams {
+    /// The identifier for the standard.
+    id: StandardIdentifierOwned,
 }
 
 /// The parameter type for the state contract function `isOperator`.
@@ -475,6 +500,7 @@ impl<S: HasStateApi> State<S> {
         State {
             protocol_addresses: ProtocolAddressesState::UnInitialized,
             token:              state_builder.new_map(),
+            implementors:       state_builder.new_map(),
             paused:             false,
         }
     }
@@ -531,6 +557,37 @@ impl StateImplementation {
             .get()?;
 
         Ok(balance)
+    }
+
+    /// Check if state contains any implementors for a given standard.
+    fn have_implementors<S>(
+        &self,
+        state_address: &ContractAddress,
+        std_id: &StandardIdentifierOwned,
+        host: &impl HasHost<StateImplementation, StateApiType = S>,
+    ) -> ContractResult<SupportResult> {
+        // Setup parameter.
+        let parameter_bytes = to_bytes(std_id);
+
+        let implementors = host.invoke_contract_raw_read_only(
+            state_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("getImplementors"),
+            Amount::zero(),
+        )?;
+
+        // It is expected that this contract is initialized with the w_ccd_state
+        // contract (a V1 contract). In that case, the implementors can be
+        // queried from the state contract without error.
+        let implementors: Option<Vec<ContractAddress>> = implementors
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+            .get()?;
+
+        if let Some(addresses) = implementors {
+            Ok(SupportResult::SupportBy(addresses.to_vec()))
+        } else {
+            Ok(SupportResult::NoSupport)
+        }
     }
 
     /// Check if an address is an operator of a specific owner address.
@@ -923,6 +980,37 @@ fn only_proxy(proxy_address: ContractAddress, sender: Address) -> ContractResult
 
 // Getter and setter functions
 
+/// Set Implementors.
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    mutable
+)]
+fn contract_state_set_implementors<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let implementation_address = if let ProtocolAddressesState::Initialized {
+        proxy_address: _,
+        implementation_address,
+    } = host.state().protocol_addresses
+    {
+        implementation_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
+    // Only implementation can set state.
+    only_implementation(implementation_address, ctx.sender())?;
+
+    // Set implementors.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+
+    host.state_mut().implementors.insert(params.id, params.implementors);
+    Ok(())
+}
+
 /// Set paused.
 #[receive(contract = "CIS2-wCCD-State", name = "setPaused", parameter = "SetPausedParams", mutable)]
 fn contract_state_set_paused<S: HasStateApi>(
@@ -1100,6 +1188,27 @@ fn contract_state_get_balance<S: HasStateApi>(
         Ok(s.balance)
     } else {
         Ok(0u64.into())
+    }
+}
+
+/// Get Implementors.
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "getImplementors",
+    parameter = "GetImplementorsParams",
+    return_value = "ContractTokenAmount"
+)]
+fn contract_state_get_implementors<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<Option<Vec<ContractAddress>>> {
+    let params: GetImplementorsParams = ctx.parameter_cursor().get()?;
+
+    if let Some(addresses) = host.state().implementors.get(&params.id) {
+        let return_addresses = &*addresses;
+        Ok(Some(return_addresses.to_vec()))
+    } else {
+        Ok(None)
     }
 }
 
@@ -1793,6 +1902,90 @@ fn contract_proxy_update_admin<S: HasStateApi>(
     logger.log(&NewAdminEvent {
         new_admin,
     })?;
+
+    Ok(())
+}
+
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse"
+)]
+fn contract_supports<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().have_implementors(&state_address, &std_id, host).unwrap());
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Set the addresses for an implementation given a standard identifier and a
+/// list of contract addresses.
+///
+/// It rejects if:
+/// - Sender is not the admin of the contract instance.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    mutable
+)]
+fn contract_set_implementor<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<()> {
+    // Authorize the sender.
+    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+
+    let parameter_bytes = to_bytes(&params);
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
+    // Update the implementors in the state
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("setImplementors"),
+        Amount::zero(),
+    )?;
 
     Ok(())
 }
