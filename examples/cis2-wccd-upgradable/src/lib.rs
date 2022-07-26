@@ -26,17 +26,18 @@
 //! CCD is sent to the receiver.
 //!
 //! The protocol consists of three smart contracts (`proxy`, `implementation`,
-//! and `state`). All wccd functions (e.g. `wrap`, `unwrap`, `transfer`,
-//! `updateOperator`, `balanceOf`, `operatorOf` and `tokenMetadata`) have to be
-//! invoked on the `proxy` contract. The `proxy` will append the
-//! `current_sender` to the input parameters so that the `implementation` can
-//! retrieve this information. Invoking the wccd functions directly on the
-//! `implementation` without going through the `proxy` fallback function will
-//! revert.
+//! and `state`). All state-mutative wccd functions (e.g. `wrap`, `unwrap`,
+//! `transfer`, and `updateOperator`) have be invoked on the `proxy` contract.
+//! All non-state-mutative wccd functions (e.g. `balanceOf`, `operatorOf`
+//! and `tokenMetadata`) should be queried on the implementation.
+//! The `proxy` will append the `current_sender` to the input parameters
+//! so that the `implementation` can retrieve this information.
+//! Invoking the state-mutative wccd functions directly on the`implementation`
+//! without going through the `proxy` fallback function will revert.
 
 //! The admin address on the `proxy` can upgrade the protocol with
 //! a new `implementation` contract. The admin address on the
-//! `implementation` can pause/unpause the protocol.
+//! `implementation` can pause/unpause the protocol and set implementors.
 //!
 //! Deploy the `state` and the `implementation` contract first by invoking their
 //! respective `init` functions. Then, deploy the `proxy` contract and pass
@@ -72,8 +73,7 @@ type ContractTokenId = TokenIdUnit;
 /// of arithmetics.
 type ContractTokenAmount = TokenAmountU64;
 
-/// Needed for the custom serial instance, which doesn't include the `Option`
-/// tag and the length of the vector.
+/// This parameter is used as the return value of the fallback function.
 #[derive(PartialEq, Eq, Debug)]
 struct RawReturnValue(Vec<u8>);
 
@@ -146,7 +146,7 @@ impl<T: Deserial> Deserial for ParamWithSender<T> {
 }
 
 /// The state tracked for each address.
-#[derive(Serial, DeserialWithState, Deletable)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The number of tokens owned by this address.
@@ -185,7 +185,8 @@ enum ProtocolAddressesState {
 /// The `implementation` contract state.
 #[derive(Serial, Deserial, SchemaType)]
 struct StateImplementation {
-    /// The admin address can pause/unpause the contract.
+    /// The admin address can pause/unpause the contract
+    /// and set implementors.
     admin:              Address,
     /// Addresses of the protocol
     protocol_addresses: ProtocolAddressesImplementation,
@@ -242,6 +243,17 @@ struct TransferEventParams {
     to:     Address,
 }
 
+/// The parameter type for the contract function `log_update_operator_event`.
+#[derive(Serialize)]
+struct UpdateOperatorEventParams {
+    /// The owner of the tokens.
+    owner:    Address,
+    /// The operator of the tokens.
+    operator: Address,
+    /// Add or remove an operator.
+    update:   OperatorUpdate,
+}
+
 /// NewAdminEvent.
 #[derive(Serial)]
 struct NewAdminEvent {
@@ -256,19 +268,8 @@ struct NewImplementationEvent {
     new_implementation: ContractAddress,
 }
 
-/// The parameter type for the contract function `log_update_operator_event`.
-#[derive(Serialize)]
-struct UpdateOperatorEventParams {
-    /// The owner of the tokens.
-    owner:    Address,
-    /// The operator of the tokens.
-    operator: Address,
-    /// Add or remove an operator.
-    update:   OperatorUpdate,
-}
-
 /// The parameter type for the contract function `unwrap`.
-/// Takes an amount of tokens and unwraps the CCD and send it to a receiver.
+/// Takes an amount of tokens and unwraps the CCD and sends it to a receiver.
 #[derive(Serialize, SchemaType)]
 struct UnwrapParams {
     /// The amount of tokens to unwrap.
@@ -289,10 +290,11 @@ struct UnwrapParams {
 struct WrapParams {
     /// The address to receive these tokens.
     /// If the receiver is the sender of the message wrapping the tokens, it
-    /// will not log a transfer.
+    /// will not log a transfer event.
     to:   Receiver,
-    /// Some additional bytes that are used in the `OnReceivingCis2` hook. Only
-    /// if the `Receiver` is a contract the receive hook function is
+    /// Some additional bytes are used in the `OnReceivingCis2` hook. Only
+    /// if the `Receiver` is a contract and the `Receiver` is not
+    /// the invoker of the wrap function the receive hook function is
     /// executed.
     data: AdditionalData,
 }
@@ -332,7 +334,7 @@ struct SetImplementationAddressParams {
     implementation_address: ContractAddress,
 }
 
-/// The parameter type for the proxy and state contract functions `transferCCD`.
+/// The parameter type for the proxy contract function `transferCCD`.
 #[derive(Serialize, SchemaType)]
 struct TransferCCDParams {
     /// Amount of CCD to transfer to implementation.
@@ -344,7 +346,7 @@ struct TransferCCDParams {
 struct TransferCCDImplementationParams {
     /// Amount of CCD to transfer.
     amount:  ContractTokenAmount,
-    /// Account that receives CCD tokens.
+    /// Account that receives the CCD.
     account: AccountAddress,
 }
 
@@ -457,8 +459,6 @@ enum CustomContractError {
     OnlyProxy,
     /// Raised when implementation can not invoke state contract.
     StateInvokeError,
-    /// Raised when implementation can not invoke proxy contract.
-    ProxyInvokeError,
 }
 
 type ContractError = Cis2Error<CustomContractError>;
@@ -492,8 +492,8 @@ impl From<CustomContractError> for ContractError {
 
 impl<S: HasStateApi> State<S> {
     /// Creates the new state of the `state` contract with no one owning any
-    /// tokens by default. The proxy_address and the implementation_address
-    /// are set to None. Both addresses have to be set with the `initialize`
+    /// tokens by default. The ProtocolAddressesState is uninitialized.
+    /// The ProtocolAddressesState has to be set with the `initialize`
     /// function after the `proxy` contract is deployed.
     fn new(state_builder: &mut StateBuilder<S>) -> Self {
         // Setup state.
@@ -507,10 +507,10 @@ impl<S: HasStateApi> State<S> {
 }
 
 impl StateImplementation {
-    /// Creates the new state of the `implementation` contract. The
-    /// proxy_address and the state_address are set to None. Both addresses
-    /// have to be set with the `initialize` function after the `proxy`
-    /// contract is deployed.
+    /// Creates the new state of the `implementation` contract.
+    /// The ProtocolAddressesState is uninitialized.
+    /// The ProtocolAddressesState has to be set with the `initialize`
+    /// function after the `proxy` contract is deployed.
     fn new(admin: Address) -> Self {
         // Setup state.
         StateImplementation {
@@ -523,6 +523,7 @@ impl StateImplementation {
     /// Results in an error if the token id does not exist in the state.
     fn balance<S>(
         &self,
+        state_address: &ContractAddress,
         token_id: &ContractTokenId,
         owner: &Address,
         host: &impl HasHost<StateImplementation, StateApiType = S>,
@@ -532,18 +533,8 @@ impl StateImplementation {
         // Setup parameter.
         let parameter_bytes = to_bytes(owner);
 
-        let state_address = if let ProtocolAddressesImplementation::Initialized {
-            proxy_address: _,
-            state_address,
-        } = host.state().protocol_addresses
-        {
-            state_address
-        } else {
-            panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-        };
-
         let balance = host.invoke_contract_raw_read_only(
-            &state_address,
+            state_address,
             Parameter(&parameter_bytes),
             EntrypointName::new_unchecked("getBalance"),
             Amount::zero(),
@@ -557,6 +548,38 @@ impl StateImplementation {
             .get()?;
 
         Ok(balance)
+    }
+
+    /// Check if an address is an operator of a specific owner address.
+    /// Results in an error if the token id does not exist in the state.
+    fn is_operator<S>(
+        &self,
+        state_address: &ContractAddress,
+        address: &Address,
+        owner: &Address,
+        host: &impl HasHost<StateImplementation, StateApiType = S>,
+    ) -> ContractResult<bool> {
+        // Setup parameter.
+        let parameter_bytes = to_bytes(&IsOperatorParams {
+            owner:   *owner,
+            address: *address,
+        });
+
+        let is_operator = host.invoke_contract_raw_read_only(
+            state_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("isOperator"),
+            Amount::zero(),
+        )?;
+
+        // It is expected that this contract is initialized with the w_ccd_state
+        // contract (a V1 contract). In that case, the balance variable can be
+        // queried from the state contract without error.
+        let is_operator = is_operator
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+            .get()?;
+
+        Ok(is_operator)
     }
 
     /// Check if state contains any implementors for a given standard.
@@ -588,47 +611,6 @@ impl StateImplementation {
         } else {
             Ok(SupportResult::NoSupport)
         }
-    }
-
-    /// Check if an address is an operator of a specific owner address.
-    /// Results in an error if the token id does not exist in the state.
-    fn is_operator<S>(
-        &self,
-        address: &Address,
-        owner: &Address,
-        host: &impl HasHost<StateImplementation, StateApiType = S>,
-    ) -> ContractResult<bool> {
-        // Setup parameter.
-        let parameter_bytes = to_bytes(&IsOperatorParams {
-            owner:   *owner,
-            address: *address,
-        });
-
-        let state_address = if let ProtocolAddressesImplementation::Initialized {
-            proxy_address: _,
-            state_address,
-        } = host.state().protocol_addresses
-        {
-            state_address
-        } else {
-            panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-        };
-
-        let is_operator = host.invoke_contract_raw_read_only(
-            &state_address,
-            Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("isOperator"),
-            Amount::zero(),
-        )?;
-
-        // It is expected that this contract is initialized with the w_ccd_state
-        // contract (a V1 contract). In that case, the balance variable can be
-        // queried from the state contract without error.
-        let is_operator = is_operator
-            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
-            .get()?;
-
-        Ok(is_operator)
     }
 }
 
@@ -737,7 +719,7 @@ fn contract_state_init<S: HasStateApi>(
     Ok(state)
 }
 
-/// Initialize contract instance with no initial tokens.
+/// Initialize the implementation contract.
 #[init(contract = "CIS2-wCCD")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
@@ -774,9 +756,9 @@ fn contract_proxy_init<S: HasStateApi>(
     Ok(state)
 }
 
-/// Initializes the state of the w_ccd contract with the proxy and the
-/// implementation addresses. Both addresses have to be set together by calling
-/// this function. This function can only be called once.
+/// Initializes the state w-ccd contract with the proxy and the
+/// implementation addresses. Both addresses have to be set together
+/// by calling this function. This function can only be called once.
 #[receive(
     contract = "CIS2-wCCD-State",
     name = "initialize",
@@ -787,6 +769,7 @@ fn contract_state_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
+    // Contract can only be initialized once.
     ensure_eq!(
         host.state().protocol_addresses,
         ProtocolAddressesState::UnInitialized,
@@ -804,9 +787,9 @@ fn contract_state_initialize<S: HasStateApi>(
     Ok(())
 }
 
-/// Initializes the implementation of the w_ccd contract with the proxy and the
-/// state addresses. Both addresses have to be set together by calling this
-/// function. This function can only be called once.
+/// Initializes the implementation w-ccd contract with the proxy and
+/// the state addresses. Both addresses have to be set together by
+/// calling this function. This function can only be called once.
 #[receive(
     contract = "CIS2-wCCD",
     name = "initialize",
@@ -817,6 +800,7 @@ fn contract_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
+    // Contract can only be initialized once.
     ensure_eq!(
         host.state().protocol_addresses,
         ProtocolAddressesImplementation::UnInitialized,
@@ -837,8 +821,9 @@ fn contract_initialize<S: HasStateApi>(
 /// Initializes the `implementation` and `state` contracts by using the
 /// addresses that the `proxy` contract was set up. This function will call the
 /// `initialize` functions on the `implementation` as well as the `state`
-/// contracts. Logs a mint event with amount 0 to signal that a new CIS-2 token
-/// was deployed. Logs an event including the metadata for this token.
+/// contracts. This function logs a mint event with amount 0 to signal that a
+/// new CIS-2 token was deployed. This function logs an event including the
+/// metadata for this token. This function logs a new implementation event.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "initialize", enable_logger, mutable)]
 fn contract_proxy_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -900,14 +885,7 @@ fn contract_proxy_initialize<S: HasStateApi>(
 }
 
 /// The fallback method, which redirects the invocations to the implementation.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    fallback,
-    mutable,
-    payable,
-    parameter = "ContractBalanceOfQueryParams",
-    return_value = "ContractBalanceOfQueryResponse"
-)]
+#[receive(contract = "CIS2-wCCD-Proxy", fallback, mutable, payable)]
 fn receive_fallback<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -1038,7 +1016,7 @@ fn contract_state_set_paused<S: HasStateApi>(
 
 /// Set implementation_address. Only the proxy can invoke this function.
 /// The admin on the proxy will initiate the `updateImplementation` function on
-/// the proxy which will call this function.
+/// the proxy which will invoke this function.
 #[receive(
     contract = "CIS2-wCCD-State",
     name = "setImplementationAddress",
@@ -1097,10 +1075,10 @@ fn contract_state_set_balance<S: HasStateApi>(
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
 
-    let (state, state_builder) = host.state_and_builder();
-
     // Set balance.
     let params: SetBalanceParams = ctx.parameter_cursor().get()?;
+
+    let (state, state_builder) = host.state_and_builder();
 
     let mut owner_state = state.token.entry(params.owner).or_insert_with(|| AddressState {
         balance:   0u64.into(),
@@ -1195,8 +1173,7 @@ fn contract_state_get_balance<S: HasStateApi>(
 #[receive(
     contract = "CIS2-wCCD-State",
     name = "getImplementors",
-    parameter = "GetImplementorsParams",
-    return_value = "ContractTokenAmount"
+    parameter = "GetImplementorsParams"
 )]
 fn contract_state_get_implementors<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -1336,7 +1313,7 @@ fn contract_proxy_view_balance<S: HasStateApi>(
     Ok(host.self_balance())
 }
 
-/// Function to view state of contract.
+/// Function to view state of the state contract.
 #[receive(contract = "CIS2-wCCD-State", name = "view", return_value = "ReturnBasicState")]
 fn contract_state_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -1360,7 +1337,7 @@ fn contract_state_view<S: HasStateApi>(
     Ok(state)
 }
 
-/// Function to view state of contract.
+/// Function to view state of the implementation contract.
 #[receive(contract = "CIS2-wCCD", name = "view", return_value = "StateImplementation")]
 fn contract_implementation_view<'a, 'b, S: HasStateApi>(
     _ctx: &'b impl HasReceiveContext,
@@ -1369,7 +1346,7 @@ fn contract_implementation_view<'a, 'b, S: HasStateApi>(
     Ok(host.state())
 }
 
-/// Function to view state of contract.
+/// Function to view state of the proxy contract.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "view", return_value = "StateProxy")]
 fn contract_proxy_view<'a, 'b, S: HasStateApi>(
     _ctx: &'b impl HasReceiveContext,
@@ -1380,20 +1357,11 @@ fn contract_proxy_view<'a, 'b, S: HasStateApi>(
 
 /// Helper function to ensure contract is not paused.
 fn when_not_paused<S>(
+    state_address: &ContractAddress,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
-
     let paused = host.invoke_contract_raw_read_only(
-        &state_address,
+        state_address,
         Parameter(&[]),
         EntrypointName::new_unchecked("getPaused"),
         Amount::zero(),
@@ -1432,7 +1400,8 @@ fn contract_wrap<S: HasStateApi>(
     only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    when_not_paused(host)?;
+    when_not_paused(&state_address, host)?;
+
     if amount == Amount::zero() {
         return Ok(());
     }
@@ -1541,7 +1510,7 @@ fn contract_unwrap<S: HasStateApi>(
     only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    when_not_paused(host)?;
+    when_not_paused(&state_address, host)?;
 
     let input: UnwrapParamsWithSender = ctx.parameter_cursor().get()?;
 
@@ -1551,19 +1520,20 @@ fn contract_unwrap<S: HasStateApi>(
 
     // Get the sender who invoked this contract function.
     let sender = input.sender;
-    //  let state = host.state_mut();
+
     ensure!(
         sender == input.params.owner
             || host
                 .state()
-                .is_operator(&sender, &input.params.owner, host)
+                .is_operator(&state_address, &sender, &input.params.owner, host)
                 .map_or(false, |is_operator| is_operator),
         ContractError::Unauthorized
     );
 
     // Update the state.
 
-    let token_balance = host.state().balance(&TOKEN_ID_WCCD, &input.params.owner, host)?;
+    let token_balance =
+        host.state().balance(&state_address, &TOKEN_ID_WCCD, &input.params.owner, host)?;
 
     ensure!(token_balance >= input.params.amount, ContractError::InsufficientFunds);
 
@@ -1664,12 +1634,15 @@ fn contract_transfer<S: HasStateApi>(
     only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    when_not_paused(host)?;
+    when_not_paused(&state_address, host)?;
 
     // Parse the parameter.
     let input: TransferParameterWithSender = ctx.parameter_cursor().get()?;
 
     let TransferParams(transfers) = input.params;
+
+    // Get the sender who invoked this contract function.
+    let sender = input.sender;
 
     for Transfer {
         token_id,
@@ -1679,20 +1652,16 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
-        // Get the sender who invoked this contract function.
-        let sender = input.sender;
-
         // Authenticate the sender for this transfer
         ensure!(
             from == sender
                 || host
                     .state()
-                    .is_operator(&sender, &from, host)
+                    .is_operator(&state_address, &sender, &from, host)
                     .map_or(false, |is_operator| is_operator),
             ContractError::Unauthorized
         );
         let to_address = to.address();
-        // Update the contract state
 
         if amount == 0u64.into() {
             return Ok(());
@@ -1700,7 +1669,7 @@ fn contract_transfer<S: HasStateApi>(
 
         // Update the state.
 
-        let token_balance = host.state().balance(&TOKEN_ID_WCCD, &from, host)?;
+        let token_balance = host.state().balance(&state_address, &token_id, &from, host)?;
 
         ensure!(token_balance >= amount, ContractError::InsufficientFunds);
         {
@@ -1735,20 +1704,6 @@ fn contract_transfer<S: HasStateApi>(
             Amount::zero(),
         )?;
 
-        // Log transfer event.
-        let parameter_bytes = to_bytes(&TransferEventParams {
-            amount,
-            from,
-            to: to_address,
-        });
-
-        host.invoke_contract_raw(
-            &proxy_address,
-            Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("logTransferEvent"),
-            Amount::zero(),
-        )?;
-
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
             let parameter = OnReceivingCis2Params {
@@ -1764,6 +1719,20 @@ fn contract_transfer<S: HasStateApi>(
                 Amount::zero(),
             )?;
         }
+
+        // Log transfer event.
+        let parameter_bytes = to_bytes(&TransferEventParams {
+            amount,
+            from,
+            to: to_address,
+        });
+
+        host.invoke_contract_raw(
+            &proxy_address,
+            Parameter(&parameter_bytes),
+            EntrypointName::new_unchecked("logTransferEvent"),
+            Amount::zero(),
+        )?;
     }
     Ok(())
 }
@@ -1793,19 +1762,18 @@ fn contract_update_operator<S: HasStateApi>(
     only_proxy(proxy_address, ctx.sender())?;
 
     // Check that contract is not paused.
-    when_not_paused(host)?;
+    when_not_paused(&state_address, host)?;
 
     // Parse the parameter.
     let input: UpdateOperatorParamsWithSender = ctx.parameter_cursor().get()?;
 
     let UpdateOperatorParams(params) = input.params;
 
+    // Get the sender who invoked this contract function.
+    let sender = input.sender;
+
     for param in params {
-        // Get the sender who invoked this contract function.
-        let sender = input.sender;
-
         // Update the operator in the state.
-
         match param.update {
             OperatorUpdate::Add => {
                 let set_operator_params = SetIsOperatorParams {
@@ -1906,47 +1874,6 @@ fn contract_proxy_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-/// Get the supported standards or addresses for a implementation given list of
-/// standard identifiers.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-#[receive(
-    contract = "CIS2-wCCD",
-    name = "supports",
-    parameter = "SupportsQueryParams",
-    return_value = "SupportsQueryResponse"
-)]
-fn contract_supports<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateImplementation, StateApiType = S>,
-) -> ContractResult<SupportsQueryResponse> {
-    // Parse the parameter.
-    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
-
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
-
-    // Build the response.
-    let mut response = Vec::with_capacity(params.queries.len());
-    for std_id in params.queries {
-        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
-            response.push(SupportResult::Support);
-        } else {
-            response.push(host.state().have_implementors(&state_address, &std_id, host).unwrap());
-        }
-    }
-    let result = SupportsQueryResponse::from(response);
-    Ok(result)
-}
-
 /// Set the addresses for an implementation given a standard identifier and a
 /// list of contract addresses.
 ///
@@ -1969,6 +1896,7 @@ fn contract_set_implementor<S: HasStateApi>(
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
 
     let parameter_bytes = to_bytes(&params);
+
     let state_address = if let ProtocolAddressesImplementation::Initialized {
         proxy_address: _,
         state_address,
@@ -1999,7 +1927,7 @@ fn contract_set_implementor<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_implementation<S: HasStateApi>(
+fn contract_proxy_update_implementation<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -2020,7 +1948,7 @@ fn contract_update_implementation<S: HasStateApi>(
 
     let state_address = host.state().state_address;
 
-    // Update implementation in the state contract.
+    // Update implementation address in the state contract.
     host.invoke_contract_raw(
         &state_address,
         Parameter(&parameter_bytes),
@@ -2112,7 +2040,6 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 /// Get the balance of given token IDs and addresses.
 ///
 /// It rejects if:
-/// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
@@ -2127,19 +2054,30 @@ fn contract_balance_of<S: HasStateApi>(
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
+
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
         // Query the state for balance.
-        let amount = host.state().balance(&query.token_id, &query.address, host)?;
+        let amount = host.state().balance(&state_address, &query.token_id, &query.address, host)?;
         response.push(amount);
     }
     let result = ContractBalanceOfQueryResponse::from(response);
     Ok(result)
 }
 
-/// Takes a list of queries. Each query is an owner address and some address to
-/// check as an operator of the owner address.
+/// Takes a list of queries. Each query contains an owner address and some
+/// address that will be checked if it is an operator to the owner address.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -2155,17 +2093,69 @@ fn contract_operator_of<S: HasStateApi>(
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
+
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
-        // Query the state for address being an operator of owner.
+        // Query the state if the `address` being an `operator` of `owner`.
         let is_operator = host
             .state()
-            .is_operator(&query.address, &query.owner, host)
+            .is_operator(&state_address, &query.address, &query.owner, host)
             .map_or(false, |is_operator| is_operator);
         response.push(is_operator);
     }
     let result = OperatorOfQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse"
+)]
+fn contract_supports<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    let state_address = if let ProtocolAddressesImplementation::Initialized {
+        proxy_address: _,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        state_address
+    } else {
+        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    };
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().have_implementors(&state_address, &std_id, host).unwrap());
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
     Ok(result)
 }
 
@@ -2573,7 +2563,7 @@ mod tests {
         );
         let balance0 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0, &host)
+            .balance(&STATE, &TOKEN_ID_WCCD, &ADDRESS_0, &host)
             .expect_report("Token is expected to exist");
         host.setup_mock_entrypoint(
             STATE,
@@ -2582,7 +2572,7 @@ mod tests {
         );
         let balance1 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1, &host)
+            .balance(&STATE, &TOKEN_ID_WCCD, &ADDRESS_1, &host)
             .expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
@@ -2797,7 +2787,7 @@ mod tests {
         // Check the state.
         let balance0 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0, &host)
+            .balance(&STATE, &TOKEN_ID_WCCD, &ADDRESS_0, &host)
             .expect_report("Token is expected to exist");
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
@@ -2807,7 +2797,7 @@ mod tests {
         );
         let balance1 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1, &host)
+            .balance(&STATE, &TOKEN_ID_WCCD, &ADDRESS_1, &host)
             .expect_report("Token is expected to exist");
         claim_eq!(balance0, 300.into()); //, "Token owner balance should be decreased by the transferred amount");
         claim_eq!(
@@ -2896,7 +2886,7 @@ mod tests {
         // Check the state.
         claim!(
             host.state()
-                .is_operator(&ADDRESS_1, &ADDRESS_0, &host)
+                .is_operator(&STATE, &ADDRESS_1, &ADDRESS_0, &host)
                 .map_or(false, |is_operator| is_operator),
             "Account should be an operator"
         );
@@ -3409,7 +3399,7 @@ mod tests {
         // Check the state.
         let balance0 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0, &host)
+            .balance(&STATE, &TOKEN_ID_WCCD, &ADDRESS_0, &host)
             .expect_report("Token is expected to exist");
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
@@ -3419,7 +3409,7 @@ mod tests {
         );
         let balance1 = host
             .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1, &host)
+            .balance(&STATE, &TOKEN_ID_WCCD, &ADDRESS_1, &host)
             .expect_report("Token is expected to exist");
         claim_eq!(balance0, 400.into(), "Token owner balance should be still the same");
         claim_eq!(balance1, 0.into(), "Token receiver balance should be still the same");
@@ -3501,7 +3491,7 @@ mod tests {
         claim!(
             !host
                 .state()
-                .is_operator(&ADDRESS_1, &ADDRESS_0, &host)
+                .is_operator(&STATE, &ADDRESS_1, &ADDRESS_0, &host)
                 .map_or(false, |is_operator| is_operator),
             "Account should not be an operator"
         );
@@ -3639,7 +3629,7 @@ mod tests {
 
     /// Test updating to new admin address on the proxy contract.
     #[concordium_test]
-    fn test_contract_update_implementation() {
+    fn test_contract_proxy_update_implementation() {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
@@ -3669,7 +3659,7 @@ mod tests {
 
         // Call the contract function.
         let result: ContractResult<()> =
-            contract_update_implementation(&ctx, &mut host, &mut logger);
+            contract_proxy_update_implementation(&ctx, &mut host, &mut logger);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");

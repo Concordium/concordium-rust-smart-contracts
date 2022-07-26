@@ -73,7 +73,7 @@ struct State<S> {
 }
 
 /// The parameter type for the contract function `unwrap`.
-/// Takes an amount of tokens and unwraps the CCD and send it to a receiver.
+/// Takes an amount of tokens and unwraps the CCD and sends it to a receiver.
 #[derive(Serialize, SchemaType)]
 struct UnwrapParams {
     /// The amount of tokens to unwrap.
@@ -95,10 +95,11 @@ struct UnwrapParams {
 struct WrapParams {
     /// The address to receive these tokens.
     /// If the receiver is the sender of the message wrapping the tokens, it
-    /// will not log a transfer.
+    /// will not log a transfer event.
     to:   Receiver,
-    /// Some additional bytes that are used in the `OnReceivingCis2` hook. Only
-    /// if the `Receiver` is a contract the receive hook function is
+    /// Some additional bytes are used in the `OnReceivingCis2` hook. Only
+    /// if the `Receiver` is a contract and the `Receiver` is not
+    /// the invoker of the wrap function the receive hook function is
     /// executed.
     data: AdditionalData,
 }
@@ -579,7 +580,6 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 /// Get the balance of given token IDs and addresses.
 ///
 /// It rejects if:
-/// - Sender is not a contract.
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
@@ -606,8 +606,8 @@ fn contract_balance_of<S: HasStateApi>(
     Ok(result)
 }
 
-/// Takes a list of queries. Each query is an owner address and some address to
-/// check as an operator of the owner address.
+/// Takes a list of queries. Each query contains an owner address and some
+/// address that will be checked if it is an operator to the owner address.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -627,7 +627,7 @@ fn contract_operator_of<S: HasStateApi>(
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
-        // Query the state for address being an operator of owner.
+        // Query the state if the `address` being an `operator` of `owner`.
         let is_operator = host.state().is_operator(&query.address, &query.owner);
         response.push(is_operator);
     }
