@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased changes
+
+- Removed `derive(Serial)` and `derive(Deserial)` (moved to `concordium-contracts-common-derive`).
+
 ## concordium-std-derive 3.0.0 (2022-05-17)
 
 - Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.
