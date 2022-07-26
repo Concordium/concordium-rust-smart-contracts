@@ -214,7 +214,7 @@ struct StateProxy {
     state_address:          ContractAddress,
 }
 
-/// The parameter type for the contract function `log_mint_event`.
+/// The mint event parameter type for the contract function `logEvent`.
 #[derive(Serialize)]
 struct MintEventParams {
     /// The amount of tokens to be minted.
@@ -223,7 +223,7 @@ struct MintEventParams {
     address: Address,
 }
 
-/// The parameter type for the contract function `log_burn_event`.
+/// The burn event parameter type for the contract function `logEvent`.
 #[derive(Serialize)]
 struct BurnEventParams {
     /// The amount of tokens to be burned.
@@ -232,7 +232,7 @@ struct BurnEventParams {
     address: Address,
 }
 
-/// The parameter type for the contract function `log_transfer_event`.
+/// The transfer parameter type for the contract function `logEvent`.
 #[derive(Serialize)]
 struct TransferEventParams {
     /// The amount of tokens to be transferred.
@@ -243,7 +243,7 @@ struct TransferEventParams {
     to:     Address,
 }
 
-/// The parameter type for the contract function `log_update_operator_event`.
+/// The update operator parameter type for the contract function `logEvent`.
 #[derive(Serialize)]
 struct UpdateOperatorEventParams {
     /// The owner of the tokens.
@@ -530,12 +530,9 @@ impl StateImplementation {
     ) -> ContractResult<ContractTokenAmount> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
-        // Setup parameter.
-        let parameter_bytes = to_bytes(owner);
-
-        let balance = host.invoke_contract_raw_read_only(
+        let balance = host.invoke_contract_read_only(
             state_address,
-            Parameter(&parameter_bytes),
+            owner,
             EntrypointName::new_unchecked("getBalance"),
             Amount::zero(),
         )?;
@@ -559,15 +556,12 @@ impl StateImplementation {
         owner: &Address,
         host: &impl HasHost<StateImplementation, StateApiType = S>,
     ) -> ContractResult<bool> {
-        // Setup parameter.
-        let parameter_bytes = to_bytes(&IsOperatorParams {
-            owner:   *owner,
-            address: *address,
-        });
-
-        let is_operator = host.invoke_contract_raw_read_only(
+        let is_operator = host.invoke_contract_read_only(
             state_address,
-            Parameter(&parameter_bytes),
+            &IsOperatorParams {
+                owner:   *owner,
+                address: *address,
+            },
             EntrypointName::new_unchecked("isOperator"),
             Amount::zero(),
         )?;
@@ -589,12 +583,9 @@ impl StateImplementation {
         std_id: &StandardIdentifierOwned,
         host: &impl HasHost<StateImplementation, StateApiType = S>,
     ) -> ContractResult<SupportResult> {
-        // Setup parameter.
-        let parameter_bytes = to_bytes(std_id);
-
-        let implementors = host.invoke_contract_raw_read_only(
+        let implementors = host.invoke_contract_read_only(
             state_address,
-            Parameter(&parameter_bytes),
+            std_id,
             EntrypointName::new_unchecked("getImplementors"),
             Amount::zero(),
         )?;
@@ -614,9 +605,9 @@ impl StateImplementation {
     }
 }
 
-/// This function logs a mint event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logMintEvent", enable_logger, mutable)]
-fn contract_proxy_log_mint_event<S: HasStateApi>(
+/// This function logs an event.
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logEvent", enable_logger, mutable)]
+fn contract_proxy_log_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -624,83 +615,8 @@ fn contract_proxy_log_mint_event<S: HasStateApi>(
     // Only implementation can log event.
     only_implementation(host.state().implementation_address, ctx.sender())?;
 
-    let params: MintEventParams = ctx.parameter_cursor().get()?;
-
-    // Log event for the newly minted tokens.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   params.amount,
-        owner:    params.address,
-    }))?;
-
-    Ok(())
-}
-
-/// This function logs a burn event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logBurnEvent", enable_logger, mutable)]
-fn contract_proxy_log_burn_event<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Only implementation can log event.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    let params: BurnEventParams = ctx.parameter_cursor().get()?;
-
-    // Log the burning of tokens.
-    logger.log(&Cis2Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   params.amount,
-        owner:    params.address,
-    }))?;
-
-    Ok(())
-}
-
-/// This function logs a transfer event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logTransferEvent", enable_logger, mutable)]
-fn contract_proxy_log_transfer_event<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Only implementation can log event.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    let params: TransferEventParams = ctx.parameter_cursor().get()?;
-
-    // Log event for transferring the tokens.
-    logger.log(&Cis2Event::Transfer(TransferEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   params.amount,
-        from:     params.from,
-        to:       params.to,
-    }))?;
-
-    Ok(())
-}
-
-/// This function logs an updateOperator event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logUpdateOperatorEvent", enable_logger, mutable)]
-fn contract_proxy_log_update_operator_event<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Only implementation can log event.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    let params: UpdateOperatorEventParams = ctx.parameter_cursor().get()?;
-
-    // Log event for the updating the operator.
-    logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-        UpdateOperatorEvent {
-            owner:    params.owner,
-            operator: params.operator,
-            update:   params.update,
-        },
-    ))?;
+    // Log event.
+    logger.log(&ctx.parameter_cursor().get()?)?;
 
     Ok(())
 }
@@ -969,15 +885,7 @@ fn contract_state_set_implementors<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let implementation_address = if let ProtocolAddressesState::Initialized {
-        proxy_address: _,
-        implementation_address,
-    } = host.state().protocol_addresses
-    {
-        implementation_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -995,15 +903,7 @@ fn contract_state_set_paused<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let implementation_address = if let ProtocolAddressesState::Initialized {
-        proxy_address: _,
-        implementation_address,
-    } = host.state().protocol_addresses
-    {
-        implementation_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -1027,15 +927,7 @@ fn contract_state_set_implementation_address<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let proxy_address = if let ProtocolAddressesState::Initialized {
-        proxy_address,
-        implementation_address: _,
-    } = host.state().protocol_addresses
-    {
-        proxy_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (proxy_address, _implementation_address) = get_protocol_addresses_state(host)?;
 
     // Only proxy can update the implementation address.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1062,15 +954,7 @@ fn contract_state_set_balance<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let implementation_address = if let ProtocolAddressesState::Initialized {
-        proxy_address: _,
-        implementation_address,
-    } = host.state().protocol_addresses
-    {
-        implementation_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -1104,15 +988,7 @@ fn contract_state_set_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let implementation_address = if let ProtocolAddressesState::Initialized {
-        proxy_address: _,
-        implementation_address,
-    } = host.state().protocol_addresses
-    {
-        implementation_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -1215,10 +1091,15 @@ fn contract_state_get_operator<S: HasStateApi>(
 /// additional logic to deal with sending the CCD to the receiver address.
 #[receive(contract = "CIS2-wCCD", name = "receiveCCD", payable)]
 fn contract_implementation_recieve_ccd<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<StateImplementation, StateApiType = S>,
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+    let (proxy_address, _state_address) = get_protocol_addresses_implementation(host)?;
+
+    // Only proxy can send ccds to implementation.
+    only_proxy(proxy_address, ctx.sender())?;
+
     Ok(())
 }
 
@@ -1226,10 +1107,13 @@ fn contract_implementation_recieve_ccd<S: HasStateApi>(
 /// proxy contract.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", payable)]
 fn contract_proxy_recieve_ccd<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<StateProxy, StateApiType = S>,
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<StateProxy, StateApiType = S>,
     _amount: Amount,
 ) -> ContractResult<()> {
+    // Only implementation can send ccds to proxy.
+    only_implementation(host.state().implementation_address, ctx.sender())?;
+
     Ok(())
 }
 
@@ -1319,15 +1203,7 @@ fn contract_state_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ReturnBasicState> {
-    let (proxy_address, implementation_address) = if let ProtocolAddressesState::Initialized {
-        proxy_address,
-        implementation_address,
-    } = host.state().protocol_addresses
-    {
-        (proxy_address, implementation_address)
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
 
     let state = ReturnBasicState {
         proxy_address,
@@ -1355,14 +1231,44 @@ fn contract_proxy_view<'a, 'b, S: HasStateApi>(
     Ok(host.state())
 }
 
+/// Helper function to get protocol addresses from the implementation contract.
+fn get_protocol_addresses_implementation<S>(
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<(ContractAddress, ContractAddress)> {
+    if let ProtocolAddressesImplementation::Initialized {
+        proxy_address,
+        state_address,
+    } = host.state().protocol_addresses
+    {
+        Ok((proxy_address, state_address))
+    } else {
+        bail!(concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized))
+    }
+}
+
+/// Helper function to get protocol addresses from the state contract.
+fn get_protocol_addresses_state<S>(
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<(ContractAddress, ContractAddress)> {
+    if let ProtocolAddressesState::Initialized {
+        proxy_address,
+        implementation_address,
+    } = host.state().protocol_addresses
+    {
+        Ok((proxy_address, implementation_address))
+    } else {
+        bail!(concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
+    }
+}
+
 /// Helper function to ensure contract is not paused.
 fn when_not_paused<S>(
     state_address: &ContractAddress,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let paused = host.invoke_contract_raw_read_only(
+    let paused = host.invoke_contract_read_only(
         state_address,
-        Parameter(&[]),
+        &Parameter(&[]),
         EntrypointName::new_unchecked("getPaused"),
         Amount::zero(),
     )?;
@@ -1386,15 +1292,7 @@ fn contract_wrap<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        (proxy_address, state_address)
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1421,10 +1319,8 @@ fn contract_wrap<S: HasStateApi>(
         amount,
     )?;
 
-    let owner = receive_address;
-
     let set_balance_params = SetBalanceParams {
-        owner,
+        owner:  receive_address,
         amount: amount.micro_ccd.into(),
         update: Update::Add,
     };
@@ -1448,7 +1344,7 @@ fn contract_wrap<S: HasStateApi>(
     host.invoke_contract_raw(
         &proxy_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("logMintEvent"),
+        EntrypointName::new_unchecked("logEvent"),
         Amount::zero(),
     )?;
 
@@ -1466,7 +1362,7 @@ fn contract_wrap<S: HasStateApi>(
         host.invoke_contract_raw(
             &proxy_address,
             Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("logTransferEvent"),
+            EntrypointName::new_unchecked("logEvent"),
             Amount::zero(),
         )?;
 
@@ -1496,15 +1392,7 @@ fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        (proxy_address, state_address)
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1590,7 +1478,7 @@ fn contract_unwrap<S: HasStateApi>(
     host.invoke_contract_raw(
         &proxy_address,
         Parameter(&parameter_bytes),
-        EntrypointName::new_unchecked("logBurnEvent"),
+        EntrypointName::new_unchecked("logEvent"),
         Amount::zero(),
     )?;
 
@@ -1620,15 +1508,7 @@ fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        (proxy_address, state_address)
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1663,20 +1543,33 @@ fn contract_transfer<S: HasStateApi>(
         );
         let to_address = to.address();
 
-        if amount == 0u64.into() {
-            return Ok(());
-        }
+        if amount != 0u64.into() {
+            // Update the state.
 
-        // Update the state.
+            let token_balance = host.state().balance(&state_address, &token_id, &from, host)?;
 
-        let token_balance = host.state().balance(&state_address, &token_id, &from, host)?;
+            ensure!(token_balance >= amount, ContractError::InsufficientFunds);
+            {
+                let set_balance_params = SetBalanceParams {
+                    owner: from,
+                    amount,
+                    update: Update::Remove,
+                };
 
-        ensure!(token_balance >= amount, ContractError::InsufficientFunds);
-        {
+                let parameter_bytes = to_bytes(&set_balance_params);
+
+                host.invoke_contract_raw(
+                    &state_address,
+                    Parameter(&parameter_bytes),
+                    EntrypointName::new_unchecked("setBalance"),
+                    Amount::zero(),
+                )?;
+            }
+
             let set_balance_params = SetBalanceParams {
-                owner: from,
+                owner: to_address,
                 amount,
-                update: Update::Remove,
+                update: Update::Add,
             };
 
             let parameter_bytes = to_bytes(&set_balance_params);
@@ -1688,21 +1581,6 @@ fn contract_transfer<S: HasStateApi>(
                 Amount::zero(),
             )?;
         }
-
-        let set_balance_params = SetBalanceParams {
-            owner: to_address,
-            amount,
-            update: Update::Add,
-        };
-
-        let parameter_bytes = to_bytes(&set_balance_params);
-
-        host.invoke_contract_raw(
-            &state_address,
-            Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("setBalance"),
-            Amount::zero(),
-        )?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
@@ -1730,7 +1608,7 @@ fn contract_transfer<S: HasStateApi>(
         host.invoke_contract_raw(
             &proxy_address,
             Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("logTransferEvent"),
+            EntrypointName::new_unchecked("logEvent"),
             Amount::zero(),
         )?;
     }
@@ -1748,15 +1626,7 @@ fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        (proxy_address, state_address)
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1820,7 +1690,7 @@ fn contract_update_operator<S: HasStateApi>(
         host.invoke_contract_raw(
             &proxy_address,
             Parameter(&parameter_bytes),
-            EntrypointName::new_unchecked("logUpdateOperatorEvent"),
+            EntrypointName::new_unchecked("logEvent"),
             Amount::zero(),
         )?;
     }
@@ -1897,15 +1767,7 @@ fn contract_set_implementor<S: HasStateApi>(
 
     let parameter_bytes = to_bytes(&params);
 
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Update the implementors in the state
     host.invoke_contract_raw(
@@ -1978,15 +1840,7 @@ fn contract_pause<S: HasStateApi>(
         paused: true,
     });
 
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -2011,15 +1865,7 @@ fn contract_un_pause<S: HasStateApi>(
         paused: false,
     });
 
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -2055,15 +1901,7 @@ fn contract_balance_of<S: HasStateApi>(
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
 
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2094,15 +1932,7 @@ fn contract_operator_of<S: HasStateApi>(
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
 
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2136,15 +1966,7 @@ fn contract_supports<S: HasStateApi>(
     // Parse the parameter.
     let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
 
-    let state_address = if let ProtocolAddressesImplementation::Initialized {
-        proxy_address: _,
-        state_address,
-    } = host.state().protocol_addresses
-    {
-        state_address
-    } else {
-        panic!("{:?}", concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
-    };
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2525,7 +2347,7 @@ mod tests {
         // Set up a mock invocation for the proxy contract.
         host.setup_mock_entrypoint(
             PROXY,
-            OwnedEntrypointName::new_unchecked("logTransferEvent".into()),
+            OwnedEntrypointName::new_unchecked("logEvent".into()),
             MockFn::returning_ok(()),
         );
 
@@ -2718,15 +2540,8 @@ mod tests {
         // Set up a mock invocation for the proxy contract.
         host.setup_mock_entrypoint(
             PROXY,
-            OwnedEntrypointName::new_unchecked("logUpdateOperatorEvent".into()),
+            OwnedEntrypointName::new_unchecked("logEvent".into()),
             MockFn::returning_ok(true),
-        );
-
-        // Set up a mock invocation for the proxy contract.
-        host.setup_mock_entrypoint(
-            PROXY,
-            OwnedEntrypointName::new_unchecked("logTransferEvent".into()),
-            MockFn::returning_ok(()),
         );
 
         // Setup parameter.
@@ -2855,7 +2670,7 @@ mod tests {
         // Set up a mock invocation for the proxy contract.
         host.setup_mock_entrypoint(
             PROXY,
-            OwnedEntrypointName::new_unchecked("logUpdateOperatorEvent".into()),
+            OwnedEntrypointName::new_unchecked("logEvent".into()),
             MockFn::returning_ok(()),
         );
 
@@ -3155,14 +2970,7 @@ mod tests {
         // Set up a mock invocation for the proxy contract.
         host.setup_mock_entrypoint(
             PROXY,
-            OwnedEntrypointName::new_unchecked("logMintEvent".into()),
-            MockFn::returning_ok(()),
-        );
-
-        // Set up a mock invocation for the proxy contract.
-        host.setup_mock_entrypoint(
-            PROXY,
-            OwnedEntrypointName::new_unchecked("logBurnEvent".into()),
+            OwnedEntrypointName::new_unchecked("logEvent".into()),
             MockFn::returning_ok(()),
         );
 
@@ -3255,17 +3063,10 @@ mod tests {
             MockFn::returning_ok(()),
         );
 
-        // Set up a mock invocation for the state contract.
-        host.setup_mock_entrypoint(
-            PROXY,
-            OwnedEntrypointName::new_unchecked("logMintEvent".into()),
-            MockFn::returning_ok(()),
-        );
-
         // Set up a mock invocation for the proxy contract.
         host.setup_mock_entrypoint(
             PROXY,
-            OwnedEntrypointName::new_unchecked("logTransferEvent".into()),
+            OwnedEntrypointName::new_unchecked("logEvent".into()),
             MockFn::returning_ok(()),
         );
 
