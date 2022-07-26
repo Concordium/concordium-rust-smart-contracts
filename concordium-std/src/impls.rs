@@ -1,9 +1,7 @@
 use crate::{
     cell::UnsafeCell,
-    collections::{BTreeMap, BTreeSet},
     convert::{self, TryInto},
     fmt,
-    hash::Hash,
     marker::PhantomData,
     mem, num,
     num::NonZeroU32,
