@@ -60,6 +60,12 @@ const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
 
+/// Tag for the NewAdmin event.
+pub const TOKEN_NEW_ADMIN_EVENT_TAG: u8 = u8::MAX - 5;
+
+/// Tag for the NewImplementation event.
+pub const TOKEN_NEW_IMPLEMENTATION_EVENT_TAG: u8 = u8::MAX - 6;
+
 // Types
 
 /// Contract token ID type.
@@ -79,6 +85,29 @@ struct RawReturnValue(Vec<u8>);
 
 impl Serial for RawReturnValue {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.0) }
+}
+
+/// Tagged events to be serialized for the event log.
+pub enum WccdEvent {
+    /// A new admin event.
+    NewAdmin(NewAdminEvent),
+    /// A new implementation event.
+    NewImplementation(NewImplementationEvent),
+}
+
+impl Serial for WccdEvent {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            WccdEvent::NewAdmin(event) => {
+                out.write_u8(TOKEN_NEW_ADMIN_EVENT_TAG)?;
+                event.serial(out)
+            }
+            WccdEvent::NewImplementation(event) => {
+                out.write_u8(TOKEN_NEW_IMPLEMENTATION_EVENT_TAG)?;
+                event.serial(out)
+            }
+        }
+    }
 }
 
 type WrapParamsWithSender = ParamWithSender<WrapParams>;
@@ -214,58 +243,18 @@ struct StateProxy {
     state_address:          ContractAddress,
 }
 
-/// The mint event parameter type for the contract function `logEvent`.
-#[derive(Serialize)]
-struct MintEventParams {
-    /// The amount of tokens to be minted.
-    amount:  ContractTokenAmount,
-    // Address to receive the minted tokens.
-    address: Address,
-}
-
-/// The burn event parameter type for the contract function `logEvent`.
-#[derive(Serialize)]
-struct BurnEventParams {
-    /// The amount of tokens to be burned.
-    amount:  ContractTokenAmount,
-    // Address that the tokens be burned from.
-    address: Address,
-}
-
-/// The transfer parameter type for the contract function `logEvent`.
-#[derive(Serialize)]
-struct TransferEventParams {
-    /// The amount of tokens to be transferred.
-    amount: ContractTokenAmount,
-    /// Address that the tokens be transferred from.
-    from:   Address,
-    /// Address to receive the tokens.
-    to:     Address,
-}
-
-/// The update operator parameter type for the contract function `logEvent`.
-#[derive(Serialize)]
-struct UpdateOperatorEventParams {
-    /// The owner of the tokens.
-    owner:    Address,
-    /// The operator of the tokens.
-    operator: Address,
-    /// Add or remove an operator.
-    update:   OperatorUpdate,
-}
-
 /// NewAdminEvent.
 #[derive(Serial)]
-struct NewAdminEvent {
+pub struct NewAdminEvent {
     /// New admin address.
-    new_admin: Address,
+    pub new_admin: Address,
 }
 
 /// NewImplementationEvent.
 #[derive(Serial)]
-struct NewImplementationEvent {
+pub struct NewImplementationEvent {
     /// New implementation address.
-    new_implementation: ContractAddress,
+    pub new_implementation: ContractAddress,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -606,10 +595,10 @@ impl StateImplementation {
 }
 
 /// This function logs an event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logEvent", enable_logger, mutable)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logEvent", enable_logger)]
 fn contract_proxy_log_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+    host: &impl HasHost<StateProxy, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Only implementation can log event.
@@ -740,6 +729,7 @@ fn contract_initialize<S: HasStateApi>(
 /// contracts. This function logs a mint event with amount 0 to signal that a
 /// new CIS-2 token was deployed. This function logs an event including the
 /// metadata for this token. This function logs a new implementation event.
+/// This function logs a new admin event.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "initialize", enable_logger, mutable)]
 fn contract_proxy_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -793,9 +783,14 @@ fn contract_proxy_initialize<S: HasStateApi>(
     }))?;
 
     // Log a new implementation event.
-    logger.log(&NewImplementationEvent {
+    logger.log(&WccdEvent::NewImplementation(NewImplementationEvent {
         new_implementation: implementation_address,
-    })?;
+    }))?;
+
+    // Log a new admin event.
+    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
+        new_admin: host.state().admin,
+    }))?;
 
     Ok(())
 }
@@ -1336,10 +1331,11 @@ fn contract_wrap<S: HasStateApi>(
     )?;
 
     // Log the newly minted tokens.
-    let parameter_bytes = to_bytes(&MintEventParams {
-        amount:  ContractTokenAmount::from(amount.micro_ccd),
-        address: sender,
-    });
+    let parameter_bytes = to_bytes(&Cis2Event::Mint(MintEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   ContractTokenAmount::from(amount.micro_ccd),
+        owner:    sender,
+    }));
 
     host.invoke_contract_raw(
         &proxy_address,
@@ -1353,11 +1349,12 @@ fn contract_wrap<S: HasStateApi>(
     // and the receiver is a contract.
     if sender != receive_address {
         // Log the transfer event.
-        let parameter_bytes = to_bytes(&TransferEventParams {
-            amount: ContractTokenAmount::from(amount.micro_ccd),
-            from:   sender,
-            to:     receive_address,
-        });
+        let parameter_bytes = to_bytes(&Cis2Event::Transfer(TransferEvent {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(amount.micro_ccd),
+            from:     sender,
+            to:       receive_address,
+        }));
 
         host.invoke_contract_raw(
             &proxy_address,
@@ -1470,10 +1467,11 @@ fn contract_unwrap<S: HasStateApi>(
     }
 
     // Log the burn event.
-    let parameter_bytes = to_bytes(&BurnEventParams {
-        amount:  input.params.amount,
-        address: input.params.owner,
-    });
+    let parameter_bytes = to_bytes(&Cis2Event::Burn(BurnEvent {
+        token_id: TOKEN_ID_WCCD,
+        amount:   input.params.amount,
+        owner:    input.params.owner,
+    }));
 
     host.invoke_contract_raw(
         &proxy_address,
@@ -1598,12 +1596,13 @@ fn contract_transfer<S: HasStateApi>(
             )?;
         }
 
-        // Log transfer event.
-        let parameter_bytes = to_bytes(&TransferEventParams {
+        // Log the transfer event.
+        let parameter_bytes = to_bytes(&Cis2Event::Transfer(TransferEvent {
+            token_id: TOKEN_ID_WCCD,
             amount,
             from,
             to: to_address,
-        });
+        }));
 
         host.invoke_contract_raw(
             &proxy_address,
@@ -1681,11 +1680,14 @@ fn contract_update_operator<S: HasStateApi>(
         };
 
         // Log the update operator event.
-        let parameter_bytes = to_bytes(&UpdateOperatorEventParams {
-            owner:    sender,
-            operator: param.operator,
-            update:   param.update,
-        });
+        let parameter_bytes =
+            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner:    sender,
+                    operator: param.operator,
+                    update:   param.update,
+                },
+            ));
 
         host.invoke_contract_raw(
             &proxy_address,
@@ -1714,9 +1716,9 @@ fn contract_implementation_update_admin<S: HasStateApi>(
     host.state_mut().admin = new_admin;
 
     // Log a new admin event.
-    logger.log(&NewAdminEvent {
+    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
         new_admin,
-    })?;
+    }))?;
 
     Ok(())
 }
@@ -1737,9 +1739,9 @@ fn contract_proxy_update_admin<S: HasStateApi>(
     host.state_mut().admin = new_admin;
 
     // Log a new admin event.
-    logger.log(&NewAdminEvent {
+    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
         new_admin,
-    })?;
+    }))?;
 
     Ok(())
 }
@@ -1819,9 +1821,9 @@ fn contract_proxy_update_implementation<S: HasStateApi>(
     )?;
 
     // Log a new implementation event.
-    logger.log(&NewImplementationEvent {
+    logger.log(&WccdEvent::NewImplementation(NewImplementationEvent {
         new_implementation: params.implementation_address,
-    })?;
+    }))?;
 
     Ok(())
 }
@@ -2117,7 +2119,7 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
 
         // Check the logs
-        claim_eq!(logger.logs.len(), 3, "Exactly three events should be logged");
+        claim_eq!(logger.logs.len(), 4, "Exactly four events should be logged");
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
                 owner:    ADMIN_ADDRESS,
@@ -2139,10 +2141,18 @@ mod tests {
             "Missing event with metadata for the token"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&NewImplementationEvent {
-                new_implementation: IMPLEMENTATION,
-            })),
+            logger.logs.contains(&to_bytes(&WccdEvent::NewImplementation(
+                NewImplementationEvent {
+                    new_implementation: IMPLEMENTATION,
+                }
+            ))),
             "Missing event for the new implementation"
+        );
+        claim!(
+            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin(NewAdminEvent {
+                new_admin: ADMIN_ADDRESS,
+            }))),
+            "Missing event for the new admin"
         );
     }
 
