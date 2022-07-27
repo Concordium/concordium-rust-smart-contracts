@@ -604,8 +604,11 @@ fn contract_proxy_log_event<S: HasStateApi>(
     // Only implementation can log event.
     only_implementation(host.state().implementation_address, ctx.sender())?;
 
+    let mut parameter_buffer = vec![0; ctx.parameter_cursor().size() as usize];
+    ctx.parameter_cursor().read_exact(&mut parameter_buffer)?;
+
     // Log event.
-    logger.log(&ctx.parameter_cursor().get()?)?;
+    logger.log(&parameter_buffer)?;
 
     Ok(())
 }
