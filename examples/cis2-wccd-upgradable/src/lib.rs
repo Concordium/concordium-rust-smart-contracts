@@ -608,7 +608,7 @@ fn contract_proxy_log_event<S: HasStateApi>(
     ctx.parameter_cursor().read_exact(&mut parameter_buffer)?;
 
     // Log event.
-    logger.log(&parameter_buffer)?;
+    logger.log(&RawReturnValue(parameter_buffer))?;
 
     Ok(())
 }
@@ -1705,7 +1705,13 @@ fn contract_update_operator<S: HasStateApi>(
 
 /// This functions allows the admin of the implementation to transfer the
 /// address to a new admin.
-#[receive(contract = "CIS2-wCCD", name = "updateAdmin", enable_logger, mutable)]
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "updateAdmin",
+    parameter = "Address",
+    enable_logger,
+    mutable
+)]
 fn contract_implementation_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1728,7 +1734,13 @@ fn contract_implementation_update_admin<S: HasStateApi>(
 
 /// This functions allows the admin of the proxy to transfer the address to a
 /// new admin.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "updateAdmin", enable_logger, mutable)]
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    name = "updateAdmin",
+    parameter = "Address",
+    enable_logger,
+    mutable
+)]
 fn contract_proxy_update_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -3520,6 +3532,6 @@ mod tests {
         let result = receive_fallback(&ctx, &mut host, Amount::zero());
 
         // Assert
-        claim_eq!(result, Ok(RawReturnValue(b"hello, world!".to_vec())))
+        claim_eq!(result, Ok(RawReturnValue(b"hello, world!".to_vec())));
     }
 }
