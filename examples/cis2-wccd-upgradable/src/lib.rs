@@ -359,20 +359,17 @@ struct SetImplementationAddressParams {
     implementation_address: ContractAddress,
 }
 
-/// The parameter type for the proxy contract function `transferCCD`.
+/// The parameter type for the contract functions `transferCCD`.
 #[derive(Serialize, SchemaType)]
 struct TransferCCDParams {
-    /// Amount of CCD to transfer to implementation.
-    amount: ContractTokenAmount,
-}
-
-/// The parameter type for the implementation contract function `transferCCD`.
-#[derive(Serialize, SchemaType)]
-struct TransferCCDImplementationParams {
     /// Amount of CCD to transfer.
     amount:  ContractTokenAmount,
-    /// Account that receives the CCD.
-    account: AccountAddress,
+    /// Address that receives the CCD.
+    address: Receiver,
+    /// If the `Receiver` is a contract the unwrapped CCD together with these
+    /// additional data bytes are sent to the function entrypoint specified in
+    /// the `Receiver`.
+    data:    AdditionalData,
 }
 
 /// The parameter type for the contract function `setImplementors`.
@@ -1119,24 +1116,6 @@ fn contract_state_get_operator<S: HasStateApi>(
         .map_or(false, |address_state| address_state.operators.contains(&params.address)))
 }
 
-/// Function to receive CCD on the implementation. All CCDs are held by the
-/// proxy contract. Nonetheless, during the `unwrap` function the proxy should
-/// send some CCD amount back to the implementation which then goes through
-/// additional logic to deal with sending the CCD to the receiver address.
-#[receive(contract = "CIS2-wCCD", name = "receiveCCD", payable)]
-fn contract_implementation_recieve_ccd<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateImplementation, StateApiType = S>,
-    _amount: Amount,
-) -> ContractResult<()> {
-    let (proxy_address, _state_address) = get_protocol_addresses_implementation(host)?;
-
-    // Only proxy can send ccds to implementation.
-    only_proxy(proxy_address, ctx.sender())?;
-
-    Ok(())
-}
-
 /// Function to receive CCD on the proxy. All CCDs are held by the
 /// proxy contract.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", payable)]
@@ -1151,7 +1130,7 @@ fn contract_proxy_recieve_ccd<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to access the CCD on the proxy. Only the implementation can access
+/// Function to access the CCDs on the proxy. Only the implementation can access
 /// the funds.
 #[receive(
     contract = "CIS2-wCCD-Proxy",
@@ -1163,33 +1142,31 @@ fn contract_proxy_transfer_ccd<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
 ) -> ContractResult<()> {
-    // Only implementation can access ccds on proxy.
+    // Only implementation can access CCDs on proxy.
     only_implementation(host.state().implementation_address, ctx.sender())?;
 
     let params: TransferCCDParams = ctx.parameter_cursor().get()?;
 
-    // Funds are sent to the implementation which then further sends them
-    // in the `unwrap` function to the receiver.
-    let implementation = host.state().implementation_address;
-    host.invoke_contract_raw(
-        &implementation,
-        Parameter(&[]),
-        EntrypointName::new_unchecked("receiveCCD"),
-        Amount::from_micro_ccd(params.amount.into()),
-    )?;
+    let amount = Amount::from_micro_ccd(params.amount.into());
+
+    // Send CCDs to receiver.
+    match params.address {
+        Receiver::Account(address) => host.invoke_transfer(&address, amount)?,
+        Receiver::Contract(address, function) => {
+            host.invoke_contract(&address, &params.data, function.as_entrypoint_name(), amount)?;
+        }
+    }
 
     Ok(())
 }
 
-/// This function is meant for recovering CCD tokens in the future by the admin.
-/// In case some CCD tokens are accidentally sent to the `implementation`
-/// contract the admin can access the CCD via this function if necessary.
-#[receive(
-    contract = "CIS2-wCCD",
-    parameter = "TransferCCDImplementationParams",
-    name = "transferCCD",
-    mutable
-)]
+/// This function is meant for recovering CCD tokens by the admin
+/// in case they accidentally end up on the implementation.
+/// Every smart contract instance with a payable function should have
+/// some mechanism to recover funds as a good smart contract coding practice.
+/// Nonetheless, it is not expected that any CCD tokens can end up
+/// on the implementation since the `wrap` function forwards them to the proxy.
+#[receive(contract = "CIS2-wCCD", parameter = "TransferCCDParams", name = "transferCCD", mutable)]
 fn contract_implementation_transfer_ccd<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1197,9 +1174,16 @@ fn contract_implementation_transfer_ccd<S: HasStateApi>(
     // Check that only the admin is authorized.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
-    let params: TransferCCDImplementationParams = ctx.parameter_cursor().get()?;
+    let params: TransferCCDParams = ctx.parameter_cursor().get()?;
 
-    host.invoke_transfer(&params.account, Amount::from_micro_ccd(params.amount.into()))?;
+    let amount = Amount::from_micro_ccd(params.amount.into());
+
+    match params.address {
+        Receiver::Account(address) => host.invoke_transfer(&address, amount)?,
+        Receiver::Contract(address, function) => {
+            host.invoke_contract(&address, &params.data, function.as_entrypoint_name(), amount)?;
+        }
+    }
 
     Ok(())
 }
@@ -1476,34 +1460,21 @@ fn contract_unwrap<S: HasStateApi>(
         Amount::zero(),
     )?;
 
-    let params2: TransferCCDParams = TransferCCDParams {
-        amount: input.params.amount,
+    let params_transfer_ccd: TransferCCDParams = TransferCCDParams {
+        amount:  input.params.amount,
+        address: input.params.receiver,
+        data:    input.params.data,
     };
 
-    let parameter_bytes = to_bytes(&params2);
+    let parameter_bytes = to_bytes(&params_transfer_ccd);
 
-    // Access/Request CCD funds from proxy.
+    // Transfer CCD funds from proxy to the receiver address.
     host.invoke_contract_raw(
         &proxy_address,
         Parameter(&parameter_bytes),
         EntrypointName::new_unchecked("transferCCD"),
         Amount::zero(),
     )?;
-
-    let unwrapped_amount = Amount::from_micro_ccd(input.params.amount.into());
-
-    // Send CCD to receiver.
-    match input.params.receiver {
-        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
-        Receiver::Contract(address, function) => {
-            host.invoke_contract(
-                &address,
-                &input.params.data,
-                function.as_entrypoint_name(),
-                unwrapped_amount,
-            )?;
-        }
-    }
 
     // Log the burn event.
     let parameter_bytes = to_bytes(&Cis2Event::Burn(BurnEvent {
