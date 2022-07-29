@@ -28,13 +28,49 @@
 //! The protocol consists of three smart contracts (`proxy`, `implementation`,
 //! and `state`). All state-mutative wccd functions (e.g. `wrap`, `unwrap`,
 //! `transfer`, and `updateOperator`) have be invoked on the `proxy` contract.
-//! All non-state-mutative wccd functions (e.g. `balanceOf`, `operatorOf`
-//! and `tokenMetadata`) should be queried on the implementation.
-//! The `proxy` will append the `current_sender` to the input parameters
+//! The `proxy` will append the `sender` to the input parameters
 //! so that the `implementation` can retrieve this information.
 //! Invoking the state-mutative wccd functions directly on the`implementation`
 //! without going through the `proxy` fallback function will revert.
-
+//! All non-state-mutative wccd functions (e.g. `balanceOf`, `operatorOf`
+//! and `tokenMetadata`) can be queried on the proxy or the implementation.
+//!
+//! If you want to create a schema to invoke a state-mutative wccd function
+//! through the fallback function, add the respective `parameters` as attributes
+//! to the fallback function. For example, add `WrapParams`, `UnParams`,
+//! `TransferParameter`, or `UpdateOperatorParams` as parameter to the
+//! fallback function to create a schema for the `wrap`, `unwrap`,
+//! `transfer`, and `updateOperator` function, respectively.
+//!
+//! Example using `WrapParams` to create a schema to invoke the
+//! `wrap` function via the fallback function on the proxy:
+//!
+//! #[receive(contract = "CIS2-wCCD-Proxy", fallback, parameter = "WrapParams",
+//! mutable, payable)] fn receive_fallback<S: HasStateApi>( ... ) { ... }
+//!
+//! If you want to create a schema to invoke a non-state-mutative wccd function
+//! through the fallback function, add the respective `parameters` and
+//! `return_values` as attributes to the fallback function.
+//!
+//! Example using `OperatorOfQueryParams` and `OperatorOfQueryResponse` to
+//! create a schema to invoke the `operatorOf` function via the fallback
+//! function:
+//!
+//! #[receive(contract = "CIS2-wCCD-Proxy", fallback, parameter =
+//! "OperatorOfQueryParams", return_value = "OperatorOfQueryResponse", mutable,
+//! payable)] fn receive_fallback<S: HasStateApi>( ... ) { ... }
+//!
+//! State-mutative wccd functions need to retrieve the `sender` that was
+//! appended by the fallback function. These functions use the parameter
+//! type `ParamWithSender<T>` on the implementation. This type masks the
+//! `sender` to any generic input parameter `T`.
+//! Non-state-mutative wccd function don't need to retrieve the `sender`
+//! and even so the sender was appended by the fallback function they can
+//! use their usual input parameter. The last few bytes representing the
+//! `sender` are just ignored. E.g. the `operatorOf` function uses
+//! `OperatorOfQueryParams` and not `ParamWithSender<OperatorOfQueryParams>`
+//! on the implementation.
+//!
 //! The admin address on the `proxy` can upgrade the protocol with
 //! a new `implementation` contract. The admin address on the
 //! `implementation` can pause/unpause the protocol and set implementors.
