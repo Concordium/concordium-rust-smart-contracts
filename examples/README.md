@@ -22,3 +22,11 @@ The list of contracts is as follows
   containing NFTs.
 - [cis2-wccd](./cis2-wccd) An example implementation of the CIS-2 Concordium Token Standard
   containing a single fungible token which is a wrapped CCD.
+- [cis2-wccd-upgradable](./cis2-wccd-upgradable) An upgradable example implementation of the CIS-2 Concordium Token Standard
+  containing a single fungible token which is a wrapped CCD.
+- [counter-notify](./counter-notify) A contract that works as a counter and can invoke another contract with the current counter value.
+- [fib](./fib) A contract that calculates and stores the nth Fibonacci number by recursively calling itself.
+- [icecream](./icecream) A contract for buying ice cream only when it is sunny. A weather service oracle smart contract is used.
+- [proxy](./proxy) A proxy contract that can be put in front of another contract. It works with V0 as well as V1 smart contracts.
+- [recorder](./recorder) A contract that records account addresses, and has an entry point to invoke transfers to all those addresses.
+- [signature-verifier](./signature-verifier) An example of how to use `crypto_primitives`. The contract verifies an Ed25519 signature.
