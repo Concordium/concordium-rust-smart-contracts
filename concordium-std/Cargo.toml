@@ -26,7 +26,6 @@ version = "3.0"
 path = "../concordium-contracts-common/concordium-contracts-common"
 version = "3.0"
 default-features = false
-features = ["derive"]
 
 [features]
 default = ["std"]
