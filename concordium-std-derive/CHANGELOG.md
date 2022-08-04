@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std-derive 3.1.0 (2022-08-04)
+
 - Removed `derive(Serial)` and `derive(Deserial)` (moved to `concordium-contracts-common-derive`).
 
 ## concordium-std-derive 3.0.0 (2022-05-17)
