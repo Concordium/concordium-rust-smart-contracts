@@ -109,14 +109,16 @@ fn auction_bid<S: HasStateApi>(
     host: &mut impl HasHost<State, StateApiType = S>,
     amount: Amount,
 ) -> Result<(), BidError> {
-    let balance = host.self_balance();
-    let state = host.state_mut();
     // Ensure the auction has not been finalized yet
-    ensure_eq!(state.auction_state, AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
+    ensure_eq!(
+        host.state_mut().auction_state,
+        AuctionState::NotSoldYet,
+        BidError::AuctionAlreadyFinalized
+    );
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
-    ensure!(slot_time <= state.end, BidError::BidTooLate);
+    ensure!(slot_time <= host.state_mut().end, BidError::BidTooLate);
 
     // Ensure that only accounts can place a bid
     let sender_address = match ctx.sender() {
@@ -124,10 +126,16 @@ fn auction_bid<S: HasStateApi>(
         Address::Account(account_address) => account_address,
     };
 
-    // Ensure that the new bid exceeds the highest bid so far
-    ensure!(amount > balance - amount, BidError::BidTooLow);
+    // Balance of the contract
+    let balance = host.self_balance();
 
-    if let Some(account_address) = state.highest_bidder.replace(sender_address) {
+    // Balance of the contract before the call
+    let previous_balance = balance - amount;
+
+    // Ensure that the new bid exceeds the highest bid so far
+    ensure!(amount > previous_balance, BidError::BidTooLow);
+
+    if let Some(account_address) = host.state_mut().highest_bidder.replace(sender_address) {
         // Refunding old highest bidder;
         // This transfer (given enough NRG of course) always succeeds because the
         // `account_address` exists since it was recorded when it placed a bid.
@@ -136,7 +144,7 @@ fn auction_bid<S: HasStateApi>(
         // Please consider using a pull-over-push pattern when expanding this smart
         // contract to allow smart contract instances to participate in the auction as
         // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        host.invoke_transfer(&account_address, balance - amount).unwrap_abort();
+        host.invoke_transfer(&account_address, previous_balance).unwrap_abort();
     }
     Ok(())
 }
