@@ -125,7 +125,7 @@ fn auction_bid<S: HasStateApi>(
     };
 
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(amount > balance, BidError::BidTooLow);
+    ensure!(amount > balance - amount, BidError::BidTooLow);
 
     if let Some(account_address) = state.highest_bidder.replace(sender_address) {
         // Refunding old highest bidder;
@@ -136,7 +136,7 @@ fn auction_bid<S: HasStateApi>(
         // Please consider using a pull-over-push pattern when expanding this smart
         // contract to allow smart contract instances to participate in the auction as
         // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        host.invoke_transfer(&account_address, balance).unwrap_abort();
+        host.invoke_transfer(&account_address, balance - amount).unwrap_abort();
     }
     Ok(())
 }
@@ -148,6 +148,15 @@ fn view<'a, 'b, S: HasStateApi>(
     host: &'b impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<&'b State> {
     Ok(host.state())
+}
+
+/// ViewBalance function that returns the balance of the contract
+#[receive(contract = "auction", name = "viewBalance", return_value = "Amount")]
+fn view_balance<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State, StateApiType = S>,
+) -> ReceiveResult<Amount> {
+    Ok(host.self_balance())
 }
 
 /// Receive function used to finalize the auction. It sends the highest bid (the
@@ -244,6 +253,24 @@ mod tests {
         ctx
     }
 
+    fn bid(
+        host: &mut TestHost<State>,
+        ctx: &TestContext<TestReceiveOnlyData>,
+        amount: Amount,
+        current_smart_contract_balance: Amount,
+    ) {
+        // Setting the contract balance.
+        // This should be the sum of the contract’s initial balance and
+        // the amount you wish to invoke it with when using the TestHost.
+        // https://docs.rs/concordium-std/latest/concordium_std/test_infrastructure/struct.TestHost.html#method.set_self_balance
+        // This is because the `self_balance` function on-chain behaves as follows:
+        // https://docs.rs/concordium-std/latest/concordium_std/trait.HasHost.html#tymethod.self_balance
+        host.set_self_balance(amount + current_smart_contract_balance);
+
+        // Invoking the bid function.
+        auction_bid(ctx, host, amount).expect_report("Bidding should pass.");
+    }
+
     #[concordium_test]
     /// Test that the smart-contract initialization sets the state correctly
     /// (no bids, active state, indicated auction-end time and item name).
@@ -287,17 +314,20 @@ mod tests {
         let mut host = TestHost::new(initial_state, state_builder);
 
         // 1st bid: Alice bids `amount`.
+        // The current_smart_contract_balance before the invoke is 0.
         let (alice, alice_ctx) = new_account_ctx();
-        verify_bid(&mut host, &alice_ctx, amount);
+        bid(&mut host, &alice_ctx, amount, Amount::from_micro_ccd(0));
 
         // 2nd bid: Alice bids `amount + amount`.
         // Alice gets her initial bid refunded.
-        verify_bid(&mut host, &alice_ctx, amount + amount);
+        // The current_smart_contract_balance before the invoke is amount.
+        bid(&mut host, &alice_ctx, amount + amount, amount);
 
         // 3rd bid: Bob bids `winning_amount`.
         // Alice gets refunded.
+        // The current_smart_contract_balance before the invoke is amount + amount.
         let (bob, bob_ctx) = new_account_ctx();
-        verify_bid(&mut host, &bob_ctx, winning_amount);
+        bid(&mut host, &bob_ctx, winning_amount, amount + amount);
 
         // Trying to finalize auction that is still active
         // (specifically, the tx is submitted at the last moment,
@@ -354,15 +384,6 @@ mod tests {
         );
     }
 
-    fn verify_bid(
-        host: &mut TestHost<State>,
-        ctx: &TestContext<TestReceiveOnlyData>,
-        amount: Amount,
-    ) {
-        auction_bid(ctx, host, amount).expect_report("Bidding should pass.");
-        host.set_self_balance(amount);
-    }
-
     #[concordium_test]
     /// Bids for amounts lower or equal to the highest bid should be rejected.
     fn test_auction_bid_repeated_bid() {
@@ -383,7 +404,18 @@ mod tests {
         let mut host = TestHost::new(initial_state, state_builder);
 
         // 1st bid: Account1 bids `amount`.
-        verify_bid(&mut host, &ctx1, amount);
+        // The current_smart_contract_balance before the invoke is 0.
+        bid(&mut host, &ctx1, amount, Amount::from_micro_ccd(0));
+
+        // Setting the contract balance.
+        // This should be the sum of the contract’s initial balance and
+        // the amount you wish to invoke it with when using the TestHost.
+        // The current_smart_contract_balance before the invoke is `amount`.
+        // The balance we wish to invoke the next function with is `amount` as well.
+        // https://docs.rs/concordium-std/latest/concordium_std/test_infrastructure/struct.TestHost.html#method.set_self_balance
+        // This is because the `self_balance` function on-chain behaves as follows:
+        // https://docs.rs/concordium-std/latest/concordium_std/trait.HasHost.html#tymethod.self_balance
+        host.set_self_balance(amount + amount);
 
         // 2nd bid: Account2 bids `amount` (should fail
         // because amount is equal to highest bid).
