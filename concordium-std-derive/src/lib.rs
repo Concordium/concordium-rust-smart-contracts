@@ -1909,8 +1909,9 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 ///
 /// For variants with fields, all fields are serialized into the buffer used in
 /// the return value, which is always [`Some`][std::option::Option::Some].
-/// For fieldless variants, the return value is always
-/// [`None`][std::option::Option::None].
+/// The contents of the buffer are returned by the contract along with the error
+/// code. For fieldless variants, the return value is always
+/// [`None`][std::option::Option::None] and only the error code is returned.
 ///
 /// The conversion will map the first variant to error code -1, second to -2,
 /// etc.
@@ -1980,8 +1981,8 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 /// Generate the cases for matching on the enum. For variants with fields, all
-/// fields are serialized into a buffer that is include in the return value. For
-/// fieldless variants, the return value is always `None`.
+/// fields are serialized into a buffer that is included in the return value.
+/// For fieldless variants, the return value is always `None`.
 fn generate_variant_matches(
     enum_data: &DataEnum,
     enum_name: &syn::Ident,
@@ -1997,7 +1998,9 @@ fn generate_variant_matches(
 
                 let mut serial_fields = proc_macro2::TokenStream::new();
                 for n in field_names {
-                    serial_fields.extend(quote!(#n.serial(&mut buf);));
+                    serial_fields.extend(
+                        quote!(concordium_std::Serial::serial(&#n, &mut buf).unwrap_abort();),
+                    );
                 }
 
                 match_cases.extend(quote! {
@@ -2022,7 +2025,9 @@ fn generate_variant_matches(
 
                 let mut serial_fields = proc_macro2::TokenStream::new();
                 for n in field_names {
-                    serial_fields.extend(quote!(#n.serial(&mut buf);));
+                    serial_fields.extend(
+                        quote!(concordium_std::Serial::serial(&#n, &mut buf).unwrap_abort();),
+                    );
                 }
 
                 match_cases.extend(quote! {
