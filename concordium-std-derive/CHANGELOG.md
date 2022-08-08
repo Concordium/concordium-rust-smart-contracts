@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased changes
+
+- Removed `derive(Serial)` and `derive(Deserial)` (moved to `concordium-contracts-common-derive`).
 - Add ability to `derive(Reject)` for enums *with fields*, where all fields
   implement the `Serial` trait.
 
