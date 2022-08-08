@@ -158,9 +158,10 @@ fn view<'a, 'b, S: HasStateApi>(
     Ok(host.state())
 }
 
-/// ViewBalance function that returns the balance of the contract
-#[receive(contract = "auction", name = "viewBalance", return_value = "Amount")]
-fn view_balance<S: HasStateApi>(
+/// ViewHighestBid function that returns the highest bid which is the balance of
+/// the contract
+#[receive(contract = "auction", name = "viewHighestBid", return_value = "Amount")]
+fn view_highest_bid<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<Amount> {
