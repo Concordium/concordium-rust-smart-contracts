@@ -1559,10 +1559,15 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// For variants with fields, all fields are serialized into the buffer used in
+/// For enums where at least one variant has a field, the enum *must* implement
+/// [`Serial`](../concordium_contracts_common/trait.Serial.html) if [`Reject`]
+/// is to be derived.
+///
+/// For variants with fields, the enum is serialized into the buffer used in
 /// the return value, which is always [`Some`][std::option::Option::Some].
 /// The contents of the buffer are returned by the contract along with the error
-/// code. For fieldless variants, the return value is always
+/// code.
+/// For fieldless variants the return value is always
 /// [`None`][std::option::Option::None] and only the error code is returned.
 ///
 /// The conversion will map the first variant to error code -1, second to -2,
@@ -1570,11 +1575,11 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 ///
 /// ### Example
 /// ```ignore
-/// #[derive(Clone, Copy, Reject)]
+/// #[derive(Reject, Serial)]
 /// enum MyError {
 ///     IllegalState, // receives error code -1
 ///     WrongSender, // receives error code -2
-///     TimeExpired(time: Timestamp), // receives error code -3 (all fields must implement `Serial`)
+///     TimeExpired(time: Timestamp), // receives error code -3 (enums with fields must implement Serial)
 ///     ...
 /// }
 /// ```
@@ -1611,7 +1616,8 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     };
 
     let variant_error_conversions = generate_variant_error_conversions(enum_data, enum_ident)?;
-    let variant_matches = generate_variant_matches(enum_data, enum_ident);
+    let enum_var_ident = format_ident!("{}", "e");
+    let variant_matches = generate_variant_matches(enum_data, enum_ident, &enum_var_ident);
 
     let gen = quote! {
         /// The from implementation maps the first variant to -1, second to -2, etc.
@@ -1620,8 +1626,8 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         #[automatically_derived]
         impl From<#enum_ident> for Reject {
             #[inline(always)]
-            fn from(e: #enum_ident) -> Self {
-                match e {
+            fn from(#enum_var_ident: #enum_ident) -> Self {
+                match &#enum_var_ident {
                    #variant_matches
                 }
             }
@@ -1632,62 +1638,39 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     Ok(gen.into())
 }
 
-/// Generate the cases for matching on the enum. For variants with fields, all
-/// fields are serialized into a buffer that is included in the return value.
-/// For fieldless variants, the return value is always `None`.
+/// Generate the cases for matching on the enum. For variants with fields, the
+/// whole enum type is serialized into a buffer that is included in the return
+/// value. This means that enums with fields need to implement `Serial` in order
+/// for deriving `Reject` to work. For fieldless variants, the return value is
+/// always `None`.
 fn generate_variant_matches(
     enum_data: &DataEnum,
     enum_name: &syn::Ident,
+    enum_var_ident: &syn::Ident,
 ) -> proc_macro2::TokenStream {
     let mut match_cases = proc_macro2::TokenStream::new();
     for (index, variant) in enum_data.variants.iter().enumerate() {
         let variant_ident = &variant.ident;
         match variant.fields {
             syn::Fields::Named(_) => {
-                let field_names: Vec<_> =
-                    variant.fields.iter().map(|field| field.ident.clone().unwrap()).collect();
-                let pattern = quote! { {#(#field_names),*} };
-
-                let mut serial_fields = proc_macro2::TokenStream::new();
-                for n in field_names {
-                    serial_fields.extend(
-                        quote!(concordium_std::Serial::serial(&#n, &mut buf).unwrap_abort();),
-                    );
-                }
-
                 match_cases.extend(quote! {
-                    #enum_name::#variant_ident#pattern => Reject {
+                    #enum_name::#variant_ident{..} => Reject {
                         error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
                         return_value: {
                             let mut buf = Vec::new();
-                            #serial_fields
+                            concordium_std::Serial::serial(&#enum_var_ident, &mut buf).unwrap_abort();
                             Some(buf)
                         },
                     },
                 });
             }
             syn::Fields::Unnamed(_) => {
-                let field_names: Vec<_> = variant
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| format_ident!("x_{}", i))
-                    .collect();
-                let pattern = quote! { ( #(#field_names),* ) };
-
-                let mut serial_fields = proc_macro2::TokenStream::new();
-                for n in field_names {
-                    serial_fields.extend(
-                        quote!(concordium_std::Serial::serial(&#n, &mut buf).unwrap_abort();),
-                    );
-                }
-
                 match_cases.extend(quote! {
-                    #enum_name::#variant_ident#pattern => Reject {
+                    #enum_name::#variant_ident(..) => Reject {
                         error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
                         return_value: {
                             let mut buf = Vec::new();
-                            #serial_fields
+                            concordium_std::Serial::serial(&#enum_var_ident, &mut buf).unwrap_abort();
                             Some(buf)
                         },
                     },
