@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std-derive 3.1.0 (2022-08-04)
+
 - Removed `derive(Serial)` and `derive(Deserial)` (moved to `concordium-contracts-common-derive`).
 - Add ability to `derive(Reject)` for enums *with fields*, where all fields
   implement the `Serial` trait.
