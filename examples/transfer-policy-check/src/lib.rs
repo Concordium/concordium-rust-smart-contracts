@@ -51,11 +51,11 @@ fn receive<S: HasStateApi>(
     amount: Amount,
 ) -> Result<(), ContractError> {
     for policy in ctx.policies() {
-        if !policy
-            .attributes()
-            .any(|(tag, val)| tag == attributes::COUNTRY_OF_RESIDENCE && val.as_ref() == &LOCAL_COUNTRY[..]) {
-                return Err(ContractError::NotLocalSender)
-            }
+        if !policy.attributes().any(|(tag, val)| {
+            tag == attributes::COUNTRY_OF_RESIDENCE && val.as_ref() == &LOCAL_COUNTRY[..]
+        }) {
+            return Err(ContractError::NotLocalSender);
+        }
     }
     Ok(host.invoke_transfer(host.state(), amount)?)
 }
@@ -74,13 +74,13 @@ mod tests {
             identity_provider: 0,
             created_at:        Timestamp::from_timestamp_millis(0),
             valid_to:          Timestamp::from_timestamp_millis(1000),
-            items:             vec![(attributes::COUNTRY_OF_RESIDENCE, LOCAL_COUNTRY[..].into())],
+            items:             vec![(attributes::COUNTRY_OF_RESIDENCE, LOCAL_COUNTRY.into())],
         });
         ctx.push_policy(Policy {
             identity_provider: 0,
             created_at:        Timestamp::from_timestamp_millis(0),
             valid_to:          Timestamp::from_timestamp_millis(1000),
-            items:             vec![(attributes::COUNTRY_OF_RESIDENCE, LOCAL_COUNTRY[..].into())],
+            items:             vec![(attributes::COUNTRY_OF_RESIDENCE, LOCAL_COUNTRY.into())],
         });
 
         let state = ACCOUNT_0;
@@ -100,7 +100,7 @@ mod tests {
             identity_provider: 0,
             created_at:        Timestamp::from_timestamp_millis(0),
             valid_to:          Timestamp::from_timestamp_millis(1000),
-            items:             vec![(attributes::COUNTRY_OF_RESIDENCE, LOCAL_COUNTRY[..].into())],
+            items:             vec![(attributes::COUNTRY_OF_RESIDENCE, LOCAL_COUNTRY.into())],
         });
         ctx.push_policy(Policy {
             identity_provider: 0,
@@ -108,8 +108,8 @@ mod tests {
             valid_to:          Timestamp::from_timestamp_millis(1000),
             items:             vec![(
                 attributes::COUNTRY_OF_RESIDENCE,
-                b"NOT_LOCAL_COUNTRY"[..].into(), /* Chose an invalid country to avoid conflicts
-                                                  * with valid settings of `LOCAL_COUNTRY`. */
+                b"NOT_LOCAL_COUNTRY".into(), /* Chose an invalid country to avoid conflicts
+                                              * with valid settings of `LOCAL_COUNTRY`. */
             )],
         });
 

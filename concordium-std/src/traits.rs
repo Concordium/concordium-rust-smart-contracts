@@ -7,8 +7,8 @@ use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
     CallContractResult, EntryRaw, HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
-    PolicyAttributesIter, PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult,
-    SignatureEcdsaSecp256k1, SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
+    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
+    SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -66,8 +66,7 @@ pub trait HasPolicy: Sized {
     /// iterate through the elements more efficiently, without any allocations,
     /// the consumer being responsible for allocating the buffer.
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
-
-    /// Get an iterator over the remaining attributes.
+    /// Get an iterator all the attributes of the policy.
     fn attributes(&self) -> Self::Iterator;
 }
 

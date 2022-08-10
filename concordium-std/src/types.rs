@@ -1,6 +1,5 @@
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasPolicy, HasStateApi, Serial,
-    Vec,
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
 
 #[derive(Debug)]
@@ -644,6 +643,8 @@ pub struct AttributesCursor {
     pub(crate) current_position: u32,
     /// The number of remaining items in the policy.
     pub(crate) remaining_items:  u16,
+    /// The total number of items. Used for creating new attribute cursors.
+    pub(crate) total_items:      u16,
 }
 
 /// An iterator over the attributes of a policy.

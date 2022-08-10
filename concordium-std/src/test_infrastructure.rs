@@ -113,14 +113,7 @@ impl TestPolicy {
             identity_provider: policy.identity_provider,
             created_at:        policy.created_at,
             valid_to:          policy.valid_to,
-            items:             policy
-                .items
-                .into_iter()
-                .map(|(at, av)| {
-                    let bs = AttributeValue::new(&av[..]);
-                    (at, bs)
-                })
-                .collect(),
+            items:             policy.items.into(),
         };
         Self {
             position: 0,
@@ -480,7 +473,7 @@ impl HasPolicy for TestPolicy {
     fn attributes(&self) -> Self::Iterator {
         TestIterator {
             items:    self.policy.items.clone(),
-            position: self.position,
+            position: 0,
         }
     }
 }

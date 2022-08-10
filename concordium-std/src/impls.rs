@@ -1652,7 +1652,11 @@ impl HasPolicy for Policy<AttributesCursor> {
 
     fn attributes(&self) -> Self::Iterator {
         PolicyAttributesIter {
-            cursor: self.items,
+            cursor: AttributesCursor {
+                current_position: 0,
+                remaining_items:  self.items.total_items,
+                total_items:      self.items.total_items,
+            },
         }
     }
 }
@@ -1664,8 +1668,7 @@ impl Iterator for PolicyAttributesIter {
         let mut inner = [0u8; 32];
         let (tag, len) = self.cursor.next_item(&mut inner[1..])?;
         inner[0] = len;
-        Some((tag, unsafe { AttributeValue::new_unchecked(inner)
-        }))
+        Some((tag, unsafe { AttributeValue::new_unchecked(inner) }))
     }
 }
 
@@ -1713,6 +1716,7 @@ impl Iterator for PoliciesIterator {
             items: AttributesCursor {
                 current_position: attributes_start,
                 remaining_items,
+                total_items: remaining_items,
             },
         })
     }
