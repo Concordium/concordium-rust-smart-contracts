@@ -66,7 +66,7 @@ pub trait HasPolicy: Sized {
     /// iterate through the elements more efficiently, without any allocations,
     /// the consumer being responsible for allocating the buffer.
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
-    /// Get an iterator all the attributes of the policy.
+    /// Get an iterator over all the attributes of the policy.
     fn attributes(&self) -> Self::Iterator;
 }
 
