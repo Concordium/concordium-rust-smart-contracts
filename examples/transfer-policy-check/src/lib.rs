@@ -9,7 +9,7 @@
  * The contract has a single receive entrypoint, `receive`,
  * which checks whether all sender policies have their country of residence
  * attribute set to `LOCAL_COUNTRY`. If that is the case, then the `amount`
- * will be forwarded to the account address held in the state. OTherwise,
+ * will be forwarded to the account address held in the state. Otherwise,
  * the receive function will reject with `ContractError::NotLocalSender`.
  */
 use concordium_std::*;
