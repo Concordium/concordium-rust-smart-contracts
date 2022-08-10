@@ -39,8 +39,7 @@ fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
 ) -> InitResult<()> {
-    let forward_to = ctx.parameter_cursor().get()?;
-    Ok(forward_to)
+    Ok(ctx.parameter_cursor().get()?)
 }
 
 /// Forward the `amount` to the account defined in the state iff all sender
@@ -51,17 +50,14 @@ fn receive<S: HasStateApi>(
     host: &impl HasHost<State, StateApiType = S>,
     amount: Amount,
 ) -> Result<(), ContractError> {
-    if ctx.policies().all(|mut policy| {
-        // Note the use of `any`, which forces each policy to have at least one country
-        // of residence attribute set to `LOCAL_COUNTRY`.
-        policy
-            .iter()
-            .any(|(tag, val)| tag == attributes::COUNTRY_OF_RESIDENCE && val == LOCAL_COUNTRY[..])
-    }) {
-        Ok(host.invoke_transfer(host.state(), amount)?)
-    } else {
-        Err(ContractError::NotLocalSender)
+    for policy in ctx.policies() {
+        if !policy
+            .attributes()
+            .any(|(tag, val)| tag == attributes::COUNTRY_OF_RESIDENCE && val.as_ref() == &LOCAL_COUNTRY[..]) {
+                return Err(ContractError::NotLocalSender)
+            }
     }
+    Ok(host.invoke_transfer(host.state(), amount)?)
 }
 
 #[concordium_cfg_test]

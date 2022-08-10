@@ -636,7 +636,7 @@ pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>
 pub type TransferResult = Result<(), TransferError>;
 
 /// A type representing the attributes, lazily acquired from the host.
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct AttributesCursor {
     /// Current position of the cursor, starting from 0.
     /// Note that this is only for the variable attributes.
@@ -648,9 +648,9 @@ pub struct AttributesCursor {
 
 /// An iterator over the attributes of a policy.
 /// The iterator returns pairs of [`AttributeTag`] and [`AttributeValue`].
-pub struct PolicyAttributesIter<'a, P: HasPolicy> {
-    pub iter: &'a mut P,
-    pub buf:  [u8; 31],
+#[repr(transparent)]
+pub struct PolicyAttributesIter {
+    pub(crate) cursor: AttributesCursor,
 }
 
 /// A type representing the logger.

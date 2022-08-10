@@ -104,11 +104,24 @@ pub struct TestPolicy {
     /// Current position in the vector of policies. Used to implement
     /// `next_item`.
     position: usize,
-    policy:   OwnedPolicy,
+    policy:   Policy<Rc<[(AttributeTag, AttributeValue)]>>,
 }
 
 impl TestPolicy {
     fn new(policy: OwnedPolicy) -> Self {
+        let policy = Policy {
+            identity_provider: policy.identity_provider,
+            created_at:        policy.created_at,
+            valid_to:          policy.valid_to,
+            items:             policy
+                .items
+                .into_iter()
+                .map(|(at, av)| {
+                    let bs = AttributeValue::new(&av[..]);
+                    (at, bs)
+                })
+                .collect(),
+        };
         Self {
             position: 0,
             policy,
@@ -439,7 +452,14 @@ impl HasChainMetadata for TestChainMeta {
     fn slot_time(&self) -> SlotTime { unwrap_ctx_field(self.slot_time, "metadata.slot_time") }
 }
 
+pub struct TestIterator {
+    items:    Rc<[(AttributeTag, AttributeValue)]>,
+    position: usize,
+}
+
 impl HasPolicy for TestPolicy {
+    type Iterator = TestIterator;
+
     fn identity_provider(&self) -> IdentityProvider { self.policy.identity_provider }
 
     fn created_at(&self) -> Timestamp { self.policy.created_at }
@@ -448,8 +468,8 @@ impl HasPolicy for TestPolicy {
 
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
         if let Some(item) = self.policy.items.get(self.position) {
-            let len = item.1.len();
-            buf[0..len].copy_from_slice(&item.1);
+            let len = item.1.as_ref().len();
+            buf[0..len].copy_from_slice(&item.1.as_ref());
             self.position += 1;
             Some((item.0, len as u8))
         } else {
@@ -457,11 +477,21 @@ impl HasPolicy for TestPolicy {
         }
     }
 
-    fn iter(&mut self) -> PolicyAttributesIter<Self> {
-        PolicyAttributesIter {
-            iter: self,
-            buf:  [0u8; 31],
+    fn attributes(&self) -> Self::Iterator {
+        TestIterator {
+            items:    self.policy.items.clone(),
+            position: self.position,
         }
+    }
+}
+
+impl Iterator for TestIterator {
+    type Item = (AttributeTag, AttributeValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let elem = self.items.get(self.position)?;
+        self.position += 1;
+        Some(*elem)
     }
 }
 

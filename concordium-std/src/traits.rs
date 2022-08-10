@@ -45,6 +45,7 @@ pub trait HasChainMetadata {
 /// low-level style to enable efficient traversal of all the attributes without
 /// any allocations.
 pub trait HasPolicy: Sized {
+    type Iterator: Iterator<Item = (AttributeTag, AttributeValue)>;
     /// Identity provider who signed the identity object the credential is
     /// derived from.
     fn identity_provider(&self) -> IdentityProvider;
@@ -66,12 +67,8 @@ pub trait HasPolicy: Sized {
     /// the consumer being responsible for allocating the buffer.
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
 
-    /// Get an iterator over pairs of [`AttributeTag`] and [`AttributeValue`].
-    ///
-    /// Using the iterator methods, such as [`Iterator::any`],
-    /// [`Iterator::find`], etc., is a more ergonomic way to check the policies
-    /// than via [`next_item`][Self::next_item].
-    fn iter(&mut self) -> PolicyAttributesIter<Self>;
+    /// Get an iterator over the remaining attributes.
+    fn attributes(&self) -> Self::Iterator;
 }
 
 /// Common data accessible to both init and receive methods.
