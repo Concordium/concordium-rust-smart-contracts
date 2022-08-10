@@ -836,7 +836,8 @@ impl schema::SchemaType for Receiver {
                 String::from("Contract"),
                 schema::Fields::Unnamed(vec![
                     ContractAddress::get_type(),
-                    OwnedReceiveName::get_type(),
+                    // The below string represents the function entrypoint
+                    schema::Type::String(schema::SizeLength::U16),
                 ]),
             ),
         ])
