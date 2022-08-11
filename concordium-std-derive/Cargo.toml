@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std-derive"
-version = "3.0.0"
+version = "3.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -16,7 +16,7 @@ quote = "=1.0.0"
 proc-macro2 = "1.0"
 
 [dependencies.concordium-contracts-common]
-path = "../concordium-contracts-common"
+path = "../concordium-contracts-common/concordium-contracts-common"
 version = "3.0"
 default-features = false
 

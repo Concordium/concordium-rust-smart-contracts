@@ -474,44 +474,6 @@ pub trait ExpectNoneReport {
     fn expect_none_report(self, msg: &str);
 }
 
-/// The `SerialCtx` trait provides a means of writing structures into byte-sinks
-/// (`Write`) using contextual information.
-/// The contextual information is:
-///
-///   - `size_length`: The number of bytes used to record the length of the
-///     data.
-pub trait SerialCtx {
-    /// Attempt to write the structure into the provided writer, failing if
-    /// if the length cannot be represented in the provided `size_length` or
-    /// only part of the structure could be written.
-    ///
-    /// NB: We use Result instead of Option for better composability with other
-    /// constructs.
-    fn serial_ctx<W: Write>(
-        &self,
-        size_length: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err>;
-}
-
-/// The `DeserialCtx` trait provides a means of reading structures from
-/// byte-sources (`Read`) using contextual information.
-/// The contextual information is:
-///
-///   - `size_length`: The expected number of bytes used for the length of the
-///     data.
-///   - `ensure_ordered`: Whether the ordering should be ensured, for example
-///     that keys in `BTreeMap` and `BTreeSet` are in strictly increasing order.
-pub trait DeserialCtx: Sized {
-    /// Attempt to read a structure from a given source and context, failing if
-    /// an error occurs during deserialization or reading.
-    fn deserial_ctx<R: Read>(
-        size_length: schema::SizeLength,
-        ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self>;
-}
-
 /// The `DeserialWithState` trait provides a means of reading structures from
 /// byte-sources ([`Read`]) for types that also need a reference to a
 /// [`HasStateApi`] type.

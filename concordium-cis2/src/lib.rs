@@ -33,6 +33,18 @@ use std::{fmt, ops};
 
 use convert::TryFrom;
 
+/// The standard identifier for the CIS-0: Standard Detection.
+pub const CIS0_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-0");
+
+/// The standard identifier for the CIS-1: Concordium Token Standard.
+pub const CIS1_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-1");
+
+/// The standard identifier for the CIS-2: Concordium Token Standard 2.
+pub const CIS2_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-2");
+
 /// Tag for the CIS2 Transfer event.
 pub const TRANSFER_EVENT_TAG: u8 = u8::MAX;
 /// Tag for the CIS2 Mint event.
@@ -824,7 +836,8 @@ impl schema::SchemaType for Receiver {
                 String::from("Contract"),
                 schema::Fields::Unnamed(vec![
                     ContractAddress::get_type(),
-                    OwnedReceiveName::get_type(),
+                    // The below string represents the function entrypoint
+                    schema::Type::String(schema::SizeLength::U16),
                 ]),
             ),
         ])
@@ -996,7 +1009,7 @@ impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
 
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
-/// It consists of the list of queries paired with their corresponding result.
+/// It consists of the list of results corresponding to the list of queries.
 #[derive(Debug, Serialize)]
 pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
@@ -1087,7 +1100,7 @@ impl<T: IsTokenId> schema::SchemaType for TokenMetadataQueryParams<T> {
 
 /// The response which is sent back when calling the contract function
 /// `tokenMetadata`.
-/// It consists of the list of queries paired with their corresponding result.
+/// It consists of the list of results corresponding to the list of queries.
 #[derive(Debug, Serialize)]
 pub struct TokenMetadataQueryResponse(#[concordium(size_length = 2)] pub Vec<MetadataUrl>);
 
@@ -1118,6 +1131,163 @@ pub struct OnReceivingCis2Params<T: IsTokenId, A: IsTokenAmount> {
     pub from:     Address,
     /// Some extra information which where sent as part of the transfer.
     pub data:     AdditionalData,
+}
+
+/// Identifier for a smart contract standard.
+/// Consists of a string of ASCII characters up to a length of 255.
+///
+/// See [StandardIdentifierOwned] for the owned version.
+#[derive(Debug, Serial, PartialEq, Eq)]
+pub struct StandardIdentifier<'a> {
+    #[concordium(size_length = 1)]
+    id: &'a str,
+}
+
+/// String is not a valid standard identifier. Ensure the length is less than
+/// 256 and it only contains ASCII characters.
+#[derive(Default)]
+pub struct InvalidStandardIdentifierError;
+
+impl<'a> StandardIdentifier<'a> {
+    /// Validate and construct a standard identifier.
+    pub fn new(id: &'a str) -> Result<Self, InvalidStandardIdentifierError> {
+        if id.len() > 255 || !id.is_ascii() {
+            Err(InvalidStandardIdentifierError)
+        } else {
+            Ok(Self {
+                id,
+            })
+        }
+    }
+
+    /// Construct a standard identifier without validation.
+    pub const fn new_unchecked(id: &'a str) -> Self {
+        Self {
+            id,
+        }
+    }
+
+    /// Convert to owned standard identifier.
+    pub fn to_owned(&self) -> StandardIdentifierOwned {
+        StandardIdentifierOwned::new_unchecked(self.id.to_string())
+    }
+}
+
+/// Owned identifier for a smart contract standard.
+/// Consists of a string of ASCII characters up to a length of 255.
+///
+/// See [StandardIdentifier] for the borrowed version.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct StandardIdentifierOwned {
+    #[concordium(size_length = 1)]
+    id: String,
+}
+
+// This is implemented manually to flatten and simplify the schema.
+impl schema::SchemaType for StandardIdentifierOwned {
+    fn get_type() -> schema::Type { schema::Type::String(schema::SizeLength::U8) }
+}
+
+impl StandardIdentifierOwned {
+    /// Validate and construct a standard identifier.
+    pub fn new(id: String) -> Result<Self, InvalidStandardIdentifierError> {
+        if id.len() > 255 || !id.is_ascii() {
+            Err(InvalidStandardIdentifierError)
+        } else {
+            Ok(Self {
+                id,
+            })
+        }
+    }
+
+    /// Construct a standard identifier without validation.
+    pub fn new_unchecked(id: String) -> Self {
+        Self {
+            id,
+        }
+    }
+
+    /// Convert to standard identifier.
+    pub fn as_standard_identifier(&self) -> StandardIdentifier {
+        StandardIdentifier::new_unchecked(&self.id)
+    }
+}
+
+/// The parameter type for the contract function `supports`.
+#[derive(Debug, Serialize)]
+pub struct SupportsQueryParams {
+    /// The list of support queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<StandardIdentifierOwned>,
+}
+
+// This is implemented manually to flatten and simplify the schema.
+impl schema::SchemaType for SupportsQueryParams {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(StandardIdentifierOwned::get_type()))
+    }
+}
+
+/// The query result type for whether a smart contract supports a standard.
+// Note: For the serialization to be derived according to the CIS0
+// specification, the order of the variants and their fields cannot be changed.
+#[derive(Debug, Serialize)]
+pub enum SupportResult {
+    /// The standard is not supported.
+    NoSupport,
+    /// The standard is supported by the current contract address.
+    Support,
+    /// The standard is supported by using another contract address.
+    SupportBy(#[concordium(size_length = 1)] Vec<ContractAddress>),
+}
+
+// This is implemented manually because another manual implementation depends on
+// this. Currently it is not practical to rely on a derived schema type in a
+// manual implemented schema type, because the derived version only generates
+// the implementation with a specific feature enabled.
+impl schema::SchemaType for SupportResult {
+    fn get_type() -> schema::Type {
+        schema::Type::Enum(vec![
+            ("NoSupport".to_string(), schema::Fields::None),
+            ("Support".to_string(), schema::Fields::None),
+            (
+                "SupportBy".to_string(),
+                schema::Fields::Unnamed(vec![schema::Type::List(
+                    schema::SizeLength::U8,
+                    Box::new(ContractAddress::get_type()),
+                )]),
+            ),
+        ])
+    }
+}
+
+/// The response which is sent back when calling the contract function
+/// `supports`. It consists of a list of results corresponding to the list of
+/// queries.
+#[derive(Debug, Serialize)]
+pub struct SupportsQueryResponse {
+    /// List of support results corresponding to the list of queries.
+    #[concordium(size_length = 2)]
+    pub results: Vec<SupportResult>,
+}
+
+// This is implemented manually to flatten and simplify the schema.
+impl schema::SchemaType for SupportsQueryResponse {
+    fn get_type() -> schema::Type {
+        schema::Type::List(schema::SizeLength::U16, Box::new(SupportResult::get_type()))
+    }
+}
+
+impl From<Vec<SupportResult>> for SupportsQueryResponse {
+    fn from(results: Vec<SupportResult>) -> Self {
+        SupportsQueryResponse {
+            results,
+        }
+    }
+}
+
+impl AsRef<[SupportResult]> for SupportsQueryResponse {
+    fn as_ref(&self) -> &[SupportResult] { &self.results }
 }
 
 #[cfg(test)]
