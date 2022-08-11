@@ -133,9 +133,6 @@ where
     /// `.seek(SeekFrom::Start(0))` but can be implemented more efficiently.
     fn move_to_start(&mut self);
 
-    /// Get the cursor position counted from the beginning of the stream.
-    fn get_cursor_position(&self) -> u32;
-
     /// Get the current size of the entry.
     /// Returns an error if the entry does not exist.
     fn size(&self) -> Result<u32, Self::Error>;

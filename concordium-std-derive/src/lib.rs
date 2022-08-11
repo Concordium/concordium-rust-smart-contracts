@@ -1963,7 +1963,7 @@ pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenSt
 /// limitations.
 ///
 /// The trait is used in the
-/// [`TestHost`][../concordium_std/test_infrastructure/struct.TestHost.html]
+/// [`TestHost`](../concordium_std/test_infrastructure/struct.TestHost.html)
 /// when rolling back the state. If that functionality is needed, then this
 /// trait must be derived for types which have not implement the `Clone` trait.
 /// That is, `StateClone` should be derived for types with a non-trivial state.
@@ -1978,7 +1978,7 @@ pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenSt
 /// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
 /// To do so, use the `#[concordium(state_parameter =
 /// "NameOfGenericParameter")]` attribute on the type you are deriving
-/// `Deletable` for.
+/// `StateClone` for.
 ///
 /// # Example
 /// ``` ignore
@@ -2001,7 +2001,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
         None => {
             return Err(syn::Error::new(
                 Span::call_site(),
-                "Deletable requires the attribute #[concordium(state_parameter = \"S\")], where \
+                "StateClone requires the attribute #[concordium(state_parameter = \"S\")], where \
                  \"S\" should be the HasStateApi generic parameter.",
             ))
         }
@@ -2017,7 +2017,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 syn::Fields::Named(_) => {
                     for field in data.fields.iter() {
                         let field_ident = field.ident.clone().unwrap(); // safe since named fields.
-                        field_tokens.extend(quote!(let #field_ident = self.#field_ident.clone_state(cloned_state_api);));
+                        field_tokens.extend(quote!(let #field_ident = concordium_std::StateClone::clone_state(&self.#field_ident, cloned_state_api);));
                         field_names.extend(quote!(#field_ident,));
                     }
                     quote!(Self{#field_names})
@@ -2027,7 +2027,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                         let field_index = syn::Index::from(i);
                         let variable_ident = format_ident!("x_{}", i);
                         field_tokens
-                            .extend(quote!(let #variable_ident = self.#field_index.clone_state(cloned_state_api);));
+                            .extend(quote!(let #variable_ident = concordium_std::StateClone::clone_state(&self.#field_index, cloned_state_api);));
                         field_names.extend(quote!(#variable_ident,))
                     }
                     quote!(Self(#field_names))
@@ -2050,7 +2050,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Named(_) => {
                         for field in variant.fields.iter() {
                             let field_ident = field.ident.clone().unwrap(); // safe since named fields.
-                            field_tokens.extend(quote!(let #field_ident = #field_ident.clone_state(cloned_state_api);));
+                            field_tokens.extend(quote!(let #field_ident = concordium_std::StateClone::clone_state(#field_ident, cloned_state_api);));
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!({#field_names});
@@ -2059,7 +2059,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Unnamed(_) => {
                         for i in 0..variant.fields.len() {
                             let field_ident = format_ident!("x_{}", i);
-                            field_tokens.extend(quote!(let #field_ident = #field_ident.clone_state(cloned_state_api);));
+                            field_tokens.extend(quote!(let #field_ident = concordium_std::StateClone::clone_state(#field_ident, cloned_state_api);));
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!((#field_names));
@@ -2090,7 +2090,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let gen = quote! {
         #[automatically_derived]
-        unsafe impl #impl_generics StateClone<#state_parameter> for #data_name #ty_generics where #state_parameter: HasStateApi, #where_predicates {
+        unsafe impl #impl_generics concordium_std::StateClone<#state_parameter> for #data_name #ty_generics where #state_parameter: concordium_std::HasStateApi, #where_predicates {
             unsafe fn clone_state(&self, cloned_state_api: &#state_parameter) -> Self {
                 #body_tokens
             }

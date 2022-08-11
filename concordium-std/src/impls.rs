@@ -201,9 +201,6 @@ impl HasStateEntry for StateEntry {
     fn move_to_start(&mut self) { self.current_position = 0; }
 
     #[inline(always)]
-    fn get_cursor_position(&self) -> u32 { self.current_position }
-
-    #[inline(always)]
     fn size(&self) -> Result<u32, Self::Error> {
         let res = unsafe { prims::state_entry_size(self.state_entry_id) };
         match res {
@@ -284,6 +281,9 @@ impl Seek for StateEntry {
             }
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.current_position }
 }
 
 impl Read for StateEntry {
@@ -1557,6 +1557,9 @@ impl Seek for ExternParameter {
 
     #[inline(always)]
     fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(pos) }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
 impl HasParameter for ExternParameter {}
@@ -2648,10 +2651,10 @@ unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for 
                 // Get a new entry from the cloned state.
                 let mut new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
                 let new_value =
-                    T::deserial_with_state(&cloned_state_api, &mut new_entry).unwrap_abort();
+                    T::deserial_with_state(cloned_state_api, &mut new_entry).unwrap_abort();
 
                 // Set position of new entry to match the old entry.
-                let old_entry_position = entry.get_cursor_position();
+                let old_entry_position = entry.cursor_position();
                 new_entry.seek(SeekFrom::Start(old_entry_position)).unwrap_abort();
 
                 StateBoxInner::Loaded {

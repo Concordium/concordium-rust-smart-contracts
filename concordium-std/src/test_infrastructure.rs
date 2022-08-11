@@ -320,6 +320,9 @@ impl<'a> Seek for TestParameterCursor<'a> {
 
     #[inline(always)]
     fn seek(&mut self, seek: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(seek) }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
 impl<'a> Read for TestParameterCursor<'a> {
@@ -979,9 +982,6 @@ impl HasStateEntry for TestStateEntry {
     #[inline(always)]
     fn move_to_start(&mut self) { self.cursor.offset = 0; }
 
-    #[inline(always)]
-    fn get_cursor_position(&self) -> u32 { self.cursor.offset as u32 }
-
     /// Get the size of the data in the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
     fn size(&self) -> Result<u32, Self::Error> {
@@ -1103,6 +1103,9 @@ impl Seek for TestStateEntry {
             },
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.offset as u32 }
 }
 
 impl HasCallResponse for Cursor<Vec<u8>> {
@@ -2131,7 +2134,7 @@ mod test {
                     entry,
                     modified: _,
                     value: _,
-                } => entry.get_cursor_position(),
+                } => entry.cursor_position(),
                 crate::StateBoxInner::Reference {
                     prefix: _,
                 } => panic!("Cannot be called on StateBoxInner::Reference"),
