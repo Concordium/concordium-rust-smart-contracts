@@ -12,6 +12,7 @@
  * will be forwarded to the account address held in the state. Otherwise,
  * the receive function will reject with `ContractError::NotLocalSender`.
  */
+#![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
 type State = AccountAddress;
@@ -34,7 +35,7 @@ impl From<TransferError> for ContractError {
 }
 
 /// Set the account address that `receive` will forward CCD to.
-#[init(contract = "polices", parameter = "AccountAddress")]
+#[init(contract = "transfer-policy-check", parameter = "AccountAddress")]
 fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
