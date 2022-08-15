@@ -326,6 +326,9 @@ impl<'a> Seek for TestParameterCursor<'a> {
 
     #[inline(always)]
     fn seek(&mut self, seek: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(seek) }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
 impl<'a> Read for TestParameterCursor<'a> {
@@ -1123,6 +1126,9 @@ impl Seek for TestStateEntry {
             },
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.offset as u32 }
 }
 
 impl HasCallResponse for Cursor<Vec<u8>> {

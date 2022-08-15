@@ -281,6 +281,9 @@ impl Seek for StateEntry {
             }
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.current_position }
 }
 
 impl Read for StateEntry {
@@ -1554,6 +1557,9 @@ impl Seek for ExternParameter {
 
     #[inline(always)]
     fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(pos) }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
 impl HasParameter for ExternParameter {}
