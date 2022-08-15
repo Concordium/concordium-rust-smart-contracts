@@ -1606,15 +1606,9 @@ impl HasChainMetadata for ExternChainMeta {
     }
 }
 
-impl HasPolicy for Policy<AttributesCursor> {
-    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
-
-    fn created_at(&self) -> Timestamp { self.created_at }
-
-    fn valid_to(&self) -> Timestamp { self.valid_to }
-
-    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
-        if self.items.remaining_items == 0 {
+impl AttributesCursor {
+    fn next_item(&mut self, buf: &mut [u8]) -> Option<(AttributeTag, u8)> {
+        if self.remaining_items == 0 {
             return None;
         }
 
@@ -1624,11 +1618,11 @@ impl HasPolicy for Policy<AttributesCursor> {
             let num_read = prims::get_policy_section(
                 tag_value_len.as_mut_ptr() as *mut u8,
                 2,
-                self.items.current_position,
+                self.current_position,
             );
             (tag_value_len.assume_init(), num_read)
         };
-        self.items.current_position += num_read;
+        self.current_position += num_read;
         if tag_value_len[1] > 31 {
             // Should not happen because all attributes fit into 31 bytes.
             return None;
@@ -1637,13 +1631,53 @@ impl HasPolicy for Policy<AttributesCursor> {
             prims::get_policy_section(
                 buf.as_mut_ptr(),
                 u32::from(tag_value_len[1]),
-                self.items.current_position,
+                self.current_position,
             )
         };
-        self.items.current_position += num_read;
-        self.items.remaining_items -= 1;
+        self.current_position += num_read;
+        self.remaining_items -= 1;
         Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
     }
+}
+
+impl HasPolicy for Policy<AttributesCursor> {
+    type Iterator = PolicyAttributesIter;
+
+    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
+
+    fn created_at(&self) -> Timestamp { self.created_at }
+
+    fn valid_to(&self) -> Timestamp { self.valid_to }
+
+    #[inline(always)]
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
+        self.items.next_item(buf)
+    }
+
+    fn attributes(&self) -> Self::Iterator {
+        PolicyAttributesIter {
+            cursor: AttributesCursor {
+                current_position: 0,
+                remaining_items:  self.items.total_items,
+                total_items:      self.items.total_items,
+            },
+        }
+    }
+}
+
+impl Iterator for PolicyAttributesIter {
+    type Item = (AttributeTag, AttributeValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut inner = [0u8; 32];
+        let (tag, len) = self.cursor.next_item(&mut inner[1..])?;
+        inner[0] = len;
+        Some((tag, unsafe { AttributeValue::new_unchecked(inner) }))
+    }
+}
+
+impl ExactSizeIterator for PolicyAttributesIter {
+    fn len(&self) -> usize { self.cursor.remaining_items as usize }
 }
 
 /// An iterator over policies using host functions to supply the data.
@@ -1690,6 +1724,7 @@ impl Iterator for PoliciesIterator {
             items: AttributesCursor {
                 current_position: attributes_start,
                 remaining_items,
+                total_items: remaining_items,
             },
         })
     }
