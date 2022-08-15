@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "0.1.2"
+version = "1.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -11,7 +11,7 @@ readme = "./README.md"
 
 [dependencies.concordium-std]
 path = "../concordium-std"
-version = "3.0"
+version = "3.1"
 default-features = false
 
 [features]
@@ -23,3 +23,9 @@ crate-type = ["rlib"]
 
 [profile.release]
 opt-level = "s"
+
+[package.metadata.docs.rs]
+# This sets the default target to `wasm32-unknown-unknown` and only builds that
+# target on docs.rs. This is useful because the some parts of documentation only
+# exist on that platform.
+targets = ["wasm32-unknown-unknown"]
