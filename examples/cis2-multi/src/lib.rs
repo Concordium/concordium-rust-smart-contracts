@@ -69,7 +69,7 @@ struct SetImplementorsParams {
 }
 
 /// The state for each address.
-#[derive(Serial, DeserialWithState, Deletable)]
+#[derive(Serial, DeserialWithState, Deletable, StateClone)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The amount of tokens owned by this address.
@@ -91,7 +91,7 @@ impl<S: HasStateApi> AddressState<S> {
 ///
 /// Note: The specification does not specify how to structure the contract state
 /// and this could be structured in a more space efficient way.
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state of addresses.

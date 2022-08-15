@@ -44,7 +44,8 @@ pub trait HasChainMetadata {
 /// Since policies can be large this is deliberately written in a relatively
 /// low-level style to enable efficient traversal of all the attributes without
 /// any allocations.
-pub trait HasPolicy {
+pub trait HasPolicy: Sized {
+    type Iterator: Iterator<Item = (AttributeTag, AttributeValue)>;
     /// Identity provider who signed the identity object the credential is
     /// derived from.
     fn identity_provider(&self) -> IdentityProvider;
@@ -65,6 +66,8 @@ pub trait HasPolicy {
     /// iterate through the elements more efficiently, without any allocations,
     /// the consumer being responsible for allocating the buffer.
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
+    /// Get an iterator over all the attributes of the policy.
+    fn attributes(&self) -> Self::Iterator;
 }
 
 /// Common data accessible to both init and receive methods.
@@ -518,4 +521,31 @@ where
         state: &S,
         source: &mut R,
     ) -> ParseResult<Self>;
+}
+
+/// Types that can be cloned along with the state.
+///
+/// Used for rolling back the test state when errors occur in a receive
+/// function. See [`TestHost::with_rollback`][iwr] and
+/// [`TestHost::invoke_contract_raw`][icr].
+///
+/// # Safety
+///
+/// Marked unsafe because special care should be taken when
+/// implementing this trait. In particular, one should only use the supplied
+/// `cloned_state_api`, or (shallow) clones thereof. Creating a new
+/// [`HasStateApi`] or using a `deep_clone` will lead to an inconsistent state
+/// and undefined behaviour.
+///
+/// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
+/// [iwr]: crate::test_infrastructure::TestHost::with_rollback
+pub unsafe trait StateClone<S> {
+    /// Make a clone of the type while using the `cloned_state_api`.
+    ///
+    /// # Safety
+    ///
+    /// Marked unsafe because this function *should not* be called
+    /// directly. It is only used within generated code and in the test
+    /// infrastructure.
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self;
 }

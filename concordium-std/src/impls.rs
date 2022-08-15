@@ -281,6 +281,9 @@ impl Seek for StateEntry {
             }
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.current_position }
 }
 
 impl Read for StateEntry {
@@ -1554,6 +1557,9 @@ impl Seek for ExternParameter {
 
     #[inline(always)]
     fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(pos) }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
 impl HasParameter for ExternParameter {}
@@ -1600,15 +1606,9 @@ impl HasChainMetadata for ExternChainMeta {
     }
 }
 
-impl HasPolicy for Policy<AttributesCursor> {
-    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
-
-    fn created_at(&self) -> Timestamp { self.created_at }
-
-    fn valid_to(&self) -> Timestamp { self.valid_to }
-
-    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
-        if self.items.remaining_items == 0 {
+impl AttributesCursor {
+    fn next_item(&mut self, buf: &mut [u8]) -> Option<(AttributeTag, u8)> {
+        if self.remaining_items == 0 {
             return None;
         }
 
@@ -1618,11 +1618,11 @@ impl HasPolicy for Policy<AttributesCursor> {
             let num_read = prims::get_policy_section(
                 tag_value_len.as_mut_ptr() as *mut u8,
                 2,
-                self.items.current_position,
+                self.current_position,
             );
             (tag_value_len.assume_init(), num_read)
         };
-        self.items.current_position += num_read;
+        self.current_position += num_read;
         if tag_value_len[1] > 31 {
             // Should not happen because all attributes fit into 31 bytes.
             return None;
@@ -1631,13 +1631,53 @@ impl HasPolicy for Policy<AttributesCursor> {
             prims::get_policy_section(
                 buf.as_mut_ptr(),
                 u32::from(tag_value_len[1]),
-                self.items.current_position,
+                self.current_position,
             )
         };
-        self.items.current_position += num_read;
-        self.items.remaining_items -= 1;
+        self.current_position += num_read;
+        self.remaining_items -= 1;
         Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
     }
+}
+
+impl HasPolicy for Policy<AttributesCursor> {
+    type Iterator = PolicyAttributesIter;
+
+    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
+
+    fn created_at(&self) -> Timestamp { self.created_at }
+
+    fn valid_to(&self) -> Timestamp { self.valid_to }
+
+    #[inline(always)]
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
+        self.items.next_item(buf)
+    }
+
+    fn attributes(&self) -> Self::Iterator {
+        PolicyAttributesIter {
+            cursor: AttributesCursor {
+                current_position: 0,
+                remaining_items:  self.items.total_items,
+                total_items:      self.items.total_items,
+            },
+        }
+    }
+}
+
+impl Iterator for PolicyAttributesIter {
+    type Item = (AttributeTag, AttributeValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut inner = [0u8; 32];
+        let (tag, len) = self.cursor.next_item(&mut inner[1..])?;
+        inner[0] = len;
+        Some((tag, unsafe { AttributeValue::new_unchecked(inner) }))
+    }
+}
+
+impl ExactSizeIterator for PolicyAttributesIter {
+    fn len(&self) -> usize { self.cursor.remaining_items as usize }
 }
 
 /// An iterator over policies using host functions to supply the data.
@@ -1684,6 +1724,7 @@ impl Iterator for PoliciesIterator {
             items: AttributesCursor {
                 current_position: attributes_start,
                 remaining_items,
+                total_items: remaining_items,
             },
         })
     }
@@ -2611,4 +2652,68 @@ impl Deserial for HashKeccak256 {
 
 impl schema::SchemaType for HashKeccak256 {
     fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
+}
+
+unsafe impl<T, S: HasStateApi> StateClone<S> for StateSet<T, S> {
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
+        Self {
+            _marker:   self._marker,
+            prefix:    self.prefix,
+            state_api: cloned_state_api.clone(),
+        }
+    }
+}
+
+unsafe impl<T, V, S: HasStateApi> StateClone<S> for StateMap<T, V, S> {
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
+        Self {
+            _marker_key:   self._marker_key,
+            _marker_value: self._marker_value,
+            prefix:        self.prefix,
+            state_api:     cloned_state_api.clone(),
+        }
+    }
+}
+
+unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
+        let inner_value = match &*self.inner.get() {
+            StateBoxInner::Loaded {
+                entry,
+                modified,
+                value: _,
+            } => {
+                // Get a new entry from the cloned state.
+                let mut new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
+                let new_value =
+                    T::deserial_with_state(cloned_state_api, &mut new_entry).unwrap_abort();
+
+                // Set position of new entry to match the old entry.
+                let old_entry_position = entry.cursor_position();
+                new_entry.seek(SeekFrom::Start(old_entry_position)).unwrap_abort();
+
+                StateBoxInner::Loaded {
+                    entry:    new_entry,
+                    modified: *modified,
+                    value:    new_value,
+                }
+            }
+            StateBoxInner::Reference {
+                prefix,
+            } => StateBoxInner::Reference {
+                prefix: *prefix,
+            },
+        };
+
+        Self {
+            state_api: cloned_state_api.clone(),
+            inner:     UnsafeCell::new(inner_value),
+        }
+    }
+}
+
+/// Blanket implementation for all cloneable, flat types that don't have
+/// references to items in the state.
+unsafe impl<T: Clone, S> StateClone<S> for T {
+    unsafe fn clone_state(&self, _cloned_state_api: &S) -> Self { self.clone() }
 }
