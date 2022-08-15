@@ -635,7 +635,7 @@ pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>
 pub type TransferResult = Result<(), TransferError>;
 
 /// A type representing the attributes, lazily acquired from the host.
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct AttributesCursor {
     /// Current position of the cursor, starting from 0.
     /// Note that this is only for the variable attributes.
@@ -643,6 +643,15 @@ pub struct AttributesCursor {
     pub(crate) current_position: u32,
     /// The number of remaining items in the policy.
     pub(crate) remaining_items:  u16,
+    /// The total number of items. Used for creating new attribute cursors.
+    pub(crate) total_items:      u16,
+}
+
+/// An iterator over the attributes of a policy.
+/// The iterator returns pairs of [`AttributeTag`] and [`AttributeValue`].
+#[repr(transparent)]
+pub struct PolicyAttributesIter {
+    pub(crate) cursor: AttributesCursor,
 }
 
 /// A type representing the logger.

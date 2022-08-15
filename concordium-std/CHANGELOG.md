@@ -8,6 +8,9 @@
 - Add `Seek` requirement for `HasParameter`.
 - Implement `Seek` for `ExternParameter`.
 - Add wrapper type `TestParameterCursor` instead of exposing `Cursor` directly, when using `TestContext`. This is changing the type returned by `parameter_cursor` for `TestContext`, but provides the same interface.
+- Make using policies more ergonomic
+  - Add `attributes` method to `HasPolicy` that gives an iterator over `(AttributeTag, AttributeValue)`.
+  - Change `OwnedPolicy` to use `AttributeValue` instead of `OwnedAttributeValue` (breaking change)
 
 ## concordium-std 3.0.0 (2022-05-17)
 - Remove support for v0 smart contracts and add support for v1:
