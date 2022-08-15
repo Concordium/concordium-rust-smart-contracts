@@ -2,6 +2,14 @@
 
 ## Unreleased changes
 
+- Add rollback functionality to the `TestHost`.
+  - Add a function `TestHost::with_rollback` for calling receive functions,
+    which rolls back the host and state if the receive function returns an error.
+  - Add a `StateClone` trait.
+    - The `TestHost` requires the `State` to implement `StateClone` (breaking change).
+    - `StateClone` is implemented for all `Clone` types, and can be derived similarly to `DeserialWithState`.
+  - Add the method `cursor_position` to the `Seek` trait.
+
 ## concordium-std 3.1.0 (2022-08-04)
 
 - Change SchemaType implementation for cryptographic primitives to ByteArray, meaning that the primitives(e.g., hashes and signatures) are now supplied as hex strings in JSON.

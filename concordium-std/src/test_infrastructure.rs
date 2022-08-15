@@ -67,7 +67,6 @@
 //!     }
 //! }
 //! ```
-use crate::*;
 
 use self::trie::StateTrie;
 use crate::{
@@ -77,6 +76,7 @@ use crate::{
     collections::{BTreeMap, BTreeSet},
     num,
     rc::Rc,
+    *,
 };
 use convert::TryInto;
 
@@ -616,7 +616,7 @@ impl From<TestStateError> for ParseError {
     fn from(_: TestStateError) -> Self { ParseError::default() }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A wrapper for the data stored in [`TestStateEntry`], which is used to match
 /// the semantics of the host functions. Specifically, it is used to ensure that
 /// interactions with a deleted entry result in a error.
@@ -680,7 +680,7 @@ impl TestStateEntry {
 }
 
 #[derive(Debug, Clone)]
-/// A state api used for testing. Implement [`HasStateApi`].
+/// A state api used for testing. Implements [`HasStateApi`].
 pub struct TestStateApi {
     trie: Rc<RefCell<StateTrie>>,
 }
@@ -729,6 +729,13 @@ impl TestStateApi {
     pub fn new() -> Self {
         Self {
             trie: Rc::new(RefCell::new(StateTrie::new())),
+        }
+    }
+
+    /// Make a deep clone of the state. Used for rollbacks.
+    pub(crate) fn clone_deep(&self) -> Self {
+        Self {
+            trie: Rc::new(RefCell::new(self.trie.borrow().clone_deep())),
         }
     }
 }
@@ -1260,6 +1267,9 @@ impl<State> MockFn<State> {
     }
 }
 
+/// A map from contract address and entrypoints to mocking functions.
+type MockFnMap<State> = BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>;
+
 /// A [`Host`](HasHost) implementation used for unit testing smart contracts.
 ///
 /// The host provides a way to set up mock responses to transfers, and to
@@ -1272,7 +1282,9 @@ impl<State> MockFn<State> {
 /// were affected.
 pub struct TestHost<State> {
     /// Functions that mock responses to calls.
-    mocking_fns:      BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>,
+    // This is Rc+RefCell because it needs to be cloneable. There might be another way to make the
+    // MockFn cloneable, but this seemed like the easiest option.
+    mocking_fns:      Rc<RefCell<MockFnMap<State>>>,
     /// Transfers the contract has made during its execution.
     transfers:        RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
@@ -1286,7 +1298,9 @@ pub struct TestHost<State> {
     missing_accounts: BTreeSet<AccountAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
+impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
+    for TestHost<State>
+{
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -1325,6 +1339,11 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
     /// This uses the mock entrypoints set up with
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
+    ///
+    /// If the invocation results in `Err(_)`, the host and state will be rolled
+    /// back. This means that the state and the logs of, e.g., transactions will
+    /// look as if the invocation never occurred. See also
+    /// [`TestHost::with_rollback`].
     fn invoke_contract_raw(
         &mut self,
         to: &ContractAddress,
@@ -1333,7 +1352,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType> {
         self.commit_state();
-        let handler = match self.mocking_fns.get_mut(&(*to, OwnedEntrypointName::from(method))) {
+        let mocking_fns = self.mocking_fns.clone();
+        let mut mocking_fns_mut = mocking_fns.borrow_mut();
+        let handler = match mocking_fns_mut.get_mut(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
@@ -1346,24 +1367,37 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         if amount.micro_ccd > 0 && *self.contract_balance.borrow() < amount {
             return Err(CallContractError::AmountTooLarge);
         }
+
+        // Save a checkpoint for rolling back on errors.
+        let host_checkpoint = self.checkpoint();
+
         // Invoke the handler.
-        let (state_modified, res) = (handler.f)(
+        let invocation_res = (handler.f)(
             parameter,
             amount,
             &mut self.contract_balance.borrow_mut(),
             &mut self.state,
-        )?;
+        );
 
-        // Update the contract balance if the invocation succeeded.
-        if amount.micro_ccd > 0 {
-            *self.contract_balance.borrow_mut() -= amount;
+        match invocation_res {
+            Err(error) => {
+                // Roll back the host.
+                *self = host_checkpoint;
+                Err(error)
+            }
+            Ok((state_modified, res)) => {
+                // Update the contract balance if the invocation succeeded.
+                if amount.micro_ccd > 0 {
+                    *self.contract_balance.borrow_mut() -= amount;
+                }
+                // since the caller only modified (in principle) the in-memory state,
+                // we make sure to persist it to reflect what happens in actual calls
+                if state_modified {
+                    self.commit_state();
+                }
+                Ok((state_modified, res))
+            }
         }
-        // since the caller only modified (in principle) the in-memory state,
-        // we make sure to persist it to reflect what happens in actual calls
-        if state_modified {
-            self.commit_state();
-        }
-        Ok((state_modified, res))
     }
 
     /// Invoke a contract entrypoint.
@@ -1371,6 +1405,11 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
     /// This uses the mock entrypoints set up with
     /// `setup_mock_entrypoint`. The method will [fail] with a panic
     /// if no responses were set for the given contract address and method.
+    ///
+    /// If the invocation results in `Err(_)`, the host and state will be rolled
+    /// back. This means that the state and the logs of, e.g., transactions will
+    /// look as if the invocation never occurred. See also
+    /// [`TestHost::with_rollback`].
     fn invoke_contract_raw_read_only(
         &self,
         to: &ContractAddress,
@@ -1378,7 +1417,8 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         method: EntrypointName,
         amount: Amount,
     ) -> ReadOnlyCallContractResult<Self::ReturnValueType> {
-        let handler = match self.mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
+        let mocking_fns = self.mocking_fns.borrow();
+        let handler = match mocking_fns.get(&(*to, OwnedEntrypointName::from(method))) {
             Some(handler) => handler,
             None => fail!(
                 "Mocking has not been set up for invoking contract {:?} with method '{}'.",
@@ -1463,7 +1503,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
             .expect_report("TestHost::new: Could not store state root.");
         state.serial(&mut root_entry).expect_report("TestHost::new: cannot serialize state.");
         Self {
-            mocking_fns: BTreeMap::new(),
+            mocking_fns: Rc::new(RefCell::new(BTreeMap::new())),
             transfers: RefCell::new(Vec::new()),
             contract_balance: RefCell::new(Amount::zero()),
             state_builder,
@@ -1485,7 +1525,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         method: OwnedEntrypointName,
         handler: MockFn<State>,
     ) {
-        self.mocking_fns.insert((to, method), handler);
+        self.mocking_fns.borrow_mut().insert((to, method), handler);
     }
 
     /// Set the contract balance.
@@ -1556,6 +1596,42 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
+impl<State: StateClone<TestStateApi>> TestHost<State> {
+    /// Make a deep clone of the host, including the whole state and all
+    /// references to the state. Used for rolling back the host and state,
+    /// fx when using [`with_rollback`].
+    fn checkpoint(&self) -> Self {
+        let cloned_state_api = self.state_builder.state_api.clone_deep();
+        Self {
+            mocking_fns:      self.mocking_fns.clone(),
+            transfers:        self.transfers.clone(),
+            contract_balance: self.contract_balance.clone(),
+            state_builder:    StateBuilder {
+                state_api: cloned_state_api.clone(),
+            },
+            state:            unsafe { self.state.clone_state(&cloned_state_api) },
+            missing_accounts: self.missing_accounts.clone(),
+        }
+    }
+
+    /// Helper function for invoking receive methods that respects the
+    /// transactional nature of invocations. That is, if the invocation
+    /// returns `Err(_)`, then the host and state is rolled back to a
+    /// checkpoint just before the invocation.
+    pub fn with_rollback<R, E>(
+        &mut self,
+        call: impl FnOnce(&mut TestHost<State>) -> Result<R, E>,
+    ) -> Result<R, E> {
+        let checkpoint = self.checkpoint();
+        let res = call(self);
+        // Roll back on errors.
+        if res.is_err() {
+            *self = checkpoint;
+        }
+        res
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::TestStateApi;
@@ -1563,10 +1639,10 @@ mod test {
         cell::RefCell,
         rc::Rc,
         test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateMap, StateSet,
-        INITIAL_NEXT_ITEM_PREFIX,
+        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox, StateClone,
+        StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
-    use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
+    use concordium_contracts_common::{to_bytes, Cursor, Deserial, Read, Seek, SeekFrom, Write};
 
     #[test]
     // Perform a number of operations from Seek, Read, Write and HasStateApi
@@ -2070,5 +2146,60 @@ mod test {
         let actual_size =
             state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
         assert_eq!(expected_size as u32, actual_size);
+    }
+
+    #[test]
+    /// Test that deep cloning a statebox, in both of its internal forms, work
+    /// as expected.
+    fn deep_cloning_state_box() {
+        let state = TestStateApi::new();
+        let mut state_builder = TestStateBuilder::open(state.clone());
+
+        // Helper function.
+        fn get_loaded_entry_cursor_pos<T: concordium_contracts_common::Serial>(
+            b: &StateBox<T, TestStateApi>,
+        ) -> u32 {
+            match unsafe { &*b.inner.get() } {
+                crate::StateBoxInner::Loaded {
+                    entry,
+                    modified: _,
+                    value: _,
+                } => entry.cursor_position(),
+                crate::StateBoxInner::Reference {
+                    prefix: _,
+                } => panic!("Cannot be called on StateBoxInner::Reference"),
+            }
+        }
+
+        // These boxes have InnerBox::Loaded
+        let b1_loaded = state_builder.new_box(101010);
+        let mut b2_loaded = state_builder.new_box(b1_loaded);
+
+        let b2_bytes = to_bytes(&b2_loaded);
+
+        let b2_loaded_cursor_pos = get_loaded_entry_cursor_pos(&b2_loaded);
+
+        // Deserial to get boxes with InnerBox::Reference
+        let mut b2_ref = StateBox::<StateBox<i32, _>, _>::deserial_with_state(
+            &state,
+            &mut Cursor::new(b2_bytes),
+        )
+        .unwrap();
+
+        // Make clones
+        let state_clone = state.clone_deep();
+        let b2_loaded_clone = unsafe { b2_loaded.clone_state(&state_clone) };
+        let b2_ref_clone = unsafe { b2_ref.clone_state(&state_clone) };
+
+        // Modify originals
+        b2_loaded.update(|b| b.update(|x| *x += 1)); // 101011
+        b2_ref.update(|b| b.update(|x| *x += 1)); // 101012
+
+        // Check that clones are unchanged
+        let b2_loaded_clone_cursor_pos = get_loaded_entry_cursor_pos(&b2_loaded_clone);
+
+        assert_eq!(*b2_loaded_clone.get().get(), 101010);
+        assert_eq!(*b2_ref_clone.get().get(), 101010);
+        assert_eq!(b2_loaded_clone_cursor_pos, b2_loaded_cursor_pos);
     }
 }
