@@ -89,8 +89,9 @@ use concordium_std::{fmt::Debug, *};
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
-/// The metadata url for the wCCD token.
-const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
+/// The initial metadata url for the wCCD token.
+/// The url can be updated with the `setURL` function on the `implementation`.
+const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
@@ -222,7 +223,7 @@ struct AddressState<S> {
 }
 
 /// The `state` contract state.
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// Addresses of the protocol
@@ -234,9 +235,12 @@ struct State<S> {
     implementors:       StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// Contract is paused/unpaused.
     paused:             bool,
+    /// The metadata URL for the wCCD token following the specification RFC1738.
+    #[concordium(size_length = 2)]
+    url:                String,
 }
 
-#[derive(Serialize, PartialEq)]
+#[derive(Serialize, PartialEq, Clone)]
 enum ProtocolAddressesState {
     UnInitialized,
     Initialized {
@@ -248,7 +252,7 @@ enum ProtocolAddressesState {
 }
 
 /// The `implementation` contract state.
-#[derive(Serial, Deserial, SchemaType)]
+#[derive(Serial, Deserial, Clone, SchemaType)]
 struct StateImplementation {
     /// The admin address can pause/unpause the contract
     /// and set implementors.
@@ -257,7 +261,7 @@ struct StateImplementation {
     protocol_addresses: ProtocolAddressesImplementation,
 }
 
-#[derive(SchemaType, Serialize, PartialEq)]
+#[derive(SchemaType, Serialize, PartialEq, Clone)]
 enum ProtocolAddressesImplementation {
     UnInitialized,
     Initialized {
@@ -269,7 +273,7 @@ enum ProtocolAddressesImplementation {
 }
 
 /// The `proxy` contract state.
-#[derive(Serial, Deserial, SchemaType)]
+#[derive(Serial, Deserial, Clone, SchemaType)]
 struct StateProxy {
     /// The admin address can upgrade the implementation contract.
     admin:                  Address,
@@ -388,6 +392,15 @@ struct SetImplementorsParams {
 struct SetPausedParams {
     /// Contract is paused/unpaused.
     paused: bool,
+}
+
+/// The parameter type for the state contract and implementation contract
+/// functions `setURL`.
+#[derive(Serialize, SchemaType, Clone)]
+struct SetURLParams {
+    /// The URL following the specification RFC1738.
+    #[concordium(size_length = 2)]
+    url: String,
 }
 
 /// The parameter type for the state contract function `setIsOperator`.
@@ -524,6 +537,7 @@ impl<S: HasStateApi> State<S> {
             token:              state_builder.new_map(),
             implementors:       state_builder.new_map(),
             paused:             false,
+            url:                INITIAL_TOKEN_METADATA_URL.to_string(),
         }
     }
 }
@@ -809,11 +823,22 @@ fn contract_proxy_initialize<S: HasStateApi>(
         owner:    ctx.sender(),
     }))?;
 
+    let url = host.invoke_contract_read_only(
+        &state_address,
+        &Parameter(&[]),
+        EntrypointName::new_unchecked("getURL"),
+        Amount::zero(),
+    )?;
+
+    let url = url
+        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+        .get()?;
+
     // Log an event including the metadata for this token.
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
         token_id:     TOKEN_ID_WCCD,
         metadata_url: MetadataUrl {
-            url:  String::from(TOKEN_METADATA_URL),
+            url,
             hash: None,
         },
     }))?;
@@ -945,6 +970,23 @@ fn contract_state_set_paused<S: HasStateApi>(
     Ok(())
 }
 
+/// Set URL.
+#[receive(contract = "CIS2-wCCD-State", name = "setURL", parameter = "SetURLParams", mutable)]
+fn contract_state_set_url<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+
+    // Only implementation can set state.
+    only_implementation(implementation_address, ctx.sender())?;
+
+    // Set URL.
+    let params: SetURLParams = ctx.parameter_cursor().get()?;
+    host.state_mut().url = params.url;
+    Ok(())
+}
+
 /// Set implementation_address. Only the proxy can invoke this function.
 /// The admin on the proxy will initiate the `updateImplementation` function on
 /// the proxy which will invoke this function.
@@ -1054,6 +1096,15 @@ fn contract_state_get_paused<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<bool> {
     Ok(host.state().paused)
+}
+
+/// Get URL.
+#[receive(contract = "CIS2-wCCD-State", name = "getURL", return_value = "String")]
+fn contract_state_get_url<'a, 'b, S: 'a + HasStateApi>(
+    _ctx: &'b impl HasReceiveContext,
+    host: &'a impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<&'a String> {
+    Ok(&host.state().url)
 }
 
 /// Get Balance.
@@ -1876,6 +1927,52 @@ fn contract_pause<S: HasStateApi>(
     Ok(())
 }
 
+/// This function can be used to set a new URL. Only the
+/// admin of the implementation can call this function.
+#[receive(contract = "CIS2-wCCD", name = "setURL", parameter = "SetURLParams", mutable)]
+fn contract_set_url<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateImplementation, StateApiType = S>,
+) -> ContractResult<()> {
+    // Check that only the current admin can set the url.
+    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+
+    // Parse the parameter.
+    let params: SetURLParams = ctx.parameter_cursor().get()?;
+
+    let parameter_bytes = to_bytes(&SetURLParams {
+        url: params.url.clone(),
+    });
+
+    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+
+    host.invoke_contract_raw(
+        &state_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("setURL"),
+        Amount::zero(),
+    )?;
+
+    // Log an event including the metadata for this token.
+    let parameter_bytes =
+        to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+            token_id:     TOKEN_ID_WCCD,
+            metadata_url: MetadataUrl {
+                url:  params.url,
+                hash: None,
+            },
+        }));
+
+    host.invoke_contract_raw(
+        &proxy_address,
+        Parameter(&parameter_bytes),
+        EntrypointName::new_unchecked("logEvent"),
+        Amount::zero(),
+    )?;
+
+    Ok(())
+}
+
 /// Function to unpause the contract by the admin.
 #[receive(contract = "CIS2-wCCD", name = "unPause", mutable)]
 fn contract_un_pause<S: HasStateApi>(
@@ -2024,10 +2121,12 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<StateImplementation, StateApiType = S>,
+    host: &impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
+
+    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2035,8 +2134,19 @@ fn contract_token_metadata<S: HasStateApi>(
         // Check the token exists.
         ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
+        let url = host.invoke_contract_read_only(
+            &state_address,
+            &Parameter(&[]),
+            EntrypointName::new_unchecked("getURL"),
+            Amount::zero(),
+        )?;
+
+        let url = url
+            .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
+            .get()?;
+
         let metadata_url = MetadataUrl {
-            url:  TOKEN_METADATA_URL.to_string(),
+            url,
             hash: None,
         };
         response.push(metadata_url);
@@ -2123,6 +2233,13 @@ mod tests {
         // Set up a mock invocation for the state contract.
         host.setup_mock_entrypoint(
             STATE,
+            OwnedEntrypointName::new_unchecked("getURL".into()),
+            MockFn::returning_ok(INITIAL_TOKEN_METADATA_URL),
+        );
+
+        // Set up a mock invocation for the state contract.
+        host.setup_mock_entrypoint(
+            STATE,
             OwnedEntrypointName::new_unchecked("initialize".into()),
             MockFn::returning_ok(()),
         );
@@ -2155,7 +2272,7 @@ mod tests {
                 TokenMetadataEvent {
                     token_id:     TOKEN_ID_WCCD,
                     metadata_url: MetadataUrl {
-                        url:  String::from(TOKEN_METADATA_URL),
+                        url:  String::from(INITIAL_TOKEN_METADATA_URL),
                         hash: None,
                     },
                 }
