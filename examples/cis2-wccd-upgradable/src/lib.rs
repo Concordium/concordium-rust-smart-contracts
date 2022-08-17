@@ -1,43 +1,57 @@
-//! upgradable wCCD: Canonical wCCD implementation following the CIS2 standard.
-//! Compared to the other wCCD example in this repo, this smart contract
-//! can be paused/unpaused and upgraded by admin addresses.
+//! Upgradable wCCD smart contract (Concordium's canonical wCCD
+//! implementation following the CIS-2 standard)
 //!
 //! # Description
-//! The token in this contract is a wrapped CCD (wCCD), meaning it holds a one
-//! to one correspondence with the CCD.
+//! The token in this contract is a wrapped CCD (wCCD), meaning it holds a
+//! one-to-one correspondence with the CCD. Compared to the other wCCD
+//! example in this repo, this smart contract can be paused/unpaused
+//! and upgraded by admin addresses.
+//!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
-//! As follows from the CIS2 specification, the contract has a `transfer`
+//! As follows from the CIS-2 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some token owner address is allowed
-//! to transfer any tokens of the owner.
+//! to transfer or unwrap any tokens of the owner.
 //!
-//! Besides the contract functions required CIS2, this contract implements a
-//! function `wrap` for converting CCD into wCCD tokens. It accepts an amount of
-//! CCD and mints this amount of wCCD. The function takes a receiving address as
-//! the parameter and transfers the amount of tokens.
+//! Besides the contract functions required by the CIS-2 standard, this contract
+//! implements a function `wrap` for converting CCD into wCCD tokens. It accepts
+//! an amount of CCD and mints this amount of wCCD tokens. The function requires
+//! a receiving address as an input parameter that receives the minted wCCD
+//! tokens.
 //!
 //! The contract also implements a contract function `unwrap` for converting
 //! wCCD back into CCD. The function takes the amount of tokens to unwrap, the
 //! address owning these wCCD and a receiver for the CCD. If the sender is the
-//! owner or an operator of the owner, the wCCD are burned and the amount of
-//! CCD is sent to the receiver.
+//! owner or an operator of the owner, the wCCD tokens are burned and the amount
+//! of CCD is sent to the receiver.
 //!
 //! The protocol consists of three smart contracts (`proxy`, `implementation`,
-//! and `state`). All state-mutative wccd functions (e.g. `wrap`, `unwrap`,
-//! `transfer`, and `updateOperator`) have be invoked on the `proxy` contract.
-//! The `proxy` will append the `sender` to the input parameters
+//! and `state`). All state-mutative wCCD functions (e.g. `wrap`, `unwrap`,
+//! `transfer`, and `updateOperator`) have to be invoked on the `proxy`
+//! contract. The `proxy` will append the `sender` to the input parameters
 //! so that the `implementation` can retrieve this information.
-//! Invoking the state-mutative wccd functions directly on the`implementation`
+//! Invoking the state-mutative wCCD functions directly on the `implementation`
 //! without going through the `proxy` fallback function will revert.
-//! All non-state-mutative wccd functions (e.g. `balanceOf`, `operatorOf`
-//! and `tokenMetadata`) can be queried on the proxy or the implementation.
+//! All non-state-mutative wCCD functions (e.g. `balanceOf`, `operatorOf`,
+//! `supports` and `tokenMetadata`) can be queried on the `proxy` or the
+//! `implementation`. While for testings it can be convenient to invoke
+//! non-state-mutative wCCD functions on the `implementation` contract, you
+//! should always invoke them on the `proxy` contract in production. When the
+//! protocol is upgraded, the old `implementation` address becomes invalid, you
+//! would need to update your production product to the new `implementation`
+//! address.
 //!
-//! If you want to create a schema to invoke a state-mutative wccd function
+//! There is a corresponding tutorial for this smart contract available here:
+//! https://developer.concordium.software/en/mainnet/smart-contracts/tutorials/wCCD/index.html
+//! All schemas are available for download here: https://github.com/Concordium/concordium.github.io/
+//! tree/main/source/mainnet/smart-contracts/tutorials/wCCD/schemas
+//!
+//! If you want to create a schema to invoke a state-mutative wCCD function
 //! through the fallback function, add the respective `parameters` as attributes
-//! to the fallback function. For example, add `WrapParams`, `UnParams`,
+//! to the fallback function. For example, add `WrapParams`, `UnwrapParams`,
 //! `TransferParameter`, or `UpdateOperatorParams` as parameter to the
 //! fallback function to create a schema for the `wrap`, `unwrap`,
 //! `transfer`, and `updateOperator` function, respectively.
@@ -45,10 +59,10 @@
 //! Example using `WrapParams` to create a schema to invoke the
 //! `wrap` function via the fallback function on the proxy:
 //!
-//! #[receive(contract = "CIS2-wCCD-Proxy", fallback, parameter = "WrapParams",
+//! #[receive(contract = "CIS-2-wCCD-Proxy", fallback, parameter = "WrapParams",
 //! mutable, payable)] fn receive_fallback<S: HasStateApi>( ... ) { ... }
 //!
-//! If you want to create a schema to invoke a non-state-mutative wccd function
+//! If you want to create a schema to invoke a non-state-mutative wCCD function
 //! through the fallback function, add the respective `parameters` and
 //! `return_values` as attributes to the fallback function.
 //!
@@ -60,27 +74,34 @@
 //! "OperatorOfQueryParams", return_value = "OperatorOfQueryResponse", mutable,
 //! payable)] fn receive_fallback<S: HasStateApi>( ... ) { ... }
 //!
-//! State-mutative wccd functions need to retrieve the `sender` that was
+//! State-mutative wCCD functions need to retrieve the `sender` that was
 //! appended by the fallback function. These functions use the parameter
 //! type `ParamWithSender<T>` on the implementation. This type masks the
 //! `sender` to any generic input parameter `T`.
-//! Non-state-mutative wccd function don't need to retrieve the `sender`
-//! and even so the sender was appended by the fallback function they can
+//! Non-state-mutative wCCD function don't need to retrieve the `sender`
+//! and nevertheless the sender was appended by the fallback function they can
 //! use their usual input parameter. The last few bytes representing the
 //! `sender` are just ignored. E.g. the `operatorOf` function uses
 //! `OperatorOfQueryParams` and not `ParamWithSender<OperatorOfQueryParams>`
-//! on the implementation.
+//! on the `implementation`.
 //!
 //! The admin address on the `proxy` can upgrade the protocol with
-//! a new `implementation` contract. The admin address on the
-//! `implementation` can pause/unpause the protocol and set implementors.
+//! a new `implementation` contract by invoking the `updateImplementation`
+//! function. This invoke will update the `protocol_addresses` to the new
+//! `implementation` address in all contracts. The `proxy` and `state` contracts
+//! can not be upgraded (change the logic/code). The state of the smart contract
+//! is kept in the `state` contract. Only the `implementation` can mutate values
+//! in the `state` contract (except for the `protocol_addresses`). All CCD funds
+//! are on the `proxy` and all wCCD events are logged on `proxy`. The admin
+//! address on the `implementation` can pause/unpause the protocol and set
+//! implementors.
 //!
 //! Deploy the `state` and the `implementation` contract first by invoking their
 //! respective `init` functions. Then, deploy the `proxy` contract and pass
 //! the already deployed contract addresses into the proxy `init` function.
 //! Then, call the `initialize` function on the `proxy` contract. This function
 //! will call the `initialize` functions on the `state` as well as the
-//! `implementation` contracts to set the remaining addresses.
+//! `implementation` contracts to set the remaining `protocol_addresses`.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::*;
@@ -89,15 +110,16 @@ use concordium_std::{fmt::Debug, *};
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
-/// The initial metadata url for the wCCD token.
-/// The url can be updated with the `setURL` function on the `implementation`.
+/// The initial metadata URL for the wCCD token.
+/// The URL can be updated with the `setURL` function on the `implementation`.
 const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
 
-/// Tag for the NewAdmin event.
+/// Tag for the NewAdmin event. The CIS-2 library already uses the
+/// event tags from `u8::MAX` to `u8::MAX - 4`.
 pub const TOKEN_NEW_ADMIN_EVENT_TAG: u8 = u8::MAX - 5;
 
 /// Tag for the NewImplementation event.
@@ -321,10 +343,13 @@ struct WrapParams {
     /// If the receiver is the sender of the message wrapping the tokens, it
     /// will not log a transfer event.
     to:   Receiver,
-    /// Some additional bytes are used in the `OnReceivingCis2` hook. Only
+    /// Some additional data bytes are used in the `OnReceivingCis2` hook. Only
     /// if the `Receiver` is a contract and the `Receiver` is not
     /// the invoker of the wrap function the receive hook function is
-    /// executed.
+    /// executed. The `OnReceivingCis2` hook invokes the function entrypoint
+    /// specified in the `Receiver` with these additional data bytes as
+    /// part of the input parameters. This action allows the receiving smart
+    /// contract to react to the credited wCCD amount.
     data: AdditionalData,
 }
 
@@ -457,6 +482,9 @@ struct ReturnBasicState {
     implementation_address: ContractAddress,
     /// Contract is paused/unpaused.
     paused:                 bool,
+    /// The URL following the specification RFC1738.
+    #[concordium(size_length = 2)]
+    url:                    String,
 }
 
 /// Update struct.
@@ -492,7 +520,7 @@ enum CustomContractError {
     OnlyImplementation,
     /// Only proxy contract.
     OnlyProxy,
-    /// Raised when implementation can not invoke state contract.
+    /// Raised when implementation/proxy can not invoke state contract.
     StateInvokeError,
 }
 
@@ -584,7 +612,6 @@ impl StateImplementation {
     }
 
     /// Check if an address is an operator of a specific owner address.
-    /// Results in an error if the token id does not exist in the state.
     fn is_operator<S>(
         &self,
         state_address: &ContractAddress,
@@ -603,7 +630,7 @@ impl StateImplementation {
         )?;
 
         // It is expected that this contract is initialized with the w_ccd_state
-        // contract (a V1 contract). In that case, the balance variable can be
+        // contract (a V1 contract). In that case, the is_operator variable can be
         // queried from the state contract without error.
         let is_operator = is_operator
             .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
@@ -674,16 +701,23 @@ fn contract_state_init<S: HasStateApi>(
     Ok(state)
 }
 
-/// Initialize the implementation contract.
-#[init(contract = "CIS2-wCCD")]
+/// Initialize the implementation contract. This function logs a new admin
+/// event.
+#[init(contract = "CIS2-wCCD", enable_logger)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     _state_builder: &mut StateBuilder<S>,
+    logger: &mut impl HasLogger,
 ) -> InitResult<StateImplementation> {
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Construct the initial contract state.
     let state = StateImplementation::new(invoker);
+
+    // Log a new admin event.
+    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
+        new_admin: invoker,
+    }))?;
 
     Ok(state)
 }
@@ -941,7 +975,7 @@ fn contract_state_set_implementors<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -959,7 +993,7 @@ fn contract_state_set_paused<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -976,7 +1010,7 @@ fn contract_state_set_url<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -1000,7 +1034,7 @@ fn contract_state_set_implementation_address<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, _implementation_address) = get_protocol_addresses_state(host)?;
+    let (proxy_address, _implementation_address) = get_protocol_addresses_from_state(host)?;
 
     // Only proxy can update the implementation address.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1027,7 +1061,7 @@ fn contract_state_set_balance<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -1061,7 +1095,7 @@ fn contract_state_set_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
 
     // Only implementation can set state.
     only_implementation(implementation_address, ctx.sender())?;
@@ -1239,7 +1273,7 @@ fn contract_implementation_transfer_ccd<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to view contract balance.
+/// Function to view contract balance of state contract.
 #[receive(contract = "CIS2-wCCD-State", name = "viewBalance", return_value = "Amount")]
 fn contract_state_view_balance<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -1248,7 +1282,7 @@ fn contract_state_view_balance<S: HasStateApi>(
     Ok(host.self_balance())
 }
 
-/// Function to view contract balance.
+/// Function to view contract balance of implementation contract.
 #[receive(contract = "CIS2-wCCD", name = "viewBalance", return_value = "Amount")]
 fn contract_view_balance<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -1257,7 +1291,7 @@ fn contract_view_balance<S: HasStateApi>(
     Ok(host.self_balance())
 }
 
-/// Function to view contract balance.
+/// Function to view contract balance of proxy contract.
 #[receive(contract = "CIS2-wCCD-Proxy", name = "viewBalance", return_value = "Amount")]
 fn contract_proxy_view_balance<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -1272,12 +1306,13 @@ fn contract_state_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ReturnBasicState> {
-    let (proxy_address, implementation_address) = get_protocol_addresses_state(host)?;
+    let (proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
 
     let state = ReturnBasicState {
         proxy_address,
         implementation_address,
         paused: host.state().paused,
+        url: host.state().url.clone(),
     };
     Ok(state)
 }
@@ -1301,7 +1336,7 @@ fn contract_proxy_view<'a, 'b, S: HasStateApi>(
 }
 
 /// Helper function to get protocol addresses from the implementation contract.
-fn get_protocol_addresses_implementation<S>(
+fn get_protocol_addresses_from_implementation<S>(
     host: &impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<(ContractAddress, ContractAddress)> {
     if let ProtocolAddressesImplementation::Initialized {
@@ -1316,7 +1351,7 @@ fn get_protocol_addresses_implementation<S>(
 }
 
 /// Helper function to get protocol addresses from the state contract.
-fn get_protocol_addresses_state<S>(
+fn get_protocol_addresses_from_state<S>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<(ContractAddress, ContractAddress)> {
     if let ProtocolAddressesState::Initialized {
@@ -1361,7 +1396,7 @@ fn contract_wrap<S: HasStateApi>(
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1463,7 +1498,7 @@ fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1567,7 +1602,7 @@ fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1686,7 +1721,7 @@ fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<()> {
-    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Can be only called through the fallback function on the proxy.
     only_proxy(proxy_address, ctx.sender())?;
@@ -1842,7 +1877,7 @@ fn contract_set_implementor<S: HasStateApi>(
 
     let parameter_bytes = to_bytes(&params);
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Update the implementors in the state
     host.invoke_contract_raw(
@@ -1915,7 +1950,7 @@ fn contract_pause<S: HasStateApi>(
         paused: true,
     });
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -1944,7 +1979,7 @@ fn contract_set_url<S: HasStateApi>(
         url: params.url.clone(),
     });
 
-    let (proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -1986,7 +2021,7 @@ fn contract_un_pause<S: HasStateApi>(
         paused: false,
     });
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     host.invoke_contract_raw(
         &state_address,
@@ -2022,7 +2057,7 @@ fn contract_balance_of<S: HasStateApi>(
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2053,7 +2088,7 @@ fn contract_operator_of<S: HasStateApi>(
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2087,7 +2122,7 @@ fn contract_supports<S: HasStateApi>(
     // Parse the parameter.
     let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2126,7 +2161,7 @@ fn contract_token_metadata<S: HasStateApi>(
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
 
-    let (_proxy_address, state_address) = get_protocol_addresses_implementation(host)?;
+    let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
@@ -2430,11 +2465,12 @@ mod tests {
         // Setup the context
         let mut ctx = TestInitContext::empty();
         ctx.set_init_origin(ACCOUNT_0);
+        let mut logger = TestLogger::init();
 
         let mut builder = TestStateBuilder::new();
 
         // Call the contract function.
-        let result = contract_init(&ctx, &mut builder);
+        let result = contract_init(&ctx, &mut builder, &mut logger);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
