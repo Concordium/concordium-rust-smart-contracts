@@ -18,7 +18,7 @@ use concordium_std::*;
 type State = AccountAddress;
 const LOCAL_COUNTRY: [u8; 2] = *b"DK";
 
-#[derive(Reject, PartialEq, Eq, Debug)]
+#[derive(Serial, Reject, PartialEq, Eq, Debug)]
 enum ContractError {
     NotLocalSender,
     TransferErrorAmountTooLarge,
