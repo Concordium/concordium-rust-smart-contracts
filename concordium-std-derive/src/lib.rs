@@ -46,12 +46,15 @@ struct OptionalArguments {
     pub(crate) enable_logger:     bool,
     /// The function is a low-level one, with direct access to contract memory.
     pub(crate) low_level:         bool,
-    /// Which type, if any, is the parameter type of the contract.
+    /// Which type, if any, is the parameter type of the function.
     /// This is used when generating schemas.
     pub(crate) parameter:         Option<syn::LitStr>,
-    /// Which type, if any, is the return value of the contract.
+    /// Which type, if any, is the return value of the function.
     /// This is used when generating schemas.
     pub(crate) return_value:      Option<syn::LitStr>,
+    /// Which type, if any, is the error type of the function.
+    /// This is used when generating schemas.
+    pub(crate) error:             Option<syn::LitStr>,
     /// If enabled, the function has access to cryptographic primitives.
     pub(crate) crypto_primitives: bool,
 }
@@ -234,6 +237,7 @@ const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
 const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
+const INIT_ATTRIBUTE_ERROR: &str = "error";
 const INIT_ATTRIBUTE_CRYPTO_PRIMITIVES: &str = "crypto_primitives";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
@@ -259,6 +263,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             "The 'return_value' attribute is currently not supported for init methods.",
         ));
     }
+    let error = attributes.extract_value(INIT_ATTRIBUTE_ERROR);
     let crypto_primitives = attributes.extract_flag(INIT_ATTRIBUTE_CRYPTO_PRIMITIVES).is_some();
 
     // Make sure that there are no unrecognized attributes. These would typically be
@@ -273,6 +278,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             low_level,
             parameter,
             return_value: None, // Return values are currently not supported on init methods.
+            error,
             crypto_primitives,
         },
     })
@@ -282,6 +288,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
 
 const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
 const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
+const RECEIVE_ATTRIBUTE_ERROR: &str = "error";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
 const RECEIVE_ATTRIBUTE_FALLBACK: &str = "fallback";
@@ -302,6 +309,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
     let return_value: Option<syn::LitStr> =
         attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
+    let error: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_ERROR);
     let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE).is_some();
     let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER).is_some();
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
@@ -349,6 +357,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 low_level: low_level.is_some(),
                 parameter,
                 return_value,
+                error,
                 crypto_primitives,
             },
             mutable: mutable.is_some(), /* This is also optional, but does not belong in
@@ -366,6 +375,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                         low_level: low_level.is_some(),
                         parameter,
                         return_value,
+                        error,
                         crypto_primitives,
                     },
                     mutable: mutable.is_some(), /* TODO: This is also optional, but does not
@@ -600,9 +610,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     // attribute is set.
     let parameter_option = init_attributes.optional.parameter;
     let return_value_option = None; // Return values are currently not supported on init.
+    let error_option = init_attributes.optional.error;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
+        error_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
@@ -946,9 +958,11 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // attribute is set.
     let parameter_option = receive_attributes.optional.parameter;
     let return_value_option = receive_attributes.optional.return_value;
+    let error_option = receive_attributes.optional.error;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
+        error_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
@@ -1003,32 +1017,67 @@ fn contract_function_optional_args_tokens(
 fn contract_function_schema_tokens(
     parameter_option: Option<syn::LitStr>,
     return_value_option: Option<syn::LitStr>,
+    error_option: Option<syn::LitStr>,
     rust_name: syn::Ident,
     wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let construct_schema_bytes = match (parameter_option, return_value_option) {
-        (Some(parameter_ty), Some(return_value_ty)) => {
+    let construct_schema_bytes = match (parameter_option, return_value_option, error_option) {
+        (Some(parameter_ty), None, None) => {
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::Param(parameter));})
+        }
+        (None, Some(return_value_ty), None) => {
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+            let schema_bytes =
+                concordium_std::to_bytes(&schema::FunctionV2::Rv(return_value));     })
+        }
+        (Some(parameter_ty), Some(return_value_ty), None) => {
             let parameter_ty = parameter_ty.parse::<syn::Type>()?;
             let return_value_ty = return_value_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::Both { parameter, return_value });
-            })
+                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamRv {
+            parameter, return_value });     })
         }
-        (Some(parameter_ty), None) => {
+        (None, None, Some(error_ty)) => {
+            let error_ty = error_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let error = <#error_ty as schema::SchemaType>::get_type();
+            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::Error(error));     })
+        }
+        (Some(parameter_ty), None, Some(error_ty)) => {
             let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            let error_ty = error_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::Parameter(parameter));
-            })
+                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                    let error = <#error_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamError {
+            parameter, error });     })
         }
-        (None, Some(return_value_ty)) => {
+        (None, Some(return_value_ty), Some(error_ty)) => {
             let return_value_ty = return_value_ty.parse::<syn::Type>()?;
+            let error_ty = error_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
-            })
+                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                    let error = <#error_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::RvError {
+            return_value, error });     })
+        }
+        (Some(parameter_ty), Some(return_value_ty), Some(error_ty)) => {
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
+            let error_ty = error_ty.parse::<syn::Type>()?;
+            Some(quote! {
+                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                    let error = <#error_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamRvError {
+            parameter, return_value, error });     })
         }
         _ => None,
     };
@@ -1054,6 +1103,7 @@ fn contract_function_schema_tokens(
 fn contract_function_schema_tokens(
     _parameter_option: Option<syn::LitStr>,
     _return_value_option: Option<syn::LitStr>,
+    _error_option: Option<syn::LitStr>,
     _rust_name: syn::Ident,
     _wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
