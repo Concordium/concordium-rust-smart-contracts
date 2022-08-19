@@ -103,7 +103,7 @@ fn auction_init<S: HasStateApi>(
 }
 
 /// Receive function for accounts to place a bid in the auction
-#[receive(contract = "auction", name = "bid", payable, mutable)]
+#[receive(contract = "auction", name = "bid", payable, mutable, error = "BidError")]
 fn auction_bid<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State, StateApiType = S>,
@@ -171,7 +171,7 @@ fn view_highest_bid<S: HasStateApi>(
 /// Receive function used to finalize the auction. It sends the highest bid (the
 /// current balance of this smart contract) to the owner of the smart contract
 /// instance.
-#[receive(contract = "auction", name = "finalize", mutable)]
+#[receive(contract = "auction", name = "finalize", mutable, error = "FinalizeError")]
 fn auction_finalize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State, StateApiType = S>,

@@ -28,7 +28,7 @@ const EXPECTED_PARAMETER_SIZE: u32 = 32;
 pub type ReceiveParameter = [u8; 32];
 
 /// The different errors the contract can produce.
-#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+#[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum CustomContractError {
     InvokeTransferError,
 }
@@ -43,7 +43,13 @@ struct State;
 
 /// Receive a transaction with a message. This ensures that the message is 32
 /// bytes and that the sender of the message is an account.
-#[receive(contract = "memo", name = "receive", parameter = "ReceiveParameter", payable)]
+#[receive(
+    contract = "memo",
+    name = "receive",
+    parameter = "ReceiveParameter",
+    payable,
+    error = "CustomContractError"
+)]
 fn memo_receive<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State, StateApiType = S>,

@@ -18,7 +18,7 @@ use concordium_std::*;
 type State = AccountAddress;
 const LOCAL_COUNTRY: [u8; 2] = *b"DK";
 
-#[derive(Serial, Reject, PartialEq, Eq, Debug)]
+#[derive(Serial, Reject, PartialEq, Eq, Debug, SchemaType)]
 enum ContractError {
     NotLocalSender,
     TransferErrorAmountTooLarge,
@@ -45,7 +45,7 @@ fn init<S: HasStateApi>(
 
 /// Forward the `amount` to the account defined in the state iff all sender
 /// policies have the country of residence in `LOCAL_COUNTRY`.
-#[receive(contract = "transfer-policy-check", name = "receive", payable)]
+#[receive(contract = "transfer-policy-check", name = "receive", payable, error = "ContractError")]
 fn receive<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State, StateApiType = S>,
