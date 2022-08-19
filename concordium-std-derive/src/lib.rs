@@ -492,6 +492,22 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// #[init(contract = "my_contract", parameter = "MyParam")]
 /// ```
 ///
+/// ## `error="<Error>"`: Generate schema for error
+/// To make schema generation to include the error for this function, add
+/// the attribute `error` and set it equal to a string literal containing
+/// the name of the type used for the error. The error type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// enum MyError { ... }
+///
+/// #[init(contract = "my_contract", parameter = "MyError")]
+/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasStateApi) -> Result<(), MyError> {...}
+/// ```
+///
 /// ## `crypto_primitives`: Function can access cryptographic primitives
 /// Setting the `crypto_primitives` attribute changes the required signature to
 /// include an extra argument `&impl HasCryptoPrimitives`, which provides
@@ -762,6 +778,25 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///    ctx: &impl HasReceiveContext,
 ///    host: &HasHost<MyState, StateApiType = S>,
 /// ) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
+/// ## `error="<Error>"`: Generate schema for error
+/// To make schema generation include the error for this function, add
+/// the attribute `error` and set it equal to a string literal containing
+/// the type used for the error. The error type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// enum MyError { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", error = "MyError")]
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+/// ) -> Result<A, MyError> {...}
 /// ```
 ///
 /// ## `fallback`: Create a fallback entrypoint.
