@@ -478,7 +478,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
-/// To make schema generation to include the parameter for this function, add
+/// To make schema generation include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
 /// the name of the type used for the parameter. The parameter type must
 /// implement the SchemaType trait, which for most cases can be derived
@@ -493,7 +493,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ```
 ///
 /// ## `error="<Error>"`: Generate schema for error
-/// To make schema generation to include the error for this function, add
+/// To make schema generation include the error for this function, add
 /// the attribute `error` and set it equal to a string literal containing
 /// the name of the type used for the error. The error type must
 /// implement the SchemaType trait, which for most cases can be derived

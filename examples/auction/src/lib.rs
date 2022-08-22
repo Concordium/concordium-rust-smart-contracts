@@ -62,7 +62,7 @@ struct InitParameter {
 }
 
 /// `bid` function errors
-#[derive(Debug, PartialEq, Eq, Clone, Reject, Serial)]
+#[derive(Debug, PartialEq, Eq, Clone, Reject, Serial, SchemaType)]
 enum BidError {
     /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
@@ -76,7 +76,7 @@ enum BidError {
 }
 
 /// `finalize` function errors
-#[derive(Debug, PartialEq, Eq, Clone, Reject, Serial)]
+#[derive(Debug, PartialEq, Eq, Clone, Reject, Serial, SchemaType)]
 enum FinalizeError {
     /// Raised when finalizing an auction before auction end time passed
     AuctionStillActive,

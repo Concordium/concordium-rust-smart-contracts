@@ -6,6 +6,8 @@
   - Deriving `Reject` requires the enum to implement `Serial`.
 - Add ability to add schemas for error on init and receive.
   - For example `#[receive(..., error = "MyError")]`
+  - This allows cargo-concordium and concordium-client to display a typed error
+    when simulating contract invocations.
 
 ## concordium-std-derive 3.1.0 (2022-08-04)
 
