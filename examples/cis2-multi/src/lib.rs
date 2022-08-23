@@ -104,7 +104,7 @@ struct State<S> {
 }
 
 /// The different errors the contract can produce.
-#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+#[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
@@ -368,7 +368,14 @@ fn contract_view<S: HasStateApi>(
 ///
 /// Note: Can at most mint 32 token types in one call due to the limit on the
 /// number of logs a smart contract can produce on each function call.
-#[receive(contract = "CIS2-Multi", name = "mint", parameter = "MintParams", enable_logger, mutable)]
+#[receive(
+    contract = "CIS2-Multi",
+    name = "mint",
+    parameter = "MintParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
 fn contract_mint<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
@@ -428,6 +435,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
     contract = "CIS2-Multi",
     name = "transfer",
     parameter = "TransferParameter",
+    error = "ContractError",
     enable_logger,
     mutable
 )]
@@ -493,6 +501,7 @@ fn contract_transfer<S: HasStateApi>(
     contract = "CIS2-Multi",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
+    error = "ContractError",
     enable_logger,
     mutable
 )]
@@ -543,7 +552,8 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
     contract = "CIS2-Multi",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
-    return_value = "ContractBalanceOfQueryResponse"
+    return_value = "ContractBalanceOfQueryResponse",
+    error = "ContractError"
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -571,7 +581,8 @@ fn contract_balance_of<S: HasStateApi>(
     contract = "CIS2-Multi",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
-    return_value = "OperatorOfQueryResponse"
+    return_value = "OperatorOfQueryResponse",
+    error = "ContractError"
 )]
 fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -603,7 +614,8 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
     contract = "CIS2-Multi",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
-    return_value = "TokenMetadataQueryResponse"
+    return_value = "TokenMetadataQueryResponse",
+    error = "ContractError"
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -647,7 +659,7 @@ fn contract_token_metadata<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Contract name part of the parameter is invalid.
 /// - Calling back `transfer` to sender contract rejects.
-#[receive(contract = "CIS2-Multi", name = "onReceivingCIS2")]
+#[receive(contract = "CIS2-Multi", name = "onReceivingCIS2", error = "ContractError")]
 fn contract_on_cis2_received<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -693,7 +705,8 @@ fn contract_on_cis2_received<S: HasStateApi>(
     contract = "CIS2-Multi",
     name = "supports",
     parameter = "SupportsQueryParams",
-    return_value = "SupportsQueryResponse"
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
 )]
 fn contract_supports<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -725,6 +738,7 @@ fn contract_supports<S: HasStateApi>(
     contract = "CIS2-Multi",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_set_implementor<S: HasStateApi>(

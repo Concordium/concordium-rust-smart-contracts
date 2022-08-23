@@ -898,10 +898,10 @@ macro_rules! claim_ne {
 /// custom error types.
 ///
 /// # Example
-/// Defining a custom error type that implements [`Reject`].
+/// Defining a custom error type that implements [`Reject`] and [`Serial`].
 /// ```no_run
 /// # use concordium_std::*;
-/// #[derive(Reject)]
+/// #[derive(Serial, Reject)]
 /// enum MyCustomError {
 ///     SomeError,
 /// }
@@ -926,10 +926,10 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// custom error types.
 ///
 /// # Example
-/// Defining a custom error type
+/// Defining a custom error type that implements [`Reject`] and [`Serial`].
 /// ```no_run
 /// # use concordium_std::*;
-/// #[derive(Reject)]
+/// #[derive(Serial, Reject)]
 /// enum MyCustomError {
 ///     SomeError,
 /// }

@@ -95,7 +95,7 @@ pub struct State<S> {
 
 // Contract implementation
 
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial)]
 enum InitError {
     /// Failed parsing the parameter
     #[from(ParseError)]
@@ -145,7 +145,7 @@ fn contract_receive_deposit<S: HasStateApi>(
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum ReceiveError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
@@ -191,7 +191,8 @@ type ContractResult<A> = Result<A, ReceiveError>;
     name = "receive",
     parameter = "Message",
     payable,
-    mutable
+    mutable,
+    error = "ReceiveError"
 )]
 #[inline(always)]
 fn contract_receive_message<S: HasStateApi>(

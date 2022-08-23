@@ -712,12 +712,41 @@ pub enum Cis2Error<R> {
     Custom(R),
 }
 
-/// Convert Cis2Error into a reject with error code:
+impl<R: schema::SchemaType> schema::SchemaType for Cis2Error<R> {
+    fn get_type() -> schema::Type {
+        schema::Type::Enum(Vec::from([
+            (String::from("InvalidTokenId"), schema::Fields::None),
+            (String::from("InsufficientFunds"), schema::Fields::None),
+            (String::from("Unauthorized"), schema::Fields::None),
+            (String::from("Custom"), schema::Fields::Unnamed(Vec::from([R::get_type()]))),
+        ]))
+    }
+}
+
+impl<R: Serial> Serial for Cis2Error<R> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            Cis2Error::InvalidTokenId => out.write_u8(0),
+            Cis2Error::InsufficientFunds => out.write_u8(1),
+            Cis2Error::Unauthorized => out.write_u8(2),
+            Cis2Error::Custom(r) => {
+                out.write_u8(3)?;
+                r.serial(out)
+            }
+        }
+    }
+}
+
+/// Convert `Cis2Error` into a reject with error code:
 /// - InvalidTokenId: -42000001
 /// - InsufficientFunds: -42000002
 /// - Unauthorized: -42000003
-impl<R: Into<Reject>> From<Cis2Error<R>> for Reject {
+/// - Custom: The error code of `R`.
+///
+/// Also serializes the `Cis2Error` and adds it as the return value.
+impl<R: Into<Reject> + Serial> From<Cis2Error<R>> for Reject {
     fn from(err: Cis2Error<R>) -> Self {
+        let return_value = Some(to_bytes(&err));
         let error_code = match err {
             Cis2Error::InvalidTokenId => unsafe {
                 crate::num::NonZeroI32::new_unchecked(-42000001)
@@ -730,7 +759,7 @@ impl<R: Into<Reject>> From<Cis2Error<R>> for Reject {
         };
         Self {
             error_code,
-            return_value: None,
+            return_value,
         }
     }
 }
