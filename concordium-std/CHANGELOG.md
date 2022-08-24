@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std 4.0.0 (2022-08-24)
+
 - Add rollback functionality to the `TestHost`.
   - Add a function `TestHost::with_rollback` for calling receive functions,
     which rolls back the host and state if the receive function returns an error.

@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std-derive 4.0.0 (2022-08-24)
+
 - Add ability to `derive(Reject)` for enums *with fields*.
   - Deriving `Reject` requires the enum to implement `Serial`.
 - Add ability to add schemas for error on init and receive.

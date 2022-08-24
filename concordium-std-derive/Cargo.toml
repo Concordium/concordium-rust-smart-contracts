@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std-derive"
-version = "3.1.0"
+version = "4.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -12,12 +12,12 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 syn = { version = "1.0.63", features = [ "full", "extra-traits" ] }
-quote = "=1.0.0"
+quote = "1.0"
 proc-macro2 = "1.0"
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-contracts-common/concordium-contracts-common"
-version = "3.0"
+version = "4"
 default-features = false
 
 [lib]
