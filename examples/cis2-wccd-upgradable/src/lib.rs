@@ -497,7 +497,7 @@ pub enum Update {
 }
 
 /// The different errors the contract can produce.
-#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+#[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
@@ -669,7 +669,7 @@ impl StateImplementation {
 }
 
 /// This function logs an event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logEvent", enable_logger)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "logEvent", error = "ContractError", enable_logger)]
 fn contract_proxy_log_event<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<StateProxy, StateApiType = S>,
@@ -752,6 +752,7 @@ fn contract_proxy_init<S: HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "initialize",
     parameter = "InitializeStateParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_state_initialize<S: HasStateApi>(
@@ -783,6 +784,7 @@ fn contract_state_initialize<S: HasStateApi>(
     contract = "CIS2-wCCD",
     name = "initialize",
     parameter = "InitializeImplementationParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_initialize<S: HasStateApi>(
@@ -814,7 +816,13 @@ fn contract_initialize<S: HasStateApi>(
 /// new CIS-2 token was deployed. This function logs an event including the
 /// metadata for this token. This function logs a new implementation event.
 /// This function logs a new admin event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "initialize", enable_logger, mutable)]
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    name = "initialize",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
 fn contract_proxy_initialize<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -891,7 +899,7 @@ fn contract_proxy_initialize<S: HasStateApi>(
 }
 
 /// The fallback method, which redirects the invocations to the implementation.
-#[receive(contract = "CIS2-wCCD-Proxy", fallback, mutable, payable)]
+#[receive(contract = "CIS2-wCCD-Proxy", error = "ContractError", fallback, mutable, payable)]
 fn receive_fallback<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateProxy, StateApiType = S>,
@@ -969,6 +977,7 @@ fn only_proxy(proxy_address: ContractAddress, sender: Address) -> ContractResult
     contract = "CIS2-wCCD-State",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_state_set_implementors<S: HasStateApi>(
@@ -988,7 +997,13 @@ fn contract_state_set_implementors<S: HasStateApi>(
 }
 
 /// Set paused.
-#[receive(contract = "CIS2-wCCD-State", name = "setPaused", parameter = "SetPausedParams", mutable)]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "setPaused",
+    parameter = "SetPausedParams",
+    error = "ContractError",
+    mutable
+)]
 fn contract_state_set_paused<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
@@ -1005,7 +1020,13 @@ fn contract_state_set_paused<S: HasStateApi>(
 }
 
 /// Set URL.
-#[receive(contract = "CIS2-wCCD-State", name = "setURL", parameter = "SetURLParams", mutable)]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "setURL",
+    parameter = "SetURLParams",
+    error = "ContractError",
+    mutable
+)]
 fn contract_state_set_url<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
@@ -1028,6 +1049,7 @@ fn contract_state_set_url<S: HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "setImplementationAddress",
     parameter = "SetImplementationAddressParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_state_set_implementation_address<S: HasStateApi>(
@@ -1055,6 +1077,7 @@ fn contract_state_set_implementation_address<S: HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "setBalance",
     parameter = "SetBalanceParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_state_set_balance<S: HasStateApi>(
@@ -1089,6 +1112,7 @@ fn contract_state_set_balance<S: HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "setIsOperator",
     parameter = "SetIsOperatorParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_state_set_operator<S: HasStateApi>(
@@ -1124,7 +1148,12 @@ fn contract_state_set_operator<S: HasStateApi>(
 }
 
 /// Get paused.
-#[receive(contract = "CIS2-wCCD-State", name = "getPaused", return_value = "bool")]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "getPaused",
+    return_value = "bool",
+    error = "ContractError"
+)]
 fn contract_state_get_paused<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -1133,7 +1162,12 @@ fn contract_state_get_paused<S: HasStateApi>(
 }
 
 /// Get URL.
-#[receive(contract = "CIS2-wCCD-State", name = "getURL", return_value = "String")]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "getURL",
+    return_value = "String",
+    error = "ContractError"
+)]
 fn contract_state_get_url<'a, 'b, S: 'a + HasStateApi>(
     _ctx: &'b impl HasReceiveContext,
     host: &'a impl HasHost<State<S>, StateApiType = S>,
@@ -1146,7 +1180,8 @@ fn contract_state_get_url<'a, 'b, S: 'a + HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "getBalance",
     parameter = "GetBalanceParams",
-    return_value = "ContractTokenAmount"
+    return_value = "ContractTokenAmount",
+    error = "ContractError"
 )]
 fn contract_state_get_balance<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -1165,7 +1200,8 @@ fn contract_state_get_balance<S: HasStateApi>(
 #[receive(
     contract = "CIS2-wCCD-State",
     name = "getImplementors",
-    parameter = "GetImplementorsParams"
+    parameter = "GetImplementorsParams",
+    error = "ContractError"
 )]
 fn contract_state_get_implementors<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -1186,7 +1222,8 @@ fn contract_state_get_implementors<S: HasStateApi>(
     contract = "CIS2-wCCD-State",
     name = "isOperator",
     parameter = "IsOperatorParams",
-    return_value = "bool"
+    return_value = "bool",
+    error = "ContractError"
 )]
 fn contract_state_get_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -1203,7 +1240,7 @@ fn contract_state_get_operator<S: HasStateApi>(
 
 /// Function to receive CCD on the proxy. All CCDs are held by the
 /// proxy contract.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", payable)]
+#[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", error = "ContractError", payable)]
 fn contract_proxy_recieve_ccd<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<StateProxy, StateApiType = S>,
@@ -1221,6 +1258,7 @@ fn contract_proxy_recieve_ccd<S: HasStateApi>(
     contract = "CIS2-wCCD-Proxy",
     parameter = "TransferCCDParams",
     name = "transferCCD",
+    error = "ContractError",
     mutable
 )]
 fn contract_proxy_transfer_ccd<S: HasStateApi>(
@@ -1251,7 +1289,13 @@ fn contract_proxy_transfer_ccd<S: HasStateApi>(
 /// some mechanism to recover funds as a good smart contract coding practice.
 /// Nonetheless, it is not expected that any CCD tokens can end up
 /// on the implementation since the `wrap` function forwards them to the proxy.
-#[receive(contract = "CIS2-wCCD", parameter = "TransferCCDParams", name = "transferCCD", mutable)]
+#[receive(
+    contract = "CIS2-wCCD",
+    parameter = "TransferCCDParams",
+    error = "ContractError",
+    name = "transferCCD",
+    mutable
+)]
 fn contract_implementation_transfer_ccd<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1274,7 +1318,12 @@ fn contract_implementation_transfer_ccd<S: HasStateApi>(
 }
 
 /// Function to view contract balance of state contract.
-#[receive(contract = "CIS2-wCCD-State", name = "viewBalance", return_value = "Amount")]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "viewBalance",
+    return_value = "Amount",
+    error = "ContractError"
+)]
 fn contract_state_view_balance<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -1283,7 +1332,12 @@ fn contract_state_view_balance<S: HasStateApi>(
 }
 
 /// Function to view contract balance of implementation contract.
-#[receive(contract = "CIS2-wCCD", name = "viewBalance", return_value = "Amount")]
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "viewBalance",
+    return_value = "Amount",
+    error = "ContractError"
+)]
 fn contract_view_balance<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<StateImplementation, StateApiType = S>,
@@ -1292,7 +1346,12 @@ fn contract_view_balance<S: HasStateApi>(
 }
 
 /// Function to view contract balance of proxy contract.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "viewBalance", return_value = "Amount")]
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    name = "viewBalance",
+    return_value = "Amount",
+    error = "ContractError"
+)]
 fn contract_proxy_view_balance<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<StateProxy, StateApiType = S>,
@@ -1301,7 +1360,12 @@ fn contract_proxy_view_balance<S: HasStateApi>(
 }
 
 /// Function to view state of the state contract.
-#[receive(contract = "CIS2-wCCD-State", name = "view", return_value = "ReturnBasicState")]
+#[receive(
+    contract = "CIS2-wCCD-State",
+    name = "view",
+    return_value = "ReturnBasicState",
+    error = "ContractError"
+)]
 fn contract_state_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -1318,7 +1382,12 @@ fn contract_state_view<S: HasStateApi>(
 }
 
 /// Function to view state of the implementation contract.
-#[receive(contract = "CIS2-wCCD", name = "view", return_value = "StateImplementation")]
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "view",
+    return_value = "StateImplementation",
+    error = "ContractError"
+)]
 fn contract_implementation_view<'a, 'b, S: HasStateApi>(
     _ctx: &'b impl HasReceiveContext,
     host: &'a impl HasHost<StateImplementation, StateApiType = S>,
@@ -1327,7 +1396,12 @@ fn contract_implementation_view<'a, 'b, S: HasStateApi>(
 }
 
 /// Function to view state of the proxy contract.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "view", return_value = "StateProxy")]
+#[receive(
+    contract = "CIS2-wCCD-Proxy",
+    name = "view",
+    return_value = "StateProxy",
+    error = "ContractError"
+)]
 fn contract_proxy_view<'a, 'b, S: HasStateApi>(
     _ctx: &'b impl HasReceiveContext,
     host: &'a impl HasHost<StateProxy, StateApiType = S>,
@@ -1390,7 +1464,7 @@ fn when_not_paused<S>(
 
 /// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
 /// is not the receiver.
-#[receive(contract = "CIS2-wCCD", name = "wrap", mutable, payable)]
+#[receive(contract = "CIS2-wCCD", name = "wrap", error = "ContractError", mutable, payable)]
 fn contract_wrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1493,7 +1567,7 @@ fn contract_wrap<S: HasStateApi>(
 }
 
 /// Unwrap an amount of wCCD tokens into CCD
-#[receive(contract = "CIS2-wCCD", name = "unwrap", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "unwrap", error = "ContractError", mutable)]
 fn contract_unwrap<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1597,7 +1671,7 @@ pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount
 ///     - The token is not owned by the `from`.
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
-#[receive(contract = "CIS2-wCCD", name = "transfer", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "transfer", error = "ContractError", mutable)]
 fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1716,7 +1790,7 @@ fn contract_transfer<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Fails to log event.
-#[receive(contract = "CIS2-wCCD", name = "updateOperator", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "updateOperator", error = "ContractError", mutable)]
 fn contract_update_operator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1802,6 +1876,7 @@ fn contract_update_operator<S: HasStateApi>(
     contract = "CIS2-wCCD",
     name = "updateAdmin",
     parameter = "Address",
+    error = "ContractError",
     enable_logger,
     mutable
 )]
@@ -1831,6 +1906,7 @@ fn contract_implementation_update_admin<S: HasStateApi>(
     contract = "CIS2-wCCD-Proxy",
     name = "updateAdmin",
     parameter = "Address",
+    error = "ContractError",
     enable_logger,
     mutable
 )]
@@ -1864,6 +1940,7 @@ fn contract_proxy_update_admin<S: HasStateApi>(
     contract = "CIS2-wCCD",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
+    error = "ContractError",
     mutable
 )]
 fn contract_set_implementor<S: HasStateApi>(
@@ -1896,6 +1973,7 @@ fn contract_set_implementor<S: HasStateApi>(
     contract = "CIS2-wCCD-Proxy",
     name = "updateImplementation",
     parameter = "SetImplementationAddressParams",
+    error = "ContractError",
     enable_logger,
     mutable
 )]
@@ -1938,7 +2016,7 @@ fn contract_proxy_update_implementation<S: HasStateApi>(
 
 /// This function pauses the contract. Only the
 /// admin of the implementation can call this function.
-#[receive(contract = "CIS2-wCCD", name = "pause", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "pause", error = "ContractError", mutable)]
 fn contract_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -1964,7 +2042,13 @@ fn contract_pause<S: HasStateApi>(
 
 /// This function can be used to set a new URL. Only the
 /// admin of the implementation can call this function.
-#[receive(contract = "CIS2-wCCD", name = "setURL", parameter = "SetURLParams", mutable)]
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "setURL",
+    parameter = "SetURLParams",
+    error = "ContractError",
+    mutable
+)]
 fn contract_set_url<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -2009,7 +2093,7 @@ fn contract_set_url<S: HasStateApi>(
 }
 
 /// Function to unpause the contract by the admin.
-#[receive(contract = "CIS2-wCCD", name = "unPause", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "unPause", error = "ContractError", mutable)]
 fn contract_un_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -2048,7 +2132,8 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
     contract = "CIS2-wCCD",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
-    return_value = "ContractBalanceOfQueryResponse"
+    return_value = "ContractBalanceOfQueryResponse",
+    error = "ContractError"
 )]
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -2079,7 +2164,8 @@ fn contract_balance_of<S: HasStateApi>(
     contract = "CIS2-wCCD",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
-    return_value = "OperatorOfQueryResponse"
+    return_value = "OperatorOfQueryResponse",
+    error = "ContractError"
 )]
 fn contract_operator_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -2113,7 +2199,8 @@ fn contract_operator_of<S: HasStateApi>(
     contract = "CIS2-wCCD",
     name = "supports",
     parameter = "SupportsQueryParams",
-    return_value = "SupportsQueryResponse"
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
 )]
 fn contract_supports<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -2152,7 +2239,8 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
     contract = "CIS2-wCCD",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
-    return_value = "TokenMetadataQueryResponse"
+    return_value = "TokenMetadataQueryResponse",
+    error = "ContractError"
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
