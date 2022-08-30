@@ -930,10 +930,14 @@ fn receive_fallback<S: HasStateApi>(
         .map_err(|r| {
             if let CallContractError::LogicReject {
                 reason,
-                ..
+                mut return_value,
             } = r
             {
-                Reject::new(reason).unwrap_abort()
+                let mut buffer = vec![0; return_value.size() as usize];
+                return_value.read_exact(&mut buffer[..]).unwrap_abort(); // This should always be safe.
+                let mut reject = Reject::new(reason).unwrap_abort();
+                reject.return_value = Some(buffer);
+                reject
             } else {
                 r.into()
             }
