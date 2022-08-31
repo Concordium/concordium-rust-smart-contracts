@@ -391,8 +391,7 @@ fn contract_wrap<S: HasStateApi>(
                 &parameter,
                 function.as_entrypoint_name(),
                 Amount::zero(),
-            )
-            .unwrap_abort();
+            )?;
         }
     }
     Ok(())

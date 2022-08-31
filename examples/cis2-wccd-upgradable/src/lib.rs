@@ -863,7 +863,7 @@ fn contract_proxy_initialize<S: HasStateApi>(
 
     let url = host.invoke_contract_read_only(
         &state_address,
-        &[8; 0],
+        &Parameter(&[]),
         EntrypointName::new_unchecked("getURL"),
         Amount::zero(),
     )?;
@@ -1208,8 +1208,7 @@ fn contract_state_get_implementors<S: HasStateApi>(
     let params: GetImplementorsParams = ctx.parameter_cursor().get()?;
 
     if let Some(addresses) = host.state().implementors.get(&params.id) {
-        let return_addresses = &*addresses;
-        Ok(Some(return_addresses.to_vec()))
+        Ok(Some(addresses.to_vec()))
     } else {
         Ok(None)
     }
@@ -1444,7 +1443,7 @@ fn when_not_paused<S>(
 ) -> ContractResult<()> {
     let paused = host.invoke_contract_read_only(
         state_address,
-        &[8; 0],
+        &Parameter(&[]),
         EntrypointName::new_unchecked("getPaused"),
         Amount::zero(),
     )?;
@@ -1548,8 +1547,7 @@ fn contract_wrap<S: HasStateApi>(
                 },
                 function.as_entrypoint_name(),
                 Amount::zero(),
-            )
-            .unwrap_abort();
+            )?;
         }
     }
     Ok(())
@@ -1580,10 +1578,7 @@ fn contract_unwrap<S: HasStateApi>(
 
     ensure!(
         sender == input.params.owner
-            || host
-                .state()
-                .is_operator(&state_address, &sender, &input.params.owner, host)
-                .map_or(false, |is_operator| is_operator),
+            || host.state().is_operator(&state_address, &sender, &input.params.owner, host)?,
         ContractError::Unauthorized
     );
 
@@ -1681,11 +1676,7 @@ fn contract_transfer<S: HasStateApi>(
     {
         // Authenticate the sender for this transfer
         ensure!(
-            from == sender
-                || host
-                    .state()
-                    .is_operator(&state_address, &sender, &from, host)
-                    .map_or(false, |is_operator| is_operator),
+            from == sender || host.state().is_operator(&state_address, &sender, &from, host)?,
             ContractError::Unauthorized
         );
         let to_address = to.address();
@@ -2037,7 +2028,7 @@ fn contract_set_url<S: HasStateApi>(
 }
 
 /// Function to unpause the contract by the admin.
-#[receive(contract = "CIS2-wCCD", name = "unPause", error = "ContractError", mutable)]
+#[receive(contract = "CIS2-wCCD", name = "unpause", error = "ContractError", mutable)]
 fn contract_un_pause<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<StateImplementation, StateApiType = S>,
@@ -2122,10 +2113,8 @@ fn contract_operator_of<S: HasStateApi>(
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
         // Query the state if the `address` being an `operator` of `owner`.
-        let is_operator = host
-            .state()
-            .is_operator(&state_address, &query.address, &query.owner, host)
-            .map_or(false, |is_operator| is_operator);
+        let is_operator =
+            host.state().is_operator(&state_address, &query.address, &query.owner, host)?;
         response.push(is_operator);
     }
     let result = OperatorOfQueryResponse::from(response);
@@ -2159,7 +2148,7 @@ fn contract_supports<S: HasStateApi>(
         if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
             response.push(SupportResult::Support);
         } else {
-            response.push(host.state().have_implementors(&state_address, &std_id, host).unwrap());
+            response.push(host.state().have_implementors(&state_address, &std_id, host)?);
         }
     }
     let result = SupportsQueryResponse::from(response);
@@ -2201,7 +2190,7 @@ fn contract_token_metadata<S: HasStateApi>(
 
         let url = host.invoke_contract_read_only(
             &state_address,
-            &[8; 0],
+            &Parameter(&[]),
             EntrypointName::new_unchecked("getURL"),
             Amount::zero(),
         )?;
