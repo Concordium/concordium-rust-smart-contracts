@@ -1314,48 +1314,6 @@ fn contract_implementation_transfer_ccd<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to view contract balance of state contract.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "viewBalance",
-    return_value = "Amount",
-    error = "ContractError"
-)]
-fn contract_state_view_balance<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<Amount> {
-    Ok(host.self_balance())
-}
-
-/// Function to view contract balance of implementation contract.
-#[receive(
-    contract = "CIS2-wCCD",
-    name = "viewBalance",
-    return_value = "Amount",
-    error = "ContractError"
-)]
-fn contract_view_balance<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateImplementation, StateApiType = S>,
-) -> ContractResult<Amount> {
-    Ok(host.self_balance())
-}
-
-/// Function to view contract balance of proxy contract.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    name = "viewBalance",
-    return_value = "Amount",
-    error = "ContractError"
-)]
-fn contract_proxy_view_balance<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateProxy, StateApiType = S>,
-) -> ContractResult<Amount> {
-    Ok(host.self_balance())
-}
-
 /// Function to view state of the state contract.
 #[receive(
     contract = "CIS2-wCCD-State",
@@ -1487,9 +1445,9 @@ fn contract_wrap<S: HasStateApi>(
     let receive_address = input.params.to.address();
 
     // Proxy holds CCD funds. CCD is sent to proxy.
-    host.invoke_contract(
+    host.invoke_contract_raw(
         &proxy_address,
-        &[8; 0],
+        Parameter(&[]),
         EntrypointName::new_unchecked("receiveCCD"),
         amount,
     )?;
