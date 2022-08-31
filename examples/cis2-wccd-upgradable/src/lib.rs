@@ -388,6 +388,16 @@ struct SetImplementationAddressParams {
     implementation_address: ContractAddress,
 }
 
+/// The parameter type for the proxy contract function
+/// `onReceivingCis2`.
+#[derive(Serialize, SchemaType)]
+struct OnReceivingCis2HookParams {
+    /// Receiver smart contract.
+    receiver:                 Receiver,
+    /// Parameters sent to the receiver smart contract.
+    on_receiving_cis2_params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount>,
+}
+
 /// The parameter type for the contract functions `transferCCD`.
 #[derive(Serialize, SchemaType)]
 struct TransferCCDParams {
@@ -683,6 +693,30 @@ fn contract_proxy_log_event<S: HasStateApi>(
 
     // Log event.
     logger.log(&RawReturnValue(parameter_buffer))?;
+
+    Ok(())
+}
+
+/// This function executes the `OnReceivingCis2` hook
+#[receive(contract = "CIS2-wCCD-Proxy", name = "onReceivingCis2", error = "ContractError", mutable)]
+fn contract_proxy_on_receiving_cis2<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<StateProxy, StateApiType = S>,
+) -> ContractResult<()> {
+    // Only implementation can invoke the hook.
+    only_implementation(host.state().implementation_address, ctx.sender())?;
+
+    // Get OnReceivingCis2HookParams.
+    let params: OnReceivingCis2HookParams = ctx.parameter_cursor().get()?;
+
+    if let Receiver::Contract(address, function) = params.receiver {
+        host.invoke_contract(
+            &address,
+            &params.on_receiving_cis2_params,
+            function.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
 
     Ok(())
 }
@@ -1493,17 +1527,23 @@ fn contract_wrap<S: HasStateApi>(
             Amount::zero(),
         )?;
 
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = input.params.to {
-            host.invoke_contract(
-                &address,
-                &OnReceivingCis2Params {
+        // If the receiver is a contract: invoke the onReceivingCis2 hook function on
+        // the proxy.
+        if let Receiver::Contract(_, _) = input.params.to {
+            let params = OnReceivingCis2HookParams {
+                receiver:                 input.params.to,
+                on_receiving_cis2_params: OnReceivingCis2Params {
                     token_id: TOKEN_ID_WCCD,
                     amount:   ContractTokenAmount::from(amount.micro_ccd),
                     from:     sender,
                     data:     input.params.data,
                 },
-                function.as_entrypoint_name(),
+            };
+
+            host.invoke_contract(
+                &proxy_address,
+                &params,
+                EntrypointName::new_unchecked("onReceivingCis2"),
                 Amount::zero(),
             )?;
         }
@@ -1670,17 +1710,23 @@ fn contract_transfer<S: HasStateApi>(
             )?;
         }
 
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = to {
-            host.invoke_contract(
-                &address,
-                &OnReceivingCis2Params {
+        // If the receiver is a contract: invoke the onReceivingCis2 hook function on
+        // the proxy.
+        if let Receiver::Contract(_, _) = to {
+            let params = OnReceivingCis2HookParams {
+                receiver:                 to,
+                on_receiving_cis2_params: OnReceivingCis2Params {
                     token_id,
                     amount,
                     from,
                     data,
                 },
-                function.as_entrypoint_name(),
+            };
+
+            host.invoke_contract(
+                &proxy_address,
+                &params,
+                EntrypointName::new_unchecked("onReceivingCis2"),
                 Amount::zero(),
             )?;
         }
@@ -1730,33 +1776,20 @@ fn contract_update_operator<S: HasStateApi>(
 
     for param in params {
         // Update the operator in the state.
-        match param.update {
-            OperatorUpdate::Add => {
-                host.invoke_contract(
-                    &state_address,
-                    &SetIsOperatorParams {
-                        owner:    sender,
-                        operator: param.operator,
-                        update:   Update::Add,
-                    },
-                    EntrypointName::new_unchecked("setIsOperator"),
-                    Amount::zero(),
-                )?;
-            }
-
-            OperatorUpdate::Remove => {
-                host.invoke_contract(
-                    &state_address,
-                    &SetIsOperatorParams {
-                        owner:    sender,
-                        operator: param.operator,
-                        update:   Update::Remove,
-                    },
-                    EntrypointName::new_unchecked("setIsOperator"),
-                    Amount::zero(),
-                )?;
-            }
+        let update = match param.update {
+            OperatorUpdate::Add => Update::Add,
+            OperatorUpdate::Remove => Update::Remove,
         };
+        host.invoke_contract(
+            &state_address,
+            &SetIsOperatorParams {
+                owner: sender,
+                operator: param.operator,
+                update,
+            },
+            EntrypointName::new_unchecked("setIsOperator"),
+            Amount::zero(),
+        )?;
 
         // Log the update operator event.
         host.invoke_contract(
