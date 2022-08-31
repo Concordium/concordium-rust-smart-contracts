@@ -147,7 +147,7 @@ impl Serial for RawReturnValue {
 }
 
 /// Tagged events to be serialized for the event log.
-pub enum WccdEvent {
+enum WccdEvent {
     /// A new admin event.
     NewAdmin(NewAdminEvent),
     /// A new implementation event.
@@ -307,16 +307,16 @@ struct StateProxy {
 
 /// NewAdminEvent.
 #[derive(Serial)]
-pub struct NewAdminEvent {
+struct NewAdminEvent {
     /// New admin address.
-    pub new_admin: Address,
+    new_admin: Address,
 }
 
 /// NewImplementationEvent.
 #[derive(Serial)]
-pub struct NewImplementationEvent {
+struct NewImplementationEvent {
     /// New implementation address.
-    pub new_implementation: ContractAddress,
+    new_implementation: ContractAddress,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -830,28 +830,24 @@ fn contract_proxy_initialize<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state_address = host.state().state_address;
 
-    let parameter_bytes = to_bytes(&InitializeStateParams {
-        proxy_address:          ctx.self_address(),
-        implementation_address: host.state().implementation_address,
-    });
-
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &InitializeStateParams {
+            proxy_address:          ctx.self_address(),
+            implementation_address: host.state().implementation_address,
+        },
         EntrypointName::new_unchecked("initialize"),
         Amount::zero(),
     )?;
 
     let implementation_address = host.state().implementation_address;
 
-    let parameter_bytes = to_bytes(&InitializeImplementationParams {
-        proxy_address: ctx.self_address(),
-        state_address: host.state().state_address,
-    });
-
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &implementation_address,
-        Parameter(&parameter_bytes),
+        &InitializeImplementationParams {
+            proxy_address: ctx.self_address(),
+            state_address: host.state().state_address,
+        },
         EntrypointName::new_unchecked("initialize"),
         Amount::zero(),
     )?;
@@ -867,7 +863,7 @@ fn contract_proxy_initialize<S: HasStateApi>(
 
     let url = host.invoke_contract_read_only(
         &state_address,
-        &Parameter(&[]),
+        &[8; 0],
         EntrypointName::new_unchecked("getURL"),
         Amount::zero(),
     )?;
@@ -917,13 +913,11 @@ fn receive_fallback<S: HasStateApi>(
         sender: ctx.sender(),
     };
 
-    let parameter_bytes = to_bytes(&paramter_with_sender);
-
     // Forwarding the invoke unaltered to the implementation contract.
     let mut return_value = host
-        .invoke_contract_raw(
+        .invoke_contract(
             &implementation,
-            Parameter(&parameter_bytes),
+            &paramter_with_sender,
             entrypoint.as_entrypoint_name(),
             amount,
         )
@@ -1450,7 +1444,7 @@ fn when_not_paused<S>(
 ) -> ContractResult<()> {
     let paused = host.invoke_contract_read_only(
         state_address,
-        &Parameter(&[]),
+        &[8; 0],
         EntrypointName::new_unchecked("getPaused"),
         Amount::zero(),
     )?;
@@ -1494,39 +1488,33 @@ fn contract_wrap<S: HasStateApi>(
     let receive_address = input.params.to.address();
 
     // Proxy holds CCD funds. CCD is sent to proxy.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &proxy_address,
-        Parameter(&[]),
+        &[8; 0],
         EntrypointName::new_unchecked("receiveCCD"),
         amount,
     )?;
 
-    let set_balance_params = SetBalanceParams {
-        owner:  receive_address,
-        amount: amount.micro_ccd.into(),
-        update: Update::Add,
-    };
-
-    let parameter_bytes = to_bytes(&set_balance_params);
-
     // Update state.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &SetBalanceParams {
+            owner:  receive_address,
+            amount: amount.micro_ccd.into(),
+            update: Update::Add,
+        },
         EntrypointName::new_unchecked("setBalance"),
         Amount::zero(),
     )?;
 
     // Log the newly minted tokens.
-    let parameter_bytes = to_bytes(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(amount.micro_ccd),
-        owner:    sender,
-    }));
-
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &proxy_address,
-        Parameter(&parameter_bytes),
+        &Cis2Event::Mint(MintEvent {
+            token_id: TOKEN_ID_WCCD,
+            amount:   ContractTokenAmount::from(amount.micro_ccd),
+            owner:    sender,
+        }),
         EntrypointName::new_unchecked("logEvent"),
         Amount::zero(),
     )?;
@@ -1536,31 +1524,28 @@ fn contract_wrap<S: HasStateApi>(
     // and the receiver is a contract.
     if sender != receive_address {
         // Log the transfer event.
-        let parameter_bytes = to_bytes(&Cis2Event::Transfer(TransferEvent {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            to:       receive_address,
-        }));
-
-        host.invoke_contract_raw(
+        host.invoke_contract(
             &proxy_address,
-            Parameter(&parameter_bytes),
+            &Cis2Event::Transfer(TransferEvent {
+                token_id: TOKEN_ID_WCCD,
+                amount:   ContractTokenAmount::from(amount.micro_ccd),
+                from:     sender,
+                to:       receive_address,
+            }),
             EntrypointName::new_unchecked("logEvent"),
             Amount::zero(),
         )?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = input.params.to {
-            let parameter = OnReceivingCis2Params {
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(amount.micro_ccd),
-                from:     sender,
-                data:     input.params.data,
-            };
             host.invoke_contract(
                 &address,
-                &parameter,
+                &OnReceivingCis2Params {
+                    token_id: TOKEN_ID_WCCD,
+                    amount:   ContractTokenAmount::from(amount.micro_ccd),
+                    from:     sender,
+                    data:     input.params.data,
+                },
                 function.as_entrypoint_name(),
                 Amount::zero(),
             )
@@ -1609,47 +1594,37 @@ fn contract_unwrap<S: HasStateApi>(
 
     ensure!(token_balance >= input.params.amount, ContractError::InsufficientFunds);
 
-    let set_balance_params = SetBalanceParams {
-        owner:  input.params.owner,
-        amount: input.params.amount,
-        update: Update::Remove,
-    };
-
-    let parameter_bytes = to_bytes(&set_balance_params);
-
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &SetBalanceParams {
+            owner:  input.params.owner,
+            amount: input.params.amount,
+            update: Update::Remove,
+        },
         EntrypointName::new_unchecked("setBalance"),
         Amount::zero(),
     )?;
 
-    let params_transfer_ccd: TransferCCDParams = TransferCCDParams {
-        amount:  input.params.amount,
-        address: input.params.receiver,
-        data:    input.params.data,
-    };
-
-    let parameter_bytes = to_bytes(&params_transfer_ccd);
-
     // Transfer CCD funds from proxy to the receiver address.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &proxy_address,
-        Parameter(&parameter_bytes),
+        &TransferCCDParams {
+            amount:  input.params.amount,
+            address: input.params.receiver,
+            data:    input.params.data,
+        },
         EntrypointName::new_unchecked("transferCCD"),
         Amount::zero(),
     )?;
 
     // Log the burn event.
-    let parameter_bytes = to_bytes(&Cis2Event::Burn(BurnEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   input.params.amount,
-        owner:    input.params.owner,
-    }));
-
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &proxy_address,
-        Parameter(&parameter_bytes),
+        &Cis2Event::Burn(BurnEvent {
+            token_id: TOKEN_ID_WCCD,
+            amount:   input.params.amount,
+            owner:    input.params.owner,
+        }),
         EntrypointName::new_unchecked("logEvent"),
         Amount::zero(),
     )?;
@@ -1722,33 +1697,25 @@ fn contract_transfer<S: HasStateApi>(
 
             ensure!(token_balance >= amount, ContractError::InsufficientFunds);
             {
-                let set_balance_params = SetBalanceParams {
-                    owner: from,
-                    amount,
-                    update: Update::Remove,
-                };
-
-                let parameter_bytes = to_bytes(&set_balance_params);
-
-                host.invoke_contract_raw(
+                host.invoke_contract(
                     &state_address,
-                    Parameter(&parameter_bytes),
+                    &SetBalanceParams {
+                        owner: from,
+                        amount,
+                        update: Update::Remove,
+                    },
                     EntrypointName::new_unchecked("setBalance"),
                     Amount::zero(),
                 )?;
             }
 
-            let set_balance_params = SetBalanceParams {
-                owner: to_address,
-                amount,
-                update: Update::Add,
-            };
-
-            let parameter_bytes = to_bytes(&set_balance_params);
-
-            host.invoke_contract_raw(
+            host.invoke_contract(
                 &state_address,
-                Parameter(&parameter_bytes),
+                &SetBalanceParams {
+                    owner: to_address,
+                    amount,
+                    update: Update::Add,
+                },
                 EntrypointName::new_unchecked("setBalance"),
                 Amount::zero(),
             )?;
@@ -1756,31 +1723,28 @@ fn contract_transfer<S: HasStateApi>(
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
-            let parameter = OnReceivingCis2Params {
-                token_id,
-                amount,
-                from,
-                data,
-            };
             host.invoke_contract(
                 &address,
-                &parameter,
+                &OnReceivingCis2Params {
+                    token_id,
+                    amount,
+                    from,
+                    data,
+                },
                 function.as_entrypoint_name(),
                 Amount::zero(),
             )?;
         }
 
         // Log the transfer event.
-        let parameter_bytes = to_bytes(&Cis2Event::Transfer(TransferEvent {
-            token_id: TOKEN_ID_WCCD,
-            amount,
-            from,
-            to: to_address,
-        }));
-
-        host.invoke_contract_raw(
+        host.invoke_contract(
             &proxy_address,
-            Parameter(&parameter_bytes),
+            &Cis2Event::Transfer(TransferEvent {
+                token_id: TOKEN_ID_WCCD,
+                amount,
+                from,
+                to: to_address,
+            }),
             EntrypointName::new_unchecked("logEvent"),
             Amount::zero(),
         )?;
@@ -1819,34 +1783,26 @@ fn contract_update_operator<S: HasStateApi>(
         // Update the operator in the state.
         match param.update {
             OperatorUpdate::Add => {
-                let set_operator_params = SetIsOperatorParams {
-                    owner:    sender,
-                    operator: param.operator,
-                    update:   Update::Add,
-                };
-
-                let parameter_bytes = to_bytes(&set_operator_params);
-
-                host.invoke_contract_raw(
+                host.invoke_contract(
                     &state_address,
-                    Parameter(&parameter_bytes),
+                    &SetIsOperatorParams {
+                        owner:    sender,
+                        operator: param.operator,
+                        update:   Update::Add,
+                    },
                     EntrypointName::new_unchecked("setIsOperator"),
                     Amount::zero(),
                 )?;
             }
 
             OperatorUpdate::Remove => {
-                let set_operator_params = SetIsOperatorParams {
-                    owner:    sender,
-                    operator: param.operator,
-                    update:   Update::Remove,
-                };
-
-                let parameter_bytes = to_bytes(&set_operator_params);
-
-                host.invoke_contract_raw(
+                host.invoke_contract(
                     &state_address,
-                    Parameter(&parameter_bytes),
+                    &SetIsOperatorParams {
+                        owner:    sender,
+                        operator: param.operator,
+                        update:   Update::Remove,
+                    },
                     EntrypointName::new_unchecked("setIsOperator"),
                     Amount::zero(),
                 )?;
@@ -1854,18 +1810,15 @@ fn contract_update_operator<S: HasStateApi>(
         };
 
         // Log the update operator event.
-        let parameter_bytes =
-            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+        host.invoke_contract(
+            &proxy_address,
+            &Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
                 UpdateOperatorEvent {
                     owner:    sender,
                     operator: param.operator,
                     update:   param.update,
                 },
-            ));
-
-        host.invoke_contract_raw(
-            &proxy_address,
-            Parameter(&parameter_bytes),
+            ),
             EntrypointName::new_unchecked("logEvent"),
             Amount::zero(),
         )?;
@@ -1956,14 +1909,12 @@ fn contract_set_implementor<S: HasStateApi>(
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
 
-    let parameter_bytes = to_bytes(&params);
-
     let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
     // Update the implementors in the state
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &params,
         EntrypointName::new_unchecked("setImplementors"),
         Amount::zero(),
     )?;
@@ -1994,18 +1945,14 @@ fn contract_proxy_update_implementation<S: HasStateApi>(
     // Update implementation.
     host.state_mut().implementation_address = params.implementation_address;
 
-    let set_implementation_address_params = SetImplementationAddressParams {
-        implementation_address: params.implementation_address,
-    };
-
-    let parameter_bytes = to_bytes(&set_implementation_address_params);
-
     let state_address = host.state().state_address;
 
     // Update implementation address in the state contract.
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &SetImplementationAddressParams {
+            implementation_address: params.implementation_address,
+        },
         EntrypointName::new_unchecked("setImplementationAddress"),
         Amount::zero(),
     )?;
@@ -2028,15 +1975,13 @@ fn contract_pause<S: HasStateApi>(
     // Check that only the current admin can pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
-    let parameter_bytes = to_bytes(&SetPausedParams {
-        paused: true,
-    });
-
     let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &SetPausedParams {
+            paused: true,
+        },
         EntrypointName::new_unchecked("setPaused"),
         Amount::zero(),
     )?;
@@ -2063,32 +2008,27 @@ fn contract_set_url<S: HasStateApi>(
     // Parse the parameter.
     let params: SetURLParams = ctx.parameter_cursor().get()?;
 
-    let parameter_bytes = to_bytes(&SetURLParams {
-        url: params.url.clone(),
-    });
-
     let (proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &SetURLParams {
+            url: params.url.clone(),
+        },
         EntrypointName::new_unchecked("setURL"),
         Amount::zero(),
     )?;
 
     // Log an event including the metadata for this token.
-    let parameter_bytes =
-        to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+    host.invoke_contract(
+        &proxy_address,
+        &Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
             token_id:     TOKEN_ID_WCCD,
             metadata_url: MetadataUrl {
                 url:  params.url,
                 hash: None,
             },
-        }));
-
-    host.invoke_contract_raw(
-        &proxy_address,
-        Parameter(&parameter_bytes),
+        }),
         EntrypointName::new_unchecked("logEvent"),
         Amount::zero(),
     )?;
@@ -2105,15 +2045,13 @@ fn contract_un_pause<S: HasStateApi>(
     // Check that only the current admin can un_pause.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
-    let parameter_bytes = to_bytes(&SetPausedParams {
-        paused: false,
-    });
-
     let (_proxy_address, state_address) = get_protocol_addresses_from_implementation(host)?;
 
-    host.invoke_contract_raw(
+    host.invoke_contract(
         &state_address,
-        Parameter(&parameter_bytes),
+        &SetPausedParams {
+            paused: false,
+        },
         EntrypointName::new_unchecked("setPaused"),
         Amount::zero(),
     )?;
@@ -2263,7 +2201,7 @@ fn contract_token_metadata<S: HasStateApi>(
 
         let url = host.invoke_contract_read_only(
             &state_address,
-            &Parameter(&[]),
+            &[8; 0],
             EntrypointName::new_unchecked("getURL"),
             Amount::zero(),
         )?;
