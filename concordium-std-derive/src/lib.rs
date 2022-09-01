@@ -1615,7 +1615,7 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
                     };
                     check_for_name_collisions(&mut used_field_names, &field_name, field_span)?;
 
-                    let field_schema_type = schema_type_field_type(&field)?;
+                    let field_schema_type = schema_type_field_type(field)?;
                     Ok(quote! {
                         (concordium_std::String::from(#field_name), #field_schema_type)
                     })

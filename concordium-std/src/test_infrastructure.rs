@@ -940,7 +940,7 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
             match (signature, public_key, message_hash) {
                 (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
                     let verifier = secp256k1::Secp256k1::verification_only();
-                    verifier.verify_ecdsa(&message_hash, &signature, &public_key).is_ok()
+                    verifier.verify_ecdsa(&message_hash, signature, &public_key).is_ok()
                 }
                 _ => false,
             }
