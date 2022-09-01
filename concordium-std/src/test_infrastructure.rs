@@ -465,7 +465,7 @@ impl HasPolicy for TestPolicy {
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
         if let Some(item) = self.policy.items.get(self.position) {
             let len = item.1.as_ref().len();
-            buf[0..len].copy_from_slice(&item.1.as_ref());
+            buf[0..len].copy_from_slice(item.1.as_ref());
             self.position += 1;
             Some((item.0, len as u8))
         } else {
@@ -940,7 +940,7 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
             match (signature, public_key, message_hash) {
                 (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
                     let verifier = secp256k1::Secp256k1::verification_only();
-                    verifier.verify_ecdsa(&message_hash, &signature, &public_key).is_ok()
+                    verifier.verify_ecdsa(&message_hash, signature, &public_key).is_ok()
                 }
                 _ => false,
             }

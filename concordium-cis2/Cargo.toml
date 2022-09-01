@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -14,9 +14,14 @@ path = "../concordium-std"
 version = "4"
 default-features = false
 
+[dependencies.primitive-types]
+version = "0.11"
+default-features = false
+
 [features]
 default = ["std"]
 std = ["concordium-std/std"]
+u256_amount = []
 
 [lib]
 crate-type = ["rlib"]
@@ -29,3 +34,5 @@ opt-level = "s"
 # target on docs.rs. This is useful because the some parts of documentation only
 # exist on that platform.
 targets = ["wasm32-unknown-unknown"]
+# Default features to build documentation for.
+features = ["std", "u256_amount"]

@@ -24,6 +24,12 @@
 //!     // ...
 //!     Ok(A::accept())
 //! }
+//!
+//! # Features
+//!
+//! This crate has features `std` and `u256_amount`. The former one is default.
+//! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is defined
+//! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 #[cfg(not(feature = "std"))]
@@ -565,6 +571,162 @@ token_amount_wrapper!(TokenAmountU64, u64);
 token_amount_wrapper!(TokenAmountU32, u32);
 token_amount_wrapper!(TokenAmountU16, u16);
 token_amount_wrapper!(TokenAmountU8, u8);
+
+#[cfg(feature = "u256_amount")]
+mod u256_token {
+    use super::*;
+    use primitive_types::U256;
+    #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
+    #[repr(transparent)]
+    pub struct TokenAmountU256(pub U256);
+
+    impl ops::Add<Self> for TokenAmountU256 {
+        type Output = Self;
+
+        fn add(self, rhs: Self) -> Self::Output { TokenAmountU256(self.0 + rhs.0) }
+    }
+
+    impl ops::AddAssign for TokenAmountU256 {
+        fn add_assign(&mut self, other: Self) { *self = *self + other; }
+    }
+
+    impl ops::Sub<Self> for TokenAmountU256 {
+        type Output = Self;
+
+        fn sub(self, rhs: Self) -> Self::Output { TokenAmountU256(self.0 - rhs.0) }
+    }
+
+    impl ops::SubAssign for TokenAmountU256 {
+        fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+    }
+
+    impl ops::Mul<U256> for TokenAmountU256 {
+        type Output = Self;
+
+        fn mul(self, rhs: U256) -> Self::Output { TokenAmountU256(self.0 * rhs) }
+    }
+
+    impl ops::Mul<TokenAmountU256> for U256 {
+        type Output = TokenAmountU256;
+
+        fn mul(self, rhs: TokenAmountU256) -> Self::Output { TokenAmountU256(self * rhs.0) }
+    }
+
+    impl ops::MulAssign<U256> for TokenAmountU256 {
+        fn mul_assign(&mut self, other: U256) { *self = *self * other; }
+    }
+
+    impl ops::Rem<U256> for TokenAmountU256 {
+        type Output = Self;
+
+        fn rem(self, other: U256) -> Self::Output { TokenAmountU256(self.0 % other) }
+    }
+
+    impl ops::RemAssign<U256> for TokenAmountU256 {
+        fn rem_assign(&mut self, other: U256) { *self = *self % other; }
+    }
+
+    impl iter::Sum for TokenAmountU256 {
+        fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+            iter.fold(TokenAmountU256(U256::zero()), ops::Add::add)
+        }
+    }
+
+    impl IsTokenAmount for TokenAmountU256 {}
+
+    /// Uses the ULeb128 encoding with up to 37 bytes for the encoding as
+    /// according to CIS-2 specification.
+    impl schema::SchemaType for TokenAmountU256 {
+        fn get_type() -> schema::Type { schema::Type::ULeb128(37) }
+    }
+
+    impl Serial for TokenAmountU256 {
+        fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+            let mut value = self.0;
+            loop {
+                let mut byte = (value.low_u32() as u8) & 0b0111_1111;
+                value >>= 7;
+                if value != U256::zero() {
+                    byte |= 0b1000_0000;
+                }
+                out.write_u8(byte)?;
+
+                if value.is_zero() {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    impl Deserial for TokenAmountU256 {
+        fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+            let mut result: U256 = U256::zero();
+            for i in 0..36 {
+                let byte = source.read_u8()?;
+                let value_byte = <U256>::from(byte & 0b0111_1111);
+                result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
+                if byte & 0b1000_0000 == 0 {
+                    return Ok(TokenAmountU256(result));
+                }
+            }
+            let byte = source.read_u8()?;
+            let value_byte = byte & 0b0111_1111;
+            if value_byte & 0b1111_0000 != 0 {
+                Err(ParseError {})
+            } else {
+                let value_byte = <U256>::from(value_byte);
+                result = result.checked_add(value_byte << (36 * 7)).ok_or(ParseError {})?;
+                if byte & 0b1000_0000 == 0 {
+                    Ok(TokenAmountU256(result))
+                } else {
+                    Err(ParseError {})
+                }
+            }
+        }
+    }
+
+    impl From<U256> for TokenAmountU256 {
+        fn from(v: U256) -> TokenAmountU256 { TokenAmountU256(v) }
+    }
+
+    impl From<TokenAmountU256> for U256 {
+        fn from(v: TokenAmountU256) -> U256 { v.0 }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn serial_token_amount256_max_test() {
+            let v = TokenAmountU256(U256([u64::MAX; 4]));
+            let bytes = to_bytes(&v);
+            assert_eq!(Ok(v), from_bytes(&bytes));
+        }
+        #[test]
+        fn serial_token_amount256_0_test() {
+            let v = TokenAmountU256(U256([0; 4]));
+            let bytes = to_bytes(&v);
+            assert_eq!(Ok(v), from_bytes(&bytes));
+        }
+        #[test]
+        fn serial_token_amount_test() {
+            let v = TokenAmountU256(U256([u64::MAX, 1, 1, 1]));
+            let bytes = to_bytes(&v);
+            assert_eq!(Ok(v), from_bytes(&bytes));
+        }
+        #[test]
+        fn serial_token_amount_invalid() {
+            // fail if overflowing.
+            let mut max = to_bytes(&TokenAmountU256(U256([u64::MAX; 4])));
+            max[36] |= 0b1000_0000;
+            max.push(0b0000_1111);
+            assert_eq!(Err(ParseError {}), from_bytes::<TokenAmountU256>(&max));
+        }
+    }
+}
+
+#[cfg(feature = "u256_amount")]
+pub use u256_token::*;
 
 /// An untagged event of a transfer of some amount of tokens from one address to
 /// another. For a tagged version, use `Cis2Event`.
