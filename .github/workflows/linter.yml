@@ -45,7 +45,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-06-09
+          toolchain: nightly-2022-06-09
           override: true
           components: rustfmt
 
@@ -82,7 +82,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.53
+          toolchain: 1.56
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -398,6 +398,43 @@ jobs:
           command: test
           # Run all tests, including doc tests.
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }}
+
+  test-cis2-with-256:
+    name: Test the library
+    runs-on: ubuntu-latest
+    needs: [rustfmt, clippy]
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+
+        lib-crates:
+          - concordium-cis2/Cargo.toml
+
+        features:
+          - u256_amount
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.56
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          # Run all tests, including doc tests.
+          args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }}
+
 
   test-examples:
     name: Test examples

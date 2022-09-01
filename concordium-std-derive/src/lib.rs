@@ -1271,7 +1271,7 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
 fn find_state_parameter_attribute(
     attributes: &[syn::Attribute],
 ) -> syn::Result<Option<syn::Ident>> {
-    let value = match find_attribute_value(attributes, false, &"state_parameter")? {
+    let value = match find_attribute_value(attributes, false, "state_parameter")? {
         Some(v) => v,
         None => return Ok(None),
     };
