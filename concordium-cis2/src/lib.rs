@@ -646,7 +646,7 @@ mod u256_token {
             loop {
                 let mut byte = (value.low_u32() as u8) & 0b0111_1111;
                 value >>= 7;
-                if value != <U256>::from(0u8) {
+                if value != U256::zero() {
                     byte |= 0b1000_0000;
                 }
                 out.write_u8(byte)?;
