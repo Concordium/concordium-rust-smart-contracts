@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Add `TokenAmountU256`
+- Fix overflow during deserialization of amounts.
+
 ## concordium-cis2 1.1.0 (2022-08-24)
 
 - Update `concordium-std` to version 4.
