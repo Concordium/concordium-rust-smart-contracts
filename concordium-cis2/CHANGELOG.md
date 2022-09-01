@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-cis2 1.2.0 (2022-09-01)
+
 - Add `TokenAmountU256`
 - Fix overflow during deserialization of amounts.
 
