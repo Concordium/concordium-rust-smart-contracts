@@ -1,5 +1,5 @@
 [package]
-name = "cis2_wccd_upgradable"
+name = "cis2_wccd_upgradable_proxy"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
@@ -10,8 +10,8 @@ default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
 
 [dependencies]
-concordium-std = {path = "../../concordium-std", default-features = false}
-concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
+concordium-std = {path = "../../../concordium-std", default-features = false}
+concordium-cis2 = {path = "../../../concordium-cis2", default-features = false}
 
 [lib]
 crate-type=["cdylib", "rlib"]

@@ -48,6 +48,7 @@
 //! https://developer.concordium.software/en/mainnet/smart-contracts/tutorials/wCCD/index.html
 //! All schemas are available for download here: https://github.com/Concordium/concordium.github.io/
 //! tree/main/source/mainnet/smart-contracts/tutorials/wCCD/schemas
+//! There is a front-end example in development here: https://github.com/Concordium/concordium-browser-wallet/pull/62
 //!
 //! If you want to create a schema to invoke a state-mutative wCCD function
 //! through the fallback function, add the respective `parameters` as attributes
@@ -110,10 +111,6 @@ use concordium_std::{fmt::Debug, *};
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
-/// The initial metadata URL for the wCCD token.
-/// The URL can be updated with the `setURL` function on the `implementation`.
-const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
-
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
@@ -139,19 +136,17 @@ type ContractTokenId = TokenIdUnit;
 type ContractTokenAmount = TokenAmountU64;
 
 /// This parameter is used as the return value of the fallback function.
-#[derive(PartialEq, Eq, Debug)]
+/*#[derive(PartialEq, Eq, Debug)]
 struct RawReturnValue(Vec<u8>);
 
 impl Serial for RawReturnValue {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.0) }
-}
+}*/
 
 /// Tagged events to be serialized for the event log.
 enum WccdEvent {
     /// A new admin event.
     NewAdmin(NewAdminEvent),
-    /// A new implementation event.
-    NewImplementation(NewImplementationEvent),
 }
 
 impl Serial for WccdEvent {
@@ -159,10 +154,6 @@ impl Serial for WccdEvent {
         match self {
             WccdEvent::NewAdmin(event) => {
                 out.write_u8(TOKEN_NEW_ADMIN_EVENT_TAG)?;
-                event.serial(out)
-            }
-            WccdEvent::NewImplementation(event) => {
-                out.write_u8(TOKEN_NEW_IMPLEMENTATION_EVENT_TAG)?;
                 event.serial(out)
             }
         }
@@ -233,46 +224,6 @@ impl<T: Deserial> Deserial for ParamWithSender<T> {
     }
 }
 
-/// The state tracked for each address.
-#[derive(Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-struct AddressState<S> {
-    /// The number of tokens owned by this address.
-    balance:   ContractTokenAmount,
-    /// The address which are currently enabled as operators for this token and
-    /// this address.
-    operators: StateSet<Address, S>,
-}
-
-/// The `state` contract state.
-#[derive(Serial, DeserialWithState, StateClone)]
-#[concordium(state_parameter = "S")]
-struct State<S> {
-    /// Addresses of the protocol
-    protocol_addresses: ProtocolAddressesState,
-    /// The state of the one token.
-    token:              StateMap<Address, AddressState<S>, S>,
-    /// Map with contract addresses providing implementations of additional
-    /// standards.
-    implementors:       StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// Contract is paused/unpaused.
-    paused:             bool,
-    /// The metadata URL for the wCCD token following the specification RFC1738.
-    #[concordium(size_length = 2)]
-    url:                String,
-}
-
-#[derive(Serialize, PartialEq, Clone)]
-enum ProtocolAddressesState {
-    UnInitialized,
-    Initialized {
-        /// Address of the w_ccd proxy contract.
-        proxy_address:          ContractAddress,
-        /// Address of the w_ccd implementation contract.
-        implementation_address: ContractAddress,
-    },
-}
-
 /// The `implementation` contract state.
 #[derive(Serial, Deserial, Clone, SchemaType)]
 struct StateImplementation {
@@ -292,17 +243,6 @@ enum ProtocolAddressesImplementation {
         /// Address of the w_ccd state contract.
         state_address: ContractAddress,
     },
-}
-
-/// The `proxy` contract state.
-#[derive(Serial, Deserial, Clone, SchemaType)]
-struct StateProxy {
-    /// The admin address can upgrade the implementation contract.
-    admin:                  Address,
-    /// Address of the w_ccd implementation contract.
-    implementation_address: ContractAddress,
-    /// Address of the w_ccd state contract.
-    state_address:          ContractAddress,
 }
 
 /// NewAdminEvent.
@@ -353,15 +293,6 @@ struct WrapParams {
     data: AdditionalData,
 }
 
-/// The parameter type for the state contract function `initialize`.
-#[derive(Serialize, SchemaType)]
-struct InitializeStateParams {
-    /// Address of the w_ccd proxy contract.
-    proxy_address:          ContractAddress,
-    /// Address of the w_ccd implementation contract.
-    implementation_address: ContractAddress,
-}
-
 /// The parameter type for the implementation contract function `initialize`.
 #[derive(Serialize, SchemaType)]
 struct InitializeImplementationParams {
@@ -369,23 +300,6 @@ struct InitializeImplementationParams {
     proxy_address: ContractAddress,
     /// Address of the w_ccd state contract.
     state_address: ContractAddress,
-}
-
-/// The parameter type for the proxy contract function `init`.
-#[derive(Serialize, SchemaType)]
-struct InitProxyParams {
-    /// Address of the w_ccd implementation contract.
-    implementation_address: ContractAddress,
-    /// Address of the w_ccd state contract.
-    state_address:          ContractAddress,
-}
-
-/// The parameter type for the state contract function
-/// `set_implementation_address`.
-#[derive(Serialize, SchemaType)]
-struct SetImplementationAddressParams {
-    /// Address of the w_ccd implementation contract.
-    implementation_address: ContractAddress,
 }
 
 /// The parameter type for the proxy contract function
@@ -483,20 +397,6 @@ struct IsOperatorParams {
     address: Address,
 }
 
-/// The return type for the state contract function `view`.
-#[derive(Serialize, SchemaType)]
-struct ReturnBasicState {
-    /// Address of the w_ccd proxy contract.
-    proxy_address:          ContractAddress,
-    /// Address of the w_ccd implementation contract.
-    implementation_address: ContractAddress,
-    /// Contract is paused/unpaused.
-    paused:                 bool,
-    /// The URL following the specification RFC1738.
-    #[concordium(size_length = 2)]
-    url:                    String,
-}
-
 /// Update struct.
 #[derive(Debug, Serialize, SchemaType)]
 pub enum Update {
@@ -561,23 +461,6 @@ impl From<TransferError> for CustomContractError {
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
-}
-
-impl<S: HasStateApi> State<S> {
-    /// Creates the new state of the `state` contract with no one owning any
-    /// tokens by default. The ProtocolAddressesState is uninitialized.
-    /// The ProtocolAddressesState has to be set with the `initialize`
-    /// function after the `proxy` contract is deployed.
-    fn new(state_builder: &mut StateBuilder<S>) -> Self {
-        // Setup state.
-        State {
-            protocol_addresses: ProtocolAddressesState::UnInitialized,
-            token:              state_builder.new_map(),
-            implementors:       state_builder.new_map(),
-            paused:             false,
-            url:                INITIAL_TOKEN_METADATA_URL.to_string(),
-        }
-    }
 }
 
 impl StateImplementation {
@@ -678,62 +561,7 @@ impl StateImplementation {
     }
 }
 
-/// This function logs an event.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "logEvent", error = "ContractError", enable_logger)]
-fn contract_proxy_log_event<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Only implementation can log event.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    let mut parameter_buffer = vec![0; ctx.parameter_cursor().size() as usize];
-    ctx.parameter_cursor().read_exact(&mut parameter_buffer)?;
-
-    // Log event.
-    logger.log(&RawReturnValue(parameter_buffer))?;
-
-    Ok(())
-}
-
-/// This function executes the `OnReceivingCis2` hook
-#[receive(contract = "CIS2-wCCD-Proxy", name = "onReceivingCis2", error = "ContractError", mutable)]
-fn contract_proxy_on_receiving_cis2<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-) -> ContractResult<()> {
-    // Only implementation can invoke the hook.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    // Get OnReceivingCis2HookParams.
-    let params: OnReceivingCis2HookParams = ctx.parameter_cursor().get()?;
-
-    if let Receiver::Contract(address, function) = params.receiver {
-        host.invoke_contract(
-            &address,
-            &params.on_receiving_cis2_params,
-            function.as_entrypoint_name(),
-            Amount::zero(),
-        )?;
-    }
-
-    Ok(())
-}
-
 // Contract functions
-
-/// Initialize the state contract instance with no initial tokens.
-#[init(contract = "CIS2-wCCD-State")]
-fn contract_state_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
-) -> InitResult<State<S>> {
-    // Construct the initial contract state.
-    let state = State::new(state_builder);
-
-    Ok(state)
-}
 
 /// Initialize the implementation contract. This function logs a new admin
 /// event.
@@ -754,61 +582,6 @@ fn contract_init<S: HasStateApi>(
     }))?;
 
     Ok(state)
-}
-
-/// Initializes the state of the w_ccd proxy contract with the state and the
-/// implementation addresses. Both addresses have to be set together by calling
-/// this function.
-#[init(contract = "CIS2-wCCD-Proxy", parameter = "InitProxyParams")]
-fn contract_proxy_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<StateProxy> {
-    // Set state and implementation addresses.
-    let params: InitProxyParams = ctx.parameter_cursor().get()?;
-
-    // Get the instantiater of this contract instance.
-    let invoker = Address::Account(ctx.init_origin());
-    // Construct the initial proxy contract state.
-    let state = StateProxy {
-        admin:                  invoker,
-        state_address:          params.state_address,
-        implementation_address: params.implementation_address,
-    };
-
-    Ok(state)
-}
-
-/// Initializes the state w-ccd contract with the proxy and the
-/// implementation addresses. Both addresses have to be set together
-/// by calling this function. This function can only be called once.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "initialize",
-    parameter = "InitializeStateParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_initialize<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    // Contract can only be initialized once.
-    ensure_eq!(
-        host.state().protocol_addresses,
-        ProtocolAddressesState::UnInitialized,
-        concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized)
-    );
-
-    // Set proxy and implementation addresses.
-    let params: InitializeStateParams = ctx.parameter_cursor().get()?;
-
-    host.state_mut().protocol_addresses = ProtocolAddressesState::Initialized {
-        proxy_address:          params.proxy_address,
-        implementation_address: params.implementation_address,
-    };
-
-    Ok(())
 }
 
 /// Initializes the implementation w-ccd contract with the proxy and
@@ -843,155 +616,8 @@ fn contract_initialize<S: HasStateApi>(
     Ok(())
 }
 
-/// Initializes the `implementation` and `state` contracts by using the
-/// addresses that the `proxy` contract was set up. This function will call the
-/// `initialize` functions on the `implementation` as well as the `state`
-/// contracts. This function logs a mint event with amount 0 to signal that a
-/// new CIS-2 token was deployed. This function logs an event including the
-/// metadata for this token. This function logs a new implementation event.
-/// This function logs a new admin event.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    name = "initialize",
-    error = "ContractError",
-    enable_logger,
-    mutable
-)]
-fn contract_proxy_initialize<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    let state_address = host.state().state_address;
-
-    host.invoke_contract(
-        &state_address,
-        &InitializeStateParams {
-            proxy_address:          ctx.self_address(),
-            implementation_address: host.state().implementation_address,
-        },
-        EntrypointName::new_unchecked("initialize"),
-        Amount::zero(),
-    )?;
-
-    let implementation_address = host.state().implementation_address;
-
-    host.invoke_contract(
-        &implementation_address,
-        &InitializeImplementationParams {
-            proxy_address: ctx.self_address(),
-            state_address: host.state().state_address,
-        },
-        EntrypointName::new_unchecked("initialize"),
-        Amount::zero(),
-    )?;
-
-    // Log a `Mint` event for the single token id with 0 amount. Minting an amount
-    // of 0 is used to signal that a new token was deployed. Invoking the mint event
-    // with 0 amount in the `wrap` function is impossible.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(0u64),
-        owner:    ctx.sender(),
-    }))?;
-
-    let url = host.invoke_contract_read_only(
-        &state_address,
-        &Parameter(&[]),
-        EntrypointName::new_unchecked("getURL"),
-        Amount::zero(),
-    )?;
-
-    let url = url
-        .ok_or(concordium_cis2::Cis2Error::Custom(CustomContractError::StateInvokeError))?
-        .get()?;
-
-    // Log an event including the metadata for this token.
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     TOKEN_ID_WCCD,
-        metadata_url: MetadataUrl {
-            url,
-            hash: None,
-        },
-    }))?;
-
-    // Log a new implementation event.
-    logger.log(&WccdEvent::NewImplementation(NewImplementationEvent {
-        new_implementation: implementation_address,
-    }))?;
-
-    // Log a new admin event.
-    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
-        new_admin: host.state().admin,
-    }))?;
-
-    Ok(())
-}
-
-/// The fallback method, which redirects the invocations to the implementation.
-#[receive(contract = "CIS2-wCCD-Proxy", error = "ContractError", fallback, mutable, payable)]
-fn receive_fallback<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    amount: Amount,
-) -> ReceiveResult<RawReturnValue> {
-    let entrypoint = ctx.named_entrypoint();
-    let implementation = host.state().implementation_address;
-
-    let mut parameter_buffer = vec![0; ctx.parameter_cursor().size() as usize];
-    ctx.parameter_cursor().read_exact(&mut parameter_buffer)?;
-
-    // Appending the sender to the input parameters
-    let paramter_with_sender = ParamWithSender {
-        params: parameter_buffer,
-        sender: ctx.sender(),
-    };
-
-    // Forwarding the invoke unaltered to the implementation contract.
-    let mut return_value = host
-        .invoke_contract(
-            &implementation,
-            &paramter_with_sender,
-            entrypoint.as_entrypoint_name(),
-            amount,
-        )
-        .map_err(|r| {
-            if let CallContractError::LogicReject {
-                reason,
-                mut return_value,
-            } = r
-            {
-                let mut buffer = vec![0; return_value.size() as usize];
-                return_value.read_exact(&mut buffer[..]).unwrap_abort(); // This should always be safe.
-                let mut reject = Reject::new(reason).unwrap_abort();
-                reject.return_value = Some(buffer);
-                reject
-            } else {
-                r.into()
-            }
-        })?
-        .1
-        .unwrap_abort();
-
-    let mut rv_buffer = vec![0; return_value.size() as usize];
-    return_value.read_exact(&mut rv_buffer)?;
-    Ok(RawReturnValue(rv_buffer))
-}
-
 // Simple helper functions to ensure that a call comes from the implementation
 // or the proxy.
-
-fn only_implementation(
-    implementation_address: ContractAddress,
-    sender: Address,
-) -> ContractResult<()> {
-    ensure!(
-        sender.matches_contract(&implementation_address),
-        concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation)
-    );
-
-    Ok(())
-}
 
 fn only_proxy(proxy_address: ContractAddress, sender: Address) -> ContractResult<()> {
     ensure!(
@@ -1003,316 +629,6 @@ fn only_proxy(proxy_address: ContractAddress, sender: Address) -> ContractResult
 }
 
 // Getter and setter functions
-
-/// Set Implementors.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setImplementors",
-    parameter = "SetImplementorsParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_set_implementors<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    // Only implementation can set state.
-    only_implementation(implementation_address, ctx.sender())?;
-
-    // Set implementors.
-    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
-
-    host.state_mut().implementors.insert(params.id, params.implementors);
-    Ok(())
-}
-
-/// Set paused.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setPaused",
-    parameter = "SetPausedParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_set_paused<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    // Only implementation can set state.
-    only_implementation(implementation_address, ctx.sender())?;
-
-    // Set paused.
-    let params: SetPausedParams = ctx.parameter_cursor().get()?;
-    host.state_mut().paused = params.paused;
-    Ok(())
-}
-
-/// Set URL.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setURL",
-    parameter = "SetURLParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_set_url<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    // Only implementation can set state.
-    only_implementation(implementation_address, ctx.sender())?;
-
-    // Set URL.
-    let params: SetURLParams = ctx.parameter_cursor().get()?;
-    host.state_mut().url = params.url;
-    Ok(())
-}
-
-/// Set implementation_address. Only the proxy can invoke this function.
-/// The admin on the proxy will initiate the `updateImplementation` function on
-/// the proxy which will invoke this function.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setImplementationAddress",
-    parameter = "SetImplementationAddressParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_set_implementation_address<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let (proxy_address, _implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    // Only proxy can update the implementation address.
-    only_proxy(proxy_address, ctx.sender())?;
-
-    // Set implementation address.
-    let params: SetImplementationAddressParams = ctx.parameter_cursor().get()?;
-
-    host.state_mut().protocol_addresses = ProtocolAddressesState::Initialized {
-        proxy_address,
-        implementation_address: params.implementation_address,
-    };
-
-    Ok(())
-}
-
-/// Set balance.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setBalance",
-    parameter = "SetBalanceParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_set_balance<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    // Only implementation can set state.
-    only_implementation(implementation_address, ctx.sender())?;
-
-    // Set balance.
-    let params: SetBalanceParams = ctx.parameter_cursor().get()?;
-
-    let (state, state_builder) = host.state_and_builder();
-
-    let mut owner_state = state.token.entry(params.owner).or_insert_with(|| AddressState {
-        balance:   0u64.into(),
-        operators: state_builder.new_set(),
-    });
-
-    match params.update {
-        Update::Add => owner_state.balance += params.amount,
-        Update::Remove => owner_state.balance -= params.amount,
-    };
-
-    Ok(())
-}
-
-/// Set operator.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "setIsOperator",
-    parameter = "SetIsOperatorParams",
-    error = "ContractError",
-    mutable
-)]
-fn contract_state_set_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let (_proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    // Only implementation can set state.
-    only_implementation(implementation_address, ctx.sender())?;
-
-    // Set balance.
-    let params: SetIsOperatorParams = ctx.parameter_cursor().get()?;
-
-    match params.update {
-        Update::Add => {
-            let (state, state_builder) = host.state_and_builder();
-
-            let mut owner_state = state.token.entry(params.owner).or_insert_with(|| AddressState {
-                balance:   0u64.into(),
-                operators: state_builder.new_set(),
-            });
-            owner_state.operators.insert(params.operator);
-        }
-        Update::Remove => {
-            host.state_mut().token.entry(params.owner).and_modify(|address_state| {
-                address_state.operators.remove(&params.operator);
-            });
-        }
-    };
-
-    Ok(())
-}
-
-/// Get paused.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "getPaused",
-    return_value = "bool",
-    error = "ContractError"
-)]
-fn contract_state_get_paused<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<bool> {
-    Ok(host.state().paused)
-}
-
-/// Get URL.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "getURL",
-    return_value = "String",
-    error = "ContractError"
-)]
-fn contract_state_get_url<'a, 'b, S: 'a + HasStateApi>(
-    _ctx: &'b impl HasReceiveContext,
-    host: &'a impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<&'a String> {
-    Ok(&host.state().url)
-}
-
-/// Get Balance.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "getBalance",
-    parameter = "GetBalanceParams",
-    return_value = "ContractTokenAmount",
-    error = "ContractError"
-)]
-fn contract_state_get_balance<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<ContractTokenAmount> {
-    let params: GetBalanceParams = ctx.parameter_cursor().get()?;
-
-    if let Some(s) = host.state().token.get(&params.owner) {
-        Ok(s.balance)
-    } else {
-        Ok(0u64.into())
-    }
-}
-
-/// Get Implementors.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "getImplementors",
-    parameter = "GetImplementorsParams",
-    error = "ContractError"
-)]
-fn contract_state_get_implementors<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<Option<Vec<ContractAddress>>> {
-    let params: GetImplementorsParams = ctx.parameter_cursor().get()?;
-
-    if let Some(addresses) = host.state().implementors.get(&params.id) {
-        Ok(Some(addresses.to_vec()))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Is_operator.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "isOperator",
-    parameter = "IsOperatorParams",
-    return_value = "bool",
-    error = "ContractError"
-)]
-fn contract_state_get_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<bool> {
-    let params: IsOperatorParams = ctx.parameter_cursor().get()?;
-
-    Ok(host
-        .state()
-        .token
-        .get(&params.owner)
-        .map_or(false, |address_state| address_state.operators.contains(&params.address)))
-}
-
-/// Function to receive CCD on the proxy. All CCDs are held by the
-/// proxy contract.
-#[receive(contract = "CIS2-wCCD-Proxy", name = "receiveCCD", error = "ContractError", payable)]
-fn contract_proxy_recieve_ccd<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<StateProxy, StateApiType = S>,
-    _amount: Amount,
-) -> ContractResult<()> {
-    // Only implementation can send ccds to proxy.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    Ok(())
-}
-
-/// Function to access the CCDs on the proxy. Only the implementation can access
-/// the funds.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    parameter = "TransferCCDParams",
-    name = "transferCCD",
-    error = "ContractError",
-    mutable
-)]
-fn contract_proxy_transfer_ccd<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-) -> ContractResult<()> {
-    // Only implementation can access CCDs on proxy.
-    only_implementation(host.state().implementation_address, ctx.sender())?;
-
-    let params: TransferCCDParams = ctx.parameter_cursor().get()?;
-
-    let amount = Amount::from_micro_ccd(params.amount.into());
-
-    // Send CCDs to receiver.
-    match params.address {
-        Receiver::Account(address) => host.invoke_transfer(&address, amount)?,
-        Receiver::Contract(address, function) => {
-            host.invoke_contract(&address, &params.data, function.as_entrypoint_name(), amount)?;
-        }
-    }
-
-    Ok(())
-}
 
 /// This function is meant for recovering CCD tokens by the admin
 /// in case they accidentally end up on the implementation.
@@ -1348,28 +664,6 @@ fn contract_implementation_transfer_ccd<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to view state of the state contract.
-#[receive(
-    contract = "CIS2-wCCD-State",
-    name = "view",
-    return_value = "ReturnBasicState",
-    error = "ContractError"
-)]
-fn contract_state_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<ReturnBasicState> {
-    let (proxy_address, implementation_address) = get_protocol_addresses_from_state(host)?;
-
-    let state = ReturnBasicState {
-        proxy_address,
-        implementation_address,
-        paused: host.state().paused,
-        url: host.state().url.clone(),
-    };
-    Ok(state)
-}
-
 /// Function to view state of the implementation contract.
 #[receive(
     contract = "CIS2-wCCD",
@@ -1381,20 +675,6 @@ fn contract_implementation_view<'a, 'b, S: HasStateApi>(
     _ctx: &'b impl HasReceiveContext,
     host: &'a impl HasHost<StateImplementation, StateApiType = S>,
 ) -> ContractResult<&'a StateImplementation> {
-    Ok(host.state())
-}
-
-/// Function to view state of the proxy contract.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    name = "view",
-    return_value = "StateProxy",
-    error = "ContractError"
-)]
-fn contract_proxy_view<'a, 'b, S: HasStateApi>(
-    _ctx: &'b impl HasReceiveContext,
-    host: &'a impl HasHost<StateProxy, StateApiType = S>,
-) -> ContractResult<&'a StateProxy> {
     Ok(host.state())
 }
 
@@ -1410,21 +690,6 @@ fn get_protocol_addresses_from_implementation<S>(
         Ok((proxy_address, state_address))
     } else {
         bail!(concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized))
-    }
-}
-
-/// Helper function to get protocol addresses from the state contract.
-fn get_protocol_addresses_from_state<S>(
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<(ContractAddress, ContractAddress)> {
-    if let ProtocolAddressesState::Initialized {
-        proxy_address,
-        implementation_address,
-    } = host.state().protocol_addresses
-    {
-        Ok((proxy_address, implementation_address))
-    } else {
-        bail!(concordium_cis2::Cis2Error::Custom(CustomContractError::UnInitialized));
     }
 }
 
@@ -1839,36 +1104,6 @@ fn contract_implementation_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-/// This functions allows the admin of the proxy to transfer the address to a
-/// new admin.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    name = "updateAdmin",
-    parameter = "Address",
-    error = "ContractError",
-    enable_logger,
-    mutable
-)]
-fn contract_proxy_update_admin<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Check that only the old admin is authorized to update the admin address.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
-    // Parse the parameter.
-    let new_admin = ctx.parameter_cursor().get()?;
-    // Update admin.
-    host.state_mut().admin = new_admin;
-
-    // Log a new admin event.
-    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
-        new_admin,
-    }))?;
-
-    Ok(())
-}
-
 /// Set the addresses for an implementation given a standard identifier and a
 /// list of contract addresses.
 ///
@@ -1900,49 +1135,6 @@ fn contract_set_implementor<S: HasStateApi>(
         EntrypointName::new_unchecked("setImplementors"),
         Amount::zero(),
     )?;
-
-    Ok(())
-}
-
-/// Function to update the protocol with a new implementation.
-/// Only the admin on the proxy can call this function.
-#[receive(
-    contract = "CIS2-wCCD-Proxy",
-    name = "updateImplementation",
-    parameter = "SetImplementationAddressParams",
-    error = "ContractError",
-    enable_logger,
-    mutable
-)]
-fn contract_proxy_update_implementation<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<StateProxy, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Check that only the proxy admin is authorized to update the implementation
-    // address.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
-    // Parse the parameter.
-    let params: SetImplementationAddressParams = ctx.parameter_cursor().get()?;
-    // Update implementation.
-    host.state_mut().implementation_address = params.implementation_address;
-
-    let state_address = host.state().state_address;
-
-    // Update implementation address in the state contract.
-    host.invoke_contract(
-        &state_address,
-        &SetImplementationAddressParams {
-            implementation_address: params.implementation_address,
-        },
-        EntrypointName::new_unchecked("setImplementationAddress"),
-        Amount::zero(),
-    )?;
-
-    // Log a new implementation event.
-    logger.log(&WccdEvent::NewImplementation(NewImplementationEvent {
-        new_implementation: params.implementation_address,
-    }))?;
 
     Ok(())
 }
@@ -2218,20 +1410,12 @@ mod tests {
     const NEW_ADMIN_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
     const NEW_ADMIN_ADDRESS: Address = Address::Account(NEW_ADMIN_ACCOUNT);
 
-    const IMPLEMENTATION: ContractAddress = ContractAddress {
-        index:    1,
-        subindex: 0,
-    };
     const PROXY: ContractAddress = ContractAddress {
         index:    2,
         subindex: 0,
     };
     const STATE: ContractAddress = ContractAddress {
         index:    3,
-        subindex: 0,
-    };
-    const NEW_IMPLEMENTATION: ContractAddress = ContractAddress {
-        index:    4,
         subindex: 0,
     };
 
@@ -2243,229 +1427,9 @@ mod tests {
         claim_eq!(actual, err);
     }
 
-    /// Test helper function which creates a w_ccd_state contract state
-    fn initial_state_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        State::new(state_builder)
-    }
-
     /// Test helper function which creates a w_ccd_implementation contract state
     fn initial_state_implementation() -> StateImplementation {
         StateImplementation::new(ADMIN_ADDRESS)
-    }
-
-    /// Test helper function which creates a w_ccd_proxy contract state
-    fn initial_state_proxy() -> StateProxy {
-        StateProxy {
-            admin:                  ADMIN_ADDRESS,
-            implementation_address: IMPLEMENTATION,
-            state_address:          STATE,
-        }
-    }
-
-    /// Test events on proxy when contract is initialized.
-    #[concordium_test]
-    fn test_proxy_events_during_initialization() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_self_address(PROXY);
-
-        let mut logger = TestLogger::init();
-        let state_builder = TestStateBuilder::new();
-        let state = initial_state_proxy();
-        let mut host = TestHost::new(state, state_builder);
-
-        // Set up a mock invocation for the state contract.
-        host.setup_mock_entrypoint(
-            STATE,
-            OwnedEntrypointName::new_unchecked("getURL".into()),
-            MockFn::returning_ok(INITIAL_TOKEN_METADATA_URL),
-        );
-
-        // Set up a mock invocation for the state contract.
-        host.setup_mock_entrypoint(
-            STATE,
-            OwnedEntrypointName::new_unchecked("initialize".into()),
-            MockFn::returning_ok(()),
-        );
-
-        // Set up a mock invocation for the implementation contract.
-        host.setup_mock_entrypoint(
-            IMPLEMENTATION,
-            OwnedEntrypointName::new_unchecked("initialize".into()),
-            MockFn::returning_ok(()),
-        );
-
-        // Initialize the proxy contract.
-        let result: ContractResult<()> = contract_proxy_initialize(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the logs
-        claim_eq!(logger.logs.len(), 4, "Exactly four events should be logged");
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner:    ADMIN_ADDRESS,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(0),
-            }))),
-            "Missing event for minting the token"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
-                TokenMetadataEvent {
-                    token_id:     TOKEN_ID_WCCD,
-                    metadata_url: MetadataUrl {
-                        url:  String::from(INITIAL_TOKEN_METADATA_URL),
-                        hash: None,
-                    },
-                }
-            ))),
-            "Missing event with metadata for the token"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::NewImplementation(
-                NewImplementationEvent {
-                    new_implementation: IMPLEMENTATION,
-                }
-            ))),
-            "Missing event for the new implementation"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin(NewAdminEvent {
-                new_admin: ADMIN_ADDRESS,
-            }))),
-            "Missing event for the new admin"
-        );
-    }
-
-    /// Test w_ccd state initialization works.
-    #[concordium_test]
-    fn test_state_init() {
-        // Setup the context
-        let mut ctx = TestInitContext::empty();
-        ctx.set_init_origin(ACCOUNT_0);
-
-        let mut builder = TestStateBuilder::new();
-
-        // Call the contract function.
-        let result = contract_state_init(&ctx, &mut builder);
-
-        // Check the result
-        let state = result.expect_report("Contract w_ccd state initialization failed");
-
-        if let ProtocolAddressesState::UnInitialized = state.protocol_addresses {
-        } else {
-            claim!(false, "Implementation address should not be initialized");
-        };
-
-        let mut host = TestHost::new(state, builder);
-
-        // Setup parameter.
-        let initialize_state_params = InitializeStateParams {
-            proxy_address:          PROXY,
-            implementation_address: IMPLEMENTATION,
-        };
-        let parameter_bytes = to_bytes(&initialize_state_params);
-
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Initialize the state contract.
-
-        let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        if let ProtocolAddressesState::Initialized {
-            implementation_address,
-            proxy_address,
-        } = host.state().protocol_addresses
-        {
-            claim_eq!(
-                implementation_address,
-                IMPLEMENTATION,
-                "Implementation address should now be set"
-            );
-
-            claim_eq!(proxy_address, PROXY, "Proxy address should now be set");
-        } else {
-            claim!(false, "Implementation address should now be set");
-        };
-
-        // Can not initialize again.
-        let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
-        // Check that invoke failed.
-        expect_error(
-            result,
-            concordium_cis2::Cis2Error::Custom(CustomContractError::AlreadyInitialized),
-            "Can not initialize again",
-        );
-    }
-
-    /// Test set unpause time in state contract.
-    #[concordium_test]
-    fn test_set_paused() {
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Setup the context.
-        let mut ctx = TestReceiveContext::empty();
-
-        // Setup parameter.
-        let initialize_state_params = InitializeStateParams {
-            proxy_address:          PROXY,
-            implementation_address: IMPLEMENTATION,
-        };
-        let parameter_bytes = to_bytes(&initialize_state_params);
-
-        ctx.set_parameter(&parameter_bytes);
-        ctx.set_sender(concordium_std::Address::Contract(IMPLEMENTATION));
-
-        // Initialize the state contract.
-        let result: ContractResult<()> = contract_state_initialize(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&SetPausedParams {
-            paused: true,
-        });
-        ctx.set_parameter(&parameter_bytes);
-
-        // Check return value of the get_paused function
-        let paused: ContractResult<bool> = contract_state_get_paused(&ctx, &host);
-        claim_eq!(
-            paused,
-            Ok(false),
-            "Getter function should return that the contract is not paused"
-        );
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_state_set_paused(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check return value of the get_paused function
-        let paused: ContractResult<bool> = contract_state_get_paused(&ctx, &host);
-        claim_eq!(paused, Ok(true), "Getter function should return that contract is paused");
-
-        // Can NOT set_paused from an address other than the implementation
-        ctx.set_sender(ADDRESS_0);
-        let result: ContractResult<()> = contract_state_set_paused(&ctx, &mut host);
-        // Check that invoke failed.
-        expect_error(
-            result,
-            concordium_cis2::Cis2Error::Custom(CustomContractError::OnlyImplementation),
-            "Only implemnentation can call setter functions",
-        );
     }
 
     /// Test initialization succeeds and the tokens are owned by the contract
@@ -3523,35 +2487,6 @@ mod tests {
         claim_eq!(host.state().admin, NEW_ADMIN_ADDRESS, "Admin should be the new admin address");
     }
 
-    /// Test updating to new admin address on the proxy contract.
-    #[concordium_test]
-    fn test_proxy_update_admin() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-        let mut logger = TestLogger::init();
-
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
-        ctx.set_parameter(&parameter_bytes);
-
-        let state_builder = TestStateBuilder::new();
-        let state = initial_state_proxy();
-        let mut host = TestHost::new(state, state_builder);
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, NEW_ADMIN_ADDRESS, "Admin should be the new admin address");
-    }
-
     /// Test that only the current admin can update the admin address on the
     /// implementation contract.
     #[concordium_test]
@@ -3586,122 +2521,5 @@ mod tests {
 
         // Check the admin state.
         claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be still the old admin address");
-    }
-
-    /// Test that only the current admin can update the admin address on the
-    /// proxy contract.
-    #[concordium_test]
-    fn test_proxy_update_admin_not_authorized() {
-        // Setup the context.
-        let mut ctx = TestReceiveContext::empty();
-        // NEW_ADMIN is not the current admin but tries to update the admin variable to
-        // its own address.
-        ctx.set_sender(NEW_ADMIN_ADDRESS);
-        let mut logger = TestLogger::init();
-
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
-        ctx.set_parameter(&parameter_bytes);
-
-        let state_builder = TestStateBuilder::new();
-        let state = initial_state_proxy();
-        let mut host = TestHost::new(state, state_builder);
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_proxy_update_admin(&ctx, &mut host, &mut logger);
-        // Check that invoke failed.
-        expect_error(
-            result,
-            ContractError::Unauthorized,
-            "Update admin should fail because not the current admin tries to update",
-        );
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be still the old admin address");
-    }
-
-    /// Test updating to new admin address on the proxy contract.
-    #[concordium_test]
-    fn test_contract_proxy_update_implementation() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-        let mut logger = TestLogger::init();
-
-        // Setup the parameter.
-        let parameter_bytes = to_bytes(&[NEW_IMPLEMENTATION]);
-        ctx.set_parameter(&parameter_bytes);
-
-        let state_builder = TestStateBuilder::new();
-        let state = initial_state_proxy();
-        let mut host = TestHost::new(state, state_builder);
-
-        // Set up a mock invocation for the state contract.
-        host.setup_mock_entrypoint(
-            STATE,
-            OwnedEntrypointName::new_unchecked("setImplementationAddress".into()),
-            MockFn::returning_ok(()),
-        );
-
-        // Check the admin state.
-        claim_eq!(
-            host.state().implementation_address,
-            IMPLEMENTATION,
-            "Implementation should be the old implementation address"
-        );
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_proxy_update_implementation(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the admin state.
-        claim_eq!(
-            host.state().implementation_address,
-            NEW_IMPLEMENTATION,
-            "Implementation should be the new implementation address"
-        );
-    }
-
-    /// Test fallback function.
-    #[concordium_test]
-    fn test_contract_fallback() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        let state_builder = TestStateBuilder::new();
-        let state = initial_state_proxy();
-        let mut host = TestHost::new(state, state_builder);
-
-        let entrypoint_implementation =
-            OwnedEntrypointName::new_unchecked("some_entrypoint".into());
-
-        ctx.set_named_entrypoint(entrypoint_implementation.clone());
-        ctx.set_parameter(b"hello");
-
-        host.setup_mock_entrypoint(
-            IMPLEMENTATION,
-            entrypoint_implementation,
-            MockFn::new_v1(|parameter, _, &mut _, &mut _| {
-                let rv = parameter.0.to_vec();
-                let length = rv.len();
-
-                let return_value = [&rv[0..length - 33], b", world!"].concat();
-
-                Ok((false, RawReturnValue(return_value)))
-            }),
-        );
-
-        // Act
-        let result = receive_fallback(&ctx, &mut host, Amount::zero());
-
-        // Assert
-        claim_eq!(result, Ok(RawReturnValue(b"hello, world!".to_vec())));
     }
 }
