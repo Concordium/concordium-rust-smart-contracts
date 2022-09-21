@@ -1,0 +1,6 @@
+[template]
+cargo_generate_version = "0.16.0"
+
+[placeholders]
+description = { type="string", prompt="Description for the crate?" }
+TOKEN_METADATA_BASE_URL = { type="string", prompt="Token metadata base URL of the token?", default='https://some.example/token/' }
