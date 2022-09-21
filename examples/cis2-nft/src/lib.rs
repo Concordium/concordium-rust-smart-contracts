@@ -116,7 +116,7 @@ enum CustomContractError {
     InvokeContractError,
 }
 
-/// Wrapping the custom errors in a type with CIS1 errors.
+/// Wrapping the custom errors in a type with CIS2 errors.
 type ContractError = Cis2Error<CustomContractError>;
 
 type ContractResult<A> = Result<A, ContractError>;
