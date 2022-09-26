@@ -3,4 +3,3 @@ cargo_generate_version = "0.16.0"
 
 [placeholders]
 description = { type="string", prompt="Description for the crate?" }
-currentAuthors = { type="string", prompt="Authors for this crate?" }

@@ -5,7 +5,7 @@ name = "{{crate_name}}"
 version = "0.1.0"
 edition = "2018"
 license = "MPL-2.0"
-authors = [ "{{currentAuthors}}" ]
+authors = [ "{{authors}}" ]
 description = "{{description}}"
 
 [dependencies]
