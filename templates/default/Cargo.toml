@@ -13,3 +13,7 @@ concordium-std = "4.0.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1

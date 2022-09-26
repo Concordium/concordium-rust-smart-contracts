@@ -73,17 +73,8 @@ mod tests {
 
     type ContractResult<A> = Result<A, Error>;
 
-    fn expect_error<E, T>(expr: Result<T, E>, err: E, msg: &str)
-    where
-        E: Eq + Debug,
-        T: Debug,
-    {
-        let actual = expr.expect_err_report(msg);
-        claim_eq!(actual, err);
-    }
-
     #[concordium_test]
-    /// Init test
+    /// Test that initializing the contract succeeds with some state.
     fn test_init() {
         let ctx = TestInitContext::empty();
 
@@ -94,7 +85,7 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Throw no error test
+    /// Test that invoking the `receive` endpoint with the `false` parameter succeeds in updating the contract.
     fn test_throw_no_error() {
         let ctx = TestInitContext::empty();
 
@@ -119,7 +110,7 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Throw an error test
+    /// Test that invoking the `receive` endpoint with the `true` parameter results in the `YourError` being thrown.
     fn test_throw_error() {
         let ctx = TestInitContext::empty();
 
@@ -137,9 +128,9 @@ mod tests {
         let mut host = TestHost::new(initial_state, state_builder);
 
         // Call the contract function.
-        let result: ContractResult<()> = receive(&ctx, &mut host);
+        let error: ContractResult<()> = receive(&ctx, &mut host);
 
         // Check the result.
-        expect_error(result, Error::YourError, "Function should throw an error.");
+        claim_eq!(error, Err(Error::YourError), "Function should throw an error.");
     }
 }
