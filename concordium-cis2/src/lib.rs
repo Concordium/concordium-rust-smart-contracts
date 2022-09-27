@@ -166,9 +166,7 @@ impl<const N: usize> Serial for TokenIdFixed<N> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         let len = u8::try_from(N).map_err(|_| W::Err::default())?;
         out.write_u8(len)?;
-        for byte in self.0 {
-            out.write_u8(byte)?;
-        }
+        out.write_all(&self.0)?;
         Ok(())
     }
 }
