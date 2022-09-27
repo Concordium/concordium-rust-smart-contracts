@@ -6,7 +6,8 @@ edition = "2018"
 license = "MPL-2.0"
 
 [features]
-default = ["std"]
+default = ["std", "crypto-primitives"]
+crypto-primitives = ["concordium-std/crypto-primitives"]
 std = ["concordium-std/std", "concordium-cis2/std"]
 
 [dependencies]

@@ -55,17 +55,28 @@ struct RegisterNameParams {
     owner:  AccountAddress,
     /// Name
     name: String,
-    /// Associated data
-    data: Vec<u8>
 }
 
-#[derive(Serial, Deserial)]
-struct NameInfo {
+#[derive(Serial, DeserialWithState, Deletable, StateClone)]
+#[concordium(state_parameter = "S")]
+struct NameInfo<S: HasStateApi> {
     // name owner
     owner: AccountAddress,
     // expiration date
     name_expires: Timestamp,
+    // associated data
+    data: StateBox<Vec<u8>,S>
 } 
+
+impl<S: HasStateApi> NameInfo<S> {
+    fn fresh(owner: AccountAddress, name_expires: Timestamp, state_builder: &mut StateBuilder<S>) -> Self {
+        NameInfo {
+            owner,
+            name_expires,
+            data: state_builder.new_box(Vec::new())
+        }
+    }
+}
 
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable, StateClone)]
@@ -91,13 +102,11 @@ impl<S: HasStateApi> AddressState<S> {
 // and this could be structured in a more space efficient way depending on the use case.
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
-struct State<S> {
+struct State<S: HasStateApi> {
     /// The state for each account address.
     state:        StateMap<AccountAddress, AddressState<S>, S>,
     /// All of the token IDs
-    all_names:    StateMap<ContractTokenId, NameInfo, S>,
-    // data associated with each name
-    data:         StateMap<ContractTokenId, Vec<u8>, S>,
+    all_names:    StateMap<ContractTokenId, NameInfo<S>, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -178,7 +187,6 @@ impl<S: HasStateApi> State<S> {
         State {
             state:        state_builder.new_map(),
             all_names:    state_builder.new_map(),
-            data:         state_builder.new_map(),
             implementors: state_builder.new_map(),
         }
     }
@@ -186,17 +194,17 @@ impl<S: HasStateApi> State<S> {
     /// Register a name if it's not taken
     fn register_fresh(
         &mut self,
-        name: ContractTokenId,
+        name: &ContractTokenId,
         owner: &AccountAddress,
         expires : Timestamp,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
-        let name_info = NameInfo {owner: *owner, name_expires: expires};
-        ensure!(self.all_names.insert(name, name_info).is_none(), CustomContractError::NameIsTaken.into());
-        ensure!(self.data.insert(name, Vec::new()).is_none(), CustomContractError::NameIsTaken.into());
+        let name_info = NameInfo::fresh(*owner, expires, state_builder);
+        // make sure that the name is not taken
+        ensure!(self.all_names.insert(*name, name_info).is_none(), CustomContractError::NameIsTaken.into());
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
-        owner_state.owned_names.insert(name);
+        owner_state.owned_names.insert(*name);
         Ok(())
     }
 
@@ -206,7 +214,6 @@ impl<S: HasStateApi> State<S> {
         now : Timestamp,
         name: &ContractTokenId,
         owner: &AccountAddress,
-        expires : Timestamp,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         let name_info = self.all_names.get(name).ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
@@ -225,7 +232,10 @@ impl<S: HasStateApi> State<S> {
         data: &[u8],
     ) -> ContractResult<()> {
         // Insert and ensure that the key is present
-        ensure!(self.data.insert(*name, data.to_vec()).is_some(), CustomContractError::InconsistentState.into());
+        self.all_names
+            .get_mut(&name)
+            .map(|mut ni| { ni.data.replace(data.to_vec()) })
+            .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
         Ok(())
     }
 
@@ -255,7 +265,23 @@ impl<S: HasStateApi> State<S> {
         token_id: &ContractTokenId,
         address: &Address,
     ) -> ContractResult<ContractTokenAmount> {
-    todo!();
+        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
+        let balance = if let Address::Account(addr) = address {
+            self    
+            .state
+            .get(addr)
+            .map(|address_state| {
+                if address_state.owned_names.contains(token_id) {
+                    1
+                } else {
+                    0
+                }
+            })
+            .unwrap_or(0)
+        } else {
+            0
+        };
+        Ok(balance.into())
     }
 
     /// Check if a given address is an operator of a given owner address.
@@ -277,14 +303,6 @@ impl<S: HasStateApi> State<S> {
         to: &Address,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
-        let from_acc = match from {
-            Address::Account(addr) => addr,
-            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()) 
-        };
-        let to_acc = match to {
-            Address::Account(addr) => addr,
-            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()) 
-        };
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
         if amount == 0.into() {
@@ -324,27 +342,55 @@ impl<S: HasStateApi> State<S> {
         let new_expires = name_info.name_expires
                            .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
                            .ok_or::<ContractError>(CustomContractError::InvokeContractError.into())?;
-        let updated_name_info = NameInfo { owner: *to_acc, name_expires: new_expires};
-        self.all_names.insert(*token_id, updated_name_info);
+        // update the name info (owner and expiration date) keeping data intact
+        // the map must contain the token id, if not - return an error
+        self.all_names
+            .get_mut(&token_id)
+            .map(|mut ni| {ni.owner = *to_acc; ni.name_expires = new_expires})
+            .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
         Ok(())
+        
+        // if let Some(mut ni) = self.all_names.get_mut(&token_id) {
+        //                    ni.owner = *to_acc;
+        //                    ni.name_expires = new_expires;
+        //                    Ok(())
+        //                }
+        // else { 
+        //    Err(Cis2Error::Custom(CustomContractError::InvokeContractError))
+        // }        
     }
 
     /// Update the state adding a new operator for a given address.
     /// Succeeds even if the `operator` is already an operator for the
-    /// `address`.
+    /// `address. If the owner is not an account, return an error
     fn add_operator(
         &mut self,
         owner: &Address,
         operator: &Address,
         state_builder: &mut StateBuilder<S>,
-    ) {
-        todo!();
+    ) -> ContractResult<()> {
+        match owner {
+            Address::Account(addr) => {
+                let mut owner_state =
+                    self.state.entry(*addr).or_insert_with(|| AddressState::empty(state_builder));
+                owner_state.operators.insert(*operator);
+                Ok(())
+            },
+            Address::Contract(_) => Err(CustomContractError::OwnerShouldBeAccount.into())
+        }
     }
-
     /// Update the state removing an operator for a given address.
     /// Succeeds even if the `operator` is _not_ an operator for the `address`.
-    fn remove_operator(&mut self, owner: &Address, operator: &Address) {
-        todo!();
+    fn remove_operator(&mut self, owner: &Address, operator: &Address) -> ContractResult<()> {
+        match owner {
+            Address::Account(addr) =>  {
+                self.state.entry(*addr).and_modify(|address_state| {
+                    address_state.operators.remove(operator);
+                });
+                Ok(())
+                },
+            Address::Contract(_) => Err(CustomContractError::OwnerShouldBeAccount.into())
+        }
     }
 
     /// Check if state contains any implementors for a given standard.
@@ -388,7 +434,9 @@ fn contract_init<S: HasStateApi>(
 
 #[derive(Serialize, SchemaType)]
 struct ViewNameInfo {
+    owner : AccountAddress,
     name_expires: Timestamp,
+    data: Vec<u8>
 } 
 
 #[derive(Serialize, SchemaType)]
@@ -401,13 +449,14 @@ struct ViewAddressState {
 struct ViewState {
     state:     Vec<(AccountAddress, ViewAddressState)>,
     all_names: Vec<(ContractTokenId, ViewNameInfo)>,
-    data: Vec<(ContractTokenId, Vec<u8>)>,
-}
+    }
 
-fn view_nameinfo (names : (StateRef<TokenIdFixed<32>>, StateRef<NameInfo>)) -> (TokenIdFixed<32>, ViewNameInfo) {
+fn view_nameinfo<S: HasStateApi>(names : (StateRef<TokenIdFixed<32>>, StateRef<NameInfo<S>>)) -> (TokenIdFixed<32>, ViewNameInfo) {
     let (a_token_id, a_name_info) = names;
-    let name_info = ViewNameInfo {      
-        name_expires : a_name_info.name_expires
+    let name_info = ViewNameInfo {
+        owner: a_name_info.owner,
+        name_expires : a_name_info.name_expires,
+        data: a_name_info.data.get().iter().map(|x| *x).collect()
     };
     (*a_token_id, name_info)
 }
@@ -431,12 +480,10 @@ fn contract_view<S: HasStateApi>(
         }));
     }
     let all_names = state.all_names.iter().map(|x| view_nameinfo(x)).collect();
-    let data = state.data.iter().map(|x| (*x.0, x.1.iter().map(|x| *x).collect())).collect();
 
     Ok(ViewState {
         state: inner_state,
         all_names,
-        data
     })
 }
 
@@ -461,7 +508,7 @@ fn contract_view<S: HasStateApi>(
     name = "mint",
     crypto_primitives,
     payable,
-    parameter = "MintParams",
+    parameter = "RegisterNameParams",
     error = "ContractError",
     enable_logger,
     mutable
@@ -473,8 +520,6 @@ fn contract_register<S: HasStateApi>(
     logger: &mut impl HasLogger,
     crypto_primitives : &impl HasCryptoPrimitives
 ) -> ContractResult<()> {
-    // Get the sender of the transaction
-    let sender = ctx.sender();
     // Validate the amount
     ensure_eq!(amount, REGISTRACTION_FEE, CustomContractError::IncorrectFee.into());
      // Parse the parameter.
@@ -486,16 +531,29 @@ fn contract_register<S: HasStateApi>(
     // calculate the expiration date
     let expires = now.checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
                      .ok_or::<ContractError>(CustomContractError::InvokeContractError.into())?;
-    // try to register the hashed name as a fresh (not yet used) name
-    // otherwise try to register expired name
-    state.register_fresh(TokenIdFixed(name_hash), &params.owner, expires, builder)
-         .or_else(|e| {
-            if e == CustomContractError::NameIsTaken.into() {
-                state.register_expired(now, &TokenIdFixed(name_hash), &params.owner, expires, builder)
-            } else {
-                Err(e) 
-            }
-         })
+    let token_id = TokenIdFixed(name_hash);
+    if state.contains_token(&token_id) {
+        // token was registered, try to register it as expired
+        state.register_expired(now, &token_id, &params.owner, builder)
+    } else {
+        // token is not registered, make a fresh registration
+        state.register_fresh(&token_id, &params.owner, expires, builder)?;
+        // Event for minted NFT.
+        logger.log(&Cis2Event::Mint(MintEvent {
+                token_id,
+                amount: ContractTokenAmount::from(1),
+                owner: params.owner.into(),
+            }))?;
+    
+        // Metadata URL for the NFT.
+        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+                token_id,
+                metadata_url: MetadataUrl {
+                    url:  build_token_metadata_url(&token_id),
+                    hash: None,
+                }}))?;
+        Ok(())
+    }
 }
 
 type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
@@ -584,7 +642,6 @@ fn contract_transfer<S: HasStateApi>(
     parameter = "String",
     error = "ContractError",
     crypto_primitives,
-    enable_logger,
     payable,
     mutable
 )]
@@ -592,7 +649,6 @@ fn contract_renew<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
-    logger: &mut impl HasLogger,
     crypto_primitives : &impl HasCryptoPrimitives
 ) -> ContractResult<()> {
     // Get the sender of the transaction
@@ -602,8 +658,13 @@ fn contract_renew<S: HasStateApi>(
     // Parse the parameter.
     let name: String = ctx.parameter_cursor().get()?;
     let name_hash = crypto_primitives.hash_sha2_256(&name.as_bytes()).0;
-    host.state_mut().renew(&TokenIdFixed(name_hash));
-    Ok(())
+    let state = host.state();
+    let token_id = &TokenIdFixed(name_hash);
+    let name_info = state.all_names.get(token_id).ok_or(ContractError::Unauthorized)?;
+    // Authenticate the sender for this transfer
+    ensure!(Address::Account(name_info.owner) == sender || state.is_operator(&sender, &name_info.owner), ContractError::Unauthorized);
+    // Renwe the name
+    host.state_mut().renew(token_id)
 }
 
 #[receive(
@@ -612,7 +673,6 @@ fn contract_renew<S: HasStateApi>(
     parameter = "UpdateDataParams",
     error = "ContractError",
     crypto_primitives,
-    enable_logger,
     payable,
     mutable
 )]
@@ -620,7 +680,6 @@ fn contract_update_data<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     amount: Amount,
-    logger: &mut impl HasLogger,
     crypto_primitives : &impl HasCryptoPrimitives
 ) -> ContractResult<()> {
     // Get the sender of the transaction
@@ -636,8 +695,7 @@ fn contract_update_data<S: HasStateApi>(
     let owner = name_info.owner;
     // Authenticate the sender for this transfer
     ensure!(Address::Account(owner) == sender || state.is_operator(&sender, &owner), ContractError::Unauthorized);
-    state.update_data(&TokenIdFixed(name_hash), params.data.as_slice());
-    Ok(())
+    state.update_data(&TokenIdFixed(name_hash), params.data.as_slice())
 }
 
 /// Enable or disable addresses as operators of the sender address.
@@ -667,8 +725,8 @@ fn contract_update_operator<S: HasStateApi>(
     for param in params {
         // Update the operator in the state.
         match param.update {
-            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, builder),
-            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
+            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, builder)?,
+            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator)?,
         }
 
         // Log the appropriate event
@@ -854,8 +912,9 @@ fn contract_set_implementor<S: HasStateApi>(
 #[concordium_cfg_test]
 mod tests {
     use super::*;
-    use test_infrastructure::*;
+    use concordium_std::test_infrastructure::*;
 
+    const CURRENT_TIME: u64 = 1;
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
@@ -866,17 +925,184 @@ mod tests {
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
-    fn initial_state<S: HasStateApi>(now: Timestamp, state_builder: &mut StateBuilder<S>) -> State<S> {
+    fn initial_state<S: HasStateApi>(expires: Timestamp, state_builder: &mut StateBuilder<S>) -> State<S> {
         let mut state = State::empty(state_builder);
         let crypto_primitives = TestCryptoPrimitives::new();
-        let expires = now.checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-                         .expect_report("Failed to register NAME_0");
         let token_0 = crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0;
         let token_1 = crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0;
-        state.register_fresh(TokenIdFixed(token_0), &ACCOUNT_0, expires, state_builder).expect_report("Failed to register NAME_0");
+        state.register_fresh(&TokenIdFixed(token_0), &ACCOUNT_0, expires, state_builder).expect_report("Failed to register NAME_0");
+        state.register_fresh(&TokenIdFixed(token_1), &ACCOUNT_1, expires, state_builder).expect_report("Failed to register NAME_1");
         //state.mint(TOKEN_1, &ADDRESS_0, state_builder).expect_report("Failed to mint TOKEN_1");
         state
     }
+
+    /// Test registering a fresh name, ensuring the the name is owned by the given address and
+    /// the appropriate events are logged.
+    #[concordium_test]
+    #[cfg(feature = "crypto-primitives")]
+    fn test_register_fresh() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(CURRENT_TIME));
+        ctx.set_sender(ADDRESS_0.into());
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let parameter = RegisterNameParams {
+            name: NAME_0.to_string(),
+            owner: ACCOUNT_0,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::empty(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register(&ctx, &mut host, REGISTRACTION_FEE, &mut logger, &crypto_primitives);
+
+        // Check the result
+        claim!(result.is_ok(), "Results in rejection");
+
+        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
+
+        // Check the state
+        // Note. This is rather expensive as an iterator is created and then traversed -
+        // should be avoided when writing smart contracts.
+        claim_eq!(host.state().all_names.iter().count(), 1, "Expected one name in all names.");
+        claim_eq!(host.state().state.iter().count(), 1, "Expected one name in the state.");
+        
+        let name_info = host.state().all_names.get(&token_0).expect_report("Token is expected to exist");
+        claim_eq!(name_info.owner, ACCOUNT_0, "The name must be owned by ACCOUNT_0");
+        
+        let addr_state = host.state().state.get(&ACCOUNT_0).expect_report("ACCOUNT_0 must own a name");
+        claim!(addr_state.owned_names.contains(&token_0), "ACCOUNT_0 must own token 0");
+
+        let balance0 =
+            host.state().balance(&token_0, &ACCOUNT_0.into()).expect_report("Token is expected to exist");
+        claim_eq!(balance0, 1.into(), "Token balance should be non-zero");
+
+        // Check the logs
+        claim!(
+            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
+                owner:    ADDRESS_0,
+                token_id: token_0,
+                amount:   ContractTokenAmount::from(1),
+            }))),
+            "Expected an event for minting NAME_0"
+        );
+    }
+
+    /// Test registering an expired name, ensuring the the name is owned by the new given address
+    #[concordium_test]
+    #[cfg(feature = "crypto-primitives")]
+    fn test_register_expired() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        let old_owner = ACCOUNT_0;
+        let new_owner = ACCOUNT_1;
+
+        // the time of expiry in the past
+        let old_expiry = Timestamp::from_timestamp_millis(1);
+        
+        // ensure that the current date is beyond the expiry date,
+        // so we can register the expired name
+        let now = old_expiry
+                    .checked_add(Duration::from_days(10))
+                    .expect_report("Failed to calculate the date");
+        ctx.set_metadata_slot_time(now);
+        ctx.set_sender(ADDRESS_0.into());
+        ctx.set_owner(old_owner);
+
+        // and parameter.
+        let parameter = RegisterNameParams {
+            name: NAME_0.to_string(),
+            owner: new_owner,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+
+        // create initial state where NAME_0 was owned by ACCOUNT_1
+        let state = initial_state(old_expiry, &mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register(&ctx, &mut host, REGISTRACTION_FEE, &mut logger, &crypto_primitives);
+
+        // Check the result
+        claim!(result.is_ok(), "Results in rejection");
+
+        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
+
+        let name_info = host.state().all_names.get(&token_0).expect_report("Token is expected to exist");
+        claim_eq!(name_info.owner, new_owner, "The name must be owned by the new owner");
+        
+        let addr_state = host.state().state.get(&new_owner).expect_report("The new owner must own a name");
+        claim!(addr_state.owned_names.contains(&token_0), "The new owner must own the name");
+
+        let balance_new =
+            host.state().balance(&token_0, &new_owner.into()).expect_report("Token is expected to exist");
+        claim_eq!(balance_new, 1.into(), "Token balance should be non-zero");
+
+        let balance_old =
+            host.state().balance(&token_0, &old_owner.into()).expect_report("Token is expected to exist");
+        claim_eq!(balance_old, 0.into(), "Token balance should be zero");
+
+        // Check the logs, there should be no record for minting, 
+        // because it's a registration of an expired name
+        claim_eq!(
+            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
+                owner:    new_owner.into(),
+                token_id: token_0,
+                amount:   ContractTokenAmount::from(1),
+            }))),
+            false,
+            "Expected an event for minting NAME_0"
+        );
+    }
+
+    #[concordium_test]
+    #[cfg(feature = "crypto-primitives")]
+    fn test_register_fails_incorrect_fee() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(CURRENT_TIME));
+        ctx.set_sender(ADDRESS_0.into());
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let parameter = RegisterNameParams {
+            name: NAME_0.to_string(),
+            owner: ACCOUNT_0,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::empty(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Call the contract function wiht zero cdd
+        let result: ContractResult<()> = contract_register(&ctx, &mut host, Amount::from_ccd(0), &mut logger, &crypto_primitives);
+
+        // Check the result
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(err, ContractError::Custom(CustomContractError::IncorrectFee), "Error is expected to be IncorrectFee");
+    }
+
+
 
     
 }
