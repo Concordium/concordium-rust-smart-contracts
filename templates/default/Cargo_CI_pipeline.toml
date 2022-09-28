@@ -1,0 +1,19 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "ci_pipeline"
+version = "0.1.0"
+edition = "2018"
+license = "MPL-2.0"
+authors = [ "Concordium <developers@concordium.com>" ]
+description = "This toml file is for the CI pipeline"
+
+[dependencies]
+concordium-std = "4.0.0"
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1

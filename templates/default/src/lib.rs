@@ -85,7 +85,8 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Test that invoking the `receive` endpoint with the `false` parameter succeeds in updating the contract.
+    /// Test that invoking the `receive` endpoint with the `false` parameter
+    /// succeeds in updating the contract.
     fn test_throw_no_error() {
         let ctx = TestInitContext::empty();
 
@@ -110,7 +111,8 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Test that invoking the `receive` endpoint with the `true` parameter results in the `YourError` being thrown.
+    /// Test that invoking the `receive` endpoint with the `true` parameter
+    /// results in the `YourError` being thrown.
     fn test_throw_error() {
         let ctx = TestInitContext::empty();
 
