@@ -9,8 +9,12 @@
 //! to another account address.
 //!
 //! # Operations
-//! The contract allows for registering new names, updating data associated with the name
-//! and for renewing a name. All operations require to pay a fee. Registration succeeds
+//! The contract allows for
+//!  - registering new names;
+//!  - updating data associated with a name;
+//!  - renewing a name;
+//!  - viewing information about a name (owner and data)
+//! To register, renew and update one has to pay a fee. Registration succeeds
 //! if either name is not yet registered, or it is registered but expired. In this case,
 //! ownership is transferred to the new owner and the expiration date is updated as for 
 //! the "fresh" registration. Updating data and renewing is only possible if the
@@ -462,13 +466,17 @@ struct ViewState {
     all_names: Vec<(ContractTokenId, ViewNameInfo)>,
     }
 
+fn into_view_name_info<S: HasStateApi> (name_info : &NameInfo<S>) -> ViewNameInfo {
+    ViewNameInfo {
+        owner: name_info.owner,
+        name_expires : name_info.name_expires,
+        data: name_info.data.get().iter().map(|x| *x).collect()
+    }
+}
+
 fn view_nameinfo<S: HasStateApi>(names : (StateRef<TokenIdFixed<32>>, StateRef<NameInfo<S>>)) -> (TokenIdFixed<32>, ViewNameInfo) {
     let (a_token_id, a_name_info) = names;
-    let name_info = ViewNameInfo {
-        owner: a_name_info.owner,
-        name_expires : a_name_info.name_expires,
-        data: a_name_info.data.get().iter().map(|x| *x).collect()
-    };
+    let name_info = into_view_name_info(&a_name_info);
     (*a_token_id, name_info)
 }
 
@@ -498,17 +506,39 @@ fn contract_view<S: HasStateApi>(
     })
 }
 
-/// Mint new tokens with a given address as the owner of these tokens.
-/// Can only be called by the contract owner.
-/// Logs a `Mint` and a `TokenMetadata` event for each token.
+/// Query the info about a name.
+/// The name is epected to be a string.
+#[receive(
+    contract = "nametoken",
+    name = "viewNameInfo",
+    crypto_primitives,
+    parameter = "RegisterNameParams",
+    return_value = "ViewNameInfo",
+    error = "ContractError"
+)]
+fn contract_nameinfo_view<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+    crypto_primitives : &impl HasCryptoPrimitives
+) -> ReceiveResult<ViewNameInfo> {
+    let params: String = ctx.parameter_cursor().get()?;
+    let name_hash = crypto_primitives.hash_sha2_256(&params.as_bytes()).0;
+    let name_info = host.state().all_names.get(&TokenIdFixed(name_hash)).ok_or::<ContractError>(CustomContractError::NameNotFound.into())?;
+    Ok(into_view_name_info(&name_info))
+} 
+
+/// Register a new nametoken with a given address as the owner.
+/// Can only be called by anyone, but requires to pay a registration fee.
+/// Logs a `Mint` and a `TokenMetadata` event for each nametoken.
 /// The url for the token metadata is the token ID encoded in hex, appended on
 /// the `TOKEN_METADATA_BASE_URL`.
 ///
 /// It rejects if:
-/// - The sender is not the contract instance owner.
+/// - Fee is incorrect.
 /// - Fails to parse parameter.
+/// - Overflows when calculating the expiration date.
 /// - Any of the tokens fails to be minted, which could be if:
-///     - The minted token ID already exists.
+///     - The registered name is already taken and not expired.
 ///     - Fails to log Mint event
 ///     - Fails to log TokenMetadata event
 ///
@@ -516,7 +546,7 @@ fn contract_view<S: HasStateApi>(
 /// number of logs a smart contract can produce on each function call.
 #[receive(
     contract = "nametoken",
-    name = "mint",
+    name = "register",
     crypto_primitives,
     payable,
     parameter = "RegisterNameParams",
@@ -581,6 +611,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 ///     - The sender is not the owner of the token, or an operator for this
 ///       specific `token_id` and `from` address.
 ///     - The token is not owned by the `from`.
+///     - `from` or `to`are not account addresses.
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
 #[receive(
@@ -652,6 +683,15 @@ fn contract_transfer<S: HasStateApi>(
     Ok(())
 }
 
+/// Renew a nametoken by updating it's expiration date
+///
+//  It rejects if:
+/// - Fee is incorrect
+/// - It fails to parse the parameter.
+/// - Name doesn't exist
+/// - Name expired
+/// - The sender is not the owner of the token, or an operator for this
+///   specific `token_id` and `owner` address of the nametoken.
 #[receive(
     contract = "nametoken",
     name = "renewName",
@@ -676,17 +716,27 @@ fn contract_renew<S: HasStateApi>(
     let name_hash = crypto_primitives.hash_sha2_256(&name.as_bytes()).0;
     let token_id = &TokenIdFixed(name_hash);
     let state = host.state();
-    let name_info = state.all_names.get(token_id).ok_or(ContractError::Unauthorized)?;
+    let name_info = state.all_names.get(token_id).ok_or::<ContractError>(CustomContractError::NameNotFound.into())?;
     let expires = name_info.name_expires;
     // Authenticate the sender for this transfer
     ensure!(Address::Account(name_info.owner) == sender || state.is_operator(&sender, &name_info.owner), ContractError::Unauthorized);
-    // Ensure that the name is not expired
+    // Ensure that the name has not expired
     let now = ctx.metadata().slot_time();
     ensure!(now <= expires, ContractError::Unauthorized);
     // Renew the name
     host.state_mut().renew(token_id)
 }
 
+
+/// Update data associated with a nametoken
+///
+/// It rejects if:
+/// - Fee is incorrect
+/// - It fails to parse the parameter.
+/// - Name doesn't exist
+/// - Name expired
+/// - The sender is not the owner of the token, or an operator for this
+///   specific `token_id` and `owner` address of the nametoken.
 #[receive(
     contract = "nametoken",
     name = "updateData",
@@ -806,6 +856,7 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
+/// The balance is considered 0 if the nametoken has expired.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
