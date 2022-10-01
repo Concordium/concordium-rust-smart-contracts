@@ -33,6 +33,9 @@
 //! initially registered.
 //! 
 //! Note: token ids are hashed names. Words "name" and "token id" are used interchangeably
+//!
+//! # Misc
+//! This example demontrates how to use crypto primitives (hashing) and lazy loaded data.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -89,6 +92,9 @@ struct NameInfo<S: HasStateApi> {
     // expiration date
     name_expires: Timestamp,
     // associated data
+    // `StateBox` allows for lazy loading data; this is helpful in the
+    // sutuations when one wants to do a partial update not touching this
+    // field, which can be large.
     data: StateBox<Vec<u8>,S>
 } 
 
@@ -247,9 +253,10 @@ impl<S: HasStateApi> State<S> {
         // transfer ownership
         self.transfer(name, 1.into(), &Address::Account(name_info.owner), &Address::Account(*owner), state_builder)?;
         let new_expires = now.checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS)).ok_or::<ContractError>(CustomContractError::InvokeContractError.into())?;
+        // update expiration date and replace old data with an empty vector
         self.all_names
             .get_mut(&name)
-            .map(|mut ni| {ni.name_expires = new_expires})
+            .map(|mut ni| {ni.name_expires = new_expires; ni.data.replace(Vec::new())})
             .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
         Ok(())
     } 
@@ -507,7 +514,11 @@ fn contract_view<S: HasStateApi>(
 }
 
 /// Query the info about a name.
-/// The name is epected to be a string.
+/// The name is expected to be a string.
+///
+/// It rejects if:
+/// - Fails to parse parameter.
+/// - Name doesn't exist
 #[receive(
     contract = "nametoken",
     name = "viewNameInfo",
@@ -520,7 +531,7 @@ fn contract_nameinfo_view<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
     crypto_primitives : &impl HasCryptoPrimitives
-) -> ReceiveResult<ViewNameInfo> {
+) -> ContractResult<ViewNameInfo> {
     let params: String = ctx.parameter_cursor().get()?;
     let name_hash = crypto_primitives.hash_sha2_256(&params.as_bytes()).0;
     let name_info = host.state().all_names.get(&TokenIdFixed(name_hash)).ok_or::<ContractError>(CustomContractError::NameNotFound.into())?;
@@ -995,10 +1006,11 @@ mod tests {
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
     const NAME_0: &str = "MyCoolName";
     const NAME_1: &str = "EvenCoolerName";
-    //const TOKEN_2: ContractTokenId = TokenIdU32(43);
+    const SAMPLE_DATA: &str = "GitHub: my-github-name";
 
     /// Test helper function which creates a contract state with two tokens with
-    /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
+    /// id `NAME_0` and id `NAME_1` owned by `ACCOUNT_0` adn `ACCOUNT_1`
+    /// `NAME_1` has som non-empty associated data
     fn initial_state<S: HasStateApi>(expires: Timestamp, state_builder: &mut StateBuilder<S>) -> State<S> {
         let mut state = State::empty(state_builder);
         let crypto_primitives = TestCryptoPrimitives::new();
@@ -1008,6 +1020,9 @@ mod tests {
              .expect_report("Failed to register NAME_0");
         state.register_fresh(&TokenIdFixed(token_1), &ACCOUNT_1, expires, state_builder)
              .expect_report("Failed to register NAME_1");
+        let data = SAMPLE_DATA.to_string();
+        state.update_data(&TokenIdFixed(token_1), data.as_bytes())
+             .expect_report("Failed to update data for NAME_1");
         state
     }
 
@@ -1149,6 +1164,8 @@ mod tests {
         let balance_old =
             host.state().balance(now, &token_0, &old_owner.into()).expect_report("Token is expected to exist");
         claim_eq!(balance_old, 0.into(), "Token balance should be zero");
+
+        claim_eq!(name_info.data.get().as_slice(), [], "Data should be empty");
 
         // Check the logs, there should be no record for minting, 
         // because it's a registration of an expired name
@@ -1453,7 +1470,7 @@ mod tests {
         ctx.set_metadata_slot_time(now);
 
         // and parameter
-        let data = "GitHub: my-github-name".to_string();
+        let data = SAMPLE_DATA.to_string();
         let parameter = UpdateDataParams {
             name: NAME_0.to_string(),
             data: data.as_bytes().to_vec()
@@ -1476,7 +1493,7 @@ mod tests {
 
         let name_info = host.state().all_names.get(&token_0).expect_report("Token expected to exist");
         let saved_data = name_info.data.get();
-        claim_eq!(saved_data.as_slice(), parameter.data.as_slice());
+        claim_eq!(*saved_data.as_slice(), *parameter.data.as_slice());
     }
 
     // Test updating data fails if the name is expired
@@ -1491,7 +1508,7 @@ mod tests {
         ctx.set_metadata_slot_time(now);
 
         // and parameter
-        let data = "GitHub: my-github-name".to_string();
+        let data = SAMPLE_DATA.to_string();
         let parameter = UpdateDataParams {
             name: NAME_0.to_string(),
             data: data.as_bytes().to_vec()
@@ -1512,4 +1529,38 @@ mod tests {
         let err = result.expect_err_report("Expected to fail");
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unathorized");
     }
+
+    #[concordium_test]
+    #[cfg(feature="crypto-primitives")]
+    fn test_nameinfo_view() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
+        ctx.set_metadata_slot_time(now);
+
+        // and parameter
+        let parameter : String = NAME_1.to_string();
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+        
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(now, &mut state_builder);
+        let host = TestHost::new(state, state_builder);
+        
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Call the contract function.
+        let result: ContractResult<ViewNameInfo> = contract_nameinfo_view(&ctx, &host, &crypto_primitives);
+
+        let token_1 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0);
+        let original_name_info = host.state().all_names.get(&token_1).expect_report("Token expected to exist");
+        if let Ok(name_info) = result {
+            claim_eq!(*name_info.data.as_slice(), *original_name_info.data.as_slice(), "Queried data is different");
+            claim_eq!(name_info.owner, original_name_info.owner, "Queried owner is different");
+        } else {
+            fail!("Resutls in rejection")
+        }
+    }
+    
 }
