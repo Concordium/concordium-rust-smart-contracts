@@ -931,10 +931,10 @@ fn contract_balance_of<S: HasStateApi>(
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
+    let now = ctx.metadata().slot_time();
     for query in params.queries {
         // Query the state for balance.
-        let amount =
-            host.state().balance(ctx.metadata().slot_time(), &query.token_id, &query.address)?;
+        let amount = host.state().balance(now, &query.token_id, &query.address)?;
         response.push(amount);
     }
     let result = ContractBalanceOfQueryResponse::from(response);
@@ -1055,7 +1055,7 @@ mod tests {
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `NAME_0` and id `NAME_1` owned by `ACCOUNT_0` and `ACCOUNT_1`
-    /// `NAME_1` has som non-empty associated data
+    /// `NAME_1` has some non-empty associated data
     fn initial_state<S: HasStateApi>(
         expires: Timestamp,
         state_builder: &mut StateBuilder<S>,
@@ -1650,11 +1650,68 @@ mod tests {
             host.state().all_names.get(&token_1).expect_report("Token expected to exist");
         if let Ok(name_info) = result {
             claim_eq!(
-                *name_info.data.as_slice(),
-                *original_name_info.data.as_slice(),
+                name_info.data.as_slice(),
+                original_name_info.data.as_slice(),
                 "Queried data is different"
             );
             claim_eq!(name_info.owner, original_name_info.owner, "Queried owner is different");
+        } else {
+            fail!("Resutls in rejection")
+        }
+    }
+
+    // Test querying balances for expired and not expired names
+    #[concordium_test]
+    #[cfg(feature = "crypto-primitives")]
+    fn test_balance_of_expired_not_expired() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        let expired = Timestamp::from_timestamp_millis(0);
+        let now = Timestamp::from_timestamp_millis(1000);
+        let future = Timestamp::from_timestamp_millis(10000);
+        ctx.set_metadata_slot_time(now);
+
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::empty(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // and parameter
+        let crypto_primitives = TestCryptoPrimitives::new();
+        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
+        let token_1 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0);
+        let mut parameter_vec: Vec<BalanceOfQuery<ContractTokenId>> = Vec::new();
+        let q1 = BalanceOfQuery {
+            token_id: token_0,
+            address:  ADDRESS_0,
+        };
+        let q2 = BalanceOfQuery {
+            token_id: token_1,
+            address:  ADDRESS_1,
+        };
+        parameter_vec.push(q1);
+        parameter_vec.push(q2);
+        let parameter = BalanceOfQueryParams {
+            queries: parameter_vec,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let (st, sb) = host.state_and_builder();
+
+        // `token_0` has expired
+        st.register_fresh(&token_0, &ACCOUNT_0, expired, sb)
+            .expect_report("Failed to register NAME_0");
+        // `token_1` hasn't expired yet
+        st.register_fresh(&token_1, &ACCOUNT_1, future, sb)
+            .expect_report("Failed to register NAME_1");
+
+        // Call the contract function.
+        let result: ContractResult<ContractBalanceOfQueryResponse> =
+            contract_balance_of(&ctx, &host);
+
+        if let Ok(BalanceOfQueryResponse(balances)) = result {
+            claim_eq!(balances.as_slice(), vec![0.into(), 1.into()], "Queried data is different");
         } else {
             fail!("Resutls in rejection")
         }
