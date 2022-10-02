@@ -83,20 +83,20 @@ struct RegisterNameParams {
     /// Owner of the newly registered name
     owner: AccountAddress,
     /// Name
-    name: String,
+    name:  String,
 }
 
 #[derive(Serial, DeserialWithState, Deletable, StateClone)]
 #[concordium(state_parameter = "S")]
 struct NameInfo<S: HasStateApi> {
     // name owner
-    owner: AccountAddress,
+    owner:        AccountAddress,
     // expiration date
     name_expires: Timestamp,
     // associated data `StateBox` allows for lazy loading data; this is helpful
     // in the sutuations when one wants to do a partial update not touching
     // this field, which can be large.
-    data: StateBox<Vec<u8>, S>,
+    data:         StateBox<Vec<u8>, S>,
 }
 
 impl<S: HasStateApi> NameInfo<S> {
@@ -120,14 +120,14 @@ struct AddressState<S> {
     /// The tokens owned by this address.
     owned_names: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
-    operators: StateSet<Address, S>,
+    operators:   StateSet<Address, S>,
 }
 
 impl<S: HasStateApi> AddressState<S> {
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         AddressState {
             owned_names: state_builder.new_set(),
-            operators: state_builder.new_set(),
+            operators:   state_builder.new_set(),
         }
     }
 }
@@ -140,9 +140,9 @@ impl<S: HasStateApi> AddressState<S> {
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     /// The state for each account address.
-    state: StateMap<AccountAddress, AddressState<S>, S>,
+    state:        StateMap<AccountAddress, AddressState<S>, S>,
     /// All of the token IDs
-    all_names: StateMap<ContractTokenId, NameInfo<S>, S>,
+    all_names:    StateMap<ContractTokenId, NameInfo<S>, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -154,7 +154,7 @@ struct State<S: HasStateApi> {
 #[derive(Debug, Serialize, SchemaType)]
 struct SetImplementorsParams {
     /// The identifier for the standard.
-    id: StandardIdentifierOwned,
+    id:           StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     implementors: Vec<ContractAddress>,
 }
@@ -207,16 +207,12 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self {
-        Self::InvokeContractError
-    }
+    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
 }
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self {
-        Cis2Error::Custom(c)
-    }
+    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
 // Functions for creating, updating and querying the contract state.
@@ -224,8 +220,8 @@ impl<S: HasStateApi> State<S> {
     /// Creates a new state with no tokens.
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         State {
-            state: state_builder.new_map(),
-            all_names: state_builder.new_map(),
+            state:        state_builder.new_map(),
+            all_names:    state_builder.new_map(),
             implementors: state_builder.new_map(),
         }
     }
@@ -482,28 +478,28 @@ fn contract_init<S: HasStateApi>(
 
 #[derive(Serialize, SchemaType)]
 struct ViewNameInfo {
-    owner: AccountAddress,
+    owner:        AccountAddress,
     name_expires: Timestamp,
-    data: Vec<u8>,
+    data:         Vec<u8>,
 }
 
 #[derive(Serialize, SchemaType)]
 struct ViewAddressState {
     owned_names: Vec<ContractTokenId>,
-    operators: Vec<Address>,
+    operators:   Vec<Address>,
 }
 
 #[derive(Serialize, SchemaType)]
 struct ViewState {
-    state: Vec<(AccountAddress, ViewAddressState)>,
+    state:     Vec<(AccountAddress, ViewAddressState)>,
     all_names: Vec<(ContractTokenId, ViewNameInfo)>,
 }
 
 fn into_view_name_info<S: HasStateApi>(name_info: &NameInfo<S>) -> ViewNameInfo {
     ViewNameInfo {
-        owner: name_info.owner,
+        owner:        name_info.owner,
         name_expires: name_info.name_expires,
-        data: name_info.data.get().to_vec(),
+        data:         name_info.data.get().to_vec(),
     }
 }
 
@@ -528,13 +524,10 @@ fn contract_view<S: HasStateApi>(
     for (k, a_state) in state.state.iter() {
         let owned_names = a_state.owned_names.iter().map(|x| *x).collect();
         let operators = a_state.operators.iter().map(|x| *x).collect();
-        inner_state.push((
-            *k,
-            ViewAddressState {
-                owned_names,
-                operators,
-            },
-        ));
+        inner_state.push((*k, ViewAddressState {
+            owned_names,
+            operators,
+        }));
     }
     let all_names = state.all_names.iter().map(|x| view_nameinfo(x)).collect();
 
@@ -638,7 +631,7 @@ fn contract_register<S: HasStateApi>(
         logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
             token_id,
             metadata_url: MetadataUrl {
-                url: build_token_metadata_url(&token_id),
+                url:  build_token_metadata_url(&token_id),
                 hash: None,
             },
         }))?;
@@ -736,14 +729,13 @@ fn contract_transfer<S: HasStateApi>(
 }
 
 /// Renew a nametoken by updating it's expiration date
-///
 //  It rejects if:
 /// - Fee is incorrect
 /// - It fails to parse the parameter.
 /// - Name doesn't exist
 /// - Name expired
-/// - The sender is not the owner of the token, or an operator for this
-///   specific `token_id` and `owner` address of the nametoken.
+/// - The sender is not the owner of the token, or an operator for this specific
+///   `token_id` and `owner` address of the nametoken.
 #[receive(
     contract = "nametoken",
     name = "renewName",
@@ -792,8 +784,8 @@ fn contract_renew<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Name doesn't exist
 /// - Name expired
-/// - The sender is not the owner of the token, or an operator for this
-///   specific `token_id` and `owner` address of the nametoken.
+/// - The sender is not the owner of the token, or an operator for this specific
+///   `token_id` and `owner` address of the nametoken.
 #[receive(
     contract = "nametoken",
     name = "updateData",
@@ -868,9 +860,9 @@ fn contract_update_operator<S: HasStateApi>(
         // Log the appropriate event
         logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
             UpdateOperatorEvent {
-                owner: sender,
+                owner:    sender,
                 operator: param.operator,
-                update: param.update,
+                update:   param.update,
             },
         ))?;
     }
@@ -978,7 +970,7 @@ fn contract_token_metadata<S: HasStateApi>(
         ensure!(host.state().contains_token(&token_id), ContractError::InvalidTokenId);
 
         let metadata_url = MetadataUrl {
-            url: build_token_metadata_url(&token_id),
+            url:  build_token_metadata_url(&token_id),
             hash: None,
         };
         response.push(metadata_url);
@@ -1085,8 +1077,8 @@ mod tests {
         state
     }
 
-    /// Test registering a fresh name, ensuring the the name is owned by the given address and
-    /// the appropriate events are logged.
+    /// Test registering a fresh name, ensuring the the name is owned by the
+    /// given address and the appropriate events are logged.
     #[concordium_test]
     #[cfg(feature = "crypto-primitives")]
     fn test_register_fresh() {
@@ -1098,7 +1090,7 @@ mod tests {
 
         // and parameter.
         let parameter = RegisterNameParams {
-            name: NAME_0.to_string(),
+            name:  NAME_0.to_string(),
             owner: ACCOUNT_0,
         };
         let parameter_bytes = to_bytes(&parameter);
@@ -1144,9 +1136,9 @@ mod tests {
         // Check the logs
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner: ADDRESS_0,
+                owner:    ADDRESS_0,
                 token_id: token_0,
-                amount: ContractTokenAmount::from(1),
+                amount:   ContractTokenAmount::from(1),
             }))),
             "Expected an event for minting NAME_0"
         );
@@ -1156,9 +1148,9 @@ mod tests {
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
                 TokenMetadataEvent {
-                    token_id: token_0,
+                    token_id:     token_0,
                     metadata_url: MetadataUrl {
-                        url: base_url.to_string(),
+                        url:  base_url.to_string(),
                         hash: None,
                     },
                 }
@@ -1193,7 +1185,7 @@ mod tests {
 
         // and parameter.
         let parameter = RegisterNameParams {
-            name: NAME_0.to_string(),
+            name:  NAME_0.to_string(),
             owner: new_owner,
         };
         let parameter_bytes = to_bytes(&parameter);
@@ -1243,9 +1235,9 @@ mod tests {
         // because it's a registration of an expired name
         claim_eq!(
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner: new_owner.into(),
+                owner:    new_owner.into(),
                 token_id: token_0,
-                amount: ContractTokenAmount::from(1),
+                amount:   ContractTokenAmount::from(1),
             }))),
             false,
             "Expected an event for minting NAME_0"
@@ -1264,7 +1256,7 @@ mod tests {
 
         // and parameter.
         let parameter = RegisterNameParams {
-            name: NAME_0.to_string(),
+            name:  NAME_0.to_string(),
             owner: ACCOUNT_0,
         };
         let parameter_bytes = to_bytes(&parameter);
@@ -1311,10 +1303,10 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             token_id: token_0,
-            amount: ContractTokenAmount::from(1),
-            from: ACCOUNT_0.into(),
-            to: Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
+            amount:   ContractTokenAmount::from(1),
+            from:     ACCOUNT_0.into(),
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1364,10 +1356,10 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from: ACCOUNT_0.into(),
-                to: ACCOUNT_1.into(),
+                from:     ACCOUNT_0.into(),
+                to:       ACCOUNT_1.into(),
                 token_id: token_0,
-                amount: ContractTokenAmount::from(1),
+                amount:   ContractTokenAmount::from(1),
             })),
             "Incorrect event emitted"
         )
@@ -1389,10 +1381,10 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             token_id: token_0,
-            amount: ContractTokenAmount::from(1),
-            from: ACCOUNT_0.into(),
-            to: Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
+            amount:   ContractTokenAmount::from(1),
+            from:     ACCOUNT_0.into(),
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1426,11 +1418,11 @@ mod tests {
 
         // and parameter.
         let transfer = Transfer {
-            from: ADDRESS_0,
-            to: Receiver::from_account(ACCOUNT_1),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: token_0,
-            amount: ContractTokenAmount::from(1),
-            data: AdditionalData::empty(),
+            amount:   ContractTokenAmount::from(1),
+            data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1476,10 +1468,10 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from: ADDRESS_0,
-                to: ADDRESS_1,
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
                 token_id: token_0,
-                amount: ContractTokenAmount::from(1),
+                amount:   ContractTokenAmount::from(1),
             })),
             "Incorrect event emitted"
         )
