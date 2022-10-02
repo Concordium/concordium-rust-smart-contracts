@@ -261,7 +261,7 @@ impl<S: HasStateApi> State<S> {
         let name_info = self
             .all_names
             .get(name)
-            .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
+            .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
         let old_expires = name_info.name_expires;
         // check whether the name has expired
         ensure!(now > old_expires, CustomContractError::NameIsTaken.into());
@@ -275,15 +275,15 @@ impl<S: HasStateApi> State<S> {
         )?;
         let new_expires =
             now.checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-                .ok_or::<ContractError>(CustomContractError::InvokeContractError.into())?;
+                .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
         // update expiration date and replace old data with an empty vector
         self.all_names
-            .get_mut(&name)
+            .get_mut(name)
             .map(|mut ni| {
                 ni.name_expires = new_expires;
                 ni.data.replace(Vec::new())
             })
-            .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
+            .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
         Ok(())
     }
 
@@ -291,9 +291,9 @@ impl<S: HasStateApi> State<S> {
     fn update_data(&mut self, name: &ContractTokenId, data: &[u8]) -> ContractResult<()> {
         // Insert and ensure that the key is present
         self.all_names
-            .get_mut(&name)
+            .get_mut(name)
             .map(|mut ni| ni.data.replace(data.to_vec()))
-            .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
+            .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
         Ok(())
     }
 
@@ -302,12 +302,12 @@ impl<S: HasStateApi> State<S> {
         let mut entry = self
             .all_names
             .entry(*name)
-            .occupied_or::<ContractError>(CustomContractError::NameNotFound.into())?;
+            .occupied_or(ContractError::Custom(CustomContractError::NameNotFound))?;
         let new_expires = entry
             .get_ref()
             .name_expires
             .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-            .ok_or::<ContractError>(CustomContractError::InvokeContractError.into())?;
+            .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
         entry.modify(|x| x.name_expires = new_expires);
         Ok(())
     }
@@ -401,9 +401,9 @@ impl<S: HasStateApi> State<S> {
         to_address_state.owned_names.insert(*token_id);
 
         self.all_names
-            .get_mut(&token_id)
+            .get_mut(token_id)
             .map(|mut ni| ni.owner = *to_acc)
-            .ok_or::<ContractError>(CustomContractError::InconsistentState.into())?;
+            .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
         Ok(())
     }
 
@@ -503,7 +503,7 @@ fn into_view_name_info<S: HasStateApi>(name_info: &NameInfo<S>) -> ViewNameInfo 
     ViewNameInfo {
         owner: name_info.owner,
         name_expires: name_info.name_expires,
-        data: name_info.data.get().iter().map(|x| *x).collect(),
+        data: name_info.data.get().to_vec(),
     }
 }
 
@@ -564,12 +564,12 @@ fn contract_nameinfo_view<S: HasStateApi>(
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<ViewNameInfo> {
     let params: String = ctx.parameter_cursor().get()?;
-    let name_hash = crypto_primitives.hash_sha2_256(&params.as_bytes()).0;
+    let name_hash = crypto_primitives.hash_sha2_256(params.as_bytes()).0;
     let name_info = host
         .state()
         .all_names
         .get(&TokenIdFixed(name_hash))
-        .ok_or::<ContractError>(CustomContractError::NameNotFound.into())?;
+        .ok_or(ContractError::Custom(CustomContractError::NameNotFound))?;
     Ok(into_view_name_info(&name_info))
 }
 
@@ -613,13 +613,13 @@ fn contract_register<S: HasStateApi>(
     // Parse the parameter.
     let params: RegisterNameParams = ctx.parameter_cursor().get()?;
     // Hash the name
-    let name_hash = crypto_primitives.hash_sha2_256(&params.name.as_bytes()).0;
+    let name_hash = crypto_primitives.hash_sha2_256(params.name.as_bytes()).0;
     let (state, builder) = host.state_and_builder();
     let now = ctx.metadata().slot_time();
     // calculate the expiration date
     let expires = now
         .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-        .ok_or::<ContractError>(CustomContractError::InvokeContractError.into())?;
+        .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
     let token_id = TokenIdFixed(name_hash);
     if state.contains_token(&token_id) {
         // token was registered, try to register it as expired
@@ -765,13 +765,13 @@ fn contract_renew<S: HasStateApi>(
     ensure_eq!(amount, RENEWAL_FEE, CustomContractError::IncorrectFee.into());
     // Parse the parameter.
     let name: String = ctx.parameter_cursor().get()?;
-    let name_hash = crypto_primitives.hash_sha2_256(&name.as_bytes()).0;
+    let name_hash = crypto_primitives.hash_sha2_256(name.as_bytes()).0;
     let token_id = &TokenIdFixed(name_hash);
     let state = host.state();
     let name_info = state
         .all_names
         .get(token_id)
-        .ok_or::<ContractError>(CustomContractError::NameNotFound.into())?;
+        .ok_or(ContractError::Custom(CustomContractError::NameNotFound))?;
     let expires = name_info.name_expires;
     // Authenticate the sender for this transfer
     ensure!(
@@ -816,12 +816,12 @@ fn contract_update_data<S: HasStateApi>(
     // Parse the parameter.
     let params: UpdateDataParams = ctx.parameter_cursor().get()?;
     // Hash the name
-    let name_hash = crypto_primitives.hash_sha2_256(&params.name.as_bytes()).0;
+    let name_hash = crypto_primitives.hash_sha2_256(params.name.as_bytes()).0;
     let state = host.state_mut();
     let name_info = state
         .all_names
         .get(&TokenIdFixed(name_hash))
-        .ok_or::<ContractError>(CustomContractError::NameNotFound.into())?;
+        .ok_or(ContractError::Custom(CustomContractError::NameNotFound))?;
     let owner = name_info.owner;
     // Authenticate the sender for this transfer
     ensure!(
