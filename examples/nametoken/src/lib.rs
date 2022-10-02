@@ -273,9 +273,9 @@ impl<S: HasStateApi> State<S> {
             &Address::Account(*owner),
             state_builder,
         )?;
-        let new_expires =
-            now.checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-                .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
+        let new_expires = now
+            .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
+            .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
         // update expiration date and replace old data with an empty vector
         self.all_names
             .get_mut(name)
