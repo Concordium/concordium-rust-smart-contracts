@@ -60,7 +60,7 @@ const REGISTRACTION_FEE: Amount = Amount::from_ccd(70);
 // Data update fee in CCD
 const UPDATE_FEE: Amount = Amount::from_ccd(7);
 
-// Extension fee in CCD
+// Renewal fee in CCD
 const RENEWAL_FEE: Amount = Amount::from_ccd(7);
 
 // How long the registered name is owned before it needs to be renewed
@@ -89,12 +89,12 @@ struct RegisterNameParams {
 #[derive(Serial, DeserialWithState, Deletable, StateClone)]
 #[concordium(state_parameter = "S")]
 struct NameInfo<S: HasStateApi> {
-    // name owner
+    // Name owner
     owner:        AccountAddress,
-    // expiration date
+    // Expiration date
     name_expires: Timestamp,
-    // associated data `StateBox` allows for lazy loading data; this is helpful
-    // in the sutuations when one wants to do a partial update not touching
+    // Associated data `StateBox` allows for lazy loading data; this is helpful
+    // in the situations when one wants to do a partial update not touching
     // this field, which can be large.
     data:         StateBox<Vec<u8>, S>,
 }
@@ -182,7 +182,7 @@ enum CustomContractError {
     OwnerShouldBeAccount,
     /// The amount does not match the fee
     IncorrectFee,
-    // some invarians of the state are broken
+    /// Some invariants of the state are broken
     InconsistentState,
     /// Failed to invoke a contract.
     InvokeContractError,
