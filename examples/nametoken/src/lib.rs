@@ -139,6 +139,9 @@ impl<S: HasStateApi> AddressState<S> {
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
+    /// The address of the administrating account.
+    /// Admin can withdraw the accumulated fees and update the admin account.
+    admin:        AccountAddress,
     /// The state for each account address.
     state:        StateMap<AccountAddress, AddressState<S>, S>,
     /// All of the token IDs
@@ -188,6 +191,10 @@ enum CustomContractError {
     InvokeContractError,
     /// Name is not found in the registry
     NameNotFound,
+    /// Provided amount is to large (used for transfers to admin)
+    AdminAmountTooLarge,
+    /// Admin account not found
+    MissingAdminAccount,
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
@@ -205,6 +212,16 @@ impl From<LogError> for CustomContractError {
     }
 }
 
+/// Mapping the transfer errors to CustomContractError.
+impl From<TransferError> for CustomContractError {
+    fn from(le: TransferError) -> Self {
+        match le {
+            TransferError::AmountTooLarge => Self::AdminAmountTooLarge,
+            TransferError::MissingAccount => Self::MissingAdminAccount,
+        }
+    }
+}
+
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
@@ -218,10 +235,11 @@ impl From<CustomContractError> for ContractError {
 // Functions for creating, updating and querying the contract state.
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with no tokens.
-    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+    fn empty(admin: AccountAddress, state_builder: &mut StateBuilder<S>) -> Self {
         State {
-            state:        state_builder.new_map(),
-            all_names:    state_builder.new_map(),
+            admin,
+            state: state_builder.new_map(),
+            all_names: state_builder.new_map(),
             implementors: state_builder.new_map(),
         }
     }
@@ -467,13 +485,14 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with no token types initially.
+/// Set the account that initialised the contract to be admin
 #[init(contract = "nametoken")]
 fn contract_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
+    ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
     // Construct the initial contract state.
-    Ok(State::empty(state_builder))
+    Ok(State::empty(ctx.init_origin(), state_builder))
 }
 
 #[derive(Serialize, SchemaType)]
@@ -777,6 +796,58 @@ fn contract_renew<S: HasStateApi>(
     host.state_mut().renew(token_id)
 }
 
+#[receive(
+    contract = "nametoken",
+    name = "withdraw",
+    parameter = "Amount",
+    error = "ContractError",
+    mutable
+)]
+fn contract_withdraw<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Get the contract admin
+    let admin = host.state().admin;
+    // Get the sender of the transaction
+    let sender = ctx.sender();
+    // Only admin can withdraw
+    ensure!(sender.matches_account(&admin), ContractError::Unauthorized);
+
+    // Read the parameter
+    let amount: Amount = ctx.parameter_cursor().get()?;
+
+    Ok(host.invoke_transfer(&admin, amount)?)
+}
+
+#[receive(
+    contract = "nametoken",
+    name = "updateAdmin",
+    parameter = "AccountAddress",
+    error = "ContractError",
+    mutable
+)]
+fn contract_update_admin<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Get the contract admin
+    let admin = host.state().admin;
+
+    // Get the sender of the transaction
+    let sender = ctx.sender();
+
+    // Only admin can update the admin address
+    ensure!(sender.matches_account(&admin), ContractError::Unauthorized);
+
+    // Read the parameter
+    let new_admin: AccountAddress = ctx.parameter_cursor().get()?;
+
+    let state = host.state_mut();
+    state.admin = new_admin;
+    Ok(())
+}
+
 /// Update data associated with a nametoken
 ///
 /// It rejects if:
@@ -1049,6 +1120,8 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
+    const ADMIN_ACCOUNT_0: AccountAddress = AccountAddress([2u8; 32]);
+    const ADMIN_ACCOUNT_1: AccountAddress = AccountAddress([3u8; 32]);
     const NAME_0: &str = "MyCoolName";
     const NAME_1: &str = "EvenCoolerName";
     const SAMPLE_DATA: &str = "GitHub: my-github-name";
@@ -1060,7 +1133,7 @@ mod tests {
         expires: Timestamp,
         state_builder: &mut StateBuilder<S>,
     ) -> State<S> {
-        let mut state = State::empty(state_builder);
+        let mut state = State::empty(ADMIN_ACCOUNT_0, state_builder);
         let crypto_primitives = TestCryptoPrimitives::new();
         let token_0 = crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0;
         let token_1 = crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0;
@@ -1098,7 +1171,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(&mut state_builder);
+        let state = State::empty(ADMIN_ACCOUNT_0, &mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         let crypto_primitives = TestCryptoPrimitives::new();
@@ -1264,7 +1337,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(&mut state_builder);
+        let state = State::empty(ADMIN_ACCOUNT_0, &mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         let crypto_primitives = TestCryptoPrimitives::new();
@@ -1673,7 +1746,7 @@ mod tests {
         ctx.set_metadata_slot_time(now);
 
         let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(&mut state_builder);
+        let state = State::empty(ADMIN_ACCOUNT_0, &mut state_builder);
         let mut host = TestHost::new(state, state_builder);
 
         // and parameter
@@ -1715,5 +1788,61 @@ mod tests {
         } else {
             fail!("Resutls in rejection")
         }
+    }
+
+    // Test updating data for an existing name
+    #[concordium_test]
+    fn test_update_admin() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADMIN_ACCOUNT_0.into());
+
+        // and parameter
+        let parameter = ADMIN_ACCOUNT_1;
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut state_builder = TestStateBuilder::new();
+
+        // Initial state uses ADMIN_ACCOUNT_0 as the admin address
+        let state =
+            initial_state(Timestamp::from_timestamp_millis(CURRENT_TIME), &mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host);
+
+        claim!(result.is_ok(), "Results in rejection");
+
+        let st = host.state();
+
+        claim_eq!(st.admin, ADMIN_ACCOUNT_1);
+    }
+
+    // Test updating data for an existing name
+    #[concordium_test]
+    fn test_update_admin_fails_unauthorized() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ACCOUNT_0.into());
+
+        // and parameter
+        let parameter = ADMIN_ACCOUNT_1;
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut state_builder = TestStateBuilder::new();
+
+        // Initial state uses ADMIN_ACCOUNT_0 as the admin address
+        let state =
+            initial_state(Timestamp::from_timestamp_millis(CURRENT_TIME), &mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host);
+
+        // We expect that that ACCOUNT_0 is not authorized to change the admin address
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unathorized");
     }
 }
