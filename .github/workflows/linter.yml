@@ -55,14 +55,18 @@ jobs:
           command: fmt
           args: --manifest-path=${{ matrix.crates }} --all -- --check
 
-  rustfmt-templates:
-    name: Format Templates
+  # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
+  # can be executed without errors on the generated smart contracts.
+  cargo-generate-templates:
+    name: Smart contract template generation
     runs-on: ubuntu-latest
     strategy:
       matrix:
         crates:
-          - templates/default/Cargo.toml
-          - templates/cis2-nft/Cargo.toml
+          - templates/default
+          - templates/cis2-nft
+    env:
+      PROJECT_NAME: my-project
 
     steps:
       - name: Checkout sources
@@ -70,25 +74,121 @@ jobs:
         with:
           submodules: true
 
-      - name: Install nightly toolchain with rustfmt available
+      - name: Run cargo-generate
+        uses: cargo-generate/cargo-generate-action@v0.16.0
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: ${{ matrix.crates }}
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/"
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      # we need to move the generated project to a temp folder, away from the template project
+      # otherwise `cargo` runs would fail
+      # see https://github.com/rust-lang/cargo/issues/9922
+      # Run all tests, including doc tests.
+      - name: Run cargo test
+        run: |
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          cd ${{ runner.temp }}/$PROJECT_NAME
+          cargo test
+
+  # All templates are generated with the `cargo-generate` command
+  # and it is checked that the schemas can be built as part of the 'clippy' command.
+  clippy-template:
+    name: Clippy on smart contract templates
+    runs-on: ubuntu-latest
+    needs: rustfmt
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+
+        crates:
+          - templates/default
+          - templates/cis2-nft
+
+    env:
+      PROJECT_NAME: cis2-nft
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Run cargo-generate
+        uses: cargo-generate/cargo-generate-action@v0.16.0
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: ${{ matrix.crates }}
+          other: "-d description=cis2-nft-project -d tokenMetadataBaseURL=https://some.example/token/"
+
+      - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-06-09
+          toolchain: 1.56
+          target: ${{ matrix.target }}
           override: true
-          components: rustfmt
+          components: clippy
 
-      - name: Moving the broken Cargo.toml file (in that it has curly brackets in fields)
-        run: mv ./templates/default/Cargo.toml ./templates/default/Cargo.toml.tmpl; mv ./templates/cis2-nft/Cargo.toml ./templates/cis2-nft/Cargo.toml.tmpl
+      # we need to move the generated project to a temp folder, away from the template project
+      # otherwise `cargo` runs would fail
+      # see https://github.com/rust-lang/cargo/issues/9922
+      - name: Run clippy with build-schema
+        run: |
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          cd ${{ runner.temp }}/$PROJECT_NAME
+          rustup target add wasm32-unknown-unknown
+          cargo clippy --manifest-path ./Cargo.toml --target=${{ matrix.target }} --features concordium-std/build-schema -- -D warnings
 
-      - name: Replacing the broken Cargo.toml file
-        run: mv ./templates/default/Cargo_CI_pipeline.toml ./templates/default/Cargo.toml; mv ./templates/cis2-nft/Cargo_CI_pipeline.toml ./templates/cis2-nft/Cargo.toml
+  # The cis2-nft template is generated with the `cargo-generate` command
+  # and it is checked that the code is equivalent to the cis2-nft smart contract in the example folder.
+  cargo-generate-templates-comparison:
+    name: Smart contract template comparison
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crates:
+          - templates/cis2-nft
+    env:
+      PROJECT_NAME: cis2-nft
 
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
         with:
-          command: fmt
-          args: --manifest-path=${{ matrix.crates }} --all -- --check
+          submodules: true
+
+      - name: Run cargo-generate
+        uses: cargo-generate/cargo-generate-action@v0.16.0
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: ${{ matrix.crates }}
+          other: "-d description=cis2-nft-project -d tokenMetadataBaseURL=https://some.example/token/"
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      # Run diff to check if there are any differences between the generated smart contracts
+      # and the example smart contracts. The templates have hardcoded versions of `concordium-std`
+      # and `concordium-cis2` which need to be replaced with the paths used in the smart contract example folder.
+      # This CI pipeline uses `root` as the author which needs to be replaced with the author
+      # `Concordium <developers@concordium.com>` of the smart contract examples.
+      - name: Run diff
+        run: |
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/\"4.0.0\"/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/\"1.2.0\"/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
+          diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
 
   clippy-cis2:
     name: Clippy
@@ -396,47 +496,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/wasm-test -- -D warnings
-
-  clippy-templates:
-    name: Clippy on smart contract templates
-    runs-on: ubuntu-latest
-    needs: rustfmt
-    strategy:
-      matrix:
-        target:
-          - wasm32-unknown-unknown
-
-        crates:
-          - templates/default/Cargo.toml
-          - templates/cis2-nft/Cargo.toml
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-        with:
-          submodules: true
-
-      - name: Install toolchain with clippy available
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.56
-          target: ${{ matrix.target }}
-          override: true
-          components: clippy
-
-      - name: Moving the broken Cargo.toml file (in that it has curly brackets in fields)
-        run: mv ./templates/default/Cargo.toml ./templates/default/Cargo2.toml; mv ./templates/cis2-nft/Cargo.toml ./templates/cis2-nft/Cargo2.toml
-
-      - name: Replacing the broken Cargo.toml file
-        run: mv ./templates/default/Cargo_CI_pipeline.toml ./templates/default/Cargo.toml; mv ./templates/cis2-nft/Cargo_CI_pipeline.toml ./templates/cis2-nft/Cargo.toml
-
-      - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} -- -D warnings
-
 
   test:
     name: Test the library

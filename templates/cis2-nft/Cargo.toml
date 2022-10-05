@@ -1,12 +1,10 @@
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [package]
 name = "{{crate_name}}"
 version = "0.1.0"
+authors = [ "{{authors}}" ]
 edition = "2018"
 license = "MPL-2.0"
 description = "{{description}}"
-authors = [ "{{authors}}" ]
 
 [features]
 default = ["std"]
@@ -20,5 +18,5 @@ concordium-cis2 = "1.2.0"
 crate-type=["cdylib", "rlib"]
 
 [profile.release]
-opt-level = "s"
 codegen-units = 1
+opt-level = "s"

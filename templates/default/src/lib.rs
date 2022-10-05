@@ -1,7 +1,3 @@
-//! Note: This contract is not meant for production, it is used to illustrate
-//! how to use the standard library and the tooling Concordium provides. There
-//! is no claim that the logic of the contract is reasonable, or safe.
-//!
 //! # A Concordium V1 smart contract
 use concordium_std::*;
 use core::fmt::Debug;
