@@ -1,7 +1,3 @@
-//! Note: This contract is not meant for production, it is used to illustrate
-//! how to use the standard library and the tooling Concordium provides. There
-//! is no claim that the logic of the contract is reasonable, or safe.
-//!
 //! # A Concordium V1 smart contract
 use concordium_std::*;
 use core::fmt::Debug;
@@ -85,7 +81,8 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Test that invoking the `receive` endpoint with the `false` parameter succeeds in updating the contract.
+    /// Test that invoking the `receive` endpoint with the `false` parameter
+    /// succeeds in updating the contract.
     fn test_throw_no_error() {
         let ctx = TestInitContext::empty();
 
@@ -110,7 +107,8 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Test that invoking the `receive` endpoint with the `true` parameter results in the `YourError` being thrown.
+    /// Test that invoking the `receive` endpoint with the `true` parameter
+    /// results in the `YourError` being thrown.
     fn test_throw_error() {
         let ctx = TestInitContext::empty();
 
