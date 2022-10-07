@@ -566,7 +566,7 @@ fn contract_view<S: HasStateApi>(
     contract = "nametoken",
     name = "viewNameInfo",
     crypto_primitives,
-    parameter = "RegisterNameParams",
+    parameter = "String",
     return_value = "ViewNameInfo",
     error = "ContractError"
 )]
