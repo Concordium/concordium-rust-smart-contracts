@@ -13,31 +13,32 @@
 //!  - registering new names;
 //!  - updating data associated with a name;
 //!  - renewing a name;
-//!  - viewing information about a name (owner and data) To register, renew and
-//! update one has to pay a fee. Registration succeeds if either name is not
-//! yet registered, or it is registered but expired. In this case, ownership is
-//! transferred to the new owner and the expiration date is updated as for the
-//! "fresh" registration. Updating data and renewing is only possible if the
-//! name is not expired.
+//!  - viewing information about a name (owner and data).
+//! To register, renew and update one has to pay a fee. Registration succeeds if
+//! either name is not yet registered, or it is registered but expired. In this
+//! case, ownership is transferred to the new owner and the expiration date is
+//! updated as for the "fresh" registration. Updating data and renewing is only
+//! possible if the name is not expired.
 //!
 //! # Token
-//! NameToken is essentially an NFT. Therefore we expose it as an instance of
-//! CIS-2 standard. This allows trading of domain names on NFT auctions. The
-//! contract is based on the NFT example with modifications required for the
-//! name management. Registering a fresh name is effectively minting. It
-//! generates log events accordingly. However, taking over an expired name is
-//! not considered minting. Ownership can be transferred by the owner or by an
-//! operator. Owners are accounts only, but operators can be any address. Token
-//! ownership is determined by the expiration date. Expired name tokens are not
-//! burned, they are considered as not owned, that is the balance is 0 for the
-//! address it was initially registered.
+//! NameToken is essentially an NFT that adheres to the CIS-2 token standard.
+//! Therefore we expose it as an instance of CIS-2 standard. This allows trading
+//! of domain names on NFT auctions. The contract is based on the NFT example
+//! with modifications required for the name management. Registering a fresh
+//! name is effectively minting. It generates log events accordingly. However,
+//! taking over an expired name is not considered minting. Ownership can be
+//! transferred by the owner or by an operator. Owners are accounts only, but
+//! operators can be any address. Token ownership is determined by the
+//! expiration date. Expired name tokens are not burned, they are considered as
+//! not owned, that is the balance is 0 for the address it was initially
+//! registered.
 //!
-//! Note: token ids are hashed names. Words "name" and "token id" are used
-//! interchangeably
+//! Note: token ids are hashed names. The words "name" and "token id" are used
+//! interchangeably.
 //!
 //! # Misc
-//! This example demontrates how to use crypto primitives (hashing) and lazy
-//! loaded data.
+//! This example demonstrates how to use crypto primitives (hashing) and
+//! lazy-loaded data.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -89,7 +90,7 @@ struct RegisterNameParams {
 #[derive(Serial, DeserialWithState, Deletable, StateClone)]
 #[concordium(state_parameter = "S")]
 struct NameInfo<S: HasStateApi> {
-    // Name owner
+    /// Name owner
     owner:        AccountAddress,
     // Expiration date
     name_expires: Timestamp,
@@ -264,7 +265,7 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    // Register a name if it's present in the registry, but expired
+    /// Register a name if it's present in the registry, but expired
     fn register_expired(
         &mut self,
         now: Timestamp,
@@ -301,7 +302,7 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    // Update existing data
+    /// Update existing data
     fn update_data(&mut self, name: &ContractTokenId, data: &[u8]) -> ContractResult<()> {
         // Insert and ensure that the key is present
         self.all_names
@@ -311,7 +312,7 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    // Renew an existing name
+    /// Renew an existing name
     fn renew(&mut self, name: &ContractTokenId) -> ContractResult<()> {
         let mut entry = self
             .all_names
@@ -486,7 +487,7 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 
 /// Initialize contract instance with no token types initially.
 /// Set the account that initialised the contract to be admin
-#[init(contract = "nametoken")]
+#[init(contract = "NameToken")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -532,7 +533,7 @@ fn view_nameinfo<S: HasStateApi>(
 
 /// View function that returns the entire contents of the state. Meant for
 /// testing.
-#[receive(contract = "nametoken", name = "view", return_value = "ViewState")]
+#[receive(contract = "NameToken", name = "view", return_value = "ViewState")]
 fn contract_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -563,7 +564,7 @@ fn contract_view<S: HasStateApi>(
 /// - Fails to parse parameter.
 /// - Name doesn't exist
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "viewNameInfo",
     crypto_primitives,
     parameter = "String",
@@ -585,10 +586,10 @@ fn contract_nameinfo_view<S: HasStateApi>(
     Ok(into_view_name_info(&name_info))
 }
 
-/// Register a new nametoken with a given address as the owner. The name
+/// Register a new name with a given address as the owner. The name
 /// parameter is a string, which is then hashed an used as a token id.` Can
-/// only be called by anyone, but requires to pay a registration fee. Logs a
-/// `Mint` and a `TokenMetadata` event for each nametoken. The url for the
+/// be called by anyone, but requires to pay a registration fee. Logs a
+/// `Mint` and a `TokenMetadata` event for each namet oken. The url for the
 /// token metadata is the token ID encoded in hex, appended on the
 /// `TOKEN_METADATA_BASE_URL`.
 ///
@@ -604,7 +605,7 @@ fn contract_nameinfo_view<S: HasStateApi>(
 /// Note: Can at most mint 32 token types in one call due to the limit on the
 /// number of logs a smart contract can produce on each function call.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "register",
     crypto_primitives,
     payable,
@@ -676,7 +677,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "transfer",
     parameter = "TransferParameter",
     error = "ContractError",
@@ -747,16 +748,16 @@ fn contract_transfer<S: HasStateApi>(
     Ok(())
 }
 
-/// Renew a nametoken by updating it's expiration date
-//  It rejects if:
+/// Renew a name by updating its expiration date
+///  It rejects if:
 /// - Fee is incorrect
 /// - It fails to parse the parameter.
 /// - Name doesn't exist
 /// - Name expired
 /// - The sender is not the owner of the token, or an operator for this specific
-///   `token_id` and `owner` address of the nametoken.
+///   `token_id` and `owner` address of the name.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "renewName",
     parameter = "String",
     error = "ContractError",
@@ -797,7 +798,7 @@ fn contract_renew<S: HasStateApi>(
 }
 
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "withdraw",
     parameter = "Amount",
     error = "ContractError",
@@ -821,7 +822,7 @@ fn contract_withdraw<S: HasStateApi>(
 }
 
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "updateAdmin",
     parameter = "AccountAddress",
     error = "ContractError",
@@ -848,7 +849,7 @@ fn contract_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-/// Update data associated with a nametoken
+/// Update data associated with a name
 ///
 /// It rejects if:
 /// - Fee is incorrect
@@ -856,9 +857,9 @@ fn contract_update_admin<S: HasStateApi>(
 /// - Name doesn't exist
 /// - Name expired
 /// - The sender is not the owner of the token, or an operator for this specific
-///   `token_id` and `owner` address of the nametoken.
+///   `token_id` and `owner` address of the name.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "updateData",
     parameter = "UpdateDataParams",
     error = "ContractError",
@@ -904,7 +905,7 @@ fn contract_update_data<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Fails to log event.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     error = "ContractError",
@@ -947,7 +948,7 @@ fn contract_update_operator<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
     return_value = "OperatorOfQueryResponse",
@@ -982,13 +983,13 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
-/// The balance is considered 0 if the nametoken has expired.
+/// The balance is considered 0 if the name has expired.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
     return_value = "ContractBalanceOfQueryResponse",
@@ -1022,7 +1023,7 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
     return_value = "TokenMetadataQueryResponse",
@@ -1056,7 +1057,7 @@ fn contract_token_metadata<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "supports",
     parameter = "SupportsQueryParams",
     return_value = "SupportsQueryResponse",
@@ -1089,7 +1090,7 @@ fn contract_supports<S: HasStateApi>(
 /// - Sender is not the owner of the contract instance.
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "nametoken",
+    contract = "NameToken",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
     error = "ContractError",
