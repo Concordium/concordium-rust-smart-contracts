@@ -14,6 +14,7 @@
 //!  - updating data associated with a name;
 //!  - renewing a name;
 //!  - viewing information about a name (owner and data).
+//!
 //! To register, renew and update one has to pay a fee. Registration succeeds if
 //! either name is not yet registered, or it is registered but expired. In this
 //! case, ownership is transferred to the new owner and the expiration date is
@@ -22,16 +23,15 @@
 //!
 //! # Token
 //! NameToken is essentially an NFT that adheres to the CIS-2 token standard.
-//! Therefore we expose it as an instance of CIS-2 standard. This allows trading
-//! of domain names on NFT auctions. The contract is based on the NFT example
-//! with modifications required for the name management. Registering a fresh
-//! name is effectively minting. It generates log events accordingly. However,
-//! taking over an expired name is not considered minting. Ownership can be
-//! transferred by the owner or by an operator. Owners are accounts only, but
-//! operators can be any address. Token ownership is determined by the
-//! expiration date. Expired name tokens are not burned, they are considered as
-//! not owned, that is the balance is 0 for the address it was initially
-//! registered.
+//! This allows for trading of domain names on NFT auctions. The contract is
+//! based on the NFT example with modifications required for the name
+//! management. Registering a fresh name is effectively minting. It generates
+//! log events accordingly. However, taking over an expired name is not
+//! considered minting. Ownership can be transferred by the owner or by an
+//! operator. Owners are accounts only, but operators can be any address. Token
+//! ownership is determined by the expiration date. Expired name tokens are not
+//! burned, they are considered as not owned, that is the balance is 0 for the
+//! address it was initially registered.
 //!
 //! Note: token ids are hashed names. The words "name" and "token id" are used
 //! interchangeably.
