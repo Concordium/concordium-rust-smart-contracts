@@ -587,7 +587,7 @@ fn contract_nameinfo_view<S: HasStateApi>(
 }
 
 /// Register a new name with a given address as the owner. The name
-/// parameter is a string, which is then hashed an used as a token id.` Can
+/// parameter is a string, which is then hashed and used as a token id. Can
 /// be called by anyone, but requires to pay a registration fee. Logs a
 /// `Mint` and a `TokenMetadata` event for each namet oken. The url for the
 /// token metadata is the token ID encoded in hex, appended on the
