@@ -554,7 +554,7 @@ fn contract_view<S: HasStateApi>(
             operators,
         }));
     }
-    let all_names = state.all_names.iter().map(|x| view_nameinfo(x)).collect();
+    let all_names = state.all_names.iter().map(view_nameinfo).collect();
 
     Ok(ViewState {
         state: inner_state,
@@ -700,7 +700,6 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 ///     - The token is not owned by the `from`.
 ///     - `from` or `to`are not account addresses.
 /// - Fails to log event.
-/// - Any of the receive hook function calls rejects.
 #[receive(
     contract = "NameToken",
     name = "transfer",
@@ -726,14 +725,21 @@ fn contract_transfer<S: HasStateApi>(
         amount,
         from,
         to,
-        data,
+        data: _,
     } in transfers
     {
-        let (state, builder) = host.state_and_builder();
+        let to_address = to.address();
+        // Fail early it one of the address is not account
+        let to_acc = match to_address {
+            Address::Account(addr) => addr,
+            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()),
+        };
         let from_acc = match from {
             Address::Account(addr) => addr,
             Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()),
         };
+
+        let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
         ensure!(
             from == sender || state.is_operator(&sender, &from_acc),
@@ -742,33 +748,17 @@ fn contract_transfer<S: HasStateApi>(
         let name_info = state.all_names.get(&token_id).ok_or(ContractError::Unauthorized)?;
         // It's possible to transefer only if the name is not expired
         ensure!(now <= name_info.name_expires, ContractError::Unauthorized);
-        let to_address = to.address();
         // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address, builder)?;
+        state.transfer(&token_id, amount, &from, &Address::Account(to_acc), builder)?;
 
-        // Log transfer event
+        // At this point we know that `from` and `to` are accounts, so we do not call
+        // the receive hook function
         logger.log(&Cis2Event::Transfer(TransferEvent {
             token_id,
             amount,
             from,
             to: to_address,
         }))?;
-
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = to {
-            let parameter = OnReceivingCis2Params {
-                token_id,
-                amount,
-                from,
-                data,
-            };
-            host.invoke_contract(
-                &address,
-                &parameter,
-                function.as_entrypoint_name(),
-                Amount::zero(),
-            )?;
-        }
     }
     Ok(())
 }
@@ -1184,7 +1174,7 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(CURRENT_TIME));
-        ctx.set_sender(ADDRESS_0.into());
+        ctx.set_sender(ADDRESS_0);
         ctx.set_owner(ACCOUNT_0);
 
         // and parameter.
@@ -1279,7 +1269,7 @@ mod tests {
             .checked_add(Duration::from_days(10))
             .expect_report("Failed to calculate the date");
         ctx.set_metadata_slot_time(now);
-        ctx.set_sender(ADDRESS_0.into());
+        ctx.set_sender(ADDRESS_0);
         ctx.set_owner(old_owner);
 
         // and parameter.
@@ -1351,7 +1341,7 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(CURRENT_TIME));
-        ctx.set_sender(ADDRESS_0.into());
+        ctx.set_sender(ADDRESS_0);
         ctx.set_owner(ACCOUNT_0);
 
         // and parameter.
