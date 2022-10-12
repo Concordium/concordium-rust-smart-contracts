@@ -196,6 +196,8 @@ enum CustomContractError {
     AdminAmountTooLarge,
     /// Admin account not found
     MissingAdminAccount,
+    /// Overflow for numeric operations
+    OverflowError,
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
@@ -290,7 +292,7 @@ impl<S: HasStateApi> State<S> {
         )?;
         let new_expires = now
             .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-            .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
+            .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
         // update expiration date and replace old data with an empty vector
         self.all_names
             .get_mut(name)
@@ -322,7 +324,7 @@ impl<S: HasStateApi> State<S> {
             .get_ref()
             .name_expires
             .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-            .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
+            .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
         entry.modify(|x| x.name_expires = new_expires);
         Ok(())
     }
@@ -632,7 +634,7 @@ fn contract_register<S: HasStateApi>(
     // calculate the expiration date
     let expires = now
         .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-        .ok_or(ContractError::Custom(CustomContractError::InvokeContractError))?;
+        .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
     let token_id = TokenIdFixed(name_hash);
     if state.contains_token(&token_id) {
         // token was registered, try to register it as expired
