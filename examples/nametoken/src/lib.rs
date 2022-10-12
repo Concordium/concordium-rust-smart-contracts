@@ -196,6 +196,8 @@ enum CustomContractError {
     AdminAmountTooLarge,
     /// Admin account not found
     MissingAdminAccount,
+    /// Name has expired
+    NameExpired,
     /// Overflow for numeric operations
     OverflowError,
 }
@@ -747,7 +749,7 @@ fn contract_transfer<S: HasStateApi>(
         );
         let name_info = state.all_names.get(&token_id).ok_or(ContractError::Unauthorized)?;
         // It's possible to transefer only if the name is not expired
-        ensure!(now <= name_info.name_expires, ContractError::Unauthorized);
+        ensure!(now <= name_info.name_expires, CustomContractError::NameExpired.into());
         // Update the contract state
         state.transfer(&token_id, amount, &from, &Address::Account(to_acc), builder)?;
 
@@ -786,10 +788,10 @@ fn contract_renew<S: HasStateApi>(
     amount: Amount,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
-    // Get the sender of the transaction
-    let sender = ctx.sender();
     // Validate the amount
     ensure_eq!(amount, RENEWAL_FEE, CustomContractError::IncorrectFee.into());
+    // Get the sender of the transaction
+    let sender = ctx.sender();
     // Parse the parameter.
     let name: String = ctx.parameter_cursor().get()?;
     let name_hash = crypto_primitives.hash_sha2_256(name.as_bytes()).0;
@@ -807,7 +809,7 @@ fn contract_renew<S: HasStateApi>(
     );
     // Ensure that the name has not expired
     let now = ctx.metadata().slot_time();
-    ensure!(now <= expires, ContractError::Unauthorized);
+    ensure!(now <= expires, CustomContractError::NameExpired.into());
     // Renew the name
     host.state_mut().renew(token_id)
 }
@@ -909,7 +911,7 @@ fn contract_update_data<S: HasStateApi>(
     );
     // Ensure that the name is not expired
     let now = ctx.metadata().slot_time();
-    ensure!(now <= name_info.name_expires, ContractError::Unauthorized);
+    ensure!(now <= name_info.name_expires, CustomContractError::NameExpired.into());
     state.update_data(&TokenIdFixed(name_hash), params.data.as_slice())
 }
 
@@ -1116,7 +1118,7 @@ fn contract_set_implementor<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Authorize the sender.
-    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    ensure!(ctx.sender().matches_account(&host.state().admin), ContractError::Unauthorized);
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
@@ -1253,21 +1255,19 @@ mod tests {
     #[concordium_test]
     #[cfg(feature = "crypto-primitives")]
     fn test_register_expired() {
-        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(now);
-        let old_owner = ACCOUNT_0;
-        let new_owner = ACCOUNT_1;
-
-        // the time of expiry in the past
+        // The time of expiry in the past
         let old_expiry = Timestamp::from_timestamp_millis(1);
-
         // ensure that the current date is beyond the expiry date,
         // so we can register the expired name
         let now = old_expiry
             .checked_add(Duration::from_days(10))
             .expect_report("Failed to calculate the date");
+
+        let old_owner = ACCOUNT_0;
+        let new_owner = ACCOUNT_1;
+
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
         ctx.set_metadata_slot_time(now);
         ctx.set_sender(ADDRESS_0);
         ctx.set_owner(old_owner);
@@ -1489,7 +1489,11 @@ mod tests {
         let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
         // Check the result
         let err = result.expect_err_report("Expected to fail");
-        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unathorized");
+        claim_eq!(
+            err,
+            CustomContractError::NameExpired.into(),
+            "Error is expected to be NameExpired"
+        );
     }
 
     // Test transfer succeeds when sender is not the owner, but is an operator
@@ -1634,7 +1638,11 @@ mod tests {
 
         // Check the result
         let err = result.expect_err_report("Expected to fail");
-        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unathorized");
+        claim_eq!(
+            err,
+            CustomContractError::NameExpired.into(),
+            "Error is expected to be NameExpired"
+        );
     }
 
     // Test updating data for an existing name
@@ -1708,7 +1716,11 @@ mod tests {
 
         // Check the result
         let err = result.expect_err_report("Expected to fail");
-        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unathorized");
+        claim_eq!(
+            err,
+            CustomContractError::NameExpired.into(),
+            "Error is expected to be NameExpired"
+        );
     }
 
     #[concordium_test]
@@ -1807,7 +1819,7 @@ mod tests {
         }
     }
 
-    // Test updating data for an existing name
+    // Test updating admin
     #[concordium_test]
     fn test_update_admin() {
         // Setup the context
@@ -1836,11 +1848,12 @@ mod tests {
         claim_eq!(st.admin, ADMIN_ACCOUNT_1);
     }
 
-    // Test updating data for an existing name
+    // Test updating admin failsfor an existing name
     #[concordium_test]
     fn test_update_admin_fails_unauthorized() {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
+        // ACCOUNT_0 is not admin
         ctx.set_sender(ACCOUNT_0.into());
 
         // and parameter
