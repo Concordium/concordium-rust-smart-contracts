@@ -1146,12 +1146,10 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
-        // Make ACCOUNT_1 missing such that transfers to it will fail.
 
         host.setup_mock_upgrade(new_module_ref, Err(UpgradeError::MissingModule));
 
-        // Call the contract function. Note the use of `with_rollback`.
-        let result: ContractResult<()> = host.with_rollback(|host| contract_upgrade(&ctx, host));
+        let result: ContractResult<()> = contract_upgrade(&ctx, &mut host);
 
         claim_eq!(
             result,
