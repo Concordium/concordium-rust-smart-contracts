@@ -281,6 +281,9 @@ pub trait HasHost<State>: Sized {
 
     /// Upgrade the module for this instance to a given module. The new module
     /// must contain a smart contract with a matching name.
+    /// Invocations of this instance after the point of a successful upgrade,
+    /// will use the new smart contract module. The remaining code after a
+    /// successful upgrade in the same invokation is executed as normal.
     ///
     /// This will fail if:
     /// - The supplied module is not deployed.
