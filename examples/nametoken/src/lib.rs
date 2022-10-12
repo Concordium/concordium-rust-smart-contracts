@@ -1610,7 +1610,7 @@ mod tests {
         claim_eq!(expected, new_expires);
     }
 
-    // Test renewing fails is the name is expired
+    // Test renewing fails if the name is expired
     #[concordium_test]
     #[cfg(feature = "crypto-primitives")]
     fn test_renew_name_fails_expired() {
