@@ -617,6 +617,18 @@ pub enum TransferError {
     MissingAccount,
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone)]
+/// Errors that may occur when upgrading the smart contract module.
+pub enum UpgradeError {
+    /// Provided module does not exist.
+    MissingModule,
+    /// Provided module does not contain a smart contract with a matching name.
+    MissingContract,
+    /// Provided module is a version 0 smart contract module.
+    UnsupportedModuleVersion,
+}
+
 /// A wrapper around [Result] that fixes the error variant to
 /// [CallContractError], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
@@ -633,6 +645,10 @@ pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>
 /// A wrapper around [Result] that fixes the error variant to [TransferError]
 /// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
 pub type TransferResult = Result<(), TransferError>;
+
+/// A wrapper around [Result] that fixes the error variant to [UpgradeError]
+/// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
+pub type UpgradeResult = Result<(), UpgradeError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]

@@ -1800,6 +1800,24 @@ fn parse_transfer_response_code(code: u64) -> TransferResult {
 
 /// Decode the the response code.
 ///
+/// The response is encoded as follows.
+/// - success is encoded as 0.
+/// - failed because of missing module is 1.
+/// - failed because of module is missing contract with the same name is 2.
+/// - failed because of module being an unsupported version is 3.
+#[inline(always)]
+fn parse_upgrade_response_code(code: u64) -> UpgradeResult {
+    match code {
+        0 => Ok(()),
+        1 => Err(UpgradeError::MissingModule),
+        2 => Err(UpgradeError::MissingContract),
+        3 => Err(UpgradeError::UnsupportedModuleVersion),
+        _ => crate::trap(),
+    }
+}
+
+/// Decode the the response code.
+///
 /// This is necessary since Wasm only allows us to pass simple scalars as
 /// parameters. Everything else requires passing data in memory, or via host
 /// functions, both of which are difficult.
@@ -2089,6 +2107,11 @@ where
         }
     }
 
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
+        parse_upgrade_response_code(response)
+    }
+
     fn state(&self) -> &S { &self.state }
 
     fn state_mut(&mut self) -> &mut S { &mut self.state }
@@ -2134,6 +2157,11 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         let len = data.len();
         let response = unsafe { prims::invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         parse_call_response_code(response)
+    }
+
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
+        parse_upgrade_response_code(response)
     }
 
     #[inline(always)]

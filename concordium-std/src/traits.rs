@@ -8,7 +8,7 @@ use crate::{
     types::{LogError, StateError},
     CallContractResult, EntryRaw, HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
     PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
-    SignatureEd25519, StateBuilder, TransferResult, VacantEntryRaw,
+    SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -278,6 +278,16 @@ pub trait HasHost<State>: Sized {
         let param = to_bytes(parameter);
         self.invoke_contract_raw(to, Parameter(&param), method, amount)
     }
+
+    /// Upgrade the module for this instance to a given module. The new module
+    /// must contain a smart contract with a matching name.
+    ///
+    /// This will fail if:
+    /// - The supplied module is not deployed.
+    /// - The supplied module is does not contain a smart contract with a name
+    ///   matching this instance.
+    /// - The supplied module is a version 0 smart contract module.
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult;
 
     /// Invoke a given method of a contract with the amount and parameter
     /// provided. If invocation succeeds **and the state of the contract

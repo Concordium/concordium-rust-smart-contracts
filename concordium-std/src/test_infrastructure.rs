@@ -1270,6 +1270,9 @@ impl<State> MockFn<State> {
 /// A map from contract address and entrypoints to mocking functions.
 type MockFnMap<State> = BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>;
 
+/// A map from module references to the result to mock.
+type MockUpgradeMap = BTreeMap<ModuleReference, UpgradeResult>;
+
 /// A [`Host`](HasHost) implementation used for unit testing smart contracts.
 ///
 /// The host provides a way to set up mock responses to transfers, and to
@@ -1290,6 +1293,9 @@ pub struct TestHost<State> {
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: RefCell<Amount>,
+    /// Map from module reference to the results to mock for upgrading to this
+    /// perticular module.
+    mocking_upgrades: RefCell<MockUpgradeMap>,
     /// StateBuilder for the state.
     state_builder:    StateBuilder<TestStateApi>,
     /// State of the instance.
@@ -1457,6 +1463,18 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
         Ok(res)
     }
 
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        if let Some(result) = self.mocking_upgrades.borrow().get(&module) {
+            result.to_owned()
+        } else {
+            fail!(
+                "Mocking has not been set up for upgrading to this perticular module reference: \
+                 {:?}",
+                module
+            )
+        }
+    }
+
     fn commit_state(&mut self) {
         let mut root_entry = self
             .state_builder
@@ -1506,6 +1524,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
             mocking_fns: Rc::new(RefCell::new(BTreeMap::new())),
             transfers: RefCell::new(Vec::new()),
             contract_balance: RefCell::new(Amount::zero()),
+            mocking_upgrades: RefCell::new(BTreeMap::new()),
             state_builder,
             state,
             missing_accounts: BTreeSet::new(),
@@ -1517,8 +1536,8 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
 
     /// Set up a mock entrypoint for handling calls to `invoke_contract`.
     ///
-    /// If you set up multiple handlers for the same entrypoint (to, method),
-    /// then the latest handler will be used.
+    /// If multiple handlers for the same entrypoint (to, method) are set up,
+    /// the latest handler will be used.
     pub fn setup_mock_entrypoint(
         &mut self,
         to: ContractAddress,
@@ -1526,6 +1545,14 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         handler: MockFn<State>,
     ) {
         self.mocking_fns.borrow_mut().insert((to, method), handler);
+    }
+
+    /// Set up a mock for upgrading to a perticular module.
+    ///
+    /// If multiple mocks are setup for the same module, the latest will be
+    /// used.
+    pub fn setup_mock_upgrade(&mut self, module: ModuleReference, result: UpgradeResult) {
+        self.mocking_upgrades.borrow_mut().insert(module, result);
     }
 
     /// Set the contract balance.
@@ -1606,6 +1633,7 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
             mocking_fns:      self.mocking_fns.clone(),
             transfers:        self.transfers.clone(),
             contract_balance: self.contract_balance.clone(),
+            mocking_upgrades: self.mocking_upgrades.clone(),
             state_builder:    StateBuilder {
                 state_api: cloned_state_api.clone(),
             },
