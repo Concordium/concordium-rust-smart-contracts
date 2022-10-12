@@ -274,7 +274,7 @@ impl<S: HasStateApi> State<S> {
         name: &ContractTokenId,
         owner: &AccountAddress,
         state_builder: &mut StateBuilder<S>,
-    ) -> ContractResult<()> {
+    ) -> ContractResult<AccountAddress> {
         let name_info = self
             .all_names
             .get(name)
@@ -282,11 +282,14 @@ impl<S: HasStateApi> State<S> {
         let old_expires = name_info.name_expires;
         // check whether the name has expired
         ensure!(now > old_expires, CustomContractError::NameIsTaken.into());
+
+        let old_owner = name_info.owner;
+
         // transfer ownership
         self.transfer(
             name,
             1.into(),
-            &Address::Account(name_info.owner),
+            &Address::Account(old_owner),
             &Address::Account(*owner),
             state_builder,
         )?;
@@ -301,7 +304,7 @@ impl<S: HasStateApi> State<S> {
                 ni.data.replace(Vec::new())
             })
             .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
-        Ok(())
+        Ok(old_owner)
     }
 
     /// Update existing data
@@ -526,9 +529,9 @@ fn into_view_name_info<S: HasStateApi>(name_info: &NameInfo<S>) -> ViewNameInfo 
 }
 
 fn view_nameinfo<S: HasStateApi>(
-    names: (StateRef<TokenIdFixed<32>>, StateRef<NameInfo<S>>),
+    name: (StateRef<TokenIdFixed<32>>, StateRef<NameInfo<S>>),
 ) -> (TokenIdFixed<32>, ViewNameInfo) {
-    let (a_token_id, a_name_info) = names;
+    let (a_token_id, a_name_info) = name;
     let name_info = into_view_name_info(&a_name_info);
     (*a_token_id, name_info)
 }
@@ -638,7 +641,16 @@ fn contract_register<S: HasStateApi>(
     let token_id = TokenIdFixed(name_hash);
     if state.contains_token(&token_id) {
         // token was registered, try to register it as expired
-        state.register_expired(now, &token_id, &params.owner, builder)
+        let old_owner = state.register_expired(now, &token_id, &params.owner, builder)?;
+
+        // Log transfer event
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id,
+            amount: ContractTokenAmount::from(1),
+            from: Address::Account(old_owner),
+            to: Address::Account(params.owner),
+        }))?;
+        Ok(())
     } else {
         // token is not registered, make a fresh registration
         state.register_fresh(&token_id, &params.owner, expires, builder)?;
@@ -1307,17 +1319,18 @@ mod tests {
 
         claim_eq!(name_info.data.get().as_slice(), [], "Data should be empty");
 
-        // Check the logs, there should be no record for minting,
-        // because it's a registration of an expired name
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
-            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner:    new_owner.into(),
+            logger.logs[0],
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
                 token_id: token_0,
                 amount:   ContractTokenAmount::from(1),
-            }))),
-            false,
-            "Expected an event for minting NAME_0"
-        );
+            })),
+            "Incorrect event emitted"
+        )
     }
 
     // Register fails if the fee in incorrect
