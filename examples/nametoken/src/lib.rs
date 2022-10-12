@@ -593,22 +593,33 @@ fn contract_nameinfo_view<S: HasStateApi>(
 
 /// Register a new name with a given address as the owner. The name
 /// parameter is a string, which is then hashed and used as a token id. Can
-/// be called by anyone, but requires to pay a registration fee. Logs a
-/// `Mint` and a `TokenMetadata` event for each namet oken. The url for the
-/// token metadata is the token ID encoded in hex, appended on the
-/// `TOKEN_METADATA_BASE_URL`.
+/// be called by anyone, but requires to pay a registration fee.
 ///
-/// It rejects if:
-/// - Fee is incorrect.
-/// - Fails to parse parameter.
-/// - Overflows when calculating the expiration date.
-/// - Any of the tokens fails to be minted, which could be if:
-///     - The registered name is already taken and not expired.
-///     - Fails to log Mint event
-///     - Fails to log TokenMetadata event
+/// Two scenarios are possible
+/// - Register a fresh name (not previously registered); considered as minting.
+///   In this case, logs a `Mint` and a `TokenMetadata` event for the new name
+///   token. The url for the token metadata is the token ID encoded in hex,
+///   appended on the`TOKEN_METADATA_BASE_URL`.
 ///
-/// Note: Can at most mint 32 token types in one call due to the limit on the
-/// number of logs a smart contract can produce on each function call.
+///   It rejects if:
+///   - Fee is incorrect.
+///   - Fails to parse parameter.
+///   - Overflows when calculating the expiration date.
+///   - The token fails to be minted, which could be if:
+///       - Fails to log `Mint` event
+///       - Fails to log `TokenMetadata` event
+///
+/// - Register an expired name, that is, a name that was previously registered,
+///   but has expired now. In this case logs a `Transfer` event, since the
+///   ownership is transfered.
+///
+///   It rejects if:
+///   - Fee is incorrect.
+///   - Fails to parse parameter.
+///   - Overflows when calculating the expiration date.
+///   - The token exists, but has not expired.
+///   - The token fails to be transfered, which could be if:
+///       - Fails to log `Transfer` event
 #[receive(
     contract = "NameToken",
     name = "register",
