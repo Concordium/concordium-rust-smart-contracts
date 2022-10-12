@@ -698,7 +698,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 ///     - The sender is not the owner of the token, or an operator for this
 ///       specific `token_id` and `from` address.
 ///     - The token is not owned by the `from`.
-///     - `from` or `to`are not account addresses.
+///     - `from` or `to` are not account addresses.
 /// - Fails to log event.
 #[receive(
     contract = "NameToken",
