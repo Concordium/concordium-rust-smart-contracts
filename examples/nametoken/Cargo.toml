@@ -1,5 +1,5 @@
 [package]
-name = "NameToken"
+name = "nametoken"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"

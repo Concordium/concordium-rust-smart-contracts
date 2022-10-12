@@ -27,6 +27,7 @@ jobs:
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
+          - examples/nametoken/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
           - examples/proxy/Cargo.toml
@@ -255,6 +256,7 @@ jobs:
           - examples/cis2-wccd/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-multi/Cargo.toml
+          - examples/nametoken/Cargo.toml
 
         features:
           -
@@ -294,6 +296,7 @@ jobs:
           - crypto-primitives
 
         crates:
+          - examples/nametoken/Cargo.toml
           - examples/signature-verifier/Cargo.toml
 
     steps:
@@ -333,6 +336,7 @@ jobs:
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
+          - examples/nametoken/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
           - examples/proxy/Cargo.toml
@@ -453,6 +457,7 @@ jobs:
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
+          - examples/nametoken/Cargo.toml
           - examples/piggy-bank/part1/Cargo.toml
           - examples/piggy-bank/part2/Cargo.toml
           - examples/proxy/Cargo.toml
