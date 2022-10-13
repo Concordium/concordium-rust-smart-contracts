@@ -252,8 +252,8 @@ impl<S: HasStateApi> State<S> {
     /// Register a name if it's not taken
     fn register_fresh(
         &mut self,
-        name: &ContractTokenId,
-        owner: &AccountAddress,
+        name: ContractTokenId,
+        owner: AccountAddress,
         expires: Timestamp,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
