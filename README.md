@@ -19,6 +19,7 @@ with low-level details of how the interaction with the chain works.
 - `concordium-std` version 3 only supports building version 1 contracts
 
 Also note that `concordium-std` version 4 only works with `cargo-concordium` version 2.1+.
+Also note that `concordium-std` version 4.1 only works with `cargo-concordium` version 2.3+.
 
 ## Examples
 
@@ -64,3 +65,4 @@ rustup toolchain install nightly-2021-06-09
 or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.
 
 In order to contribute you should make a pull request and ask at least two people familiar with the code to do a review.
+
