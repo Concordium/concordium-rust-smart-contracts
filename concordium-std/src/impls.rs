@@ -144,6 +144,26 @@ impl<T> From<CallContractError<T>> for Reject {
     }
 }
 
+/// MissingModule is i32::MIN + 22,
+/// MissingContract is i32::MIN + 23,
+/// UnsupportedModuleVersion is i32::MIN + 24.
+impl From<UpgradeError> for Reject {
+    #[inline(always)]
+    fn from(te: UpgradeError) -> Self {
+        match te {
+            UpgradeError::MissingModule => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 22).into()
+            },
+            UpgradeError::MissingContract => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 23).into()
+            },
+            UpgradeError::UnsupportedModuleVersion => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 24).into()
+            },
+        }
+    }
+}
+
 /// Return values are intended to be produced by writing to the
 /// [ExternReturnValue] buffer, either in a high-level interface via
 /// serialization, or in a low-level interface by manually using the [Write]
