@@ -273,8 +273,8 @@ impl<S: HasStateApi> State<S> {
     fn register_expired(
         &mut self,
         now: Timestamp,
-        name: &ContractTokenId,
-        owner: &AccountAddress,
+        name: ContractTokenId,
+        owner: AccountAddress,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<AccountAddress> {
         let name_info = self
