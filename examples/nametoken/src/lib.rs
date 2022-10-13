@@ -70,6 +70,8 @@ const REGISTRATION_PERIOD_DAYS: u64 = 365;
 // Types
 
 /// Contract token ID type.
+/// We pick `TokenIdFixed`, since we hash names with sha256, that gives a
+/// fixed-length 32 byte array.
 type ContractTokenId = TokenIdFixed<32>;
 
 /// Contract token amount. Since the tokens are non-fungible the total supply
@@ -134,9 +136,7 @@ impl<S: HasStateApi> AddressState<S> {
 }
 
 /// The contract state.
-// Note: The specification does not specify how to structure the contract state
-// and this could be structured in a more space efficient way depending on the
-// use case.
+
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
@@ -257,15 +257,15 @@ impl<S: HasStateApi> State<S> {
         expires: Timestamp,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
-        let name_info = NameInfo::fresh(*owner, expires, state_builder);
+        let name_info = NameInfo::fresh(owner, expires, state_builder);
         // make sure that the name is not taken
         ensure!(
-            self.all_names.insert(*name, name_info).is_none(),
+            self.all_names.insert(name, name_info).is_none(),
             CustomContractError::NameIsTaken.into()
         );
         let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
-        owner_state.owned_names.insert(*name);
+            self.state.entry(owner).or_insert_with(|| AddressState::empty(state_builder));
+        owner_state.owned_names.insert(name);
         Ok(())
     }
 
@@ -279,7 +279,7 @@ impl<S: HasStateApi> State<S> {
     ) -> ContractResult<AccountAddress> {
         let name_info = self
             .all_names
-            .get(name)
+            .get(&name)
             .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
         let old_expires = name_info.name_expires;
         // check whether the name has expired
@@ -289,10 +289,10 @@ impl<S: HasStateApi> State<S> {
 
         // transfer ownership
         self.transfer(
-            name,
+            &name,
             1.into(),
             &Address::Account(old_owner),
-            &Address::Account(*owner),
+            &Address::Account(owner),
             state_builder,
         )?;
         let new_expires = now
@@ -300,7 +300,7 @@ impl<S: HasStateApi> State<S> {
             .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
         // update expiration date and replace old data with an empty vector
         self.all_names
-            .get_mut(name)
+            .get_mut(&name)
             .map(|mut ni| {
                 ni.name_expires = new_expires;
                 ni.data.replace(Vec::new())
@@ -654,7 +654,7 @@ fn contract_register<S: HasStateApi>(
     let token_id = TokenIdFixed(name_hash);
     if state.contains_token(&token_id) {
         // token was registered, try to register it as expired
-        let old_owner = state.register_expired(now, &token_id, &params.owner, builder)?;
+        let old_owner = state.register_expired(now, token_id, params.owner, builder)?;
 
         // Log transfer event
         logger.log(&Cis2Event::Transfer(TransferEvent {
@@ -666,7 +666,7 @@ fn contract_register<S: HasStateApi>(
         Ok(())
     } else {
         // token is not registered, make a fresh registration
-        state.register_fresh(&token_id, &params.owner, expires, builder)?;
+        state.register_fresh(token_id, params.owner, expires, builder)?;
         // Event for minted NFT.
         logger.log(&Cis2Event::Mint(MintEvent {
             token_id,
@@ -1156,10 +1156,10 @@ mod tests {
         let token_0 = crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0;
         let token_1 = crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0;
         state
-            .register_fresh(&TokenIdFixed(token_0), &ACCOUNT_0, expires, state_builder)
+            .register_fresh(TokenIdFixed(token_0), ACCOUNT_0, expires, state_builder)
             .expect_report("Failed to register NAME_0");
         state
-            .register_fresh(&TokenIdFixed(token_1), &ACCOUNT_1, expires, state_builder)
+            .register_fresh(TokenIdFixed(token_1), ACCOUNT_1, expires, state_builder)
             .expect_report("Failed to register NAME_1");
         let data = SAMPLE_DATA.to_string();
         state
@@ -1802,10 +1802,10 @@ mod tests {
         let (st, sb) = host.state_and_builder();
 
         // `token_0` has expired
-        st.register_fresh(&token_0, &ACCOUNT_0, expired, sb)
+        st.register_fresh(token_0, ACCOUNT_0, expired, sb)
             .expect_report("Failed to register NAME_0");
         // `token_1` hasn't expired yet
-        st.register_fresh(&token_1, &ACCOUNT_1, future, sb)
+        st.register_fresh(token_1, ACCOUNT_1, future, sb)
             .expect_report("Failed to register NAME_1");
 
         // Call the contract function.
