@@ -1822,16 +1822,17 @@ fn parse_transfer_response_code(code: u64) -> TransferResult {
 ///
 /// The response is encoded as follows.
 /// - success is encoded as 0.
-/// - failed because of missing module is 1.
-/// - failed because of module is missing contract with the same name is 2.
-/// - failed because of module being an unsupported version is 3.
+/// - failed because of missing module is 0x07_0000_0000.
+/// - failed because of module is missing contract with the same name is
+///   0x08_0000_0000.
+/// - failed because of module being an unsupported version is 0x09_0000_0000.
 #[inline(always)]
 fn parse_upgrade_response_code(code: u64) -> UpgradeResult {
     match code {
         0 => Ok(()),
-        1 => Err(UpgradeError::MissingModule),
-        2 => Err(UpgradeError::MissingContract),
-        3 => Err(UpgradeError::UnsupportedModuleVersion),
+        0x07_0000_0000 => Err(UpgradeError::MissingModule),
+        0x08_0000_0000 => Err(UpgradeError::MissingContract),
+        0x09_0000_0000 => Err(UpgradeError::UnsupportedModuleVersion),
         _ => crate::trap(),
     }
 }
