@@ -63,26 +63,10 @@ struct OptionalArguments {
 struct InitAttributes {
     /// Which type, if any, is the event type of the function.
     /// This is used when generating schemas.
-    pub(crate) event_schema: Option<syn::LitStr>,
-    /// A list of event tags to be mapped to the event enum indexes.
-    /// The event tags variable has to be a vector that should have the same
-    /// length as the number of variants in the event enum (each event tag
-    /// that is used in the smart contract needs to be included in the
-    /// event_tags vector). For the event_tags to be able to map the events, the
-    /// above event_schema variable has to be set as well. The first tag in this
-    /// vector is assigned to the event enum at index 0 and so on. If no
-    /// event_tags are provided but the above event_schema variable, the
-    /// default event tag convention is used.
-    ///
-    /// Default convention for mapping event tags to enum indexes: Event tags
-    /// start with u8::MAX and go down. The default convention maps the
-    /// event at index 0 in the enum to the event tag u8::MAX. The default
-    /// convention maps the event at index 1 in the enum to the event tag
-    /// u8::MAX - 1) and so on.
-    pub(crate) event_tags:   Option<syn::LitStr>,
+    pub(crate) event:    Option<syn::LitStr>,
     /// Name of the contract.
-    pub(crate) contract:     syn::LitStr,
-    pub(crate) optional:     OptionalArguments,
+    pub(crate) contract: syn::LitStr,
+    pub(crate) optional: OptionalArguments,
 }
 
 /// Attributes that can be attached to the receive method.
@@ -257,8 +241,7 @@ const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
 const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const INIT_ATTRIBUTE_ERROR: &str = "error";
-const INIT_ATTRIBUTE_EVENT_SCHEMA: &str = "event_schema";
-const INIT_ATTRIBUTE_EVENT_TAGS: &str = "event_tags";
+const INIT_ATTRIBUTE_EVENT: &str = "event";
 const INIT_ATTRIBUTE_CRYPTO_PRIMITIVES: &str = "crypto_primitives";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
@@ -285,8 +268,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
         ));
     }
     let error = attributes.extract_value(INIT_ATTRIBUTE_ERROR);
-    let event_schema = attributes.extract_value(INIT_ATTRIBUTE_EVENT_SCHEMA);
-    let event_tags = attributes.extract_value(INIT_ATTRIBUTE_EVENT_TAGS);
+    let event = attributes.extract_value(INIT_ATTRIBUTE_EVENT);
     let crypto_primitives = attributes.extract_flag(INIT_ATTRIBUTE_CRYPTO_PRIMITIVES).is_some();
 
     // Make sure that there are no unrecognized attributes. These would typically be
@@ -295,8 +277,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attributes.report_all_attributes()?;
     Ok(InitAttributes {
         contract,
-        event_schema,
-        event_tags,
+        event,
         optional: OptionalArguments {
             payable,
             enable_logger,
@@ -652,14 +633,12 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let parameter_option = init_attributes.optional.parameter;
     let return_value_option = None; // Return values are currently not supported on init.
     let error_option = init_attributes.optional.error;
-    let event_schema_option = init_attributes.event_schema;
-    let event_tags_option = init_attributes.event_tags;
+    let event_option = init_attributes.event;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
         error_option,
-        event_schema_option,
-        event_tags_option,
+        event_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
@@ -1028,7 +1007,6 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
         return_value_option,
         error_option,
         None, // Event schema should be attached to the `init` function and is globally available.
-        None, // Event schema should be attached to the `init` function and is globally available.
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
@@ -1084,322 +1062,70 @@ fn contract_function_schema_tokens(
     parameter_option: Option<syn::LitStr>,
     return_value_option: Option<syn::LitStr>,
     error_option: Option<syn::LitStr>,
-    event_schema_option: Option<syn::LitStr>,
-    event_tags_option: Option<syn::LitStr>,
+    event_option: Option<syn::LitStr>,
     rust_name: syn::Ident,
     wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let construct_schema_bytes = match (
-        parameter_option,
-        return_value_option,
-        error_option,
-        event_schema_option,
-    ) {
-        (Some(parameter_ty), None, None, Some(event_ty)) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
+    let mut embed = false;
 
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamEvent {
-                            parameter,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamEvent {
-                        parameter,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
+    let parameter_schema = format_ident!("parameter");
+    let parameter_embed = if let Some(parameter_ty) = parameter_option {
+        let ty = parameter_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #parameter_schema = Some(<#ty as schema::SchemaType>::get_type());
         }
-        (None, None, Some(error_ty), Some(event_ty)) => {
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let error = <#error_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ErrorEvent {
-                            error,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ErrorEvent {
-                        error,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
-        }
-        (None, Some(return_value_ty), None, Some(event_ty)) => {
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::RvEvent {
-                            return_value,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::RvEvent {
-                        return_value,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
-        }
-        (Some(parameter_ty), Some(return_value_ty), None, Some(event_ty)) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                        let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamRvEvent {
-                            parameter,
-                            return_value,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamRvEvent {
-                        parameter,
-                        return_value,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
-        }
-        (Some(parameter_ty), None, Some(error_ty), Some(event_ty)) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                        let error = <#error_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamErrorEvent {
-                            parameter,
-                            error,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamErrorEvent {
-                        parameter,
-                        error,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
-        }
-        (None, Some(return_value_ty), Some(error_ty), Some(event_ty)) => {
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                        let error = <#error_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::RvErrorEvent {
-                            return_value,
-                            error,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::RvErrorEvent {
-                        return_value,
-                        error,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
-        }
-        (Some(parameter_ty), Some(return_value_ty), Some(error_ty), Some(event_ty)) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                        let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                        let error = <#error_ty as schema::SchemaType>::get_type();
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamRvErrorEvent {
-                            parameter,
-                            return_value,
-                            error,
-                            event: schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        });
-                    })
-                }
-                _ => Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamRvErrorEvent {
-                        parameter,
-                        return_value,
-                        error,
-                        event: schema::EventSchema {event_schema, event_tags: None}
-                    });
-                }),
-            }
-        }
-        (None, None, None, Some(event_ty)) => {
-            let event_ty = event_ty.parse::<syn::Type>()?;
-
-            match event_tags_option {
-                Some(event_tags) => {
-                    let event_tags_ty = event_tags.parse::<syn::Type>()?;
-
-                    Some(quote! {
-                        let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                        let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::Event (
-                            schema::EventSchema {event_schema, event_tags: Some(#event_tags_ty.to_vec())}
-                        ));
-                    })
-                }
-                _ => Some(quote! {
-                    let event_schema = <#event_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::Event (
-                        schema::EventSchema {event_schema, event_tags: None}
-                    ));
-                }),
-            }
-        }
-        (Some(parameter_ty), None, None, None) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            Some(quote! {
-            let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::Param(parameter));})
-        }
-        (None, Some(return_value_ty), None, None) => {
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            Some(quote! {
-            let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-            let schema_bytes =
-                concordium_std::to_bytes(&schema::FunctionV3::Rv(return_value));     })
-        }
-        (Some(parameter_ty), Some(return_value_ty), None, None) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamRv {
-            parameter, return_value });     })
-        }
-        (None, None, Some(error_ty), None) => {
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-            let error = <#error_ty as schema::SchemaType>::get_type();
-            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::Error(error));     })
-        }
-        (Some(parameter_ty), None, Some(error_ty), None) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamError {
-            parameter, error });     })
-        }
-        (None, Some(return_value_ty), Some(error_ty), None) => {
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::RvError {
-            return_value, error });     })
-        }
-        (Some(parameter_ty), Some(return_value_ty), Some(error_ty), None) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3::ParamRvError {
-            parameter, return_value, error });     })
-        }
-        _ => None,
+    } else {
+        quote! {let #parameter_schema = None;}
     };
 
-    // Only produce the schema function if the parameter or return_value attribute
-    // was set.
-    if let Some(construct_schema_bytes) = construct_schema_bytes {
+    let return_value_schema = format_ident!("return_value");
+    let return_embed = if let Some(return_ty) = return_value_option {
+        let ty = return_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #return_value_schema = Some(<#ty as schema::SchemaType>::get_type());
+        }
+    } else {
+        quote! {let #return_value_schema = None;}
+    };
+
+    let error_schema = format_ident!("error");
+    let error_embed = if let Some(error_ty) = error_option {
+        let ty = error_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #error_schema = Some(<#ty as schema::SchemaType>::get_type());
+        }
+    } else {
+        quote! {let #error_schema = None;}
+    };
+
+    let event_schema = format_ident!("event");
+    let event_embed = if let Some(event_ty) = event_option {
+        let ty = event_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #event_schema = Some(<#ty as schema::SchemaType>::get_type());
+        }
+    } else {
+        quote! {let #event_schema = None;}
+    };
+
+    // Only produce the schema function if the parameter, return_value, error, or
+    // event attribute was set.
+    if embed {
         let schema_name = format!("concordium_schema_function_{}", wasm_name);
         let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
         Ok(quote! {
             #[export_name = #schema_name]
             pub extern "C" fn #schema_ident() -> *mut u8 {
-                #construct_schema_bytes
+                #return_embed
+                #parameter_embed
+                #error_embed
+                #event_embed
+                let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3 {
+                    index: 0, parameter: #parameter_schema, return_value: #return_value_schema, error: #error_schema, event: #event_schema});
                 concordium_std::put_in_memory(&schema_bytes)
             }
         })
@@ -1413,8 +1139,7 @@ fn contract_function_schema_tokens(
     _parameter_option: Option<syn::LitStr>,
     _return_value_option: Option<syn::LitStr>,
     _error_option: Option<syn::LitStr>,
-    _event_schema_option: Option<syn::LitStr>,
-    _event_tags_option: Option<syn::LitStr>,
+    _event_option: Option<syn::LitStr>,
     _rust_name: syn::Ident,
     _wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
