@@ -277,15 +277,26 @@ impl<S: HasStateApi> State<S> {
         owner: AccountAddress,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<AccountAddress> {
-        let name_info = self
+        let mut name_info = self
             .all_names
-            .get(&name)
+            .get_mut(&name)
             .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
         let old_expires = name_info.name_expires;
-        // check whether the name has expired
+        // Check whether the name has expired
         ensure!(now > old_expires, CustomContractError::NameIsTaken.into());
 
         let old_owner = name_info.owner;
+
+        let new_expires = now
+            .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
+            .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
+        // Update expiration date
+        name_info.name_expires = new_expires;
+        // Replace old data with an empty vector
+        let old_data = mem::replace(&mut name_info.data, state_builder.new_box(Vec::new()));
+        // and delete old data to avoid space leaks
+        old_data.delete();
+        drop(name_info);
 
         // transfer ownership
         self.transfer(
@@ -295,17 +306,7 @@ impl<S: HasStateApi> State<S> {
             &Address::Account(owner),
             state_builder,
         )?;
-        let new_expires = now
-            .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-            .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
-        // update expiration date and replace old data with an empty vector
-        self.all_names
-            .get_mut(&name)
-            .map(|mut ni| {
-                ni.name_expires = new_expires;
-                ni.data.replace(Vec::new())
-            })
-            .ok_or(ContractError::Custom(CustomContractError::InconsistentState))?;
+
         Ok(old_owner)
     }
 
@@ -391,6 +392,16 @@ impl<S: HasStateApi> State<S> {
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
+
+        // Make sure that addresses are accounts
+        let from_acc = match from {
+            Address::Account(addr) => addr,
+            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()),
+        };
+        let to_acc = match to {
+            Address::Account(addr) => addr,
+            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()),
+        };
         // A zero transfer does not modify the state.
         if amount == 0.into() {
             return Ok(());
@@ -400,14 +411,6 @@ impl<S: HasStateApi> State<S> {
         // address must have insufficient funds for any amount other than 1.
         ensure_eq!(amount, 1.into(), ContractError::InsufficientFunds);
 
-        let from_acc = match from {
-            Address::Account(addr) => addr,
-            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()),
-        };
-        let to_acc = match to {
-            Address::Account(addr) => addr,
-            Address::Contract(_) => bail!(CustomContractError::OwnerShouldBeAccount.into()),
-        };
         {
             let mut from_address_state =
                 self.state.get_mut(from_acc).ok_or(ContractError::InsufficientFunds)?;
@@ -647,13 +650,13 @@ fn contract_register<S: HasStateApi>(
     let name_hash = crypto_primitives.hash_sha2_256(params.name.as_bytes()).0;
     let (state, builder) = host.state_and_builder();
     let now = ctx.metadata().slot_time();
-    // calculate the expiration date
+    // Calculate the expiration date
     let expires = now
         .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
         .ok_or(ContractError::Custom(CustomContractError::OverflowError))?;
     let token_id = TokenIdFixed(name_hash);
     if state.contains_token(&token_id) {
-        // token was registered, try to register it as expired
+        // Token was registered, try to register it as expired
         let old_owner = state.register_expired(now, token_id, params.owner, builder)?;
 
         // Log transfer event
@@ -665,7 +668,7 @@ fn contract_register<S: HasStateApi>(
         }))?;
         Ok(())
     } else {
-        // token is not registered, make a fresh registration
+        // Token is not registered, make a fresh registration
         state.register_fresh(token_id, params.owner, expires, builder)?;
         // Event for minted NFT.
         logger.log(&Cis2Event::Mint(MintEvent {
