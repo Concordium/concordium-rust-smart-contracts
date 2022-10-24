@@ -1,9 +1,10 @@
 [package]
-name = "cis2-nft"
+name = "cis2_nft"
 version = "0.1.0"
-authors = ["Concordium <developers@concordium.com>"]
+authors = [ "Concordium <developers@concordium.com>" ]
 edition = "2018"
 license = "MPL-2.0"
+description = "cis2-nft-project"
 
 [features]
 default = ["std"]

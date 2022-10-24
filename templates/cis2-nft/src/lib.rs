@@ -1,7 +1,3 @@
-//! Note: This contract is not meant for production, it is used to illustrate
-//! how to use the standard library and the tooling Concordium provides. There
-//! is no claim that the logic of the contract is reasonable, or safe.
-//!
 //! A NFT smart contract example using the Concordium Token Standard CIS2.
 //!
 //! # Description
@@ -805,7 +801,7 @@ mod tests {
                 TokenMetadataEvent {
                     token_id:     TOKEN_0,
                     metadata_url: MetadataUrl {
-                        url:  TOKEN_METADATA_BASE_URL.to_string() + &"00000000".to_string(),
+                        url:  format!("{}00000000", TOKEN_METADATA_BASE_URL),
                         hash: None,
                     },
                 }
@@ -817,7 +813,7 @@ mod tests {
                 TokenMetadataEvent {
                     token_id:     TOKEN_1,
                     metadata_url: MetadataUrl {
-                        url:  TOKEN_METADATA_BASE_URL.to_string() + &"2A000000".to_string(),
+                        url:  format!("{}2A000000", TOKEN_METADATA_BASE_URL),
                         hash: None,
                     },
                 }
