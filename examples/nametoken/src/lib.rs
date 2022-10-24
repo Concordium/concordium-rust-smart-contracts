@@ -383,6 +383,8 @@ impl<S: HasStateApi> State<S> {
     /// Update the state with a transfer of some token.
     /// Results in an error if the token ID does not exist in the state or if
     /// the from address have insufficient tokens to do the transfer.
+    //  Note: data associated with the name (token_id) is remains untouched after
+    //  transfer.  Alternatively, one might consider erasing it.
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
