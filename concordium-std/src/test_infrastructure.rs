@@ -1270,7 +1270,7 @@ impl<State> MockFn<State> {
 /// A map from contract address and entrypoints to mocking functions.
 type MockFnMap<State> = BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>;
 
-/// A map from module references to the result to mock.
+/// A map from module references to the mocked result.
 type MockUpgradeMap = BTreeMap<ModuleReference, UpgradeResult>;
 
 /// A [`Host`](HasHost) implementation used for unit testing smart contracts.
@@ -1293,8 +1293,8 @@ pub struct TestHost<State> {
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
     contract_balance: RefCell<Amount>,
-    /// Map from module reference to the results to mock for upgrading to this
-    /// perticular module.
+    /// Map from module references to the mocked results of upgrading to this
+    /// particular module.
     mocking_upgrades: RefCell<MockUpgradeMap>,
     /// StateBuilder for the state.
     state_builder:    StateBuilder<TestStateApi>,
@@ -1468,7 +1468,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             result.to_owned()
         } else {
             fail!(
-                "Mocking has not been set up for upgrading to this perticular module reference: \
+                "Mocking has not been set up for upgrading to this particular module reference: \
                  {:?}",
                 module
             )
@@ -1547,7 +1547,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         self.mocking_fns.borrow_mut().insert((to, method), handler);
     }
 
-    /// Set up a mock for upgrading to a perticular module.
+    /// Set up a mock for upgrading to a particular module.
     ///
     /// If multiple mocks are setup for the same module, the latest will be
     /// used.

@@ -629,24 +629,24 @@ pub enum UpgradeError {
     UnsupportedModuleVersion,
 }
 
-/// A wrapper around [Result] that fixes the error variant to
-/// [CallContractError], and the result to `(bool, Option<A>)`.
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`CallContractError`], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
 /// modified or not, and the second item is the actual return value, which is
 /// present (i.e., [`Some`]) if and only if a `V1` contract was invoked.
 pub type CallContractResult<A> = Result<(bool, Option<A>), CallContractError<A>>;
 
-/// A wrapper around [Result] that fixes the error variant to
-/// [CallContractError], and the result to [`Option<A>`](Option)
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`CallContractError`], and the result to [`Option<A>`](Option)
 /// If the result is `Ok` then the value is [`None`] if a `V0` contract was
 /// invoked, and a return value returned by a `V1` contract otherwise.
 pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>;
 
-/// A wrapper around [Result] that fixes the error variant to [TransferError]
-/// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`TransferError`] and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
 pub type TransferResult = Result<(), TransferError>;
 
-/// A wrapper around [Result] that fixes the error variant to [UpgradeError]
+/// A wrapper around [`Result`] that fixes the error variant to [`UpgradeError`]
 /// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
 pub type UpgradeResult = Result<(), UpgradeError>;
 

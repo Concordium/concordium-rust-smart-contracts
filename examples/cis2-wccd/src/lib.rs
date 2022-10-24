@@ -111,14 +111,16 @@ struct SetImplementorsParams {
 }
 
 /// The parameter type for the contract function `upgrade`.
-/// Takes the new module and optionally a migration function to call in the new
-/// module after the upgrade.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade will then be reverted if the
+/// entrypoint fails. This can be useful for doing migration in the same
+/// tranction triggering the upgrade.
 #[derive(Debug, Serialize, SchemaType)]
 struct UpgradeParams {
     /// The new module reference.
     module:  ModuleReference,
-    /// Migration function in the new module.
-    migrate: Option<(OwnedEntrypointName, Vec<u8>)>,
+    /// Optional entrypoint to call in the new module after upgrade.
+    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
 /// The different errors the contract can produce.
@@ -171,6 +173,7 @@ impl From<TransferError> for CustomContractError {
 
 /// Mapping errors related to contract upgrades to CustomContractError.
 impl From<UpgradeError> for CustomContractError {
+    #[inline(always)]
     fn from(ue: UpgradeError) -> Self {
         match ue {
             UpgradeError::MissingModule => Self::FailedUpgradeMissingModule,
@@ -777,7 +780,7 @@ fn contract_upgrade<S: HasStateApi>(
     if let Some((func, parameters)) = params.migrate {
         host.invoke_contract_raw(
             &ctx.self_address(),
-            Parameter(&parameters),
+            parameters.as_parameter(),
             func.as_entrypoint_name(),
             Amount::zero(),
         )?;

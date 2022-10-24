@@ -174,9 +174,9 @@
 //! | [NotPayableError] | `-2147483636` |
 //! | [TransferError::AmountTooLarge] | `-2147483635` |
 //! | [TransferError::MissingAccount] | `-2147483634` |
-//! | [UpgradeError::MissingModule] | `-2147483633` |
-//! | [UpgradeError::MissingContract] | `-2147483632` |
-//! | [UpgradeError::UnsupportedModuleVersion] | `-2147483631` |
+//! | [UpgradeError::MissingModule] | `-2147483626` |
+//! | [UpgradeError::MissingContract] | `-2147483625` |
+//! | [UpgradeError::UnsupportedModuleVersion] | `-2147483624` |
 //! | [CallContractError::AmountTooLarge] | `-2147483633` |
 //! | [CallContractError::MissingAccount] | `-2147483632` |
 //! | [CallContractError::MissingContract] | `-2147483631` |

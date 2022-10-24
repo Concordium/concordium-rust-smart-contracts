@@ -287,7 +287,7 @@ pub trait HasHost<State>: Sized {
     ///
     /// This will fail if:
     /// - The supplied module is not deployed.
-    /// - The supplied module is does not contain a smart contract with a name
+    /// - The supplied module does not contain a smart contract with a name
     ///   matching this instance.
     /// - The supplied module is a version 0 smart contract module.
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult;
