@@ -55,16 +55,16 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
 
 // Fees
 
-// Registration fee in CCD
+/// Registration fee in CCD
 const REGISTRACTION_FEE: Amount = Amount::from_ccd(70);
 
-// Data update fee in CCD
+/// Data update fee in CCD
 const UPDATE_FEE: Amount = Amount::from_ccd(7);
 
-// Renewal fee in CCD
+/// Renewal fee in CCD
 const RENEWAL_FEE: Amount = Amount::from_ccd(7);
 
-// How long the registered name is owned before it needs to be renewed
+/// How long the registered name is owned before it needs to be renewed
 const REGISTRATION_PERIOD_DAYS: u64 = 365;
 
 // Types
@@ -89,14 +89,16 @@ struct RegisterNameParams {
     name:  String,
 }
 
+/// Data for each name.
 #[derive(Serial, DeserialWithState, Deletable, StateClone)]
 #[concordium(state_parameter = "S")]
 struct NameInfo<S: HasStateApi> {
     /// Name owner
     owner:        AccountAddress,
-    // Expiration date
+    /// Expiration date
     name_expires: Timestamp,
-    // Associated data `StateBox` allows for lazy loading data; this is helpful
+    /// Associated data
+    // `StateBox` allows for lazy loading data; this is helpful
     // in the situations when one wants to do a partial update not touching
     // this field, which can be large.
     data:         StateBox<Vec<u8>, S>,
