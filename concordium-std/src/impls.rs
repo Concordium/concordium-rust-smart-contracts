@@ -144,6 +144,26 @@ impl<T> From<CallContractError<T>> for Reject {
     }
 }
 
+/// MissingModule is i32::MIN + 22,
+/// MissingContract is i32::MIN + 23,
+/// UnsupportedModuleVersion is i32::MIN + 24.
+impl From<UpgradeError> for Reject {
+    #[inline(always)]
+    fn from(te: UpgradeError) -> Self {
+        match te {
+            UpgradeError::MissingModule => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 22).into()
+            },
+            UpgradeError::MissingContract => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 23).into()
+            },
+            UpgradeError::UnsupportedModuleVersion => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 24).into()
+            },
+        }
+    }
+}
+
 /// Return values are intended to be produced by writing to the
 /// [ExternReturnValue] buffer, either in a high-level interface via
 /// serialization, or in a low-level interface by manually using the [Write]
@@ -1798,6 +1818,25 @@ fn parse_transfer_response_code(code: u64) -> TransferResult {
     }
 }
 
+/// Decode the response code from calling upgrade.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0.
+/// - failure because of missing module is 0x07_0000_0000.
+/// - failure because of module is missing contract with the same name is
+///   0x08_0000_0000.
+/// - failure because of module being an unsupported version is 0x09_0000_0000.
+#[inline(always)]
+fn parse_upgrade_response_code(code: u64) -> UpgradeResult {
+    match code {
+        0 => Ok(()),
+        0x07_0000_0000 => Err(UpgradeError::MissingModule),
+        0x08_0000_0000 => Err(UpgradeError::MissingContract),
+        0x09_0000_0000 => Err(UpgradeError::UnsupportedModuleVersion),
+        _ => crate::trap(),
+    }
+}
+
 /// Decode the the response code.
 ///
 /// This is necessary since Wasm only allows us to pass simple scalars as
@@ -2089,6 +2128,11 @@ where
         }
     }
 
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
+        parse_upgrade_response_code(response)
+    }
+
     fn state(&self) -> &S { &self.state }
 
     fn state_mut(&mut self) -> &mut S { &mut self.state }
@@ -2134,6 +2178,11 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         let len = data.len();
         let response = unsafe { prims::invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         parse_call_response_code(response)
+    }
+
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
+        parse_upgrade_response_code(response)
     }
 
     #[inline(always)]

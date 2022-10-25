@@ -50,6 +50,18 @@ extern "C" {
     ///
     /// The return value indicates how many bytes were written.
     pub fn write_output(start: *const u8, length: u32, offset: u32) -> u32;
+    /// Upgrade the smart contract module to a provided module.
+    /// The only argument is a pointer to 32 bytes for the module reference to
+    /// become the new smart contract module of this instance.
+    /// A return value of:
+    /// - `0` means the upgrade succeeded.
+    /// - `0x07_0000_0000` means the upgrade failed: The provided module was not
+    ///   found.
+    /// - `0x08_0000_0000` means the upgrade failed: The new module did not
+    ///   contain a contract with the same name.
+    /// - `0x09_0000_0000` means the upgrade failed: The new module is an
+    ///   unsupported smart contract module version.
+    pub fn upgrade(module_ref: *const u8) -> u64;
     /// Get the size of the `i`-th parameter to the call. 0-th parameter is
     /// always the original parameter that the method was invoked with,
     /// invoking a contract adds additional parameters to the stack. Returns

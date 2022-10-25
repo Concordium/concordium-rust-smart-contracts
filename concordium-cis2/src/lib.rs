@@ -960,6 +960,15 @@ where
     fn from(err: TransferError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
+impl<X> From<UpgradeError> for Cis2Error<X>
+where
+    X: From<UpgradeError>,
+{
+    #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
+    fn from(err: UpgradeError) -> Self { Cis2Error::Custom(X::from(err)) }
+}
+
 impl<X> From<NewReceiveNameError> for Cis2Error<X>
 where
     X: From<NewReceiveNameError>,

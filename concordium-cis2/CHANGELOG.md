@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add `From` implementation from types implementing `From<UpgradeError>` to `Cis2Error`.
+
 ## concordium-cis2 1.2.0 (2022-09-01)
 
 - Add `TokenAmountU256`
