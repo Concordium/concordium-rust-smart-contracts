@@ -1,10 +1,7 @@
 use crate::{
-    boxed,
     cell::UnsafeCell,
-    collections::{BTreeMap, BTreeSet},
     convert::{self, TryInto},
     fmt,
-    hash::Hash,
     marker::PhantomData,
     mem, num,
     num::NonZeroU32,
@@ -284,6 +281,9 @@ impl Seek for StateEntry {
             }
         }
     }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.current_position }
 }
 
 impl Read for StateEntry {
@@ -1512,7 +1512,17 @@ where
     }
 }
 
-/// # Trait implementations for Parameter
+// # Trait implementations for Parameter
+
+impl Default for ExternParameter {
+    #[inline(always)]
+    fn default() -> Self {
+        ExternParameter {
+            cursor: Cursor::new(ExternParameterDataPlaceholder {}),
+        }
+    }
+}
+
 impl Read for ExternParameter {
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
         let len: u32 = {
@@ -1522,18 +1532,37 @@ impl Read for ExternParameter {
             }
         };
         let num_read = unsafe {
-            prims::get_parameter_section(0, buf.as_mut_ptr(), len, self.current_position)
+            // parameter 0 always exists, so this is safe.
+            prims::get_parameter_section(0, buf.as_mut_ptr(), len, self.cursor.offset as u32)
         };
-        self.current_position += num_read as u32; // parameter 0 always exists, so this is safe.
+
+        self.cursor.offset += num_read as usize;
         Ok(num_read as usize)
     }
 }
 
-impl HasParameter for ExternParameter {
+impl HasSize for ExternParameterDataPlaceholder {
     #[inline(always)]
     // parameter 0 always exists so this is correct
     fn size(&self) -> u32 { unsafe { prims::get_parameter_size(0) as u32 } }
 }
+
+impl HasSize for ExternParameter {
+    #[inline(always)]
+    fn size(&self) -> u32 { self.cursor.data.size() }
+}
+
+impl Seek for ExternParameter {
+    type Err = ();
+
+    #[inline(always)]
+    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(pos) }
+
+    #[inline(always)]
+    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
+}
+
+impl HasParameter for ExternParameter {}
 
 /// The read implementation uses host functions to read chunks of return value
 /// on demand.
@@ -1577,15 +1606,9 @@ impl HasChainMetadata for ExternChainMeta {
     }
 }
 
-impl HasPolicy for Policy<AttributesCursor> {
-    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
-
-    fn created_at(&self) -> Timestamp { self.created_at }
-
-    fn valid_to(&self) -> Timestamp { self.valid_to }
-
-    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
-        if self.items.remaining_items == 0 {
+impl AttributesCursor {
+    fn next_item(&mut self, buf: &mut [u8]) -> Option<(AttributeTag, u8)> {
+        if self.remaining_items == 0 {
             return None;
         }
 
@@ -1595,11 +1618,11 @@ impl HasPolicy for Policy<AttributesCursor> {
             let num_read = prims::get_policy_section(
                 tag_value_len.as_mut_ptr() as *mut u8,
                 2,
-                self.items.current_position,
+                self.current_position,
             );
             (tag_value_len.assume_init(), num_read)
         };
-        self.items.current_position += num_read;
+        self.current_position += num_read;
         if tag_value_len[1] > 31 {
             // Should not happen because all attributes fit into 31 bytes.
             return None;
@@ -1608,13 +1631,53 @@ impl HasPolicy for Policy<AttributesCursor> {
             prims::get_policy_section(
                 buf.as_mut_ptr(),
                 u32::from(tag_value_len[1]),
-                self.items.current_position,
+                self.current_position,
             )
         };
-        self.items.current_position += num_read;
-        self.items.remaining_items -= 1;
+        self.current_position += num_read;
+        self.remaining_items -= 1;
         Some((AttributeTag(tag_value_len[0]), tag_value_len[1]))
     }
+}
+
+impl HasPolicy for Policy<AttributesCursor> {
+    type Iterator = PolicyAttributesIter;
+
+    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
+
+    fn created_at(&self) -> Timestamp { self.created_at }
+
+    fn valid_to(&self) -> Timestamp { self.valid_to }
+
+    #[inline(always)]
+    fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
+        self.items.next_item(buf)
+    }
+
+    fn attributes(&self) -> Self::Iterator {
+        PolicyAttributesIter {
+            cursor: AttributesCursor {
+                current_position: 0,
+                remaining_items:  self.items.total_items,
+                total_items:      self.items.total_items,
+            },
+        }
+    }
+}
+
+impl Iterator for PolicyAttributesIter {
+    type Item = (AttributeTag, AttributeValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut inner = [0u8; 32];
+        let (tag, len) = self.cursor.next_item(&mut inner[1..])?;
+        inner[0] = len;
+        Some((tag, unsafe { AttributeValue::new_unchecked(inner) }))
+    }
+}
+
+impl ExactSizeIterator for PolicyAttributesIter {
+    fn len(&self) -> usize { self.cursor.remaining_items as usize }
 }
 
 /// An iterator over policies using host functions to supply the data.
@@ -1661,6 +1724,7 @@ impl Iterator for PoliciesIterator {
             items: AttributesCursor {
                 current_position: attributes_start,
                 remaining_items,
+                total_items: remaining_items,
             },
         })
     }
@@ -1698,11 +1762,7 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     }
 
     #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType {
-        ExternParameter {
-            current_position: 0,
-        }
-    }
+    fn parameter_cursor(&self) -> Self::ParamType { ExternParameter::default() }
 }
 
 /// Tag of the transfer operation expected by the host. See [prims::invoke].
@@ -2373,178 +2433,6 @@ impl<A: fmt::Debug> ExpectNoneReport for Option<A> {
     }
 }
 
-impl<K: Serial + Ord> SerialCtx for BTreeSet<K> {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        schema::serial_length(self.len(), size_len, out)?;
-        serial_set_no_length(self, out)
-    }
-}
-
-impl<K: Deserial + Ord + Copy> DeserialCtx for BTreeSet<K> {
-    fn deserial_ctx<R: Read>(
-        size_len: schema::SizeLength,
-        ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self> {
-        let len = schema::deserial_length(source, size_len)?;
-        if ensure_ordered {
-            deserial_set_no_length(source, len)
-        } else {
-            deserial_set_no_length_no_order_check(source, len)
-        }
-    }
-}
-
-impl<K: Serial + Ord, V: Serial> SerialCtx for BTreeMap<K, V> {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        schema::serial_length(self.len(), size_len, out)?;
-        serial_map_no_length(self, out)
-    }
-}
-
-impl<K: Deserial + Ord + Copy, V: Deserial> DeserialCtx for BTreeMap<K, V> {
-    fn deserial_ctx<R: Read>(
-        size_len: schema::SizeLength,
-        ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self> {
-        let len = schema::deserial_length(source, size_len)?;
-        if ensure_ordered {
-            deserial_map_no_length(source, len)
-        } else {
-            deserial_map_no_length_no_order_check(source, len)
-        }
-    }
-}
-
-/// Serialization for HashSet given a size_len.
-/// Values are not serialized in any particular order.
-impl<K: Serial> SerialCtx for HashSet<K> {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        schema::serial_length(self.len(), size_len, out)?;
-        serial_hashset_no_length(self, out)
-    }
-}
-
-/// Deserialization for HashSet given a size_len.
-/// Values are not verified to be in any particular order and setting
-/// ensure_ordering have no effect.
-impl<K: Deserial + Eq + Hash> DeserialCtx for HashSet<K> {
-    fn deserial_ctx<R: Read>(
-        size_len: schema::SizeLength,
-        _ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self> {
-        let len = schema::deserial_length(source, size_len)?;
-        deserial_hashset_no_length(source, len)
-    }
-}
-
-/// Serialization for HashMap given a size_len.
-/// Keys are not serialized in any particular order.
-impl<K: Serial, V: Serial> SerialCtx for HashMap<K, V> {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        schema::serial_length(self.len(), size_len, out)?;
-        serial_hashmap_no_length(self, out)
-    }
-}
-
-/// Deserialization for HashMap given a size_len.
-/// Keys are not verified to be in any particular order and setting
-/// ensure_ordering have no effect.
-impl<K: Deserial + Eq + Hash, V: Deserial> DeserialCtx for HashMap<K, V> {
-    fn deserial_ctx<R: Read>(
-        size_len: schema::SizeLength,
-        _ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self> {
-        let len = schema::deserial_length(source, size_len)?;
-        deserial_hashmap_no_length(source, len)
-    }
-}
-
-impl<T: Serial> SerialCtx for &[T] {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        schema::serial_length(self.len(), size_len, out)?;
-        serial_vector_no_length(self, out)
-    }
-}
-
-impl<T: Serial> SerialCtx for Vec<T> {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        self.as_slice().serial_ctx(size_len, out)
-    }
-}
-
-impl<T: Deserial> DeserialCtx for Vec<T> {
-    fn deserial_ctx<R: Read>(
-        size_len: schema::SizeLength,
-        _ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self> {
-        let len = schema::deserial_length(source, size_len)?;
-        deserial_vector_no_length(source, len)
-    }
-}
-
-impl SerialCtx for &str {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        schema::serial_length(self.len(), size_len, out)?;
-        serial_vector_no_length(&self.as_bytes().to_vec(), out)
-    }
-}
-
-impl SerialCtx for String {
-    fn serial_ctx<W: Write>(
-        &self,
-        size_len: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err> {
-        self.as_str().serial_ctx(size_len, out)
-    }
-}
-
-impl DeserialCtx for String {
-    fn deserial_ctx<R: Read>(
-        size_len: schema::SizeLength,
-        _ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self> {
-        let len = schema::deserial_length(source, size_len)?;
-        let bytes = deserial_vector_no_length(source, len)?;
-        let res = String::from_utf8(bytes).map_err(|_| ParseError::default())?;
-        Ok(res)
-    }
-}
-
 /// Blanket implementation of [DeserialWithState] for any [Deserial] types,
 /// which simply does not use the state argument.
 impl<D: Deserial, S: HasStateApi> DeserialWithState<S> for D {
@@ -2679,9 +2567,7 @@ impl Deserial for PublicKeyEd25519 {
 }
 
 impl schema::SchemaType for PublicKeyEd25519 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
-    }
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
 
 impl Serial for PublicKeyEcdsaSecp256k1 {
@@ -2695,9 +2581,7 @@ impl Deserial for PublicKeyEcdsaSecp256k1 {
 }
 
 impl schema::SchemaType for PublicKeyEcdsaSecp256k1 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(33, boxed::Box::new(schema::Type::U8))
-    }
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(33) }
 }
 
 impl Serial for SignatureEd25519 {
@@ -2711,9 +2595,7 @@ impl Deserial for SignatureEd25519 {
 }
 
 impl schema::SchemaType for SignatureEd25519 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(64, boxed::Box::new(schema::Type::U8))
-    }
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(64) }
 }
 
 impl Serial for SignatureEcdsaSecp256k1 {
@@ -2727,9 +2609,7 @@ impl Deserial for SignatureEcdsaSecp256k1 {
 }
 
 impl schema::SchemaType for SignatureEcdsaSecp256k1 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(64, boxed::Box::new(schema::Type::U8))
-    }
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(64) }
 }
 
 impl Serial for HashSha2256 {
@@ -2743,9 +2623,7 @@ impl Deserial for HashSha2256 {
 }
 
 impl schema::SchemaType for HashSha2256 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
-    }
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
 
 impl Serial for HashSha3256 {
@@ -2759,9 +2637,7 @@ impl Deserial for HashSha3256 {
 }
 
 impl schema::SchemaType for HashSha3256 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
-    }
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
 
 impl Serial for HashKeccak256 {
@@ -2775,7 +2651,69 @@ impl Deserial for HashKeccak256 {
 }
 
 impl schema::SchemaType for HashKeccak256 {
-    fn get_type() -> concordium_contracts_common::schema::Type {
-        schema::Type::Array(32, boxed::Box::new(schema::Type::U8))
+    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
+}
+
+unsafe impl<T, S: HasStateApi> StateClone<S> for StateSet<T, S> {
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
+        Self {
+            _marker:   self._marker,
+            prefix:    self.prefix,
+            state_api: cloned_state_api.clone(),
+        }
     }
+}
+
+unsafe impl<T, V, S: HasStateApi> StateClone<S> for StateMap<T, V, S> {
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
+        Self {
+            _marker_key:   self._marker_key,
+            _marker_value: self._marker_value,
+            prefix:        self.prefix,
+            state_api:     cloned_state_api.clone(),
+        }
+    }
+}
+
+unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
+        let inner_value = match &*self.inner.get() {
+            StateBoxInner::Loaded {
+                entry,
+                modified,
+                value: _,
+            } => {
+                // Get a new entry from the cloned state.
+                let mut new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
+                let new_value =
+                    T::deserial_with_state(cloned_state_api, &mut new_entry).unwrap_abort();
+
+                // Set position of new entry to match the old entry.
+                let old_entry_position = entry.cursor_position();
+                new_entry.seek(SeekFrom::Start(old_entry_position)).unwrap_abort();
+
+                StateBoxInner::Loaded {
+                    entry:    new_entry,
+                    modified: *modified,
+                    value:    new_value,
+                }
+            }
+            StateBoxInner::Reference {
+                prefix,
+            } => StateBoxInner::Reference {
+                prefix: *prefix,
+            },
+        };
+
+        Self {
+            state_api: cloned_state_api.clone(),
+            inner:     UnsafeCell::new(inner_value),
+        }
+    }
+}
+
+/// Blanket implementation for all cloneable, flat types that don't have
+/// references to items in the state.
+unsafe impl<T: Clone, S> StateClone<S> for T {
+    unsafe fn clone_state(&self, _cloned_state_api: &S) -> Self { self.clone() }
 }

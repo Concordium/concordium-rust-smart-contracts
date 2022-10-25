@@ -50,7 +50,7 @@ fn piggy_insert<S: HasStateApi>(
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial)]
 enum SmashError {
     NotOwner,
     AlreadySmashed,

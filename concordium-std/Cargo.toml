@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "3.0.0"
+version = "4.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -21,11 +21,11 @@ quickcheck = {version = "1", optional = true }
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"
-version = "3.0"
+version = "4"
 
 [dependencies.concordium-contracts-common]
-path = "../concordium-contracts-common"
-version = "3.0"
+path = "../concordium-contracts-common/concordium-contracts-common"
+version = "4"
 default-features = false
 
 [features]

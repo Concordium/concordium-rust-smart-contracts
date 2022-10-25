@@ -1,21 +1,22 @@
 [package]
-name = "listing-cis1"
+name = "transfer-policy-check"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
 
-[features]
-default = ["std"]
-std = ["concordium-std/std", "concordium-cis1/std"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
-concordium-cis1 = {path = "../../concordium-cis1", default-features = false}
+
+[features]
+default = ["std"]
+std = ["concordium-std/std"]
 
 [lib]
 crate-type=["cdylib", "rlib"]
 
 [profile.release]
-codegen-units = 1
-opt-level = "s"
+opt-level = 3
+panic = "abort"

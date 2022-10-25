@@ -1,7 +1,28 @@
 # Changelog
 
-## unpublished changes
+## Unreleased changes
+
 - When `concordium-quickcheck` is enabled: enables the `#[concordium_quickcheck]` macro and re-exports a quickcheck function.
+
+## concordium-std 4.0.0 (2022-08-24)
+
+- Add rollback functionality to the `TestHost`.
+  - Add a function `TestHost::with_rollback` for calling receive functions,
+    which rolls back the host and state if the receive function returns an error.
+  - Add a `StateClone` trait.
+    - The `TestHost` requires the `State` to implement `StateClone` (breaking change).
+    - `StateClone` is implemented for all `Clone` types, and can be derived similarly to `DeserialWithState`.
+  - Add the method `cursor_position` to the `Seek` trait.
+
+## concordium-std 3.1.0 (2022-08-04)
+
+- Change SchemaType implementation for cryptographic primitives to ByteArray, meaning that the primitives(e.g., hashes and signatures) are now supplied as hex strings in JSON.
+- Add `Seek` requirement for `HasParameter`.
+- Implement `Seek` for `ExternParameter`.
+- Add wrapper type `TestParameterCursor` instead of exposing `Cursor` directly, when using `TestContext`. This is changing the type returned by `parameter_cursor` for `TestContext`, but provides the same interface.
+- Make using policies more ergonomic
+  - Add `attributes` method to `HasPolicy` that gives an iterator over `(AttributeTag, AttributeValue)`.
+  - Change `OwnedPolicy` to use `AttributeValue` instead of `OwnedAttributeValue` (breaking change)
 
 ## concordium-std 3.0.0 (2022-05-17)
 - Remove support for v0 smart contracts and add support for v1:

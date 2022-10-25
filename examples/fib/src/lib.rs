@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct State {
     result: u64,
 }

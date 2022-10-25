@@ -5,6 +5,7 @@ use crate::{
     rc::Rc,
     Box, StateEntryId, StateError, Vec,
 };
+use core::convert::TryInto;
 
 const BRANCHING_FACTOR: usize = 16;
 
@@ -177,6 +178,16 @@ impl StateTrie {
             }
         }
     }
+
+    /// Makes a deep clone of the trie. Used for rollbacks.
+    pub(crate) fn clone_deep(&self) -> Self {
+        Self {
+            nodes:           self.nodes.clone_deep(),
+            next_entry_id:   self.next_entry_id.clone(),
+            entry_map:       self.entry_map.clone(),
+            iterator_counts: self.iterator_counts.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -325,8 +336,23 @@ impl Node {
         }
     }
 
-    // A node is considered empty when it has no data and no children.
+    /// Check whether a node is empty.
+    /// A node is considered empty when it has no data and no children.
     fn is_empty(&self) -> bool { self.data.is_none() && self.children.iter().all(|x| x.is_none()) }
+
+    /// Make a deep clone of the node. Used for rollbacks.
+    fn clone_deep(&self) -> Self {
+        Self {
+            data:     self.data.as_ref().map(|d| Rc::new(RefCell::new(d.borrow().clone()))),
+            children: self
+                .children
+                .iter()
+                .map(|child| child.as_ref().map(|child| Box::new(child.clone_deep())))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(), // This is safe because we know it has the right size and type.
+        }
+    }
 }
 
 #[cfg(test)]
@@ -494,5 +520,48 @@ mod tests {
         assert!(entry.write_u8(1).is_ok());
         trie.delete_prefix(&[]).unwrap();
         assert!(alias_entry.read_u8().is_err());
+    }
+
+    #[test]
+    fn test_deep_clone() {
+        let mut trie = StateTrie::new();
+
+        // Create two entries
+        let mut e1 = create_entry(&mut trie, b"ab");
+        let mut e2 = create_entry(&mut trie, b"ac");
+
+        // Insert data in both
+        e1.write_u32(10001).unwrap();
+        e2.write_u64(10002).unwrap();
+
+        // Get iterator
+        let _iterator_1 = trie.iterator(b"a");
+
+        // Save stats
+        let next_entry_id = trie.next_entry_id.get();
+
+        // Clone deeply
+        let trie_clone = trie.clone_deep();
+
+        // ---------------
+        // Modify original
+        e1.write_u32(20001).unwrap(); // Also moves cursor
+        e2.write_u32(20002).unwrap(); // Also moves cursor
+        let _e3 = create_entry(&mut trie, b"qq");
+        let _iterator_2 = trie.iterator(&[]);
+        // ---------------
+
+        // Ensure that clone matches stats
+        assert_eq!(trie_clone.entry_map.borrow().len(), 4); // Only has [e1, e2, e1, e2] (the last two from the iterator)
+        assert_eq!(trie_clone.iterator_counts.borrow().len(), 1); // Only has [iterator_1]
+        assert_eq!(trie_clone.next_entry_id.get(), next_entry_id);
+
+        let mut e1_clone = trie_clone.lookup(b"ab").expect("Entry 'ab' is missing.");
+        let mut e2_clone = trie_clone.lookup(b"ac").expect("Entry 'ac' is missing.");
+
+        assert_eq!(Ok(10001), e1_clone.read_u32());
+        assert_eq!(Ok(10002), e2_clone.read_u64());
+
+        assert!(trie_clone.lookup(b"qq").is_none());
     }
 }

@@ -1,4 +1,6 @@
-use crate::{cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, HasStateApi, Serial, Vec};
+use crate::{
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+};
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -528,12 +530,16 @@ pub enum Entry<'a, K, V: Serial, S: HasStateApi> {
     Occupied(OccupiedEntry<'a, K, V, S>),
 }
 
-#[derive(Default)]
+/// Zero-sized placeholder for the parameter data, only used internally by
+/// [ExternParameter].
+#[doc(hidden)]
+pub(crate) struct ExternParameterDataPlaceholder {}
+
 /// A type representing the parameter to init and receive methods.
 /// Its trait implementations are backed by host functions.
 #[doc(hidden)]
 pub struct ExternParameter {
-    pub(crate) current_position: u32,
+    pub(crate) cursor: Cursor<ExternParameterDataPlaceholder>,
 }
 
 /// A type representing the return value of contract invocation.
@@ -629,7 +635,7 @@ pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>
 pub type TransferResult = Result<(), TransferError>;
 
 /// A type representing the attributes, lazily acquired from the host.
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct AttributesCursor {
     /// Current position of the cursor, starting from 0.
     /// Note that this is only for the variable attributes.
@@ -637,6 +643,15 @@ pub struct AttributesCursor {
     pub(crate) current_position: u32,
     /// The number of remaining items in the policy.
     pub(crate) remaining_items:  u16,
+    /// The total number of items. Used for creating new attribute cursors.
+    pub(crate) total_items:      u16,
+}
+
+/// An iterator over the attributes of a policy.
+/// The iterator returns pairs of [`AttributeTag`] and [`AttributeValue`].
+#[repr(transparent)]
+pub struct PolicyAttributesIter {
+    pub(crate) cursor: AttributesCursor,
 }
 
 /// A type representing the logger.
@@ -883,10 +898,10 @@ macro_rules! claim_ne {
 /// custom error types.
 ///
 /// # Example
-/// Defining a custom error type that implements [`Reject`].
+/// Defining a custom error type that implements [`Reject`] and [`Serial`].
 /// ```no_run
 /// # use concordium_std::*;
-/// #[derive(Reject)]
+/// #[derive(Serial, Reject)]
 /// enum MyCustomError {
 ///     SomeError,
 /// }
@@ -911,10 +926,10 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// custom error types.
 ///
 /// # Example
-/// Defining a custom error type
+/// Defining a custom error type that implements [`Reject`] and [`Serial`].
 /// ```no_run
 /// # use concordium_std::*;
-/// #[derive(Reject)]
+/// #[derive(Serial, Reject)]
 /// enum MyCustomError {
 ///     SomeError,
 /// }

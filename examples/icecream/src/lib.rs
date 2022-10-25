@@ -37,7 +37,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Clone)]
 struct State {
     weather_service: ContractAddress,
 }
@@ -49,7 +49,7 @@ enum Weather {
 }
 
 /// The custom errors the contract can produce.
-#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
+#[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum ContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
@@ -86,7 +86,8 @@ fn contract_init<S: HasStateApi>(
     name = "buy_icecream",
     parameter = "AccountAddress",
     payable,
-    mutable
+    mutable,
+    error = "ContractError"
 )]
 fn contract_buy_icecream<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -127,7 +128,8 @@ fn contract_buy_icecream<S: HasStateApi>(
     contract = "icecream",
     name = "replace_weather_service",
     parameter = "ContractAddress",
-    mutable
+    mutable,
+    error = "ContractError"
 )]
 fn contract_replace_weather_service<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -152,7 +154,7 @@ fn weather_init<S: HasStateApi>(
 }
 
 /// Get the current weather.
-#[receive(contract = "weather", name = "get", return_value = "Weather")]
+#[receive(contract = "weather", name = "get", return_value = "Weather", error = "ContractError")]
 fn weather_get<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<Weather, StateApiType = S>,
@@ -161,7 +163,13 @@ fn weather_get<S: HasStateApi>(
 }
 
 /// Update the weather.
-#[receive(contract = "weather", name = "set", parameter = "Weather", mutable)]
+#[receive(
+    contract = "weather",
+    name = "set",
+    parameter = "Weather",
+    mutable,
+    error = "ContractError"
+)]
 fn weather_set<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<Weather, StateApiType = S>,

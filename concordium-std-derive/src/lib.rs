@@ -4,7 +4,7 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 
-use concordium_contracts_common::*;
+use concordium_contracts_common::{ContractName, ReceiveName};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
@@ -50,12 +50,15 @@ struct OptionalArguments {
     pub(crate) enable_logger:     bool,
     /// The function is a low-level one, with direct access to contract memory.
     pub(crate) low_level:         bool,
-    /// Which type, if any, is the parameter type of the contract.
+    /// Which type, if any, is the parameter type of the function.
     /// This is used when generating schemas.
     pub(crate) parameter:         Option<syn::LitStr>,
-    /// Which type, if any, is the return value of the contract.
+    /// Which type, if any, is the return value of the function.
     /// This is used when generating schemas.
     pub(crate) return_value:      Option<syn::LitStr>,
+    /// Which type, if any, is the error type of the function.
+    /// This is used when generating schemas.
+    pub(crate) error:             Option<syn::LitStr>,
     /// If enabled, the function has access to cryptographic primitives.
     pub(crate) crypto_primitives: bool,
 }
@@ -238,6 +241,7 @@ const INIT_ATTRIBUTE_PAYABLE: &str = "payable";
 const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
 const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
+const INIT_ATTRIBUTE_ERROR: &str = "error";
 const INIT_ATTRIBUTE_CRYPTO_PRIMITIVES: &str = "crypto_primitives";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
@@ -263,6 +267,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             "The 'return_value' attribute is currently not supported for init methods.",
         ));
     }
+    let error = attributes.extract_value(INIT_ATTRIBUTE_ERROR);
     let crypto_primitives = attributes.extract_flag(INIT_ATTRIBUTE_CRYPTO_PRIMITIVES).is_some();
 
     // Make sure that there are no unrecognized attributes. These would typically be
@@ -277,6 +282,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
             low_level,
             parameter,
             return_value: None, // Return values are currently not supported on init methods.
+            error,
             crypto_primitives,
         },
     })
@@ -286,6 +292,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
 
 const RECEIVE_ATTRIBUTE_PARAMETER: &str = "parameter";
 const RECEIVE_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
+const RECEIVE_ATTRIBUTE_ERROR: &str = "error";
 const RECEIVE_ATTRIBUTE_CONTRACT: &str = "contract";
 const RECEIVE_ATTRIBUTE_NAME: &str = "name";
 const RECEIVE_ATTRIBUTE_FALLBACK: &str = "fallback";
@@ -306,6 +313,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     let parameter: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_PARAMETER);
     let return_value: Option<syn::LitStr> =
         attributes.extract_value(RECEIVE_ATTRIBUTE_RETURN_VALUE);
+    let error: Option<syn::LitStr> = attributes.extract_value(RECEIVE_ATTRIBUTE_ERROR);
     let payable = attributes.extract_flag(RECEIVE_ATTRIBUTE_PAYABLE).is_some();
     let enable_logger = attributes.extract_flag(RECEIVE_ATTRIBUTE_ENABLE_LOGGER).is_some();
     let low_level = attributes.extract_flag(RECEIVE_ATTRIBUTE_LOW_LEVEL);
@@ -353,6 +361,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                 low_level: low_level.is_some(),
                 parameter,
                 return_value,
+                error,
                 crypto_primitives,
             },
             mutable: mutable.is_some(), /* This is also optional, but does not belong in
@@ -370,6 +379,7 @@ fn parse_receive_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
                         low_level: low_level.is_some(),
                         parameter,
                         return_value,
+                        error,
                         crypto_primitives,
                     },
                     mutable: mutable.is_some(), /* TODO: This is also optional, but does not
@@ -472,7 +482,7 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// ```
 ///
 /// ## `parameter="<Param>"`: Generate schema for parameter
-/// To make schema generation to include the parameter for this function, add
+/// To make schema generation include the parameter for this function, add
 /// the attribute `parameter` and set it equal to a string literal containing
 /// the name of the type used for the parameter. The parameter type must
 /// implement the SchemaType trait, which for most cases can be derived
@@ -484,6 +494,22 @@ fn contains_attribute<'a, I: IntoIterator<Item = &'a Meta>>(iter: I, name: &str)
 /// struct MyParam { ... }
 ///
 /// #[init(contract = "my_contract", parameter = "MyParam")]
+/// ```
+///
+/// ## `error="<Error>"`: Generate schema for error
+/// To make schema generation include the error for this function, add
+/// the attribute `error` and set it equal to a string literal containing
+/// the name of the type used for the error. The error type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// enum MyError { ... }
+///
+/// #[init(contract = "my_contract", parameter = "MyError")]
+/// fn some_init(ctx: &impl HasInitContext, state: &mut impl HasStateApi) -> Result<(), MyError> {...}
 /// ```
 ///
 /// ## `crypto_primitives`: Function can access cryptographic primitives
@@ -604,9 +630,11 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     // attribute is set.
     let parameter_option = init_attributes.optional.parameter;
     let return_value_option = None; // Return values are currently not supported on init.
+    let error_option = init_attributes.optional.error;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
+        error_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
@@ -754,6 +782,25 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
 ///    ctx: &impl HasReceiveContext,
 ///    host: &HasHost<MyState, StateApiType = S>,
 /// ) -> ReceiveResult<MyReturnValue> {...}
+/// ```
+///
+/// ## `error="<Error>"`: Generate schema for error
+/// To make schema generation include the error for this function, add
+/// the attribute `error` and set it equal to a string literal containing
+/// the type used for the error. The error type must
+/// implement the SchemaType trait, which for most cases can be derived
+/// automatically.
+///
+/// ### Example
+/// ```ignore
+/// #[derive(SchemaType)]
+/// enum MyError { ... }
+///
+/// #[receive(contract = "my_contract", name = "some_receive", error = "MyError")]
+/// fn contract_receive<S: HasStateApi>(
+///     ctx: &impl HasReceiveContext,
+///     host: &HasHost<MyState, StateApiType = S>,
+/// ) -> Result<A, MyError> {...}
 /// ```
 ///
 /// ## `fallback`: Create a fallback entrypoint.
@@ -950,9 +997,11 @@ fn receive_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStre
     // attribute is set.
     let parameter_option = receive_attributes.optional.parameter;
     let return_value_option = receive_attributes.optional.return_value;
+    let error_option = receive_attributes.optional.error;
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
+        error_option,
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
@@ -1007,32 +1056,67 @@ fn contract_function_optional_args_tokens(
 fn contract_function_schema_tokens(
     parameter_option: Option<syn::LitStr>,
     return_value_option: Option<syn::LitStr>,
+    error_option: Option<syn::LitStr>,
     rust_name: syn::Ident,
     wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let construct_schema_bytes = match (parameter_option, return_value_option) {
-        (Some(parameter_ty), Some(return_value_ty)) => {
+    let construct_schema_bytes = match (parameter_option, return_value_option, error_option) {
+        (Some(parameter_ty), None, None) => {
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::Param(parameter));})
+        }
+        (None, Some(return_value_ty), None) => {
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+            let schema_bytes =
+                concordium_std::to_bytes(&schema::FunctionV2::Rv(return_value));     })
+        }
+        (Some(parameter_ty), Some(return_value_ty), None) => {
             let parameter_ty = parameter_ty.parse::<syn::Type>()?;
             let return_value_ty = return_value_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::Both { parameter, return_value });
-            })
+                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamRv {
+            parameter, return_value });     })
         }
-        (Some(parameter_ty), None) => {
+        (None, None, Some(error_ty)) => {
+            let error_ty = error_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let error = <#error_ty as schema::SchemaType>::get_type();
+            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::Error(error));     })
+        }
+        (Some(parameter_ty), None, Some(error_ty)) => {
             let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            let error_ty = error_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::Parameter(parameter));
-            })
+                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                    let error = <#error_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamError {
+            parameter, error });     })
         }
-        (None, Some(return_value_ty)) => {
+        (None, Some(return_value_ty), Some(error_ty)) => {
             let return_value_ty = return_value_ty.parse::<syn::Type>()?;
+            let error_ty = error_ty.parse::<syn::Type>()?;
             Some(quote! {
-                let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                let schema_bytes = concordium_std::to_bytes(&schema::Function::ReturnValue(return_value));
-            })
+                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                    let error = <#error_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::RvError {
+            return_value, error });     })
+        }
+        (Some(parameter_ty), Some(return_value_ty), Some(error_ty)) => {
+            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
+            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
+            let error_ty = error_ty.parse::<syn::Type>()?;
+            Some(quote! {
+                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
+                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
+                    let error = <#error_ty as schema::SchemaType>::get_type();
+                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamRvError {
+            parameter, return_value, error });     })
         }
         _ => None,
     };
@@ -1058,34 +1142,11 @@ fn contract_function_schema_tokens(
 fn contract_function_schema_tokens(
     _parameter_option: Option<syn::LitStr>,
     _return_value_option: Option<syn::LitStr>,
+    _error_option: Option<syn::LitStr>,
     _rust_name: syn::Ident,
     _wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
     Ok(proc_macro2::TokenStream::new())
-}
-
-/// Derive the Deserial trait. See the documentation of
-/// [`derive(Serial)`](./derive.Serial.html) for details and limitations.
-///
-/// In addition to the attributes supported by
-/// [`derive(Serial)`](./derive.Serial.html), this derivation macro supports the
-/// `ensure_ordered` attribute. If applied to a field the of type `BTreeMap` or
-/// `BTreeSet` deserialization will additionally ensure that the keys are in
-/// strictly increasing order. By default deserialization only ensures
-/// uniqueness.
-///
-/// # Example
-/// ``` ignore
-/// #[derive(Deserial)]
-/// struct Foo {
-///     #[concordium(size_length = 1, ensure_ordered)]
-///     bar: BTreeSet<u8>,
-/// }
-/// ```
-#[proc_macro_derive(Deserial, attributes(concordium))]
-pub fn deserial_derive(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input);
-    unwrap_or_report(impl_deserial(&ast))
 }
 
 /// The prefix used in field attributes: `#[concordium(attr = "something")]`
@@ -1214,7 +1275,7 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
 fn find_state_parameter_attribute(
     attributes: &[syn::Attribute],
 ) -> syn::Result<Option<syn::Ident>> {
-    let value = match find_attribute_value(attributes, false, &"state_parameter")? {
+    let value = match find_attribute_value(attributes, false, "state_parameter")? {
         Some(v) => v,
         None => return Ok(None),
     };
@@ -1263,330 +1324,6 @@ fn check_for_name_collisions(
         return Err(error_at_first_def);
     }
     Ok(())
-}
-
-fn impl_deserial_field(
-    f: &syn::Field,
-    ident: &syn::Ident,
-    source: &syn::Ident,
-) -> syn::Result<proc_macro2::TokenStream> {
-    let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
-    let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");
-    let size_length = find_length_attribute(&f.attrs)?;
-    let has_ctx = ensure_ordered || size_length.is_some();
-    let ty = &f.ty;
-    if has_ctx {
-        // Default size length is u32, i.e. 4 bytes.
-        let l = format_ident!("U{}", 8 * size_length.unwrap_or(4));
-        Ok(quote! {
-            let #ident = <#ty as concordium_std::DeserialCtx>::deserial_ctx(concordium_std::schema::SizeLength::#l, #ensure_ordered, #source)?;
-        })
-    } else {
-        Ok(quote! {
-            let #ident = <#ty as Deserial>::deserial(#source)?;
-        })
-    }
-}
-
-fn impl_deserial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    let data_name = &ast.ident;
-
-    let span = ast.span();
-
-    let read_ident = format_ident!("__R", span = span);
-
-    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
-
-    let source_ident = Ident::new("________________source", Span::call_site());
-
-    let body_tokens = match ast.data {
-        syn::Data::Struct(ref data) => {
-            let mut names = proc_macro2::TokenStream::new();
-            let mut field_tokens = proc_macro2::TokenStream::new();
-            let return_tokens = match data.fields {
-                syn::Fields::Named(_) => {
-                    for field in data.fields.iter() {
-                        let field_ident = field.ident.clone().unwrap(); // safe since named fields.
-                        field_tokens.extend(impl_deserial_field(
-                            field,
-                            &field_ident,
-                            &source_ident,
-                        ));
-                        names.extend(quote!(#field_ident,))
-                    }
-                    quote!(Ok(#data_name{#names}))
-                }
-                syn::Fields::Unnamed(_) => {
-                    for (i, f) in data.fields.iter().enumerate() {
-                        let field_ident = format_ident!("x_{}", i);
-                        field_tokens.extend(impl_deserial_field(f, &field_ident, &source_ident));
-                        names.extend(quote!(#field_ident,))
-                    }
-                    quote!(Ok(#data_name(#names)))
-                }
-                _ => quote!(Ok(#data_name{})),
-            };
-            quote! {
-                #field_tokens
-                #return_tokens
-            }
-        }
-        syn::Data::Enum(ref data) => {
-            let mut matches_tokens = proc_macro2::TokenStream::new();
-            let source = Ident::new("________________source", Span::call_site());
-            let size = if data.variants.len() <= 256 {
-                format_ident!("u8")
-            } else if data.variants.len() <= 256 * 256 {
-                format_ident!("u16")
-            } else {
-                return Err(syn::Error::new(
-                    ast.span(),
-                    "[derive(Deserial)]: Too many variants. Maximum 65536 are supported.",
-                ));
-            };
-            for (i, variant) in data.variants.iter().enumerate() {
-                let (field_names, pattern) = match variant.fields {
-                    syn::Fields::Named(_) => {
-                        let field_names: Vec<_> = variant
-                            .fields
-                            .iter()
-                            .map(|field| field.ident.clone().unwrap())
-                            .collect();
-                        (field_names.clone(), quote! { {#(#field_names),*} })
-                    }
-                    syn::Fields::Unnamed(_) => {
-                        let field_names: Vec<_> = variant
-                            .fields
-                            .iter()
-                            .enumerate()
-                            .map(|(i, _)| format_ident!("x_{}", i))
-                            .collect();
-                        (field_names.clone(), quote! { ( #(#field_names),* ) })
-                    }
-                    syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
-                };
-
-                let field_tokens: proc_macro2::TokenStream = field_names
-                    .iter()
-                    .zip(variant.fields.iter())
-                    .map(|(name, field)| impl_deserial_field(field, name, &source))
-                    .collect::<syn::Result<proc_macro2::TokenStream>>()?;
-                let idx_lit = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
-                let variant_ident = &variant.ident;
-                matches_tokens.extend(quote! {
-                    #idx_lit => {
-                        #field_tokens
-                        Ok(#data_name::#variant_ident#pattern)
-                    },
-                })
-            }
-            quote! {
-                let idx = #size::deserial(#source)?;
-                match idx {
-                    #matches_tokens
-                    _ => Err(Default::default())
-                }
-            }
-        }
-        _ => unimplemented!("#[derive(Deserial)] is not implemented for union."),
-    };
-    let gen = quote! {
-        #[automatically_derived]
-        impl #impl_generics Deserial for #data_name #ty_generics #where_clauses {
-            fn deserial<#read_ident: Read>(#source_ident: &mut #read_ident) -> ParseResult<Self> {
-                #body_tokens
-            }
-        }
-    };
-    Ok(gen.into())
-}
-
-/// Derive the Serial trait for the type.
-///
-/// If the type is a struct all fields must implement the Serial trait. If the
-/// type is an enum then all fields of each of the enums must implement the
-/// Serial trait.
-///
-///
-/// Collections (Vec, BTreeMap, BTreeSet) and strings (String, str) are by
-/// default serialized by prepending the number of elements as 4 bytes
-/// little-endian. If this is too much or too little, fields of the above types
-/// can be annotated with `size_length`.
-///
-/// The value of this field is the number of bytes that will be used for
-/// encoding the number of elements. Supported values are 1, 2, 4, 8.
-///
-/// For BTreeMap and BTreeSet the serialize method will serialize values in
-/// increasing order of keys.
-///
-/// Fields of structs are serialized in the order they appear in the code.
-///
-/// Enums can have no more than 65536 variants. They are serialized by using a
-/// tag to indicate the variant, enumerating them in the order they are written
-/// in source code. If the number of variants is less than or equal 256 then a
-/// single byte is used to encode it. Otherwise two bytes are used for the tag,
-/// encoded in little endian.
-///
-/// # Example
-/// ```ignore
-/// #[derive(Serial)]
-/// struct Foo {
-///     #[concordium(size_length = 1)]
-///     bar: BTreeSet<u8>,
-/// }
-/// ```
-#[proc_macro_derive(Serial, attributes(concordium))]
-pub fn serial_derive(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input);
-    unwrap_or_report(impl_serial(&ast))
-}
-
-fn impl_serial_field(
-    field: &syn::Field,
-    ident: &proc_macro2::TokenStream,
-    out: &syn::Ident,
-) -> syn::Result<proc_macro2::TokenStream> {
-    if let Some(size_length) = find_length_attribute(&field.attrs)? {
-        let l = format_ident!("U{}", 8 * size_length);
-        Ok(quote!({
-            use concordium_std::SerialCtx;
-            #ident.serial_ctx(concordium_std::schema::SizeLength::#l, #out)?;
-        }))
-    } else {
-        Ok(quote! {
-            #ident.serial(#out)?;
-        })
-    }
-}
-
-fn impl_serial(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    let data_name = &ast.ident;
-
-    let span = ast.span();
-
-    let write_ident = format_ident!("W", span = span);
-
-    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
-
-    let out_ident = format_ident!("out");
-
-    let body = match ast.data {
-        syn::Data::Struct(ref data) => {
-            let fields_tokens = match data.fields {
-                syn::Fields::Named(_) => {
-                    data.fields
-                        .iter()
-                        .map(|field| {
-                            let field_ident = field.ident.clone().unwrap(); // safe since named fields.
-                            let field_ident = quote!(self.#field_ident);
-                            impl_serial_field(field, &field_ident, &out_ident)
-                        })
-                        .collect::<syn::Result<_>>()?
-                }
-                syn::Fields::Unnamed(_) => data
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .map(|(i, field)| {
-                        let i = syn::LitInt::new(i.to_string().as_str(), Span::call_site());
-                        let field_ident = quote!(self.#i);
-                        impl_serial_field(field, &field_ident, &out_ident)
-                    })
-                    .collect::<syn::Result<_>>()?,
-                syn::Fields::Unit => proc_macro2::TokenStream::new(),
-            };
-            quote! {
-                #fields_tokens
-                Ok(())
-            }
-        }
-        syn::Data::Enum(ref data) => {
-            let mut matches_tokens = proc_macro2::TokenStream::new();
-
-            let size = if data.variants.len() <= 256 {
-                format_ident!("u8")
-            } else if data.variants.len() <= 256 * 256 {
-                format_ident!("u16")
-            } else {
-                unimplemented!(
-                    "[derive(Serial)]: Enums with more than 65536 variants are not supported."
-                );
-            };
-
-            for (i, variant) in data.variants.iter().enumerate() {
-                let (field_names, pattern) = match variant.fields {
-                    syn::Fields::Named(_) => {
-                        let field_names: Vec<_> = variant
-                            .fields
-                            .iter()
-                            .map(|field| field.ident.clone().unwrap())
-                            .collect();
-                        (field_names.clone(), quote! { {#(#field_names),*} })
-                    }
-                    syn::Fields::Unnamed(_) => {
-                        let field_names: Vec<_> = variant
-                            .fields
-                            .iter()
-                            .enumerate()
-                            .map(|(i, _)| format_ident!("x_{}", i))
-                            .collect();
-                        (field_names.clone(), quote! { (#(#field_names),*) })
-                    }
-                    syn::Fields::Unit => (Vec::new(), proc_macro2::TokenStream::new()),
-                };
-                let field_tokens: proc_macro2::TokenStream = field_names
-                    .iter()
-                    .zip(variant.fields.iter())
-                    .map(|(name, field)| impl_serial_field(field, &quote!(#name), &out_ident))
-                    .collect::<syn::Result<_>>()?;
-
-                let idx_lit =
-                    syn::LitInt::new(format!("{}{}", i, size).as_str(), Span::call_site());
-                let variant_ident = &variant.ident;
-
-                matches_tokens.extend(quote! {
-                    #data_name::#variant_ident#pattern => {
-                        #idx_lit.serial(#out_ident)?;
-                        #field_tokens
-                    },
-                })
-            }
-            quote! {
-                match self {
-                    #matches_tokens
-                }
-                Ok(())
-            }
-        }
-        _ => unimplemented!("#[derive(Serial)] is not implemented for union."),
-    };
-
-    let gen = quote! {
-        #[automatically_derived]
-        impl #impl_generics Serial for #data_name #ty_generics #where_clauses {
-            fn serial<#write_ident: Write>(&self, #out_ident: &mut #write_ident) -> Result<(), #write_ident::Err> {
-                #body
-            }
-        }
-    };
-    Ok(gen.into())
-}
-
-/// A helper macro to derive both the Serial and Deserial traits.
-/// `[derive(Serialize)]` is equivalent to `[derive(Serial, Deserial)]`, see
-/// documentation of the latter two for details and options:
-/// [`derive(Serial)`](./derive.Serial.html),
-/// [`derive(Deserial)`](./derive.Deserial.html).
-#[proc_macro_derive(Serialize, attributes(concordium))]
-pub fn serialize_derive(input: TokenStream) -> TokenStream {
-    unwrap_or_report(serialize_derive_worker(input))
-}
-
-fn serialize_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
-    let ast = syn::parse(input)?;
-    let mut tokens = impl_deserial(&ast)?;
-    tokens.extend(impl_serial(&ast)?);
-    Ok(tokens)
 }
 
 /// Derive the DeserialWithState trait. See the documentation of
@@ -1663,7 +1400,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
 
     let source_ident = Ident::new("________________source", Span::call_site());
 
-    let state_ident = Ident::new("_______________________________STATE", Span::call_site());
+    let state_ident = Ident::new("_______________________________state", Span::call_site());
     let body_tokens = match ast.data {
         syn::Data::Struct(ref data) => {
             let mut names = proc_macro2::TokenStream::new();
@@ -1717,7 +1454,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                     "[derive(DeserialWithState)]: Too many variants. Maximum 65536 are supported.",
                 ));
             };
-            let state_ident = Ident::new("_______________________________STATE", Span::call_site());
+            let state_ident = Ident::new("_______________________________state", Span::call_site());
             for (i, variant) in data.variants.iter().enumerate() {
                 let (field_names, pattern) = match variant.fields {
                     syn::Fields::Named(_) => {
@@ -1882,7 +1619,7 @@ fn schema_type_fields(fields: &syn::Fields) -> syn::Result<proc_macro2::TokenStr
                     };
                     check_for_name_collisions(&mut used_field_names, &field_name, field_span)?;
 
-                    let field_schema_type = schema_type_field_type(&field)?;
+                    let field_schema_type = schema_type_field_type(field)?;
                     Ok(quote! {
                         (concordium_std::String::from(#field_name), #field_schema_type)
                     })
@@ -1911,19 +1648,21 @@ const RESERVED_ERROR_CODES: i32 = i32::MIN + 100;
 /// Creating custom enums for error types can provide meaningful error messages
 /// to the user of the smart contract.
 ///
-/// Note that at the moment, we can only derive fieldless enums and the return
-/// value is always [`None`][std::option::Option::None].
+/// When a contract function rejects, the enum is serialized and returned along
+/// with the error code. The serialization means that the enum *must* implement
+/// [`Serial`](../concordium_contracts_common/trait.Serial.html) if [`Reject`]
+/// is to be derived.
 ///
 /// The conversion will map the first variant to error code -1, second to -2,
 /// etc.
 ///
 /// ### Example
 /// ```ignore
-/// #[derive(Clone, Copy, Reject)]
+/// #[derive(Reject, Serial)]
 /// enum MyError {
 ///     IllegalState, // receives error code -1
 ///     WrongSender, // receives error code -2
-///     // TimeExpired(time: Timestamp), /* currently not supported */
+///     TimeExpired(time: Timestamp), // receives error code -3
 ///     ...
 /// }
 /// ```
@@ -1960,6 +1699,8 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
     };
 
     let variant_error_conversions = generate_variant_error_conversions(enum_data, enum_ident)?;
+    let buf_var_ident = format_ident!("{}", "buf");
+    let variant_matches = generate_variant_matches(enum_data, enum_ident, &buf_var_ident);
 
     let gen = quote! {
         /// The from implementation maps the first variant to -1, second to -2, etc.
@@ -1969,9 +1710,10 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         impl From<#enum_ident> for Reject {
             #[inline(always)]
             fn from(e: #enum_ident) -> Self {
-                Reject {
-                    error_code: unsafe { concordium_std::num::NonZeroI32::new_unchecked(-(e as i32) - 1) },
-                    return_value: None
+                let mut #buf_var_ident = Vec::new();
+                concordium_std::Serial::serial(&e, &mut #buf_var_ident).unwrap_abort();
+                match &e {
+                   #variant_matches
                 }
             }
         }
@@ -1979,6 +1721,48 @@ fn reject_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         #(#variant_error_conversions)*
     };
     Ok(gen.into())
+}
+
+/// Generate the cases for matching on the enum.
+/// The error codes for variants start at -1 and go downwards.
+/// The whole enum is serialized and included in the return_value field, which,
+/// thus, is always `Some`.
+fn generate_variant_matches(
+    enum_data: &DataEnum,
+    enum_name: &syn::Ident,
+    buf_var_ident: &syn::Ident,
+) -> proc_macro2::TokenStream {
+    let mut match_cases = proc_macro2::TokenStream::new();
+    for (index, variant) in enum_data.variants.iter().enumerate() {
+        let variant_ident = &variant.ident;
+        match variant.fields {
+            syn::Fields::Named(_) => {
+                match_cases.extend(quote! {
+                    #enum_name::#variant_ident{..} => Reject {
+                        error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
+                        return_value: Some(#buf_var_ident),
+                    },
+                });
+            }
+            syn::Fields::Unnamed(_) => {
+                match_cases.extend(quote! {
+                    #enum_name::#variant_ident(..) => Reject {
+                        error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
+                        return_value: Some(#buf_var_ident),
+                    },
+                });
+            }
+            syn::Fields::Unit => {
+                match_cases.extend(quote! {
+                    #enum_name::#variant_ident => Reject {
+                        error_code: unsafe { num::NonZeroI32::new_unchecked(-(#index as i32) - 1) },
+                        return_value: Some(#buf_var_ident),
+                    },
+                });
+            }
+        };
+    }
+    match_cases
 }
 
 /// Generate error conversions for enum variants e.g. for converting
@@ -2230,7 +2014,7 @@ pub fn concordium_cfg_test(_attr: TokenStream, item: TokenStream) -> TokenStream
 ///    my_state_map: StateMap<SomeType, SomeOtherType, S>,
 /// }
 /// ```
-#[proc_macro_derive(Deletable)]
+#[proc_macro_derive(Deletable, attributes(concordium))]
 pub fn deletable_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input);
     unwrap_or_report(impl_deletable(&ast))
@@ -2367,4 +2151,147 @@ pub fn concordium_cfg_not_test(_attr: TokenStream, item: TokenStream) -> TokenSt
         #item
     };
     out.into()
+}
+
+/// Derive the StateClone trait.
+/// See the documentation of
+/// [`derive(StateClone)`](./derive.StateClone.html) for details and
+/// limitations.
+///
+/// The trait is used in the
+/// [`TestHost`](../concordium_std/test_infrastructure/struct.TestHost.html)
+/// when rolling back the state. If that functionality is needed, then this
+/// trait must be derived for types which have not implement the `Clone` trait.
+/// That is, `StateClone` should be derived for types with a non-trivial state.
+/// Non-trivial state here means when you have a type `MyState` which has one or
+/// more fields comprised of
+/// [`StateBox`](../concordium_std/struct.StateBox.html),
+/// [`StateSet`](../concordium_std/struct.StateSet.html), or
+/// [`StateMap`](../concordium_std/struct.StateMap.html).
+///
+/// Please note that it is
+/// necessary to specify the generic parameter name for the
+/// [`HasStateApi`](../concordium_std/trait.HasStateApi.html) generic parameter.
+/// To do so, use the `#[concordium(state_parameter =
+/// "NameOfGenericParameter")]` attribute on the type you are deriving
+/// `StateClone` for.
+///
+/// # Example
+/// ``` ignore
+/// #[derive(Serial, DeserialWithState, StateClone)]
+/// #[concordium(state_parameter = "S")]
+/// struct MyState<S> {
+///    my_state_map: StateMap<SomeType, SomeOtherType, S>,
+/// }
+/// ```
+#[proc_macro_derive(StateClone, attributes(concordium))]
+pub fn state_clone_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input);
+    unwrap_or_report(impl_state_clone(&ast))
+}
+
+fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let data_name = &ast.ident;
+    let state_parameter = match find_state_parameter_attribute(&ast.attrs)? {
+        Some(state_param) => state_param,
+        None => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "StateClone requires the attribute #[concordium(state_parameter = \"S\")], where \
+                 \"S\" should be the HasStateApi generic parameter.",
+            ))
+        }
+    };
+
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+    let where_predicates = where_clauses.map(|c| c.predicates.clone());
+    let body_tokens = match ast.data {
+        syn::Data::Struct(ref data) => {
+            let mut field_names = proc_macro2::TokenStream::new();
+            let mut field_tokens = proc_macro2::TokenStream::new();
+            let return_tokens = match data.fields {
+                syn::Fields::Named(_) => {
+                    for field in data.fields.iter() {
+                        let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                        field_tokens.extend(quote!(let #field_ident = concordium_std::StateClone::clone_state(&self.#field_ident, cloned_state_api);));
+                        field_names.extend(quote!(#field_ident,));
+                    }
+                    quote!(Self{#field_names})
+                }
+                syn::Fields::Unnamed(_) => {
+                    for i in 0..data.fields.len() {
+                        let field_index = syn::Index::from(i);
+                        let variable_ident = format_ident!("x_{}", i);
+                        field_tokens
+                            .extend(quote!(let #variable_ident = concordium_std::StateClone::clone_state(&self.#field_index, cloned_state_api);));
+                        field_names.extend(quote!(#variable_ident,))
+                    }
+                    quote!(Self(#field_names))
+                }
+                syn::Fields::Unit => quote!(Ok(Self {})),
+            };
+            quote! {
+                #field_tokens
+                #return_tokens
+            }
+        }
+        syn::Data::Enum(ref data) => {
+            let mut matches_tokens = proc_macro2::TokenStream::new();
+            for (_, variant) in data.variants.iter().enumerate() {
+                let mut field_names = proc_macro2::TokenStream::new();
+                let mut field_tokens = proc_macro2::TokenStream::new();
+                let variant_ident = &variant.ident;
+
+                let (return_tokens, pattern) = match variant.fields {
+                    syn::Fields::Named(_) => {
+                        for field in variant.fields.iter() {
+                            let field_ident = field.ident.clone().unwrap(); // safe since named fields.
+                            field_tokens.extend(quote!(let #field_ident = concordium_std::StateClone::clone_state(#field_ident, cloned_state_api);));
+                            field_names.extend(quote!(#field_ident,));
+                        }
+                        let pattern = quote!({#field_names});
+                        (quote!(#data_name::#variant_ident#pattern), pattern)
+                    }
+                    syn::Fields::Unnamed(_) => {
+                        for i in 0..variant.fields.len() {
+                            let field_ident = format_ident!("x_{}", i);
+                            field_tokens.extend(quote!(let #field_ident = concordium_std::StateClone::clone_state(#field_ident, cloned_state_api);));
+                            field_names.extend(quote!(#field_ident,));
+                        }
+                        let pattern = quote!((#field_names));
+                        (quote!(#data_name::#variant_ident#pattern), pattern)
+                    }
+                    syn::Fields::Unit => (
+                        quote!(#data_name::#variant_ident#field_names),
+                        proc_macro2::TokenStream::new(),
+                    ),
+                };
+                let variant_ident = &variant.ident;
+
+                matches_tokens.extend(quote! {
+                    #data_name::#variant_ident#pattern => {
+                        #field_tokens
+                        #return_tokens
+                    },
+                })
+            }
+            quote! {
+                match self {
+                    #matches_tokens
+                }
+            }
+        }
+        _ => unimplemented!("#[derive(StateClone)] is not implemented for union."),
+    };
+
+    let gen = quote! {
+        #[automatically_derived]
+        unsafe impl #impl_generics concordium_std::StateClone<#state_parameter> for #data_name #ty_generics where #state_parameter: concordium_std::HasStateApi, #where_predicates {
+            unsafe fn clone_state(&self, cloned_state_api: &#state_parameter) -> Self {
+                #body_tokens
+            }
+        }
+    };
+
+    Ok(gen.into())
 }

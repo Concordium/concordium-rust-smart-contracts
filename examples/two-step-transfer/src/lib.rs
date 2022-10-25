@@ -25,7 +25,7 @@
  * (and can be re-added to the balance if the request times out).
  *
  * TODO Consider allowing the person who initially made the request to
- * cancel it, iff it is still outstanding
+ * cancel it, iff it is still outstanding.
  */
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -35,8 +35,8 @@ use concordium_std::{collections::*, *};
 #[derive(Serialize, SchemaType)]
 enum Message {
     /// Indicates that the user sending the message would like to make a request
-    // to send funds to the given address with the given ID and amount.
-    // This is a no-op if the given ID already exists and has not timed out.
+    /// to send funds to the given address with the given ID and amount.
+    /// This is a no-op if the given ID already exists and has not timed out.
     RequestTransfer(TransferRequestId, Amount, AccountAddress),
 
     /// Indicates that the user sending the message votes in favour of the
@@ -59,7 +59,7 @@ struct TransferRequest {
     supporters:      BTreeSet<AccountAddress>,
 }
 
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Clone)]
 struct InitParams {
     /// Who is authorized to withdraw funds from this lockup (must be non-empty)
     #[concordium(size_length = 1)]
@@ -80,21 +80,22 @@ struct InitParams {
     transfer_request_ttl: TransferRequestTimeToLiveMilliseconds,
 }
 
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
-    // The initial configuration of the contract
+    /// The initial configuration of the contract
     init_params: InitParams,
 
-    // Requests which have not been dropped due to timing out or due to being agreed to yet
-    // The request ID, the associated amount, when it times out, who is making the transfer and
-    // which account holders support this transfer
+    /// Requests which have not been dropped due to timing out or due to being
+    /// agreed to yet The request ID, the associated amount, when it times
+    /// out, who is making the transfer and which account holders support
+    /// this transfer
     requests: StateMap<TransferRequestId, TransferRequest, S>,
 }
 
 // Contract implementation
 
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial)]
 enum InitError {
     /// Failed parsing the parameter
     #[from(ParseError)]
@@ -144,7 +145,7 @@ fn contract_receive_deposit<S: HasStateApi>(
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum ReceiveError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
@@ -190,7 +191,8 @@ type ContractResult<A> = Result<A, ReceiveError>;
     name = "receive",
     parameter = "Message",
     payable,
-    mutable
+    mutable,
+    error = "ReceiveError"
 )]
 #[inline(always)]
 fn contract_receive_message<S: HasStateApi>(
@@ -543,6 +545,92 @@ mod tests {
             Amount::from_micro_ccd(0),
             "The transfer should be subtracted from the reserved balance"
         );
+    }
+
+    #[concordium_test]
+    /// Test handling of a duplicate transfer request
+    ///
+    /// This test also showcases how to use rollbacks on rejections in tests.
+    ///
+    /// - Starts out with two requests, id 0, outdated, and id 1, active.
+    /// - A duplicate transfer request with id 1 is sent.
+    /// - The outdated request is removed from the state.
+    /// - The entrypoint rejects because the new request is a duplicate.
+    /// - The state is rolled back to the starting point.
+    fn test_receive_duplicate_request() {
+        // Setup context
+        let account1 = AccountAddress([1u8; 32]);
+        let account2 = AccountAddress([2u8; 32]);
+        let target_account = AccountAddress([3u8; 32]);
+
+        let request_id_outdated = 0;
+        let request_id_active = 1;
+        let transfer_amount = Amount::from_micro_ccd(50);
+        // Create Request with id 0, to transfer 50 to target_account
+        let parameter =
+            Message::RequestTransfer(request_id_active, transfer_amount, target_account);
+        let parameter_bytes = to_bytes(&parameter);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_parameter(&parameter_bytes);
+        ctx.set_sender(Address::Account(account1));
+        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(1000));
+
+        // Setup state
+        let mut account_holders = BTreeSet::new();
+        account_holders.insert(account1);
+        account_holders.insert(account2);
+        let init_params = InitParams {
+            account_holders,
+            transfer_agreement_threshold: 2,
+            transfer_request_ttl: TransferRequestTimeToLiveMilliseconds::from_millis(10),
+        };
+
+        let mut state_builder = TestStateBuilder::new();
+        let mut requests = state_builder.new_map();
+
+        let mut supporters = BTreeSet::new();
+        supporters.insert(account1);
+
+        // Outdated request
+        requests.insert(request_id_outdated, TransferRequest {
+            transfer_amount,
+            target_account,
+            times_out_at: ctx
+                .metadata()
+                .slot_time()
+                .checked_sub(init_params.transfer_request_ttl) // In the past.
+                .expect_report("Checked sub for times_out_at failed."),
+            supporters: supporters.clone(),
+        });
+
+        // Active request
+        requests.insert(request_id_active, TransferRequest {
+            transfer_amount,
+            target_account,
+            times_out_at: ctx
+                .metadata()
+                .slot_time()
+                .checked_add(init_params.transfer_request_ttl) // In the future.
+                .expect_report("Checked sub for times_out_at failed."),
+            supporters,
+        });
+
+        let state = State {
+            init_params,
+            requests,
+        };
+        let mut host = TestHost::new(state, state_builder);
+        host.set_self_balance(Amount::from_micro_ccd(100));
+
+        // Execution. Note the use for `with_rollback`.
+        let res = host.with_rollback(|host| contract_receive_message(&ctx, host, Amount::zero()));
+        claim_eq!(res, Err(ReceiveError::RequestAlreadyExists));
+
+        // Check that both initial requests still exist in the state since it was rolled
+        // back.
+        claim!(host.state().requests.get(&request_id_outdated).is_some());
+        claim!(host.state().requests.get(&request_id_active).is_some());
     }
 
     #[concordium_quickcheck]

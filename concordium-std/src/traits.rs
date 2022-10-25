@@ -19,10 +19,7 @@ use concordium_contracts_common::*;
 ///
 /// The reuse of `Read` methods is the reason for the slightly strange choice of
 /// methods of this trait.
-pub trait HasParameter: Read {
-    /// Get the size of the parameter to the method.
-    fn size(&self) -> u32;
-}
+pub trait HasParameter: Read + Seek + HasSize {}
 
 /// Objects which can access call responses from contract invocations.
 ///
@@ -47,7 +44,8 @@ pub trait HasChainMetadata {
 /// Since policies can be large this is deliberately written in a relatively
 /// low-level style to enable efficient traversal of all the attributes without
 /// any allocations.
-pub trait HasPolicy {
+pub trait HasPolicy: Sized {
+    type Iterator: Iterator<Item = (AttributeTag, AttributeValue)>;
     /// Identity provider who signed the identity object the credential is
     /// derived from.
     fn identity_provider(&self) -> IdentityProvider;
@@ -68,6 +66,8 @@ pub trait HasPolicy {
     /// iterate through the elements more efficiently, without any allocations,
     /// the consumer being responsible for allocating the buffer.
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)>;
+    /// Get an iterator over all the attributes of the policy.
+    fn attributes(&self) -> Self::Iterator;
 }
 
 /// Common data accessible to both init and receive methods.
@@ -474,44 +474,6 @@ pub trait ExpectNoneReport {
     fn expect_none_report(self, msg: &str);
 }
 
-/// The `SerialCtx` trait provides a means of writing structures into byte-sinks
-/// (`Write`) using contextual information.
-/// The contextual information is:
-///
-///   - `size_length`: The number of bytes used to record the length of the
-///     data.
-pub trait SerialCtx {
-    /// Attempt to write the structure into the provided writer, failing if
-    /// if the length cannot be represented in the provided `size_length` or
-    /// only part of the structure could be written.
-    ///
-    /// NB: We use Result instead of Option for better composability with other
-    /// constructs.
-    fn serial_ctx<W: Write>(
-        &self,
-        size_length: schema::SizeLength,
-        out: &mut W,
-    ) -> Result<(), W::Err>;
-}
-
-/// The `DeserialCtx` trait provides a means of reading structures from
-/// byte-sources (`Read`) using contextual information.
-/// The contextual information is:
-///
-///   - `size_length`: The expected number of bytes used for the length of the
-///     data.
-///   - `ensure_ordered`: Whether the ordering should be ensured, for example
-///     that keys in `BTreeMap` and `BTreeSet` are in strictly increasing order.
-pub trait DeserialCtx: Sized {
-    /// Attempt to read a structure from a given source and context, failing if
-    /// an error occurs during deserialization or reading.
-    fn deserial_ctx<R: Read>(
-        size_length: schema::SizeLength,
-        ensure_ordered: bool,
-        source: &mut R,
-    ) -> ParseResult<Self>;
-}
-
 /// The `DeserialWithState` trait provides a means of reading structures from
 /// byte-sources ([`Read`]) for types that also need a reference to a
 /// [`HasStateApi`] type.
@@ -559,4 +521,31 @@ where
         state: &S,
         source: &mut R,
     ) -> ParseResult<Self>;
+}
+
+/// Types that can be cloned along with the state.
+///
+/// Used for rolling back the test state when errors occur in a receive
+/// function. See [`TestHost::with_rollback`][iwr] and
+/// [`TestHost::invoke_contract_raw`][icr].
+///
+/// # Safety
+///
+/// Marked unsafe because special care should be taken when
+/// implementing this trait. In particular, one should only use the supplied
+/// `cloned_state_api`, or (shallow) clones thereof. Creating a new
+/// [`HasStateApi`] or using a `deep_clone` will lead to an inconsistent state
+/// and undefined behaviour.
+///
+/// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
+/// [iwr]: crate::test_infrastructure::TestHost::with_rollback
+pub unsafe trait StateClone<S> {
+    /// Make a clone of the type while using the `cloned_state_api`.
+    ///
+    /// # Safety
+    ///
+    /// Marked unsafe because this function *should not* be called
+    /// directly. It is only used within generated code and in the test
+    /// infrastructure.
+    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self;
 }

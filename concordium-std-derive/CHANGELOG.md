@@ -1,9 +1,23 @@
 # Changelog
-
-## unpublished changes
+ 
+## Unreleased changes
 - Add a `#[concordium_quickcheck]` macro which is to `#[quickcheck]` what `#[concordium_test]`
  is to `#[test]`. It is enabled by the `concordium-quickcheck` feature.
- 
+
+
+## concordium-std-derive 4.0.0 (2022-08-24)
+
+- Add ability to `derive(Reject)` for enums *with fields*.
+  - Deriving `Reject` requires the enum to implement `Serial`.
+- Add ability to add schemas for error on init and receive.
+  - For example `#[receive(..., error = "MyError")]`
+  - This allows cargo-concordium and concordium-client to display a typed error
+    when simulating contract invocations.
+
+## concordium-std-derive 3.1.0 (2022-08-04)
+
+- Removed `derive(Serial)` and `derive(Deserial)` (moved to `concordium-contracts-common-derive`).
+
 ## concordium-std-derive 3.0.0 (2022-05-17)
 
 - Add `#[concordium_cfg_not_test]` macro, that excludes parts of code for testing.

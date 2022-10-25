@@ -12,7 +12,7 @@
 //! This contract tests a reasonably small example of state interactions.
 use concordium_std::*;
 
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     addresses: StateSet<AccountAddress, S>,

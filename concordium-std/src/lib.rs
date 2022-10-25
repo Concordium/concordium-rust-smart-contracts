@@ -14,6 +14,9 @@
 //! **support only V0 contracts**. Version 3 and later of `concordium-std`
 //! **supports only V1 contracts**.
 //!
+//! Also note that `concordium-std` version 4 only works with `cargo-concordium`
+//! version 2.1+.
+//!
 //! # Global allocator
 //! Importing this library has a side-effect of setting  the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
 //! which is a memory allocator aimed at small code footprint.
