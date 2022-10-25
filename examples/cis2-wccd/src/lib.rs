@@ -112,9 +112,9 @@ struct SetImplementorsParams {
 
 /// The parameter type for the contract function `upgrade`.
 /// Takes the new module and optionally an entrypoint to call in the new module
-/// after triggering the upgrade. The upgrade will then be reverted if the
-/// entrypoint fails. This can be useful for doing migration in the same
-/// tranction triggering the upgrade.
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
 #[derive(Debug, Serialize, SchemaType)]
 struct UpgradeParams {
     /// The new module reference.
@@ -1127,6 +1127,39 @@ mod tests {
         // The balance should still be 400 due to the rollback after rejecting.
         claim_eq!(host.state().balance(&TOKEN_ID_WCCD, &ADDRESS_0), Ok(400u64.into()));
         claim!(host.get_transfers().is_empty());
+    }
+
+    #[concordium_test]
+    fn test_upgradability() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        let self_address = ContractAddress::new(0, 0);
+        ctx.set_self_address(self_address);
+
+        let new_module_ref = ModuleReference::from([0u8; 32]);
+        let migration_entrypoint = OwnedEntrypointName::new_unchecked("migration".into());
+
+        // and parameter.
+        let parameter = UpgradeParams {
+            module:  new_module_ref,
+            migrate: Some((migration_entrypoint.clone(), OwnedParameter(Vec::new()))),
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        host.setup_mock_upgrade(new_module_ref, Ok(()));
+        host.setup_mock_entrypoint(self_address, migration_entrypoint, MockFn::returning_ok(()));
+
+        let result: ContractResult<()> = contract_upgrade(&ctx, &mut host);
+
+        claim_eq!(result, Ok(()));
     }
 
     #[concordium_test]

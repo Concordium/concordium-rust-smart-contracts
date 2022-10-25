@@ -2,7 +2,7 @@
 
 ## Unreleased changes
 
-- Add `upgrade` host function for upgrading a smart contract instance to use a new smart contract module.
+- Add `upgrade` method to `HasHost` for upgrading a smart contract instance to use a new smart contract module.
 - Support mocking `upgrade` calls in `TestHost`. An `upgrade` is mocked by specifying a module reference and a `UpgradeResult` as the outcome of upgrading to this module.
 
 ## concordium-std 4.0.0 (2022-08-24)

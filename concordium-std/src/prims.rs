@@ -59,7 +59,7 @@ extern "C" {
     ///   found.
     /// - `0x08_0000_0000` means the upgrade failed: The new module did not
     ///   contain a contract with the same name.
-    /// - `0x09_0000_0000` means the upgrade failed: The new module is a
+    /// - `0x09_0000_0000` means the upgrade failed: The new module is an
     ///   unsupported smart contract module version.
     pub fn upgrade(module_ref: *const u8) -> u64;
     /// Get the size of the `i`-th parameter to the call. 0-th parameter is
