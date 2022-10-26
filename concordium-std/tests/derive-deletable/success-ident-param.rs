@@ -1,3 +1,5 @@
+//! Ensure `derive(Deletable)` generates code successfully for the simplest
+//! case when `#[concordium(state_parameter)]` is just a type identifier
 use concordium_std::{Deletable, HasStateApi, StateMap};
 
 #[derive(Deletable)]
