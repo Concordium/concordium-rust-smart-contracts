@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- `concordium-std-derive`: allow `#[concordium(state_parameter)]`'s value be not just identifier
+  but any type path for `derive(DeserialWithState)` and `derive(Deletable)` to generate implementations.
+
 ## concordium-std 4.0.0 (2022-08-24)
 
 - Add rollback functionality to the `TestHost`.
