@@ -1277,10 +1277,13 @@ fn find_state_parameter_attribute(
     };
 
     match value {
-        syn::Lit::Str(value) => Ok(Some(value.parse()?)),
-        _ => {
-            Err(syn::Error::new(value.span(), "state_parameter attribute value must be a string."))
-        }
+        syn::Lit::Str(value) => Ok(Some(value.parse().map_err(|err| {
+            syn::Error::new(err.span(), "state_parameter attribute value is not a valid type path")
+        })?)),
+        _ => Err(syn::Error::new(
+            value.span(),
+            "state_parameter attribute value must be a string which describes valid type path",
+        )),
     }
 }
 
