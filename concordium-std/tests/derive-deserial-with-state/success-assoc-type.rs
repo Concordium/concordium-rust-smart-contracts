@@ -1,4 +1,4 @@
-use concordium_std::{ParseResult, Read, DeserialWithState, StateMap, HasStateApi};
+use concordium_std::{DeserialWithState, HasStateApi, ParseResult, Read, StateMap};
 
 pub trait ProxyTrait {
     type State: HasStateApi;
@@ -10,4 +10,4 @@ pub struct TestDeserial<T: ProxyTrait> {
     pub test_map: StateMap<u32, String, T::State>,
 }
 
-fn main() { }
+fn main() {}
