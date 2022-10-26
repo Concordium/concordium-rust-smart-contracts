@@ -43,7 +43,7 @@ crate-type = ["rlib"]
 opt-level = "s"
 
 [dev-dependencies]
-trybuild = "1.0.71"
+trybuild = "1.0"
 # Don't unwind on panics, just trap.
 # panic = "abort"
 
