@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Allow `#[concordium(state_parameter)]`'s value be not just identifier but any type path
+  for `derive(DeserialWithState)` and `derive(Deletable)` to generate implementations.
+
 ## concordium-std-derive 4.0.0 (2022-08-24)
 
 - Add ability to `derive(Reject)` for enums *with fields*.

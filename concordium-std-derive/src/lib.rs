@@ -1270,17 +1270,20 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
 /// string.
 fn find_state_parameter_attribute(
     attributes: &[syn::Attribute],
-) -> syn::Result<Option<syn::Ident>> {
+) -> syn::Result<Option<syn::TypePath>> {
     let value = match find_attribute_value(attributes, false, "state_parameter")? {
         Some(v) => v,
         None => return Ok(None),
     };
 
     match value {
-        syn::Lit::Str(value) => Ok(Some(syn::Ident::new(&value.value(), value.span()))),
-        _ => {
-            Err(syn::Error::new(value.span(), "state_parameter attribute value must be a string."))
-        }
+        syn::Lit::Str(value) => Ok(Some(value.parse().map_err(|err| {
+            syn::Error::new(err.span(), "state_parameter attribute value is not a valid type path")
+        })?)),
+        _ => Err(syn::Error::new(
+            value.span(),
+            "state_parameter attribute value must be a string which describes valid type path",
+        )),
     }
 }
 
@@ -1357,7 +1360,7 @@ fn impl_deserial_with_state_field(
     state_ident: &syn::Ident,
     ident: &syn::Ident,
     source: &syn::Ident,
-    state_parameter: &syn::Ident,
+    state_parameter: &syn::TypePath,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");

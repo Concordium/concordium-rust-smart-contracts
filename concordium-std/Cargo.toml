@@ -41,6 +41,9 @@ crate-type = ["rlib"]
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+
+[dev-dependencies]
+trybuild = "1.0"
 # Don't unwind on panics, just trap.
 # panic = "abort"
 
