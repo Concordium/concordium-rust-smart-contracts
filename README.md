@@ -65,4 +65,3 @@ rustup toolchain install nightly-2021-06-09
 or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.
 
 In order to contribute you should make a pull request and ask at least two people familiar with the code to do a review.
-
