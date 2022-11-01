@@ -1787,8 +1787,17 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 
 /// Tag of the transfer operation expected by the host. See [prims::invoke].
 const INVOKE_TRANSFER_TAG: u32 = 0;
-/// Tag of the transfer operation expected by the host. See [prims::invoke].
+/// Tag of the call operation expected by the host. See [prims::invoke].
 const INVOKE_CALL_TAG: u32 = 1;
+/// Tag of the query account balance operation expected by the host. See
+/// [prims::invoke].
+const INVOKE_QUERY_ACCOUNT_BALANCE_TAG: u32 = 2;
+/// Tag of the query contract balance operation expected by the host. See
+/// [prims::invoke].
+const INVOKE_QUERY_CONTRACT_BALANCE_TAG: u32 = 3;
+/// Tag of the query exchange rates operation expected by the host. See
+/// [prims::invoke].
+const INVOKE_QUERY_EXCHANGE_RATES_TAG: u32 = 4;
 
 /// Decode the the response code.
 ///
@@ -1893,6 +1902,76 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
     }
 }
 
+#[inline(always)]
+fn is_invoke_failure_code(code: u64) -> bool {
+    code & 0xffff_ff00_0000_0000 == 0xffff_ff00_0000_0000
+}
+
+/// Decode the account balance response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+/// - missing account is encoded as '0xffff_ff02_0000_0000'
+fn parse_query_account_balance_response_code(
+    code: u64,
+) -> Result<ExternCallResponse, QueryAccountBalanceError> {
+    if is_invoke_failure_code(code) {
+        if let 0xffff_ff02_0000_0000 = code {
+            return Err(QueryAccountBalanceError);
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        };
+    }
+
+    let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+    Ok(ExternCallResponse::new(return_value_index))
+}
+
+/// Decode the contract balance response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+/// - missing contract is encoded as '0xffff_ff03_0000_0000'
+fn parse_query_contract_balance_response_code(
+    code: u64,
+) -> Result<ExternCallResponse, QueryContractBalanceError> {
+    if is_invoke_failure_code(code) {
+        if let 0xffff_ff03_0000_0000 = code {
+            return Err(QueryContractBalanceError);
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        };
+    }
+
+    let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+    Ok(ExternCallResponse::new(return_value_index))
+}
+
+/// Decode the exchange rate response code.
+///
+/// This is necessary since Wasm only allows us to pass simple scalars as
+/// parameters. Everything else requires passing data in memory, or via host
+/// functions, both of which are difficult.
+///
+/// The response is encoded as follows.
+/// - success is encoded as 0
+fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
+    if is_invoke_failure_code(code) {
+        unsafe { crate::hint::unreachable_unchecked() }
+    }
+
+    let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+    ExternCallResponse::new(return_value_index)
+}
+
 /// Helper factoring out the common behaviour of invoke_transfer for the two
 /// extern hosts below.
 fn invoke_transfer_worker(receiver: &AccountAddress, amount: Amount) -> TransferResult {
@@ -1928,6 +2007,40 @@ fn invoke_contract_construct_parameter(
     method.serial(&mut cursor).unwrap_abort();
     amount.serial(&mut cursor).unwrap_abort();
     data
+}
+
+/// Helper factoring out the common behaviour of account_balance for the
+/// two extern hosts below.
+fn query_account_balance_worker(address: &AccountAddress) -> QueryAccountBalanceResult {
+    let response = unsafe {
+        prims::invoke(
+            INVOKE_QUERY_ACCOUNT_BALANCE_TAG,
+            AsRef::<[u8]>::as_ref(&address).as_ptr(),
+            32,
+        )
+    };
+    let mut return_value = parse_query_account_balance_response_code(response)?;
+    Ok(AccountBalance::deserial(&mut return_value).unwrap_abort())
+}
+
+/// Helper factoring out the common behaviour of contract_balance for the
+/// two extern hosts below.
+fn query_contract_balance_worker(address: &ContractAddress) -> QueryContractBalanceResult {
+    let mut data = Vec::with_capacity(16);
+    let mut cursor = Cursor::new(&mut data);
+    address.serial(&mut cursor).unwrap_abort();
+    let response = unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_BALANCE_TAG, data.as_ptr(), 16) };
+    let mut return_value = parse_query_contract_balance_response_code(response)?;
+    Ok(Amount::deserial(&mut return_value).unwrap_abort())
+}
+
+/// Helper factoring out the common behaviour of exchange_rates for the
+/// two extern hosts below.
+fn query_exchange_rates_worker() -> ExchangeRates {
+    let response_code = unsafe { prims::invoke(INVOKE_QUERY_EXCHANGE_RATES_TAG, [].as_ptr(), 0) };
+
+    let mut response = parse_query_exchange_rates_response_code(response_code);
+    ExchangeRates::deserial(&mut response).unwrap_abort()
 }
 
 impl<S> StateBuilder<S>
@@ -2128,6 +2241,16 @@ where
         }
     }
 
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
+        query_account_balance_worker(&address)
+    }
+
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
+        query_contract_balance_worker(&address)
+    }
+
+    fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
+
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
         let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
         parse_upgrade_response_code(response)
@@ -2179,6 +2302,16 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         let response = unsafe { prims::invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         parse_call_response_code(response)
     }
+
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
+        query_account_balance_worker(&address)
+    }
+
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
+        query_contract_balance_worker(&address)
+    }
+
+    fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
 
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
         let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
@@ -2696,6 +2829,40 @@ impl Serial for HashKeccak256 {
 impl Deserial for HashKeccak256 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         Ok(HashKeccak256(Deserial::deserial(source)?))
+    }
+}
+
+impl Serial for ExchangeRates {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.euro_per_energy().serial(out)?;
+        self.amount_per_euro().serial(out)?;
+        Ok(())
+    }
+}
+
+impl Deserial for ExchangeRates {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let euro_per_energy = source.get()?;
+        let amount_per_euro = source.get()?;
+        Ok(Self::new(euro_per_energy, amount_per_euro))
+    }
+}
+
+impl Serial for AccountBalance {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.total().serial(out)?;
+        self.staked().serial(out)?;
+        self.locked().serial(&mut *out)?;
+        Ok(())
+    }
+}
+
+impl Deserial for AccountBalance {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let total = source.get()?;
+        let staked = source.get()?;
+        let locked = source.get()?;
+        Ok(Self::new(total, staked, locked))
     }
 }
 

@@ -21,6 +21,9 @@ extern "C" {
     /// - `tag`, which instruction to invoke
     ///   - 0 for transfer to account
     ///   - 1 for call to a contract
+    ///   - 2 for query an account balance.
+    ///   - 3 for query a contract balance.
+    ///   - 4 for query the exchange rates.
     /// - `start`, pointer to the start of the invoke payload
     /// - `length`, length of the payload
     /// - if the last 5 bytes are 0 then the call succeeded. In this case the

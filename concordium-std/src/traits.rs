@@ -6,8 +6,9 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    CallContractResult, EntryRaw, HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
-    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
+    CallContractResult, EntryRaw, ExchangeRates, HashKeccak256, HashSha2256, HashSha3256, Key,
+    OccupiedEntryRaw, PublicKeyEcdsaSecp256k1, PublicKeyEd25519, QueryAccountBalanceResult,
+    QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
     SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
@@ -347,6 +348,16 @@ pub trait HasHost<State>: Sized {
         let param = to_bytes(parameter);
         self.invoke_contract_raw_read_only(to, Parameter(&param), method, amount)
     }
+
+    /// Get the current exchange rates for Euro per Energy and micro CCD per
+    /// Euro.
+    fn exchange_rates(&self) -> ExchangeRates;
+
+    /// Get the current balance of an account.
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult;
+
+    /// Get the current balance of a contract instance.
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult;
 
     /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;

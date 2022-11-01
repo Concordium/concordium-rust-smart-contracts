@@ -1,5 +1,8 @@
+use concordium_contracts_common::{Amount, ExchangeRate};
+
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+    cell::UnsafeCell, cmp::max, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial,
+    Vec,
 };
 
 #[derive(Debug)]
@@ -581,6 +584,69 @@ pub struct ExternReturnValue {
     pub(crate) current_position: u32,
 }
 
+/// The current public balances of an account.
+#[derive(Debug, Copy, Clone)]
+pub struct AccountBalance {
+    /// The total balance of the account including the staked and locked amount.
+    total_balance: Amount,
+    /// The current staked amount of the account.
+    staked:        Amount,
+    /// The current locked amount of the account.
+    locked:        Amount,
+}
+
+impl AccountBalance {
+    pub fn new(total_balance: Amount, staked: Amount, locked: Amount) -> Self {
+        Self {
+            total_balance,
+            staked,
+            locked,
+        }
+    }
+
+    /// The total balance of the account. Includes the staked and locked
+    /// amounts.
+    pub fn total(&self) -> Amount { self.total_balance }
+
+    /// The current staked amount of the account. This amount is used for
+    /// staking.
+    pub fn staked(&self) -> Amount { self.staked }
+
+    /// The current locked amount of the account. This amount is locked by
+    /// scheduled transfers, but can still be used for staking.
+    pub fn locked(&self) -> Amount { self.locked }
+
+    /// The current available balance of the account. This is the amount
+    /// an account have available for transfering and is not locked by staking
+    /// or scheduled transfers.
+    pub fn available(&self) -> Amount { self.total_balance - max(self.locked, self.staked) }
+}
+
+/// The current exchange rates.
+#[derive(Debug, Clone, Copy)]
+pub struct ExchangeRates {
+    /// Euro per NRG exchange rate.
+    euro_per_energy: ExchangeRate,
+    /// Micro CCD per Euro exchange rate.
+    amount_per_euro: ExchangeRate,
+}
+
+impl ExchangeRates {
+    /// Construct exchange rates.
+    pub fn new(euro_per_energy: ExchangeRate, amount_per_euro: ExchangeRate) -> Self {
+        Self {
+            euro_per_energy,
+            amount_per_euro,
+        }
+    }
+
+    /// Euro per NRG exchange rate.
+    pub fn euro_per_energy(&self) -> ExchangeRate { self.euro_per_energy }
+
+    /// Micro CCD per Euro exchange rate.
+    pub fn amount_per_euro(&self) -> ExchangeRate { self.amount_per_euro }
+}
+
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
 /// Errors that may occur when invoking a contract entrypoint.
@@ -629,6 +695,16 @@ pub enum UpgradeError {
     UnsupportedModuleVersion,
 }
 
+/// Error for querying the balance of an account.
+/// No account found for the provided account address.
+#[derive(Debug, Copy, Clone)]
+pub struct QueryAccountBalanceError;
+
+/// Error for querying the balance of a smart contract instance.
+/// No instance found for the provided contract address.
+#[derive(Debug, Copy, Clone)]
+pub struct QueryContractBalanceError;
+
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`CallContractError`], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
@@ -649,6 +725,14 @@ pub type TransferResult = Result<(), TransferError>;
 /// A wrapper around [`Result`] that fixes the error variant to [`UpgradeError`]
 /// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
 pub type UpgradeResult = Result<(), UpgradeError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryAccountBalanceError`] and result to [`AccountBalance`].
+pub type QueryAccountBalanceResult = Result<AccountBalance, QueryAccountBalanceError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryContractBalanceError`] and result to [`Amount`].
+pub type QueryContractBalanceResult = Result<Amount, QueryContractBalanceError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]

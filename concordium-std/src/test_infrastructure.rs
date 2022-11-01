@@ -1287,21 +1287,30 @@ pub struct TestHost<State> {
     /// Functions that mock responses to calls.
     // This is Rc+RefCell because it needs to be cloneable. There might be another way to make the
     // MockFn cloneable, but this seemed like the easiest option.
-    mocking_fns:      Rc<RefCell<MockFnMap<State>>>,
+    mocking_fns:             Rc<RefCell<MockFnMap<State>>>,
     /// Transfers the contract has made during its execution.
-    transfers:        RefCell<Vec<(AccountAddress, Amount)>>,
+    transfers:               RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
-    contract_balance: RefCell<Amount>,
+    contract_balance:        RefCell<Amount>,
     /// Map from module references to the mocked results of upgrading to this
     /// particular module.
-    mocking_upgrades: RefCell<MockUpgradeMap>,
+    mocking_upgrades:        RefCell<MockUpgradeMap>,
     /// StateBuilder for the state.
-    state_builder:    StateBuilder<TestStateApi>,
+    state_builder:           StateBuilder<TestStateApi>,
     /// State of the instance.
-    state:            State,
+    state:                   State,
+    /// Account balances, is used when querying the balance of an account.
+    query_account_balances:  BTreeMap<AccountAddress, AccountBalance>,
+    /// Contract balances, is used when querying the balance of a contract.
+    query_contract_balances: BTreeMap<ContractAddress, Amount>,
+    /// Current exchange rates, is used when querying the exchange rates.
+    query_exchange_rates:    Option<ExchangeRates>,
     /// List of accounts that will cause a contract invocation to fail.
-    missing_accounts: BTreeSet<AccountAddress>,
+    missing_accounts:        BTreeSet<AccountAddress>,
+    /// List of ccontract that will cause a query for contract balance to result
+    /// in missing contracts.
+    missing_contracts:       BTreeSet<ContractAddress>,
 }
 
 impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
@@ -1463,6 +1472,34 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
         Ok(res)
     }
 
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
+        if self.missing_accounts.contains(&address) {
+            Err(QueryAccountBalanceError)
+        } else if let Some(balances) = self.query_account_balances.get(&address) {
+            Ok(*balances)
+        } else {
+            fail!("No account balance for {:?} has been set up.", address)
+        }
+    }
+
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
+        if self.missing_contracts.contains(&address) {
+            Err(QueryContractBalanceError)
+        } else if let Some(balances) = self.query_contract_balances.get(&address) {
+            Ok(*balances)
+        } else {
+            fail!("No contract balance for {:?} has been set up.", address)
+        }
+    }
+
+    fn exchange_rates(&self) -> ExchangeRates {
+        if let Some(exchange_rates) = self.query_exchange_rates {
+            exchange_rates
+        } else {
+            fail!("No exchange rates has been set up")
+        }
+    }
+
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
         if let Some(result) = self.mocking_upgrades.borrow().get(&module) {
             result.to_owned()
@@ -1528,6 +1565,10 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
             state_builder,
             state,
             missing_accounts: BTreeSet::new(),
+            missing_contracts: BTreeSet::new(),
+            query_account_balances: BTreeMap::new(),
+            query_contract_balances: BTreeMap::new(),
+            query_exchange_rates: None,
         }
     }
 
@@ -1588,6 +1629,22 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         *self.contract_balance.borrow_mut() = amount;
     }
 
+    pub fn setup_account_balance(
+        &mut self,
+        address: AccountAddress,
+        account_balance: AccountBalance,
+    ) {
+        self.query_account_balances.insert(address, account_balance);
+    }
+
+    pub fn setup_contract_balance(&mut self, address: ContractAddress, balance: Amount) {
+        self.query_contract_balances.insert(address, balance);
+    }
+
+    pub fn setup_exchange_rates(&mut self, exchange_rates: ExchangeRates) {
+        self.query_exchange_rates = Some(exchange_rates);
+    }
+
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
         self.transfers.borrow().contains(&(*receiver, amount))
@@ -1630,15 +1687,19 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
     fn checkpoint(&self) -> Self {
         let cloned_state_api = self.state_builder.state_api.clone_deep();
         Self {
-            mocking_fns:      self.mocking_fns.clone(),
-            transfers:        self.transfers.clone(),
-            contract_balance: self.contract_balance.clone(),
-            mocking_upgrades: self.mocking_upgrades.clone(),
-            state_builder:    StateBuilder {
+            mocking_fns:             self.mocking_fns.clone(),
+            transfers:               self.transfers.clone(),
+            contract_balance:        self.contract_balance.clone(),
+            mocking_upgrades:        self.mocking_upgrades.clone(),
+            state_builder:           StateBuilder {
                 state_api: cloned_state_api.clone(),
             },
-            state:            unsafe { self.state.clone_state(&cloned_state_api) },
-            missing_accounts: self.missing_accounts.clone(),
+            state:                   unsafe { self.state.clone_state(&cloned_state_api) },
+            missing_accounts:        self.missing_accounts.clone(),
+            missing_contracts:       self.missing_contracts.clone(),
+            query_account_balances:  self.query_account_balances.clone(),
+            query_contract_balances: self.query_contract_balances.clone(),
+            query_exchange_rates:    self.query_exchange_rates.clone(),
         }
     }
 
