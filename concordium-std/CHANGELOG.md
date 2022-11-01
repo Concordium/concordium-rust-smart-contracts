@@ -4,6 +4,8 @@
 
 - Add `upgrade` method to `HasHost` for upgrading a smart contract instance to use a new smart contract module.
 - Support mocking `upgrade` calls in `TestHost`. An `upgrade` is mocked by specifying a module reference and a `UpgradeResult` as the outcome of upgrading to this module.
+- Add the chain queries `account_balance`, `contract_balance` and `exchange_rates` to `HasHost` for querying balances and the current exchange rates.
+- Support mocking chain queries `account_balance`, `contract_balance` and `exchange_rates` in `TestHost`. For each parameter a corresponding response can be setup.
 
 ## concordium-std 4.0.0 (2022-08-24)
 

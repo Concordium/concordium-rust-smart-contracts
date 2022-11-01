@@ -2,7 +2,7 @@
 
 ## Unreleased changes
 
-- Add `From` implementation from types implementing `From<UpgradeError>` to `Cis2Error`.
+- Add `From` implementation from types implementing `From<UpgradeError>`, `From<QueryAccountBalanceError>` or `From<QueryContractBalanceError>` to `Cis2Error`.
 
 ## concordium-cis2 1.2.0 (2022-09-01)
 
