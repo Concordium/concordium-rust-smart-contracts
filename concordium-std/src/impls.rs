@@ -164,6 +164,22 @@ impl From<UpgradeError> for Reject {
     }
 }
 
+/// Query account balance error missing account is i32::MIN + 25.
+impl From<QueryAccountBalanceError> for Reject {
+    #[inline(always)]
+    fn from(_: QueryAccountBalanceError) -> Self {
+        unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 25).into() }
+    }
+}
+
+/// Query contract balance error missing contract is i32::MIN + 26.
+impl From<QueryContractBalanceError> for Reject {
+    #[inline(always)]
+    fn from(_: QueryContractBalanceError) -> Self {
+        unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 26).into() }
+    }
+}
+
 /// Return values are intended to be produced by writing to the
 /// [ExternReturnValue] buffer, either in a high-level interface via
 /// serialization, or in a low-level interface by manually using the [Write]

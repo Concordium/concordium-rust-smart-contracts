@@ -174,9 +174,6 @@
 //! | [NotPayableError] | `-2147483636` |
 //! | [TransferError::AmountTooLarge] | `-2147483635` |
 //! | [TransferError::MissingAccount] | `-2147483634` |
-//! | [UpgradeError::MissingModule] | `-2147483626` |
-//! | [UpgradeError::MissingContract] | `-2147483625` |
-//! | [UpgradeError::UnsupportedModuleVersion] | `-2147483624` |
 //! | [CallContractError::AmountTooLarge] | `-2147483633` |
 //! | [CallContractError::MissingAccount] | `-2147483632` |
 //! | [CallContractError::MissingContract] | `-2147483631` |
@@ -184,6 +181,11 @@
 //! | [CallContractError::MessageFailed] | `-2147483629` |
 //! | [CallContractError::LogicReject] | `-2147483628` |
 //! | [CallContractError::Trap] | `-2147483627` |
+//! | [UpgradeError::MissingModule] | `-2147483626` |
+//! | [UpgradeError::MissingContract] | `-2147483625` |
+//! | [UpgradeError::UnsupportedModuleVersion] | `-2147483624` |
+//! | [QueryAccountBalanceError] | `-2147483623` |
+//! | [QueryContractBalanceError] | `-2147483622` |
 //!
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
