@@ -1149,7 +1149,7 @@ fn contract_function_schema_tokens(
                 #return_embed
                 #parameter_embed
                 #error_embed
-                let schema_bytes = concordium_std::to_bytes(&schema::FunctionV3 {parameter: #parameter_schema, return_value: #return_value_schema, error: #error_schema});
+                let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2 {parameter: #parameter_schema, return_value: #return_value_schema, error: #error_schema});
                 concordium_std::put_in_memory(&schema_bytes)
             }
         })
