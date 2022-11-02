@@ -588,17 +588,17 @@ pub struct ExternReturnValue {
 #[derive(Debug, Copy, Clone)]
 pub struct AccountBalance {
     /// The total balance of the account including the staked and locked amount.
-    total_balance: Amount,
+    pub(crate) total:  Amount,
     /// The current staked amount of the account.
-    staked:        Amount,
+    pub(crate) staked: Amount,
     /// The current locked amount of the account.
-    locked:        Amount,
+    pub(crate) locked: Amount,
 }
 
 impl AccountBalance {
-    pub fn new(total_balance: Amount, staked: Amount, locked: Amount) -> Self {
+    pub fn new(total: Amount, staked: Amount, locked: Amount) -> Self {
         Self {
-            total_balance,
+            total,
             staked,
             locked,
         }
@@ -606,7 +606,7 @@ impl AccountBalance {
 
     /// The total balance of the account. Includes the staked and locked
     /// amounts.
-    pub fn total(&self) -> Amount { self.total_balance }
+    pub fn total(&self) -> Amount { self.total }
 
     /// The current staked amount of the account. This amount is used for
     /// staking.
@@ -619,7 +619,7 @@ impl AccountBalance {
     /// The current available balance of the account. This is the amount
     /// an account have available for transfering and is not locked by staking
     /// or scheduled transfers.
-    pub fn available(&self) -> Amount { self.total_balance - max(self.locked, self.staked) }
+    pub fn available(&self) -> Amount { self.total - max(self.locked, self.staked) }
 }
 
 /// The current exchange rates.
