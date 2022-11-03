@@ -62,14 +62,6 @@ pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
 /// Tag for the CIS2 TokenMetadata event.
 pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
 
-pub const EVENT_TAG_VECTOR: [u8; 5] = [
-    TRANSFER_EVENT_TAG,
-    MINT_EVENT_TAG,
-    BURN_EVENT_TAG,
-    UPDATE_OPERATOR_EVENT_TAG,
-    TOKEN_METADATA_EVENT_TAG,
-];
-
 /// Sha256 digest
 pub type Sha256 = [u8; 32];
 
@@ -750,17 +742,6 @@ pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
     pub to:       Address,
 }
 
-impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for TransferEvent<T, A> {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            (String::from("token_id"), T::get_type()),
-            (String::from("amount"), A::get_type()),
-            (String::from("from"), Address::get_type()),
-            (String::from("to"), Address::get_type()),
-        ]))
-    }
-}
-
 /// An untagged event of tokens being minted, could be a new token type or
 /// extending the total supply of existing token.
 /// For a tagged version, use `Cis2Event`.
@@ -774,16 +755,6 @@ pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
     pub amount:   A,
     /// The initial owner of these newly minted amount of tokens.
     pub owner:    Address,
-}
-
-impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for MintEvent<T, A> {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            (String::from("token_id"), T::get_type()),
-            (String::from("amount"), A::get_type()),
-            (String::from("owner"), Address::get_type()),
-        ]))
-    }
 }
 
 /// An untagged event of some amount of a token type being burned.
@@ -800,16 +771,6 @@ pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
     pub owner:    Address,
 }
 
-impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for BurnEvent<T, A> {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            (String::from("token_id"), T::get_type()),
-            (String::from("amount"), A::get_type()),
-            (String::from("owner"), Address::get_type()),
-        ]))
-    }
-}
-
 /// An untagged event of an update to an operator address for an owner address.
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
@@ -824,16 +785,6 @@ pub struct UpdateOperatorEvent {
     pub operator: Address,
 }
 
-impl schema::SchemaType for UpdateOperatorEvent {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            (String::from("update"), OperatorUpdate::get_type()),
-            (String::from("owner"), Address::get_type()),
-            (String::from("operator"), Address::get_type()),
-        ]))
-    }
-}
-
 /// An untagged event for setting the metadata for a token.
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
@@ -844,15 +795,6 @@ pub struct TokenMetadataEvent<T: IsTokenId> {
     pub token_id:     T,
     /// The location of the metadata.
     pub metadata_url: MetadataUrl,
-}
-
-impl<T: IsTokenId> schema::SchemaType for TokenMetadataEvent<T> {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            (String::from("token_id"), T::get_type()),
-            (String::from("metadata_url"), MetadataUrl::get_type()),
-        ]))
-    }
 }
 
 /// Tagged CIS2 event to be serialized for the event log.
@@ -875,41 +817,61 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
         event_map.insert(
-            EVENT_TAG_VECTOR[0],
+            TRANSFER_EVENT_TAG,
             (
                 "Transfer".to_string(),
-                schema::Fields::Unnamed(Vec::from([TransferEvent::<T, A>::get_type()])),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("amount"), A::get_type()),
+                    (String::from("from"), Address::get_type()),
+                    (String::from("to"), Address::get_type()),
+                ]),
             ),
         );
         event_map.insert(
-            EVENT_TAG_VECTOR[1],
+            MINT_EVENT_TAG,
             (
                 "Mint".to_string(),
-                schema::Fields::Unnamed(Vec::from([MintEvent::<T, A>::get_type()])),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("amount"), A::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
             ),
         );
         event_map.insert(
-            EVENT_TAG_VECTOR[2],
+            BURN_EVENT_TAG,
             (
                 "Burn".to_string(),
-                schema::Fields::Unnamed(Vec::from([BurnEvent::<T, A>::get_type()])),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("amount"), A::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
             ),
         );
         event_map.insert(
-            EVENT_TAG_VECTOR[3],
+            UPDATE_OPERATOR_EVENT_TAG,
             (
                 "UpdateOperator".to_string(),
-                schema::Fields::Unnamed(Vec::from([UpdateOperatorEvent::get_type()])),
+                schema::Fields::Named(vec![
+                    (String::from("update"), OperatorUpdate::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                    (String::from("operator"), Address::get_type()),
+                ]),
             ),
         );
         event_map.insert(
-            EVENT_TAG_VECTOR[4],
+            TOKEN_METADATA_EVENT_TAG,
             (
                 "TokenMetadata".to_string(),
-                schema::Fields::Unnamed(Vec::from([TokenMetadataEvent::<T>::get_type()])),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("metadata_url"), MetadataUrl::get_type()),
+                ]),
             ),
         );
-        schema::Type::EnumTag(event_map)
+        schema::Type::TaggedEnum(event_map)
     }
 }
 
