@@ -1310,8 +1310,8 @@ pub struct TestHost<State> {
     query_exchange_rates:    Option<ExchangeRates>,
     /// List of accounts that will cause a contract invocation to fail.
     missing_accounts:        BTreeSet<AccountAddress>,
-    /// List of ccontract that will cause a query for contract balance to result
-    /// in missing contracts.
+    /// List of contracts that will cause a query for contract balance to result
+    /// in a missing contract error.
     missing_contracts:       BTreeSet<ContractAddress>,
 }
 

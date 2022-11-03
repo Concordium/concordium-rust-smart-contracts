@@ -357,13 +357,19 @@ pub trait HasHost<State>: Sized {
     /// unencrypted or unshielded. See [`AccountBalance`] for more.
     ///
     /// Note: Querying the account invoking this transaction, will return the
-    /// current account balance subtracting the amount of CCD needed for paying
-    /// the entire energy limit set in the transaction.
+    /// current account balance subtracted the amount of CCD needed for paying
+    /// the entire energy limit and the amount sent as part of update
+    /// transaction.
     ///
     /// This query will fail if the provided address does not exist on chain.
     fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult;
 
     /// Get the current balance of a contract instance.
+    ///
+    /// Note: Querying the contract itself returns the balance of the contract
+    /// including the amount transferred as part of the invocation.
+    /// Any amount sent and received by transfers and invocations is also
+    /// reflected in this balance.
     ///
     /// This query will fail if the provided address does not exist on chain.
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult;

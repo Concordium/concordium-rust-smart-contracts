@@ -590,9 +590,11 @@ pub struct AccountBalance {
     /// The total balance of the account. Note that part of this balance might
     /// be staked and/or locked in scheduled transfers.
     pub(crate) total:  Amount,
-    /// The current staked amount of the account.
+    /// The current staked amount of the account. This amount is used for
+    /// staking.
     pub(crate) staked: Amount,
-    /// The current locked amount of the account.
+    /// The current amount locked in releases that resulted from transfers with
+    /// schedule. A locked amount can still be used for staking.
     pub(crate) locked: Amount,
 }
 
@@ -607,20 +609,20 @@ impl AccountBalance {
     }
 
     /// The total balance of the account. Note that part of this balance might
-    /// be staked and/or locked in scheduled transfers.
+    /// be staked and/or locked in releases using scheduled transfers.
     pub fn total(&self) -> Amount { self.total }
 
-    /// The current staked amount of the account. This amount used for
+    /// The current staked amount of the account. This amount is used for
     /// staking.
     pub fn staked(&self) -> Amount { self.staked }
 
-    /// The current locked amount of the account. This amount is locked by
-    /// scheduled transfers, but can still be used for staking.
+    /// The current amount locked in releases that resulted from transfers with
+    /// schedule. A locked amount can still be used for staking.
     pub fn locked(&self) -> Amount { self.locked }
 
     /// The current available balance of the account. This is the amount
-    /// an account currently have available for transfering and is not current
-    /// staked or locked in a scheduled transfers.
+    /// an account currently have available for transfering and is not
+    /// staked or locked in releases by scheduled transfers.
     pub fn available(&self) -> Amount { self.total - max(self.locked, self.staked) }
 }
 

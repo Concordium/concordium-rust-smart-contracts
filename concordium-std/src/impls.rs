@@ -1918,6 +1918,8 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
     }
 }
 
+/// Check wether the response code from calling `invoke` is encoding a failure,
+/// i.e. whether the first 3 bytes are all set.
 #[inline(always)]
 fn is_invoke_failure_code(code: u64) -> bool {
     code & 0xffff_ff00_0000_0000 == 0xffff_ff00_0000_0000
@@ -1981,6 +1983,7 @@ fn parse_query_contract_balance_response_code(
 /// - success is encoded as 0
 fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
     if is_invoke_failure_code(code) {
+        // Querying the exchange rates should never produce a failure response code.
         unsafe { crate::hint::unreachable_unchecked() }
     }
 
@@ -2042,9 +2045,9 @@ fn query_account_balance_worker(address: &AccountAddress) -> QueryAccountBalance
 /// Helper factoring out the common behaviour of contract_balance for the
 /// two extern hosts below.
 fn query_contract_balance_worker(address: &ContractAddress) -> QueryContractBalanceResult {
-    let mut data = Vec::with_capacity(16);
-    let mut cursor = Cursor::new(&mut data);
-    address.serial(&mut cursor).unwrap_abort();
+    let mut data = [0u8; 16];
+    data[..8].copy_from_slice(&address.index.to_le_bytes());
+    data[8..].copy_from_slice(&address.subindex.to_le_bytes());
     let response = unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_BALANCE_TAG, data.as_ptr(), 16) };
     let mut return_value = parse_query_contract_balance_response_code(response)?;
     Ok(Amount::deserial(&mut return_value).unwrap_abort())
@@ -2257,14 +2260,17 @@ where
         }
     }
 
+    #[inline(always)]
     fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
         query_account_balance_worker(&address)
     }
 
+    #[inline(always)]
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
         query_contract_balance_worker(&address)
     }
 
+    #[inline(always)]
     fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
 
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
@@ -2319,14 +2325,17 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         parse_call_response_code(response)
     }
 
+    #[inline(always)]
     fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
         query_account_balance_worker(&address)
     }
 
+    #[inline(always)]
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
         query_contract_balance_worker(&address)
     }
 
+    #[inline(always)]
     fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
 
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
