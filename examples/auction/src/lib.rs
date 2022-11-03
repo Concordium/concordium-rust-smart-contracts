@@ -24,8 +24,10 @@
 //! Terminology: `Accounts` are derived from a public/private key pair.
 //! `Contract` instances are created by deploying a smart contract
 //! module and initializing it.
+
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use concordium_std::*;
-use core::fmt::Debug;
 
 /// The state of the auction.
 #[derive(Debug, Serialize, SchemaType, Eq, PartialEq, PartialOrd, Clone)]
@@ -225,6 +227,7 @@ fn auction_finalize<S: HasStateApi>(
 #[concordium_cfg_test]
 mod tests {
     use super::*;
+    use core::fmt::Debug;
     use std::sync::atomic::{AtomicU8, Ordering};
     use test_infrastructure::*;
 
@@ -243,8 +246,9 @@ mod tests {
 
     fn item_end_parameter() -> InitParameter {
         InitParameter {
-            item: ITEM.into(),
-            end:  Timestamp::from_timestamp_millis(AUCTION_END),
+            item:          ITEM.into(),
+            end:           Timestamp::from_timestamp_millis(AUCTION_END),
+            minimum_raise: 100,
         }
     }
 
@@ -339,6 +343,10 @@ mod tests {
             auction_init(&ctx0, &mut state_builder).expect("Initialization should pass");
 
         let mut host = TestHost::new(initial_state, state_builder);
+        host.set_exchange_rates(ExchangeRates::new(
+            ExchangeRate::new_unchecked(1, 1),
+            ExchangeRate::new_unchecked(1, 1),
+        ));
 
         // 1st bid: Alice bids `amount`.
         // The current_smart_contract_balance before the invoke is 0.
@@ -429,7 +437,10 @@ mod tests {
             auction_init(&ctx0, &mut state_builder).expect("Initialization should succeed.");
 
         let mut host = TestHost::new(initial_state, state_builder);
-
+        host.set_exchange_rates(ExchangeRates::new(
+            ExchangeRate::new_unchecked(1, 1),
+            ExchangeRate::new_unchecked(1, 1),
+        ));
         // 1st bid: Account1 bids `amount`.
         // The current_smart_contract_balance before the invoke is 0.
         bid(&mut host, &ctx1, amount, Amount::from_micro_ccd(0));
@@ -449,7 +460,7 @@ mod tests {
         let res2 = auction_bid(&ctx2, &mut host, amount);
         expect_error(
             res2,
-            BidError::BidTooLow,
+            BidError::BidBelowCurrentBid,
             "Bidding 2 should fail because bid amount must be higher than highest bid",
         );
     }
@@ -470,6 +481,6 @@ mod tests {
         let mut host = TestHost::new(initial_state, state_builder);
 
         let res = auction_bid(&ctx1, &mut host, Amount::zero());
-        expect_error(res, BidError::BidTooLow, "Bidding zero should fail");
+        expect_error(res, BidError::BidBelowCurrentBid, "Bidding zero should fail");
     }
 }
