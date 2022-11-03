@@ -349,14 +349,23 @@ pub trait HasHost<State>: Sized {
         self.invoke_contract_raw_read_only(to, Parameter(&param), method, amount)
     }
 
-    /// Get the current exchange rates for Euro per Energy and micro CCD per
-    /// Euro.
+    /// Get the current exchange rates used by the chain. That is a Euro per
+    /// Energy rate and micro CCD per Euro rate.
     fn exchange_rates(&self) -> ExchangeRates;
 
-    /// Get the current balance of an account.
+    /// Get the current public balance of an account. Here public means
+    /// unencrypted or unshielded. See [`AccountBalance`] for more.
+    ///
+    /// Note: Querying the account invoking this transaction, will return the
+    /// current account balance subtracting the amount of CCD needed for paying
+    /// the entire energy limit set in the transaction.
+    ///
+    /// This query will fail if the provided address does not exist on chain.
     fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult;
 
     /// Get the current balance of a contract instance.
+    ///
+    /// This query will fail if the provided address does not exist on chain.
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult;
 
     /// Get an immutable reference to the contract state.
