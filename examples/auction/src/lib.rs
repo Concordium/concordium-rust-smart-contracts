@@ -2,8 +2,12 @@
 //!
 //! Accounts can invoke the bid function to participate in the auction.
 //! An account has to send some CCD when invoking the bid function.
-//! This CCD amount has to exceed the current highest bid to be accepted by the
-//! smart contract.
+//! This CCD amount has to exceed the current highest bid by a minimum raise
+//! to be accepted by the smart contract.
+//!
+//! The minimum raise is set when initializing and defined in Euro cent.
+//! The contract uses the current exchange rate used by the chain by the time of
+//! the bid, to convert the bid into EUR.
 //!
 //! The smart contract keeps track of the current highest bidder as well as
 //! the CCD amount of the highest bid. The CCD balance of the smart contract
@@ -46,6 +50,8 @@ pub struct State {
     /// The highest bidder so far; The variant `None` represents
     /// that no bidder has taken part in the auction yet.
     highest_bidder: Option<AccountAddress>,
+    /// The minimum accepted raise to over bid the current bidder in Euro cent.
+    minimum_raise:  u64,
     /// The item to be sold (to be displayed by the front-end)
     item:           String,
     /// Time when auction ends (to be displayed by the front-end)
@@ -56,9 +62,11 @@ pub struct State {
 #[derive(Serialize, SchemaType)]
 struct InitParameter {
     /// The item to be sold
-    item: String,
+    item:          String,
     /// Time when auction ends using the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
-    end:  Timestamp,
+    end:           Timestamp,
+    /// The minimum accepted raise to over bid the current bidder in Euro cent.
+    minimum_raise: u64,
 }
 
 /// `bid` function errors
@@ -67,11 +75,14 @@ enum BidError {
     /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
     OnlyAccount,
-    /// Raised when new bid amount is lower than current highest bid
-    BidTooLow,
-    /// Raised when bid is placed after auction end time passed
+    /// Raised when new bid amount is lower than current highest bid.
+    BidBelowCurrentBid,
+    /// Raised when a new bid amount is raising the current highest bid
+    /// with less than the minimum raise.
+    BidBelowMinimumRaise,
+    /// Raised when bid is placed after auction end time passed.
     BidTooLate,
-    /// Raised when bid is placed after auction has been finalized
+    /// Raised when bid is placed after auction has been finalized.
     AuctionAlreadyFinalized,
 }
 
@@ -96,6 +107,7 @@ fn auction_init<S: HasStateApi>(
     let state = State {
         auction_state:  AuctionState::NotSoldYet,
         highest_bidder: None,
+        minimum_raise:  parameter.minimum_raise,
         item:           parameter.item,
         end:            parameter.end,
     };
@@ -109,16 +121,13 @@ fn auction_bid<S: HasStateApi>(
     host: &mut impl HasHost<State, StateApiType = S>,
     amount: Amount,
 ) -> Result<(), BidError> {
+    let state = host.state();
     // Ensure the auction has not been finalized yet
-    ensure_eq!(
-        host.state_mut().auction_state,
-        AuctionState::NotSoldYet,
-        BidError::AuctionAlreadyFinalized
-    );
+    ensure_eq!(state.auction_state, AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
-    ensure!(slot_time <= host.state_mut().end, BidError::BidTooLate);
+    ensure!(slot_time <= state.end, BidError::BidTooLate);
 
     // Ensure that only accounts can place a bid
     let sender_address = match ctx.sender() {
@@ -133,7 +142,16 @@ fn auction_bid<S: HasStateApi>(
     let previous_balance = balance - amount;
 
     // Ensure that the new bid exceeds the highest bid so far
-    ensure!(amount > previous_balance, BidError::BidTooLow);
+    ensure!(amount > previous_balance, BidError::BidBelowCurrentBid);
+
+    // Calculate the difference between the previous bid and the new bid in CCD.
+    let amount_difference = amount - previous_balance;
+    // Get the current exchange rate used by the chain
+    let exchange_rates = host.exchange_rates();
+    // Convert the CCD difference to EUR
+    let euro_cent_difference = exchange_rates.convert_amount_to_euro_cent(amount_difference);
+    // Ensure that the bid is at least 100 EUR cent more than the previous bid
+    ensure!(euro_cent_difference >= state.minimum_raise, BidError::BidBelowMinimumRaise);
 
     if let Some(account_address) = host.state_mut().highest_bidder.replace(sender_address) {
         // Refunding old highest bidder;
