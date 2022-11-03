@@ -630,17 +630,17 @@ impl AccountBalance {
 #[derive(Debug, Clone, Copy)]
 pub struct ExchangeRates {
     /// Euro per NRG exchange rate.
-    euro_per_energy: ExchangeRate,
+    euro_per_energy:    ExchangeRate,
     /// Micro CCD per Euro exchange rate.
-    amount_per_euro: ExchangeRate,
+    micro_ccd_per_euro: ExchangeRate,
 }
 
 impl ExchangeRates {
     /// Construct exchange rates.
-    pub fn new(euro_per_energy: ExchangeRate, amount_per_euro: ExchangeRate) -> Self {
+    pub fn new(euro_per_energy: ExchangeRate, micro_ccd_per_euro: ExchangeRate) -> Self {
         Self {
             euro_per_energy,
-            amount_per_euro,
+            micro_ccd_per_euro,
         }
     }
 
@@ -648,13 +648,13 @@ impl ExchangeRates {
     pub fn euro_per_energy(&self) -> ExchangeRate { self.euro_per_energy }
 
     /// Micro CCD per Euro exchange rate.
-    pub fn amount_per_euro(&self) -> ExchangeRate { self.amount_per_euro }
+    pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.micro_ccd_per_euro }
 
     /// Convert Euro cent to CCD using the current exchange rate.
     /// This will round down to the nearest micro CCD.
     pub fn convert_euro_cent_to_amount(&self, euro_cent: u64) -> Amount {
-        let numerator = self.amount_per_euro.numerator() as u128;
-        let denominator = self.amount_per_euro.denominator() as u128;
+        let numerator = self.micro_ccd_per_euro.numerator() as u128;
+        let denominator = self.micro_ccd_per_euro.denominator() as u128;
         let euro_cent = euro_cent as u128;
         let result = numerator * euro_cent / (denominator * 100);
         Amount::from_micro_ccd(result as u64)
@@ -663,8 +663,8 @@ impl ExchangeRates {
     /// Convert CCD to Euro cent using the current exchange rate.
     /// This will round down to the nearest Euro cent.
     pub fn convert_amount_to_euro_cent(&self, amount: Amount) -> u64 {
-        let numerator = self.amount_per_euro.numerator() as u128;
-        let denominator = self.amount_per_euro.denominator() as u128;
+        let numerator = self.micro_ccd_per_euro.numerator() as u128;
+        let denominator = self.micro_ccd_per_euro.denominator() as u128;
         let micro_ccd = amount.micro_ccd() as u128;
         let result = micro_ccd * 100 * denominator / numerator;
         result as u64

@@ -5,7 +5,7 @@
 //! This CCD amount has to exceed the current highest bid by a minimum raise
 //! to be accepted by the smart contract.
 //!
-//! The minimum raise is set when initializing and defined in Euro cent.
+//! The minimum raise is set when initializing and is defined in Euro cent.
 //! The contract uses the current exchange rate used by the chain by the time of
 //! the bid, to convert the bid into EUR.
 //!
@@ -152,7 +152,8 @@ fn auction_bid<S: HasStateApi>(
     let exchange_rates = host.exchange_rates();
     // Convert the CCD difference to EUR
     let euro_cent_difference = exchange_rates.convert_amount_to_euro_cent(amount_difference);
-    // Ensure that the bid is at least 100 EUR cent more than the previous bid
+    // Ensure that the bid is at least the `minimum_raise` more than the previous
+    // bid
     ensure!(euro_cent_difference >= state.minimum_raise, BidError::BidBelowMinimumRaise);
 
     if let Some(account_address) = host.state_mut().highest_bidder.replace(sender_address) {

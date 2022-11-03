@@ -2860,7 +2860,7 @@ impl Deserial for HashKeccak256 {
 impl Serial for ExchangeRates {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.euro_per_energy().serial(out)?;
-        self.amount_per_euro().serial(out)?;
+        self.micro_ccd_per_euro().serial(out)?;
         Ok(())
     }
 }
@@ -2868,8 +2868,8 @@ impl Serial for ExchangeRates {
 impl Deserial for ExchangeRates {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let euro_per_energy = source.get()?;
-        let amount_per_euro = source.get()?;
-        Ok(Self::new(euro_per_energy, amount_per_euro))
+        let micro_ccd_per_euro = source.get()?;
+        Ok(Self::new(euro_per_energy, micro_ccd_per_euro))
     }
 }
 
