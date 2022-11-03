@@ -730,7 +730,7 @@ pub use u256_token::*;
 /// another. For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -747,7 +747,7 @@ pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: T,
@@ -761,7 +761,7 @@ pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token where an amount is being burned.
     pub token_id: T,
@@ -775,7 +775,7 @@ pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct UpdateOperatorEvent {
     /// The update to the operator.
     pub update:   OperatorUpdate,
@@ -789,7 +789,7 @@ pub struct UpdateOperatorEvent {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct TokenMetadataEvent<T: IsTokenId> {
     /// The ID of the token.
     pub token_id:     T,
