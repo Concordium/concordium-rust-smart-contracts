@@ -2895,7 +2895,7 @@ impl Deserial for AccountBalance {
         let total = source.get()?;
         let staked = source.get()?;
         let locked = source.get()?;
-        Ok(Self::new(total, staked, locked))
+        Self::new(total, staked, locked).ok_or_else(ParseError::default)
     }
 }
 
