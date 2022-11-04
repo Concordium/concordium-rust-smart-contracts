@@ -1652,10 +1652,16 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         if self.missing_contracts.contains(&address) {
             fail!("The self_address is marked as a missing contract address.")
         }
+        if self.query_contract_balances.borrow().get(&address).is_some() {
+            fail!(
+                "The self_address cannot be setup as a query contract balance. Either use another \
+                 address as self_address or in 'setup_query_contract_balance'."
+            )
+        }
         self.contract_address = Some(address);
     }
 
-    pub fn setup_account_balance(
+    pub fn setup_query_account_balance(
         &mut self,
         address: AccountAddress,
         account_balance: AccountBalance,
@@ -1663,15 +1669,14 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         self.query_account_balances.borrow_mut().insert(address, account_balance);
     }
 
-    pub fn setup_contract_balance(&mut self, address: ContractAddress, balance: Amount) {
-        self.query_contract_balances.borrow_mut().insert(address, balance);
-
-        // Update the contract balance if the address matches.
-        if let Some(self_address) = self.contract_address {
-            if self_address == address {
-                *self.contract_balance.borrow_mut() = balance;
-            }
+    pub fn setup_query_contract_balance(&mut self, address: ContractAddress, balance: Amount) {
+        if Some(address) == self.contract_address {
+            fail!(
+                "Setting up a query contract balance for the self_address is not possible, use \
+                 'set_self_balance' instead."
+            )
         }
+        self.query_contract_balances.borrow_mut().insert(address, balance);
     }
 
     pub fn set_exchange_rates(&mut self, exchange_rates: ExchangeRates) {
@@ -1787,7 +1792,7 @@ mod test {
 
         let account = AccountAddress([0; 32]);
         let account_balance = AccountBalance::new(Amount::zero(), Amount::zero(), Amount::zero());
-        host.setup_account_balance(account, account_balance);
+        host.setup_query_account_balance(account, account_balance);
 
         host.invoke_transfer(&account, Amount::from_micro_ccd(2000))
             .expect("Transferring should succeed");
@@ -1809,7 +1814,7 @@ mod test {
         host.set_self_balance(Amount::from_micro_ccd(3000));
 
         let other_address = ContractAddress::new(1, 0);
-        host.setup_contract_balance(other_address, Amount::from_micro_ccd(4000));
+        host.setup_query_contract_balance(other_address, Amount::from_micro_ccd(4000));
 
         let entrypoint = OwnedEntrypointName::new_unchecked("test.method".to_string());
 
