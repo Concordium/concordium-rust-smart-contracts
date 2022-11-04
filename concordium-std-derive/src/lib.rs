@@ -1065,28 +1065,24 @@ fn contract_function_schema_tokens2(
     event_option: Option<syn::LitStr>,
     contract_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let mut embed = false;
-
-    let event_schema = format_ident!("event");
-    let event_embed = if let Some(event_ty) = event_option {
-        let ty = event_ty.parse::<syn::Type>()?;
-        embed = true;
-        quote! {
-             let #event_schema = Some(<#ty as schema::SchemaType>::get_type());
+    let event_embed = match event_option {
+        Some(event_ty) => {
+            let event_ty = event_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let event = <#event_ty as schema::SchemaType>::get_type();
+            let schema_bytes = concordium_std::to_bytes(&event);})
         }
-    } else {
-        quote! {let #event_schema = None;}
+        _ => None,
     };
 
-    if embed {
+    // Only produce the schema function if the event was set.
+    if let Some(construct_schema_bytes) = event_embed {
         let schema_name = format!("concordium_event_schema_{}", contract_name);
         let schema_ident = format_ident!("concordium_event_schema_{}", contract_name);
-
         Ok(quote! {
             #[export_name = #schema_name]
             pub extern "C" fn #schema_ident() -> *mut u8 {
-                #event_embed
-                let schema_bytes = concordium_std::to_bytes(&#event_schema);
+                #construct_schema_bytes
                 concordium_std::put_in_memory(&schema_bytes)
             }
         })
