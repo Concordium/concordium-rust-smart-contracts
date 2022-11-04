@@ -1815,78 +1815,85 @@ const INVOKE_QUERY_CONTRACT_BALANCE_TAG: u32 = 3;
 /// [prims::invoke].
 const INVOKE_QUERY_EXCHANGE_RATES_TAG: u32 = 4;
 
+/// Check whether the response code from calling `invoke` is encoding a failure
+/// and map out the byte used for the error code.
+/// A successful response code have the last 5 bytes unset.
+#[inline(always)]
+fn get_invoke_failure_code(code: u64) -> Option<u8> {
+    if code & 0xff_ffff_ffff == 0 {
+        None
+    } else {
+        let error_code = (code & 0xff_0000_0000) >> 32;
+        Some(error_code as u8)
+    }
+}
+
 /// Decode the the response code.
 ///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
-///
 /// The response is encoded as follows.
-/// - success is encoded as 0
-/// - every failure has all bits of the first 3 bytes set
-/// - in case of failure
-///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
-///     reason from the contract
-///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index, except the first bit,
+///     which is used to indicate whether the contract state was modified.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure, where:
+///   - 0x01 encodes amount too large.
+///   - 0x02 encodes missing account.
 fn parse_transfer_response_code(code: u64) -> TransferResult {
-    if code & !0xffff_ff00_0000_0000 == 0 {
-        // success
-        // assume response from host conforms to spec, just return success.
-        Ok(())
-    } else {
-        // failure.
-        match (0x0000_00ff_0000_0000 & code) >> 32 {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        match error_code {
             0x01 => Err(TransferError::AmountTooLarge),
             0x02 => Err(TransferError::MissingAccount),
             _ => crate::trap(), // host precondition violation
         }
+    } else {
+        Ok(())
     }
 }
 
 /// Decode the response code from calling upgrade.
 ///
 /// The response is encoded as follows.
-/// - success is encoded as 0.
-/// - failure because of missing module is 0x07_0000_0000.
-/// - failure because of module is missing contract with the same name is
-///   0x08_0000_0000.
-/// - failure because of module being an unsupported version is 0x09_0000_0000.
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index, except the first bit,
+///     which is used to indicate whether the contract state was modified.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure, where:
+///   - 0x07 encodes missing module.
+///   - 0x08 encodes missing contract.
+///   - 0x09 encodes module being an unsupported version.
 #[inline(always)]
 fn parse_upgrade_response_code(code: u64) -> UpgradeResult {
-    match code {
-        0 => Ok(()),
-        0x07_0000_0000 => Err(UpgradeError::MissingModule),
-        0x08_0000_0000 => Err(UpgradeError::MissingContract),
-        0x09_0000_0000 => Err(UpgradeError::UnsupportedModuleVersion),
-        _ => crate::trap(),
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        match error_code {
+            0x07 => Err(UpgradeError::MissingModule),
+            0x08 => Err(UpgradeError::MissingContract),
+            0x09 => Err(UpgradeError::UnsupportedModuleVersion),
+            _ => crate::trap(), // host precondition violation
+        }
+    } else {
+        Ok(())
     }
 }
 
 /// Decode the the response code.
 ///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
-///
 /// The response is encoded as follows.
-/// - success is encoded as 0
-/// - every failure has all bits of the first 3 bytes set
-/// - in case of failure
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index, except the first bit,
+///     which is used to indicate whether the contract state was modified.
+/// - In case of failure:
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
 ///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+///     - 0x01 encodes amount too large.
+///     - 0x02 encodes missing account.
+///     - 0x03 encodes missing contract.
+///     - 0x04 encodes missing entrypoint.
+///     - 0x05 encodes message failed.
+///     - 0x06 encodes trap.
 fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse> {
-    if code & !0xffff_ff00_0000_0000 == 0 {
-        // this means success
-        let rv = (code >> 40) as u32;
-        let tag = 0x80_0000u32;
-        if tag & rv != 0 {
-            Ok((true, NonZeroU32::new(rv & !tag).map(ExternCallResponse::new)))
-        } else {
-            Ok((false, NonZeroU32::new(rv).map(ExternCallResponse::new)))
-        }
-    } else {
-        match (0x0000_00ff_0000_0000 & code) >> 32 {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        match error_code {
             0x00 =>
             // response with logic error and return value.
             {
@@ -1915,80 +1922,81 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
             0x06 => Err(CallContractError::Trap),
             _ => unsafe { crate::hint::unreachable_unchecked() }, // host precondition violation
         }
-    }
-}
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let rv = (code >> 40) as u32;
 
-/// Check wether the response code from calling `invoke` is encoding a failure,
-/// i.e. whether the first 3 bytes are all set.
-#[inline(always)]
-fn is_invoke_failure_code(code: u64) -> bool {
-    code & 0xffff_ff00_0000_0000 == 0xffff_ff00_0000_0000
+        let tag = 0x80_0000u32; // Mask for the first bit.
+        if tag & rv != 0 {
+            // Check the bit, indicating a contract state change.
+            Ok((true, NonZeroU32::new(rv & !tag).map(ExternCallResponse::new)))
+        } else {
+            Ok((false, NonZeroU32::new(rv).map(ExternCallResponse::new)))
+        }
+    }
 }
 
 /// Decode the account balance response code.
 ///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
-///
-/// The response is encoded as follows.
-/// - success is encoded as 0
-/// - missing account is encoded as '0xffff_ff02_0000_0000'
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure where:
+///    - '0x02' encodes missing account.
 fn parse_query_account_balance_response_code(
     code: u64,
 ) -> Result<ExternCallResponse, QueryAccountBalanceError> {
-    if is_invoke_failure_code(code) {
-        if let 0xffff_ff02_0000_0000 = code {
-            return Err(QueryAccountBalanceError);
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x02 {
+            Err(QueryAccountBalanceError)
         } else {
             unsafe { crate::hint::unreachable_unchecked() }
-        };
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        Ok(ExternCallResponse::new(return_value_index))
     }
-
-    let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
-    Ok(ExternCallResponse::new(return_value_index))
 }
 
 /// Decode the contract balance response code.
 ///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
-///
-/// The response is encoded as follows.
-/// - success is encoded as 0
-/// - missing contract is encoded as '0xffff_ff03_0000_0000'
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure where:
+///    - '0x03' encodes missing contract.
 fn parse_query_contract_balance_response_code(
     code: u64,
 ) -> Result<ExternCallResponse, QueryContractBalanceError> {
-    if is_invoke_failure_code(code) {
-        if let 0xffff_ff03_0000_0000 = code {
-            return Err(QueryContractBalanceError);
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x03 {
+            Err(QueryContractBalanceError)
         } else {
             unsafe { crate::hint::unreachable_unchecked() }
-        };
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        Ok(ExternCallResponse::new(return_value_index))
     }
-
-    let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
-    Ok(ExternCallResponse::new(return_value_index))
 }
 
 /// Decode the exchange rate response code.
 ///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
-///
-/// The response is encoded as follows.
-/// - success is encoded as 0
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure we throw a runtime error, since this query is not
+///   expected to fail.
 fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
-    if is_invoke_failure_code(code) {
+    if get_invoke_failure_code(code).is_some() {
         // Querying the exchange rates should never produce a failure response code.
         unsafe { crate::hint::unreachable_unchecked() }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        ExternCallResponse::new(return_value_index)
     }
-
-    let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
-    ExternCallResponse::new(return_value_index)
 }
 
 /// Helper factoring out the common behaviour of invoke_transfer for the two
