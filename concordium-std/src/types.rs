@@ -599,8 +599,8 @@ pub struct AccountBalance {
 }
 
 impl AccountBalance {
-    /// Construct a new account balance, ensuring that the staked and locked
-    /// amount is smaller than or equal to the total balance.
+    /// Construct a new account balance, ensuring that both the staked amount
+    /// and the locked amount is smaller than or equal to the total balance.
     pub fn new(total: Amount, staked: Amount, locked: Amount) -> Option<Self> {
         if total < staked || total < locked {
             None
@@ -613,8 +613,9 @@ impl AccountBalance {
         }
     }
 
-    /// Construct a new account balance, *without* ensuring that the staked and
-    /// locked amount is smaller than or equal to the total balance.
+    /// Construct a new account balance, *without* ensuring that both the staked
+    /// amount and the locked amount is smaller than or equal to the total
+    /// balance.
     pub fn new_unchecked(total: Amount, staked: Amount, locked: Amount) -> Self {
         Self {
             total,

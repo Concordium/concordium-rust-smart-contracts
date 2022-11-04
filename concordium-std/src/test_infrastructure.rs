@@ -1382,7 +1382,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
         };
 
         // Check if the contract has sufficient balance.
-        if amount.micro_ccd > 0 && *self.contract_balance.borrow() < amount {
+        if *self.contract_balance.borrow() < amount {
             return Err(CallContractError::AmountTooLarge);
         }
 
@@ -1405,9 +1405,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             }
             Ok((state_modified, res)) => {
                 // Update the contract balance if the invocation succeeded.
-                if amount.micro_ccd > 0 {
-                    *self.contract_balance.borrow_mut() -= amount;
-                }
+                *self.contract_balance.borrow_mut() -= amount;
 
                 // Update the receiver query balance.
                 if let Some(balance) = self.query_contract_balances.borrow_mut().get_mut(to) {
@@ -1475,9 +1473,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             fail!("State modified in a read-only contract call.");
         }
         // Update the contract balance if the invocation succeeded.
-        if amount.micro_ccd > 0 {
-            *self.contract_balance.borrow_mut() -= amount;
-        }
+        *self.contract_balance.borrow_mut() -= amount;
+
         // Update the receiver query balance.
         if let Some(balance) = self.query_contract_balances.borrow_mut().get_mut(to) {
             *balance += amount;
@@ -1655,7 +1652,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         if self.query_contract_balances.borrow().get(&address).is_some() {
             fail!(
                 "The self_address cannot be setup as a query contract balance. Either use another \
-                 address as self_address or in 'setup_query_contract_balance'."
+                 address as self_address or another address in 'setup_query_contract_balance'."
             )
         }
         self.contract_address = Some(address);

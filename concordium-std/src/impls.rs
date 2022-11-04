@@ -1817,7 +1817,7 @@ const INVOKE_QUERY_EXCHANGE_RATES_TAG: u32 = 4;
 
 /// Check whether the response code from calling `invoke` is encoding a failure
 /// and map out the byte used for the error code.
-/// A successful response code have the last 5 bytes unset.
+/// A successful response code has the last 5 bytes unset.
 #[inline(always)]
 fn get_invoke_failure_code(code: u64) -> Option<u8> {
     if code & 0xff_ffff_ffff == 0 {
