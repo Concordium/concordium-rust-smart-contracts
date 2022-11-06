@@ -300,7 +300,7 @@ impl<S: HasStateApi> State<S> {
 /// Initialize contract instance with no initial tokens.
 /// Logs a `Mint` event for the single token id with no amounts.
 #[init(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     enable_logger,
     event = "Cis2Event<ContractTokenId, ContractTokenAmount>"
 )]
@@ -335,7 +335,7 @@ fn contract_init<S: HasStateApi>(
 /// Wrap an amount of CCD into wCCD tokens and transfer the tokens if the sender
 /// is not the receiver.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "wrap",
     parameter = "WrapParams",
     error = "ContractError",
@@ -394,7 +394,7 @@ fn contract_wrap<S: HasStateApi>(
 
 /// Unwrap an amount of wCCD tokens into CCD
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "unwrap",
     parameter = "UnwrapParams",
     error = "ContractError",
@@ -462,7 +462,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "transfer",
     parameter = "TransferParameter",
     error = "ContractError",
@@ -528,7 +528,7 @@ fn contract_transfer<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Fails to log event.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     error = "ContractError",
@@ -579,7 +579,7 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
     return_value = "ContractBalanceOfQueryResponse",
@@ -608,7 +608,7 @@ fn contract_balance_of<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
     return_value = "OperatorOfQueryResponse",
@@ -643,7 +643,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
     return_value = "TokenMetadataQueryResponse",
@@ -678,7 +678,7 @@ fn contract_token_metadata<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "supports",
     parameter = "SupportsQueryParams",
     return_value = "SupportsQueryResponse",
@@ -711,7 +711,7 @@ fn contract_supports<S: HasStateApi>(
 /// - Sender is not the owner of the contract instance.
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis_wCCD",
+    contract = "cis2_wCCD",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
     error = "ContractError",

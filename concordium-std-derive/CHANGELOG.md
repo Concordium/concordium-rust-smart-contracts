@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add support for event schemas in the schema derivation macro.
+
 ## concordium-std-derive 4.1.0 (2022-10-31)
 
 - Allow `#[concordium(state_parameter)]`'s value be not just identifier but any type path

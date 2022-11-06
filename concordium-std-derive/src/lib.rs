@@ -634,7 +634,8 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let return_value_option = None; // Return values are currently not supported on init.
     let error_option = init_attributes.optional.error;
     let event_option = init_attributes.event;
-    let contract_name = wasm_export_fn_name.clone();
+    let wasm_name_cloned = wasm_export_fn_name.clone();
+    let rust_name_cloned = rust_export_fn_name.clone();
 
     out.extend(contract_function_schema_tokens(
         parameter_option,
@@ -645,7 +646,7 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     )?);
 
     // Adding the event schema
-    out.extend(contract_function_schema_tokens2(event_option, contract_name)?);
+    out.extend(contract_function_event_schema(event_option, rust_name_cloned, wasm_name_cloned)?);
 
     ast.to_tokens(&mut out);
 
@@ -1061,9 +1062,10 @@ fn contract_function_optional_args_tokens(
 }
 
 #[cfg(feature = "build-schema")]
-fn contract_function_schema_tokens2(
+fn contract_function_event_schema(
     event_option: Option<syn::LitStr>,
-    contract_name: String,
+    rust_name: syn::Ident,
+    wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let event_embed = match event_option {
         Some(event_ty) => {
@@ -1077,8 +1079,8 @@ fn contract_function_schema_tokens2(
 
     // Only produce the schema function if the event was set.
     if let Some(construct_schema_bytes) = event_embed {
-        let schema_name = format!("concordium_event_schema_{}", contract_name);
-        let schema_ident = format_ident!("concordium_event_schema_{}", contract_name);
+        let schema_name = format!("concordium_event_schema_{}", wasm_name);
+        let schema_ident = format_ident!("concordium_event_schema_{}", rust_name);
         Ok(quote! {
             #[export_name = #schema_name]
             pub extern "C" fn #schema_ident() -> *mut u8 {
@@ -1166,9 +1168,10 @@ fn contract_function_schema_tokens(
 }
 
 #[cfg(not(feature = "build-schema"))]
-fn contract_function_schema_tokens2(
+fn contract_function_event_schema(
     _event_option: Option<syn::LitStr>,
-    _contract_name: String,
+    _rust_name: syn::Ident,
+    _wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
     Ok(proc_macro2::TokenStream::new())
 }
