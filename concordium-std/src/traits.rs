@@ -362,7 +362,7 @@ pub trait HasHost<State>: Sized {
     ///
     /// ```ignore
     /// let balance_before = host.account_balance(account)?;
-    /// host.transfer(&account, amount)?;
+    /// host.invoke_transfer(&account, amount)?;
     /// let balance_after = host.account_balance(account)?; // balance_before + amount
     /// ```
     ///

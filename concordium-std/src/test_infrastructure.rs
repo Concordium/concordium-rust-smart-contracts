@@ -1646,7 +1646,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 
     /// Set the contract address.
-    /// This is used to redirect queryies for the balance of the contract
+    /// This is used to redirect queries for the balance of the contract
     /// itself.
     ///
     /// This method panics if the address provided is already setup as a missing
@@ -1713,7 +1713,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     /// Set the current exchange rates.
     /// This is used for resolving a query for the current exchange rates.
     ///
-    /// Note: Setting this overwrites previous set exchange rates.
+    /// Note: Setting this again overwrites the previously set exchange rates.
     pub fn set_exchange_rates(&mut self, exchange_rates: ExchangeRates) {
         self.query_exchange_rates = Some(exchange_rates);
     }
