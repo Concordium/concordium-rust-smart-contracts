@@ -2867,17 +2867,41 @@ impl Deserial for HashKeccak256 {
 
 impl Serial for ExchangeRates {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        self.euro_per_energy().serial(out)?;
-        self.micro_ccd_per_euro().serial(out)?;
+        self.euro_per_energy.serial(out)?;
+        self.micro_ccd_per_euro.serial(out)?;
         Ok(())
     }
 }
 
 impl Deserial for ExchangeRates {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let euro_per_energy = source.get()?;
-        let micro_ccd_per_euro = source.get()?;
-        Ok(Self::new(euro_per_energy, micro_ccd_per_euro))
+        let bytes: [u8; 32] = source.read_array()?;
+        let chunks = unsafe { mem::transmute::<[u8; 32], [[u8; 8]; 4]>(bytes) };
+
+        let euro_per_energy_numerator = u64::from_le_bytes(chunks[0]);
+        let euro_per_energy_denominator = u64::from_le_bytes(chunks[1]);
+        let micro_ccd_per_euro_numerator = u64::from_le_bytes(chunks[2]);
+        let micro_ccd_per_euro_denominator = u64::from_le_bytes(chunks[3]);
+
+        if euro_per_energy_numerator == 0
+            || euro_per_energy_denominator == 0
+            || micro_ccd_per_euro_numerator == 0
+            || micro_ccd_per_euro_denominator == 0
+        {
+            return Err(ParseError::default());
+        }
+
+        let euro_per_energy =
+            ExchangeRate::new_unchecked(euro_per_energy_numerator, euro_per_energy_denominator);
+        let micro_ccd_per_euro = ExchangeRate::new_unchecked(
+            micro_ccd_per_euro_numerator,
+            micro_ccd_per_euro_denominator,
+        );
+
+        Ok(Self {
+            euro_per_energy,
+            micro_ccd_per_euro,
+        })
     }
 }
 
@@ -2892,9 +2916,11 @@ impl Serial for AccountBalance {
 
 impl Deserial for AccountBalance {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let total = source.get()?;
-        let staked = source.get()?;
-        let locked = source.get()?;
+        let bytes: [u8; 24] = source.read_array()?;
+        let chunks = unsafe { mem::transmute::<[u8; 24], [[u8; 8]; 3]>(bytes) };
+        let total = Amount::from_micro_ccd(u64::from_le_bytes(chunks[0]));
+        let staked = Amount::from_micro_ccd(u64::from_le_bytes(chunks[1]));
+        let locked = Amount::from_micro_ccd(u64::from_le_bytes(chunks[2]));
         Self::new(total, staked, locked).ok_or_else(ParseError::default)
     }
 }
