@@ -6,8 +6,9 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    CallContractResult, EntryRaw, HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
-    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
+    CallContractResult, EntryRaw, ExchangeRates, HashKeccak256, HashSha2256, HashSha3256, Key,
+    OccupiedEntryRaw, PublicKeyEcdsaSecp256k1, PublicKeyEd25519, QueryAccountBalanceResult,
+    QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
     SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
@@ -347,6 +348,45 @@ pub trait HasHost<State>: Sized {
         let param = to_bytes(parameter);
         self.invoke_contract_raw_read_only(to, Parameter(&param), method, amount)
     }
+
+    /// Get the current exchange rates used by the chain. That is a Euro per
+    /// Energy rate and micro CCD per Euro rate.
+    fn exchange_rates(&self) -> ExchangeRates;
+
+    /// Get the current public balance of an account. Here public means
+    /// unencrypted or unshielded. See [`AccountBalance`] for more.
+    /// This query will fail if the provided address does not exist on chain.
+    ///
+    /// Any amount received by transfers during the transaction
+    /// until the point of querying are reflected in this balance.
+    ///
+    /// ```ignore
+    /// let balance_before = host.account_balance(account)?;
+    /// host.invoke_transfer(&account, amount)?;
+    /// let balance_after = host.account_balance(account)?; // balance_before + amount
+    /// ```
+    ///
+    /// Note: Querying the account invoking this transaction, will return the
+    /// current account balance subtracted the amount of CCD reserved for paying
+    /// the entire energy limit and the amount sent as part of update
+    /// transaction.
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult;
+
+    /// Get the current balance of a contract instance.
+    ///
+    /// Any amount sent and received by transfers and invocations until the
+    /// point of querying are reflected in this balance.
+    /// This query will fail if the provided address does not exist on chain.
+    ///
+    /// ```ignore
+    /// let balance_before = host.contract_balance(contract_address)?;
+    /// host.invoke_contract(&contract_address, ..., amount)?;
+    /// let balance_after = host.contract_balance(contract_address)?; // balance_before + amount
+    /// ```
+    ///
+    /// Note: Querying the contract itself returns the balance of the contract
+    /// including the amount transferred as part of the invocation.
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult;
 
     /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;
