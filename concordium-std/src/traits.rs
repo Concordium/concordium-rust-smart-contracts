@@ -355,23 +355,37 @@ pub trait HasHost<State>: Sized {
 
     /// Get the current public balance of an account. Here public means
     /// unencrypted or unshielded. See [`AccountBalance`] for more.
+    /// This query will fail if the provided address does not exist on chain.
+    ///
+    /// Any amount received by transfers during the transaction
+    /// until the point of querying are reflected in this balance.
+    ///
+    /// ```ignore
+    /// let balance_before = host.account_balance(account)?;
+    /// host.transfer(&account, amount)?;
+    /// let balance_after = host.account_balance(account)?; // balance_before + amount
+    /// ```
     ///
     /// Note: Querying the account invoking this transaction, will return the
-    /// current account balance subtracted the amount of CCD needed for paying
+    /// current account balance subtracted the amount of CCD reserved for paying
     /// the entire energy limit and the amount sent as part of update
     /// transaction.
-    ///
-    /// This query will fail if the provided address does not exist on chain.
     fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult;
 
     /// Get the current balance of a contract instance.
     ///
+    /// Any amount sent and received by transfers and invocations until the
+    /// point of querying are reflected in this balance.
+    /// This query will fail if the provided address does not exist on chain.
+    ///
+    /// ```ignore
+    /// let balance_before = host.contract_balance(contract_address)?;
+    /// host.invoke_contract(&contract_address, ..., amount)?;
+    /// let balance_after = host.contract_balance(contract_address)?; // balance_before + amount
+    /// ```
+    ///
     /// Note: Querying the contract itself returns the balance of the contract
     /// including the amount transferred as part of the invocation.
-    /// Any amount sent and received by transfers and invocations is also
-    /// reflected in this balance.
-    ///
-    /// This query will fail if the provided address does not exist on chain.
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult;
 
     /// Get an immutable reference to the contract state.
