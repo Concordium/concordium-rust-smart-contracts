@@ -589,13 +589,13 @@ pub struct ExternReturnValue {
 pub struct AccountBalance {
     /// The total balance of the account. Note that part of this balance might
     /// be staked and/or locked in scheduled transfers.
-    pub(crate) total:  Amount,
+    pub total:  Amount,
     /// The current staked amount of the account. This amount is used for
     /// staking.
-    pub(crate) staked: Amount,
+    pub staked: Amount,
     /// The current amount locked in releases that resulted from transfers with
     /// schedule. A locked amount can still be used for staking.
-    pub(crate) locked: Amount,
+    pub locked: Amount,
 }
 
 impl AccountBalance {
@@ -612,29 +612,6 @@ impl AccountBalance {
             })
         }
     }
-
-    /// Construct a new account balance, *without* ensuring that both the staked
-    /// amount and the locked amount is smaller than or equal to the total
-    /// balance.
-    pub fn new_unchecked(total: Amount, staked: Amount, locked: Amount) -> Self {
-        Self {
-            total,
-            staked,
-            locked,
-        }
-    }
-
-    /// The total balance of the account. Note that part of this balance might
-    /// be staked and/or locked in releases using scheduled transfers.
-    pub fn total(&self) -> Amount { self.total }
-
-    /// The current staked amount of the account. This amount is used for
-    /// staking.
-    pub fn staked(&self) -> Amount { self.staked }
-
-    /// The current amount locked in releases that resulted from transfers with
-    /// schedule. A locked amount can still be used for staking.
-    pub fn locked(&self) -> Amount { self.locked }
 
     /// The current available balance of the account. This is the amount
     /// an account currently have available for transfering and is not

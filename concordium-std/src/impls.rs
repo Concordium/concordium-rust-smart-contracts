@@ -2907,9 +2907,9 @@ impl Deserial for ExchangeRates {
 
 impl Serial for AccountBalance {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        self.total().serial(out)?;
-        self.staked().serial(out)?;
-        self.locked().serial(&mut *out)?;
+        self.total.serial(out)?;
+        self.staked.serial(out)?;
+        self.locked.serial(&mut *out)?;
         Ok(())
     }
 }
