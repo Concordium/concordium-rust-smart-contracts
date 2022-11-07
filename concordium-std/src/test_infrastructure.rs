@@ -1330,8 +1330,8 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     /// chain.
     ///
     /// Possible errors:
-    ///   - [TransferError::AmountTooLarge]: Contract has insufficient funds.
-    ///   - [TransferError::MissingAccount]: Attempted transfer to an account
+    ///   - [`TransferError::AmountTooLarge`]: Contract has insufficient funds.
+    ///   - [`TransferError::MissingAccount`]: Attempted transfer to an account
     ///     set as missing with `make_account_missing`.
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         if self.missing_accounts.contains(receiver) {
@@ -1645,6 +1645,12 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         *self.contract_balance.borrow_mut() = amount;
     }
 
+    /// Set the contract address.
+    /// This is used to redirect queryies for the balance of the contract
+    /// itself.
+    ///
+    /// This method panics if the address provided is already setup as a missing
+    /// contract or for contract balance queries.
     pub fn set_self_address(&mut self, address: ContractAddress) {
         if self.missing_contracts.contains(&address) {
             fail!("The self_address is marked as a missing contract address.")
@@ -1658,15 +1664,43 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         self.contract_address = Some(address);
     }
 
+    /// Setup an account balance for an account.
+    /// This is used to resolve queries for account balances.
+    ///
+    /// This method panics if the address provided is already setup as a missing
+    /// account.
+    ///
+    /// Note: Setting up the account balance for the same address will overwrite
+    /// the previous setup for that address.
     pub fn setup_query_account_balance(
         &mut self,
         address: AccountAddress,
         account_balance: AccountBalance,
     ) {
+        if self.missing_accounts.contains(&address) {
+            fail!(
+                "Setting up a query account balance for the provided address is not possible, \
+                 because the address is marked as a missing account."
+            )
+        }
         self.query_account_balances.borrow_mut().insert(address, account_balance);
     }
 
+    /// Setup a balance for a contract.
+    /// This is used to resolve queries for contract balances.
+    ///
+    /// This method panics if the address provided is already setup as a missing
+    /// contract or as the self_address.
+    ///
+    /// Note: Setting up the balance for the same address will overwrite the
+    /// previous setup for that address.
     pub fn setup_query_contract_balance(&mut self, address: ContractAddress, balance: Amount) {
+        if self.missing_contracts.contains(&address) {
+            fail!(
+                "Setting up a query contract balance for the provided address is not possible, \
+                 because the address is marked as a missing contract address."
+            )
+        }
         if Some(address) == self.contract_address {
             fail!(
                 "Setting up a query contract balance for the self_address is not possible, use \
@@ -1676,6 +1710,10 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         self.query_contract_balances.borrow_mut().insert(address, balance);
     }
 
+    /// Set the current exchange rates.
+    /// This is used for resolving a query for the current exchange rates.
+    ///
+    /// Note: Setting this overwrites previous set exchange rates.
     pub fn set_exchange_rates(&mut self, exchange_rates: ExchangeRates) {
         self.query_exchange_rates = Some(exchange_rates);
     }
@@ -1707,18 +1745,36 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 
     /// Set an account to be missing. Any transfers to this account will result
-    /// in an [TransferError::MissingAccount] error.
+    /// in an [`TransferError::MissingAccount`] error.
     ///
     /// This differs from the default, where all accounts are assumed to exist.
+    ///
+    /// This method panics if the address provided is already setup for a query
+    /// account balance.
     pub fn make_account_missing(&mut self, account: AccountAddress) {
+        if self.query_account_balances.borrow().get(&account).is_some() {
+            fail!(
+                "The account cannot be setup as a missing account. It is already setup for a \
+                 query account balance."
+            )
+        }
         self.missing_accounts.insert(account);
     }
 
     /// Set a contract to be missing. Any queries for the balance to this
-    /// contract will result in an [QueryContractBalanceError].
+    /// contract will result in an [`QueryContractBalanceError`].
+    ///
+    /// This method panics if the address provided is already setup for a query
+    /// contract balance or as the self_address.
     pub fn make_contract_missing(&mut self, contract: ContractAddress) {
         if self.contract_address == Some(contract) {
             fail!("The address of the instance cannot be one of the missing contracts.")
+        }
+        if self.query_contract_balances.borrow().get(&contract).is_some() {
+            fail!(
+                "The contract address cannot be setup as a missing contract. It is already setup \
+                 for a query contract balance."
+            )
         }
         self.missing_contracts.insert(contract);
     }
