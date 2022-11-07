@@ -2909,7 +2909,7 @@ impl Serial for AccountBalance {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.total.serial(out)?;
         self.staked.serial(out)?;
-        self.locked.serial(&mut *out)?;
+        self.locked.serial(out)?;
         Ok(())
     }
 }
