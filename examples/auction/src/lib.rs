@@ -344,10 +344,10 @@ mod tests {
             auction_init(&ctx0, &mut state_builder).expect("Initialization should pass");
 
         let mut host = TestHost::new(initial_state, state_builder);
-        host.set_exchange_rates(ExchangeRates::new(
-            ExchangeRate::new_unchecked(1, 1),
-            ExchangeRate::new_unchecked(1, 1),
-        ));
+        host.set_exchange_rates(ExchangeRates {
+            euro_per_energy:    ExchangeRate::new_unchecked(1, 1),
+            micro_ccd_per_euro: ExchangeRate::new_unchecked(1, 1),
+        });
 
         // 1st bid: Alice bids `amount`.
         // The current_smart_contract_balance before the invoke is 0.
@@ -438,10 +438,11 @@ mod tests {
             auction_init(&ctx0, &mut state_builder).expect("Initialization should succeed.");
 
         let mut host = TestHost::new(initial_state, state_builder);
-        host.set_exchange_rates(ExchangeRates::new(
-            ExchangeRate::new_unchecked(1, 1),
-            ExchangeRate::new_unchecked(1, 1),
-        ));
+        host.set_exchange_rates(ExchangeRates {
+            euro_per_energy:    ExchangeRate::new_unchecked(1, 1),
+            micro_ccd_per_euro: ExchangeRate::new_unchecked(1, 1),
+        });
+
         // 1st bid: Account1 bids `amount`.
         // The current_smart_contract_balance before the invoke is 0.
         bid(&mut host, &ctx1, amount, Amount::from_micro_ccd(0));
