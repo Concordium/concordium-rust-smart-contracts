@@ -1844,7 +1844,8 @@ mod test {
         host.set_self_balance(Amount::from_micro_ccd(3000));
 
         let account = AccountAddress([0; 32]);
-        let account_balance = AccountBalance::new(Amount::zero(), Amount::zero(), Amount::zero());
+        let account_balance =
+            AccountBalance::new(Amount::zero(), Amount::zero(), Amount::zero()).unwrap();
         host.setup_query_account_balance(account, account_balance);
 
         host.invoke_transfer(&account, Amount::from_micro_ccd(2000))
@@ -1853,7 +1854,7 @@ mod test {
         let account_new_balance = host.account_balance(account).expect("Should succeed");
         let self_new_balance = host.contract_balance(self_address).expect("Should succeed");
 
-        assert_eq!(account_new_balance.total(), Amount::from_micro_ccd(2000));
+        assert_eq!(account_new_balance.total, Amount::from_micro_ccd(2000));
         assert_eq!(self_new_balance, Amount::from_micro_ccd(1000));
     }
 
