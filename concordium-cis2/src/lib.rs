@@ -31,7 +31,7 @@
 //! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is defined
 //! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_std::*;
+use concordium_std::{collections::BTreeMap, *};
 #[cfg(not(feature = "std"))]
 use core::{fmt, ops};
 #[cfg(feature = "std")]
@@ -811,6 +811,68 @@ pub enum Cis2Event<T: IsTokenId, A: IsTokenAmount> {
     UpdateOperator(UpdateOperatorEvent),
     /// Setting the metadata for a token.
     TokenMetadata(TokenMetadataEvent<T>),
+}
+
+impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
+    fn get_type() -> schema::Type {
+        let mut event_map = BTreeMap::new();
+        event_map.insert(
+            TRANSFER_EVENT_TAG,
+            (
+                "Transfer".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("amount"), A::get_type()),
+                    (String::from("from"), Address::get_type()),
+                    (String::from("to"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            MINT_EVENT_TAG,
+            (
+                "Mint".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("amount"), A::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            BURN_EVENT_TAG,
+            (
+                "Burn".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("amount"), A::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            UPDATE_OPERATOR_EVENT_TAG,
+            (
+                "UpdateOperator".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("update"), OperatorUpdate::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                    (String::from("operator"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            TOKEN_METADATA_EVENT_TAG,
+            (
+                "TokenMetadata".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), T::get_type()),
+                    (String::from("metadata_url"), MetadataUrl::get_type()),
+                ]),
+            ),
+        );
+        schema::Type::TaggedEnum(event_map)
+    }
 }
 
 impl<T: IsTokenId, A: IsTokenAmount> Serial for Cis2Event<T, A> {

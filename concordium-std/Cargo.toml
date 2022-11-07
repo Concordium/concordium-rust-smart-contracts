@@ -20,11 +20,11 @@ ed25519-zebra = { version = "2.2", optional = true }
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"
-version = "4"
+version = "4.2"
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-contracts-common/concordium-contracts-common"
-version = "4"
+version = "4.1"
 default-features = false
 
 [features]
@@ -41,6 +41,9 @@ crate-type = ["rlib"]
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+
+[dev-dependencies]
+trybuild = "1.0"
 # Don't unwind on panics, just trap.
 # panic = "abort"
 
