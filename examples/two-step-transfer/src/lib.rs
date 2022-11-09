@@ -29,6 +29,7 @@
  */
 
 #![cfg_attr(not(feature = "std"), no_std)]
+
 use concordium_std::{collections::*, *};
 
 // Types
@@ -634,13 +635,14 @@ mod tests {
     }
 
     #[concordium_quickcheck]
+    #[cfg(feature = "quickcheck")]
     fn prop_receive_support_transfer(
         account1: AccountAddress,
         account2: AccountAddress,
         account3: AccountAddress,
         target_account: AccountAddress,
         transfer_amount: Amount,
-    ) {
+    ) -> bool {
         // Setup context
         let request_id = 0;
         let parameter = Message::SupportTransfer(request_id, transfer_amount, target_account);
@@ -684,12 +686,7 @@ mod tests {
         // Execution
         let res: ContractResult<()> =
             contract_receive_message(&ctx, &mut host, Amount::from_ccd(0));
-
-        claim!(res.is_ok(), "Contract receive support failed, but it should not have.");
-        claim_eq!(
-            sum_reserved_balance(host.state()),
-            Amount::from_micro_ccd(0),
-            "The transfer should be subtracted from the reserved balance"
-        );
+        // The contract execution shouldn't fail and the sum of reserved balances should be zero
+        res.is_ok() && (sum_reserved_balance(host.state()) == Amount::from_micro_ccd(0))
     }
 }

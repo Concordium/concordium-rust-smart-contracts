@@ -79,6 +79,8 @@ use crate::{
     *,
 };
 use convert::TryInto;
+#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+use quickcheck::*;
 
 mod trie;
 
@@ -563,15 +565,20 @@ impl HasLogger for TestLogger {
     }
 }
 
-/// Reports back an error to the host when compiled to wasm
-/// Used internally, not meant to be called directly by contract writers
 #[doc(hidden)]
 #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
-pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
+fn report_error_internal(
+    is_quickcheck: bool,
+    message: &str,
+    filename: &str,
+    line: u32,
+    column: u32,
+) {
     let msg_bytes = message.as_bytes();
     let filename_bytes = filename.as_bytes();
     unsafe {
         crate::prims::report_error(
+            is_quickcheck as u32,
             msg_bytes.as_ptr(),
             msg_bytes.len() as u32,
             filename_bytes.as_ptr(),
@@ -582,11 +589,30 @@ pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
     };
 }
 
+#[doc(hidden)]
+#[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
+fn report_error_internal(
+    _is_quickcheck: bool,
+    _message: &str,
+    _filename: &str,
+    _line: u32,
+    _column: u32,
+) {
+}
+
 /// Reports back an error to the host when compiled to wasm
 /// Used internally, not meant to be called directly by contract writers
 #[doc(hidden)]
-#[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
-pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
+pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
+    report_error_internal(false, message, filename, line, column)
+}
+
+/// Reports back an error from a QuickCheck test to the host when compiled to
+/// wasm Used internally, not meant to be called directly by contract writers
+#[doc(hidden)]
+pub fn report_quickcheck_error(message: &str, filename: &str, line: u32, column: u32) {
+    report_error_internal(true, message, filename, line, column)
+}
 
 #[derive(Debug, PartialEq, Eq)]
 /// An error that is raised when operating with `Seek`, `Write`, `Read`, or
@@ -1629,6 +1655,45 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
             *self = checkpoint;
         }
         res
+    }
+}
+
+#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+use getrandom::register_custom_getrandom;
+#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
+    unsafe {
+        crate::prims::get_random(dest.as_mut_ptr(), dest.len() as u32);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "std", target_arch = "wasm32"))]
+register_custom_getrandom!(get_random);
+
+#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+pub fn concordium_qc<A>(f: A)
+where
+    A: Testable, {
+    let mut qc = QuickCheck::new();
+    let res = qc.quicktest(f);
+    match res {
+        Ok(n_tests_passed) => {
+            let default = 0;
+            let min_tests = match std::env::var("QUICKCHECK_MIN_TESTS_PASSED") {
+                Ok(val) => val.parse().unwrap_or(default),
+                Err(_) => default,
+            };
+            if n_tests_passed < min_tests {
+                let msg =
+                    format!("(Unable to generate enough tests, {} not discarded.)", n_tests_passed);
+                report_quickcheck_error(&msg, file!(), line!(), column!())
+            }
+        }
+        Err(result) => {
+            let msg = format!("Failed with the counterexample: {:#?}", result);
+            report_quickcheck_error(&msg, file!(), line!(), column!());
+        }
     }
 }
 

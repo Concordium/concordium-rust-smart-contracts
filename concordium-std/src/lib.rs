@@ -264,8 +264,6 @@ mod types;
 pub use concordium_contracts_common::*;
 pub use concordium_std_derive::*;
 pub use impls::*;
-#[cfg(feature = "concordium-quickcheck")]
-pub use quickcheck::quickcheck;
 pub use traits::*;
 pub use types::*;
 

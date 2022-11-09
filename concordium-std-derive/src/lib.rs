@@ -1951,7 +1951,7 @@ pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStr
                     #(#attrs)*
                     fn #name() {
                         #item_fn
-                       ::concordium_std::quickcheck(#name as #fn_type)
+                       ::concordium_std::test_infrastructure::concordium_qc(#name as #fn_type)
                     }
                 }
             } else {
