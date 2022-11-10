@@ -17,7 +17,6 @@ std = ["concordium-std/std"]
 [lib]
 crate-type=["cdylib", "rlib"]
 
-
 [profile.release]
 opt-level = 3
 panic = "abort"

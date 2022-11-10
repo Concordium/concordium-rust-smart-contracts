@@ -2,25 +2,38 @@ use std::collections::BTreeMap;
 
 use concordium_std::*;
 
+type VotingOption = String;
+type Vote = u32;
+type VoteCount = u32;
+
 #[derive(Serial, Deserial, SchemaType, Clone)]
 struct Description {
     description_text: String,
     options:          Vec<VotingOption>,
 }
 
-type VotingOption = String;
-type Vote = u32;
-type VoteCount = u32;
-
 #[derive(Deserial, SchemaType)]
 struct VoteParameter {
     vote: u32,
+}
+
+#[derive(Deserial, SchemaType)]
+struct InitParameter {
+    description: Description,
+    end_time:    Timestamp,
 }
 
 #[derive(Serial, Deserial, Clone, Eq, PartialEq, SchemaType)]
 struct Tally {
     result:      BTreeMap<VotingOption, VoteCount>,
     total_votes: VoteCount,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct VotingView {
+    description: Description,
+    tally:       Tally,
+    end_time:    Timestamp,
 }
 
 #[derive(Serial, DeserialWithState, StateClone)]
@@ -31,17 +44,9 @@ struct State<S> {
     end_time:    Timestamp,
 }
 
-#[derive(Deserial, SchemaType)]
-struct InitParameter {
-    description: Description,
-    end_time:    Timestamp,
-}
-
 #[derive(Serial, Deserial, SchemaType)]
-struct VotingView {
-    description: Description,
-    tally:       Tally,
-    end_time:    Timestamp,
+struct VoteListState {
+    list_votes: Vec<ContractAddress>,
 }
 
 #[derive(Reject, Serial, PartialEq, Eq, Debug, SchemaType)]
@@ -73,15 +78,9 @@ type VotingResult<T> = Result<T, VotingError>;
 #[derive(Reject, Serial)]
 enum FinalizationError {
     VoteStillActive,
-    //VoteAlreadyFinalized,
 }
 
 type FinalizationResult<T> = Result<T, FinalizationError>;
-
-#[derive(Serial, Deserial, SchemaType)]
-struct VoteListState {
-    list_votes: Vec<ContractAddress>,
-}
 
 #[derive(Reject, Serial, PartialEq, Eq, Debug, SchemaType)]
 enum ListAddError {
@@ -267,6 +266,19 @@ mod tests {
     const ADDR_ACC_0: Address = Address::Account(ACC_0);
     const ADDR_ACC_1: Address = Address::Account(ACC_1);
 
+    fn make_test_host(options: Vec<String>, end_time: Timestamp) -> TestHost<State<TestStateApi>> {
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            description: Description {
+                description_text: "Test description".into(),
+                options,
+            },
+            ballots: state_builder.new_map(),
+            end_time,
+        };
+        TestHost::new(state, state_builder)
+    }
+
     #[concordium_test]
     fn test_vote_after_finish_time() {
         let end_time = Timestamp::from_timestamp_millis(100);
@@ -336,26 +348,12 @@ mod tests {
         claim_eq!(vec![(ACC_0, 1), (ACC_1, 0)], ballots);
     }
 
-    fn make_test_host(options: Vec<String>, end_time: Timestamp) -> TestHost<State<TestStateApi>> {
-        let mut state_builder = TestStateBuilder::new();
-        let state = State {
-            description: Description {
-                description_text: "Test description".into(),
-                options,
-            },
-            // vote_state: VoteState::Voting,
-            ballots: state_builder.new_map(),
-            end_time,
-        };
-        TestHost::new(state, state_builder)
-    }
-
     #[concordium_test]
     fn test_tally() {
         let options = vec![
-            VotingOption::from("Blue"),
+            VotingOption::from("Concordium"),
             VotingOption::from("Bitcoin"),
-            VotingOption::from("Coffee"),
+            VotingOption::from("Ethereum"),
         ];
         let mut state_builder = TestStateBuilder::new();
         let mut ballots = state_builder.new_map();
