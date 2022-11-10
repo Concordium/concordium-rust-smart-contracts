@@ -20,6 +20,7 @@ jobs:
           - concordium-std-derive/Cargo.toml
           - concordium-std/Cargo.toml
           - concordium-cis2/Cargo.toml
+          - examples/voting/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
@@ -464,6 +465,7 @@ jobs:
           - wasm32-unknown-unknown
 
         crates:
+          - examples/voting/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
@@ -585,6 +587,7 @@ jobs:
           - x86_64-unknown-linux-gnu
 
         crates:
+          - examples/voting/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
