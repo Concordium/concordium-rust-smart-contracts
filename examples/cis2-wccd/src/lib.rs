@@ -30,9 +30,6 @@ use concordium_std::*;
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
-/// The metadata url for the wCCD token.
-const TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
-
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
@@ -61,15 +58,27 @@ struct AddressState<S> {
     operators: StateSet<Address, S>,
 }
 
+#[derive(Serialize, SchemaType)]
+struct TestParams {
+    metadata_url:        String,
+    fail_transfer:       bool,
+    fail_balance_of:     bool,
+    fail_token_metadata: bool,
+}
+
 /// The contract state,
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state the one token.
-    token:        StateMap<Address, AddressState<S>, S>,
+    token:               StateMap<Address, AddressState<S>, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    metadata_url:        String,
+    fail_transfer:       bool,
+    fail_balance_of:     bool,
+    fail_token_metadata: bool,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -157,10 +166,14 @@ impl From<CustomContractError> for ContractError {
 
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(state_builder: &mut StateBuilder<S>) -> Self {
+    fn new(state_builder: &mut StateBuilder<S>, test_params: &TestParams) -> Self {
         State {
-            token:        state_builder.new_map(),
-            implementors: state_builder.new_map(),
+            token:               state_builder.new_map(),
+            implementors:        state_builder.new_map(),
+            metadata_url:        test_params.metadata_url.clone(),
+            fail_transfer:       test_params.fail_transfer,
+            fail_balance_of:     test_params.fail_balance_of,
+            fail_token_metadata: test_params.fail_token_metadata,
         }
     }
 
@@ -302,15 +315,17 @@ impl<S: HasStateApi> State<S> {
 #[init(
     contract = "cis2_wCCD",
     enable_logger,
-    event = "Cis2Event<ContractTokenId, ContractTokenAmount>"
+    event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
+    parameter = "TestParams"
 )]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
+    let test_params: TestParams = ctx.parameter_cursor().get()?;
     // Construct the initial contract state.
-    let state = State::new(state_builder);
+    let state = State::new(state_builder, &test_params);
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
@@ -324,7 +339,7 @@ fn contract_init<S: HasStateApi>(
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
         token_id:     TOKEN_ID_WCCD,
         metadata_url: MetadataUrl {
-            url:  String::from(TOKEN_METADATA_URL),
+            url:  test_params.metadata_url,
             hash: None,
         },
     }))?;
@@ -518,6 +533,9 @@ fn contract_transfer<S: HasStateApi>(
             )?;
         }
     }
+    if host.state().fail_transfer {
+        return Err(ContractError::Unauthorized);
+    }
     Ok(())
 }
 
@@ -599,6 +617,9 @@ fn contract_balance_of<S: HasStateApi>(
         response.push(amount);
     }
     let result = ContractBalanceOfQueryResponse::from(response);
+    if host.state().fail_balance_of {
+        return Err(ContractError::Unauthorized);
+    }
     Ok(result)
 }
 
@@ -651,7 +672,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 )]
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -663,13 +684,39 @@ fn contract_token_metadata<S: HasStateApi>(
         ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
         let metadata_url = MetadataUrl {
-            url:  TOKEN_METADATA_URL.to_string(),
+            url:  host.state().metadata_url.clone(),
             hash: None,
         };
         response.push(metadata_url);
     }
     let result = TokenMetadataQueryResponse::from(response);
+    if host.state().fail_token_metadata {
+        return Err(ContractError::Unauthorized);
+    }
     Ok(result)
+}
+
+#[receive(contract = "cis2_wCCD", name = "updateUrl", parameter = "String", mutable)]
+fn contract_update_url<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<()> {
+    let metadata_url = ctx.parameter_cursor().get()?;
+    host.state_mut().metadata_url = metadata_url;
+    Ok(())
+}
+
+#[receive(contract = "cis2_wCCD", name = "updateTestParams", parameter = "TestParams", mutable)]
+fn contract_update_test_params<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<()> {
+    let params: TestParams = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    state.fail_transfer = params.fail_transfer;
+    state.fail_balance_of = params.fail_balance_of;
+    state.fail_token_metadata = params.fail_token_metadata;
+    Ok(())
 }
 
 /// Get the supported standards or addresses for a implementation given list of
