@@ -79,7 +79,7 @@ use crate::{
     *,
 };
 use convert::TryInto;
-#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(feature = "concordium-quickcheck")]
 use quickcheck::*;
 
 mod trie;
@@ -1661,6 +1661,10 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
 use getrandom::register_custom_getrandom;
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+/// A custom function for generating random numbers.
+/// On-chain Wasm cannot use RNGs and function redirects a call to the
+/// `get_random()` primitive (host function), which is later handled by
+/// `TestHost`, where the actual random number generation happens.
 fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
     unsafe {
         crate::prims::get_random(dest.as_mut_ptr(), dest.len() as u32);
@@ -1669,6 +1673,10 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
 }
 
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
+// Register our own custom random number generation function, so all the calls,
+// that depend on `getrandom` (like `from_entropy()`) will call our function
+// instead. This is anly relevant for on-chain `Wasm`, where RNGs are not
+// supported.
 register_custom_getrandom!(get_random);
 
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
@@ -1695,6 +1703,13 @@ where
             report_quickcheck_error(&msg, file!(), line!(), column!());
         }
     }
+}
+
+#[cfg(all(feature = "concordium-quickcheck", not(target_arch = "wasm32")))]
+pub fn concordium_qc<A>(f: A)
+where
+    A: Testable, {
+    quickcheck::quickcheck(f)
 }
 
 #[cfg(test)]
