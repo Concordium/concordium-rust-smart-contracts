@@ -58,12 +58,15 @@ struct AddressState<S> {
     operators: StateSet<Address, S>,
 }
 
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Clone)]
 struct TestParams {
-    metadata_url:        String,
-    fail_transfer:       bool,
-    fail_balance_of:     bool,
-    fail_token_metadata: bool,
+    metadata_url:                  String,
+    fail_transfer:                 bool,
+    fail_balance_of:               bool,
+    fail_token_metadata:           bool,
+    always_transfer_to:            Option<AccountAddress>, // fail_transfer takes precedence
+    balance_of_returns_string:     bool,                   // fail_balance takes precedence
+    token_metadata_returns_number: bool,                   // fail_metadata takes precedence
 }
 
 /// The contract state,
@@ -71,14 +74,11 @@ struct TestParams {
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state the one token.
-    token:               StateMap<Address, AddressState<S>, S>,
+    token:        StateMap<Address, AddressState<S>, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    metadata_url:        String,
-    fail_transfer:       bool,
-    fail_balance_of:     bool,
-    fail_token_metadata: bool,
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    test_params:  TestParams,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -166,14 +166,11 @@ impl From<CustomContractError> for ContractError {
 
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(state_builder: &mut StateBuilder<S>, test_params: &TestParams) -> Self {
+    fn new(state_builder: &mut StateBuilder<S>, test_params: TestParams) -> Self {
         State {
-            token:               state_builder.new_map(),
-            implementors:        state_builder.new_map(),
-            metadata_url:        test_params.metadata_url.clone(),
-            fail_transfer:       test_params.fail_transfer,
-            fail_balance_of:     test_params.fail_balance_of,
-            fail_token_metadata: test_params.fail_token_metadata,
+            token: state_builder.new_map(),
+            implementors: state_builder.new_map(),
+            test_params,
         }
     }
 
@@ -325,7 +322,8 @@ fn contract_init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let test_params: TestParams = ctx.parameter_cursor().get()?;
     // Construct the initial contract state.
-    let state = State::new(state_builder, &test_params);
+    let url = test_params.metadata_url.clone();
+    let state = State::new(state_builder, test_params);
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
     // Log event for the newly minted token.
@@ -339,7 +337,7 @@ fn contract_init<S: HasStateApi>(
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
         token_id:     TOKEN_ID_WCCD,
         metadata_url: MetadataUrl {
-            url:  test_params.metadata_url,
+            url,
             hash: None,
         },
     }))?;
@@ -505,7 +503,12 @@ fn contract_transfer<S: HasStateApi>(
         let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
         ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
-        let to_address = to.address();
+
+        let to_address = if let Some(acc) = state.test_params.always_transfer_to {
+            Address::Account(acc)
+        } else {
+            to.address()
+        };
         // Update the contract state
         state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
@@ -533,7 +536,7 @@ fn contract_transfer<S: HasStateApi>(
             )?;
         }
     }
-    if host.state().fail_transfer {
+    if host.state().test_params.fail_transfer {
         return Err(ContractError::Unauthorized);
     }
     Ok(())
@@ -590,6 +593,21 @@ type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
 type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
+enum BalanceOfRV {
+    Normal(ContractBalanceOfQueryResponse),
+    AString(String),
+}
+
+// Serial without any tags.
+impl Serial for BalanceOfRV {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            BalanceOfRV::Normal(x) => x.serial(out),
+            BalanceOfRV::AString(x) => x.serial(out),
+        }
+    }
+}
+
 /// Get the balance of given token IDs and addresses.
 ///
 /// It rejects if:
@@ -606,7 +624,7 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 fn contract_balance_of<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<ContractBalanceOfQueryResponse> {
+) -> ContractResult<BalanceOfRV> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
     // Build the response.
@@ -617,10 +635,15 @@ fn contract_balance_of<S: HasStateApi>(
         response.push(amount);
     }
     let result = ContractBalanceOfQueryResponse::from(response);
-    if host.state().fail_balance_of {
+    if host.state().test_params.fail_balance_of {
         return Err(ContractError::Unauthorized);
     }
-    Ok(result)
+
+    if host.state().test_params.balance_of_returns_string {
+        return Ok(BalanceOfRV::AString("Hello".into()));
+    }
+
+    Ok(BalanceOfRV::Normal(result))
 }
 
 /// Takes a list of queries. Each query is an owner address and some address to
@@ -658,6 +681,21 @@ fn contract_operator_of<S: HasStateApi>(
 // for when generating the schema.
 pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
 
+enum MetadataRV {
+    Normal(TokenMetadataQueryResponse),
+    Number(u64),
+}
+
+// Serialize without a tag
+impl Serial for MetadataRV {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            MetadataRV::Normal(x) => x.serial(out),
+            MetadataRV::Number(x) => x.serial(out),
+        }
+    }
+}
+
 /// Get the token metadata URLs and checksums given a list of token IDs.
 ///
 /// It rejects if:
@@ -673,7 +711,7 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
 fn contract_token_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<TokenMetadataQueryResponse> {
+) -> ContractResult<MetadataRV> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
 
@@ -684,16 +722,19 @@ fn contract_token_metadata<S: HasStateApi>(
         ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
         let metadata_url = MetadataUrl {
-            url:  host.state().metadata_url.clone(),
+            url:  host.state().test_params.metadata_url.clone(),
             hash: None,
         };
         response.push(metadata_url);
     }
     let result = TokenMetadataQueryResponse::from(response);
-    if host.state().fail_token_metadata {
+    if host.state().test_params.fail_token_metadata {
         return Err(ContractError::Unauthorized);
     }
-    Ok(result)
+    if host.state().test_params.token_metadata_returns_number {
+        return Ok(MetadataRV::Number(42));
+    }
+    Ok(MetadataRV::Normal(result))
 }
 
 #[receive(contract = "cis2_wCCD", name = "updateUrl", parameter = "String", mutable)]
@@ -702,7 +743,7 @@ fn contract_update_url<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     let metadata_url = ctx.parameter_cursor().get()?;
-    host.state_mut().metadata_url = metadata_url;
+    host.state_mut().test_params.metadata_url = metadata_url;
     Ok(())
 }
 
@@ -712,10 +753,7 @@ fn contract_update_test_params<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     let params: TestParams = ctx.parameter_cursor().get()?;
-    let state = host.state_mut();
-    state.fail_transfer = params.fail_transfer;
-    state.fail_balance_of = params.fail_balance_of;
-    state.fail_token_metadata = params.fail_token_metadata;
+    host.state_mut().test_params = params;
     Ok(())
 }
 
