@@ -642,7 +642,7 @@ mod tests {
         account3: AccountAddress,
         target_account: AccountAddress,
         transfer_amount: Amount,
-        ccd_amount: Amount
+        ccd_amount: Amount,
     ) -> bool {
         // Setup context
         let request_id = 0;
@@ -687,9 +687,9 @@ mod tests {
         // Execution
         // Note: `ccd_amount` doesn't affect the outcome
         // Maybe the contract should reject if it's not zero
-        let res: ContractResult<()> =
-            contract_receive_message(&ctx, &mut host, ccd_amount);
-        // The contract execution shouldn't fail and the sum of reserved balances should be zero
+        let res: ContractResult<()> = contract_receive_message(&ctx, &mut host, ccd_amount);
+        // The contract execution shouldn't fail and the sum of reserved balances should
+        // be zero
         res.is_ok() && (sum_reserved_balance(host.state()) == Amount::from_micro_ccd(0))
     }
 }
