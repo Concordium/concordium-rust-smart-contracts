@@ -10,13 +10,10 @@ repository = "https://github.com/concordium/concordium-rust-smart-contracts"
 readme = "../README.md"
 
 [features]
-default = ["std", "quickcheck"]
+default = ["std", "concordium-quickcheck"]
 
 std = ["concordium-std/std"]
-quickcheck = ["concordium-std/concordium-quickcheck", "concordium-contracts-common/quickcheck"]
-
-[dependencies]
-quickcheck = "1"
+concordium-quickcheck = ["concordium-std/concordium-quickcheck", "concordium-contracts-common/concordium-quickcheck"]
 
 [dependencies.concordium-std]
 # git = "https://github.com/Concordium/concordium-std.git"

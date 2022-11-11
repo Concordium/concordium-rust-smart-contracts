@@ -1911,8 +1911,10 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
 #[cfg(feature = "concordium-quickcheck")]
 #[proc_macro_attribute]
-/// Derive the appropriate export for an annotated quickcheck function, when
-/// feature "wasm-test" is enabled, otherwise behaves like `#[quickcheck]`.
+/// Derive the appropriate export for an annotated QuickCheck function by
+/// exposing it as `#[concordium_test]`. The macro was copied from `QuickCheck`
+/// and changed to use `concordium_std::test_infrastructure::concordium_qc()`
+/// instead of the standard  `QuickCheck`'s `quickcheck()`
 pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let output = match syn::Item::parse.parse(input.clone()) {
         Ok(syn::Item::Fn(mut item_fn)) => {

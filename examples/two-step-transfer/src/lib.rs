@@ -635,13 +635,14 @@ mod tests {
     }
 
     #[concordium_quickcheck]
-    #[cfg(feature = "quickcheck")]
+    #[cfg(feature = "concordium-quickcheck")]
     fn prop_receive_support_transfer(
         account1: AccountAddress,
         account2: AccountAddress,
         account3: AccountAddress,
         target_account: AccountAddress,
         transfer_amount: Amount,
+        ccd_amount: Amount
     ) -> bool {
         // Setup context
         let request_id = 0;
@@ -684,8 +685,10 @@ mod tests {
         host.set_self_balance(transfer_amount);
 
         // Execution
+        // Note: `ccd_amount` doesn't affect the outcome
+        // Maybe the contract should reject if it's not zero
         let res: ContractResult<()> =
-            contract_receive_message(&ctx, &mut host, Amount::from_ccd(0));
+            contract_receive_message(&ctx, &mut host, ccd_amount);
         // The contract execution shouldn't fail and the sum of reserved balances should be zero
         res.is_ok() && (sum_reserved_balance(host.state()) == Amount::from_micro_ccd(0))
     }
