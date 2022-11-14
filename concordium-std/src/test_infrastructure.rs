@@ -1672,7 +1672,7 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
     Ok(())
 }
 
-#[cfg(all(feature = "std", target_arch = "wasm32"))]
+#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
 // Register our own custom random number generation function, so all the calls,
 // that depend on `getrandom` (like `from_entropy()`) will call our function
 // instead. This is only relevant for on-chain wasm, where RNGs are not
