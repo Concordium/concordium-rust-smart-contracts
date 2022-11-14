@@ -1,76 +1,137 @@
-use std::collections::BTreeMap;
+//! A voting smart contract example.
+//!
+//! # Description
+//! A contract that allows for conducting an election with several voting
+//! options. An end_time is set when the election is initialized. Only accounts
+//! can vote for one of the voting options. Each account can change its  
+//! selected voting option as often as it desires until the end_time is reached.
+//! No voting will be possible after the end_time.
+//!
+//! # Operations
+//! The contract allows for
+//!  - `initializing` the election;
+//!  - `vote` for one of the voting options;
+//!  - `getNumberOfVotes` for each voting option;
+//!  - `view` general information about the election.
+//!
+//! Note: Vec<VotingOption> (among other variables) is an input parameter to the
+//! `init` function as well as a return_value (among other variables) of the
+//! `view` function. Since there is a limit to the parameter/return_value size,
+//! the size of the Vec<VotingOption> is limited.
 
+#![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
 type VotingOption = String;
-type Vote = u32;
+type VoteIndex = u32;
 type VoteCount = u32;
 
-#[derive(Serial, Deserial, SchemaType, Clone)]
-struct Description {
-    description_text: String,
-    options:          Vec<VotingOption>,
-}
-
+/// The parameter type for the contract function `vote`.
+/// Takes a vote_index that the account wants to vote for.
 #[derive(Deserial, SchemaType)]
 struct VoteParameter {
-    vote: u32,
+    /// Vote option index to vote for
+    vote_index: VoteIndex,
 }
 
+/// The parameter type for the contract function `init`.
+/// Takes a description, the voting options, and the end_time to start the
+/// election.
 #[derive(Deserial, SchemaType)]
 struct InitParameter {
-    description: Description,
+    /// The description of the election
+    description: String,
+    /// A vector of all voting options
+    options:     Vec<VotingOption>,
+    /// The time when the election ends
     end_time:    Timestamp,
 }
 
-#[derive(Serial, Deserial, Clone, Eq, PartialEq, SchemaType)]
-struct Tally {
-    result:      BTreeMap<VotingOption, VoteCount>,
-    total_votes: VoteCount,
-}
-
+/// The return_value type of the contract function `view`.
+/// Returns a description, the end_time, the voting options as a vector, and the
+/// number of voting options of the current election.
 #[derive(Serial, Deserial, SchemaType)]
 struct VotingView {
-    description: Description,
-    tally:       Tally,
+    /// The description of the election
+    description: String,
+    /// The time when the election ends
     end_time:    Timestamp,
+    /// A vector of all voting options
+    options:     Vec<VotingOption>,
+    /// The number of voting options
+    num_options: u32,
 }
 
+/// The contract state
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
-    description: Description,
-    ballots:     StateMap<AccountAddress, Vote, S>,
+    /// The description of the election.
+    description: String,
+    /// The map connecting a voter to the index of the voted for voting option.
+    ballots:     StateMap<AccountAddress, VoteIndex, S>,
+    /// The map connecting the index of a voting option to the number of votes
+    /// it received so far.
+    tally:       StateMap<VoteIndex, VoteCount, S>,
+    /// The time when the election ends.
     end_time:    Timestamp,
+    /// A vector of all voting options.
+    options:     Vec<VotingOption>,
+    /// The number of voting options.
+    num_options: u32,
 }
 
+/// The different errors that the `vote` function can produce.
 #[derive(Reject, Serial, PartialEq, Eq, Debug, SchemaType)]
 enum VotingError {
+    /// Raised when bid is placed after auction has been finalized.
     VotingFinished,
+    /// Raised when voting for a voting index that does not exists.
     InvalidVoteIndex,
+    /// Raised when parsing the parameter failed.
+    #[from(ParseError)]
     ParsingFailed,
+    /// Raised when a smart contract tries to participate in the election. Only
+    /// accounts are allowed to vote.
     ContractVoter,
-}
-
-impl From<ParseError> for VotingError {
-    fn from(_: ParseError) -> Self { VotingError::ParsingFailed }
 }
 
 type VotingResult<T> = Result<T, VotingError>;
 
+// Contract functions
+
+/// Initialize the contract instance and start the election.
+/// A description, the vector of all voting options, and an end_time
+/// have to be provided.
 #[init(contract = "voting", parameter = "InitParameter")]
 fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
+    // Parse the parameter.
     let param: InitParameter = ctx.parameter_cursor().get()?;
+    // Calculate the number of voting options.
+    let num_options = param.options.len() as u32;
+
+    // Set the state.
     Ok(State {
         description: param.description,
-        ballots:     state_builder.new_map(),
-        end_time:    param.end_time,
+        ballots: state_builder.new_map(),
+        tally: state_builder.new_map(),
+        end_time: param.end_time,
+        options: param.options,
+        num_options,
     })
 }
 
+/// Enables accounts to vote for a specific voting option. Each account can
+/// change its selected voting option with this function as often as it desires
+/// until the end_time is reached.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - A contract tries to vote.
+/// - It is past the end_time.
 #[receive(
     contract = "voting",
     name = "vote",
@@ -83,183 +144,223 @@ fn vote<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> VotingResult<()> {
     // Check that the election hasn't finished yet.
-    if ctx.metadata().slot_time() > host.state().end_time {
-        return Err(VotingError::VotingFinished);
-    }
+    ensure!(ctx.metadata().slot_time() <= host.state().end_time, VotingError::VotingFinished);
+
     // Ensure that the sender is an account.
     let acc = match ctx.sender() {
         Address::Account(acc) => acc,
         Address::Contract(_) => return Err(VotingError::ContractVoter),
     };
+
+    // Parse the parameter.
     let param: VoteParameter = ctx.parameter_cursor().get()?;
 
-    let new_vote = param.vote;
+    let new_vote_index = param.vote_index;
 
     // Check that vote is in range
-    ensure!(
-        (new_vote as usize) < host.state().description.options.len(),
-        VotingError::InvalidVoteIndex
-    );
+    ensure!(new_vote_index < host.state().num_options, VotingError::InvalidVoteIndex);
 
     // Insert or replace the vote for the account.
-    host.state_mut().ballots.entry(acc).and_modify(|vote| *vote = new_vote).or_insert(new_vote);
+    host.state_mut()
+        .ballots
+        .entry(acc)
+        .and_modify(|vote| *vote = new_vote_index)
+        .or_insert(new_vote_index);
+
+    // Update the tally for the `new_vote_index` with one additional vote.
+    host.state_mut().tally.entry(new_vote_index).and_modify(|vote| *vote += 1).or_insert(1);
+
     Ok(())
 }
 
-fn get_tally<S: HasStateApi>(
-    options: &[VotingOption],
-    ballots: &StateMap<AccountAddress, Vote, S>,
-) -> Tally {
-    let mut stats: BTreeMap<VotingOption, Vote> = BTreeMap::new();
+/// Get the number of votes for a specific vote option.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "voting",
+    name = "getNumberOfVotes",
+    parameter = "VoteParameter",
+    return_value = "VoteCount"
+)]
+fn get_votes<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<VoteCount> {
+    // Parse the parameter.
+    let param: VoteIndex = ctx.parameter_cursor().get()?;
 
-    for (_, ballot_index) in ballots.iter() {
-        let entry = &options[*ballot_index as usize];
-        stats.entry(entry.clone()).and_modify(|curr| *curr += 1).or_insert(1);
-    }
-    let total = stats.values().sum();
+    // Get the number of votes from the tally.
+    let result = match host.state().tally.get(&param) {
+        Some(votes) => *votes,
+        None => 0,
+    };
 
-    Tally {
-        result:      stats,
-        total_votes: total,
-    }
+    Ok(result)
 }
 
-/// We assume that all ballots contain a valid voteoption index this should be
-/// checked by the vote function Assumption: Each account has at most one vote
-#[receive(contract = "voting", name = "getvotes", return_value = "VotingView")]
-fn get_votes<S: HasStateApi>(
+/// Get the election information.
+#[receive(contract = "voting", name = "view", return_value = "VotingView")]
+fn view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<VotingView> {
-    let tally = get_tally(&host.state().description.options, &host.state().ballots);
+    // Get information from state.
+    let description = host.state().description.clone();
+    let end_time = host.state().end_time;
+    let num_options = host.state().num_options;
+    let options = host.state().options.clone();
+
+    // Return election information.
     Ok(VotingView {
-        description: host.state().description.clone(),
-        tally,
-        end_time: host.state().end_time,
+        description,
+        end_time,
+        options,
+        num_options,
     })
 }
 
-// Tests //
+// Tests
 
 #[concordium_cfg_test]
 mod tests {
     use super::*;
     use concordium_std::test_infrastructure::*;
 
+    // Test accounts/addresses.
     const ACC_0: AccountAddress = AccountAddress([0; 32]);
     const ACC_1: AccountAddress = AccountAddress([1; 32]);
     const ADDR_ACC_0: Address = Address::Account(ACC_0);
     const ADDR_ACC_1: Address = Address::Account(ACC_1);
 
-    fn make_test_host(options: Vec<String>, end_time: Timestamp) -> TestHost<State<TestStateApi>> {
+    // Setup the test host.
+    fn make_test_host(
+        options: Vec<String>,
+        num_options: u32,
+        end_time: Timestamp,
+    ) -> TestHost<State<TestStateApi>> {
         let mut state_builder = TestStateBuilder::new();
         let state = State {
-            description: Description {
-                description_text: "Test description".into(),
-                options,
-            },
+            description: "Test description".into(),
             ballots: state_builder.new_map(),
+            tally: state_builder.new_map(),
             end_time,
+            options,
+            num_options,
         };
         TestHost::new(state, state_builder)
     }
 
+    /// Test that an account cannot vote if it is past the end_time of the
+    /// election.
     #[concordium_test]
     fn test_vote_after_finish_time() {
+        // Setup the context.
         let end_time = Timestamp::from_timestamp_millis(100);
         let current_time = Timestamp::from_timestamp_millis(200);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_metadata_slot_time(current_time);
-        let mut host = make_test_host(Vec::new(), end_time);
 
+        // Setup the test host.
+        let mut host = make_test_host(Vec::new(), 0, end_time);
+
+        // Call the contract function.
         let res = vote(&ctx, &mut host);
 
+        // Check that error is thrown because the election is finished already.
         claim_eq!(res, Err(VotingError::VotingFinished));
     }
 
+    /// Test that voting fails if the voting index is out of range.
     #[concordium_test]
     fn test_vote_with_invalid_index() {
+        // Setup the context.
         let end_time = Timestamp::from_timestamp_millis(100);
         let current_time = Timestamp::from_timestamp_millis(0);
         let mut ctx = TestReceiveContext::empty();
-        let vote_parameter = to_bytes(&4);
-        ctx.set_parameter(&vote_parameter);
         ctx.set_metadata_slot_time(current_time);
         ctx.set_sender(ADDR_ACC_0);
-        let mut host = make_test_host(vec!["A".into(), "B".into()], end_time);
+        // Setup the paramter.
+        let vote_parameter = to_bytes(&4);
+        ctx.set_parameter(&vote_parameter);
 
+        // Setup the test host.
+        let mut host = make_test_host(vec!["A".into(), "B".into()], 2, end_time);
+
+        // Call the contract function.
         let res = vote(&ctx, &mut host);
 
+        // Check that error is thrown because the voting index is out of range.
         claim_eq!(res, Err(VotingError::InvalidVoteIndex));
     }
 
     #[concordium_test]
     fn test_vote_with_valid_index() {
+        // Setup the context.
         let end_time = Timestamp::from_timestamp_millis(100);
         let current_time = Timestamp::from_timestamp_millis(0);
         let mut ctx = TestReceiveContext::empty();
+        ctx.set_metadata_slot_time(current_time);
 
-        // Vote once
+        // Vote once.
+
+        // Setup the paramter.
         let vote_parameter = to_bytes(&0);
         ctx.set_parameter(&vote_parameter);
-        ctx.set_metadata_slot_time(current_time);
+        // Setup the sender.
         ctx.set_sender(ADDR_ACC_0);
-        let mut host = make_test_host(vec!["A".into(), "B".into()], end_time);
-        let _res = vote(&ctx, &mut host);
+        // Setup the test host.
+        let mut host = make_test_host(vec!["A".into(), "B".into()], 2, end_time);
+        // Call the contract function.
+        let result = vote(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+        // Check the ballots (ACCOUNT_0 voted for vote option index 0).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 0)], ballots);
 
-        // Vote again
+        // Vote again.
+
+        // Setup the paramter.
         let vote_parameter = to_bytes(&1);
         ctx.set_parameter(&vote_parameter);
-        let _res = vote(&ctx, &mut host);
+        // Call the contract function.
+        let result = vote(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+        // Check the ballots (ACCOUNT_0 changed its vote option index to 1).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 1)], ballots);
 
-        // Another vote
+        // Another vote.
+
+        // Setup the paramter.
         let vote_parameter = to_bytes(&0);
         ctx.set_parameter(&vote_parameter);
+        // Setup the sender.
         ctx.set_sender(ADDR_ACC_1);
-        let _res = vote(&ctx, &mut host);
+        // Call the contract function.
+        let result = vote(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+        // Check the ballots (ACCOUNT_0 voted for vote option index 1 and ACCOUNT_1
+        // voted for vote option index 0).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 1), (ACC_1, 0)], ballots);
 
-        // Vote yet again
+        // Vote yet again.
+
+        // Setup the paramter.
         let vote_parameter = to_bytes(&1);
         ctx.set_parameter(&vote_parameter);
         ctx.set_sender(ADDR_ACC_0);
-        let _res = vote(&ctx, &mut host);
+        // Call the contract function.
+        let result = vote(&ctx, &mut host);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+        // Check the ballots (ACCOUNT_0 still voted for vote option index 1 and
+        // ACCOUNT_1 still voted for vote option index 0).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 1), (ACC_1, 0)], ballots);
-    }
-
-    #[concordium_test]
-    fn test_tally() {
-        let options = vec![
-            VotingOption::from("Concordium"),
-            VotingOption::from("Bitcoin"),
-            VotingOption::from("Ethereum"),
-        ];
-        let mut state_builder = TestStateBuilder::new();
-        let mut ballots = state_builder.new_map();
-        let actual_total_votes: VoteCount = 11;
-        for i in 0..actual_total_votes {
-            ballots.insert(AccountAddress([i as u8; 32]), i % 3);
-        }
-        let tally = get_tally(&options, &ballots);
-        claim_eq!(tally.total_votes, actual_total_votes, "Should count all votes");
-        let total_options: VoteCount = options.len() as VoteCount;
-        for (i, entry) in options.iter().enumerate() {
-            let mut expected_votes = actual_total_votes / total_options;
-            if (i as VoteCount) < actual_total_votes % total_options {
-                expected_votes += 1;
-            }
-            dbg!(i, expected_votes, tally.result.get(entry));
-            claim_eq!(
-                tally.result.get(entry),
-                Some(&expected_votes),
-                "Should count votes correctly"
-            );
-        }
     }
 }
