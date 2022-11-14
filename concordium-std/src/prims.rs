@@ -268,7 +268,7 @@ extern "C" {
         column: u32,
     );
 
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
     /// Generating a random number for rendomised testing
     pub(crate) fn get_random(dest: *mut u8, size: u32);
 }
