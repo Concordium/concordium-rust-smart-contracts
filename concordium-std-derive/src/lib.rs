@@ -65,6 +65,9 @@ struct OptionalArguments {
 
 /// Attributes that can be attached to the initialization method.
 struct InitAttributes {
+    /// Which type, if any, is the event type of the function.
+    /// This is used when generating schemas.
+    pub(crate) event:    Option<syn::LitStr>,
     /// Name of the contract.
     pub(crate) contract: syn::LitStr,
     pub(crate) optional: OptionalArguments,
@@ -242,6 +245,7 @@ const INIT_ATTRIBUTE_ENABLE_LOGGER: &str = "enable_logger";
 const INIT_ATTRIBUTE_LOW_LEVEL: &str = "low_level";
 const INIT_ATTRIBUTE_RETURN_VALUE: &str = "return_value";
 const INIT_ATTRIBUTE_ERROR: &str = "error";
+const INIT_ATTRIBUTE_EVENT: &str = "event";
 const INIT_ATTRIBUTE_CRYPTO_PRIMITIVES: &str = "crypto_primitives";
 
 fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
@@ -268,6 +272,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
         ));
     }
     let error = attributes.extract_value(INIT_ATTRIBUTE_ERROR);
+    let event = attributes.extract_value(INIT_ATTRIBUTE_EVENT);
     let crypto_primitives = attributes.extract_flag(INIT_ATTRIBUTE_CRYPTO_PRIMITIVES).is_some();
 
     // Make sure that there are no unrecognized attributes. These would typically be
@@ -276,6 +281,7 @@ fn parse_init_attributes<'a, I: IntoIterator<Item = &'a Meta>>(
     attributes.report_all_attributes()?;
     Ok(InitAttributes {
         contract,
+        event,
         optional: OptionalArguments {
             payable,
             enable_logger,
@@ -631,6 +637,10 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
     let parameter_option = init_attributes.optional.parameter;
     let return_value_option = None; // Return values are currently not supported on init.
     let error_option = init_attributes.optional.error;
+    let event_option = init_attributes.event;
+    let wasm_name_cloned = wasm_export_fn_name.clone();
+    let rust_name_cloned = rust_export_fn_name.clone();
+
     out.extend(contract_function_schema_tokens(
         parameter_option,
         return_value_option,
@@ -638,6 +648,9 @@ fn init_worker(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream>
         rust_export_fn_name,
         wasm_export_fn_name,
     )?);
+
+    // Adding the event schema
+    out.extend(contract_function_event_schema(event_option, rust_name_cloned, wasm_name_cloned)?);
 
     ast.to_tokens(&mut out);
 
@@ -1053,6 +1066,38 @@ fn contract_function_optional_args_tokens(
 }
 
 #[cfg(feature = "build-schema")]
+fn contract_function_event_schema(
+    event_option: Option<syn::LitStr>,
+    rust_name: syn::Ident,
+    wasm_name: String,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let event_embed = match event_option {
+        Some(event_ty) => {
+            let event_ty = event_ty.parse::<syn::Type>()?;
+            Some(quote! {
+            let event = <#event_ty as schema::SchemaType>::get_type();
+            let schema_bytes = concordium_std::to_bytes(&event);})
+        }
+        _ => None,
+    };
+
+    // Only produce the schema function if the event was set.
+    if let Some(construct_schema_bytes) = event_embed {
+        let schema_name = format!("concordium_event_schema_{}", wasm_name);
+        let schema_ident = format_ident!("concordium_event_schema_{}", rust_name);
+        Ok(quote! {
+            #[export_name = #schema_name]
+            pub extern "C" fn #schema_ident() -> *mut u8 {
+                #construct_schema_bytes
+                concordium_std::put_in_memory(&schema_bytes)
+            }
+        })
+    } else {
+        Ok(proc_macro2::TokenStream::new())
+    }
+}
+
+#[cfg(feature = "build-schema")]
 fn contract_function_schema_tokens(
     parameter_option: Option<syn::LitStr>,
     return_value_option: Option<syn::LitStr>,
@@ -1060,76 +1105,53 @@ fn contract_function_schema_tokens(
     rust_name: syn::Ident,
     wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let construct_schema_bytes = match (parameter_option, return_value_option, error_option) {
-        (Some(parameter_ty), None, None) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            Some(quote! {
-            let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::Param(parameter));})
+    let mut embed = false;
+
+    let parameter_schema = format_ident!("parameter");
+    let parameter_embed = if let Some(parameter_ty) = parameter_option {
+        let ty = parameter_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #parameter_schema = Some(<#ty as schema::SchemaType>::get_type());
         }
-        (None, Some(return_value_ty), None) => {
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            Some(quote! {
-            let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-            let schema_bytes =
-                concordium_std::to_bytes(&schema::FunctionV2::Rv(return_value));     })
-        }
-        (Some(parameter_ty), Some(return_value_ty), None) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamRv {
-            parameter, return_value });     })
-        }
-        (None, None, Some(error_ty)) => {
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-            let error = <#error_ty as schema::SchemaType>::get_type();
-            let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::Error(error));     })
-        }
-        (Some(parameter_ty), None, Some(error_ty)) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamError {
-            parameter, error });     })
-        }
-        (None, Some(return_value_ty), Some(error_ty)) => {
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::RvError {
-            return_value, error });     })
-        }
-        (Some(parameter_ty), Some(return_value_ty), Some(error_ty)) => {
-            let parameter_ty = parameter_ty.parse::<syn::Type>()?;
-            let return_value_ty = return_value_ty.parse::<syn::Type>()?;
-            let error_ty = error_ty.parse::<syn::Type>()?;
-            Some(quote! {
-                    let parameter = <#parameter_ty as schema::SchemaType>::get_type();
-                    let return_value = <#return_value_ty as schema::SchemaType>::get_type();
-                    let error = <#error_ty as schema::SchemaType>::get_type();
-                    let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2::ParamRvError {
-            parameter, return_value, error });     })
-        }
-        _ => None,
+    } else {
+        quote! {let #parameter_schema = None;}
     };
 
-    // Only produce the schema function if the parameter or return_value attribute
-    // was set.
-    if let Some(construct_schema_bytes) = construct_schema_bytes {
+    let return_value_schema = format_ident!("return_value");
+    let return_embed = if let Some(return_ty) = return_value_option {
+        let ty = return_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #return_value_schema = Some(<#ty as schema::SchemaType>::get_type());
+        }
+    } else {
+        quote! {let #return_value_schema = None;}
+    };
+
+    let error_schema = format_ident!("error");
+    let error_embed = if let Some(error_ty) = error_option {
+        let ty = error_ty.parse::<syn::Type>()?;
+        embed = true;
+        quote! {
+             let #error_schema = Some(<#ty as schema::SchemaType>::get_type());
+        }
+    } else {
+        quote! {let #error_schema = None;}
+    };
+
+    // Only produce the schema function if the parameter, return_value, error, or
+    // event attribute was set.
+    if embed {
         let schema_name = format!("concordium_schema_function_{}", wasm_name);
         let schema_ident = format_ident!("concordium_schema_function_{}", rust_name);
         Ok(quote! {
             #[export_name = #schema_name]
             pub extern "C" fn #schema_ident() -> *mut u8 {
-                #construct_schema_bytes
+                #return_embed
+                #parameter_embed
+                #error_embed
+                let schema_bytes = concordium_std::to_bytes(&schema::FunctionV2 {parameter: #parameter_schema, return_value: #return_value_schema, error: #error_schema});
                 concordium_std::put_in_memory(&schema_bytes)
             }
         })
@@ -1143,6 +1165,15 @@ fn contract_function_schema_tokens(
     _parameter_option: Option<syn::LitStr>,
     _return_value_option: Option<syn::LitStr>,
     _error_option: Option<syn::LitStr>,
+    _rust_name: syn::Ident,
+    _wasm_name: String,
+) -> syn::Result<proc_macro2::TokenStream> {
+    Ok(proc_macro2::TokenStream::new())
+}
+
+#[cfg(not(feature = "build-schema"))]
+fn contract_function_event_schema(
+    _event_option: Option<syn::LitStr>,
     _rust_name: syn::Ident,
     _wasm_name: String,
 ) -> syn::Result<proc_macro2::TokenStream> {
@@ -1274,17 +1305,20 @@ fn find_length_attribute(attributes: &[syn::Attribute]) -> syn::Result<Option<u3
 /// string.
 fn find_state_parameter_attribute(
     attributes: &[syn::Attribute],
-) -> syn::Result<Option<syn::Ident>> {
+) -> syn::Result<Option<syn::TypePath>> {
     let value = match find_attribute_value(attributes, false, "state_parameter")? {
         Some(v) => v,
         None => return Ok(None),
     };
 
     match value {
-        syn::Lit::Str(value) => Ok(Some(syn::Ident::new(&value.value(), value.span()))),
-        _ => {
-            Err(syn::Error::new(value.span(), "state_parameter attribute value must be a string."))
-        }
+        syn::Lit::Str(value) => Ok(Some(value.parse().map_err(|err| {
+            syn::Error::new(err.span(), "state_parameter attribute value is not a valid type path")
+        })?)),
+        _ => Err(syn::Error::new(
+            value.span(),
+            "state_parameter attribute value must be a string which describes valid type path",
+        )),
     }
 }
 
@@ -1361,7 +1395,7 @@ fn impl_deserial_with_state_field(
     state_ident: &syn::Ident,
     ident: &syn::Ident,
     source: &syn::Ident,
-    state_parameter: &syn::Ident,
+    state_parameter: &syn::TypePath,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let concordium_attributes = get_concordium_field_attributes(&f.attrs)?;
     let ensure_ordered = contains_attribute(&concordium_attributes, "ensure_ordered");

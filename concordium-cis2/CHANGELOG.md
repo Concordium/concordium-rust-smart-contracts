@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add SchemaType for Cis2Event<T, A>
+
 ## concordium-cis2 1.2.0 (2022-09-01)
 
 - Add `TokenAmountU256`

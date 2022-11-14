@@ -295,7 +295,7 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with a no token types.
-#[init(contract = "CIS2-Multi")]
+#[init(contract = "cis2_multi", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
 fn contract_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -319,7 +319,7 @@ struct ViewState {
 /// View function for testing. This reports on the entire state of the contract
 /// for testing purposes. In a realistic example there `balance_of` and similar
 /// functions with a smaller response.
-#[receive(contract = "CIS2-Multi", name = "view", return_value = "ViewState")]
+#[receive(contract = "cis2_multi", name = "view", return_value = "ViewState")]
 fn contract_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -369,7 +369,7 @@ fn contract_view<S: HasStateApi>(
 /// Note: Can at most mint 32 token types in one call due to the limit on the
 /// number of logs a smart contract can produce on each function call.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "mint",
     parameter = "MintParams",
     error = "ContractError",
@@ -432,7 +432,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "transfer",
     parameter = "TransferParameter",
     error = "ContractError",
@@ -498,7 +498,7 @@ fn contract_transfer<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Fails to log event.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     error = "ContractError",
@@ -549,7 +549,7 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
     return_value = "ContractBalanceOfQueryResponse",
@@ -578,7 +578,7 @@ fn contract_balance_of<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
     return_value = "OperatorOfQueryResponse",
@@ -611,7 +611,7 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
     return_value = "TokenMetadataQueryResponse",
@@ -659,7 +659,7 @@ fn contract_token_metadata<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Contract name part of the parameter is invalid.
 /// - Calling back `transfer` to sender contract rejects.
-#[receive(contract = "CIS2-Multi", name = "onReceivingCIS2", error = "ContractError")]
+#[receive(contract = "cis2_multi", name = "onReceivingCIS2", error = "ContractError")]
 fn contract_on_cis2_received<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -702,7 +702,7 @@ fn contract_on_cis2_received<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "supports",
     parameter = "SupportsQueryParams",
     return_value = "SupportsQueryResponse",
@@ -735,7 +735,7 @@ fn contract_supports<S: HasStateApi>(
 /// - Sender is not the owner of the contract instance.
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "CIS2-Multi",
+    contract = "cis2_multi",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
     error = "ContractError",

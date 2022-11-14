@@ -2,7 +2,11 @@
 
 ## Unreleased changes
 
-- When `concordium-quickcheck` is enabled: enables the `#[concordium_quickcheck]` macro and re-exports a quickcheck function.
+- When `concordium-quickcheck` is enabled: enables the `#[concordium_quickcheck]` macro and re-exports 
+  a QuickCheck function as `#[concordium_test]`.
+- `concordium-std-derive`: add support for event schemas in the schema derivation macro.
+- `concordium-std-derive`: allow `#[concordium(state_parameter)]`'s value be not just identifier
+  but any type path for `derive(DeserialWithState)` and `derive(Deletable)` to generate implementations.
 
 ## concordium-std 4.0.0 (2022-08-24)
 
