@@ -1681,7 +1681,8 @@ register_custom_getrandom!(get_random);
 
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
 /// A customized QuickCheck test runner used for on-chain wasm code.
-/// Adds support for reporting errors using the primitives available when running on-chain code.
+/// Adds support for reporting errors using the primitives available when
+/// running on-chain code.
 pub fn concordium_qc<A>(f: A)
 where
     A: Testable, {
