@@ -1675,11 +1675,13 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
 #[cfg(all(feature = "std", target_arch = "wasm32"))]
 // Register our own custom random number generation function, so all the calls,
 // that depend on `getrandom` (like `from_entropy()`) will call our function
-// instead. This is anly relevant for on-chain `Wasm`, where RNGs are not
+// instead. This is only relevant for on-chain wasm, where RNGs are not
 // supported.
 register_custom_getrandom!(get_random);
 
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+/// A customized QuickCheck test runner used for on-chain wasm code.
+/// Adds support for reporting errors using the primitives available when running on-chain code.
 pub fn concordium_qc<A>(f: A)
 where
     A: Testable, {
@@ -1695,17 +1697,20 @@ where
             if n_tests_passed < min_tests {
                 let msg =
                     format!("(Unable to generate enough tests, {} not discarded.)", n_tests_passed);
+                // calls `report_error` which is handled by `TestHost`
                 report_quickcheck_error(&msg, file!(), line!(), column!())
             }
         }
         Err(result) => {
             let msg = format!("Failed with the counterexample: {:#?}", result);
+            // calls `report_error` which is handled by `TestHost`
             report_quickcheck_error(&msg, file!(), line!(), column!());
         }
     }
 }
 
 #[cfg(all(feature = "concordium-quickcheck", not(target_arch = "wasm32")))]
+/// A wrapper for QuickCheck test runner for non-wasm targets.
 pub fn concordium_qc<A>(f: A)
 where
     A: Testable, {
