@@ -258,7 +258,7 @@ extern "C" {
     /// Reporting back an error, only exists in debug mode
     pub(crate) fn report_error(
         // Represents a boolean flag showing whether the error originates from a QuickCheck test;
-        // false = 0, `true = 1
+        // false = 0, true = 1
         quickcheck: u32,
         msg_start: *const u8,
         msg_length: u32,
