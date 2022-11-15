@@ -565,10 +565,11 @@ impl HasLogger for TestLogger {
     }
 }
 
+/// Reports back an error to the host when compiled to wasm
+/// Used internally, not meant to be called directly by contract writers
 #[doc(hidden)]
 #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
-fn report_error_internal(
-    is_quickcheck: bool,
+pub fn report_error(
     message: &str,
     filename: &str,
     line: u32,
@@ -578,7 +579,6 @@ fn report_error_internal(
     let filename_bytes = filename.as_bytes();
     unsafe {
         crate::prims::report_error(
-            is_quickcheck as u32,
             msg_bytes.as_ptr(),
             msg_bytes.len() as u32,
             filename_bytes.as_ptr(),
@@ -591,27 +591,12 @@ fn report_error_internal(
 
 #[doc(hidden)]
 #[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
-fn report_error_internal(
-    _is_quickcheck: bool,
+pub fn report_error(
     _message: &str,
     _filename: &str,
     _line: u32,
     _column: u32,
 ) {
-}
-
-/// Reports back an error to the host when compiled to wasm
-/// Used internally, not meant to be called directly by contract writers
-#[doc(hidden)]
-pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
-    report_error_internal(false, message, filename, line, column)
-}
-
-/// Reports back an error from a QuickCheck test to the host when compiled to
-/// Wasm. Used internally, not meant to be called directly by contract writers.
-#[doc(hidden)]
-pub fn report_quickcheck_error(message: &str, filename: &str, line: u32, column: u32) {
-    report_error_internal(true, message, filename, line, column)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1658,9 +1643,9 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
     }
 }
 
-#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
 use getrandom::register_custom_getrandom;
-#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
 /// A custom function for generating random numbers.
 /// On-chain Wasm cannot use RNGs and function redirects a call to the
 /// `get_random()` primitive (host function), which is later handled by
@@ -1672,17 +1657,17 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
     Ok(())
 }
 
-#[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
 // Register our own custom random number generation function, so all the calls,
 // that depend on `getrandom` (like `from_entropy()`) will call our function
-// instead. This is only relevant for on-chain wasm, where RNGs are not
+// instead. This is only relevant for Wasm, where RNGs are not
 // supported.
 register_custom_getrandom!(get_random);
 
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
 /// A customized QuickCheck test runner used for on-chain wasm code.
 /// Adds support for reporting errors using the primitives available when
-/// running on-chain code.
+/// running Wasm code.
 pub fn concordium_qc<A>(f: A)
 where
     A: Testable, {
@@ -1699,13 +1684,13 @@ where
                 let msg =
                     format!("(Unable to generate enough tests, {} not discarded.)", n_tests_passed);
                 // calls `report_error` which is handled by `TestHost`
-                report_quickcheck_error(&msg, file!(), line!(), column!())
+                report_error(&msg, file!(), line!(), column!())
             }
         }
         Err(result) => {
             let msg = format!("Failed with the counterexample: {:#?}", result);
             // calls `report_error` which is handled by `TestHost`
-            report_quickcheck_error(&msg, file!(), line!(), column!());
+            report_error(&msg, file!(), line!(), column!());
         }
     }
 }
