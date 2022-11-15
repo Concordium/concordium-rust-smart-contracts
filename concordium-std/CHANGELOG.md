@@ -2,7 +2,7 @@
 
 ## Unreleased changes
 
-- Add a new primitive `get_random`. It is used to generate random numbers in on-chain code for testing with QuickCheck.
+- Add a new primitive `get_random`. It is used to generate random numbers in Wasm code for testing with QuickCheck.
 - Add an extra `quickcheck: bool` parameter to the `report_error` primitive; `true` corresponds to errors related to the QuickCheck tests.
 - `concordium-std-derive`: the `concordium-quickcheck` feature enables the `#[concordium_quickcheck]` macro that re-exports 
   a customized QuickCheck function test function `test_infrastructure::concordium_qc` as a `#[concordium_test]` function.
