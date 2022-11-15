@@ -584,6 +584,8 @@ pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
     };
 }
 
+/// Reports back an error to the host when compiled to wasm
+/// Used internally, not meant to be called directly by contract writers
 #[doc(hidden)]
 #[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
 pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
