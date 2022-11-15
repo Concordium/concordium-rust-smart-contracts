@@ -608,7 +608,7 @@ pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
 }
 
 /// Reports back an error from a QuickCheck test to the host when compiled to
-/// wasm Used internally, not meant to be called directly by contract writers
+/// Wasm. Used internally, not meant to be called directly by contract writers.
 #[doc(hidden)]
 pub fn report_quickcheck_error(message: &str, filename: &str, line: u32, column: u32) {
     report_error_internal(true, message, filename, line, column)
