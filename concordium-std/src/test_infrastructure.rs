@@ -569,12 +569,7 @@ impl HasLogger for TestLogger {
 /// Used internally, not meant to be called directly by contract writers
 #[doc(hidden)]
 #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
-pub fn report_error(
-    message: &str,
-    filename: &str,
-    line: u32,
-    column: u32,
-) {
+pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
     let msg_bytes = message.as_bytes();
     let filename_bytes = filename.as_bytes();
     unsafe {
@@ -591,13 +586,7 @@ pub fn report_error(
 
 #[doc(hidden)]
 #[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
-pub fn report_error(
-    _message: &str,
-    _filename: &str,
-    _line: u32,
-    _column: u32,
-) {
-}
+pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
 
 #[derive(Debug, PartialEq, Eq)]
 /// An error that is raised when operating with `Seek`, `Write`, `Read`, or
