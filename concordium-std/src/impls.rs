@@ -2053,10 +2053,9 @@ fn query_account_balance_worker(address: &AccountAddress) -> QueryAccountBalance
 /// Helper factoring out the common behaviour of contract_balance for the
 /// two extern hosts below.
 fn query_contract_balance_worker(address: &ContractAddress) -> QueryContractBalanceResult {
-    let mut data = [0u8; 16];
-    data[..8].copy_from_slice(&address.index.to_le_bytes());
-    data[8..].copy_from_slice(&address.subindex.to_le_bytes());
-    let response = unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_BALANCE_TAG, data.as_ptr(), 16) };
+    let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
+    let response =
+        unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_BALANCE_TAG, data.as_ptr() as *const u8, 16) };
     let mut return_value = parse_query_contract_balance_response_code(response)?;
     Ok(Amount::deserial(&mut return_value).unwrap_abort())
 }
