@@ -2,32 +2,35 @@
 //!
 //! # Description
 //! A contract that allows for conducting an election with several voting
-//! options. An end_time is set when the election is initialized. Only accounts
-//! can vote for one of the voting options. Each account can change its
-//! selected voting option as often as it desires until the end_time is reached.
-//! No voting will be possible after the end_time.
+//! options. An `end_time` is set when the election is initialized. Only
+//! accounts are eligible to vote. Each account can change its
+//! selected voting option as often as it desires until the `end_time` is
+//! reached. No voting will be possible after the `end_time`.
 //!
 //! # Operations
 //! The contract allows for
 //!  - `initializing` the election;
 //!  - `vote` for one of the voting options;
-//!  - `getNumberOfVotes` for each voting option;
+//!  - `getNumberOfVotes` for a requested voting option;
 //!  - `view` general information about the election.
 //!
 //! Note: Vec<VotingOption> (among other variables) is an input parameter to the
-//! `init` function as well as a return_value (among other variables) of the
-//! `view` function. Since there is a limit to the parameter/return_value size,
+//! `init` function. Since there is a limit to the parameter size (65535 Bytes),
 //! the size of the Vec<VotingOption> is limited.
-
+//! https://developer.concordium.software/en/mainnet/smart-contracts/general/contract-instances.html#limits
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
+/// The human-readable description of a voting option.
 type VotingOption = String;
+/// The voting options are stored in a vector. The vector index is used to refer
+/// to a specific voting option.
 type VoteIndex = u32;
+/// Number of votes.
 type VoteCount = u32;
 
 /// The parameter type for the contract function `vote`.
-/// Takes a vote_index that the account wants to vote for.
+/// Takes a `vote_index` that the account wants to vote for.
 #[derive(Deserial, SchemaType)]
 struct VoteParameter {
     /// Voting option index to vote for.
@@ -35,7 +38,7 @@ struct VoteParameter {
 }
 
 /// The parameter type for the contract function `init`.
-/// Takes a description, the voting options, and the end_time to start the
+/// Takes a description, the voting options, and the `end_time` to start the
 /// election.
 #[derive(Deserial, SchemaType)]
 struct InitParameter {
@@ -43,18 +46,22 @@ struct InitParameter {
     description: String,
     /// A vector of all voting options.
     options:     Vec<VotingOption>,
-    /// The time when the election ends.
+    /// The last timestamp that an account can vote.
+    /// The election is open from the point in time that this smart contract is
+    /// initialized until the `end_time`.
     end_time:    Timestamp,
 }
 
-/// The return_value type of the contract function `view`.
-/// Returns a description, the end_time, the voting options as a vector, and the
-/// number of voting options of the current election.
+/// The `return_value` type of the contract function `view`.
+/// Returns a description, the `end_time`, the voting options as a vector, and
+/// the number of voting options of the current election.
 #[derive(Serial, Deserial, SchemaType)]
 struct VotingView {
     /// The description of the election.
     description: String,
-    /// The time when the election ends.
+    /// The last timestamp that an account can vote.
+    /// The election is open from the point in time that this smart contract is
+    /// initialized until the `end_time`.
     end_time:    Timestamp,
     /// A vector of all voting options.
     options:     Vec<VotingOption>,
@@ -65,18 +72,26 @@ struct VotingView {
 /// The contract state
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
-struct State<S> {
+struct State<S: HasStateApi> {
     /// The description of the election.
-    description: String,
+    /// `StateBox` allows for lazy loading data. This is helpful
+    /// in the situations when one wants to do a partial update not touching
+    /// this field, which can be large.
+    description: StateBox<String, S>,
     /// The map connects a voter to the index of the voted-for voting option.
     ballots:     StateMap<AccountAddress, VoteIndex, S>,
     /// The map connects the index of a voting option to the number of votes
     /// it received so far.
     tally:       StateMap<VoteIndex, VoteCount, S>,
-    /// The time when the election ends.
+    /// The last timestamp that an account can vote.
+    /// The election is open from the point in time that this smart contract is
+    /// initialized until the `end_time`.
     end_time:    Timestamp,
     /// A vector of all voting options.
-    options:     Vec<VotingOption>,
+    /// `StateBox` allows for lazy loading data. This is helpful
+    /// in the situations when one wants to do a partial update not touching
+    /// this field, which can be large.
+    options:     StateBox<Vec<VotingOption>, S>,
     /// The number of voting options.
     num_options: u32,
 }
@@ -110,6 +125,8 @@ impl From<LogError> for VotingError {
     }
 }
 
+/// A custom alias type for the `Result` type with the error type fixed to
+/// `VotingError`.
 type VotingResult<T> = Result<T, VotingError>;
 
 /// The event is logged when a new (or replacement) vote is cast by an account.
@@ -132,7 +149,7 @@ pub enum Event {
 // Contract functions
 
 /// Initialize the contract instance and start the election.
-/// A description, the vector of all voting options, and an end_time
+/// A description, the vector of all voting options, and an `end_time`
 /// have to be provided.
 #[init(contract = "voting", parameter = "InitParameter", event = "Event")]
 fn init<S: HasStateApi>(
@@ -146,23 +163,23 @@ fn init<S: HasStateApi>(
 
     // Set the state.
     Ok(State {
-        description: param.description,
+        description: state_builder.new_box(param.description),
         ballots: state_builder.new_map(),
         tally: state_builder.new_map(),
         end_time: param.end_time,
-        options: param.options,
+        options: state_builder.new_box(param.options),
         num_options,
     })
 }
 
 /// Enables accounts to vote for a specific voting option. Each account can
 /// change its selected voting option with this function as often as it desires
-/// until the end_time is reached.
+/// until the `end_time` is reached.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - A contract tries to vote.
-/// - It is past the end_time.
+/// - It is past the `end_time`.
 #[receive(
     contract = "voting",
     name = "vote",
@@ -201,7 +218,7 @@ fn vote<S: HasStateApi>(
         .or_insert(new_vote_index);
 
     // Update the tally for the `new_vote_index` with one additional vote.
-    host.state_mut().tally.entry(new_vote_index).and_modify(|vote| *vote += 1).or_insert(1);
+    *host.state_mut().tally.entry(new_vote_index).or_insert(0) += 1;
 
     // Log event for the vote.
     logger.log(&Event::Vote(VoteEvent {
@@ -273,24 +290,22 @@ mod tests {
     const ADDR_ACC_1: Address = Address::Account(ACC_1);
 
     // Set up the test host.
-    fn make_test_host(
-        options: Vec<String>,
-        num_options: u32,
-        end_time: Timestamp,
-    ) -> TestHost<State<TestStateApi>> {
+    fn make_test_host(options: Vec<String>, end_time: Timestamp) -> TestHost<State<TestStateApi>> {
         let mut state_builder = TestStateBuilder::new();
+        let num_options = options.len() as u32;
+
         let state = State {
-            description: "Test description".into(),
+            description: state_builder.new_box("Test description".into()),
             ballots: state_builder.new_map(),
             tally: state_builder.new_map(),
             end_time,
-            options,
+            options: state_builder.new_box(options),
             num_options,
         };
         TestHost::new(state, state_builder)
     }
 
-    /// Test that an account cannot vote if it is past the end_time of the
+    /// Test that an account cannot vote if it is past the `end_time` of the
     /// election.
     #[concordium_test]
     fn test_vote_after_finish_time() {
@@ -304,7 +319,7 @@ mod tests {
         let mut logger = TestLogger::init();
 
         // Set up the test host.
-        let mut host = make_test_host(Vec::new(), 0, end_time);
+        let mut host = make_test_host(Vec::new(), end_time);
 
         // Call the contract function.
         let res = vote(&ctx, &mut host, &mut logger);
@@ -324,14 +339,14 @@ mod tests {
         ctx.set_sender(ADDR_ACC_0);
 
         // Set up the parameter.
-        let vote_parameter = to_bytes(&4);
+        let vote_parameter = to_bytes(&2);
         ctx.set_parameter(&vote_parameter);
 
         // Set up logger.
         let mut logger = TestLogger::init();
 
         // Set up the test host.
-        let mut host = make_test_host(vec!["A".into(), "B".into()], 2, end_time);
+        let mut host = make_test_host(vec!["A".into(), "B".into()], end_time);
 
         // Call the contract function.
         let res = vote(&ctx, &mut host, &mut logger);
@@ -359,7 +374,7 @@ mod tests {
         // Set up the sender.
         ctx.set_sender(ADDR_ACC_0);
         // Set up the test host.
-        let mut host = make_test_host(vec!["A".into(), "B".into()], 2, end_time);
+        let mut host = make_test_host(vec!["A".into(), "B".into()], end_time);
         // Call the contract function.
         let result = vote(&ctx, &mut host, &mut logger);
         // Check the result.
@@ -368,7 +383,7 @@ mod tests {
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 0)], ballots);
 
-        // Vote again.
+        // Change vote.
 
         // Set up the parameter.
         let vote_parameter = to_bytes(&1);
@@ -381,7 +396,7 @@ mod tests {
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 1)], ballots);
 
-        // Another vote.
+        // Another vote, by another account.
 
         // Set up the parameter.
         let vote_parameter = to_bytes(&0);
@@ -397,7 +412,7 @@ mod tests {
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
         claim_eq!(vec![(ACC_0, 1), (ACC_1, 0)], ballots);
 
-        // Vote yet again.
+        // Vote again, using the same index as before.
 
         // Set up the parameter.
         let vote_parameter = to_bytes(&1);
