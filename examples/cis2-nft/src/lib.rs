@@ -186,13 +186,7 @@ impl<S: HasStateApi> State<S> {
         let balance = self
             .state
             .get(address)
-            .map(|address_state| {
-                if address_state.owned_tokens.contains(token_id) {
-                    1
-                } else {
-                    0
-                }
-            })
+            .map(|address_state| u8::from(address_state.owned_tokens.contains(token_id)))
             .unwrap_or(0);
         Ok(balance.into())
     }
