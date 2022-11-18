@@ -213,7 +213,7 @@ fn vote<S: HasStateApi>(
     if let Some(old_vote_index) = host.state().ballots.get(&acc) {
         let old_vote_index = *old_vote_index;
         // Update the tally for the `old_vote_index` by reducing one vote.
-        *host.state_mut().tally.entry(old_vote_index).or_insert(0) -= 1;
+        *host.state_mut().tally.entry(old_vote_index).or_insert(1) -= 1;
     };
 
     // Insert or replace the vote for the account.
