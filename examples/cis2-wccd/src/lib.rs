@@ -33,7 +33,7 @@
 //! The admin address can pause/unpause the protocol, set implementors, transfer
 //! the admin address to a new address, and update the metadata URL.
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_cis2::*;
+use concordium_cis2::{Cis2Event, *};
 use concordium_std::{collections::BTreeMap, *};
 
 /// The id of the wCCD token in this contract.
@@ -43,9 +43,8 @@ const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 /// The URL can be updated with the `setURL` function by the `admin`.
 const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
 
-/// Tag for the NewAdmin event. The CIS-2 library already uses the
-/// event tags from `u8::MAX` to `u8::MAX - 4`.
-pub const NEW_ADMIN_EVENT_TAG: u8 = u8::MAX - 5;
+/// Tag for the NewAdmin event.
+pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
 
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
@@ -78,7 +77,7 @@ struct AddressState<S> {
 /// The contract state,
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
-struct State<S> {
+struct State<S: HasStateApi> {
     /// The admin address can upgrade the contract, pause and unpause the
     /// contract, transfer the admin address to a new address, set
     /// implementors, and update the metadata URL in the contract.
@@ -92,8 +91,10 @@ struct State<S> {
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// The metadata URL for the wCCD token following the specification RFC1738.
-    #[concordium(size_length = 2)]
-    url:          String,
+    /// `StateBox` allows for lazy loading data. This is helpful
+    /// in the situations when one wants to do a partial update not touching
+    /// this field, which can be large.
+    url:          StateBox<String, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -164,29 +165,20 @@ struct ReturnBasicState {
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
     paused: bool,
     /// The metadata URL following the specification RFC1738.
-    #[concordium(size_length = 2)]
     url:    String,
-}
-
-/// A dummy `WccdEventSchema` struct to implement an event schema including both
-/// (the events specified in this contract and the events specified in the CIS-2
-/// library).
-#[allow(dead_code)]
-struct WccdEventSchema<T: IsTokenId, A: IsTokenAmount> {
-    dummy_t: T,
-    dummy_a: A,
 }
 
 /// The parameter type for the contract function `setURL`.
 #[derive(Serialize, SchemaType, Clone)]
+#[repr(transparent)]
 struct SetURLParams {
     /// The URL following the specification RFC1738.
-    #[concordium(size_length = 2)]
     url: String,
 }
 
 /// The parameter type for the contract function `setPaused`.
 #[derive(Serialize, SchemaType)]
+#[repr(transparent)]
 struct SetPausedParams {
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
     paused: bool,
@@ -194,15 +186,16 @@ struct SetPausedParams {
 
 /// A NewAdminEvent introduced by this smart contract.
 #[derive(Serial, SchemaType)]
+#[repr(transparent)]
 struct NewAdminEvent {
     /// New admin address.
     new_admin: Address,
 }
 
-/// Tagged event to be serialized for the event log.
+/// Tagged events to be serialized for the event log.
 enum WccdEvent {
-    /// A new admin event.
     NewAdmin(NewAdminEvent),
+    Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
 }
 
 impl Serial for WccdEvent {
@@ -212,6 +205,7 @@ impl Serial for WccdEvent {
                 out.write_u8(NEW_ADMIN_EVENT_TAG)?;
                 event.serial(out)
             }
+            WccdEvent::Cis2Event(event) => event.serial(out),
         }
     }
 }
@@ -219,7 +213,7 @@ impl Serial for WccdEvent {
 /// Manual implementation of the `WccdEventSchema` which includes both (the
 /// events specified in this contract and the events specified in the CIS-2
 /// library). The events are tagged to distinguish them on-chain.
-impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for WccdEventSchema<T, A> {
+impl schema::SchemaType for WccdEvent {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
         event_map.insert(
@@ -234,8 +228,8 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for WccdEventSchema<T, A
             (
                 "Transfer".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("token_id"), T::get_type()),
-                    (String::from("amount"), A::get_type()),
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
                     (String::from("from"), Address::get_type()),
                     (String::from("to"), Address::get_type()),
                 ]),
@@ -246,8 +240,8 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for WccdEventSchema<T, A
             (
                 "Mint".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("token_id"), T::get_type()),
-                    (String::from("amount"), A::get_type()),
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
                     (String::from("owner"), Address::get_type()),
                 ]),
             ),
@@ -257,8 +251,8 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for WccdEventSchema<T, A
             (
                 "Burn".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("token_id"), T::get_type()),
-                    (String::from("amount"), A::get_type()),
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
                     (String::from("owner"), Address::get_type()),
                 ]),
             ),
@@ -279,7 +273,7 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for WccdEventSchema<T, A
             (
                 "TokenMetadata".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("token_id"), T::get_type()),
+                    (String::from("token_id"), ContractTokenId::get_type()),
                     (String::from("metadata_url"), MetadataUrl::get_type()),
                 ]),
             ),
@@ -363,7 +357,7 @@ impl<S: HasStateApi> State<S> {
             paused: false,
             token: state_builder.new_map(),
             implementors: state_builder.new_map(),
-            url: INITIAL_TOKEN_METADATA_URL.to_string(),
+            url: state_builder.new_box(INITIAL_TOKEN_METADATA_URL.to_string()),
         }
     }
 
@@ -506,11 +500,7 @@ impl<S: HasStateApi> State<S> {
 /// Logs a `Mint` event for the single token id with no amounts.
 /// Logs a `TokenMetadata` event with the INITIAL_TOKEN_METADATA_URL.
 /// Logs a `NewAdmin` event with the invoker as admin.
-#[init(
-    contract = "cis2_wCCD",
-    enable_logger,
-    event = "WccdEventSchema<ContractTokenId, ContractTokenAmount>"
-)]
+#[init(contract = "cis2_wCCD", enable_logger, event = "WccdEvent")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -521,20 +511,22 @@ fn contract_init<S: HasStateApi>(
     // Construct the initial contract state.
     let state = State::new(state_builder, invoker);
     // Log event for the newly minted token.
-    logger.log(&Cis2Event::Mint(MintEvent {
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
         amount:   ContractTokenAmount::from(0u64),
         owner:    invoker,
-    }))?;
+    })))?;
 
     // Log event for where to find metadata for the token
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     TOKEN_ID_WCCD,
-        metadata_url: MetadataUrl {
-            url:  String::from(INITIAL_TOKEN_METADATA_URL),
-            hash: None,
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+        TokenMetadataEvent {
+            token_id:     TOKEN_ID_WCCD,
+            metadata_url: MetadataUrl {
+                url:  String::from(INITIAL_TOKEN_METADATA_URL),
+                hash: None,
+            },
         },
-    }))?;
+    )))?;
 
     // Log event for the new admin.
     logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
@@ -576,22 +568,22 @@ fn contract_wrap<S: HasStateApi>(
     state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
 
     // Log the newly minted tokens.
-    logger.log(&Cis2Event::Mint(MintEvent {
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
         amount:   ContractTokenAmount::from(amount.micro_ccd),
         owner:    sender,
-    }))?;
+    })))?;
 
     // Only logs a transfer event if the receiver is not the sender.
     // Only executes the `OnReceivingCis2` hook if the receiver is not the sender
     // and the receiver is a contract.
     if sender != receive_address {
-        logger.log(&Cis2Event::Transfer(TransferEvent {
+        logger.log(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WCCD,
             amount:   ContractTokenAmount::from(amount.micro_ccd),
             from:     sender,
             to:       receive_address,
-        }))?;
+        })))?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = params.to {
@@ -646,11 +638,11 @@ fn contract_unwrap<S: HasStateApi>(
     state.burn(&TOKEN_ID_WCCD, params.amount, &params.owner)?;
 
     // Log the burning of tokens.
-    logger.log(&Cis2Event::Burn(BurnEvent {
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::Burn(BurnEvent {
         token_id: TOKEN_ID_WCCD,
         amount:   params.amount,
         owner:    params.owner,
-    }))?;
+    })))?;
 
     let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
 
@@ -760,16 +752,18 @@ fn contract_state_set_url<S: HasStateApi>(
     let params: SetURLParams = ctx.parameter_cursor().get()?;
 
     // Update the url variable.
-    host.state_mut().url = params.url;
+    *host.state_mut().url = params.url;
 
     // Log an event including the new metadata for this token.
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     TOKEN_ID_WCCD,
-        metadata_url: MetadataUrl {
-            url:  host.state().url.clone(),
-            hash: None,
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+        TokenMetadataEvent {
+            token_id:     TOKEN_ID_WCCD,
+            metadata_url: MetadataUrl {
+                url:  host.state().url.clone(),
+                hash: None,
+            },
         },
-    }))?;
+    )))?;
 
     Ok(())
 }
@@ -829,12 +823,12 @@ fn contract_transfer<S: HasStateApi>(
         state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
         // Log transfer event
-        logger.log(&Cis2Event::Transfer(TransferEvent {
+        logger.log(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
             token_id,
             amount,
             from,
             to: to_address,
-        }))?;
+        })))?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = to {
@@ -891,12 +885,14 @@ fn contract_update_operator<S: HasStateApi>(
         }
 
         // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
+        logger.log(&WccdEvent::Cis2Event(
+            Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner:    sender,
+                    operator: param.operator,
+                    update:   param.update,
+                },
+            ),
         ))?;
     }
 
@@ -1176,15 +1172,18 @@ mod tests {
         // Check the logs
         claim_eq!(logger.logs.len(), 3, "Exactly three events should be logged");
         claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
+            logger.logs.contains(&to_bytes(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
                 owner:    ADDRESS_0,
                 token_id: TOKEN_ID_WCCD,
                 amount:   ContractTokenAmount::from(0),
-            }))),
+            })))),
             "Missing event for minting the token"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+            logger.logs.contains(&to_bytes(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<
+                _,
+                ContractTokenAmount,
+            >(
                 TokenMetadataEvent {
                     token_id:     TOKEN_ID_WCCD,
                     metadata_url: MetadataUrl {
@@ -1192,7 +1191,7 @@ mod tests {
                         hash: None,
                     },
                 }
-            ))),
+            )))),
             "Missing event with metadata for the token"
         );
         claim!(
@@ -1259,12 +1258,12 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
+            to_bytes(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WCCD,
                 amount:   ContractTokenAmount::from(100),
-            })),
+            }))),
             "Incorrect event emitted"
         )
     }
@@ -1357,12 +1356,12 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
+            to_bytes(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_ID_WCCD,
                 amount:   ContractTokenAmount::from(100),
-            })),
+            }))),
             "Incorrect event emitted"
         )
     }
@@ -1425,12 +1424,14 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                UpdateOperatorEvent {
-                    owner:    ADDRESS_0,
-                    operator: ADDRESS_1,
-                    update:   OperatorUpdate::Add,
-                }
+            to_bytes(&WccdEvent::Cis2Event(
+                Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                    UpdateOperatorEvent {
+                        owner:    ADDRESS_0,
+                        operator: ADDRESS_1,
+                        update:   OperatorUpdate::Add,
+                    }
+                )
             )),
             "Incorrect event emitted"
         )
