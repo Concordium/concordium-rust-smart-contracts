@@ -210,11 +210,17 @@ fn vote<S: HasStateApi>(
     // Check that vote is in range
     ensure!(new_vote_index < host.state().num_options, VotingError::InvalidVoteIndex);
 
+    if let Some(old_vote_index) = host.state().ballots.get(&acc) {
+        let old_vote_index = *old_vote_index;
+        // Update the tally for the `old_vote_index` by reducing one vote.
+        *host.state_mut().tally.entry(old_vote_index).or_insert(0) -= 1;
+    };
+
     // Insert or replace the vote for the account.
     host.state_mut()
         .ballots
         .entry(acc)
-        .and_modify(|vote| *vote = new_vote_index)
+        .and_modify(|old_vote_index| *old_vote_index = new_vote_index)
         .or_insert(new_vote_index);
 
     // Update the tally for the `new_vote_index` with one additional vote.
@@ -325,7 +331,11 @@ mod tests {
         let res = vote(&ctx, &mut host, &mut logger);
 
         // Check that error is thrown because the election is finished already.
-        claim_eq!(res, Err(VotingError::VotingFinished));
+        claim_eq!(
+            res,
+            Err(VotingError::VotingFinished),
+            "Should throw error because voting is finished"
+        );
     }
 
     /// Test that voting fails if the voting index is out of range.
@@ -352,7 +362,11 @@ mod tests {
         let res = vote(&ctx, &mut host, &mut logger);
 
         // Check that error is thrown because the voting index is out of range.
-        claim_eq!(res, Err(VotingError::InvalidVoteIndex));
+        claim_eq!(
+            res,
+            Err(VotingError::InvalidVoteIndex),
+            "Should throw error because voting index is invalid"
+        );
     }
 
     #[concordium_test]
@@ -381,7 +395,11 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
         // Check the ballots (ACCOUNT_0 voted for voting option index 0).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
-        claim_eq!(vec![(ACC_0, 0)], ballots);
+        let votes_count_0 = host.state().tally.get(&0).unwrap();
+        let votes_count_1 = host.state().tally.get(&1);
+        claim_eq!(*votes_count_0, 1, "Expect: one vote for option 0");
+        claim!(votes_count_1.is_none(), "Expect: no votes for option 1");
+        claim_eq!(vec![(ACC_0, 0)], ballots, "Expect: ACCOUNT_0 voted for voting option index 0");
 
         // Change vote.
 
@@ -394,7 +412,15 @@ mod tests {
         claim!(result.is_ok(), "Results in rejection");
         // Check the ballots (ACCOUNT_0 changed its voting option index to 1).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
-        claim_eq!(vec![(ACC_0, 1)], ballots);
+        let votes_count_0 = host.state().tally.get(&0).unwrap();
+        let votes_count_1 = host.state().tally.get(&1).unwrap();
+        claim_eq!(*votes_count_0, 0, "Expect: no votes for option 0");
+        claim_eq!(*votes_count_1, 1, "Expect: one vote for option 1");
+        claim_eq!(
+            vec![(ACC_0, 1)],
+            ballots,
+            "Expect: ACCOUNT_0 changed its voting option index to 1"
+        );
 
         // Another vote, by another account.
 
@@ -410,7 +436,16 @@ mod tests {
         // Check the ballots (ACCOUNT_0 voted for voting option index 1 and ACCOUNT_1
         // voted for voting option index 0).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
-        claim_eq!(vec![(ACC_0, 1), (ACC_1, 0)], ballots);
+        let votes_count_0 = host.state().tally.get(&0).unwrap();
+        let votes_count_1 = host.state().tally.get(&1).unwrap();
+        claim_eq!(*votes_count_0, 1, "Expect: one vote for option 0");
+        claim_eq!(*votes_count_1, 1, "Expect: one vote for option 1");
+        claim_eq!(
+            vec![(ACC_0, 1), (ACC_1, 0)],
+            ballots,
+            "Expect: ACCOUNT_0 voted for voting option index 1 and ACCOUNT_1 voted for voting \
+             option index 0"
+        );
 
         // Vote again, using the same index as before.
 
@@ -425,6 +460,15 @@ mod tests {
         // Check the ballots (ACCOUNT_0 still voted for voting option index 1 and
         // ACCOUNT_1 still voted for voting option index 0).
         let ballots = host.state().ballots.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
-        claim_eq!(vec![(ACC_0, 1), (ACC_1, 0)], ballots);
+        let votes_count_0 = host.state().tally.get(&0).unwrap();
+        let votes_count_1 = host.state().tally.get(&1).unwrap();
+        claim_eq!(*votes_count_0, 1, "Expect: one vote for option 0");
+        claim_eq!(*votes_count_1, 1, "Expect: one vote for option 1");
+        claim_eq!(
+            vec![(ACC_0, 1), (ACC_1, 0)],
+            ballots,
+            "ACCOUNT_0 still voted for voting option index 1 and ACCOUNT_1 still voted for voting \
+             option index 0"
+        );
     }
 }
