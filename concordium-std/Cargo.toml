@@ -19,9 +19,6 @@ secp256k1 = { version = "0.22", optional = true }
 ed25519-zebra = { version = "2.2", optional = true }
 quickcheck = {version = "1", optional = true }
 getrandom = { version = "0.2", features = ["custom"], optional = true }
-proc-macro2 = "1.0.47"
-syn = "1.0.103"
-quote = "1.0.21"
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"

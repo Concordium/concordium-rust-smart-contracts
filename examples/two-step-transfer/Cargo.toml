@@ -13,18 +13,13 @@ readme = "../README.md"
 default = ["std", "concordium-quickcheck"]
 
 std = ["concordium-std/std"]
-concordium-quickcheck = ["concordium-std/concordium-quickcheck", "concordium-contracts-common/concordium-quickcheck"]
+concordium-quickcheck = ["concordium-std/concordium-quickcheck"]
 
 [dependencies.concordium-std]
 # git = "https://github.com/Concordium/concordium-std.git"
 # branch = "main"
 version = "4"
 path = "../../concordium-std"
-default-features = false
-
-[dependencies.concordium-contracts-common]
-path = "../../concordium-contracts-common/concordium-contracts-common"
-version = "4"
 default-features = false
 
 [lib]
