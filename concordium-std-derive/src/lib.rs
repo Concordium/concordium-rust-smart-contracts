@@ -1952,7 +1952,8 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let output = match syn::Item::parse.parse(input.clone()) {
         Ok(syn::Item::Fn(mut item_fn)) => {
-            let mut inputs = syn::punctuated::Punctuated::new();
+            let mut inputs: Punctuated<syn::BareFnArg, syn::token::Comma> =
+                syn::punctuated::Punctuated::new();
             let mut errors = Vec::new();
 
             item_fn.sig.inputs.iter().for_each(|input| match *input {
@@ -1971,23 +1972,13 @@ pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStr
             if errors.is_empty() {
                 let attrs = mem::take(&mut item_fn.attrs);
                 let name = &item_fn.sig.ident;
-                let fn_type = syn::TypeBareFn {
-                    lifetimes: None,
-                    unsafety: item_fn.sig.unsafety,
-                    abi: item_fn.sig.abi.clone(),
-                    fn_token: <syn::Token![fn]>::default(),
-                    paren_token: syn::token::Paren::default(),
-                    inputs,
-                    variadic: item_fn.sig.variadic.clone(),
-                    output: item_fn.sig.output.clone(),
-                };
-
+                let codomain = &item_fn.sig.output;
                 quote! {
                     #[concordium_test]
                     #(#attrs)*
                     fn #name() {
                         #item_fn
-                       ::concordium_std::test_infrastructure::concordium_qc(#name as #fn_type)
+                       ::concordium_std::test_infrastructure::concordium_qc(#name as (fn (#inputs) #codomain))
                     }
                 }
             } else {
