@@ -11,8 +11,8 @@ default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
 
 [dependencies]
-concordium-std = "4.0.0"
-concordium-cis2 = "1.2.0"
+concordium-std = "5.0.0"
+concordium-cis2 = "2.0.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
