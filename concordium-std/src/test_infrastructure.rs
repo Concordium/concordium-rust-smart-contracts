@@ -1849,9 +1849,7 @@ register_custom_getrandom!(get_random);
 /// A customized QuickCheck test runner used for on-chain wasm code.
 /// Adds support for reporting errors using the primitives available when
 /// running Wasm code.
-pub fn concordium_qc<A>(f: A)
-where
-    A: Testable, {
+pub fn concordium_qc<A: Testable>(f: A)
     let mut qc = QuickCheck::new();
     let res = qc.quicktest(f);
     match res {
