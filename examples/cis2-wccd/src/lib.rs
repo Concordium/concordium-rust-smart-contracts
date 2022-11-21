@@ -84,7 +84,7 @@ struct State<S: HasStateApi> {
     admin:        Address,
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
     paused:       bool,
-    /// Map specifying the `AddressState` (balance, and operators) for every
+    /// Map specifying the `AddressState` (balance and operators) for every
     /// address.
     token:        StateMap<Address, AddressState<S>, S>,
     /// Map with contract addresses providing implementations of additional
@@ -210,9 +210,9 @@ impl Serial for WccdEvent {
     }
 }
 
-/// Manual implementation of the `WccdEventSchema` which includes both (the
+/// Manual implementation of the `WccdEventSchema` which includes both the
 /// events specified in this contract and the events specified in the CIS-2
-/// library). The events are tagged to distinguish them on-chain.
+/// library. The events are tagged to distinguish them on-chain.
 impl schema::SchemaType for WccdEvent {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
@@ -506,7 +506,7 @@ fn contract_init<S: HasStateApi>(
     state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
-    // Get the instantiater of this contract instance.
+    // Get the instantiator of this contract instance to be used as the initial admin.
     let invoker = Address::Account(ctx.init_origin());
     // Construct the initial contract state.
     let state = State::new(state_builder, invoker);
@@ -697,7 +697,7 @@ fn contract_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-/// Pause/Unpause this smart contract instance by the admin. All state-mutative
+/// Pause/Unpause this smart contract instance by the admin. All non-admin state-mutative
 /// functions (wrap, unwrap, transfer, updateOperator) cannot be executed when
 /// the contract is paused.
 ///
@@ -1087,6 +1087,8 @@ fn contract_set_implementor<S: HasStateApi>(
 /// It rejects if:
 /// - Sender is not the admin of the contract instance.
 /// - It fails to parse the parameter.
+/// - If the ugrade fails.
+/// - If the migration invoke fails.
 #[receive(
     contract = "cis2_wCCD",
     name = "upgrade",
@@ -1143,7 +1145,7 @@ mod tests {
     }
 
     /// Test initialization succeeds and the tokens are owned by the contract
-    /// instantiater and the appropriate events are logged.
+    /// instantiator and the appropriate events are logged.
     #[concordium_test]
     fn test_init() {
         // Set up the context
@@ -1166,7 +1168,7 @@ mod tests {
         claim_eq!(
             balance0,
             0u64.into(),
-            "No initial tokens are owned by the contract instantiater"
+            "No initial tokens are owned by the contract instantiator"
         );
 
         // Check the logs
@@ -1796,8 +1798,8 @@ mod tests {
         );
     }
 
-    /// Test that one can NOT call state-mutative functions (wrap, unwrap,
-    /// transfer, updateOperator functions) when contract is paused.
+    /// Test that one can NOT call non-admin state-mutative functions (wrap, unwrap,
+    /// transfer, updateOperator) when the contract is paused.
     #[concordium_test]
     fn test_no_execution_of_state_mutative_functions_when_paused() {
         // Set up the context.
