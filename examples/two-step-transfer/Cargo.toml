@@ -10,16 +10,16 @@ repository = "https://github.com/concordium/concordium-rust-smart-contracts"
 readme = "../README.md"
 
 [features]
-default = ["std", "concordium-quickcheck"]
+default = ["std"]
 
 std = ["concordium-std/std"]
-concordium-quickcheck = ["concordium-std/concordium-quickcheck"]
 
 [dependencies.concordium-std]
 # git = "https://github.com/Concordium/concordium-std.git"
 # branch = "main"
 version = "4"
 path = "../../concordium-std"
+features = ["concordium-quickcheck"]
 default-features = false
 
 [lib]

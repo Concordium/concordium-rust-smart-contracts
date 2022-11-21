@@ -635,7 +635,6 @@ mod tests {
     }
 
     #[concordium_quickcheck]
-    #[cfg(feature = "concordium-quickcheck")]
     fn prop_receive_support_transfer(
         account1: AccountAddress,
         account2: AccountAddress,
