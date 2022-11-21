@@ -2,7 +2,9 @@
 
 ## Unreleased changes
 
-- Add support for event schemas in the schema derivation macro.
+## concordium-std-derive 5.0.0 (2022-11-21)
+
+- Add support for event schemas (V3 schemas) in the schema derivation macro.
 
 ## concordium-std-derive 4.1.0 (2022-10-31)
 
