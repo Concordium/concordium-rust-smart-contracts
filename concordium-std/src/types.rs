@@ -1,5 +1,8 @@
+use concordium_contracts_common::{Amount, ExchangeRate};
+
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+    cell::UnsafeCell, cmp::max, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial,
+    Vec,
 };
 
 #[derive(Debug)]
@@ -581,6 +584,72 @@ pub struct ExternReturnValue {
     pub(crate) current_position: u32,
 }
 
+/// The current public balances of an account.
+#[derive(Debug, Copy, Clone)]
+pub struct AccountBalance {
+    /// The total balance of the account. Note that part of this balance might
+    /// be staked and/or locked in scheduled transfers.
+    pub total:  Amount,
+    /// The current staked amount of the account. This amount is used for
+    /// staking.
+    pub staked: Amount,
+    /// The current amount locked in releases that resulted from transfers with
+    /// schedule. A locked amount can still be used for staking.
+    pub locked: Amount,
+}
+
+impl AccountBalance {
+    /// Construct a new account balance, ensuring that both the staked amount
+    /// and the locked amount is smaller than or equal to the total balance.
+    pub fn new(total: Amount, staked: Amount, locked: Amount) -> Option<Self> {
+        if total < staked || total < locked {
+            None
+        } else {
+            Some(Self {
+                total,
+                staked,
+                locked,
+            })
+        }
+    }
+
+    /// The current available balance of the account. This is the amount
+    /// an account currently have available for transfering and is not
+    /// staked or locked in releases by scheduled transfers.
+    pub fn available(&self) -> Amount { self.total - max(self.locked, self.staked) }
+}
+
+/// The current exchange rates.
+#[derive(Debug, Clone, Copy)]
+pub struct ExchangeRates {
+    /// Euro per NRG exchange rate.
+    pub euro_per_energy:    ExchangeRate,
+    /// Micro CCD per Euro exchange rate.
+    pub micro_ccd_per_euro: ExchangeRate,
+}
+
+impl ExchangeRates {
+    /// Convert Euro cent to CCD using the current exchange rate.
+    /// This will round down to the nearest micro CCD.
+    pub fn convert_euro_cent_to_amount(&self, euro_cent: u64) -> Amount {
+        let numerator: u128 = self.micro_ccd_per_euro.numerator().into();
+        let denominator: u128 = self.micro_ccd_per_euro.denominator().into();
+        let euro_cent: u128 = euro_cent.into();
+        let result = numerator * euro_cent / (denominator * 100);
+        Amount::from_micro_ccd(result as u64)
+    }
+
+    /// Convert CCD to Euro cent using the current exchange rate.
+    /// This will round down to the nearest Euro cent.
+    pub fn convert_amount_to_euro_cent(&self, amount: Amount) -> u64 {
+        let numerator: u128 = self.micro_ccd_per_euro.numerator().into();
+        let denominator: u128 = self.micro_ccd_per_euro.denominator().into();
+        let micro_ccd: u128 = amount.micro_ccd().into();
+        let result = micro_ccd * 100 * denominator / numerator;
+        result as u64
+    }
+}
+
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
 /// Errors that may occur when invoking a contract entrypoint.
@@ -617,22 +686,56 @@ pub enum TransferError {
     MissingAccount,
 }
 
-/// A wrapper around [Result] that fixes the error variant to
-/// [CallContractError], and the result to `(bool, Option<A>)`.
+#[repr(i32)]
+#[derive(Debug, Clone)]
+/// Errors that may occur when upgrading the smart contract module.
+pub enum UpgradeError {
+    /// Provided module does not exist.
+    MissingModule,
+    /// Provided module does not contain a smart contract with a matching name.
+    MissingContract,
+    /// Provided module is a version 0 smart contract module.
+    UnsupportedModuleVersion,
+}
+
+/// Error for querying the balance of an account.
+/// No account found for the provided account address.
+#[derive(Debug, Copy, Clone)]
+pub struct QueryAccountBalanceError;
+
+/// Error for querying the balance of a smart contract instance.
+/// No instance found for the provided contract address.
+#[derive(Debug, Copy, Clone)]
+pub struct QueryContractBalanceError;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`CallContractError`], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
 /// modified or not, and the second item is the actual return value, which is
 /// present (i.e., [`Some`]) if and only if a `V1` contract was invoked.
 pub type CallContractResult<A> = Result<(bool, Option<A>), CallContractError<A>>;
 
-/// A wrapper around [Result] that fixes the error variant to
-/// [CallContractError], and the result to [`Option<A>`](Option)
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`CallContractError`], and the result to [`Option<A>`](Option)
 /// If the result is `Ok` then the value is [`None`] if a `V0` contract was
 /// invoked, and a return value returned by a `V1` contract otherwise.
 pub type ReadOnlyCallContractResult<A> = Result<Option<A>, CallContractError<A>>;
 
-/// A wrapper around [Result] that fixes the error variant to [TransferError]
-/// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`TransferError`] and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
 pub type TransferResult = Result<(), TransferError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to [`UpgradeError`]
+/// and result to [()](https://doc.rust-lang.org/std/primitive.unit.html).
+pub type UpgradeResult = Result<(), UpgradeError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryAccountBalanceError`] and result to [`AccountBalance`].
+pub type QueryAccountBalanceResult = Result<AccountBalance, QueryAccountBalanceError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryContractBalanceError`] and result to [`Amount`].
+pub type QueryContractBalanceResult = Result<Amount, QueryContractBalanceError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]

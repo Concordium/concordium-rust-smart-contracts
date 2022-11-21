@@ -144,6 +144,42 @@ impl<T> From<CallContractError<T>> for Reject {
     }
 }
 
+/// MissingModule is i32::MIN + 22,
+/// MissingContract is i32::MIN + 23,
+/// UnsupportedModuleVersion is i32::MIN + 24.
+impl From<UpgradeError> for Reject {
+    #[inline(always)]
+    fn from(te: UpgradeError) -> Self {
+        match te {
+            UpgradeError::MissingModule => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 22).into()
+            },
+            UpgradeError::MissingContract => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 23).into()
+            },
+            UpgradeError::UnsupportedModuleVersion => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 24).into()
+            },
+        }
+    }
+}
+
+/// Query account balance error missing account is i32::MIN + 25.
+impl From<QueryAccountBalanceError> for Reject {
+    #[inline(always)]
+    fn from(_: QueryAccountBalanceError) -> Self {
+        unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 25).into() }
+    }
+}
+
+/// Query contract balance error missing contract is i32::MIN + 26.
+impl From<QueryContractBalanceError> for Reject {
+    #[inline(always)]
+    fn from(_: QueryContractBalanceError) -> Self {
+        unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 26).into() }
+    }
+}
+
 /// Return values are intended to be produced by writing to the
 /// [ExternReturnValue] buffer, either in a high-level interface via
 /// serialization, or in a low-level interface by manually using the [Write]
@@ -1767,62 +1803,97 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
 
 /// Tag of the transfer operation expected by the host. See [prims::invoke].
 const INVOKE_TRANSFER_TAG: u32 = 0;
-/// Tag of the transfer operation expected by the host. See [prims::invoke].
+/// Tag of the call operation expected by the host. See [prims::invoke].
 const INVOKE_CALL_TAG: u32 = 1;
+/// Tag of the query account balance operation expected by the host. See
+/// [prims::invoke].
+const INVOKE_QUERY_ACCOUNT_BALANCE_TAG: u32 = 2;
+/// Tag of the query contract balance operation expected by the host. See
+/// [prims::invoke].
+const INVOKE_QUERY_CONTRACT_BALANCE_TAG: u32 = 3;
+/// Tag of the query exchange rates operation expected by the host. See
+/// [prims::invoke].
+const INVOKE_QUERY_EXCHANGE_RATES_TAG: u32 = 4;
 
-/// Decode the the response code.
-///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
-///
-/// The response is encoded as follows.
-/// - success is encoded as 0
-/// - every failure has all bits of the first 3 bytes set
-/// - in case of failure
-///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
-///     reason from the contract
-///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
-fn parse_transfer_response_code(code: u64) -> TransferResult {
-    if code & !0xffff_ff00_0000_0000 == 0 {
-        // success
-        // assume response from host conforms to spec, just return success.
-        Ok(())
+/// Check whether the response code from calling `invoke` is encoding a failure
+/// and map out the byte used for the error code.
+/// A successful response code has the last 5 bytes unset.
+#[inline(always)]
+fn get_invoke_failure_code(code: u64) -> Option<u8> {
+    if code & 0xff_ffff_ffff == 0 {
+        None
     } else {
-        // failure.
-        match (0x0000_00ff_0000_0000 & code) >> 32 {
-            0x01 => Err(TransferError::AmountTooLarge),
-            0x02 => Err(TransferError::MissingAccount),
-            _ => crate::trap(), // host precondition violation
-        }
+        let error_code = (code & 0xff_0000_0000) >> 32;
+        Some(error_code as u8)
     }
 }
 
 /// Decode the the response code.
 ///
-/// This is necessary since Wasm only allows us to pass simple scalars as
-/// parameters. Everything else requires passing data in memory, or via host
-/// functions, both of which are difficult.
+/// The response is encoded as follows.
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index, except the first bit,
+///     which is used to indicate whether the contract state was modified.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure, where:
+///   - 0x01 encodes amount too large.
+///   - 0x02 encodes missing account.
+fn parse_transfer_response_code(code: u64) -> TransferResult {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        match error_code {
+            0x01 => Err(TransferError::AmountTooLarge),
+            0x02 => Err(TransferError::MissingAccount),
+            _ => crate::trap(), // host precondition violation
+        }
+    } else {
+        Ok(())
+    }
+}
+
+/// Decode the response code from calling upgrade.
 ///
 /// The response is encoded as follows.
-/// - success is encoded as 0
-/// - every failure has all bits of the first 3 bytes set
-/// - in case of failure
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index, except the first bit,
+///     which is used to indicate whether the contract state was modified.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure, where:
+///   - 0x07 encodes missing module.
+///   - 0x08 encodes missing contract.
+///   - 0x09 encodes module being an unsupported version.
+#[inline(always)]
+fn parse_upgrade_response_code(code: u64) -> UpgradeResult {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        match error_code {
+            0x07 => Err(UpgradeError::MissingModule),
+            0x08 => Err(UpgradeError::MissingContract),
+            0x09 => Err(UpgradeError::UnsupportedModuleVersion),
+            _ => crate::trap(), // host precondition violation
+        }
+    } else {
+        Ok(())
+    }
+}
+
+/// Decode the the response code.
+///
+/// The response is encoded as follows.
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index, except the first bit,
+///     which is used to indicate whether the contract state was modified.
+/// - In case of failure:
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
 ///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+///     - 0x01 encodes amount too large.
+///     - 0x02 encodes missing account.
+///     - 0x03 encodes missing contract.
+///     - 0x04 encodes missing entrypoint.
+///     - 0x05 encodes message failed.
+///     - 0x06 encodes trap.
 fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse> {
-    if code & !0xffff_ff00_0000_0000 == 0 {
-        // this means success
-        let rv = (code >> 40) as u32;
-        let tag = 0x80_0000u32;
-        if tag & rv != 0 {
-            Ok((true, NonZeroU32::new(rv & !tag).map(ExternCallResponse::new)))
-        } else {
-            Ok((false, NonZeroU32::new(rv).map(ExternCallResponse::new)))
-        }
-    } else {
-        match (0x0000_00ff_0000_0000 & code) >> 32 {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        match error_code {
             0x00 =>
             // response with logic error and return value.
             {
@@ -1851,6 +1922,80 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
             0x06 => Err(CallContractError::Trap),
             _ => unsafe { crate::hint::unreachable_unchecked() }, // host precondition violation
         }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let rv = (code >> 40) as u32;
+
+        let tag = 0x80_0000u32; // Mask for the first bit.
+        if tag & rv != 0 {
+            // Check the bit, indicating a contract state change.
+            Ok((true, NonZeroU32::new(rv & !tag).map(ExternCallResponse::new)))
+        } else {
+            Ok((false, NonZeroU32::new(rv).map(ExternCallResponse::new)))
+        }
+    }
+}
+
+/// Decode the account balance response code.
+///
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure where:
+///    - '0x02' encodes missing account.
+fn parse_query_account_balance_response_code(
+    code: u64,
+) -> Result<ExternCallResponse, QueryAccountBalanceError> {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x02 {
+            Err(QueryAccountBalanceError)
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        Ok(ExternCallResponse::new(return_value_index))
+    }
+}
+
+/// Decode the contract balance response code.
+///
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure where:
+///    - '0x03' encodes missing contract.
+fn parse_query_contract_balance_response_code(
+    code: u64,
+) -> Result<ExternCallResponse, QueryContractBalanceError> {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x03 {
+            Err(QueryContractBalanceError)
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        Ok(ExternCallResponse::new(return_value_index))
+    }
+}
+
+/// Decode the exchange rate response code.
+///
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure we throw a runtime error, since this query is not
+///   expected to fail.
+fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
+    if get_invoke_failure_code(code).is_some() {
+        // Querying the exchange rates should never produce a failure response code.
+        unsafe { crate::hint::unreachable_unchecked() }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        ExternCallResponse::new(return_value_index)
     }
 }
 
@@ -1889,6 +2034,39 @@ fn invoke_contract_construct_parameter(
     method.serial(&mut cursor).unwrap_abort();
     amount.serial(&mut cursor).unwrap_abort();
     data
+}
+
+/// Helper factoring out the common behaviour of account_balance for the
+/// two extern hosts below.
+fn query_account_balance_worker(address: &AccountAddress) -> QueryAccountBalanceResult {
+    let response = unsafe {
+        prims::invoke(
+            INVOKE_QUERY_ACCOUNT_BALANCE_TAG,
+            AsRef::<[u8]>::as_ref(&address).as_ptr(),
+            32,
+        )
+    };
+    let mut return_value = parse_query_account_balance_response_code(response)?;
+    Ok(AccountBalance::deserial(&mut return_value).unwrap_abort())
+}
+
+/// Helper factoring out the common behaviour of contract_balance for the
+/// two extern hosts below.
+fn query_contract_balance_worker(address: &ContractAddress) -> QueryContractBalanceResult {
+    let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
+    let response =
+        unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_BALANCE_TAG, data.as_ptr() as *const u8, 16) };
+    let mut return_value = parse_query_contract_balance_response_code(response)?;
+    Ok(Amount::deserial(&mut return_value).unwrap_abort())
+}
+
+/// Helper factoring out the common behaviour of exchange_rates for the
+/// two extern hosts below.
+fn query_exchange_rates_worker() -> ExchangeRates {
+    let response_code = unsafe { prims::invoke(INVOKE_QUERY_EXCHANGE_RATES_TAG, [].as_ptr(), 0) };
+
+    let mut response = parse_query_exchange_rates_response_code(response_code);
+    ExchangeRates::deserial(&mut response).unwrap_abort()
 }
 
 impl<S> StateBuilder<S>
@@ -2089,6 +2267,24 @@ where
         }
     }
 
+    #[inline(always)]
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
+        query_account_balance_worker(&address)
+    }
+
+    #[inline(always)]
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
+        query_contract_balance_worker(&address)
+    }
+
+    #[inline(always)]
+    fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
+
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
+        parse_upgrade_response_code(response)
+    }
+
     fn state(&self) -> &S { &self.state }
 
     fn state_mut(&mut self) -> &mut S { &mut self.state }
@@ -2134,6 +2330,24 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         let len = data.len();
         let response = unsafe { prims::invoke(INVOKE_CALL_TAG, data.as_ptr(), len as u32) };
         parse_call_response_code(response)
+    }
+
+    #[inline(always)]
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
+        query_account_balance_worker(&address)
+    }
+
+    #[inline(always)]
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
+        query_contract_balance_worker(&address)
+    }
+
+    #[inline(always)]
+    fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
+
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
+        parse_upgrade_response_code(response)
     }
 
     #[inline(always)]
@@ -2647,6 +2861,66 @@ impl Serial for HashKeccak256 {
 impl Deserial for HashKeccak256 {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         Ok(HashKeccak256(Deserial::deserial(source)?))
+    }
+}
+
+impl Serial for ExchangeRates {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.euro_per_energy.serial(out)?;
+        self.micro_ccd_per_euro.serial(out)?;
+        Ok(())
+    }
+}
+
+impl Deserial for ExchangeRates {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let bytes: [u8; 32] = source.read_array()?;
+        let chunks = unsafe { mem::transmute::<[u8; 32], [[u8; 8]; 4]>(bytes) };
+
+        let euro_per_energy_numerator = u64::from_le_bytes(chunks[0]);
+        let euro_per_energy_denominator = u64::from_le_bytes(chunks[1]);
+        let micro_ccd_per_euro_numerator = u64::from_le_bytes(chunks[2]);
+        let micro_ccd_per_euro_denominator = u64::from_le_bytes(chunks[3]);
+
+        if euro_per_energy_numerator == 0
+            || euro_per_energy_denominator == 0
+            || micro_ccd_per_euro_numerator == 0
+            || micro_ccd_per_euro_denominator == 0
+        {
+            return Err(ParseError::default());
+        }
+
+        let euro_per_energy =
+            ExchangeRate::new_unchecked(euro_per_energy_numerator, euro_per_energy_denominator);
+        let micro_ccd_per_euro = ExchangeRate::new_unchecked(
+            micro_ccd_per_euro_numerator,
+            micro_ccd_per_euro_denominator,
+        );
+
+        Ok(Self {
+            euro_per_energy,
+            micro_ccd_per_euro,
+        })
+    }
+}
+
+impl Serial for AccountBalance {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.total.serial(out)?;
+        self.staked.serial(out)?;
+        self.locked.serial(out)?;
+        Ok(())
+    }
+}
+
+impl Deserial for AccountBalance {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let bytes: [u8; 24] = source.read_array()?;
+        let chunks = unsafe { mem::transmute::<[u8; 24], [[u8; 8]; 3]>(bytes) };
+        let total = Amount::from_micro_ccd(u64::from_le_bytes(chunks[0]));
+        let staked = Amount::from_micro_ccd(u64::from_le_bytes(chunks[1]));
+        let locked = Amount::from_micro_ccd(u64::from_le_bytes(chunks[2]));
+        Self::new(total, staked, locked).ok_or_else(ParseError::default)
     }
 }
 
