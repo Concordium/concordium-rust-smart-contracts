@@ -187,8 +187,8 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/\"4.0.0\"/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/\"1.2.0\"/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/\"5.0.0\"/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/\"2.0.0\"/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
 

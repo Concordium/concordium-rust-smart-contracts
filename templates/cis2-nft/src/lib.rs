@@ -294,7 +294,7 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with no token types initially.
-#[init(contract = "{{crate_name}}")]
+#[init(contract = "{{crate_name}}", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
 fn contract_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
