@@ -40,8 +40,12 @@ use concordium_std::{collections::BTreeMap, *};
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
 /// The metadata url for the wCCD token.
-/// The URL can be updated with the `setURL` function by the `admin`.
+/// The URL can be updated with the `setMetadataUrl` function by the `admin`.
 const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
+
+/// The hash of the document stored at the above URL.
+/// The hash can be updated with the `setMetadataUrl` function by the `admin`.
+const INITIAL_METADATA_HASH: Option<Sha256> = None;
 
 /// Tag for the NewAdmin event.
 pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
@@ -95,6 +99,11 @@ struct State<S: HasStateApi> {
     /// in the situations when one wants to do a partial update not touching
     /// this field, which can be large.
     url:          StateBox<String, S>,
+    /// The hash of the document stored at the above URL.
+    /// `StateBox` allows for lazy loading data. This is helpful
+    /// in the situations when one wants to do a partial update not touching
+    /// this field, which can be large.
+    hash:         StateBox<Option<Sha256>, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -166,14 +175,17 @@ struct ReturnBasicState {
     paused: bool,
     /// The metadata URL following the specification RFC1738.
     url:    String,
+    /// The hash of the document stored at the above URL.
+    hash:   Option<Sha256>,
 }
 
-/// The parameter type for the contract function `setURL`.
+/// The parameter type for the contract function `setMetadataUrl`.
 #[derive(Serialize, SchemaType, Clone)]
-#[repr(transparent)]
-struct SetURLParams {
+struct SetMetadataUrlParams {
     /// The URL following the specification RFC1738.
-    url: String,
+    url:  String,
+    /// The hash of the document stored at the above URL.
+    hash: Option<Sha256>,
 }
 
 /// The parameter type for the contract function `setPaused`.
@@ -358,6 +370,7 @@ impl<S: HasStateApi> State<S> {
             token: state_builder.new_map(),
             implementors: state_builder.new_map(),
             url: state_builder.new_box(INITIAL_TOKEN_METADATA_URL.to_string()),
+            hash: state_builder.new_box(INITIAL_METADATA_HASH),
         }
     }
 
@@ -506,7 +519,8 @@ fn contract_init<S: HasStateApi>(
     state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
-    // Get the instantiator of this contract instance to be used as the initial admin.
+    // Get the instantiator of this contract instance to be used as the initial
+    // admin.
     let invoker = Address::Account(ctx.init_origin());
     // Construct the initial contract state.
     let state = State::new(state_builder, invoker);
@@ -523,7 +537,7 @@ fn contract_init<S: HasStateApi>(
             token_id:     TOKEN_ID_WCCD,
             metadata_url: MetadataUrl {
                 url:  String::from(INITIAL_TOKEN_METADATA_URL),
-                hash: None,
+                hash: INITIAL_METADATA_HASH,
             },
         },
     )))?;
@@ -697,9 +711,9 @@ fn contract_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-/// Pause/Unpause this smart contract instance by the admin. All non-admin state-mutative
-/// functions (wrap, unwrap, transfer, updateOperator) cannot be executed when
-/// the contract is paused.
+/// Pause/Unpause this smart contract instance by the admin. All non-admin
+/// state-mutative functions (wrap, unwrap, transfer, updateOperator) cannot be
+/// executed when the contract is paused.
 ///
 /// It rejects if:
 /// - Sender is not the admin of the contract instance.
@@ -734,13 +748,13 @@ fn contract_set_paused<S: HasStateApi>(
 /// - It fails to parse the parameter.
 #[receive(
     contract = "cis2_wCCD",
-    name = "setURL",
-    parameter = "SetURLParams",
+    name = "setMetadataUrl",
+    parameter = "SetMetadataUrlParams",
     error = "ContractError",
     enable_logger,
     mutable
 )]
-fn contract_state_set_url<S: HasStateApi>(
+fn contract_state_set_metadata_url<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -749,10 +763,13 @@ fn contract_state_set_url<S: HasStateApi>(
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
     // Parse the parameter.
-    let params: SetURLParams = ctx.parameter_cursor().get()?;
+    let params: SetMetadataUrlParams = ctx.parameter_cursor().get()?;
 
     // Update the url variable.
     *host.state_mut().url = params.url;
+
+    // Update the hash variable.
+    *host.state_mut().hash = params.hash;
 
     // Log an event including the new metadata for this token.
     logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
@@ -760,7 +777,7 @@ fn contract_state_set_url<S: HasStateApi>(
             token_id:     TOKEN_ID_WCCD,
             metadata_url: MetadataUrl {
                 url:  host.state().url.clone(),
-                hash: None,
+                hash: *host.state().hash,
             },
         },
     )))?;
@@ -996,7 +1013,7 @@ fn contract_token_metadata<S: HasStateApi>(
 
         let metadata_url = MetadataUrl {
             url:  host.state().url.clone(),
-            hash: None,
+            hash: *host.state().hash,
         };
         response.push(metadata_url);
     }
@@ -1019,6 +1036,7 @@ fn contract_view<S: HasStateApi>(
         admin:  host.state().admin,
         paused: host.state().paused,
         url:    host.state().url.clone(),
+        hash:   *host.state().hash,
     };
     Ok(state)
 }
@@ -1190,7 +1208,7 @@ mod tests {
                     token_id:     TOKEN_ID_WCCD,
                     metadata_url: MetadataUrl {
                         url:  String::from(INITIAL_TOKEN_METADATA_URL),
-                        hash: None,
+                        hash: INITIAL_METADATA_HASH,
                     },
                 }
             )))),
@@ -1202,6 +1220,73 @@ mod tests {
             }))),
             "Missing event for the new admin"
         );
+    }
+
+    /// Test only admin can setMetadataUrl
+    #[concordium_test]
+    #[cfg(feature = "crypto-primitives")]
+    fn test_set_metadata_url() {
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::new(&mut state_builder, ADMIN_ADDRESS);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Set up the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADMIN_ADDRESS);
+
+        // Set up crypto primitives to hash the document.
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Create a new_url and a new_hash
+        let new_url = "https://some.example/token/wccd/updated".to_string();
+        let new_hash = Some(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
+
+        // Set up the parameter.
+        let parameter = SetMetadataUrlParams {
+            url:  new_url.clone(),
+            hash: new_hash,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Call the contract function.
+        let result = contract_state_set_metadata_url(&ctx, &mut host, &mut logger);
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the logs
+        claim_eq!(logger.logs.len(), 1, "Exactly one event should be logged");
+        claim!(
+            logger.logs.contains(&to_bytes(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<
+                _,
+                ContractTokenAmount,
+            >(
+                TokenMetadataEvent {
+                    token_id:     TOKEN_ID_WCCD,
+                    metadata_url: MetadataUrl {
+                        url:  new_url.clone(),
+                        hash: new_hash,
+                    },
+                }
+            )))),
+            "Missing event with updated metadata for the token"
+        );
+
+        // Check the state.
+        let url = &*host.state().url;
+        let hash = *host.state().hash;
+        claim_eq!(url, &new_url, "Expected url being updated");
+        claim_eq!(hash, new_hash, "Expected hash being updated");
+
+        // Check only the admin can update the metadata URL
+        ctx.set_sender(ADDRESS_0);
+
+        // Call the contract function.
+        let err = contract_state_set_metadata_url(&ctx, &mut host, &mut logger);
+
+        // Check that ADDRESS_0 was not successful in updating the metadata url.
+        claim_eq!(err, Err(ContractError::Unauthorized), "Error is expected to be Unauthorized")
     }
 
     /// Test transfer succeeds, when `from` is the sender.
@@ -1798,8 +1883,8 @@ mod tests {
         );
     }
 
-    /// Test that one can NOT call non-admin state-mutative functions (wrap, unwrap,
-    /// transfer, updateOperator) when the contract is paused.
+    /// Test that one can NOT call non-admin state-mutative functions (wrap,
+    /// unwrap, transfer, updateOperator) when the contract is paused.
     #[concordium_test]
     fn test_no_execution_of_state_mutative_functions_when_paused() {
         // Set up the context.
