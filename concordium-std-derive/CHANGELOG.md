@@ -1,8 +1,13 @@
 # Changelog
  
 ## Unreleased changes
-- Add a `#[concordium_quickcheck]` macro which is to `#[quickcheck]` what `#[concordium_test]` is to `#[test]`. It is enabled by the `concordium-quickcheck` feature.
-- Add support for event schemas in the schema derivation macro.
+- Add a `#[concordium_quickcheck]` macro that re-exports a customized QuickCheck function
+  test function `test_infrastructure::concordium_qc` as a `#[concordium_test]` function.
+  It is enabled by the `concordium-quickcheck` feature.
+
+## concordium-std-derive 5.0.0 (2022-11-21)
+
+- Add support for event schemas (V3 schemas) in the schema derivation macro.
 
 ## concordium-std-derive 4.1.0 (2022-10-31)
 

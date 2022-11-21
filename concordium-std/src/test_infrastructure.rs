@@ -1272,6 +1272,9 @@ impl<State> MockFn<State> {
 /// A map from contract address and entrypoints to mocking functions.
 type MockFnMap<State> = BTreeMap<(ContractAddress, OwnedEntrypointName), MockFn<State>>;
 
+/// A map from module references to the mocked result.
+type MockUpgradeMap = BTreeMap<ModuleReference, UpgradeResult>;
+
 /// A [`Host`](HasHost) implementation used for unit testing smart contracts.
 ///
 /// The host provides a way to set up mock responses to transfers, and to
@@ -1286,18 +1289,32 @@ pub struct TestHost<State> {
     /// Functions that mock responses to calls.
     // This is Rc+RefCell because it needs to be cloneable. There might be another way to make the
     // MockFn cloneable, but this seemed like the easiest option.
-    mocking_fns:      Rc<RefCell<MockFnMap<State>>>,
+    mocking_fns:             Rc<RefCell<MockFnMap<State>>>,
     /// Transfers the contract has made during its execution.
-    transfers:        RefCell<Vec<(AccountAddress, Amount)>>,
+    transfers:               RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
-    contract_balance: RefCell<Amount>,
+    contract_balance:        RefCell<Amount>,
+    /// The address of the instance. This is used when querying its own balance.
+    contract_address:        Option<ContractAddress>,
+    /// Map from module references to the mocked results of upgrading to this
+    /// particular module.
+    mocking_upgrades:        RefCell<MockUpgradeMap>,
     /// StateBuilder for the state.
-    state_builder:    StateBuilder<TestStateApi>,
+    state_builder:           StateBuilder<TestStateApi>,
     /// State of the instance.
-    state:            State,
+    state:                   State,
+    /// Account balances, is used when querying the balance of an account.
+    query_account_balances:  RefCell<BTreeMap<AccountAddress, AccountBalance>>,
+    /// Contract balances, is used when querying the balance of a contract.
+    query_contract_balances: RefCell<BTreeMap<ContractAddress, Amount>>,
+    /// Current exchange rates, is used when querying the exchange rates.
+    query_exchange_rates:    Option<ExchangeRates>,
     /// List of accounts that will cause a contract invocation to fail.
-    missing_accounts: BTreeSet<AccountAddress>,
+    missing_accounts:        BTreeSet<AccountAddress>,
+    /// List of contracts that will cause a query for contract balance to result
+    /// in a missing contract error.
+    missing_contracts:       BTreeSet<ContractAddress>,
 }
 
 impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
@@ -1315,24 +1332,25 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     /// chain.
     ///
     /// Possible errors:
-    ///   - [TransferError::AmountTooLarge]: Contract has insufficient funds.
-    ///   - [TransferError::MissingAccount]: Attempted transfer to an account
+    ///   - [`TransferError::AmountTooLarge`]: Contract has insufficient funds.
+    ///   - [`TransferError::MissingAccount`]: Attempted transfer to an account
     ///     set as missing with `make_account_missing`.
     fn invoke_transfer(&self, receiver: &AccountAddress, amount: Amount) -> TransferResult {
         if self.missing_accounts.contains(receiver) {
             return Err(TransferError::MissingAccount);
         }
-        if amount.micro_ccd > 0 {
-            if *self.contract_balance.borrow() >= amount {
-                *self.contract_balance.borrow_mut() -= amount;
-                self.transfers.borrow_mut().push((*receiver, amount));
-                Ok(())
-            } else {
-                Err(TransferError::AmountTooLarge)
-            }
-        } else {
+        if *self.contract_balance.borrow() >= amount {
+            *self.contract_balance.borrow_mut() -= amount;
             self.transfers.borrow_mut().push((*receiver, amount));
+
+            // Update the receiver query balance.
+            if let Some(balance) = self.query_account_balances.borrow_mut().get_mut(receiver) {
+                balance.total += amount;
+            }
+
             Ok(())
+        } else {
+            Err(TransferError::AmountTooLarge)
         }
     }
 
@@ -1366,7 +1384,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
         };
 
         // Check if the contract has sufficient balance.
-        if amount.micro_ccd > 0 && *self.contract_balance.borrow() < amount {
+        if *self.contract_balance.borrow() < amount {
             return Err(CallContractError::AmountTooLarge);
         }
 
@@ -1389,9 +1407,13 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             }
             Ok((state_modified, res)) => {
                 // Update the contract balance if the invocation succeeded.
-                if amount.micro_ccd > 0 {
-                    *self.contract_balance.borrow_mut() -= amount;
+                *self.contract_balance.borrow_mut() -= amount;
+
+                // Update the receiver query balance.
+                if let Some(balance) = self.query_contract_balances.borrow_mut().get_mut(to) {
+                    *balance += amount;
                 }
+
                 // since the caller only modified (in principle) the in-memory state,
                 // we make sure to persist it to reflect what happens in actual calls
                 if state_modified {
@@ -1453,10 +1475,58 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
             fail!("State modified in a read-only contract call.");
         }
         // Update the contract balance if the invocation succeeded.
-        if amount.micro_ccd > 0 {
-            *self.contract_balance.borrow_mut() -= amount;
+        *self.contract_balance.borrow_mut() -= amount;
+
+        // Update the receiver query balance.
+        if let Some(balance) = self.query_contract_balances.borrow_mut().get_mut(to) {
+            *balance += amount;
         }
+
         Ok(res)
+    }
+
+    fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult {
+        if self.missing_accounts.contains(&address) {
+            Err(QueryAccountBalanceError)
+        } else if let Some(balances) = self.query_account_balances.borrow().get(&address) {
+            Ok(*balances)
+        } else {
+            fail!("No account balance for {:?} has been set up.", address)
+        }
+    }
+
+    fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
+        // If the contract address is set and matches, we return the contract balance
+        // instead.
+        if Some(address) == self.contract_address {
+            Ok(self.contract_balance.borrow().to_owned())
+        } else if self.missing_contracts.contains(&address) {
+            Err(QueryContractBalanceError)
+        } else if let Some(balances) = self.query_contract_balances.borrow().get(&address) {
+            Ok(*balances)
+        } else {
+            fail!("No contract balance for {:?} has been set up.", address)
+        }
+    }
+
+    fn exchange_rates(&self) -> ExchangeRates {
+        if let Some(exchange_rates) = self.query_exchange_rates {
+            exchange_rates
+        } else {
+            fail!("No exchange rates has been set up")
+        }
+    }
+
+    fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
+        if let Some(result) = self.mocking_upgrades.borrow().get(&module) {
+            result.to_owned()
+        } else {
+            fail!(
+                "Mocking has not been set up for upgrading to this particular module reference: \
+                 {:?}",
+                module
+            )
+        }
     }
 
     fn commit_state(&mut self) {
@@ -1508,9 +1578,15 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
             mocking_fns: Rc::new(RefCell::new(BTreeMap::new())),
             transfers: RefCell::new(Vec::new()),
             contract_balance: RefCell::new(Amount::zero()),
+            contract_address: None,
+            mocking_upgrades: RefCell::new(BTreeMap::new()),
             state_builder,
             state,
             missing_accounts: BTreeSet::new(),
+            missing_contracts: BTreeSet::new(),
+            query_account_balances: RefCell::new(BTreeMap::new()),
+            query_contract_balances: RefCell::new(BTreeMap::new()),
+            query_exchange_rates: None,
         }
     }
 
@@ -1519,8 +1595,8 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
 
     /// Set up a mock entrypoint for handling calls to `invoke_contract`.
     ///
-    /// If you set up multiple handlers for the same entrypoint (to, method),
-    /// then the latest handler will be used.
+    /// If multiple handlers for the same entrypoint (to, method) are set up,
+    /// the latest handler will be used.
     pub fn setup_mock_entrypoint(
         &mut self,
         to: ContractAddress,
@@ -1528,6 +1604,14 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         handler: MockFn<State>,
     ) {
         self.mocking_fns.borrow_mut().insert((to, method), handler);
+    }
+
+    /// Set up a mock for upgrading to a particular module.
+    ///
+    /// If multiple mocks are setup for the same module, the latest will be
+    /// used.
+    pub fn setup_mock_upgrade(&mut self, module: ModuleReference, result: UpgradeResult) {
+        self.mocking_upgrades.borrow_mut().insert(module, result);
     }
 
     /// Set the contract balance.
@@ -1563,6 +1647,79 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         *self.contract_balance.borrow_mut() = amount;
     }
 
+    /// Set the contract address.
+    /// This is used to redirect queries for the balance of the contract
+    /// itself.
+    ///
+    /// This method panics if the address provided is already setup as a missing
+    /// contract or for contract balance queries.
+    pub fn set_self_address(&mut self, address: ContractAddress) {
+        if self.missing_contracts.contains(&address) {
+            fail!("The self_address is marked as a missing contract address.")
+        }
+        if self.query_contract_balances.borrow().get(&address).is_some() {
+            fail!(
+                "The self_address cannot be setup as a query contract balance. Either use another \
+                 address as self_address or another address in 'setup_query_contract_balance'."
+            )
+        }
+        self.contract_address = Some(address);
+    }
+
+    /// Setup an account balance for an account.
+    /// This is used to resolve queries for account balances.
+    ///
+    /// This method panics if the address provided is already setup as a missing
+    /// account.
+    ///
+    /// Note: Setting up the account balance for the same address will overwrite
+    /// the previous setup for that address.
+    pub fn setup_query_account_balance(
+        &mut self,
+        address: AccountAddress,
+        account_balance: AccountBalance,
+    ) {
+        if self.missing_accounts.contains(&address) {
+            fail!(
+                "Setting up a query account balance for the provided address is not possible, \
+                 because the address is marked as a missing account."
+            )
+        }
+        self.query_account_balances.borrow_mut().insert(address, account_balance);
+    }
+
+    /// Setup a balance for a contract.
+    /// This is used to resolve queries for contract balances.
+    ///
+    /// This method panics if the address provided is already setup as a missing
+    /// contract or as the self_address.
+    ///
+    /// Note: Setting up the balance for the same address will overwrite the
+    /// previous setup for that address.
+    pub fn setup_query_contract_balance(&mut self, address: ContractAddress, balance: Amount) {
+        if self.missing_contracts.contains(&address) {
+            fail!(
+                "Setting up a query contract balance for the provided address is not possible, \
+                 because the address is marked as a missing contract address."
+            )
+        }
+        if Some(address) == self.contract_address {
+            fail!(
+                "Setting up a query contract balance for the self_address is not possible, use \
+                 'set_self_balance' instead."
+            )
+        }
+        self.query_contract_balances.borrow_mut().insert(address, balance);
+    }
+
+    /// Set the current exchange rates.
+    /// This is used for resolving a query for the current exchange rates.
+    ///
+    /// Note: Setting this again overwrites the previously set exchange rates.
+    pub fn set_exchange_rates(&mut self, exchange_rates: ExchangeRates) {
+        self.query_exchange_rates = Some(exchange_rates);
+    }
+
     /// Check whether a given transfer occured.
     pub fn transfer_occurred(&self, receiver: &AccountAddress, amount: Amount) -> bool {
         self.transfers.borrow().contains(&(*receiver, amount))
@@ -1590,11 +1747,38 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 
     /// Set an account to be missing. Any transfers to this account will result
-    /// in an [TransferError::MissingAccount] error.
+    /// in an [`TransferError::MissingAccount`] error.
     ///
     /// This differs from the default, where all accounts are assumed to exist.
+    ///
+    /// This method panics if the address provided is already setup for a query
+    /// account balance.
     pub fn make_account_missing(&mut self, account: AccountAddress) {
+        if self.query_account_balances.borrow().get(&account).is_some() {
+            fail!(
+                "The account cannot be setup as a missing account. It is already setup for a \
+                 query account balance."
+            )
+        }
         self.missing_accounts.insert(account);
+    }
+
+    /// Set a contract to be missing. Any queries for the balance to this
+    /// contract will result in an [`QueryContractBalanceError`].
+    ///
+    /// This method panics if the address provided is already setup for a query
+    /// contract balance or as the self_address.
+    pub fn make_contract_missing(&mut self, contract: ContractAddress) {
+        if self.contract_address == Some(contract) {
+            fail!("The address of the instance cannot be one of the missing contracts.")
+        }
+        if self.query_contract_balances.borrow().get(&contract).is_some() {
+            fail!(
+                "The contract address cannot be setup as a missing contract. It is already setup \
+                 for a query contract balance."
+            )
+        }
+        self.missing_contracts.insert(contract);
     }
 }
 
@@ -1605,14 +1789,20 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
     fn checkpoint(&self) -> Self {
         let cloned_state_api = self.state_builder.state_api.clone_deep();
         Self {
-            mocking_fns:      self.mocking_fns.clone(),
-            transfers:        self.transfers.clone(),
-            contract_balance: self.contract_balance.clone(),
-            state_builder:    StateBuilder {
+            mocking_fns:             self.mocking_fns.clone(),
+            transfers:               self.transfers.clone(),
+            contract_balance:        self.contract_balance.clone(),
+            contract_address:        self.contract_address,
+            mocking_upgrades:        self.mocking_upgrades.clone(),
+            state_builder:           StateBuilder {
                 state_api: cloned_state_api.clone(),
             },
-            state:            unsafe { self.state.clone_state(&cloned_state_api) },
-            missing_accounts: self.missing_accounts.clone(),
+            state:                   unsafe { self.state.clone_state(&cloned_state_api) },
+            missing_accounts:        self.missing_accounts.clone(),
+            missing_contracts:       self.missing_contracts.clone(),
+            query_account_balances:  self.query_account_balances.clone(),
+            query_contract_balances: self.query_contract_balances.clone(),
+            query_exchange_rates:    self.query_exchange_rates,
         }
     }
 
@@ -1705,6 +1895,61 @@ mod test {
         StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Cursor, Deserial, Read, Seek, SeekFrom, Write};
+
+    #[test]
+    fn test_testhost_balance_queries_reflect_transfers() {
+        use super::*;
+        let mut host = TestHost::new((), TestStateBuilder::new());
+
+        let self_address = ContractAddress::new(0, 0);
+        host.set_self_address(self_address);
+        host.set_self_balance(Amount::from_micro_ccd(3000));
+
+        let account = AccountAddress([0; 32]);
+        let account_balance =
+            AccountBalance::new(Amount::zero(), Amount::zero(), Amount::zero()).unwrap();
+        host.setup_query_account_balance(account, account_balance);
+
+        host.invoke_transfer(&account, Amount::from_micro_ccd(2000))
+            .expect("Transferring should succeed");
+
+        let account_new_balance = host.account_balance(account).expect("Should succeed");
+        let self_new_balance = host.contract_balance(self_address).expect("Should succeed");
+
+        assert_eq!(account_new_balance.total, Amount::from_micro_ccd(2000));
+        assert_eq!(self_new_balance, Amount::from_micro_ccd(1000));
+    }
+
+    #[test]
+    fn test_testhost_balance_queries_reflect_invoke() {
+        use super::*;
+        let mut host = TestHost::new((), TestStateBuilder::new());
+
+        let self_address = ContractAddress::new(0, 0);
+        host.set_self_address(self_address);
+        host.set_self_balance(Amount::from_micro_ccd(3000));
+
+        let other_address = ContractAddress::new(1, 0);
+        host.setup_query_contract_balance(other_address, Amount::from_micro_ccd(4000));
+
+        let entrypoint = OwnedEntrypointName::new_unchecked("test.method".to_string());
+
+        host.setup_mock_entrypoint(other_address, entrypoint.clone(), MockFn::returning_ok(()));
+
+        host.invoke_contract_raw(
+            &other_address,
+            Parameter(&[]),
+            entrypoint.as_entrypoint_name(),
+            Amount::from_micro_ccd(1000),
+        )
+        .expect("Invoke should succeed");
+
+        let other_new_balance = host.contract_balance(other_address).expect("Should succeed");
+        let self_new_balance = host.contract_balance(self_address).expect("Should succeed");
+
+        assert_eq!(other_new_balance, Amount::from_micro_ccd(5000));
+        assert_eq!(self_new_balance, Amount::from_micro_ccd(2000));
+    }
 
     #[test]
     // Perform a number of operations from Seek, Read, Write and HasStateApi

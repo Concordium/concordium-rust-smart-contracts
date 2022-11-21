@@ -110,6 +110,19 @@ struct SetImplementorsParams {
     implementors: Vec<ContractAddress>,
 }
 
+/// The parameter type for the contract function `upgrade`.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
+#[derive(Debug, Serialize, SchemaType)]
+struct UpgradeParams {
+    /// The new module reference.
+    module:  ModuleReference,
+    /// Optional entrypoint to call in the new module after upgrade.
+    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum CustomContractError {
@@ -124,6 +137,14 @@ enum CustomContractError {
     InvokeContractError,
     /// Failed to invoke a transfer.
     InvokeTransferError,
+    /// Upgrade failed because the new module does not exist.
+    FailedUpgradeMissingModule,
+    /// Upgrade failed because the new module does not contain a contract with a
+    /// matching name.
+    FailedUpgradeMissingContract,
+    /// Upgrade failed because the smart contract version of the module is not
+    /// supported.
+    FailedUpgradeUnsupportedModuleVersion,
 }
 
 type ContractError = Cis2Error<CustomContractError>;
@@ -148,6 +169,18 @@ impl<T> From<CallContractError<T>> for CustomContractError {
 /// Mapping errors related to contract invocations to CustomContractError.
 impl From<TransferError> for CustomContractError {
     fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
+}
+
+/// Mapping errors related to contract upgrades to CustomContractError.
+impl From<UpgradeError> for CustomContractError {
+    #[inline(always)]
+    fn from(ue: UpgradeError) -> Self {
+        match ue {
+            UpgradeError::MissingModule => Self::FailedUpgradeMissingModule,
+            UpgradeError::MissingContract => Self::FailedUpgradeMissingContract,
+            UpgradeError::UnsupportedModuleVersion => Self::FailedUpgradeUnsupportedModuleVersion,
+        }
+    }
 }
 
 /// Mapping CustomContractError to ContractError
@@ -730,6 +763,35 @@ fn contract_set_implementor<S: HasStateApi>(
     Ok(())
 }
 
+#[receive(
+    contract = "CIS2-wCCD",
+    name = "upgrade",
+    parameter = "UpgradeParams",
+    error = "ContractError",
+    mutable
+)]
+fn contract_upgrade<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Authorize the sender.
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
+    // Trigger the upgrade.
+    host.upgrade(params.module)?;
+    // Call the migration function if provided.
+    if let Some((func, parameters)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameters.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
+    Ok(())
+}
+
 // Tests
 
 #[concordium_cfg_test]
@@ -1069,5 +1131,69 @@ mod tests {
         // The balance should still be 400 due to the rollback after rejecting.
         claim_eq!(host.state().balance(&TOKEN_ID_WCCD, &ADDRESS_0), Ok(400u64.into()));
         claim!(host.get_transfers().is_empty());
+    }
+
+    #[concordium_test]
+    fn test_upgradability() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        let self_address = ContractAddress::new(0, 0);
+        ctx.set_self_address(self_address);
+
+        let new_module_ref = ModuleReference::from([0u8; 32]);
+        let migration_entrypoint = OwnedEntrypointName::new_unchecked("migration".into());
+
+        // and parameter.
+        let parameter = UpgradeParams {
+            module:  new_module_ref,
+            migrate: Some((migration_entrypoint.clone(), OwnedParameter(Vec::new()))),
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        host.setup_mock_upgrade(new_module_ref, Ok(()));
+        host.setup_mock_entrypoint(self_address, migration_entrypoint, MockFn::returning_ok(()));
+
+        let result: ContractResult<()> = contract_upgrade(&ctx, &mut host);
+
+        claim_eq!(result, Ok(()));
+    }
+
+    #[concordium_test]
+    fn test_upgradability_rejects() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        let new_module_ref = ModuleReference::from([0u8; 32]);
+
+        // and parameter.
+        let parameter = UpgradeParams {
+            module:  new_module_ref,
+            migrate: None,
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        host.setup_mock_upgrade(new_module_ref, Err(UpgradeError::MissingModule));
+
+        let result: ContractResult<()> = contract_upgrade(&ctx, &mut host);
+
+        claim_eq!(
+            result,
+            Err(ContractError::Custom(CustomContractError::FailedUpgradeMissingModule))
+        );
     }
 }

@@ -17,7 +17,7 @@ std = ["concordium-std/std"]
 [dependencies.concordium-std]
 # git = "https://github.com/Concordium/concordium-std.git"
 # branch = "main"
-version = "4"
+version = "5"
 path = "../../concordium-std"
 features = ["concordium-quickcheck"]
 default-features = false

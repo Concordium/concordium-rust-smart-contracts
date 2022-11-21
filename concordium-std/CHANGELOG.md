@@ -3,12 +3,13 @@
 ## Unreleased changes
 
 - Add a new primitive `get_random`. It is used to generate random numbers in Wasm code for testing with QuickCheck.
-- Add an extra `quickcheck: bool` parameter to the `report_error` primitive; `true` corresponds to errors related to the QuickCheck tests.
-- `concordium-std-derive`: the `concordium-quickcheck` feature enables the `#[concordium_quickcheck]` macro that re-exports 
-  a customized QuickCheck function test function `test_infrastructure::concordium_qc` as a `#[concordium_test]` function.
-- `concordium-std-derive`: add support for event schemas in the schema derivation macro.
-- `concordium-std-derive`: allow `#[concordium(state_parameter)]`'s value be not just identifier
-  but any type path for `derive(DeserialWithState)` and `derive(Deletable)` to generate implementations.
+
+## concordium-std 5.0.0 (2022-11-21)
+
+- Add `upgrade` method to `HasHost` for upgrading a smart contract instance to use a new smart contract module.
+- Support mocking `upgrade` calls in `TestHost`. An `upgrade` is mocked by specifying a module reference and a `UpgradeResult` as the outcome of upgrading to this module.
+- Add the chain queries `account_balance`, `contract_balance` and `exchange_rates` to `HasHost` for querying balances and the current exchange rates.
+- Support mocking chain queries `account_balance`, `contract_balance` and `exchange_rates` in `TestHost`. For each parameter a corresponding response can be setup.
 
 ## concordium-std 4.0.0 (2022-08-24)
 
