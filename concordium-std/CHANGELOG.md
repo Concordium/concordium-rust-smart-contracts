@@ -2,7 +2,7 @@
 
 ## Unreleased changes
 
-- Add a new primitive `get_random`. It is used to generate random numbers in Wasm code for testing with QuickCheck.
+- Add a new primitive `get_random` for generating random numbers in Wasm code testing; `get_random` can be used in tests only, not available for smart contracts on the chain.
 
 ## concordium-std 5.0.0 (2022-11-21)
 

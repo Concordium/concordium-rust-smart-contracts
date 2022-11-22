@@ -1854,14 +1854,9 @@ pub fn concordium_qc<A: Testable>(f: A) {
     let res = qc.quicktest(f);
     match res {
         Ok(n_tests_passed) => {
-            let default = 0;
-            let min_tests = match std::env::var("QUICKCHECK_MIN_TESTS_PASSED") {
-                Ok(val) => val.parse().unwrap_or(default),
-                Err(_) => default,
-            };
-            if n_tests_passed < min_tests {
-                let msg =
-                    format!("(Unable to generate enough tests, {} not discarded.)", n_tests_passed);
+            if n_tests_passed == 0 {
+                // report a error is no tests were generated
+                let msg = "(No QuickCheck tests were generated)";
                 // calls `report_error` which is handled by `TestHost`
                 report_error(&msg, file!(), line!(), column!())
             }
