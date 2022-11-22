@@ -39,14 +39,6 @@ use concordium_std::{collections::BTreeMap, *};
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
-/// The metadata url for the wCCD token.
-/// The URL can be updated with the `setMetadataUrl` function by the `admin`.
-const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
-
-/// The hash of the document stored at the above URL.
-/// The hash can be updated with the `setMetadataUrl` function by the `admin`.
-const INITIAL_METADATA_HASH: Option<Sha256> = None;
-
 /// Tag for the NewAdmin event.
 pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
 
@@ -94,16 +86,11 @@ struct State<S: HasStateApi> {
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// The metadata URL for the wCCD token following the specification RFC1738.
+    /// The MetadataUrl of the token.
     /// `StateBox` allows for lazy loading data. This is helpful
     /// in the situations when one wants to do a partial update not touching
     /// this field, which can be large.
-    url:          StateBox<String, S>,
-    /// The hash of the document stored at the above URL.
-    /// `StateBox` allows for lazy loading data. This is helpful
-    /// in the situations when one wants to do a partial update not touching
-    /// this field, which can be large.
-    hash:         StateBox<Option<Sha256>, S>,
+    metadata_url: StateBox<concordium_cis2::MetadataUrl, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -170,13 +157,11 @@ struct ReturnBasicState {
     /// The admin address can upgrade the contract, pause and unpause the
     /// contract, transfer the admin address to a new address, set
     /// implementors, and update the metadata URL in the contract.
-    admin:  Address,
+    admin:        Address,
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
-    paused: bool,
-    /// The metadata URL following the specification RFC1738.
-    url:    String,
-    /// The hash of the document stored at the above URL.
-    hash:   Option<Sha256>,
+    paused:       bool,
+    /// The metadata URL of the token.
+    metadata_url: concordium_cis2::MetadataUrl,
 }
 
 /// The parameter type for the contract function `setMetadataUrl`.
@@ -363,14 +348,17 @@ impl From<CustomContractError> for ContractError {
 
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(state_builder: &mut StateBuilder<S>, admin: Address) -> Self {
+    fn new(
+        state_builder: &mut StateBuilder<S>,
+        admin: Address,
+        metadata_url: concordium_cis2::MetadataUrl,
+    ) -> Self {
         State {
             admin,
             paused: false,
             token: state_builder.new_map(),
             implementors: state_builder.new_map(),
-            url: state_builder.new_box(INITIAL_TOKEN_METADATA_URL.to_string()),
-            hash: state_builder.new_box(INITIAL_METADATA_HASH),
+            metadata_url: state_builder.new_box(metadata_url),
         }
     }
 
@@ -511,19 +499,33 @@ impl<S: HasStateApi> State<S> {
 
 /// Initialize contract instance with no initial tokens.
 /// Logs a `Mint` event for the single token id with no amounts.
-/// Logs a `TokenMetadata` event with the INITIAL_TOKEN_METADATA_URL.
+/// Logs a `TokenMetadata` event with the metadata url and hash.
 /// Logs a `NewAdmin` event with the invoker as admin.
-#[init(contract = "cis2_wCCD", enable_logger, event = "WccdEvent")]
+#[init(
+    contract = "cis2_wCCD",
+    enable_logger,
+    parameter = "SetMetadataUrlParams",
+    event = "WccdEvent"
+)]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
+    // Parse the parameter.
+    let params: SetMetadataUrlParams = ctx.parameter_cursor().get()?;
     // Get the instantiator of this contract instance to be used as the initial
     // admin.
     let invoker = Address::Account(ctx.init_origin());
+
+    // Create the metadata_url
+    let metadata_url = MetadataUrl {
+        url:  params.url.clone(),
+        hash: params.hash,
+    };
+
     // Construct the initial contract state.
-    let state = State::new(state_builder, invoker);
+    let state = State::new(state_builder, invoker, metadata_url.clone());
     // Log event for the newly minted token.
     logger.log(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
@@ -534,11 +536,8 @@ fn contract_init<S: HasStateApi>(
     // Log event for where to find metadata for the token
     logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
         TokenMetadataEvent {
-            token_id:     TOKEN_ID_WCCD,
-            metadata_url: MetadataUrl {
-                url:  String::from(INITIAL_TOKEN_METADATA_URL),
-                hash: INITIAL_METADATA_HASH,
-            },
+            token_id: TOKEN_ID_WCCD,
+            metadata_url,
         },
     )))?;
 
@@ -765,20 +764,20 @@ fn contract_state_set_metadata_url<S: HasStateApi>(
     // Parse the parameter.
     let params: SetMetadataUrlParams = ctx.parameter_cursor().get()?;
 
-    // Update the url variable.
-    *host.state_mut().url = params.url;
+    // Create the metadata_url
+    let metadata_url = MetadataUrl {
+        url:  params.url.clone(),
+        hash: params.hash,
+    };
 
     // Update the hash variable.
-    *host.state_mut().hash = params.hash;
+    *host.state_mut().metadata_url = metadata_url.clone();
 
     // Log an event including the new metadata for this token.
     logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
         TokenMetadataEvent {
-            token_id:     TOKEN_ID_WCCD,
-            metadata_url: MetadataUrl {
-                url:  host.state().url.clone(),
-                hash: *host.state().hash,
-            },
+            token_id: TOKEN_ID_WCCD,
+            metadata_url,
         },
     )))?;
 
@@ -1011,11 +1010,7 @@ fn contract_token_metadata<S: HasStateApi>(
         // Check the token exists.
         ensure_eq!(token_id, TOKEN_ID_WCCD, ContractError::InvalidTokenId);
 
-        let metadata_url = MetadataUrl {
-            url:  host.state().url.clone(),
-            hash: *host.state().hash,
-        };
-        response.push(metadata_url);
+        response.push(host.state().metadata_url.clone());
     }
     let result = TokenMetadataQueryResponse::from(response);
     Ok(result)
@@ -1033,10 +1028,9 @@ fn contract_view<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ReturnBasicState> {
     let state = ReturnBasicState {
-        admin:  host.state().admin,
-        paused: host.state().paused,
-        url:    host.state().url.clone(),
-        hash:   *host.state().hash,
+        admin:        host.state().admin,
+        paused:       host.state().paused,
+        metadata_url: host.state().metadata_url.clone(),
     };
     Ok(state)
 }
@@ -1152,10 +1146,24 @@ mod tests {
     const NEW_ADMIN_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
     const NEW_ADMIN_ADDRESS: Address = Address::Account(NEW_ADMIN_ACCOUNT);
 
+    // The metadata url for the wCCD token.
+    const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
+
     /// Test helper function which creates a contract state where ADDRESS_0 owns
     /// 400 tokens.
     fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        let mut state = State::new(state_builder, ADMIN_ADDRESS);
+        // Set up crypto primitives to hash the document.
+        let crypto_primitives = TestCryptoPrimitives::new();
+        // The hash of the document stored at the above URL.
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+
+        let metadata_url = concordium_cis2::MetadataUrl {
+            url:  INITIAL_TOKEN_METADATA_URL.to_string(),
+            hash: Some(initial_metadata_hash),
+        };
+
+        let mut state = State::new(state_builder, ADMIN_ADDRESS, metadata_url);
         state
             .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
             .expect_report("Failed to setup state");
@@ -1172,6 +1180,20 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut builder = TestStateBuilder::new();
+
+        // Set up crypto primitives to hash the document.
+        let crypto_primitives = TestCryptoPrimitives::new();
+        // The hash of the document stored at the above URL.
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+
+        // Set up the parameter.
+        let parameter = SetMetadataUrlParams {
+            url:  String::from(INITIAL_TOKEN_METADATA_URL),
+            hash: Some(initial_metadata_hash),
+        };
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
 
         // Call the contract function.
         let result = contract_init(&ctx, &mut builder, &mut logger);
@@ -1208,7 +1230,7 @@ mod tests {
                     token_id:     TOKEN_ID_WCCD,
                     metadata_url: MetadataUrl {
                         url:  String::from(INITIAL_TOKEN_METADATA_URL),
-                        hash: INITIAL_METADATA_HASH,
+                        hash: Some(initial_metadata_hash),
                     },
                 }
             )))),
@@ -1228,24 +1250,33 @@ mod tests {
     fn test_set_metadata_url() {
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = State::new(&mut state_builder, ADMIN_ADDRESS);
+
+        // Set up crypto primitives to hash the document.
+        let crypto_primitives = TestCryptoPrimitives::new();
+        // The hash of the document stored at the above URL.
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+
+        let metadata_url = concordium_cis2::MetadataUrl {
+            url:  INITIAL_TOKEN_METADATA_URL.to_string(),
+            hash: Some(initial_metadata_hash),
+        };
+
+        let state = State::new(&mut state_builder, ADMIN_ADDRESS, metadata_url);
         let mut host = TestHost::new(state, state_builder);
 
         // Set up the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADMIN_ADDRESS);
 
-        // Set up crypto primitives to hash the document.
-        let crypto_primitives = TestCryptoPrimitives::new();
-
         // Create a new_url and a new_hash
         let new_url = "https://some.example/token/wccd/updated".to_string();
-        let new_hash = Some(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
+        let new_hash = crypto_primitives.hash_sha2_256("document2".as_bytes()).0;
 
         // Set up the parameter.
         let parameter = SetMetadataUrlParams {
             url:  new_url.clone(),
-            hash: new_hash,
+            hash: Some(new_hash),
         };
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
@@ -1266,7 +1297,7 @@ mod tests {
                     token_id:     TOKEN_ID_WCCD,
                     metadata_url: MetadataUrl {
                         url:  new_url.clone(),
-                        hash: new_hash,
+                        hash: Some(new_hash),
                     },
                 }
             )))),
@@ -1274,10 +1305,10 @@ mod tests {
         );
 
         // Check the state.
-        let url = &*host.state().url;
-        let hash = *host.state().hash;
-        claim_eq!(url, &new_url, "Expected url being updated");
-        claim_eq!(hash, new_hash, "Expected hash being updated");
+        let url = host.state().metadata_url.url.clone();
+        let hash = host.state().metadata_url.hash;
+        claim_eq!(url, new_url, "Expected url being updated");
+        claim_eq!(hash, Some(new_hash), "Expected hash being updated");
 
         // Check only the admin can update the metadata URL
         ctx.set_sender(ADDRESS_0);
@@ -1310,7 +1341,19 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let mut state = State::new(&mut state_builder, ADMIN_ADDRESS);
+
+        // Set up crypto primitives to hash the document.
+        let crypto_primitives = TestCryptoPrimitives::new();
+        // The hash of the document stored at the above URL.
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+
+        let metadata_url = concordium_cis2::MetadataUrl {
+            url:  INITIAL_TOKEN_METADATA_URL.to_string(),
+            hash: Some(initial_metadata_hash),
+        };
+
+        let mut state = State::new(&mut state_builder, ADMIN_ADDRESS, metadata_url);
         state
             .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
             .expect_report("Failed to setup state");
