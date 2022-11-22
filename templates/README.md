@@ -1,6 +1,6 @@
 # Concordium Smart Contract Templates
 
-This repository helps you to get a new Concordium smart contract project up and running quickly by leveraging the pre-existing templates in it. There are several smart contract templates available in this repository (currently a `default` template and a `cis2-nft` template). For generating the smart contracts from the templates, you need the `cargo-concordium` tool version 2.2.0 or greater. `Cargo-concordium` can be installed as described in the following guide:
+This repository helps you to get a new Concordium smart contract project up and running quickly by leveraging the pre-existing templates in it. There are several smart contract templates available in this repository (currently a `default` template and a `cis2-nft` template). For generating the smart contracts from the templates, you need the `cargo-concordium` tool version 2.4.0 or greater. `Cargo-concordium` can be installed as described in the following guide:
 
 [Cargo-concordium setup](https://developer.concordium.software/en/mainnet/smart-contracts/guides/setup-tools.html#setup-tools)
 
