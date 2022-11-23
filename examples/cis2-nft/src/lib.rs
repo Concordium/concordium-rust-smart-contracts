@@ -186,13 +186,7 @@ impl<S: HasStateApi> State<S> {
         let balance = self
             .state
             .get(address)
-            .map(|address_state| {
-                if address_state.owned_tokens.contains(token_id) {
-                    1
-                } else {
-                    0
-                }
-            })
+            .map(|address_state| u8::from(address_state.owned_tokens.contains(token_id)))
             .unwrap_or(0);
         Ok(balance.into())
     }
@@ -294,7 +288,7 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with no token types initially.
-#[init(contract = "cis2_nft")]
+#[init(contract = "cis2_nft", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
 fn contract_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
