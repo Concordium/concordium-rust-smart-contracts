@@ -1858,7 +1858,7 @@ pub fn concordium_qc<A: Testable>(f: A) {
                 // report a error is no tests were generated
                 let msg = "(No QuickCheck tests were generated)";
                 // calls `report_error` which is handled by `TestHost`
-                report_error(&msg, file!(), line!(), column!())
+                report_error(msg, file!(), line!(), column!())
             }
         }
         Err(result) => {
