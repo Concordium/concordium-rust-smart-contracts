@@ -247,6 +247,7 @@ jobs:
         features:
           -
           - build-schema
+          - concordium-quickcheck
 
     steps:
       - name: Checkout sources
@@ -323,6 +324,7 @@ jobs:
         features:
           - wasm-test
           - wasm-test,build-schema
+          - wasm-test,concordium-quickcheck
 
     steps:
       - name: Checkout sources
