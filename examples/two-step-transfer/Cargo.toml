@@ -15,12 +15,13 @@ default = ["std"]
 std = ["concordium-std/std"]
 
 [dependencies.concordium-std]
-# git = "https://github.com/Concordium/concordium-std.git"
-# branch = "main"
 version = "5"
 path = "../../concordium-std"
-features = ["concordium-quickcheck"]
+features = []
 default-features = false
+
+[dev-dependencies.concordium-std]
+features = ["concordium-quickcheck"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
