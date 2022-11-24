@@ -18,7 +18,7 @@ use std::{
     ops::Neg,
 };
 #[cfg(feature = "concordium-quickcheck")]
-use syn::{parse::Parse, parse_quote};
+use syn::{parse::Parse, parse_quote, Lit, NestedMeta};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -1944,14 +1944,65 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 }
 
 #[cfg(feature = "concordium-quickcheck")]
+fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Error> {
+    match meta {
+        NestedMeta::Meta(Meta::NameValue(v)) => {
+            if v.path.is_ident("tests") {
+                match &v.lit {
+                    Lit::Int(i) => i
+                        .base10_parse::<u64>()
+                        .map_err(|_| syn::parse::Error::new(i.span(), "error when pasing integer")),
+                    _ => Err(syn::parse::Error::new(v.span(), "unexpected attribute")),
+                }
+            } else {
+                Err(syn::parse::Error::new(v.span(), "unexpected attribute"))
+            }
+        }
+        NestedMeta::Meta(m) => Err(syn::parse::Error::new(m.span(), "unexpected attribute")),
+        NestedMeta::Lit(l) => {
+            Err(syn::parse::Error::new(l.span(), "expected a named attribute, e.g. tests = 1000"))
+        }
+    }
+}
+
+/// A default number of tests to run with QuickCheck
+#[cfg(feature = "concordium-quickcheck")]
+const DEFAULT_QUICKCHECK_TESTS: u64 = 100;
+
+#[cfg(feature = "concordium-quickcheck")]
 #[proc_macro_attribute]
 /// Derive the appropriate export for an annotated QuickCheck function by
 /// exposing it as `#[concordium_test]`. The macro was copied from `QuickCheck`
-/// and changed to use `concordium_std::test_infrastructure::concordium_qc()`
-/// instead of the standard  `QuickCheck`'s `quickcheck()`
-pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStream {
+/// and changed to use `concordium_std::test_infrastructure::concordium_qc`
+/// instead of the standard  `QuickCheck`'s `quickcheck`
+///
+/// The macro takes a `tests` attrubute that specifies how many tests to run:
+/// `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is provided,
+/// `DEFAULT_QUICKCHECK_TESTS` is used
+pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
+    use syn::AttributeArgs;
+
     let output = match syn::Item::parse.parse(input.clone()) {
         Ok(syn::Item::Fn(mut item_fn)) => {
+            // Parse attrubutes and fail early if wrong atributes are specified
+            let a = attr.clone();
+            let parsed_attr = parse_macro_input!(a as AttributeArgs);
+            let tests = if parsed_attr.is_empty() {
+                DEFAULT_QUICKCHECK_TESTS
+            } else if parsed_attr.len() == 1 {
+                let meta = parsed_attr.get(0).unwrap();
+                match get_quickcheck_tests_count(meta).map_err(|e| e.to_compile_error()) {
+                    Ok(v) => v,
+                    Err(e) => return e.into(),
+                }
+            } else {
+                return syn::parse::Error::new(
+                    proc_macro2::TokenStream::from(attr).span(),
+                    "expected a single `tests = <number>` attribute",
+                )
+                .to_compile_error()
+                .into();
+            };
             let mut inputs: Punctuated<syn::BareFnArg, syn::token::Comma> =
                 syn::punctuated::Punctuated::new();
             let mut errors = Vec::new();
@@ -1978,7 +2029,7 @@ pub fn concordium_quickcheck(_attr: TokenStream, input: TokenStream) -> TokenStr
                     #(#attrs)*
                     fn #name() {
                         #item_fn
-                       ::concordium_std::test_infrastructure::concordium_qc(#name as (fn (#inputs) #codomain))
+                       ::concordium_std::test_infrastructure::concordium_qc(#tests, #name as (fn (#inputs) #codomain))
                     }
                 }
             } else {

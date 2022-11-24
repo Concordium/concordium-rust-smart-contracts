@@ -1849,8 +1849,10 @@ register_custom_getrandom!(get_random);
 /// A customized QuickCheck test runner used for on-chain wasm code.
 /// Adds support for reporting errors using the primitives available when
 /// running Wasm code.
-pub fn concordium_qc<A: Testable>(f: A) {
-    let mut qc = QuickCheck::new();
+///
+/// The `num_tests` parameter specifies how many random tests to run.
+pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
+    let mut qc = QuickCheck::new().tests(num_tests);
     let res = qc.quicktest(f);
     match res {
         Ok(n_tests_passed) => {
@@ -1871,7 +1873,10 @@ pub fn concordium_qc<A: Testable>(f: A) {
 
 #[cfg(all(feature = "concordium-quickcheck", not(target_arch = "wasm32")))]
 /// A wrapper for QuickCheck test runner for non-wasm targets.
-pub fn concordium_qc<A: Testable>(f: A) { quickcheck::quickcheck(f) }
+// The `num_tests` parameter specifies how many random tests to run.
+pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
+    QuickCheck::new().tests(num_tests).quickcheck(f)
+}
 
 #[cfg(test)]
 mod test {
