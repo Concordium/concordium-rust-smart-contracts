@@ -1871,9 +1871,7 @@ pub fn concordium_qc<A: Testable>(f: A) {
 
 #[cfg(all(feature = "concordium-quickcheck", not(target_arch = "wasm32")))]
 /// A wrapper for QuickCheck test runner for non-wasm targets.
-pub fn concordium_qc<A : Testable>(f: A) {
-    quickcheck::quickcheck(f)
-}
+pub fn concordium_qc<A: Testable>(f: A) { quickcheck::quickcheck(f) }
 
 #[cfg(test)]
 mod test {
