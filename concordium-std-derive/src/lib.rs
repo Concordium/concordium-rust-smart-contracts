@@ -1943,6 +1943,9 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
     Ok(test_fn.into())
 }
 
+/// Look up the `tests` identifier in `NestedMeta` and return the value
+/// associated with it. If no `tests` is found or parsing the value has failed,
+/// return a error
 #[cfg(feature = "concordium-quickcheck")]
 fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Error> {
     match meta {
