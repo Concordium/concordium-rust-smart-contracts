@@ -18,10 +18,9 @@ use std::{
     ops::Neg,
 };
 #[cfg(feature = "concordium-quickcheck")]
-use syn::{parse::Parse, parse_quote, Item, Lit, NestedMeta};
+use syn::{parse::Parse, parse_quote, FnArg, Item, Lit, NestedMeta, PatType};
 use syn::{
-    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, FnArg, Ident,
-    Meta, PatType, Token,
+    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
 
 /// A helper to report meaningful compilation errors
@@ -1958,9 +1957,19 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
         NestedMeta::Meta(Meta::NameValue(v)) => {
             if v.path.is_ident(QUICKCHECK_NUM_TESTS) {
                 match &v.lit {
-                    Lit::Int(i) => i
-                        .base10_parse::<u64>()
-                        .map_err(|e| syn::Error::new(i.span(), e.to_string())),
+                    Lit::Int(i) => {
+                        let num_tests = i
+                            .base10_parse::<u64>()
+                            .map_err(|e| syn::Error::new(i.span(), e.to_string()))?;
+                        // We explicilty fail if the number is > 10_000 because this is the dafult
+                        // max number of tests in QuickCheck, but QuickCheck just ignores won't run
+                        // more than max number of tests silently.
+                        if num_tests > 10_000u64 {
+                            Err(syn::Error::new(v.lit.span(), "max number of thest is 10000"))
+                        } else {
+                            Ok(num_tests)
+                        }
+                    }
                     l => Err(syn::Error::new(
                         l.span(),
                         "unexpected attribute value, expected a non-negative integer",
@@ -2014,9 +2023,9 @@ fn parse_quickcheck_num_tests(attr: TokenStream) -> syn::Result<u64> {
     }
 }
 
-/// Return a function that calls
-/// `[concordium_std::test_infrastructure::concordium_qc]` with the number of
-/// tests to run acquired from `attr` and a test function `item_fn`.
+/// Return a function that calls a customized QuickCheck test runner function
+/// with the number of tests to run acquired from `attr` and a test function
+/// `item_fn`.
 #[cfg(feature = "concordium-quickcheck")]
 fn wrap_quickcheck_test(
     attr: TokenStream,
@@ -2057,13 +2066,15 @@ fn wrap_quickcheck_test(
 #[cfg(feature = "concordium-quickcheck")]
 #[proc_macro_attribute]
 /// Derive the appropriate export for an annotated QuickCheck function by
-/// exposing it as `#[concordium_test]`. The macro was copied from `QuickCheck`
-/// and changed to use `concordium_std::test_infrastructure::concordium_qc`
+/// exposing it as `#[concordium_test]`. The macro is similar to `#[quickcheck]`
+/// but uses a customized test runner
 /// instead of the standard  `QuickCheck`'s `quickcheck`
 ///
 /// The macro optionally takes a `num_tests` attribute that specifies how many
 /// tests to run: `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is
-/// provided, 100 is used
+/// provided, 100 is used.
+///
+/// Note that the maximum number of tests is limited to 10000.
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = proc_macro2::TokenStream::from(input);
     let span = input.span();
