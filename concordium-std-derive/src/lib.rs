@@ -1962,7 +1962,7 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Erro
                         .map_err(|e| syn::parse::Error::new(i.span(), e.to_string())),
                     l => Err(syn::parse::Error::new(
                         l.span(),
-                        "unexpected attribute, expected a non-negative integer",
+                        "unexpected attribute value, expected a non-negative integer",
                     )),
                 }
             } else {
