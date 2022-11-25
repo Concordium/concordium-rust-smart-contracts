@@ -2004,7 +2004,7 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Erro
 ///
 /// The macro optionally takes a `num_tests` attribute that specifies how many
 /// tests to run: `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is
-/// provided, [`DEFAULT_QUICKCHECK_TESTS`] is used
+/// provided, 100 is used
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
     use syn::AttributeArgs;
 
