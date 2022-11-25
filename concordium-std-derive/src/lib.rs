@@ -2001,7 +2001,7 @@ pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStre
             } else {
                 return syn::parse::Error::new(
                     proc_macro2::TokenStream::from(attr).span(),
-                    "expected a single `tests = <number>` attribute",
+                    "expected a single `num_tests = <number>` attribute",
                 )
                 .to_compile_error()
                 .into();
