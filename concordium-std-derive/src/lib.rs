@@ -1960,12 +1960,9 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Erro
                     Lit::Int(i) => i
                         .base10_parse::<u64>()
                         .map_err(|e| syn::parse::Error::new(i.span(), e.to_string())),
-                    _ => Err(syn::parse::Error::new(
-                        v.span(),
-                        format!(
-                            "unexpected attribute, expected a single `{} = <number>` attribute",
-                            QUICKCHECK_NUM_TESTS
-                        ),
+                    l => Err(syn::parse::Error::new(
+                        l.span(),
+                        "unexpected attribute, expected a non-negative integer",
                     )),
                 }
             } else {
