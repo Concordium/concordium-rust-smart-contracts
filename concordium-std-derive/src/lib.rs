@@ -1948,6 +1948,11 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 #[cfg(feature = "concordium-quickcheck")]
 const QUICKCHECK_NUM_TESTS: &str = "num_tests";
 
+// Maximum number of QuickCheck tests to run.
+// Includes only *passed* tests (discarded not counted)
+#[cfg(feature = "concordium-quickcheck")]
+const QUICKCHECK_MAX_PASSED_TESTS: u64 = 1_000_000;
+
 /// Look up the `tests` identifier in `NestedMeta` and return the value
 /// associated with it. If no `tests` is found or parsing the value has failed,
 /// return a error
@@ -1961,11 +1966,11 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
                         let num_tests = i
                             .base10_parse::<u64>()
                             .map_err(|e| syn::Error::new(i.span(), e.to_string()))?;
-                        // We explicilty fail if the number is > 10_000 because this is the dafult
-                        // max number of tests in QuickCheck, but QuickCheck just ignores won't run
-                        // more than max number of tests silently.
-                        if num_tests > 10_000u64 {
-                            Err(syn::Error::new(v.lit.span(), "max number of thest is 10000"))
+                        if num_tests > QUICKCHECK_MAX_PASSED_TESTS {
+                            Err(syn::Error::new(
+                                v.lit.span(),
+                                format!("max number of thest is {}", QUICKCHECK_MAX_PASSED_TESTS),
+                            ))
                         } else {
                             Ok(num_tests)
                         }

@@ -1845,6 +1845,11 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
 // `from_entropy`) will call our function instead.
 register_custom_getrandom!(get_random);
 
+/// Overall number of QuickCheck tests to run.
+/// Includes both *passed and discarded*.
+#[cfg(feature = "concordium-quickcheck")]
+const QUICKCHECK_MAX_WITH_DISCARDED_TESTS: u64 = 100_000_000;
+
 #[cfg(all(feature = "concordium-quickcheck", target_arch = "wasm32"))]
 /// A customized QuickCheck test runner used for on-chain wasm code.
 /// Adds support for reporting errors using the primitives available when
@@ -1852,7 +1857,7 @@ register_custom_getrandom!(get_random);
 ///
 /// The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
-    let mut qc = QuickCheck::new().tests(num_tests);
+    let mut qc = QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS);
     let res = qc.quicktest(f);
     match res {
         Ok(n_tests_passed) => {
@@ -1875,7 +1880,7 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 /// A wrapper for QuickCheck test runner for non-wasm targets.
 // The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
-    QuickCheck::new().tests(num_tests).quickcheck(f)
+    QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS).quickcheck(f)
 }
 
 #[cfg(test)]
