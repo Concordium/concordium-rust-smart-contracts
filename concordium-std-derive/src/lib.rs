@@ -1954,7 +1954,7 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Erro
                 match &v.lit {
                     Lit::Int(i) => i
                         .base10_parse::<u64>()
-                        .map_err(|_| syn::parse::Error::new(i.span(), "error when pasing integer")),
+                        .map_err(|_| syn::parse::Error::new(i.span(), "error when parsing integer")),
                     _ => Err(syn::parse::Error::new(v.span(), "unexpected attribute")),
                 }
             } else {
@@ -1981,7 +1981,7 @@ const DEFAULT_QUICKCHECK_TESTS: u64 = 100;
 ///
 /// The macro takes a `tests` attribute that specifies how many tests to run:
 /// `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is provided,
-/// `DEFAULT_QUICKCHECK_TESTS` is used
+/// [`DEFAULT_QUICKCHECK_TESTS`] is used
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
     use syn::AttributeArgs;
 
