@@ -1943,6 +1943,11 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
     Ok(test_fn.into())
 }
 
+// Supported attributes for `concordium-quickcheck`
+
+#[cfg(feature = "concordium-quickcheck")]
+const QUICKCHECK_NUM_TESTS: &str = "num_tests";
+
 /// Look up the `tests` identifier in `NestedMeta` and return the value
 /// associated with it. If no `tests` is found or parsing the value has failed,
 /// return a error
@@ -1950,27 +1955,45 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Error> {
     match meta {
         NestedMeta::Meta(Meta::NameValue(v)) => {
-            if v.path.is_ident("tests") {
+            if v.path.is_ident(QUICKCHECK_NUM_TESTS) {
                 match &v.lit {
                     Lit::Int(i) => i
                         .base10_parse::<u64>()
-                        .map_err(|_| syn::parse::Error::new(i.span(), "error when parsing integer")),
-                    _ => Err(syn::parse::Error::new(v.span(), "unexpected attribute")),
+                        .map_err(|e| syn::parse::Error::new(i.span(), e.to_string())),
+                    _ => Err(syn::parse::Error::new(
+                        v.span(),
+                        format!(
+                            "unexpected attribute, expected a single `{} = <number>` attribute",
+                            QUICKCHECK_NUM_TESTS
+                        ),
+                    )),
                 }
             } else {
-                Err(syn::parse::Error::new(v.span(), "unexpected attribute"))
+                Err(syn::parse::Error::new(
+                    v.span(),
+                    format!(
+                        "unexpected attribute, expected a single `{} = <number>` attribute",
+                        QUICKCHECK_NUM_TESTS
+                    ),
+                ))
             }
         }
-        NestedMeta::Meta(m) => Err(syn::parse::Error::new(m.span(), "unexpected attribute")),
-        NestedMeta::Lit(l) => {
-            Err(syn::parse::Error::new(l.span(), "expected a named attribute, e.g. tests = 1000"))
-        }
+        NestedMeta::Meta(m) => Err(syn::parse::Error::new(
+            m.span(),
+            format!(
+                "unexpected attribute, expected a single `{} = <number>` attribute",
+                QUICKCHECK_NUM_TESTS
+            ),
+        )),
+        NestedMeta::Lit(l) => Err(syn::parse::Error::new(
+            l.span(),
+            format!(
+                "expected a named attribute, supported attributes: `{} = <number>`",
+                QUICKCHECK_NUM_TESTS
+            ),
+        )),
     }
 }
-
-/// A default number of tests to run with QuickCheck
-#[cfg(feature = "concordium-quickcheck")]
-const DEFAULT_QUICKCHECK_TESTS: u64 = 100;
 
 #[cfg(feature = "concordium-quickcheck")]
 #[proc_macro_attribute]
@@ -1979,9 +2002,9 @@ const DEFAULT_QUICKCHECK_TESTS: u64 = 100;
 /// and changed to use `concordium_std::test_infrastructure::concordium_qc`
 /// instead of the standard  `QuickCheck`'s `quickcheck`
 ///
-/// The macro takes a `tests` attribute that specifies how many tests to run:
-/// `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is provided,
-/// [`DEFAULT_QUICKCHECK_TESTS`] is used
+/// The macro optionally takes a `num_tests` attribute that specifies how many
+/// tests to run: `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is
+/// provided, [`DEFAULT_QUICKCHECK_TESTS`] is used
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
     use syn::AttributeArgs;
 
@@ -1991,7 +2014,7 @@ pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStre
             let a = attr.clone();
             let parsed_attr = parse_macro_input!(a as AttributeArgs);
             let tests = if parsed_attr.is_empty() {
-                DEFAULT_QUICKCHECK_TESTS
+                100
             } else if parsed_attr.len() == 1 {
                 let meta = parsed_attr.get(0).unwrap();
                 match get_quickcheck_tests_count(meta).map_err(|e| e.to_compile_error()) {
@@ -2017,9 +2040,9 @@ pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStre
                 }) => {
                     inputs.push(parse_quote!(_: #ty));
                 }
-                _ => errors.push(syn::parse::Error::new(
+                syn::FnArg::Receiver(_) => errors.push(syn::parse::Error::new(
                     input.span(),
-                    "unsupported kind of function argument",
+                    "`self` arguments are not supported",
                 )),
             });
 
