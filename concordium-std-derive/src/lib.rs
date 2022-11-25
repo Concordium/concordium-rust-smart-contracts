@@ -18,9 +18,10 @@ use std::{
     ops::Neg,
 };
 #[cfg(feature = "concordium-quickcheck")]
-use syn::{parse::Parse, parse_quote, Lit, NestedMeta};
+use syn::{parse::Parse, parse_quote, Item, Lit, NestedMeta};
 use syn::{
-    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
+    parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, FnArg, Ident,
+    Meta, PatType, Token,
 };
 
 /// A helper to report meaningful compilation errors
@@ -1952,21 +1953,21 @@ const QUICKCHECK_NUM_TESTS: &str = "num_tests";
 /// associated with it. If no `tests` is found or parsing the value has failed,
 /// return a error
 #[cfg(feature = "concordium-quickcheck")]
-fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Error> {
+fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
     match meta {
         NestedMeta::Meta(Meta::NameValue(v)) => {
             if v.path.is_ident(QUICKCHECK_NUM_TESTS) {
                 match &v.lit {
                     Lit::Int(i) => i
                         .base10_parse::<u64>()
-                        .map_err(|e| syn::parse::Error::new(i.span(), e.to_string())),
-                    l => Err(syn::parse::Error::new(
+                        .map_err(|e| syn::Error::new(i.span(), e.to_string())),
+                    l => Err(syn::Error::new(
                         l.span(),
                         "unexpected attribute value, expected a non-negative integer",
                     )),
                 }
             } else {
-                Err(syn::parse::Error::new(
+                Err(syn::Error::new(
                     v.span(),
                     format!(
                         "unexpected attribute, expected a single `{} = <number>` attribute",
@@ -1975,14 +1976,14 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Erro
                 ))
             }
         }
-        NestedMeta::Meta(m) => Err(syn::parse::Error::new(
+        NestedMeta::Meta(m) => Err(syn::Error::new(
             m.span(),
             format!(
                 "unexpected attribute, expected a single `{} = <number>` attribute",
                 QUICKCHECK_NUM_TESTS
             ),
         )),
-        NestedMeta::Lit(l) => Err(syn::parse::Error::new(
+        NestedMeta::Lit(l) => Err(syn::Error::new(
             l.span(),
             format!(
                 "expected a named attribute, supported attributes: `{} = <number>`",
@@ -1993,7 +1994,7 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::parse::Erro
 }
 
 /// Parse the arguments and return a value associated with the `num_tests`
-/// identifier, if successfull
+/// identifier, if successfull.
 #[cfg(feature = "concordium-quickcheck")]
 fn parse_quickcheck_num_tests(attr: TokenStream) -> syn::Result<u64> {
     let parsed_attr = parse_macro_input::parse::<syn::AttributeArgs>(attr.clone())?;
@@ -2003,11 +2004,54 @@ fn parse_quickcheck_num_tests(attr: TokenStream) -> syn::Result<u64> {
         let meta = parsed_attr.get(0).unwrap();
         get_quickcheck_tests_count(meta)
     } else {
-        Err(syn::parse::Error::new(
+        Err(syn::Error::new(
             proc_macro2::TokenStream::from(attr).span(),
-            "expected a single `num_tests = <number>` attribute",
+            format!(
+                "wrong number of attributes; expected a single `{} = <number>` attribute",
+                QUICKCHECK_NUM_TESTS
+            ),
         ))
     }
+}
+
+/// Return a function that calls
+/// `[concordium_std::test_infrastructure::concordium_qc]` with the number of
+/// tests to run acquired from `attr` and a test function `item_fn`.
+#[cfg(feature = "concordium-quickcheck")]
+fn wrap_quickcheck_test(
+    attr: TokenStream,
+    item_fn: &mut syn::ItemFn,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let num_tests: u64 = parse_quickcheck_num_tests(attr)?;
+    let mut inputs: Punctuated<syn::BareFnArg, syn::token::Comma> =
+        syn::punctuated::Punctuated::new();
+
+    for input in item_fn.sig.inputs.iter() {
+        match input {
+            FnArg::Typed(PatType {
+                ref ty,
+                ..
+            }) => {
+                inputs.push(parse_quote!(_: #ty));
+            }
+            FnArg::Receiver(_) => {
+                return Err(syn::Error::new(input.span(), "`self` arguments are not supported"))
+            }
+        }
+    }
+
+    let attrs = mem::take(&mut item_fn.attrs);
+    let name = &item_fn.sig.ident;
+    let codomain = &item_fn.sig.output;
+    let res = quote! {
+        #[concordium_test]
+        #(#attrs)*
+        fn #name() {
+            #item_fn
+           ::concordium_std::test_infrastructure::concordium_qc(#num_tests, #name as (fn (#inputs) #codomain))
+        }
+    };
+    Ok(res)
 }
 
 #[cfg(feature = "concordium-quickcheck")]
@@ -2021,55 +2065,19 @@ fn parse_quickcheck_num_tests(attr: TokenStream) -> syn::Result<u64> {
 /// tests to run: `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is
 /// provided, 100 is used
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let output = match syn::Item::parse.parse(input.clone()) {
-        Ok(syn::Item::Fn(mut item_fn)) => {
-            let num_tests: u64 = match parse_quickcheck_num_tests(attr) {
-                Ok(v) => v,
-                Err(e) => return e.to_compile_error().into(),
-            };
-            let mut inputs: Punctuated<syn::BareFnArg, syn::token::Comma> =
-                syn::punctuated::Punctuated::new();
-            let mut errors = Vec::new();
-
-            item_fn.sig.inputs.iter().for_each(|input| match *input {
-                syn::FnArg::Typed(syn::PatType {
-                    ref ty,
-                    ..
-                }) => {
-                    inputs.push(parse_quote!(_: #ty));
-                }
-                syn::FnArg::Receiver(_) => errors.push(syn::parse::Error::new(
-                    input.span(),
-                    "`self` arguments are not supported",
-                )),
-            });
-
-            if errors.is_empty() {
-                let attrs = mem::take(&mut item_fn.attrs);
-                let name = &item_fn.sig.ident;
-                let codomain = &item_fn.sig.output;
-                quote! {
-                    #[concordium_test]
-                    #(#attrs)*
-                    fn #name() {
-                        #item_fn
-                       ::concordium_std::test_infrastructure::concordium_qc(#num_tests, #name as (fn (#inputs) #codomain))
-                    }
-                }
-            } else {
-                errors.iter().map(syn::parse::Error::to_compile_error).collect()
-            }
-        }
-        Ok(_) => {
-            let span = proc_macro2::TokenStream::from(input).span();
-            let msg = "#[concordium_quickcheck] can only be applied to functions.";
-
-            syn::parse::Error::new(span, msg).to_compile_error()
-        }
-        Err(e) => e.to_compile_error(),
-    };
-
-    output.into()
+    let input = proc_macro2::TokenStream::from(input);
+    let span = input.span();
+    syn::Item::parse
+        .parse2(input)
+        .and_then(|item| match item {
+            Item::Fn(mut item_fn) => wrap_quickcheck_test(attr, &mut item_fn),
+            _ => Err(syn::Error::new(
+                span,
+                "#[concordium_quickcheck] can only be applied to functions.",
+            )),
+        })
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
 }
 
 /// Sets the cfg for testing targeting either Wasm and native.
