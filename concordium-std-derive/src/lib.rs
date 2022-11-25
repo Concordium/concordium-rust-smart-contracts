@@ -1979,7 +1979,7 @@ const DEFAULT_QUICKCHECK_TESTS: u64 = 100;
 /// and changed to use `concordium_std::test_infrastructure::concordium_qc`
 /// instead of the standard  `QuickCheck`'s `quickcheck`
 ///
-/// The macro takes a `tests` attrubute that specifies how many tests to run:
+/// The macro takes a `tests` attribute that specifies how many tests to run:
 /// `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is provided,
 /// `DEFAULT_QUICKCHECK_TESTS` is used
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
