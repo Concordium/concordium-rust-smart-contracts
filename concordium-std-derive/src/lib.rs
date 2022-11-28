@@ -1957,8 +1957,8 @@ const QUICKCHECK_NUM_TESTS: &str = "num_tests";
 const QUICKCHECK_MAX_PASSED_TESTS: u64 = 1_000_000;
 
 /// Look up the `tests` identifier in `NestedMeta` and return the value
-/// associated with it. If no `tests` is found or parsing the value has failed,
-/// return a error
+/// associated with it. If no `num_tests` is found or parsing the value has
+/// failed, return a error
 #[cfg(feature = "concordium-quickcheck")]
 fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
     match meta {
@@ -1984,8 +1984,8 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
                     )),
                 }
             } else {
-                Err(syn::Error::new(
-                    v.span(),
+                Err(syn::Error::new_spanned(
+                    meta,
                     format!(
                         "unexpected attribute, expected a single `{} = <number>` attribute",
                         QUICKCHECK_NUM_TESTS
@@ -1993,15 +1993,15 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
                 ))
             }
         }
-        NestedMeta::Meta(m) => Err(syn::Error::new(
-            m.span(),
+        NestedMeta::Meta(_) => Err(syn::Error::new_spanned(
+            meta,
             format!(
                 "unexpected attribute, expected a single `{} = <number>` attribute",
                 QUICKCHECK_NUM_TESTS
             ),
         )),
-        NestedMeta::Lit(l) => Err(syn::Error::new(
-            l.span(),
+        NestedMeta::Lit(_) => Err(syn::Error::new_spanned(
+            meta,
             format!(
                 "expected a named attribute, supported attributes: `{} = <number>`",
                 QUICKCHECK_NUM_TESTS
@@ -2014,20 +2014,47 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
 /// identifier, if successfull.
 #[cfg(feature = "concordium-quickcheck")]
 fn parse_quickcheck_num_tests(attr: TokenStream) -> syn::Result<u64> {
-    let parsed_attr = parse_macro_input::parse::<syn::AttributeArgs>(attr.clone())?;
-    if parsed_attr.is_empty() {
-        Ok(100)
-    } else if parsed_attr.len() == 1 {
-        let meta = parsed_attr.get(0).unwrap();
-        get_quickcheck_tests_count(meta)
+    let parsed_attr = parse_macro_input::parse::<syn::AttributeArgs>(attr)?;
+    let mut err_opt: Option<syn::Error> = None;
+    let mut v = None;
+    for attr in parsed_attr {
+        match get_quickcheck_tests_count(&attr) {
+            Ok(x) => {
+                if v.is_some() {
+                    let new_err = syn::Error::new(
+                        attr.span(),
+                        format!(
+                            "duplicate attribute; expected a single `{} = <number>` attribute",
+                            QUICKCHECK_NUM_TESTS
+                        ),
+                    );
+                    if let Some(ref mut err) = err_opt {
+                        err.combine(new_err);
+                    } else {
+                        err_opt = Some(new_err)
+                    }
+                } else {
+                    v = Some(x)
+                }
+            }
+            Err(e) => {
+                if let Some(ref mut err) = err_opt {
+                    err.combine(e);
+                } else {
+                    err_opt = Some(e)
+                }
+            }
+        }
+    }
+    if let Some(np) = v {
+        if let Some(err) = err_opt {
+            Err(err)
+        } else {
+            Ok(np)
+        }
     } else {
-        Err(syn::Error::new(
-            proc_macro2::TokenStream::from(attr).span(),
-            format!(
-                "wrong number of attributes; expected a single `{} = <number>` attribute",
-                QUICKCHECK_NUM_TESTS
-            ),
-        ))
+        // no parameter given, default values
+        Ok(100)
     }
 }
 
