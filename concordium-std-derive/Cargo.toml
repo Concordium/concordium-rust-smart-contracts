@@ -26,3 +26,4 @@ proc-macro = true
 [features]
 wasm-test = []
 build-schema = []
+concordium-quickcheck = []

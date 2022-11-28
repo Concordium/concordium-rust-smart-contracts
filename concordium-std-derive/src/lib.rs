@@ -10,11 +10,15 @@ use proc_macro2::Span;
 use quote::ToTokens;
 #[cfg(feature = "build-schema")]
 use std::collections::HashMap;
+#[cfg(feature = "concordium-quickcheck")]
+use std::mem;
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
     ops::Neg,
 };
+#[cfg(feature = "concordium-quickcheck")]
+use syn::{parse::Parse, parse_quote, FnArg, Item, Lit, NestedMeta, PatType};
 use syn::{
     parse::Parser, parse_macro_input, punctuated::*, spanned::Spanned, DataEnum, Ident, Meta, Token,
 };
@@ -1937,6 +1941,190 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
         #test_fn_ast
     };
     Ok(test_fn.into())
+}
+
+// Supported attributes for `concordium-quickcheck`
+
+#[cfg(feature = "concordium-quickcheck")]
+const QUICKCHECK_NUM_TESTS: &str = "num_tests";
+
+// Maximum number of QuickCheck tests to run.
+// Includes only *passed* tests (discarded not counted).
+// Note: when changing this constant, make sure that
+// concordium_std::test_infrastructure::QUICKCHECK_MAX_WITH_DISCARDED_TESTS is
+// also changed so it is around x100 bigger (QuckCheck default).
+#[cfg(feature = "concordium-quickcheck")]
+const QUICKCHECK_MAX_PASSED_TESTS: u64 = 1_000_000;
+
+/// Look up the `tests` identifier in `NestedMeta` and return the value
+/// associated with it. If no `num_tests` is found or parsing the value has
+/// failed, return a error
+#[cfg(feature = "concordium-quickcheck")]
+fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
+    match meta {
+        NestedMeta::Meta(Meta::NameValue(v)) => {
+            if v.path.is_ident(QUICKCHECK_NUM_TESTS) {
+                match &v.lit {
+                    Lit::Int(i) => {
+                        let num_tests = i
+                            .base10_parse::<u64>()
+                            .map_err(|e| syn::Error::new(i.span(), e.to_string()))?;
+                        if num_tests > QUICKCHECK_MAX_PASSED_TESTS {
+                            Err(syn::Error::new(
+                                v.lit.span(),
+                                format!("max number of tests is {}", QUICKCHECK_MAX_PASSED_TESTS),
+                            ))
+                        } else {
+                            Ok(num_tests)
+                        }
+                    }
+                    l => Err(syn::Error::new(
+                        l.span(),
+                        "unexpected attribute value, expected a non-negative integer",
+                    )),
+                }
+            } else {
+                Err(syn::Error::new_spanned(
+                    meta,
+                    format!(
+                        "unexpected attribute, expected a single `{} = <number>` attribute",
+                        QUICKCHECK_NUM_TESTS
+                    ),
+                ))
+            }
+        }
+        NestedMeta::Meta(_) => Err(syn::Error::new_spanned(
+            meta,
+            format!(
+                "unexpected attribute, expected a single `{} = <number>` attribute",
+                QUICKCHECK_NUM_TESTS
+            ),
+        )),
+        NestedMeta::Lit(_) => Err(syn::Error::new_spanned(
+            meta,
+            format!(
+                "expected a named attribute, supported attributes: `{} = <number>`",
+                QUICKCHECK_NUM_TESTS
+            ),
+        )),
+    }
+}
+
+/// Parse the arguments and return a value associated with the `num_tests`
+/// identifier, if successfull.
+#[cfg(feature = "concordium-quickcheck")]
+fn parse_quickcheck_num_tests(attr: TokenStream) -> syn::Result<u64> {
+    let parsed_attr = parse_macro_input::parse::<syn::AttributeArgs>(attr)?;
+    let mut err_opt: Option<syn::Error> = None;
+    let mut v = None;
+    for attr in parsed_attr {
+        match get_quickcheck_tests_count(&attr) {
+            Ok(x) => {
+                if v.is_some() {
+                    let new_err = syn::Error::new(
+                        attr.span(),
+                        format!(
+                            "duplicate attribute; expected a single `{} = <number>` attribute",
+                            QUICKCHECK_NUM_TESTS
+                        ),
+                    );
+                    if let Some(ref mut err) = err_opt {
+                        err.combine(new_err);
+                    } else {
+                        err_opt = Some(new_err)
+                    }
+                } else {
+                    v = Some(x)
+                }
+            }
+            Err(e) => {
+                if let Some(ref mut err) = err_opt {
+                    err.combine(e);
+                } else {
+                    err_opt = Some(e)
+                }
+            }
+        }
+    }
+    if let Some(np) = v {
+        if let Some(err) = err_opt {
+            Err(err)
+        } else {
+            Ok(np)
+        }
+    } else {
+        // no parameter given, default values
+        Ok(100)
+    }
+}
+
+/// Return a function that calls a customized QuickCheck test runner function
+/// with the number of tests to run acquired from `attr` and a test function
+/// `item_fn`.
+#[cfg(feature = "concordium-quickcheck")]
+fn wrap_quickcheck_test(
+    attr: TokenStream,
+    item_fn: &mut syn::ItemFn,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let num_tests: u64 = parse_quickcheck_num_tests(attr)?;
+    let mut inputs: Punctuated<syn::BareFnArg, syn::token::Comma> =
+        syn::punctuated::Punctuated::new();
+
+    for input in item_fn.sig.inputs.iter() {
+        match input {
+            FnArg::Typed(PatType {
+                ref ty,
+                ..
+            }) => {
+                inputs.push(parse_quote!(_: #ty));
+            }
+            FnArg::Receiver(_) => {
+                return Err(syn::Error::new(input.span(), "`self` arguments are not supported"))
+            }
+        }
+    }
+
+    let attrs = mem::take(&mut item_fn.attrs);
+    let name = &item_fn.sig.ident;
+    let codomain = &item_fn.sig.output;
+    let res = quote! {
+        #[concordium_test]
+        #(#attrs)*
+        fn #name() {
+            #item_fn
+           ::concordium_std::test_infrastructure::concordium_qc(#num_tests, #name as (fn (#inputs) #codomain))
+        }
+    };
+    Ok(res)
+}
+
+#[cfg(feature = "concordium-quickcheck")]
+#[proc_macro_attribute]
+/// Derive the appropriate export for an annotated QuickCheck function by
+/// exposing it as `#[concordium_test]`. The macro is similar to `#[quickcheck]`
+/// but uses a customized test runner
+/// instead of the standard  `QuickCheck`'s `quickcheck`
+///
+/// The macro optionally takes a `num_tests` attribute that specifies how many
+/// tests to run: `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is
+/// provided, 100 is used.
+///
+/// Note that the maximum number of tests is limited to 1_000_000.
+//  QUICKCHECK_MAX_PASSED_TESTS defines the limit.
+pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
+    let input = proc_macro2::TokenStream::from(input);
+    let span = input.span();
+    syn::Item::parse
+        .parse2(input)
+        .and_then(|item| match item {
+            Item::Fn(mut item_fn) => wrap_quickcheck_test(attr, &mut item_fn),
+            _ => Err(syn::Error::new(
+                span,
+                "#[concordium_quickcheck] can only be applied to functions.",
+            )),
+        })
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
 }
 
 /// Sets the cfg for testing targeting either Wasm and native.

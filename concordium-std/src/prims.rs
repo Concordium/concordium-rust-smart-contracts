@@ -279,6 +279,11 @@ extern "C" {
         line: u32,
         column: u32,
     );
+
+    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+    /// Generating random numbers for randomised testing.
+    /// Not available for contracts deployed on the chain.
+    pub(crate) fn get_random(dest: *mut u8, size: u32);
 }
 
 // For every external function, we must provide a dummy function.

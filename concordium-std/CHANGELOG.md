@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add a new primitive `get_random` for generating random numbers in Wasm code testing; `get_random` can be used in tests only, not available for smart contracts on the chain.
+
 ## concordium-std 5.0.0 (2022-11-21)
 
 - Add `upgrade` method to `HasHost` for upgrading a smart contract instance to use a new smart contract module.

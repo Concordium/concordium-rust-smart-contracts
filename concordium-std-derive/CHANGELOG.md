@@ -1,6 +1,9 @@
 # Changelog
-
+ 
 ## Unreleased changes
+- Add a `#[concordium_quickcheck]` macro that re-exports a customized QuickCheck function
+  `test_infrastructure::concordium_qc` as a `#[concordium_test]` function.
+  It is enabled by the `concordium-quickcheck` feature.
 
 ## concordium-std-derive 5.0.0 (2022-11-21)
 
