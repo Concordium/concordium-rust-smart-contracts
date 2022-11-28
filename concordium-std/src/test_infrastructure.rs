@@ -1845,8 +1845,14 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
 // `from_entropy`) will call our function instead.
 register_custom_getrandom!(get_random);
 
-/// Overall number of QuickCheck tests to run.
-/// Includes both *passed and discarded*.
+// Overall number of QuickCheck tests to run.
+// Includes both *passed and discarded*.
+// Note: when changing this constant, make sure that
+// concordium_std_derive::QUICKCHECK_MAX_PASSED_TESTS is adjusted:
+// - QUICKCHECK_MAX_PASSED_TESTS is capped by
+//   QUICKCHECK_MAX_WITH_DISCARDED_TESTS;
+// - QUICKCHECK_MAX_WITH_DISCARDED_TESTS should be bigger allowing some test to
+//   be discarded (QuickCheck default is x100).
 #[cfg(feature = "concordium-quickcheck")]
 const QUICKCHECK_MAX_WITH_DISCARDED_TESTS: u64 = 100_000_000;
 

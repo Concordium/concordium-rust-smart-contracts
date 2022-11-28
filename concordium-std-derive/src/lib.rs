@@ -1949,7 +1949,10 @@ fn concordium_test_worker(_attr: TokenStream, item: TokenStream) -> syn::Result<
 const QUICKCHECK_NUM_TESTS: &str = "num_tests";
 
 // Maximum number of QuickCheck tests to run.
-// Includes only *passed* tests (discarded not counted)
+// Includes only *passed* tests (discarded not counted).
+// Note: when changing this constant, make sure that
+// concordium_std::test_infrastructure::QUICKCHECK_MAX_WITH_DISCARDED_TESTS is
+// also changed so it is around x100 bigger (QuckCheck default).
 #[cfg(feature = "concordium-quickcheck")]
 const QUICKCHECK_MAX_PASSED_TESTS: u64 = 1_000_000;
 
@@ -1969,7 +1972,7 @@ fn get_quickcheck_tests_count(meta: &NestedMeta) -> Result<u64, syn::Error> {
                         if num_tests > QUICKCHECK_MAX_PASSED_TESTS {
                             Err(syn::Error::new(
                                 v.lit.span(),
-                                format!("max number of thest is {}", QUICKCHECK_MAX_PASSED_TESTS),
+                                format!("max number of tests is {}", QUICKCHECK_MAX_PASSED_TESTS),
                             ))
                         } else {
                             Ok(num_tests)
@@ -2079,7 +2082,8 @@ fn wrap_quickcheck_test(
 /// tests to run: `#[concordium_quickcheck(tests = 1000)]`. If no `tests` is
 /// provided, 100 is used.
 ///
-/// Note that the maximum number of tests is limited to 10000.
+/// Note that the maximum number of tests is limited to 1_000_000.
+//  QUICKCHECK_MAX_PASSED_TESTS defines the limit.
 pub fn concordium_quickcheck(attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = proc_macro2::TokenStream::from(input);
     let span = input.span();
