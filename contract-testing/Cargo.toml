@@ -1,0 +1,13 @@
+[package]
+name = "concordium-smart-contract-testing"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+concordium-contracts-common = {path = "../concordium-base/concordium-contracts-common/concordium-contracts-common"}
+concordium_base = {path = "../concordium-base/rust-src/concordium_base"}
+wasm-chain-integration = {path = "../concordium-base/smart-contracts/wasm-chain-integration"}
+wasm-transform = {path = "../concordium-base/smart-contracts/wasm-transform"}
+sha2 = "0.10"
