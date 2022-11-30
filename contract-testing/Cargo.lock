@@ -305,6 +305,7 @@ dependencies = [
 name = "concordium-smart-contract-testing"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "concordium-contracts-common",
  "concordium_base",
  "sha2 0.10.6",
