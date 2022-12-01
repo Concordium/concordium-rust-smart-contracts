@@ -31,9 +31,18 @@ pub struct Chain {
         artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>,
     >,
     /// Smart contract instances.
-    contracts:            BTreeMap<ContractAddress, v1::trie::MutableState>,
+    // TODO: Value should also hold module ref, name etc.
+    contracts:            BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
     next_contract_index:  u64,
+}
+
+pub struct ContractInstance {
+    module_reference: ModuleReference,
+    contract_name:    OwnedContractName,
+    state:            v1::trie::MutableState,
+    owner:            AccountAddress,
+    self_balance:     Amount,
 }
 
 impl Chain {
@@ -106,16 +115,16 @@ impl Chain {
     pub fn contract_init(
         &mut self,
         sender: AccountAddress,
-        module: ModuleReference,
+        module_reference: ModuleReference,
         contract_name: ContractName,
         parameter: ContractParameter,
         amount: Amount,
-        energy_limit: Energy,
+        energy_reserved: Energy,
     ) -> Result<SuccessfulContractInit, ContractInitError> {
         // Lookup artifact
         let artifact = self
             .modules
-            .get(&module)
+            .get(&module_reference)
             .ok_or_else(|| ContractInitError::ModuleDoesNotExist)?;
         // Get the account and check that it has sufficient balance to pay for the
         // energy.
@@ -123,7 +132,7 @@ impl Chain {
             .accounts
             .get(&sender)
             .ok_or_else(|| ContractInitError::AccountDoesNotExist)?;
-        if account_info.balance < self.calculate_energy_cost(energy_limit) {
+        if account_info.balance < self.calculate_energy_cost(energy_reserved) {
             return Err(ContractInitError::InsufficientFunds);
         }
         // Construct the context.
@@ -145,7 +154,7 @@ impl Chain {
                 parameter: &parameter.0,
                 energy: InterpreterEnergy {
                     // TODO: Why do we have two separate energy types?
-                    energy: energy_limit.energy,
+                    energy: energy_reserved.energy,
                 },
             },
             false,
@@ -162,11 +171,19 @@ impl Chain {
                 state,
             } => {
                 let contract_address = self.create_contract_address();
-                let energy_used = Energy::from(energy_limit.energy - remaining_energy);
+                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
                 let transaction_fee = self.calculate_energy_cost(energy_used);
 
-                // Save the state
-                self.contracts.insert(contract_address, state);
+                let contract_instance = ContractInstance {
+                    module_reference,
+                    contract_name: contract_name.to_owned(),
+                    state,
+                    owner: sender,
+                    self_balance: amount,
+                };
+
+                // Save the contract instance
+                self.contracts.insert(contract_address, contract_instance);
 
                 (
                     Ok(SuccessfulContractInit {
@@ -183,7 +200,7 @@ impl Chain {
                 return_value,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_limit.energy - remaining_energy);
+                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 (
                     Err(ContractInitError::ValidChainError(
@@ -205,7 +222,7 @@ impl Chain {
                 error,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_limit.energy - remaining_energy);
+                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 (
                     Err(ContractInitError::ValidChainError(
@@ -223,11 +240,11 @@ impl Chain {
                 )
             }
             v1::InitResult::OutOfEnergy => {
-                let transaction_fee = self.calculate_energy_cost(energy_limit);
+                let transaction_fee = self.calculate_energy_cost(energy_reserved);
                 (
                     Err(ContractInitError::ValidChainError(
                         FailedContractInteraction::OutOFEnergy {
-                            energy_used: energy_limit,
+                            energy_used: energy_reserved,
                             transaction_fee,
                             logs: v0::Logs {
                                 // TODO: Get logs on failures.
@@ -251,13 +268,75 @@ impl Chain {
     /// Can we get the return value here?
     pub fn contract_update(
         &mut self,
-        _sender: AccountAddress,
-        _address: ContractAddress,
-        _entrypoint: EntrypointName,
-        _parameter: ContractParameter,
-        _amount: Amount,
-        _energy: Energy,
-    ) -> Result<SuccessfulContractUpdate, FailedContractInteraction> {
+        invoker: AccountAddress, // TODO: Should we add a sender field and allow contract senders?
+        address: ContractAddress,
+        entrypoint: EntrypointName,
+        parameter: ContractParameter,
+        amount: Amount,
+        energy_reserved: Energy,
+    ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
+        // Find contract instance and artifact
+        let instance = self
+            .contracts
+            .get(&address)
+            .ok_or_else(|| ContractUpdateError::InstanceDoesNotExist)?;
+        let artifact = self
+            .modules
+            .get(&instance.module_reference)
+            .ok_or_else(|| ContractUpdateError::ModuleDoesNotExist)?;
+
+        // Ensure account exists and can pay for the reserved energy
+        let account_info = self
+            .accounts
+            .get(&invoker)
+            .ok_or_else(|| ContractUpdateError::AccountDoesNotExist)?;
+        if account_info.balance < self.calculate_energy_cost(energy_reserved) {
+            return Err(ContractUpdateError::InsufficientFunds);
+        }
+        // Construct the context
+        let receive_ctx = ReceiveContextOpt {
+            metadata: ChainMetadataOpt {
+                slot_time: self.slot_time,
+            },
+            invoker,
+            self_address: address,
+            self_balance: instance.self_balance + amount,
+            sender: Address::Account(invoker),
+            owner: instance.owner,
+            sender_policies: account_info.policies.clone(),
+            entrypoint: entrypoint.to_owned(),
+        };
+        let receive_name = OwnedReceiveName::new_unchecked(format!(
+            "{}.{}",
+            instance.contract_name.as_contract_name().contract_name(),
+            entrypoint
+        ));
+
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        let mut mutable_state = instance.state;
+        let inner = mutable_state.get_inner(&mut loader);
+        let instance_state = v1::InstanceState::new(loader, inner);
+
+        // Update the contract
+        let res = v1::invoke_receive(
+            *artifact,
+            receive_ctx,
+            v1::ReceiveInvocation {
+                amount,
+                receive_name: receive_name.as_receive_name(),
+                parameter: &parameter.0,
+                energy: InterpreterEnergy {
+                    energy: energy_reserved.energy,
+                },
+            },
+            instance_state,
+            v1::ReceiveParams {
+                max_parameter_size:           65535,
+                limit_logs_and_return_values: false,
+                support_queries:              true,
+            },
+        );
+        // Charge the transaction fee
         todo!()
     }
 
@@ -270,7 +349,7 @@ impl Chain {
         _entrypoint: EntrypointName,
         _parameter: ContractParameter,
         _amount: Amount,
-        _energy: Option<Energy>, // Defaults to 100000 if `None`.
+        _energy_reserved: Option<Energy>, // Defaults to 100000 if `None`.
     ) -> Result<SuccessfulContractUpdate, FailedContractInteraction> {
         todo!()
     }
@@ -349,6 +428,51 @@ impl v0::HasInitContext for InitContextOpt {
     }
 }
 
+/// A receive context with optional fields.
+/// Used when simulating contracts to allow the user to only specify the
+/// context fields used by the contract.
+/// The default value is `None` for all `Option` fields and the default of
+/// `ChainMetadataOpt` for `metadata`.
+pub(crate) struct ReceiveContextOpt {
+    metadata:        ChainMetadataOpt,
+    invoker:         AccountAddress,
+    self_address:    ContractAddress,
+    self_balance:    Amount,
+    sender:          Address,
+    owner:           AccountAddress,
+    sender_policies: Option<v0::OwnedPolicyBytes>,
+    /// The entrypoint name invoked. Only relevant for fallback receive
+    /// functions.
+    entrypoint:      OwnedEntrypointName,
+}
+
+impl v0::HasReceiveContext for ReceiveContextOpt {
+    type MetadataType = ChainMetadataOpt;
+
+    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
+
+    fn invoker(&self) -> ExecResult<&AccountAddress> { Ok(&self.invoker) }
+
+    fn self_address(&self) -> ExecResult<&ContractAddress> { Ok(&self.self_address) }
+
+    fn self_balance(&self) -> ExecResult<Amount> { Ok(self.self_balance) }
+
+    fn sender(&self) -> ExecResult<&Address> { Ok(&self.sender) }
+
+    fn owner(&self) -> ExecResult<&AccountAddress> { Ok(&self.owner) }
+
+    fn sender_policies(&self) -> ExecResult<&[u8]> {
+        unwrap_ctx_field(
+            self.sender_policies.as_ref().map(Vec::as_ref),
+            "senderPolicies",
+        )
+    }
+}
+
+impl v1::HasReceiveContext for ReceiveContextOpt {
+    fn entrypoint(&self) -> ExecResult<EntrypointName> { Ok(self.entrypoint.as_entrypoint_name()) }
+}
+
 // Error handling when unwrapping.
 fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> ExecResult<A> {
     match opt {
@@ -385,6 +509,22 @@ pub enum ContractInitError {
     StringInitError(String),
     /// Module has not been deployed in test environment.
     ModuleDoesNotExist,
+    /// Account has not been created in test environment.
+    AccountDoesNotExist,
+    /// The account does not have enough funds to pay for the energy.
+    InsufficientFunds,
+}
+
+#[derive(Debug)]
+pub enum ContractUpdateError {
+    /// Update failed for a reason that also exists on the chain.
+    ValidChainError(FailedContractInteraction),
+    /// TODO: Can we get a better error than the anyhow?
+    StringInitError(String),
+    /// Module has not been deployed in test environment.
+    ModuleDoesNotExist,
+    /// Contract instance has not been initialized in test environment.
+    InstanceDoesNotExist,
     /// Account has not been created in test environment.
     AccountDoesNotExist,
     /// The account does not have enough funds to pay for the energy.
@@ -467,14 +607,11 @@ impl ContractError {
     pub fn deserial<T: Deserial>(&self) -> Result<T, ParsingError> { todo!() }
 }
 
-#[derive(PartialEq, Eq, Debug)]
-pub struct Event(String);
-
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Debug)]
 pub enum ChainEvent {
     Interrupted {
         address: ContractAddress,
-        events:  Vec<Event>,
+        logs:    v0::Logs,
     },
     Resumed {
         address: ContractAddress,
