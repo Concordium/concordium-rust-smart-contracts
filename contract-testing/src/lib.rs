@@ -166,7 +166,7 @@ impl Chain {
                 let transaction_fee = self.calculate_energy_cost(energy_used);
 
                 // Save the state
-                self.contracts.insert(contract_address, state); // Ignore the return value since we created a new contract address for this.
+                self.contracts.insert(contract_address, state);
 
                 (
                     Ok(SuccessfulContractInit {
@@ -377,6 +377,7 @@ impl AccountInfo {
     }
 }
 
+#[derive(Debug)]
 pub enum ContractInitError {
     /// Initialization failed for a reason that also exists on the chain.
     ValidChainError(FailedContractInteraction),
@@ -419,6 +420,30 @@ pub enum FailedContractInteraction {
         /// debugging.
         logs:            v0::Logs,
     },
+}
+
+impl FailedContractInteraction {
+    pub fn transaction_fee(&self) -> Amount {
+        match self {
+            FailedContractInteraction::Reject {
+                transaction_fee, ..
+            } => *transaction_fee,
+            FailedContractInteraction::Trap {
+                transaction_fee, ..
+            } => *transaction_fee,
+            FailedContractInteraction::OutOFEnergy {
+                transaction_fee, ..
+            } => *transaction_fee,
+        }
+    }
+
+    pub fn logs(&self) -> &v0::Logs {
+        match self {
+            FailedContractInteraction::Reject { logs, .. } => logs,
+            FailedContractInteraction::Trap { logs, .. } => logs,
+            FailedContractInteraction::OutOFEnergy { logs, .. } => logs,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -528,22 +553,96 @@ impl ContractParameter {
 mod tests {
     use super::*;
 
+    const ACC_0: AccountAddress = AccountAddress([0; 32]);
+    const ACC_1: AccountAddress = AccountAddress([1; 32]);
+
+    #[test]
+    fn creating_accounts_work() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        chain.create_account(ACC_0, AccountInfo::new(Amount::from_ccd(1)));
+        chain.create_account(ACC_1, AccountInfo::new(Amount::from_ccd(2)));
+
+        assert_eq!(chain.accounts.len(), 2);
+        assert_eq!(chain.account_balance(ACC_0), Some(Amount::from_ccd(1)));
+        assert_eq!(chain.account_balance(ACC_1), Some(Amount::from_ccd(2)));
+    }
+
     #[test]
     fn deploying_valid_module_works() {
         let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
-        let acc_0 = AccountAddress([0; 32]);
         let initial_balance = Amount::from_ccd(10000);
-        chain.create_account(acc_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res = chain
-            .module_deploy(acc_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
-        assert_eq!(chain.accounts.len(), 1);
         assert_eq!(chain.modules.len(), 1);
         assert_eq!(
-            chain.account_balance(acc_0),
+            chain.account_balance(ACC_0),
             Some(initial_balance - res.transaction_fee)
         );
+    }
+
+    #[test]
+    fn initializing_valid_contract_works() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let initial_balance = Amount::from_ccd(10000);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+        let res_deploy = chain
+            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_weather"),
+                ContractParameter::from_bytes(vec![0u8]),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Initializing valid contract should work");
+        assert_eq!(
+            chain.account_balance(ACC_0),
+            Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
+        );
+        assert_eq!(chain.contracts.len(), 1);
+    }
+
+    #[test]
+    fn initializing_with_invalid_parameter_fails() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let initial_balance = Amount::from_ccd(10000);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+        let res_deploy = chain
+            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_weather"),
+                ContractParameter::from_bytes(vec![99u8]), // Invalid param
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect_err("Initializing with invalid params should fail");
+
+        assert!(matches!(res_init, ContractInitError::ValidChainError(_)));
+        match res_init {
+            // Failed in the right way and account is still charged.
+            ContractInitError::ValidChainError(FailedContractInteraction::Reject {
+                transaction_fee,
+                ..
+            }) => assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(initial_balance - res_deploy.transaction_fee - transaction_fee)
+            ),
+            _ => panic!("Expected valid chain error."),
+        };
     }
 }
