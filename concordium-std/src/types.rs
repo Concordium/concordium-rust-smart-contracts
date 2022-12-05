@@ -585,7 +585,7 @@ pub struct ExternReturnValue {
 }
 
 /// The current public balances of an account.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AccountBalance {
     /// The total balance of the account. Note that part of this balance might
     /// be staked and/or locked in scheduled transfers.
@@ -620,7 +620,7 @@ impl AccountBalance {
 }
 
 /// The current exchange rates.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExchangeRates {
     /// Euro per NRG exchange rate.
     pub euro_per_energy:    ExchangeRate,
@@ -651,7 +651,7 @@ impl ExchangeRates {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Errors that may occur when invoking a contract entrypoint.
 pub enum CallContractError<ReturnValueType> {
     /// Amount that was to be transferred is not available to the sender.
@@ -677,7 +677,7 @@ pub enum CallContractError<ReturnValueType> {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Errors that may occur when transferring CCD to an account.
 pub enum TransferError {
     /// Amount that was to be transferred is not available to the sender.
@@ -687,7 +687,7 @@ pub enum TransferError {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Errors that may occur when upgrading the smart contract module.
 pub enum UpgradeError {
     /// Provided module does not exist.
@@ -700,12 +700,12 @@ pub enum UpgradeError {
 
 /// Error for querying the balance of an account.
 /// No account found for the provided account address.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct QueryAccountBalanceError;
 
 /// Error for querying the balance of a smart contract instance.
 /// No instance found for the provided contract address.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct QueryContractBalanceError;
 
 /// A wrapper around [`Result`] that fixes the error variant to
@@ -775,7 +775,7 @@ pub enum LogError {
 
 /// Error triggered when a non-zero amount of CCD is sent to a contract
 /// init or receive function that is not marked as `payable`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NotPayableError;
 
 /// An error message, signalling rejection of a smart contract invocation.
