@@ -11,7 +11,7 @@ use std::{
 };
 use wasm_chain_integration::{
     v0,
-    v1::{self, ConcordiumAllowedImports, ReturnValue},
+    v1::{self, ConcordiumAllowedImports, InvokeResponse, ReturnValue},
     ExecResult, InterpreterEnergy,
 };
 use wasm_transform::artifact;
@@ -122,16 +122,10 @@ impl Chain {
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractInit, ContractInitError> {
         // Lookup artifact
-        let artifact = self
-            .modules
-            .get(&module_reference)
-            .ok_or_else(|| ContractInitError::ModuleDoesNotExist)?;
+        let artifact = self.get_artifact(module_reference)?;
         // Get the account and check that it has sufficient balance to pay for the
         // energy.
-        let account_info = self
-            .accounts
-            .get(&sender)
-            .ok_or_else(|| ContractInitError::AccountDoesNotExist)?;
+        let account_info = self.get_account(sender)?;
         if account_info.balance < self.calculate_energy_cost(energy_reserved) {
             return Err(ContractInitError::InsufficientFunds);
         }
@@ -252,10 +246,7 @@ impl Chain {
         };
         // Charge the account.
         // We have to get the account info again because of the borrow checker.
-        self.accounts
-            .get_mut(&sender)
-            .ok_or_else(|| ContractInitError::AccountDoesNotExist)?
-            .balance -= transaction_fee;
+        self.get_account_mut(sender)?.balance -= transaction_fee;
         res
     }
 
@@ -270,20 +261,12 @@ impl Chain {
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         // Find contract instance and artifact
-        let instance = self
-            .contracts
-            .get(&address)
-            .ok_or_else(|| ContractUpdateError::InstanceDoesNotExist)?;
-        let artifact = self
-            .modules
-            .get(&instance.module_reference)
-            .ok_or_else(|| ContractUpdateError::ModuleDoesNotExist)?;
+        let instance = self.get_instance(address)?;
+        // TODO: Charge energy for module lookup.
+        let artifact = self.get_artifact(instance.module_reference)?;
 
         // Ensure account exists and can pay for the reserved energy
-        let account_info = self
-            .accounts
-            .get(&invoker)
-            .ok_or_else(|| ContractUpdateError::AccountDoesNotExist)?;
+        let account_info = self.get_account(invoker)?;
         if account_info.balance < self.calculate_energy_cost(energy_reserved) {
             return Err(ContractUpdateError::InsufficientFunds);
         }
@@ -343,10 +326,7 @@ impl Chain {
                 let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 if state_changed {
-                    let instance = self
-                        .contracts
-                        .get_mut(&address)
-                        .ok_or_else(|| ContractUpdateError::InstanceDoesNotExist)?;
+                    let instance = self.get_instance_mut(address)?;
                     let mut collector = v1::trie::SizeCollector::default();
                     instance.state = mutable_state.freeze(&mut loader, &mut collector);
                     // TODO: Do we need to charge for storage?
@@ -365,7 +345,55 @@ impl Chain {
                     transaction_fee,
                 )
             }
-            v1::ReceiveResult::Interrupt { .. } => todo!("Handle interrupts"),
+            v1::ReceiveResult::Interrupt {
+                remaining_energy,
+                state_changed,
+                logs,
+                config,
+                interrupt,
+            } => {
+                if let v1::Interrupt::Transfer { to, amount } = interrupt {
+                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+
+                    let response = {
+                        // Check if receiver account exists
+                        if !self.accounts.contains_key(&to) {
+                            InvokeResponse::Failure {
+                                kind: v1::InvokeFailure::NonExistentAccount,
+                            }
+                        } else if self.get_instance(address)?.self_balance < amount {
+                            InvokeResponse::Failure {
+                                kind: v1::InvokeFailure::InsufficientAmount,
+                            }
+                        } else {
+                            // Move the CCD
+                            self.get_account_mut(to)?.balance += amount;
+                            let instance = self.get_instance_mut(address)?;
+                            instance.self_balance -= amount;
+
+                            InvokeResponse::Success {
+                                new_balance: instance.self_balance,
+                                data:        None,
+                            }
+                        }
+                    };
+
+                    // Resume execution
+                    let resume_res = v1::resume_receive(
+                        config, // TODO: Need to change some things so it can use the ReceiveCtxOpt
+                        response,
+                        InterpreterEnergy::from(remaining_energy),
+                        &mut mutable_state,
+                        state_changed,
+                        loader,
+                    );
+                    // TODO: Do we need to check energy here?
+                } else {
+                    todo!("Handle other interrupts")
+                }
+                todo!()
+            }
             v1::ReceiveResult::Reject {
                 reason,
                 return_value,
@@ -419,25 +447,139 @@ impl Chain {
             }
         };
         // Charge the transaction fee
-        self.accounts
-            .get_mut(&invoker)
-            .ok_or_else(|| ContractUpdateError::AccountDoesNotExist)?
-            .balance -= transaction_fee;
+        self.get_account_mut(invoker)?.balance -= transaction_fee;
         res
     }
 
-    /// If `None` is provided, address 0 will be used, which will have
-    /// sufficient funds.
+    /// TODO: Should we make invoker and energy optional?
     pub fn contract_invoke(
         &mut self,
-        _sender: Option<AccountAddress>,
-        _address: ContractAddress,
-        _entrypoint: EntrypointName,
-        _parameter: ContractParameter,
-        _amount: Amount,
-        _energy_reserved: Option<Energy>, // Defaults to 100000 if `None`.
-    ) -> Result<SuccessfulContractUpdate, FailedContractInteraction> {
-        todo!()
+        invoker: AccountAddress,
+        address: ContractAddress,
+        entrypoint: EntrypointName,
+        parameter: ContractParameter,
+        amount: Amount,
+        energy_reserved: Energy,
+    ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
+        // Find contract instance and artifact
+        let instance = self.get_instance(address)?;
+        let artifact = self.get_artifact(instance.module_reference)?;
+
+        // Ensure account exists and can pay for the reserved energy
+        let account_info = self.get_account(invoker)?;
+        if account_info.balance < self.calculate_energy_cost(energy_reserved) {
+            return Err(ContractUpdateError::InsufficientFunds);
+        }
+        // Construct the context
+        let receive_ctx = ReceiveContextOpt {
+            metadata: ChainMetadataOpt {
+                slot_time: self.slot_time,
+            },
+            invoker,
+            self_address: address,
+            self_balance: instance.self_balance + amount,
+            sender: Address::Account(invoker),
+            owner: instance.owner,
+            sender_policies: account_info.policies.clone(),
+            entrypoint: entrypoint.to_owned(),
+        };
+        let receive_name = OwnedReceiveName::new_unchecked(format!(
+            "{}.{}",
+            instance.contract_name.as_contract_name().contract_name(),
+            entrypoint
+        ));
+
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        let mut mutable_state = instance.state.thaw();
+        let inner = mutable_state.get_inner(&mut loader);
+        let instance_state = v1::InstanceState::new(loader, inner);
+
+        // Update the contract
+        let res = v1::invoke_receive::<_, _, _, _, ReceiveContextOpt, ReceiveContextOpt>(
+            std::sync::Arc::new(artifact.clone()), /* TODO: I made ProcessedImports cloneable
+                                                    * for this to work. */
+            receive_ctx,
+            v1::ReceiveInvocation {
+                amount,
+                receive_name: receive_name.as_receive_name(),
+                parameter: &parameter.0,
+                energy: InterpreterEnergy {
+                    energy: energy_reserved.energy,
+                },
+            },
+            instance_state,
+            v1::ReceiveParams {
+                max_parameter_size:           65535,
+                limit_logs_and_return_values: false,
+                support_queries:              true,
+            },
+        )
+        .map_err(|e| ContractUpdateError::StringError(e.to_string()))?;
+
+        match res {
+            v1::ReceiveResult::Success {
+                logs,
+                state_changed,
+                return_value,
+                remaining_energy,
+            } => {
+                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                Ok(SuccessfulContractUpdate {
+                    host_events: Vec::new(), // TODO: add host events
+                    transfers: Vec::new(),   /* TODO: add transfers (or add fn to compute
+                                              * based on host events) */
+                    energy_used,
+                    transaction_fee,
+                    return_value: ContractReturnValue(return_value),
+                    state_changed, // TODO: Should we always set this to false?
+                    logs,
+                })
+            }
+            v1::ReceiveResult::Interrupt { .. } => todo!("Handle interrupts"),
+            v1::ReceiveResult::Reject {
+                reason,
+                return_value,
+                remaining_energy,
+            } => {
+                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                Err(ContractUpdateError::ValidChainError(
+                    FailedContractInteraction::Reject {
+                        reason,
+                        return_value,
+                        energy_used,
+                        transaction_fee,
+                        logs: v0::Logs::default(), // TODO: Get logs on failures.
+                    },
+                ))
+            }
+            v1::ReceiveResult::Trap {
+                error,
+                remaining_energy,
+            } => {
+                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                Err(ContractUpdateError::ValidChainError(
+                    FailedContractInteraction::Trap {
+                        error,
+                        energy_used,
+                        transaction_fee,
+                        logs: v0::Logs::default(), // TODO: Get logs on failures.
+                    },
+                ))
+            }
+            v1::ReceiveResult::OutOfEnergy => {
+                let transaction_fee = self.calculate_energy_cost(energy_reserved);
+                Err(ContractUpdateError::ValidChainError(
+                    FailedContractInteraction::OutOFEnergy {
+                        energy_used: energy_reserved,
+                        transaction_fee,
+                        logs: v0::Logs::default(), // TODO: Get logs on failures.
+                    },
+                ))
+            }
+        }
     }
 
     /// Create an account. Will override existing account if already present.
@@ -472,6 +614,70 @@ impl Chain {
                 / self.micro_ccd_per_energy.denominator(),
         )
     }
+
+    fn get_artifact(
+        &self,
+        module_ref: ModuleReference,
+    ) -> Result<&artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>, ModuleMissing>
+    {
+        self.modules.get(&module_ref).ok_or(ModuleMissing)
+    }
+
+    fn get_instance(
+        &self,
+        address: ContractAddress,
+    ) -> Result<&ContractInstance, ContractInstanceMissing> {
+        self.contracts.get(&address).ok_or(ContractInstanceMissing)
+    }
+
+    fn get_instance_mut(
+        &mut self,
+        address: ContractAddress,
+    ) -> Result<&mut ContractInstance, ContractInstanceMissing> {
+        self.contracts
+            .get_mut(&address)
+            .ok_or(ContractInstanceMissing)
+    }
+
+    fn get_account(&self, address: AccountAddress) -> Result<&AccountInfo, AccountMissing> {
+        self.accounts.get(&address).ok_or(AccountMissing)
+    }
+
+    fn get_account_mut(
+        &mut self,
+        address: AccountAddress,
+    ) -> Result<&mut AccountInfo, AccountMissing> {
+        self.accounts.get_mut(&address).ok_or(AccountMissing)
+    }
+}
+
+#[derive(Debug)]
+struct ModuleMissing;
+
+impl From<ModuleMissing> for ContractInitError {
+    fn from(_: ModuleMissing) -> Self { Self::ModuleDoesNotExist }
+}
+
+impl From<ModuleMissing> for ContractUpdateError {
+    fn from(_: ModuleMissing) -> Self { Self::ModuleDoesNotExist }
+}
+
+#[derive(Debug)]
+struct ContractInstanceMissing;
+
+impl From<ContractInstanceMissing> for ContractUpdateError {
+    fn from(_: ContractInstanceMissing) -> Self { Self::InstanceDoesNotExist }
+}
+
+#[derive(Debug)]
+struct AccountMissing;
+
+impl From<AccountMissing> for ContractInitError {
+    fn from(_: AccountMissing) -> Self { Self::AccountDoesNotExist }
+}
+
+impl From<AccountMissing> for ContractUpdateError {
+    fn from(_: AccountMissing) -> Self { Self::AccountDoesNotExist }
 }
 
 /// A chain metadata with an optional field.
@@ -889,7 +1095,7 @@ mod tests {
                 ACC_0,
                 res_deploy.module_reference,
                 ContractName::new_unchecked("init_weather"),
-                ContractParameter::from_bytes(vec![0u8]),
+                ContractParameter::from_bytes(vec![0u8]), // Starts as 0
                 Amount::zero(),
                 Energy::from(10000u64),
             )
@@ -900,12 +1106,24 @@ mod tests {
                 ACC_0,
                 res_init.contract_address,
                 EntrypointName::new_unchecked("set"),
-                ContractParameter::from_bytes(vec![1u8]),
+                ContractParameter::from_bytes(vec![1u8]), // Updated to 1
                 Amount::zero(),
                 Energy::from(10000u64),
             )
             .expect("Updating valid contract should work");
 
+        let res_invoke_get = chain
+            .contract_invoke(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("get"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000),
+            )
+            .expect("Invoking get should work");
+
+        // This also asserts that the account wasn't charged for the invoke.
         assert_eq!(
             chain.account_balance(ACC_0),
             Some(
@@ -917,6 +1135,74 @@ mod tests {
         );
         assert_eq!(chain.contracts.len(), 1);
         assert!(res_update.state_changed);
-        // TODO: Assert the new state value.
+        // Assert that the updated state is persisted.
+        assert_eq!(res_invoke_get.return_value.0, [1u8]);
+    }
+
+    #[test]
+    fn update_with_account_transfer_works() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let initial_balance = Amount::from_ccd(10000);
+        let transfer_amount = Amount::from_ccd(123);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+
+        let res_deploy = chain
+            .module_deploy(ACC_0, "integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_integrate"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Initializing valid contract should work");
+
+        let res_update = chain
+            .contract_update(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("receive"),
+                ContractParameter::from_typed(&ACC_1),
+                transfer_amount,
+                Energy::from(10000u64),
+            )
+            .expect("Updating valid contract should work");
+
+        let res_view = chain
+            .contract_invoke(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("view"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Invoking get should work");
+
+        // This also asserts that the account wasn't charged for the invoke.
+        assert_eq!(
+            chain.account_balance(ACC_0),
+            Some(
+                initial_balance
+                    - res_deploy.transaction_fee
+                    - res_init.transaction_fee
+                    - res_update.transaction_fee
+                    - transfer_amount
+            )
+        );
+        assert_eq!(
+            chain.account_balance(ACC_1),
+            Some(initial_balance + transfer_amount)
+        );
+        assert_eq!(chain.contracts.len(), 1);
+        assert!(res_update.state_changed);
+        assert_eq!(res_update.return_value.0, [2u8]);
+        // Assert that the updated state is persisted.
+        assert_eq!(res_view.return_value.0, [2u8]);
     }
 }
