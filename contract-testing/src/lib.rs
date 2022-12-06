@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use concordium_base::base::{Energy, ExchangeRate};
 use concordium_contracts_common::*;
 use sha2::{Digest, Sha256};
@@ -12,15 +11,14 @@ use std::{
 use wasm_chain_integration::{
     v0,
     v1::{self, ConcordiumAllowedImports, InvokeResponse, ReturnValue},
-    ExecResult, InterpreterEnergy,
+    InterpreterEnergy,
 };
 use wasm_transform::artifact;
 
 pub struct Chain {
     /// The slot time viewable inside the smart contracts.
-    /// An error is thrown if this is `None` and the contract tries to
-    /// access it.
-    slot_time:            Option<SlotTime>,
+    /// Defaults to `0`.
+    slot_time:            SlotTime,
     /// MicroCCD per Energy.
     micro_ccd_per_energy: ExchangeRate,
     /// Accounts and info about them.
@@ -31,7 +29,6 @@ pub struct Chain {
         artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>,
     >,
     /// Smart contract instances.
-    // TODO: Value should also hold module ref, name etc.
     contracts:            BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
     next_contract_index:  u64,
@@ -48,14 +45,15 @@ pub struct ContractInstance {
 impl Chain {
     pub fn new_with_time(slot_time: SlotTime, energy_per_micro_ccd: ExchangeRate) -> Self {
         Self {
-            slot_time: Some(slot_time),
+            slot_time,
             ..Self::new(energy_per_micro_ccd)
         }
     }
 
+    /// Create a new [`Self`] where the `slot_time` defaults to `0`.
     pub fn new(energy_per_micro_ccd: ExchangeRate) -> Self {
         Self {
-            slot_time:            None,
+            slot_time:            Timestamp::from_timestamp_millis(0),
             micro_ccd_per_energy: energy_per_micro_ccd,
             accounts:             BTreeMap::new(),
             modules:              BTreeMap::new(),
@@ -130,8 +128,8 @@ impl Chain {
             return Err(ContractInitError::InsufficientFunds);
         }
         // Construct the context.
-        let init_ctx = InitContextOpt {
-            metadata:        ChainMetadataOpt {
+        let init_ctx = v0::InitContext {
+            metadata:        ChainMetadata {
                 slot_time: self.slot_time,
             },
             init_origin:     sender,
@@ -261,6 +259,8 @@ impl Chain {
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         // Find contract instance and artifact
+        // Update balance....
+        self.get_instance_mut(address)?.self_balance += amount;
         let instance = self.get_instance(address)?;
         // TODO: Charge energy for module lookup.
         let artifact = self.get_artifact(instance.module_reference)?;
@@ -271,17 +271,19 @@ impl Chain {
             return Err(ContractUpdateError::InsufficientFunds);
         }
         // Construct the context
-        let receive_ctx = ReceiveContextOpt {
-            metadata: ChainMetadataOpt {
-                slot_time: self.slot_time,
-            },
-            invoker,
-            self_address: address,
-            self_balance: instance.self_balance + amount,
-            sender: Address::Account(invoker),
-            owner: instance.owner,
-            sender_policies: account_info.policies.clone(),
+        let receive_ctx = v1::ReceiveContext {
             entrypoint: entrypoint.to_owned(),
+            common:     v0::ReceiveContext {
+                metadata: ChainMetadata {
+                    slot_time: self.slot_time,
+                },
+                invoker,
+                self_address: address,
+                self_balance: instance.self_balance,
+                sender: Address::Account(invoker),
+                owner: instance.owner,
+                sender_policies: account_info.policies.clone(),
+            },
         };
         let receive_name = OwnedReceiveName::new_unchecked(format!(
             "{}.{}",
@@ -295,7 +297,14 @@ impl Chain {
         let instance_state = v1::InstanceState::new(loader, inner);
 
         // Update the contract
-        let res = v1::invoke_receive::<_, _, _, _, ReceiveContextOpt, ReceiveContextOpt>(
+        let res = v1::invoke_receive::<
+            _,
+            _,
+            _,
+            _,
+            v1::ReceiveContext<v0::OwnedPolicyBytes>,
+            v1::ReceiveContext<v0::OwnedPolicyBytes>,
+        >(
             std::sync::Arc::new(artifact.clone()), /* TODO: I made ProcessedImports cloneable
                                                     * for this to work. */
             receive_ctx,
@@ -348,51 +357,113 @@ impl Chain {
             v1::ReceiveResult::Interrupt {
                 remaining_energy,
                 state_changed,
-                logs,
+                logs: interrupt_logs,
                 config,
                 interrupt,
             } => {
-                if let v1::Interrupt::Transfer { to, amount } = interrupt {
-                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
-                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                match interrupt {
+                    v1::Interrupt::Transfer { to, amount } => {
+                        let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                        let transaction_fee = self.calculate_energy_cost(energy_used);
 
-                    let response = {
-                        // Check if receiver account exists
-                        if !self.accounts.contains_key(&to) {
-                            InvokeResponse::Failure {
-                                kind: v1::InvokeFailure::NonExistentAccount,
-                            }
-                        } else if self.get_instance(address)?.self_balance < amount {
-                            InvokeResponse::Failure {
-                                kind: v1::InvokeFailure::InsufficientAmount,
-                            }
-                        } else {
-                            // Move the CCD
-                            self.get_account_mut(to)?.balance += amount;
-                            let instance = self.get_instance_mut(address)?;
-                            instance.self_balance -= amount;
+                        let response = {
+                            // Check if receiver account exists
+                            if !self.accounts.contains_key(&to) {
+                                InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                }
+                            } else if self.get_instance(address)?.self_balance < amount {
+                                InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::InsufficientAmount,
+                                }
+                            } else {
+                                // Move the CCD
+                                self.get_account_mut(to)?.balance += amount;
+                                let instance = self.get_instance_mut(address)?;
+                                instance.self_balance -= amount;
 
-                            InvokeResponse::Success {
-                                new_balance: instance.self_balance,
-                                data:        None,
+                                InvokeResponse::Success {
+                                    new_balance: instance.self_balance,
+                                    data:        None,
+                                }
                             }
-                        }
-                    };
+                        };
 
-                    // Resume execution
-                    let resume_res = v1::resume_receive(
-                        config, // TODO: Need to change some things so it can use the ReceiveCtxOpt
-                        response,
-                        InterpreterEnergy::from(remaining_energy),
-                        &mut mutable_state,
-                        state_changed,
-                        loader,
-                    );
-                    // TODO: Do we need to check energy here?
-                } else {
-                    todo!("Handle other interrupts")
+                        // Resume execution
+                        let res = match v1::resume_receive(
+                            config,
+                            response,
+                            InterpreterEnergy::from(remaining_energy),
+                            &mut mutable_state,
+                            state_changed,
+                            loader,
+                        ) {
+                            Ok(r) => match r {
+                                v1::ReceiveResult::Success {
+                                    logs: resume_logs,
+                                    state_changed,
+                                    return_value,
+                                    remaining_energy,
+                                } => {
+                                    let energy_used =
+                                        Energy::from(energy_reserved.energy - remaining_energy);
+                                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                                    if state_changed {
+                                        let instance = self.get_instance_mut(address)?;
+                                        let mut collector = v1::trie::SizeCollector::default();
+                                        instance.state =
+                                            mutable_state.freeze(&mut loader, &mut collector);
+                                        // TODO: Do we need to charge for
+                                        // storage?
+                                    }
+                                    (
+                                        Ok(SuccessfulContractUpdate {
+                                            host_events: vec![
+                                                ChainEvent::Resumed {
+                                                    address,
+                                                    success: true,
+                                                },
+                                                ChainEvent::Interrupted {
+                                                    address,
+                                                    logs: interrupt_logs,
+                                                },
+                                            ],
+                                            transfers: vec![(to, amount)],
+                                            energy_used,
+                                            transaction_fee,
+                                            return_value: ContractReturnValue(return_value),
+                                            state_changed, /* TODO: Which state_changed should be
+                                                            * returned here? */
+                                            logs: resume_logs,
+                                        }),
+                                        transaction_fee,
+                                    )
+                                }
+                                v1::ReceiveResult::Interrupt {
+                                    remaining_energy,
+                                    state_changed,
+                                    logs,
+                                    config,
+                                    interrupt,
+                                } => todo!(),
+                                v1::ReceiveResult::Reject {
+                                    reason,
+                                    return_value,
+                                    remaining_energy,
+                                } => todo!("reason: {}", reason),
+                                v1::ReceiveResult::Trap {
+                                    error,
+                                    remaining_energy,
+                                } => todo!(),
+                                v1::ReceiveResult::OutOfEnergy => todo!(),
+                            },
+                            Err(_) => todo!(),
+                        };
+                        res
+                        // TODO: Do we need to check energy here?
+                    }
+                    _ => todo!("Handle other interrupts"),
                 }
-                todo!()
             }
             v1::ReceiveResult::Reject {
                 reason,
@@ -446,8 +517,8 @@ impl Chain {
                 )
             }
         };
-        // Charge the transaction fee
-        self.get_account_mut(invoker)?.balance -= transaction_fee;
+        // Charge the transaction fee and amount
+        self.get_account_mut(invoker)?.balance -= transaction_fee + amount;
         res
     }
 
@@ -471,17 +542,19 @@ impl Chain {
             return Err(ContractUpdateError::InsufficientFunds);
         }
         // Construct the context
-        let receive_ctx = ReceiveContextOpt {
-            metadata: ChainMetadataOpt {
-                slot_time: self.slot_time,
-            },
-            invoker,
-            self_address: address,
-            self_balance: instance.self_balance + amount,
-            sender: Address::Account(invoker),
-            owner: instance.owner,
-            sender_policies: account_info.policies.clone(),
+        let receive_ctx = v1::ReceiveContext {
             entrypoint: entrypoint.to_owned(),
+            common:     v0::ReceiveContext {
+                metadata: ChainMetadata {
+                    slot_time: self.slot_time,
+                },
+                invoker,
+                self_address: address,
+                self_balance: instance.self_balance + amount,
+                sender: Address::Account(invoker),
+                owner: instance.owner,
+                sender_policies: account_info.policies.clone(),
+            },
         };
         let receive_name = OwnedReceiveName::new_unchecked(format!(
             "{}.{}",
@@ -495,7 +568,14 @@ impl Chain {
         let instance_state = v1::InstanceState::new(loader, inner);
 
         // Update the contract
-        let res = v1::invoke_receive::<_, _, _, _, ReceiveContextOpt, ReceiveContextOpt>(
+        let res = v1::invoke_receive::<
+            _,
+            _,
+            _,
+            _,
+            v1::ReceiveContext<v0::OwnedPolicyBytes>,
+            v1::ReceiveContext<v0::OwnedPolicyBytes>,
+        >(
             std::sync::Arc::new(artifact.clone()), /* TODO: I made ProcessedImports cloneable
                                                     * for this to work. */
             receive_ctx,
@@ -597,7 +677,7 @@ impl Chain {
         ContractAddress::new(index, subindex)
     }
 
-    pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = Some(slot_time); }
+    pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
 
     pub fn set_energy_per_micro_ccd(&mut self, energy_per_micro_ccd: ExchangeRate) {
         self.micro_ccd_per_energy = energy_per_micro_ccd;
@@ -680,117 +760,33 @@ impl From<AccountMissing> for ContractUpdateError {
     fn from(_: AccountMissing) -> Self { Self::AccountDoesNotExist }
 }
 
-/// A chain metadata with an optional field.
-/// Used when simulating contracts to allow the user to only specify the
-/// necessary context fields.
-/// The default value is `None` for all `Option` fields.
-pub(crate) struct ChainMetadataOpt {
-    slot_time: Option<SlotTime>,
-}
-
-impl v0::HasChainMetadata for ChainMetadataOpt {
-    fn slot_time(&self) -> ExecResult<SlotTime> {
-        unwrap_ctx_field(self.slot_time, "metadata.slotTime")
-    }
-}
-
-/// An init context with optional fields.
-/// Used when simulating contracts to allow the user to only specify the
-/// context fields used by the contract.
-/// The default value is `None` for all `Option` fields and the default of
-/// `ChainMetadataOpt` for `metadata`.
-pub(crate) struct InitContextOpt {
-    metadata:        ChainMetadataOpt,
-    init_origin:     AccountAddress,
-    sender_policies: Option<v0::OwnedPolicyBytes>,
-}
-
-impl v0::HasInitContext for InitContextOpt {
-    type MetadataType = ChainMetadataOpt;
-
-    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
-
-    fn init_origin(&self) -> ExecResult<&AccountAddress> { Ok(&self.init_origin) }
-
-    fn sender_policies(&self) -> ExecResult<&[u8]> {
-        unwrap_ctx_field(
-            self.sender_policies.as_ref().map(Vec::as_ref),
-            "senderPolicies",
-        )
-    }
-}
-
-/// A receive context with optional fields.
-/// Used when simulating contracts to allow the user to only specify the
-/// context fields used by the contract.
-/// The default value is `None` for all `Option` fields and the default of
-/// `ChainMetadataOpt` for `metadata`.
-pub(crate) struct ReceiveContextOpt {
-    metadata:        ChainMetadataOpt,
-    invoker:         AccountAddress,
-    self_address:    ContractAddress,
-    self_balance:    Amount,
-    sender:          Address,
-    owner:           AccountAddress,
-    sender_policies: Option<v0::OwnedPolicyBytes>,
-    /// The entrypoint name invoked. Only relevant for fallback receive
-    /// functions.
-    entrypoint:      OwnedEntrypointName,
-}
-
-impl v0::HasReceiveContext for ReceiveContextOpt {
-    type MetadataType = ChainMetadataOpt;
-
-    fn metadata(&self) -> &Self::MetadataType { &self.metadata }
-
-    fn invoker(&self) -> ExecResult<&AccountAddress> { Ok(&self.invoker) }
-
-    fn self_address(&self) -> ExecResult<&ContractAddress> { Ok(&self.self_address) }
-
-    fn self_balance(&self) -> ExecResult<Amount> { Ok(self.self_balance) }
-
-    fn sender(&self) -> ExecResult<&Address> { Ok(&self.sender) }
-
-    fn owner(&self) -> ExecResult<&AccountAddress> { Ok(&self.owner) }
-
-    fn sender_policies(&self) -> ExecResult<&[u8]> {
-        unwrap_ctx_field(
-            self.sender_policies.as_ref().map(Vec::as_ref),
-            "senderPolicies",
-        )
-    }
-}
-
-impl v1::HasReceiveContext for ReceiveContextOpt {
-    fn entrypoint(&self) -> ExecResult<EntrypointName> { Ok(self.entrypoint.as_entrypoint_name()) }
-}
-
-// Error handling when unwrapping.
-fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> ExecResult<A> {
-    match opt {
-        Some(v) => Ok(v),
-        None => Err(anyhow!(
-            "Missing field '{}' in the context. Make sure to provide all the fields that the \
-             contract uses.",
-            name,
-        )),
-    }
-}
-
 pub struct AccountInfo {
     /// The account balance. TODO: Do we need the three types of balances?
     pub balance: Amount,
-    /// Optional test policies.
-    policies:    Option<v0::OwnedPolicyBytes>,
+    /// Account policies.
+    policies:    v0::OwnedPolicyBytes,
+}
+
+pub struct TestPolicies(v0::OwnedPolicyBytes);
+
+impl TestPolicies {
+    // TODO: Make correctly structured policies ~= Vec<Tuple<Credential,
+    // PolicyBytes>>.
+    pub fn empty() -> Self { Self(v0::OwnedPolicyBytes::new()) }
+
+    // TODO: Add helper functions for creating arbitrary valid policies.
 }
 
 impl AccountInfo {
-    pub fn new(balance: Amount) -> Self {
+    pub fn new_with_policy(balance: Amount, policies: TestPolicies) -> Self {
         Self {
             balance,
-            policies: None,
+            policies: policies.0,
         }
     }
+
+    /// Create new account info with empty account policies.
+    pub fn new(balance: Amount) -> Self { Self::new_with_policy(balance, TestPolicies::empty()) }
 }
 
 #[derive(Debug)]
@@ -1143,7 +1139,7 @@ mod tests {
     fn update_with_account_transfer_works() {
         let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
         let initial_balance = Amount::from_ccd(10000);
-        let transfer_amount = Amount::from_ccd(123);
+        let transfer_amount = Amount::from_ccd(1);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
         chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
@@ -1169,7 +1165,7 @@ mod tests {
                 EntrypointName::new_unchecked("receive"),
                 ContractParameter::from_typed(&ACC_1),
                 transfer_amount,
-                Energy::from(10000u64),
+                Energy::from(4000000u64),
             )
             .expect("Updating valid contract should work");
 
@@ -1201,8 +1197,8 @@ mod tests {
         );
         assert_eq!(chain.contracts.len(), 1);
         assert!(res_update.state_changed);
-        assert_eq!(res_update.return_value.0, [2u8]);
+        assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
         // Assert that the updated state is persisted.
-        assert_eq!(res_view.return_value.0, [2u8]);
+        assert_eq!(res_view.return_value.0, [2, 0, 0, 0]);
     }
 }
