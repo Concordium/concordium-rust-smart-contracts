@@ -10,8 +10,8 @@ use std::{
 };
 use wasm_chain_integration::{
     v0,
-    v1::{self, ConcordiumAllowedImports, InvokeResponse, ReturnValue},
-    InterpreterEnergy,
+    v1::{self, trie::MutableState, ConcordiumAllowedImports, InvokeResponse, ReturnValue},
+    ExecResult, InterpreterEnergy,
 };
 use wasm_transform::artifact;
 
@@ -262,14 +262,13 @@ impl Chain {
         // Update balance....
         self.get_instance_mut(address)?.self_balance += amount;
         let instance = self.get_instance(address)?;
-        // TODO: Charge energy for module lookup.
-        let artifact = self.get_artifact(instance.module_reference)?;
-
         // Ensure account exists and can pay for the reserved energy
         let account_info = self.get_account(invoker)?;
         if account_info.balance < self.calculate_energy_cost(energy_reserved) {
             return Err(ContractUpdateError::InsufficientFunds);
         }
+        // TODO: Check if entrypoint exists or if the fallback should be used.
+
         // Construct the context
         let receive_ctx = v1::ReceiveContext {
             entrypoint: entrypoint.to_owned(),
@@ -291,22 +290,154 @@ impl Chain {
             entrypoint
         ));
 
+        // TODO: Charge energy for module lookup.
+        let artifact = self.get_artifact(instance.module_reference)?;
+
         let mut loader = v1::trie::Loader::new(&[][..]);
         let mut mutable_state = instance.state.thaw();
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
-        // Update the contract
-        let res = v1::invoke_receive::<
-            _,
-            _,
-            _,
-            _,
-            v1::ReceiveContext<v0::OwnedPolicyBytes>,
-            v1::ReceiveContext<v0::OwnedPolicyBytes>,
-        >(
-            std::sync::Arc::new(artifact.clone()), /* TODO: I made ProcessedImports cloneable
-                                                    * for this to work. */
+        struct ProcessReceiveData<'a, 'b, 'c> {
+            address:       ContractAddress,
+            contract_name: OwnedContractName,
+            amount:        Amount,
+            entrypoint:    OwnedEntrypointName,
+            chain:         &'a mut Chain,
+            chain_events:  Vec<ChainEvent>,
+            mutable_state: &'b mut MutableState,
+            loader:        v1::trie::Loader<&'c [u8]>,
+        }
+
+        fn process(
+            data: &mut ProcessReceiveData,
+            res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
+        ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
+            match res {
+                Ok(r) => match r {
+                    v1::ReceiveResult::Success {
+                        logs,
+                        state_changed,
+                        return_value,
+                        remaining_energy,
+                    } => {
+                        let update_event = ChainEvent::Updated {
+                            address:    data.address,
+                            contract:   data.contract_name.clone(),
+                            entrypoint: data.entrypoint.clone(),
+                            amount:     data.amount,
+                        };
+                        if state_changed {
+                            let instance = data
+                                .chain
+                                .get_instance_mut(data.address)
+                                .expect("Instance known to exist");
+                            let mut collector = v1::trie::SizeCollector::default();
+                            instance.state =
+                                data.mutable_state.freeze(&mut data.loader, &mut collector);
+                            // TODO: Charge energy for this
+                        }
+                        // Add update event
+                        data.chain_events.push(update_event);
+                        Ok(v1::ReceiveResult::Success {
+                            logs,
+                            state_changed,
+                            return_value,
+                            remaining_energy,
+                        })
+                    }
+                    v1::ReceiveResult::Interrupt {
+                        remaining_energy,
+                        state_changed: _,
+                        logs,
+                        config,
+                        interrupt,
+                    } => {
+                        let interrupt_event = ChainEvent::Interrupted {
+                            address: data.address,
+                            logs,
+                        };
+                        data.chain_events.push(interrupt_event);
+                        match interrupt {
+                            v1::Interrupt::Transfer { to, amount } => {
+                                let response = {
+                                    // Check if receiver account exists
+                                    if !data.chain.accounts.contains_key(&to) {
+                                        InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::NonExistentAccount,
+                                        }
+                                    } else if data
+                                        .chain
+                                        .get_instance(data.address)
+                                        .expect("Contract is known to exist")
+                                        .self_balance
+                                        < amount
+                                    {
+                                        InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::InsufficientAmount,
+                                        }
+                                    } else {
+                                        // Move the CCD
+                                        data.chain
+                                            .get_account_mut(to)
+                                            .expect("Account is already known to exist")
+                                            .balance += amount;
+                                        let instance = data
+                                            .chain
+                                            .get_instance_mut(data.address)
+                                            .expect("Contract is known to exist");
+                                        instance.self_balance -= amount;
+
+                                        // Add transfer event
+                                        data.chain_events.push(ChainEvent::Transferred {
+                                            from: data.address,
+                                            amount,
+                                            to,
+                                        });
+
+                                        InvokeResponse::Success {
+                                            new_balance: instance.self_balance,
+                                            data:        None,
+                                        }
+                                    }
+                                };
+                                let success = matches!(response, InvokeResponse::Success { .. });
+                                // Add resume event
+                                data.chain_events.push(ChainEvent::Resumed {
+                                    address: data.address,
+                                    success,
+                                });
+
+                                // Resume
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    InterpreterEnergy::from(remaining_energy),
+                                    data.mutable_state,
+                                    false, // never changes on transfers
+                                    data.loader,
+                                )
+                            }
+                            v1::Interrupt::Call {
+                                address,
+                                parameter,
+                                name,
+                                amount,
+                            } => todo!(),
+                            v1::Interrupt::Upgrade { module_ref } => todo!(),
+                            v1::Interrupt::QueryAccountBalance { address } => todo!(),
+                            v1::Interrupt::QueryContractBalance { address } => todo!(),
+                            v1::Interrupt::QueryExchangeRates => todo!(),
+                        }
+                    }
+                    x => Ok(x),
+                },
+                Err(e) => Err(e),
+            }
+        }
+
+        let mut res = v1::invoke_receive(
+            std::sync::Arc::new(artifact.clone()),
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
@@ -322,201 +453,116 @@ impl Chain {
                 limit_logs_and_return_values: false,
                 support_queries:              true,
             },
-        )
-        .map_err(|e| ContractUpdateError::StringError(e.to_string()))?;
+        );
+
+        let mut data = ProcessReceiveData {
+            address,
+            contract_name: instance.contract_name.clone(),
+            amount,
+            entrypoint: entrypoint.to_owned(),
+            chain: self,
+            chain_events: Vec::new(),
+            mutable_state: &mut mutable_state,
+            loader,
+        };
+
+        // Is false if there are still interrupts to process.
+        let mut last_processing_round = !matches!(res, Ok(v1::ReceiveResult::Interrupt { .. }));
+
+        loop {
+            res = process(&mut data, res);
+            if last_processing_round {
+                break;
+            } else {
+                last_processing_round = !matches!(res, Ok(v1::ReceiveResult::Interrupt { .. }));
+            }
+        }
+        let chain_events = data.chain_events;
 
         let (res, transaction_fee) = match res {
-            v1::ReceiveResult::Success {
-                logs,
-                state_changed,
-                return_value,
-                remaining_energy,
-            } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                if state_changed {
-                    let instance = self.get_instance_mut(address)?;
-                    let mut collector = v1::trie::SizeCollector::default();
-                    instance.state = mutable_state.freeze(&mut loader, &mut collector);
-                    // TODO: Do we need to charge for storage?
-                }
-                (
-                    Ok(SuccessfulContractUpdate {
-                        host_events: Vec::new(), // TODO: add host events
-                        transfers: Vec::new(),   /* TODO: add transfers (or add fn to compute
-                                                  * based on host events) */
-                        energy_used,
-                        transaction_fee,
-                        return_value: ContractReturnValue(return_value),
-                        state_changed,
-                        logs,
-                    }),
-                    transaction_fee,
-                )
-            }
-            v1::ReceiveResult::Interrupt {
-                remaining_energy,
-                state_changed,
-                logs: interrupt_logs,
-                config,
-                interrupt,
-            } => {
-                match interrupt {
-                    v1::Interrupt::Transfer { to, amount } => {
-                        let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
-                        let transaction_fee = self.calculate_energy_cost(energy_used);
-
-                        let response = {
-                            // Check if receiver account exists
-                            if !self.accounts.contains_key(&to) {
-                                InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::NonExistentAccount,
-                                }
-                            } else if self.get_instance(address)?.self_balance < amount {
-                                InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::InsufficientAmount,
-                                }
-                            } else {
-                                // Move the CCD
-                                self.get_account_mut(to)?.balance += amount;
-                                let instance = self.get_instance_mut(address)?;
-                                instance.self_balance -= amount;
-
-                                InvokeResponse::Success {
-                                    new_balance: instance.self_balance,
-                                    data:        None,
-                                }
-                            }
-                        };
-
-                        // Resume execution
-                        let res = match v1::resume_receive(
-                            config,
-                            response,
-                            InterpreterEnergy::from(remaining_energy),
-                            &mut mutable_state,
+            Ok(r) => match r {
+                v1::ReceiveResult::Success {
+                    logs,
+                    state_changed,
+                    return_value,
+                    remaining_energy,
+                } => {
+                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                    (
+                        Ok(SuccessfulContractUpdate {
+                            chain_events,
+                            transfers: Vec::new(), /* TODO: add transfers (or
+                                                    * add fn to compute
+                                                    * based on host events) */
+                            energy_used,
+                            transaction_fee,
+                            return_value: ContractReturnValue(return_value),
                             state_changed,
-                            loader,
-                        ) {
-                            Ok(r) => match r {
-                                v1::ReceiveResult::Success {
-                                    logs: resume_logs,
-                                    state_changed,
-                                    return_value,
-                                    remaining_energy,
-                                } => {
-                                    let energy_used =
-                                        Energy::from(energy_reserved.energy - remaining_energy);
-                                    let transaction_fee = self.calculate_energy_cost(energy_used);
-                                    if state_changed {
-                                        let instance = self.get_instance_mut(address)?;
-                                        let mut collector = v1::trie::SizeCollector::default();
-                                        instance.state =
-                                            mutable_state.freeze(&mut loader, &mut collector);
-                                        // TODO: Do we need to charge for
-                                        // storage?
-                                    }
-                                    (
-                                        Ok(SuccessfulContractUpdate {
-                                            host_events: vec![
-                                                ChainEvent::Resumed {
-                                                    address,
-                                                    success: true,
-                                                },
-                                                ChainEvent::Interrupted {
-                                                    address,
-                                                    logs: interrupt_logs,
-                                                },
-                                            ],
-                                            transfers: vec![(to, amount)],
-                                            energy_used,
-                                            transaction_fee,
-                                            return_value: ContractReturnValue(return_value),
-                                            state_changed, /* TODO: Which state_changed should be
-                                                            * returned here? */
-                                            logs: resume_logs,
-                                        }),
-                                        transaction_fee,
-                                    )
-                                }
-                                v1::ReceiveResult::Interrupt {
-                                    remaining_energy,
-                                    state_changed,
-                                    logs,
-                                    config,
-                                    interrupt,
-                                } => todo!(),
-                                v1::ReceiveResult::Reject {
-                                    reason,
-                                    return_value,
-                                    remaining_energy,
-                                } => todo!("reason: {}", reason),
-                                v1::ReceiveResult::Trap {
-                                    error,
-                                    remaining_energy,
-                                } => todo!(),
-                                v1::ReceiveResult::OutOfEnergy => todo!(),
-                            },
-                            Err(_) => todo!(),
-                        };
-                        res
-                        // TODO: Do we need to check energy here?
-                    }
-                    _ => todo!("Handle other interrupts"),
+                            logs,
+                        }),
+                        transaction_fee,
+                    )
                 }
-            }
-            v1::ReceiveResult::Reject {
-                reason,
-                return_value,
-                remaining_energy,
-            } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                (
-                    Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::Reject {
-                            reason,
-                            return_value,
-                            energy_used,
-                            transaction_fee,
-                            logs: v0::Logs::default(), // TODO: Get logs on failures.
-                        },
-                    )),
-                    transaction_fee,
-                )
-            }
-            v1::ReceiveResult::Trap {
-                error,
-                remaining_energy,
-            } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                (
-                    Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::Trap {
-                            error,
-                            energy_used,
-                            transaction_fee,
-                            logs: v0::Logs::default(), // TODO: Get logs on failures.
-                        },
-                    )),
-                    transaction_fee,
-                )
-            }
-            v1::ReceiveResult::OutOfEnergy => {
-                let transaction_fee = self.calculate_energy_cost(energy_reserved);
-                (
-                    Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::OutOFEnergy {
-                            energy_used: energy_reserved,
-                            transaction_fee,
-                            logs: v0::Logs::default(), // TODO: Get logs on failures.
-                        },
-                    )),
-                    transaction_fee,
-                )
-            }
+                v1::ReceiveResult::Interrupt { .. } => panic!("Should never happen"),
+                v1::ReceiveResult::Reject {
+                    reason,
+                    return_value,
+                    remaining_energy,
+                } => {
+                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                    (
+                        Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::Reject {
+                                reason,
+                                return_value,
+                                energy_used,
+                                transaction_fee,
+                                logs: v0::Logs::default(), // TODO: Get logs on failures.
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                }
+                v1::ReceiveResult::Trap {
+                    error,
+                    remaining_energy,
+                } => {
+                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                    (
+                        Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::Trap {
+                                error,
+                                energy_used,
+                                transaction_fee,
+                                logs: v0::Logs::default(), // TODO: Get logs on failures.
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                }
+                v1::ReceiveResult::OutOfEnergy => {
+                    let transaction_fee = self.calculate_energy_cost(energy_reserved);
+                    (
+                        Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::OutOFEnergy {
+                                energy_used: energy_reserved,
+                                transaction_fee,
+                                logs: v0::Logs::default(), // TODO: Get logs on failures.
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                }
+            },
+            Err(e) => (
+                Err(ContractUpdateError::StringError(e.to_string())),
+                self.calculate_energy_cost(energy_reserved),
+            ),
         };
+
         // Charge the transaction fee and amount
         self.get_account_mut(invoker)?.balance -= transaction_fee + amount;
         res
@@ -606,9 +652,9 @@ impl Chain {
                 let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 Ok(SuccessfulContractUpdate {
-                    host_events: Vec::new(), // TODO: add host events
-                    transfers: Vec::new(),   /* TODO: add transfers (or add fn to compute
-                                              * based on host events) */
+                    chain_events: Vec::new(), // TODO: add host events
+                    transfers: Vec::new(),    /* TODO: add transfers (or add fn to compute
+                                               * based on host events) */
                     energy_used,
                     transaction_fee,
                     return_value: ContractReturnValue(return_value),
@@ -913,16 +959,22 @@ pub enum ChainEvent {
     Updated {
         address:    ContractAddress,
         contract:   OwnedContractName,
-        entrypoing: OwnedEntrypointName,
+        entrypoint: OwnedEntrypointName,
         amount:     Amount,
+    },
+    Transferred {
+        from:   ContractAddress,
+        amount: Amount,
+        to:     AccountAddress,
     },
 }
 
 // TODO: Consider adding function to aggregate all logs from the host_events.
+#[derive(Debug)]
 pub struct SuccessfulContractUpdate {
     /// Host events that occured. This includes interrupts, resumes, and
     /// upgrades.
-    pub host_events:     Vec<ChainEvent>,
+    pub chain_events:    Vec<ChainEvent>,
     pub transfers:       Vec<(AccountAddress, Amount)>,
     /// Energy used.
     pub energy_used:     Energy,
@@ -956,6 +1008,7 @@ pub struct SuccessfulContractInit {
     pub transaction_fee:  Amount,
 }
 
+#[derive(Debug)]
 pub struct ContractReturnValue(Vec<u8>);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1200,5 +1253,53 @@ mod tests {
         assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
         // Assert that the updated state is persisted.
         assert_eq!(res_view.return_value.0, [2, 0, 0, 0]);
+    }
+
+    #[test]
+    fn update_with_account_transfer_to_missing_account_fails() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let initial_balance = Amount::from_ccd(10000);
+        let transfer_amount = Amount::from_ccd(1);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+        let res_deploy = chain
+            .module_deploy(ACC_0, "integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_integrate"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Initializing valid contract should work");
+
+        let res_update = chain.contract_update(
+            ACC_0,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("receive"),
+            ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
+            transfer_amount,
+            Energy::from(4000000u64),
+        );
+
+        assert!(matches!(res_update, Err(_)));
+
+        // assert_eq!(
+        //     chain.account_balance(ACC_0),
+        //     Some(
+        //         initial_balance
+        //             - res_deploy.transaction_fee
+        //             - res_init.transaction_fee
+        //             - res_update.???
+        //     )
+        // );
+        // assert_eq!(chain.contracts.len(), 1);
+        // assert!(!res_update.state_changed);
+        // assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
+        // Assert that the updated state is persisted.
     }
 }
