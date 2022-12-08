@@ -298,144 +298,6 @@ impl Chain {
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
-        struct ProcessReceiveData<'a, 'b, 'c> {
-            address:       ContractAddress,
-            contract_name: OwnedContractName,
-            amount:        Amount,
-            entrypoint:    OwnedEntrypointName,
-            chain:         &'a mut Chain,
-            chain_events:  Vec<ChainEvent>,
-            mutable_state: &'b mut MutableState,
-            loader:        v1::trie::Loader<&'c [u8]>,
-        }
-
-        fn process(
-            data: &mut ProcessReceiveData,
-            res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
-        ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
-            match res {
-                Ok(r) => match r {
-                    v1::ReceiveResult::Success {
-                        logs,
-                        state_changed,
-                        return_value,
-                        remaining_energy,
-                    } => {
-                        let update_event = ChainEvent::Updated {
-                            address:    data.address,
-                            contract:   data.contract_name.clone(),
-                            entrypoint: data.entrypoint.clone(),
-                            amount:     data.amount,
-                        };
-                        if state_changed {
-                            let instance = data
-                                .chain
-                                .get_instance_mut(data.address)
-                                .expect("Instance known to exist");
-                            let mut collector = v1::trie::SizeCollector::default();
-                            instance.state =
-                                data.mutable_state.freeze(&mut data.loader, &mut collector);
-                            // TODO: Charge energy for this
-                        }
-                        // Add update event
-                        data.chain_events.push(update_event);
-                        Ok(v1::ReceiveResult::Success {
-                            logs,
-                            state_changed,
-                            return_value,
-                            remaining_energy,
-                        })
-                    }
-                    v1::ReceiveResult::Interrupt {
-                        remaining_energy,
-                        state_changed: _,
-                        logs,
-                        config,
-                        interrupt,
-                    } => {
-                        let interrupt_event = ChainEvent::Interrupted {
-                            address: data.address,
-                            logs,
-                        };
-                        data.chain_events.push(interrupt_event);
-                        match interrupt {
-                            v1::Interrupt::Transfer { to, amount } => {
-                                let response = {
-                                    // Check if receiver account exists
-                                    if !data.chain.accounts.contains_key(&to) {
-                                        InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::NonExistentAccount,
-                                        }
-                                    } else if data
-                                        .chain
-                                        .get_instance(data.address)
-                                        .expect("Contract is known to exist")
-                                        .self_balance
-                                        < amount
-                                    {
-                                        InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::InsufficientAmount,
-                                        }
-                                    } else {
-                                        // Move the CCD
-                                        data.chain
-                                            .get_account_mut(to)
-                                            .expect("Account is already known to exist")
-                                            .balance += amount;
-                                        let instance = data
-                                            .chain
-                                            .get_instance_mut(data.address)
-                                            .expect("Contract is known to exist");
-                                        instance.self_balance -= amount;
-
-                                        // Add transfer event
-                                        data.chain_events.push(ChainEvent::Transferred {
-                                            from: data.address,
-                                            amount,
-                                            to,
-                                        });
-
-                                        InvokeResponse::Success {
-                                            new_balance: instance.self_balance,
-                                            data:        None,
-                                        }
-                                    }
-                                };
-                                let success = matches!(response, InvokeResponse::Success { .. });
-                                // Add resume event
-                                data.chain_events.push(ChainEvent::Resumed {
-                                    address: data.address,
-                                    success,
-                                });
-
-                                // Resume
-                                v1::resume_receive(
-                                    config,
-                                    response,
-                                    InterpreterEnergy::from(remaining_energy),
-                                    data.mutable_state,
-                                    false, // never changes on transfers
-                                    data.loader,
-                                )
-                            }
-                            v1::Interrupt::Call {
-                                address,
-                                parameter,
-                                name,
-                                amount,
-                            } => todo!(),
-                            v1::Interrupt::Upgrade { module_ref } => todo!(),
-                            v1::Interrupt::QueryAccountBalance { address } => todo!(),
-                            v1::Interrupt::QueryContractBalance { address } => todo!(),
-                            v1::Interrupt::QueryExchangeRates => todo!(),
-                        }
-                    }
-                    x => Ok(x),
-                },
-                Err(e) => Err(e),
-            }
-        }
-
         let mut res = v1::invoke_receive(
             std::sync::Arc::new(artifact.clone()),
             receive_ctx,
@@ -466,17 +328,7 @@ impl Chain {
             loader,
         };
 
-        // Is false if there are still interrupts to process.
-        let mut last_processing_round = !matches!(res, Ok(v1::ReceiveResult::Interrupt { .. }));
-
-        loop {
-            res = process(&mut data, res);
-            if last_processing_round {
-                break;
-            } else {
-                last_processing_round = !matches!(res, Ok(v1::ReceiveResult::Interrupt { .. }));
-            }
-        }
+        res = data.process(res);
         let chain_events = data.chain_events;
 
         let (res, transaction_fee) = match res {
@@ -774,6 +626,146 @@ impl Chain {
         address: AccountAddress,
     ) -> Result<&mut AccountInfo, AccountMissing> {
         self.accounts.get_mut(&address).ok_or(AccountMissing)
+    }
+}
+
+struct ProcessReceiveData<'a, 'b, 'c> {
+    address:       ContractAddress,
+    contract_name: OwnedContractName,
+    amount:        Amount,
+    entrypoint:    OwnedEntrypointName,
+    chain:         &'a mut Chain,
+    chain_events:  Vec<ChainEvent>,
+    mutable_state: &'b mut MutableState,
+    loader:        v1::trie::Loader<&'c [u8]>,
+}
+
+impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
+    fn process(
+        &mut self,
+        res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
+    ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
+        match res {
+            Ok(r) => match r {
+                v1::ReceiveResult::Success {
+                    logs,
+                    state_changed,
+                    return_value,
+                    remaining_energy,
+                } => {
+                    let update_event = ChainEvent::Updated {
+                        address:    self.address,
+                        contract:   self.contract_name.clone(),
+                        entrypoint: self.entrypoint.clone(),
+                        amount:     self.amount,
+                    };
+                    if state_changed {
+                        let instance = self
+                            .chain
+                            .get_instance_mut(self.address)
+                            .expect("Instance known to exist");
+                        let mut collector = v1::trie::SizeCollector::default();
+                        instance.state =
+                            self.mutable_state.freeze(&mut self.loader, &mut collector);
+                        // TODO: Charge energy for this
+                    }
+                    // Add update event
+                    self.chain_events.push(update_event);
+                    Ok(v1::ReceiveResult::Success {
+                        logs,
+                        state_changed,
+                        return_value,
+                        remaining_energy,
+                    })
+                }
+                v1::ReceiveResult::Interrupt {
+                    remaining_energy,
+                    state_changed: _,
+                    logs,
+                    config,
+                    interrupt,
+                } => {
+                    let interrupt_event = ChainEvent::Interrupted {
+                        address: self.address,
+                        logs,
+                    };
+                    self.chain_events.push(interrupt_event);
+                    match interrupt {
+                        v1::Interrupt::Transfer { to, amount } => {
+                            let response = {
+                                // Check if receiver account exists
+                                if !self.chain.accounts.contains_key(&to) {
+                                    InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::NonExistentAccount,
+                                    }
+                                } else if self
+                                    .chain
+                                    .get_instance(self.address)
+                                    .expect("Contract is known to exist")
+                                    .self_balance
+                                    < amount
+                                {
+                                    InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::InsufficientAmount,
+                                    }
+                                } else {
+                                    // Move the CCD
+                                    self.chain
+                                        .get_account_mut(to)
+                                        .expect("Account is already known to exist")
+                                        .balance += amount;
+                                    let instance = self
+                                        .chain
+                                        .get_instance_mut(self.address)
+                                        .expect("Contract is known to exist");
+                                    instance.self_balance -= amount;
+
+                                    // Add transfer event
+                                    self.chain_events.push(ChainEvent::Transferred {
+                                        from: self.address,
+                                        amount,
+                                        to,
+                                    });
+
+                                    InvokeResponse::Success {
+                                        new_balance: instance.self_balance,
+                                        data:        None,
+                                    }
+                                }
+                            };
+                            let success = matches!(response, InvokeResponse::Success { .. });
+                            // Add resume event
+                            self.chain_events.push(ChainEvent::Resumed {
+                                address: self.address,
+                                success,
+                            });
+
+                            // Resume
+                            self.process(v1::resume_receive(
+                                config,
+                                response,
+                                InterpreterEnergy::from(remaining_energy),
+                                &mut self.mutable_state.clone(),
+                                false, // never changes on transfers
+                                self.loader,
+                            ))
+                        }
+                        v1::Interrupt::Call {
+                            address,
+                            parameter,
+                            name,
+                            amount,
+                        } => todo!(),
+                        v1::Interrupt::Upgrade { module_ref } => todo!(),
+                        v1::Interrupt::QueryAccountBalance { address } => todo!(),
+                        v1::Interrupt::QueryContractBalance { address } => todo!(),
+                        v1::Interrupt::QueryExchangeRates => todo!(),
+                    }
+                }
+                x => Ok(x),
+            },
+            Err(e) => Err(e),
+        }
     }
 }
 
