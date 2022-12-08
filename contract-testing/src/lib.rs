@@ -34,6 +34,7 @@ pub struct Chain {
     next_contract_index:  u64,
 }
 
+#[derive(Clone)]
 pub struct ContractInstance {
     module_reference: ModuleReference,
     contract_name:    OwnedContractName,
@@ -248,8 +249,7 @@ impl Chain {
         res
     }
 
-    /// Can we get the return value here?
-    pub fn contract_update(
+    fn contract_update(
         &mut self,
         invoker: AccountAddress, // TODO: Should we add a sender field and allow contract senders?
         address: ContractAddress,
@@ -267,7 +267,21 @@ impl Chain {
         if account_info.balance < self.calculate_energy_cost(energy_reserved) {
             return Err(ContractUpdateError::InsufficientFunds);
         }
-        // TODO: Check if entrypoint exists or if the fallback should be used.
+        // Construct the receive name (or fallback receive name) and ensure its presence
+        // in the contract.
+        let receive_name = {
+            let artifact = self.get_artifact(instance.module_reference)?;
+            let contract_name = instance.contract_name.as_contract_name().contract_name();
+            let receive_name = format!("{}.{}", contract_name, entrypoint);
+            let fallback_receive_name = format!("{}.", contract_name);
+            if artifact.has_entrypoint(receive_name.as_str()) {
+                OwnedReceiveName::new_unchecked(receive_name)
+            } else if artifact.has_entrypoint(fallback_receive_name.as_str()) {
+                OwnedReceiveName::new_unchecked(fallback_receive_name)
+            } else {
+                return Err(ContractUpdateError::EntrypointDoesNotExist);
+            }
+        };
 
         // Construct the context
         let receive_ctx = v1::ReceiveContext {
@@ -284,11 +298,6 @@ impl Chain {
                 sender_policies: account_info.policies.clone(),
             },
         };
-        let receive_name = OwnedReceiveName::new_unchecked(format!(
-            "{}.{}",
-            instance.contract_name.as_contract_name().contract_name(),
-            entrypoint
-        ));
 
         // TODO: Charge energy for module lookup.
         let artifact = self.get_artifact(instance.module_reference)?;
@@ -331,6 +340,10 @@ impl Chain {
         res = data.process(res);
         let chain_events = data.chain_events;
 
+        // Used for rollback.
+        let accounts_backup = self.accounts.clone();
+        let contracts_backup = self.contracts.clone();
+
         let (res, transaction_fee) = match res {
             Ok(r) => match r {
                 v1::ReceiveResult::Success {
@@ -344,9 +357,6 @@ impl Chain {
                     (
                         Ok(SuccessfulContractUpdate {
                             chain_events,
-                            transfers: Vec::new(), /* TODO: add transfers (or
-                                                    * add fn to compute
-                                                    * based on host events) */
                             energy_used,
                             transaction_fee,
                             return_value: ContractReturnValue(return_value),
@@ -412,7 +422,7 @@ impl Chain {
             Err(e) => (
                 Err(ContractUpdateError::StringError(e.to_string())),
                 self.calculate_energy_cost(energy_reserved),
-            ),
+            ), // TODO: Incorrect cost
         };
 
         // Charge the transaction fee and amount
@@ -505,8 +515,6 @@ impl Chain {
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 Ok(SuccessfulContractUpdate {
                     chain_events: Vec::new(), // TODO: add host events
-                    transfers: Vec::new(),    /* TODO: add transfers (or add fn to compute
-                                               * based on host events) */
                     energy_used,
                     transaction_fee,
                     return_value: ContractReturnValue(return_value),
@@ -641,6 +649,10 @@ struct ProcessReceiveData<'a, 'b, 'c> {
 }
 
 impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
+    /// Process a receive function until completion.
+    ///
+    /// *Preconditions*:
+    /// - Contract instance exists in `chain.contracts`.
     fn process(
         &mut self,
         res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
@@ -798,6 +810,7 @@ impl From<AccountMissing> for ContractUpdateError {
     fn from(_: AccountMissing) -> Self { Self::AccountDoesNotExist }
 }
 
+#[derive(Clone)]
 pub struct AccountInfo {
     /// The account balance. TODO: Do we need the three types of balances?
     pub balance: Amount,
@@ -851,6 +864,8 @@ pub enum ContractUpdateError {
     ModuleDoesNotExist,
     /// Contract instance has not been initialized in test environment.
     InstanceDoesNotExist,
+    /// Entrypoint does not exist and neither does the fallback entrypoint.
+    EntrypointDoesNotExist,
     /// Account has not been created in test environment.
     AccountDoesNotExist,
     /// The account does not have enough funds to pay for the energy.
@@ -967,7 +982,6 @@ pub struct SuccessfulContractUpdate {
     /// Host events that occured. This includes interrupts, resumes, and
     /// upgrades.
     pub chain_events:    Vec<ChainEvent>,
-    pub transfers:       Vec<(AccountAddress, Amount)>,
     /// Energy used.
     pub energy_used:     Energy,
     /// Cost of transaction.
@@ -978,6 +992,32 @@ pub struct SuccessfulContractUpdate {
     pub state_changed:   bool,
     /// The logs produced before?/after? the last interrupt if any.
     pub logs:            v0::Logs,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Transfer {
+    pub from:   ContractAddress,
+    pub amount: Amount,
+    pub to:     AccountAddress,
+}
+
+impl SuccessfulContractUpdate {
+    pub fn transfers(&self) -> Vec<Transfer> {
+        self.chain_events
+            .iter()
+            .filter_map(|e| {
+                if let ChainEvent::Transferred { from, amount, to } = e {
+                    Some(Transfer {
+                        from:   *from,
+                        amount: *amount,
+                        to:     *to,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1240,6 +1280,11 @@ mod tests {
             chain.account_balance(ACC_1),
             Some(initial_balance + transfer_amount)
         );
+        assert_eq!(res_update.transfers(), [Transfer {
+            from:   res_init.contract_address,
+            amount: transfer_amount,
+            to:     ACC_1,
+        }]);
         assert_eq!(chain.contracts.len(), 1);
         assert!(res_update.state_changed);
         assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
@@ -1278,20 +1323,25 @@ mod tests {
             Energy::from(4000000u64),
         );
 
-        assert!(matches!(res_update, Err(_)));
-
-        // assert_eq!(
-        //     chain.account_balance(ACC_0),
-        //     Some(
-        //         initial_balance
-        //             - res_deploy.transaction_fee
-        //             - res_init.transaction_fee
-        //             - res_update.???
-        //     )
-        // );
-        // assert_eq!(chain.contracts.len(), 1);
-        // assert!(!res_update.state_changed);
-        // assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
-        // Assert that the updated state is persisted.
+        match res_update {
+            Err(ContractUpdateError::ValidChainError(FailedContractInteraction::Reject {
+                reason,
+                transaction_fee,
+                ..
+            })) => {
+                assert_eq!(reason, -3); // Corresponds to contract error TransactionErrorAccountMissing
+                assert_eq!(
+                    // TODO: Handle rollback of account balances.
+                    chain.account_balance(ACC_0),
+                    Some(
+                        initial_balance
+                            - res_deploy.transaction_fee
+                            - res_init.transaction_fee
+                            - transaction_fee
+                    )
+                );
+            }
+            _ => panic!("Expected contract update to fail"),
+        }
     }
 }
