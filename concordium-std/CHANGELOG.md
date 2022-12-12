@@ -3,6 +3,7 @@
 ## Unreleased changes
 
 - Add a new primitive `get_random` for generating random numbers in Wasm code testing; `get_random` can be used in tests only, not available for smart contracts on the chain.
+- Fix a linking issue when compiling contracts to native code on Windows and OSX.
 
 ## concordium-std 5.0.0 (2022-11-21)
 

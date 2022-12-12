@@ -299,6 +299,10 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
     #[no_mangle]
+    fn upgrade(_module_ref: *const u8) -> u64 {
+        unimplemented!("Dummy function! Not to be executed.")
+    }
+    #[no_mangle]
     extern "C" fn get_parameter_size(_i: u32) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
