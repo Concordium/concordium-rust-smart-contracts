@@ -309,6 +309,7 @@ dependencies = [
  "concordium-contracts-common",
  "concordium_base",
  "sha2 0.10.6",
+ "thiserror",
  "wasm-chain-integration",
  "wasm-transform",
 ]

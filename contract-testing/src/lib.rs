@@ -1,3 +1,4 @@
+use anyhow::bail;
 use concordium_base::base::{Energy, ExchangeRate};
 use concordium_contracts_common::*;
 use sha2::{Digest, Sha256};
@@ -8,6 +9,7 @@ use std::{
     },
     path::Path,
 };
+use thiserror::Error;
 use wasm_chain_integration::{
     v0,
     v1::{self, trie::MutableState, ConcordiumAllowedImports, InvokeResponse, ReturnValue},
@@ -122,7 +124,7 @@ impl Chain {
     ) -> Result<SuccessfulContractInit, ContractInitError> {
         // Lookup artifact
         let artifact = self.get_artifact(module_reference)?;
-        let mut transaction_fee = self.lookup_module_cost(&artifact);
+        let mut transaction_fee = self.calculate_energy_cost(self.lookup_module_cost(&artifact));
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
         let account_info = self.get_account(sender)?;
@@ -240,36 +242,41 @@ impl Chain {
         res
     }
 
-    fn contract_update(
+    /// Used for handling contract invokes internally.
+    ///
+    /// Precondition:
+    ///  - `invoker` exists
+    ///  - `invoker` has sufficient balance to pay for `remaining_energy`
+    ///
+    ///  TODO: Use proper error types instead of anyhow.
+    fn contract_update_aux(
         &mut self,
-        invoker: AccountAddress, // TODO: Should we add a sender field and allow contract senders?
+        invoker: AccountAddress,
+        sender: Address,
         address: ContractAddress,
-        entrypoint: EntrypointName,
-        parameter: ContractParameter,
+        entrypoint: OwnedEntrypointName,
+        parameter: Vec<u8>,
         amount: Amount,
-        energy_reserved: Energy,
-    ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.get_account(invoker)?;
-        // Save policies for later
-        let account_policies = account_info.policies.clone();
-        if account_info.balance < self.calculate_energy_cost(energy_reserved) + amount {
-            return Err(ContractUpdateError::InsufficientFunds);
+        remaining_energy: &mut Energy,
+        chain_events: &mut Vec<ChainEvent>,
+    ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
+        // Move the amount from the sender to the contract.
+        match sender {
+            Address::Account(addr) => {
+                self.get_account_mut(addr)?.balance -= amount;
+            }
+            Address::Contract(addr) => {
+                self.get_instance_mut(addr)?.self_balance -= amount;
+            }
         }
-
-        // Save backups of accounts and contracts in case of rollbacks.
-        let accounts_backup = self.accounts.clone();
-        let contracts_backup = self.contracts.clone();
-
-        // Move the amount from the invoker to the contract.
-        self.get_account_mut(invoker)?.balance -= amount;
         self.get_instance_mut(address)?.self_balance += amount;
 
         // Get the instance and artifact. To be used in several places.
         let instance = self.get_instance(address)?;
         let artifact = self.get_artifact(instance.module_reference)?;
-        // Calculate cost of looking up module.
-        let mut transaction_fee = self.lookup_module_cost(&artifact);
+        // Subtract the cost of looking up the module
+        *remaining_energy =
+            Energy::from(remaining_energy.energy - self.lookup_module_cost(&artifact).energy);
 
         // Construct the receive name (or fallback receive name) and ensure its presence
         // in the contract.
@@ -282,7 +289,7 @@ impl Chain {
             } else if artifact.has_entrypoint(fallback_receive_name.as_str()) {
                 OwnedReceiveName::new_unchecked(fallback_receive_name)
             } else {
-                return Err(ContractUpdateError::EntrypointDoesNotExist);
+                bail!("Entrypoint does not exist.");
             }
         };
 
@@ -296,9 +303,9 @@ impl Chain {
                 invoker,
                 self_address: address,
                 self_balance: instance.self_balance,
-                sender: Address::Account(invoker),
+                sender,
                 owner: instance.owner,
-                sender_policies: account_policies,
+                sender_policies: self.get_account(invoker)?.policies.clone(),
             },
         };
 
@@ -309,15 +316,15 @@ impl Chain {
         let instance_state = v1::InstanceState::new(loader, inner);
 
         // Get the initial result from invoking receive
-        let mut res = v1::invoke_receive(
+        let res = v1::invoke_receive(
             std::sync::Arc::new(artifact.clone()),
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
                 receive_name: receive_name.as_receive_name(),
-                parameter: &parameter.0,
+                parameter: &parameter,
                 energy: InterpreterEnergy {
-                    energy: energy_reserved.energy,
+                    energy: remaining_energy.energy,
                 },
             },
             instance_state,
@@ -342,8 +349,44 @@ impl Chain {
         };
 
         // Process the receive invocation to the end.
-        res = data.process(res);
-        let chain_events = data.chain_events;
+        let res = data.process(res);
+        // Get the chain events out. TODO: Find a better way.
+        *chain_events = data.chain_events;
+        res
+    }
+
+    pub fn contract_update(
+        &mut self,
+        invoker: AccountAddress, // TODO: Should we add a sender field and allow contract senders?
+        address: ContractAddress,
+        entrypoint: EntrypointName,
+        parameter: ContractParameter,
+        amount: Amount,
+        mut energy_reserved: Energy,
+    ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
+        // Save backups of accounts and contracts in case of rollbacks.
+        let accounts_backup = self.accounts.clone();
+        let contracts_backup = self.contracts.clone();
+
+        // Ensure account exists and can pay for the reserved energy and amount
+        let account_info = self.get_account(invoker)?;
+        if account_info.balance < self.calculate_energy_cost(energy_reserved) + amount {
+            return Err(ContractUpdateError::InsufficientFunds);
+        }
+
+        let mut chain_events = Vec::new();
+        let res = self.contract_update_aux(
+            invoker,
+            Address::Account(invoker),
+            address,
+            entrypoint.to_owned(),
+            parameter.0,
+            amount,
+            &mut energy_reserved,
+            &mut chain_events,
+        );
+
+        let mut transaction_fee = Amount::zero();
 
         // Convert the wasm_chain_integration result to the one used here and
         // update the transaction fee.
@@ -599,10 +642,10 @@ impl Chain {
         )
     }
 
-    pub fn lookup_module_cost(&self, artifact: &ArtifactV1) -> Amount {
+    pub fn lookup_module_cost(&self, artifact: &ArtifactV1) -> Energy {
         // TODO: Is it just the `.code`?
-        let energy = Energy::from(artifact.code.len() as u64 / 50); // Comes from Concordium/Cost.hs::lookupModule
-        self.calculate_energy_cost(energy)
+        // Comes from Concordium/Cost.hs::lookupModule
+        Energy::from(artifact.code.len() as u64 / 50)
     }
 
     fn get_artifact(&self, module_ref: ModuleReference) -> Result<&ArtifactV1, ModuleMissing> {
@@ -782,7 +825,8 @@ impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Module has not been deployed.")]
 struct ModuleMissing;
 
 impl From<ModuleMissing> for ContractInitError {
@@ -793,14 +837,16 @@ impl From<ModuleMissing> for ContractUpdateError {
     fn from(_: ModuleMissing) -> Self { Self::ModuleDoesNotExist }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Contract instance has not been instantiated.")]
 struct ContractInstanceMissing;
 
 impl From<ContractInstanceMissing> for ContractUpdateError {
     fn from(_: ContractInstanceMissing) -> Self { Self::InstanceDoesNotExist }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Account has not been created.")]
 struct AccountMissing;
 
 impl From<AccountMissing> for ContractInitError {

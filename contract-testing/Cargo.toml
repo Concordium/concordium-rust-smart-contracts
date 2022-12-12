@@ -12,3 +12,4 @@ wasm-chain-integration = {path = "../concordium-base/smart-contracts/wasm-chain-
 wasm-transform = {path = "../concordium-base/smart-contracts/wasm-transform"}
 sha2 = "0.10"
 anyhow = "1"
+thiserror = "1.0"
