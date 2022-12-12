@@ -258,15 +258,25 @@ impl Chain {
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        // Find contract instance and artifact
-        // Update balance....
-        self.get_instance_mut(address)?.self_balance += amount;
-        let instance = self.get_instance(address)?;
-        // Ensure account exists and can pay for the reserved energy
+        // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self.get_account(invoker)?;
-        if account_info.balance < self.calculate_energy_cost(energy_reserved) {
+        // Save policies for later
+        let account_policies = account_info.policies.clone();
+        if account_info.balance < self.calculate_energy_cost(energy_reserved) + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
+
+        // Save backups of accounts and contracts in case of rollbacks.
+        let accounts_backup = self.accounts.clone();
+        let contracts_backup = self.contracts.clone();
+
+        // Move the amount from the invoker to the contract.
+        self.get_account_mut(invoker)?.balance -= amount;
+        self.get_instance_mut(address)?.self_balance += amount;
+
+        // Get the instance for its info, which will be used further down.
+        let instance = self.get_instance(address)?;
+
         // Construct the receive name (or fallback receive name) and ensure its presence
         // in the contract.
         let receive_name = {
@@ -283,7 +293,7 @@ impl Chain {
             }
         };
 
-        // Construct the context
+        // Construct the receive context
         let receive_ctx = v1::ReceiveContext {
             entrypoint: entrypoint.to_owned(),
             common:     v0::ReceiveContext {
@@ -295,18 +305,20 @@ impl Chain {
                 self_balance: instance.self_balance,
                 sender: Address::Account(invoker),
                 owner: instance.owner,
-                sender_policies: account_info.policies.clone(),
+                sender_policies: account_policies,
             },
         };
 
         // TODO: Charge energy for module lookup.
         let artifact = self.get_artifact(instance.module_reference)?;
 
+        // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
         let mut mutable_state = instance.state.thaw();
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
+        // Get the initial result from invoking receive
         let mut res = v1::invoke_receive(
             std::sync::Arc::new(artifact.clone()),
             receive_ctx,
@@ -326,6 +338,8 @@ impl Chain {
             },
         );
 
+        // Set up some data needed for recursively processing the receive until the end,
+        // i.e. beyond interrupts.
         let mut data = ProcessReceiveData {
             address,
             contract_name: instance.contract_name.clone(),
@@ -337,13 +351,12 @@ impl Chain {
             loader,
         };
 
+        // Process the receive invocation to the end.
         res = data.process(res);
         let chain_events = data.chain_events;
 
-        // Used for rollback.
-        let accounts_backup = self.accounts.clone();
-        let contracts_backup = self.contracts.clone();
-
+        // Convert the wasm_chain_integration result to the one used here and find
+        // the transaction fee.
         let (res, transaction_fee) = match res {
             Ok(r) => match r {
                 v1::ReceiveResult::Success {
@@ -425,8 +438,14 @@ impl Chain {
             ), // TODO: Incorrect cost
         };
 
-        // Charge the transaction fee and amount
-        self.get_account_mut(invoker)?.balance -= transaction_fee + amount;
+        // Handle rollback
+        if res.is_err() {
+            self.accounts = accounts_backup;
+            self.contracts = contracts_backup;
+        }
+
+        // Charge the transaction fee irrespective of the result
+        self.get_account_mut(invoker)?.balance -= transaction_fee;
         res
     }
 
@@ -653,6 +672,7 @@ impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
     ///
     /// *Preconditions*:
     /// - Contract instance exists in `chain.contracts`.
+    /// - Account exists in `chain.accounts`.
     fn process(
         &mut self,
         res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
@@ -724,7 +744,7 @@ impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
                                     // Move the CCD
                                     self.chain
                                         .get_account_mut(to)
-                                        .expect("Account is already known to exist")
+                                        .expect("Account is known to exist")
                                         .balance += amount;
                                     let instance = self
                                         .chain
