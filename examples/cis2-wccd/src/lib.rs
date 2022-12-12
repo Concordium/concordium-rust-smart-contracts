@@ -1101,19 +1101,29 @@ fn contract_set_implementor<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - If the ugrade fails.
 /// - If the migration invoke fails.
+///
+/// This function is marked as `low_level`. This is **necessary** since the
+/// high-level mutable functions store the state of the contract at the end of
+/// execution. This conflicts with migration since the shape of the state
+/// **might** be changed by the migration function. If the state is then written
+/// by this function it would overwrite the state stored by the migration
+/// function.
 #[receive(
     contract = "cis2_wCCD",
     name = "upgrade",
     parameter = "UpgradeParams",
     error = "ContractError",
-    mutable
+    low_level
 )]
 fn contract_upgrade<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<S>,
 ) -> ContractResult<()> {
+    // Read the top-level contract state.
+    let state: State<S> = host.state().read_root()?;
+
     // Check that only the admin is authorized to upgrade the smart contract.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    ensure_eq!(ctx.sender(), state.admin, ContractError::Unauthorized);
     // Parse the parameter.
     let params: UpgradeParams = ctx.parameter_cursor().get()?;
     // Trigger the upgrade.
@@ -1686,74 +1696,6 @@ mod tests {
             "ADDRESS_0 balance should still be 400"
         );
         claim!(host.get_transfers().is_empty(), "No transfers should have happened");
-    }
-
-    /// Test upgrading the smart contract instance.
-    #[concordium_test]
-    fn test_upgradability() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        let self_address = ContractAddress::new(0, 0);
-        ctx.set_self_address(self_address);
-
-        let new_module_ref = ModuleReference::from([0u8; 32]);
-        let migration_entrypoint = OwnedEntrypointName::new_unchecked("migration".into());
-
-        // Set up the parameter.
-        let parameter = UpgradeParams {
-            module:  new_module_ref,
-            migrate: Some((migration_entrypoint.clone(), OwnedParameter(Vec::new()))),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        host.setup_mock_upgrade(new_module_ref, Ok(()));
-        host.setup_mock_entrypoint(self_address, migration_entrypoint, MockFn::returning_ok(()));
-
-        // Call the upgrade function.
-        let result: ContractResult<()> = contract_upgrade(&ctx, &mut host);
-
-        claim_eq!(result, Ok(()), "The upgrade should have been successful");
-    }
-
-    #[concordium_test]
-    fn test_upgradability_rejects() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        let new_module_ref = ModuleReference::from([0u8; 32]);
-
-        // Set up the parameter.
-        let parameter = UpgradeParams {
-            module:  new_module_ref,
-            migrate: None,
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Make module missing such that the upgrade will fail.
-        host.setup_mock_upgrade(new_module_ref, Err(UpgradeError::MissingModule));
-
-        // Call the upgrade function.
-        let result: ContractResult<()> = contract_upgrade(&ctx, &mut host);
-
-        // Check upgrade was not successful.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CustomContractError::FailedUpgradeMissingModule)),
-            "The upgrade should have failed because of the missing module"
-        );
     }
 
     /// Test admin can update to a new admin address.

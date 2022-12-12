@@ -225,6 +225,13 @@ pub trait HasStateApi: Clone {
     /// See the [`iterator`][HasStateApi::iterator] method for why this is
     /// necessary.
     fn delete_iterator(&mut self, iter: Self::IterType);
+
+    /// Read and deserialize the state stored at the root of the state trie.
+    /// If such a state does not exist, or cannot be deserialized into the
+    /// provided type, then this returns an error.
+    fn read_root<A: DeserialWithState<Self>>(&self) -> ParseResult<A> {
+        A::deserial_with_state(self, &mut self.lookup_entry(&[]).ok_or(ParseError {})?)
+    }
 }
 
 /// A type that can serve as the host, meaning that it supports interactions
