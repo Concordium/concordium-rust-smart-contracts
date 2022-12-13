@@ -12,7 +12,11 @@ use std::{
 use thiserror::Error;
 use wasm_chain_integration::{
     v0,
-    v1::{self, trie::MutableState, ConcordiumAllowedImports, InvokeResponse, ReturnValue},
+    v1::{
+        self,
+        trie::{MutableState, SizeCollector},
+        ConcordiumAllowedImports, InvokeResponse, ReturnValue,
+    },
     ExecResult, InterpreterEnergy,
 };
 use wasm_transform::artifact;
@@ -244,7 +248,7 @@ impl Chain {
 
     /// Used for handling contract invokes internally.
     ///
-    /// Precondition:
+    /// Preconditions:
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
     ///
@@ -257,7 +261,7 @@ impl Chain {
         entrypoint: OwnedEntrypointName,
         parameter: Vec<u8>,
         amount: Amount,
-        remaining_energy: &mut Energy,
+        mut remaining_energy: Energy,
         chain_events: &mut Vec<ChainEvent>,
     ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
         // Move the amount from the sender to the contract.
@@ -275,7 +279,7 @@ impl Chain {
         let instance = self.get_instance(address)?;
         let artifact = self.get_artifact(instance.module_reference)?;
         // Subtract the cost of looking up the module
-        *remaining_energy =
+        remaining_energy =
             Energy::from(remaining_energy.energy - self.lookup_module_cost(&artifact).energy);
 
         // Construct the receive name (or fallback receive name) and ensure its presence
@@ -338,13 +342,14 @@ impl Chain {
         // Set up some data needed for recursively processing the receive until the end,
         // i.e. beyond interrupts.
         let mut data = ProcessReceiveData {
+            invoker,
             address,
             contract_name: instance.contract_name.clone(),
             amount,
             entrypoint: entrypoint.to_owned(),
             chain: self,
             chain_events: Vec::new(),
-            mutable_state: &mut mutable_state,
+            mutable_state,
             loader,
         };
 
@@ -362,7 +367,7 @@ impl Chain {
         entrypoint: EntrypointName,
         parameter: ContractParameter,
         amount: Amount,
-        mut energy_reserved: Energy,
+        energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         // Save backups of accounts and contracts in case of rollbacks.
         let accounts_backup = self.accounts.clone();
@@ -382,7 +387,7 @@ impl Chain {
             entrypoint.to_owned(),
             parameter.0,
             amount,
-            &mut energy_reserved,
+            energy_reserved,
             &mut chain_events,
         );
 
@@ -680,18 +685,19 @@ impl Chain {
     }
 }
 
-struct ProcessReceiveData<'a, 'b, 'c> {
+struct ProcessReceiveData<'a, 'b> {
+    invoker:       AccountAddress,
     address:       ContractAddress,
     contract_name: OwnedContractName,
     amount:        Amount,
     entrypoint:    OwnedEntrypointName,
     chain:         &'a mut Chain,
     chain_events:  Vec<ChainEvent>,
-    mutable_state: &'b mut MutableState,
-    loader:        v1::trie::Loader<&'c [u8]>,
+    mutable_state: MutableState,
+    loader:        v1::trie::Loader<&'b [u8]>,
 }
 
-impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
+impl<'a, 'b> ProcessReceiveData<'a, 'b> {
     /// Process a receive function until completion.
     ///
     /// *Preconditions*:
@@ -709,6 +715,7 @@ impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
                     return_value,
                     remaining_energy,
                 } => {
+                    println!("Updated contract {}", self.address);
                     let update_event = ChainEvent::Updated {
                         address:    self.address,
                         contract:   self.contract_name.clone(),
@@ -736,11 +743,12 @@ impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
                 }
                 v1::ReceiveResult::Interrupt {
                     remaining_energy,
-                    state_changed: _,
+                    state_changed,
                     logs,
                     config,
                     interrupt,
                 } => {
+                    println!("Interrupting contract {}", self.address);
                     let interrupt_event = ChainEvent::Interrupted {
                         address: self.address,
                         logs,
@@ -811,7 +819,128 @@ impl<'a, 'b, 'c> ProcessReceiveData<'a, 'b, 'c> {
                             parameter,
                             name,
                             amount,
-                        } => todo!(),
+                        } => {
+                            println!(
+                                "Calling contract {}\n\twith parameter: {:?}",
+                                address, parameter
+                            );
+                            if state_changed {
+                                println!("Saving state");
+                                let mut collector = SizeCollector::default();
+                                let persistent_state =
+                                    self.mutable_state.freeze(&mut self.loader, &mut collector);
+                                // TODO: Charge for size of new state.
+                                self.chain.get_instance_mut(address)?.state = persistent_state;
+                            }
+
+                            let res = self.chain.contract_update_aux(
+                                self.invoker,
+                                Address::Contract(self.address),
+                                address,
+                                name,
+                                parameter,
+                                amount,
+                                Energy::from(remaining_energy),
+                                &mut self.chain_events,
+                            );
+
+                            let (success, response, energy_after_invoke, state_changed) = match res
+                            {
+                                Ok(r) => match r {
+                                    v1::ReceiveResult::Success {
+                                        return_value,
+                                        remaining_energy,
+                                        state_changed,
+                                        ..
+                                    } => (
+                                        true,
+                                        InvokeResponse::Success {
+                                            new_balance: self
+                                                .chain
+                                                .get_instance(self.address)?
+                                                .self_balance,
+                                            data:        Some(return_value),
+                                        },
+                                        remaining_energy,
+                                        state_changed,
+                                    ),
+                                    v1::ReceiveResult::Interrupt { .. } => {
+                                        panic!("Internal error: Should never return on interrupts.")
+                                    }
+                                    v1::ReceiveResult::Reject {
+                                        reason,
+                                        return_value,
+                                        remaining_energy,
+                                    } => (
+                                        false,
+                                        InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::ContractReject {
+                                                code: reason,
+                                                data: return_value,
+                                            },
+                                        },
+                                        remaining_energy,
+                                        false,
+                                    ),
+                                    v1::ReceiveResult::Trap {
+                                        remaining_energy, ..
+                                    } => (
+                                        false,
+                                        InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::RuntimeError,
+                                        },
+                                        remaining_energy,
+                                        false,
+                                    ),
+                                    v1::ReceiveResult::OutOfEnergy => (
+                                        false,
+                                        InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::RuntimeError,
+                                        },
+                                        0,
+                                        false,
+                                    ), // TODO: What is the correct error here?
+                                },
+                                Err(e) => (
+                                    false,
+                                    InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::RuntimeError,
+                                    },
+                                    0,
+                                    false,
+                                ), // TODO: Correct energy here?
+                            };
+
+                            // Add resume event
+                            let resume_event = ChainEvent::Resumed {
+                                address: self.address,
+                                success,
+                            };
+
+                            println!(
+                                "Resuming contract {}\n\tafter {}",
+                                self.address,
+                                if success {
+                                    "succesful invocation"
+                                } else {
+                                    "failed invocation"
+                                }
+                            );
+                            self.chain_events.push(resume_event);
+
+                            let mut new_mutable_state =
+                                self.chain.get_instance(self.address)?.state.thaw();
+                            self.mutable_state = new_mutable_state.clone();
+
+                            self.process(v1::resume_receive(
+                                config,
+                                response,
+                                InterpreterEnergy::from(energy_after_invoke),
+                                &mut new_mutable_state,
+                                state_changed,
+                                self.loader,
+                            ))
+                        }
                         v1::Interrupt::Upgrade { module_ref } => todo!(),
                         v1::Interrupt::QueryAccountBalance { address } => todo!(),
                         v1::Interrupt::QueryContractBalance { address } => todo!(),
@@ -1297,7 +1426,7 @@ mod tests {
                 EntrypointName::new_unchecked("receive"),
                 ContractParameter::from_typed(&ACC_1),
                 transfer_amount,
-                Energy::from(4000000u64),
+                Energy::from(10000u64),
             )
             .expect("Updating valid contract should work");
 
@@ -1367,7 +1496,7 @@ mod tests {
             EntrypointName::new_unchecked("receive"),
             ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
             transfer_amount,
-            Energy::from(4000000u64),
+            Energy::from(10000u64),
         );
 
         match res_update {
@@ -1394,4 +1523,64 @@ mod tests {
 
     // TODO: Add tests that check:
     // - Correct account balances after init / update failures (when Amount > 0)
+    //
+    #[test]
+    fn update_with_reentry_works() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let initial_balance = Amount::from_ccd(10000);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+        let res_deploy = chain
+            .module_deploy(ACC_0, "fib/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_fib"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Initializing valid contract should work");
+
+        let res_update = chain
+            .contract_update(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("receive"),
+                ContractParameter::from_typed(&3u64),
+                Amount::zero(),
+                Energy::from(1000000u64),
+            )
+            .expect("Updating valid contract should work");
+
+        let res_view = chain
+            .contract_invoke(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("view"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Invoking get should work");
+
+        // This also asserts that the account wasn't charged for the invoke.
+        assert_eq!(
+            chain.account_balance(ACC_0),
+            Some(
+                initial_balance
+                    - res_deploy.transaction_fee
+                    - res_init.transaction_fee
+                    - res_update.transaction_fee
+            )
+        );
+        assert_eq!(chain.contracts.len(), 1);
+        assert!(res_update.state_changed);
+        assert_eq!(res_update.return_value.0, u64::to_le_bytes(3));
+        // Assert that the updated state is persisted.
+        assert_eq!(res_view.return_value.0, u64::to_le_bytes(3));
+    }
 }
