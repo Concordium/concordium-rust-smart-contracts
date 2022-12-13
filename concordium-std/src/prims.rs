@@ -287,7 +287,7 @@ extern "C" {
 }
 
 // For every external function, we must provide a dummy function.
-// This is nescessary to compile to x86_64 during unit tests on Windows and OSX.
+// This is necessary to compile to x86_64 during unit tests on Windows and OSX.
 #[cfg(not(target_arch = "wasm32"))]
 mod host_dummy_functions {
     #[no_mangle]
