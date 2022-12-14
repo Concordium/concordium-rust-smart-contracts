@@ -252,6 +252,9 @@ impl Chain {
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
     ///
+    /// Returns:
+    ///  - Everything the types can encode apart from
+    ///    `Ok(v1::ReceiveResult::Interrupt)`
     ///  TODO: Use proper error types instead of anyhow.
     fn contract_update_aux(
         &mut self,
@@ -804,15 +807,17 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 success,
                             });
 
-                            // Resume
-                            self.process(v1::resume_receive(
+                            let resume_res = v1::resume_receive(
                                 config,
                                 response,
                                 InterpreterEnergy::from(remaining_energy),
-                                &mut self.mutable_state.clone(),
+                                &mut self.mutable_state,
                                 false, // never changes on transfers
                                 self.loader,
-                            ))
+                            );
+
+                            // Resume
+                            self.process(resume_res)
                         }
                         v1::Interrupt::Call {
                             address,
@@ -825,7 +830,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 address, parameter
                             );
                             if state_changed {
-                                println!("Saving state");
+                                println!("Saving state prior to invoke");
                                 let mut collector = SizeCollector::default();
                                 let persistent_state =
                                     self.mutable_state.freeze(&mut self.loader, &mut collector);
@@ -852,18 +857,21 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                         remaining_energy,
                                         state_changed,
                                         ..
-                                    } => (
-                                        true,
-                                        InvokeResponse::Success {
-                                            new_balance: self
-                                                .chain
-                                                .get_instance(self.address)?
-                                                .self_balance,
-                                            data:        Some(return_value),
-                                        },
-                                        remaining_energy,
-                                        state_changed,
-                                    ),
+                                    } => {
+                                        println!("Invoke returned with value: {:?}", return_value);
+                                        (
+                                            true,
+                                            InvokeResponse::Success {
+                                                new_balance: self
+                                                    .chain
+                                                    .get_instance(self.address)?
+                                                    .self_balance,
+                                                data:        Some(return_value),
+                                            },
+                                            remaining_energy,
+                                            state_changed,
+                                        )
+                                    }
                                     v1::ReceiveResult::Interrupt { .. } => {
                                         panic!("Internal error: Should never return on interrupts.")
                                     }
@@ -928,18 +936,21 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             );
                             self.chain_events.push(resume_event);
 
-                            let mut new_mutable_state =
+                            // Update the mutable state, since it might have been changed on
+                            // reentry.
+                            self.mutable_state =
                                 self.chain.get_instance(self.address)?.state.thaw();
-                            self.mutable_state = new_mutable_state.clone();
 
-                            self.process(v1::resume_receive(
+                            let resume_res = v1::resume_receive(
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut new_mutable_state,
+                                &mut self.mutable_state,
                                 state_changed,
                                 self.loader,
-                            ))
+                            );
+
+                            self.process(resume_res)
                         }
                         v1::Interrupt::Upgrade { module_ref } => todo!(),
                         v1::Interrupt::QueryAccountBalance { address } => todo!(),
@@ -1265,7 +1276,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res = chain
-            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         assert_eq!(chain.modules.len(), 1);
@@ -1282,7 +1293,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1309,7 +1320,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1344,7 +1355,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1405,7 +1416,7 @@ mod tests {
         chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1476,7 +1487,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1496,7 +1507,7 @@ mod tests {
             EntrypointName::new_unchecked("receive"),
             ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
             transfer_amount,
-            Energy::from(10000u64),
+            Energy::from(100000u64),
         );
 
         match res_update {
@@ -1507,7 +1518,6 @@ mod tests {
             })) => {
                 assert_eq!(reason, -3); // Corresponds to contract error TransactionErrorAccountMissing
                 assert_eq!(
-                    // TODO: Handle rollback of account balances.
                     chain.account_balance(ACC_0),
                     Some(
                         initial_balance
@@ -1525,13 +1535,13 @@ mod tests {
     // - Correct account balances after init / update failures (when Amount > 0)
     //
     #[test]
-    fn update_with_reentry_works() {
+    fn update_with_fib_reentry_works() {
         let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "fib/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/fib/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1550,7 +1560,68 @@ mod tests {
                 ACC_0,
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
-                ContractParameter::from_typed(&3u64),
+                ContractParameter::from_typed(&6u64),
+                Amount::zero(),
+                Energy::from(4000000u64),
+            )
+            .expect("Updating valid contract should work");
+
+        let res_view = chain
+            .contract_invoke(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("view"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Invoking get should work");
+
+        // This also asserts that the account wasn't charged for the invoke.
+        assert_eq!(
+            chain.account_balance(ACC_0),
+            Some(
+                initial_balance
+                    - res_deploy.transaction_fee
+                    - res_init.transaction_fee
+                    - res_update.transaction_fee
+            )
+        );
+        assert_eq!(chain.contracts.len(), 1);
+        assert!(res_update.state_changed);
+        let expected_res = u64::to_le_bytes(13);
+        assert_eq!(res_update.return_value.0, expected_res);
+        // Assert that the updated state is persisted.
+        assert_eq!(res_view.return_value.0, expected_res);
+    }
+
+    #[test]
+    fn update_with_integrate_reentry_works() {
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let initial_balance = Amount::from_ccd(10000);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+        let res_deploy = chain
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_integrate"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(10000u64),
+            )
+            .expect("Initializing valid contract should work");
+
+        let res_update = chain
+            .contract_update(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("recurse"),
+                ContractParameter::from_typed(&10u32),
                 Amount::zero(),
                 Energy::from(1000000u64),
             )
@@ -1579,8 +1650,9 @@ mod tests {
         );
         assert_eq!(chain.contracts.len(), 1);
         assert!(res_update.state_changed);
-        assert_eq!(res_update.return_value.0, u64::to_le_bytes(3));
+        let expected_res = 10 + 7 + 11 + 3 + 7 + 11;
+        assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
         // Assert that the updated state is persisted.
-        assert_eq!(res_view.return_value.0, u64::to_le_bytes(3));
+        assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
     }
 }
