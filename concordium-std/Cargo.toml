@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "5.0.0"
+version = "5.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -22,11 +22,11 @@ getrandom = { version = "0.2", features = ["custom"], optional = true }
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"
-version = "5.0"
+version = "5.1"
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-contracts-common/concordium-contracts-common"
-version = "5.0"
+version = "5.1"
 default-features = false
 
 [features]
