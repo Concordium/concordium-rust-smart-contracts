@@ -358,8 +358,10 @@ impl Chain {
 
         // Process the receive invocation to the end.
         let res = data.process(res);
-        // Get the chain events out. TODO: Find a better way.
-        chain_events.append(&mut data.chain_events);
+        // Append the new chain events if the invocation succeeded.
+        if matches!(res, Ok(v1::ReceiveResult::Success { .. })) {
+            chain_events.append(&mut data.chain_events);
+        }
         res
     }
 
@@ -923,7 +925,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                         false,
                                     ), // TODO: What is the correct error here?
                                 },
-                                Err(e) => (
+                                Err(_e) => (
                                     false,
                                     InvokeResponse::Failure {
                                         kind: v1::InvokeFailure::RuntimeError,
@@ -1673,12 +1675,14 @@ mod tests {
     #[test]
     fn update_with_rollback_and_reentry_works() {
         let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
-        let initial_balance = Amount::from_ccd(10000);
+        let initial_balance = Amount::from_ccd(1000000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
+
+        let input_param: u32 = 8;
 
         let res_init = chain
             .contract_init(
@@ -1696,9 +1700,9 @@ mod tests {
                 ACC_0,
                 res_init.contract_address,
                 EntrypointName::new_unchecked("inc-fail-on-zero"),
-                ContractParameter::from_typed(&3u32),
+                ContractParameter::from_typed(&input_param),
                 Amount::zero(),
-                Energy::from(1000000u64),
+                Energy::from(100000000u64),
             )
             .expect("Updating valid contract should work");
 
@@ -1723,7 +1727,7 @@ mod tests {
             )
         );
         assert!(res_update.state_changed);
-        let expected_res = 7;
+        let expected_res = 2u32.pow(input_param) - 1;
         assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
         // Assert that the updated state is persisted.
         assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
