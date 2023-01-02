@@ -9,7 +9,7 @@ authors = [ "{{authors}}" ]
 description = "{{description}}"
 
 [dependencies]
-concordium-std = "4.0.0"
+concordium-std = "5.1"
 
 [lib]
 crate-type=["cdylib", "rlib"]
