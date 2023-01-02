@@ -1,0 +1,22 @@
+[package]
+name = "e_sealing"
+version = "0.1.0"
+authors = ["Concordium <developers@concordium.com>"]
+edition = "2018"
+license = "MPL-2.0"
+
+[features]
+default = ["std", "crypto-primitives"]
+crypto-primitives = ["concordium-std/crypto-primitives"]
+std = ["concordium-std/std"]
+
+[dependencies]
+base58check= "*"
+concordium-std = {path = "../../concordium-std", default-features = false}
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
