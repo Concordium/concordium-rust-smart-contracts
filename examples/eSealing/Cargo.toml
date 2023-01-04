@@ -6,12 +6,10 @@ edition = "2018"
 license = "MPL-2.0"
 
 [features]
-default = ["std", "crypto-primitives"]
-crypto-primitives = ["concordium-std/crypto-primitives"]
+default = ["std"]
 std = ["concordium-std/std"]
 
 [dependencies]
-base58check= "*"
 concordium-std = {path = "../../concordium-std", default-features = false}
 
 [lib]
