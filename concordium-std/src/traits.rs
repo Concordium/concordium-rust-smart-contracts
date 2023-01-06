@@ -327,12 +327,12 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> ReadOnlyCallContractResult<Self::ReturnValueType>;
 
-    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the
-    /// parameter is automatically serialized. If the parameter already
-    /// implements [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply
-    /// converted to a byte array, then
-    /// [`invoke_contract_raw`](Self::invoke_contract_raw) should be
-    /// used, since it avoids intermediate allocations.
+    /// Like [`invoke_contract_raw_read_only`](Self::
+    /// invoke_contract_raw_read_only), except that the parameter is
+    /// automatically serialized. If the parameter already implements
+    /// [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply converted to a
+    /// byte array, then [`invoke_contract_raw`](Self::invoke_contract_raw)
+    /// should be used, since it avoids intermediate allocations.
     ///
     /// <div class="example-wrap" style="display:inline-block"><pre
     /// class="compile_fail" style="white-space:normal;font:inherit;">
