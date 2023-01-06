@@ -18,8 +18,9 @@ with low-level details of how the interaction with the chain works.
 - `concordium-std` **prior to** version 3 supported version 0 contracts
 - `concordium-std` version 3 only supports building version 1 contracts
 
-Also note that `concordium-std` version 4 only works with `cargo-concordium` version 2.1+.
-Also note that `concordium-std` version 5 only works with `cargo-concordium` version 2.4+.
+### `cargo-concordium` version dependencies
+- `concordium-std` version 4 only works with `cargo-concordium` version 2.1+.
+- `concordium-std` version 5 only works with `cargo-concordium` version 2.4+.
 
 ## Examples
 
