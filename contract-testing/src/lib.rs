@@ -24,6 +24,11 @@ use wasm_transform::artifact;
 /// A V1 artifact, with concrete types for the generic parameters.
 type ArtifactV1 = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>;
 
+// Energy constants from Cost.hs in concordium-base.
+const QUERY_ACCOUNT_BALANCE_COST: u64 = 200;
+const QUERY_CONTRACT_BALANCE_COST: u64 = 200;
+const QUERY_EXCHANGE_RATE_COST: u64 = 100;
+
 pub struct Chain {
     /// The slot time viewable inside the smart contracts.
     /// Defaults to `0`.
@@ -264,6 +269,10 @@ impl Chain {
         entrypoint: OwnedEntrypointName,
         parameter: Vec<u8>,
         amount: Amount,
+        // The CCD amount reserved from the invoker account. While the amount
+        // is reserved, it is not subtracted in the chain.accounts map.
+        // Used to handle account balance queries for the invoker account.
+        invoker_amount_reserved: Amount,
         mut remaining_energy: Energy,
         chain_events: &mut Vec<ChainEvent>,
     ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
@@ -349,6 +358,7 @@ impl Chain {
             address,
             contract_name: instance.contract_name.clone(),
             amount,
+            invoker_amount_reserved,
             entrypoint: entrypoint.to_owned(),
             chain: self,
             chain_events: Vec::new(),
@@ -385,7 +395,8 @@ impl Chain {
 
         // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self.get_account(invoker)?;
-        if account_info.balance < self.calculate_energy_cost(energy_reserved) + amount {
+        let invoker_amount_reserved = self.calculate_energy_cost(energy_reserved) + amount;
+        if account_info.balance < invoker_amount_reserved {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
@@ -397,6 +408,7 @@ impl Chain {
             entrypoint.to_owned(),
             parameter.0,
             amount,
+            invoker_amount_reserved,
             energy_reserved,
             &mut chain_events,
         );
@@ -701,15 +713,19 @@ impl Chain {
 }
 
 struct ProcessReceiveData<'a, 'b> {
-    invoker:       AccountAddress,
-    address:       ContractAddress,
-    contract_name: OwnedContractName,
-    amount:        Amount,
-    entrypoint:    OwnedEntrypointName,
-    chain:         &'a mut Chain,
-    chain_events:  Vec<ChainEvent>,
-    mutable_state: MutableState,
-    loader:        v1::trie::Loader<&'b [u8]>,
+    invoker:                 AccountAddress,
+    address:                 ContractAddress,
+    contract_name:           OwnedContractName,
+    amount:                  Amount,
+    /// The CCD amount reserved from the invoker account. While the amount is
+    /// reserved, it is not subtracted in the chain.accounts map.
+    /// Used to handle account balance queries for the invoker account.
+    invoker_amount_reserved: Amount,
+    entrypoint:              OwnedEntrypointName,
+    chain:                   &'a mut Chain,
+    chain_events:            Vec<ChainEvent>,
+    mutable_state:           MutableState,
+    loader:                  v1::trie::Loader<&'b [u8]>,
 }
 
 impl<'a, 'b> ProcessReceiveData<'a, 'b> {
@@ -858,6 +874,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 name,
                                 parameter,
                                 amount,
+                                self.invoker_amount_reserved,
                                 Energy::from(remaining_energy),
                                 &mut self.chain_events,
                             );
@@ -969,7 +986,51 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             self.process(resume_res)
                         }
                         v1::Interrupt::Upgrade { module_ref } => todo!(),
-                        v1::Interrupt::QueryAccountBalance { address } => todo!(),
+                        v1::Interrupt::QueryAccountBalance { address } => {
+                            // When querying an account, the amounts from any `invoke_transfer`s
+                            // should be included. That is handled by
+                            // the `chain` struct already. transaction.
+                            // However, that is hand
+                            let response = match self.chain.account_balance(address) {
+                                Some(acc_bal) => {
+                                    // If you query the invoker account, it should also
+                                    // take into account the send-amount and the amount reserved for
+                                    // the reserved max energy. The value of which is held in
+                                    // `self.invoker_amount_reserved`.
+                                    let acc_bal = if address == self.invoker {
+                                        acc_bal - self.invoker_amount_reserved
+                                    } else {
+                                        acc_bal
+                                    };
+                                    // TODO: Do we need non-zero staked and shielded balances?
+                                    let balances =
+                                        to_bytes(&(acc_bal, Amount::zero(), Amount::zero()));
+                                    InvokeResponse::Success {
+                                        new_balance: self
+                                            .chain
+                                            .get_instance(self.address)?
+                                            .self_balance,
+                                        data:        Some(balances),
+                                    }
+                                }
+                                None => InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                },
+                            };
+
+                            let energy_after_invoke = remaining_energy - QUERY_ACCOUNT_BALANCE_COST;
+
+                            let resume_res = v1::resume_receive(
+                                config,
+                                response,
+                                InterpreterEnergy::from(energy_after_invoke),
+                                &mut self.mutable_state,
+                                false, // State never changes on queries.
+                                self.loader,
+                            );
+
+                            self.process(resume_res)
+                        }
                         v1::Interrupt::QueryContractBalance { address } => todo!(),
                         v1::Interrupt::QueryExchangeRates => todo!(),
                     }
