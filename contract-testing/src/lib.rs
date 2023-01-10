@@ -302,7 +302,7 @@ impl Chain {
         // The CCD amount reserved from the invoker account. While the amount
         // is reserved, it is not subtracted in the chain.accounts map.
         // Used to handle account balance queries for the invoker account.
-        invoker_amount_reserved: Amount,
+        invoker_amount_reserved_for_nrg: Amount,
         mut remaining_energy: Energy,
         chain_events: &mut Vec<ChainEvent>,
     ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
@@ -388,7 +388,7 @@ impl Chain {
             address,
             contract_name: instance.contract_name.clone(),
             amount,
-            invoker_amount_reserved,
+            invoker_amount_reserved_for_nrg,
             entrypoint: entrypoint.to_owned(),
             chain: self,
             chain_events: Vec::new(),
@@ -425,8 +425,8 @@ impl Chain {
 
         // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self.get_account(invoker)?;
-        let invoker_amount_reserved = self.calculate_energy_cost(energy_reserved) + amount;
-        if account_info.balance < invoker_amount_reserved {
+        let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        if account_info.balance < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
@@ -438,7 +438,7 @@ impl Chain {
             entrypoint.to_owned(),
             parameter.0,
             amount,
-            invoker_amount_reserved,
+            invoker_amount_reserved_for_nrg,
             energy_reserved,
             &mut chain_events,
         );
@@ -743,19 +743,19 @@ impl Chain {
 }
 
 struct ProcessReceiveData<'a, 'b> {
-    invoker:                 AccountAddress,
-    address:                 ContractAddress,
-    contract_name:           OwnedContractName,
-    amount:                  Amount,
-    /// The CCD amount reserved from the invoker account. While the amount is
-    /// reserved, it is not subtracted in the chain.accounts map.
-    /// Used to handle account balance queries for the invoker account.
-    invoker_amount_reserved: Amount,
-    entrypoint:              OwnedEntrypointName,
-    chain:                   &'a mut Chain,
-    chain_events:            Vec<ChainEvent>,
-    mutable_state:           MutableState,
-    loader:                  v1::trie::Loader<&'b [u8]>,
+    invoker: AccountAddress,
+    address: ContractAddress,
+    contract_name: OwnedContractName,
+    amount: Amount,
+    /// The CCD amount reserved from the invoker account for the energy. While
+    /// the amount is reserved, it is not subtracted in the chain.accounts
+    /// map. Used to handle account balance queries for the invoker account.
+    invoker_amount_reserved_for_nrg: Amount,
+    entrypoint: OwnedEntrypointName,
+    chain: &'a mut Chain,
+    chain_events: Vec<ChainEvent>,
+    mutable_state: MutableState,
+    loader: v1::trie::Loader<&'b [u8]>,
 }
 
 impl<'a, 'b> ProcessReceiveData<'a, 'b> {
@@ -822,6 +822,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                         v1::Interrupt::Transfer { to, amount } => {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
+
+                            println!("Transferring {} CCD to {}", amount, to);
 
                             let response = {
                                 // Check if receiver account exists
@@ -913,7 +915,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 name,
                                 parameter,
                                 amount,
-                                self.invoker_amount_reserved,
+                                self.invoker_amount_reserved_for_nrg,
                                 Energy::from(remaining_energy),
                                 &mut self.chain_events,
                             );
@@ -1026,6 +1028,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                         }
                         v1::Interrupt::Upgrade { module_ref } => todo!(),
                         v1::Interrupt::QueryAccountBalance { address } => {
+                            println!("Querying account balance of {}", address);
                             // When querying an account, the amounts from any `invoke_transfer`s
                             // should be included. That is handled by
                             // the `chain` struct already. transaction.
@@ -1034,13 +1037,15 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 Some(acc_bal) => {
                                     // If you query the invoker account, it should also
                                     // take into account the send-amount and the amount reserved for
-                                    // the reserved max energy. The value of which is held in
-                                    // `self.invoker_amount_reserved`.
+                                    // the reserved max energy. The former is handled in
+                                    // `contract_update_aux`, but the latter is represented in
+                                    // `self.invoker_amount_reserved_for_nrg`.
                                     let acc_bal = if address == self.invoker {
-                                        acc_bal - self.invoker_amount_reserved
+                                        acc_bal - self.invoker_amount_reserved_for_nrg
                                     } else {
                                         acc_bal
                                     };
+
                                     // TODO: Do we need non-zero staked and shielded balances?
                                     let balances =
                                         to_bytes(&(acc_bal, Amount::zero(), Amount::zero()));
@@ -1371,12 +1376,15 @@ impl ContractParameter {
 mod tests {
     use super::*;
 
+    const NRG_PER_MICRO_CCD: u64 = 2404;
     const ACC_0: AccountAddress = AccountAddress([0; 32]);
     const ACC_1: AccountAddress = AccountAddress([1; 32]);
+    const WASM_TEST_FOLDER: &str =
+        "../../concordium-node/concordium-consensus/testdata/contracts/v1";
 
     #[test]
     fn creating_accounts_work() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         chain.create_account(ACC_0, AccountInfo::new(Amount::from_ccd(1)));
         chain.create_account(ACC_1, AccountInfo::new(Amount::from_ccd(2)));
 
@@ -1387,12 +1395,12 @@ mod tests {
 
     #[test]
     fn deploying_valid_module_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         assert_eq!(chain.modules.len(), 1);
@@ -1404,12 +1412,12 @@ mod tests {
 
     #[test]
     fn initializing_valid_contract_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1431,12 +1439,12 @@ mod tests {
 
     #[test]
     fn initializing_with_invalid_parameter_fails() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1466,12 +1474,12 @@ mod tests {
 
     #[test]
     fn updating_valid_contract_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1525,14 +1533,14 @@ mod tests {
 
     #[test]
     fn update_with_account_transfer_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         let transfer_amount = Amount::from_ccd(1);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
         chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1597,13 +1605,13 @@ mod tests {
 
     #[test]
     fn update_with_account_transfer_to_missing_account_fails() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         let transfer_amount = Amount::from_ccd(1);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1652,12 +1660,12 @@ mod tests {
     //
     #[test]
     fn update_with_fib_reentry_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/fib/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/fib/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1713,12 +1721,12 @@ mod tests {
 
     #[test]
     fn update_with_integrate_reentry_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1774,12 +1782,12 @@ mod tests {
 
     #[test]
     fn update_with_rollback_and_reentry_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(2404, 1));
+        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
         let initial_balance = Amount::from_ccd(1000000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1") // TODO: Add wasm files to the repo for tests.
+            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let input_param: u32 = 8;
@@ -1831,5 +1839,310 @@ mod tests {
         assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
         // Assert that the updated state is persisted.
         assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
+    }
+
+    mod account_balance {
+        use super::*;
+
+        /// Queries the balance of another account and asserts that it is as
+        /// expected.
+        #[test]
+        fn test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // TODO: Implement serial for four-tuples in contracts-common. Nesting tuples to
+            // get around it here.
+            // The contract will query the balance of ACC_1 and assert that the three
+            // balances match this input.
+            let input_param = (ACC_1, (initial_balance, Amount::zero(), Amount::zero()));
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                )
+            );
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// Queries the balance of the invoker account, which will have have the
+        /// expected balance of:
+        /// prior_balance - amount_sent - amount_to_cover_reserved_NRG.
+        #[test]
+        fn invoker_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+            .module_deploy_raw(ACC_0, format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER)) // TODO: Add wasm files to the repo for tests.
+            .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let update_amount = Amount::from_ccd(123);
+            let energy_limit = Energy::from(100000u64);
+            let invoker_reserved_amount = update_amount + chain.calculate_energy_cost(energy_limit);
+
+            // The contract will query the balance of ACC_1, which is also the invoker, and
+            // assert that the three balances match this input.
+            let expected_balance = initial_balance - invoker_reserved_amount;
+            let input_param = (ACC_1, (expected_balance, Amount::zero(), Amount::zero()));
+
+            let res_update = chain
+                .contract_update(
+                    ACC_1,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    update_amount,
+                    energy_limit,
+                )
+                .expect("Updating valid contract should work");
+
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
+            );
+            assert_eq!(
+                chain.account_balance(ACC_1),
+                // Differs from `expected_balance` as it only includes the actual amount charged
+                // for the NRG use. Not the reserved amount.
+                Some(initial_balance - res_update.transaction_fee - update_amount)
+            );
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// Makes a transfer to an account, then queries its balance and asserts
+        /// that it is as expected.
+        #[test]
+        fn transfer_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/queries-account-balance-transfer.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let amount_to_send = Amount::from_ccd(123);
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    amount_to_send, // Make sure the contract has CCD to transfer.
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let amount_to_send = Amount::from_ccd(123);
+            let expected_balance = initial_balance + amount_to_send;
+            let input_param = (
+                ACC_1,
+                amount_to_send,
+                (expected_balance, Amount::zero(), Amount::zero()),
+            );
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Updating valid contract should work");
+
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                        - amount_to_send
+                )
+            );
+            assert_eq!(
+                chain.account_balance(ACC_1),
+                Some(initial_balance + amount_to_send)
+            );
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Transferred { .. },
+                ChainEvent::Resumed { .. },
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        #[test]
+        fn balance_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // TODO: Implement serial for four-tuples in contracts-common. Nesting tuples to
+            // get around it here.
+            // The contract will query the balance of ACC_1 and assert that the three
+            // balances match this input.
+            let input_param = (ACC_1, (initial_balance, Amount::zero(), Amount::zero()));
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                )
+            );
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// Queries the balance of a missing account and asserts that it returns
+        /// the correct error.
+        #[test]
+        fn missing_account_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!(
+                        "{}/queries-account-balance-missing-account.wasm",
+                        WASM_TEST_FOLDER
+                    ),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // The account to query, which doesn't exist in this test case.
+            let input_param = ACC_1;
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                )
+            );
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
     }
 }
