@@ -32,17 +32,19 @@ const QUERY_EXCHANGE_RATE_COST: u64 = 100;
 pub struct Chain {
     /// The slot time viewable inside the smart contracts.
     /// Defaults to `0`.
-    slot_time:            SlotTime,
-    /// MicroCCD per Energy.
-    micro_ccd_per_energy: ExchangeRate,
+    slot_time:           SlotTime,
+    /// MicroCCD per Euro ratio.
+    micro_ccd_per_euro:  ExchangeRate,
+    /// Euro per Energy ratio.
+    euro_per_energy:     ExchangeRate,
     /// Accounts and info about them.
-    accounts:             BTreeMap<AccountAddress, AccountInfo>,
+    accounts:            BTreeMap<AccountAddress, AccountInfo>,
     /// Smart contract modules.
-    modules:              BTreeMap<ModuleReference, ArtifactV1>,
+    modules:             BTreeMap<ModuleReference, ArtifactV1>,
     /// Smart contract instances.
-    contracts:            BTreeMap<ContractAddress, ContractInstance>,
+    contracts:           BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
-    next_contract_index:  u64,
+    next_contract_index: u64,
 }
 
 #[derive(Clone)]
@@ -55,23 +57,40 @@ pub struct ContractInstance {
 }
 
 impl Chain {
-    pub fn new_with_time(slot_time: SlotTime, energy_per_micro_ccd: ExchangeRate) -> Self {
+    pub fn new_with_time_and_rates(
+        slot_time: SlotTime,
+        micro_ccd_per_euro: ExchangeRate,
+        euro_per_energy: ExchangeRate,
+    ) -> Self {
         Self {
             slot_time,
-            ..Self::new(energy_per_micro_ccd)
+            micro_ccd_per_euro,
+            euro_per_energy,
+            accounts: BTreeMap::new(),
+            modules: BTreeMap::new(),
+            contracts: BTreeMap::new(),
+            next_contract_index: 0,
         }
     }
 
-    /// Create a new [`Self`] where the `slot_time` defaults to `0`.
-    pub fn new(energy_per_micro_ccd: ExchangeRate) -> Self {
+    pub fn new_with_time(slot_time: SlotTime) -> Self {
         Self {
-            slot_time:            Timestamp::from_timestamp_millis(0),
-            micro_ccd_per_energy: energy_per_micro_ccd,
-            accounts:             BTreeMap::new(),
-            modules:              BTreeMap::new(),
-            contracts:            BTreeMap::new(),
-            next_contract_index:  0,
+            slot_time,
+            ..Self::new()
         }
+    }
+
+    /// Create a new [`Self`] where
+    ///  - `slot_time` defaults to `0`,
+    ///  - `micro_ccd_per_euro` defaults to `16036807715944130560 /
+    ///    108919627567`,
+    ///  - `euro_per_energy` defaults to `1 / 50000`.
+    pub fn new() -> Self {
+        Self::new_with_time_and_rates(
+            Timestamp::from_timestamp_millis(0),
+            ExchangeRate::new_unchecked(16036807715944130560, 108919627567),
+            ExchangeRate::new_unchecked(1, 50000),
+        )
     }
 
     /// Helper function that handles the actual logic of deploying the module
@@ -690,8 +709,12 @@ impl Chain {
 
     pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
 
-    pub fn set_energy_per_micro_ccd(&mut self, energy_per_micro_ccd: ExchangeRate) {
-        self.micro_ccd_per_energy = energy_per_micro_ccd;
+    pub fn set_euro_per_energy(&mut self, euro_per_energy: ExchangeRate) {
+        self.euro_per_energy = euro_per_energy;
+    }
+
+    pub fn set_micro_ccd_per_euro(&mut self, micro_ccd_per_euro: ExchangeRate) {
+        self.micro_ccd_per_euro = micro_ccd_per_euro;
     }
 
     /// Returns the balance of an account if it exists.
@@ -706,10 +729,14 @@ impl Chain {
             .and_then(|ci| Some(ci.self_balance))
     }
 
+    // FIXME: Compute without overflow
     pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
+        let micro_ccd_per_energy_numerator =
+            self.euro_per_energy.numerator() * self.micro_ccd_per_euro.numerator();
+        let micro_ccd_per_energy_denominator =
+            self.euro_per_energy.denominator() * self.micro_ccd_per_euro.denominator();
         Amount::from_micro_ccd(
-            energy.energy * self.micro_ccd_per_energy.numerator()
-                / self.micro_ccd_per_energy.denominator(),
+            energy.energy * micro_ccd_per_energy_numerator / micro_ccd_per_energy_denominator,
         )
     }
 
@@ -1422,7 +1449,7 @@ mod tests {
 
     #[test]
     fn creating_accounts_work() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         chain.create_account(ACC_0, AccountInfo::new(Amount::from_ccd(1)));
         chain.create_account(ACC_1, AccountInfo::new(Amount::from_ccd(2)));
 
@@ -1433,7 +1460,7 @@ mod tests {
 
     #[test]
     fn deploying_valid_module_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1450,7 +1477,7 @@ mod tests {
 
     #[test]
     fn initializing_valid_contract_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1477,7 +1504,7 @@ mod tests {
 
     #[test]
     fn initializing_with_invalid_parameter_fails() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1512,7 +1539,7 @@ mod tests {
 
     #[test]
     fn updating_valid_contract_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1571,7 +1598,7 @@ mod tests {
 
     #[test]
     fn update_with_account_transfer_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         let transfer_amount = Amount::from_ccd(1);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
@@ -1643,7 +1670,7 @@ mod tests {
 
     #[test]
     fn update_with_account_transfer_to_missing_account_fails() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         let transfer_amount = Amount::from_ccd(1);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
@@ -1698,7 +1725,7 @@ mod tests {
     //
     #[test]
     fn update_with_fib_reentry_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1759,7 +1786,7 @@ mod tests {
 
     #[test]
     fn update_with_integrate_reentry_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(10000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1820,7 +1847,7 @@ mod tests {
 
     #[test]
     fn update_with_rollback_and_reentry_works() {
-        let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+        let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -1886,7 +1913,7 @@ mod tests {
         /// expected.
         #[test]
         fn test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
@@ -1945,7 +1972,7 @@ mod tests {
         /// prior_balance - amount_sent - amount_to_cover_reserved_NRG.
         #[test]
         fn invoker_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
@@ -2004,7 +2031,7 @@ mod tests {
         /// that it is as expected.
         #[test]
         fn transfer_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
@@ -2072,7 +2099,7 @@ mod tests {
 
         #[test]
         fn balance_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
@@ -2130,7 +2157,7 @@ mod tests {
         /// the correct error.
         #[test]
         fn missing_account_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -2191,7 +2218,7 @@ mod tests {
         /// that the balance is as expected.
         #[test]
         fn test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -2249,7 +2276,7 @@ mod tests {
         /// should include the amount sent to it in the update transaction.
         #[test]
         fn query_self_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -2296,7 +2323,7 @@ mod tests {
         /// Test querying the balance after a transfer of CCD.
         #[test]
         fn query_self_after_transfer_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
@@ -2356,7 +2383,7 @@ mod tests {
         /// Test querying the balance of a contract that doesn't exist.
         #[test]
         fn missing_contract_test() {
-            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let mut chain = Chain::new();
             let initial_balance = Amount::from_ccd(1000000);
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
