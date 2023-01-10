@@ -21,6 +21,7 @@ jobs:
           - concordium-std/Cargo.toml
           - concordium-cis2/Cargo.toml
           - examples/voting/Cargo.toml
+          - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
@@ -468,6 +469,7 @@ jobs:
 
         crates:
           - examples/voting/Cargo.toml
+          - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
@@ -590,6 +592,7 @@ jobs:
 
         crates:
           - examples/voting/Cargo.toml
+          - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
