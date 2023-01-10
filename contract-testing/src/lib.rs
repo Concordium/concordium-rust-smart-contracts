@@ -810,13 +810,19 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                     interrupt,
                 } => {
                     println!("\tInterrupting contract {}", self.address);
+
+                    // Create the interrupt event, which will be included for transfers and calls,
+                    // but not for the remaining interrupts.
+                    // TODO: Or is it included in upgrades as well?
                     let interrupt_event = ChainEvent::Interrupted {
                         address: self.address,
                         logs,
                     };
-                    self.chain_events.push(interrupt_event);
                     match interrupt {
                         v1::Interrupt::Transfer { to, amount } => {
+                            // Add the interrupt event
+                            self.chain_events.push(interrupt_event);
+
                             let response = {
                                 // Check if receiver account exists
                                 if !self.chain.accounts.contains_key(&to) {
@@ -883,6 +889,9 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             name,
                             amount,
                         } => {
+                            // Add the interrupt event
+                            self.chain_events.push(interrupt_event);
+
                             if state_changed {
                                 println!("\t\tState was changed. Saving prior to another call.");
                                 let mut collector = SizeCollector::default();
