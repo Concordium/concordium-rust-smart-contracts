@@ -529,6 +529,8 @@ impl Chain {
     }
 
     /// TODO: Should we make invoker and energy optional?
+    /// TODO: Only works with basic update functions. Rewrite to use
+    /// `contract_update_aux`.
     pub fn contract_invoke(
         &mut self,
         invoker: AccountAddress,
@@ -695,6 +697,13 @@ impl Chain {
     /// Returns the balance of an account if it exists.
     pub fn account_balance(&self, address: AccountAddress) -> Option<Amount> {
         self.accounts.get(&address).and_then(|ai| Some(ai.balance))
+    }
+
+    /// Returns the balance of an contract if it exists.
+    pub fn contract_balance(&self, address: ContractAddress) -> Option<Amount> {
+        self.contracts
+            .get(&address)
+            .and_then(|ci| Some(ci.self_balance))
     }
 
     pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
@@ -1075,7 +1084,36 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             self.process(resume_res)
                         }
-                        v1::Interrupt::QueryContractBalance { address } => todo!(),
+                        v1::Interrupt::QueryContractBalance { address } => {
+                            println!("Querying contract balance of {}", address);
+
+                            let response = match self.chain.contract_balance(address) {
+                                Some(balance) => InvokeResponse::Success {
+                                    new_balance: self
+                                        .chain
+                                        .get_instance(self.address)?
+                                        .self_balance,
+                                    data:        Some(to_bytes(&balance)),
+                                },
+                                None => InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentContract,
+                                },
+                            };
+
+                            let energy_after_invoke =
+                                remaining_energy - QUERY_CONTRACT_BALANCE_COST;
+
+                            let resume_res = v1::resume_receive(
+                                config,
+                                response,
+                                InterpreterEnergy::from(energy_after_invoke),
+                                &mut self.mutable_state,
+                                false, // State never changes on queries.
+                                self.loader,
+                            );
+
+                            self.process(resume_res)
+                        }
                         v1::Interrupt::QueryExchangeRates => todo!(),
                     }
                 }
@@ -2140,6 +2178,223 @@ mod tests {
                         - res_update.transaction_fee
                 )
             );
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+    }
+
+    mod contract_balance {
+        use super::*;
+
+        /// Test querying the balance of another contract, which exists. Asserts
+        /// that the balance is as expected.
+        #[test]
+        fn test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let init_amount = Amount::from_ccd(123);
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/queries-contract-balance.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_init_other = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    init_amount, // Set up another contract with `init_amount` balance
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // check that the other contract has `self_balance == init_amount`.
+            let input_param = (res_init_other.contract_address, init_amount);
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// Test querying the balance of the contract instance itself. This
+        /// should include the amount sent to it in the update transaction.
+        #[test]
+        fn query_self_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let init_amount = Amount::from_ccd(123);
+            let update_amount = Amount::from_ccd(456);
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/queries-contract-balance.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    init_amount,
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // check that the other contract has `self_balance == init_amount`.
+            let input_param = (res_init.contract_address, init_amount + update_amount);
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    update_amount,
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// Test querying the balance after a transfer of CCD.
+        #[test]
+        fn query_self_after_transfer_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let init_amount = Amount::from_ccd(123);
+            let update_amount = Amount::from_ccd(456);
+            let transfer_amount = Amount::from_ccd(78);
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!(
+                        "{}/queries-contract-balance-transfer.wasm",
+                        WASM_TEST_FOLDER
+                    ),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    init_amount,
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let input_param = (
+                ACC_0,
+                transfer_amount,
+                (
+                    res_init.contract_address,
+                    init_amount + update_amount - transfer_amount,
+                ),
+            );
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    update_amount,
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Transferred { .. },
+                ChainEvent::Resumed { .. },
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// Test querying the balance of a contract that doesn't exist.
+        #[test]
+        fn missing_contract_test() {
+            let mut chain = Chain::new(ExchangeRate::new_unchecked(NRG_PER_MICRO_CCD, 1));
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!(
+                        "{}/queries-contract-balance-missing-contract.wasm",
+                        WASM_TEST_FOLDER
+                    ),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // Non-existent contract address.
+            let input_param = ContractAddress::new(123, 456);
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
             assert!(matches!(res_update.chain_events[..], [
                 ChainEvent::Updated { .. }
             ]));
