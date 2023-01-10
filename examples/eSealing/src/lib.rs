@@ -16,6 +16,7 @@
 //! different witness) would not prove that the second witness is also in
 //! possession of that file because the second witness could have read the
 //! file hash during the initial registration transaction from the blockchain.
+#![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
 /// The different errors the contract can produce.
@@ -80,11 +81,11 @@ impl<S: HasStateApi> State<S> {
 
     /// Get recorded FileState (timestamp and witness) from a specific file
     /// hash.
-    fn get_file_state(&self, file_hash: FileHash) -> ReceiveResult<Option<FileState>> {
-        Ok(self.files.get(&file_hash).map(|v| *v))
+    fn get_file_state(&self, file_hash: FileHash) -> Option<FileState> {
+        self.files.get(&file_hash).map(|v| *v)
     }
 
-    /// Add a new file hash.
+    /// Add a new file hash (replaces existing file if present).
     fn add_file(&mut self, file_hash: FileHash, timestamp: Timestamp, witness: AccountAddress) {
         self.files.insert(file_hash, FileState {
             timestamp,
@@ -123,7 +124,7 @@ fn contract_init<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - If file hash has already been registered.
+/// - If the file hash has already been registered.
 /// - If a smart contract tries to register the file hash.
 #[receive(
     contract = "eSealing",
@@ -149,19 +150,19 @@ fn register_file<S: HasStateApi>(
     // Ensure that the file hash hasn't been registered so far.
     ensure!(!host.state().file_exists(&file_hash), ContractError::AlreadyRegistered);
 
-    let slot_time = ctx.metadata().slot_time();
+    let timestamp = ctx.metadata().slot_time();
 
     // Register the file hash.
-    host.state_mut().add_file(file_hash, slot_time, sender_account);
+    host.state_mut().add_file(file_hash, timestamp, sender_account);
 
     // Log the event.
     logger.log(&Event::Registration(RegistrationEvent {
         file_hash,
         witness: sender_account,
-        timestamp: slot_time,
+        timestamp,
     }))?;
 
-    Result::Ok(())
+    Ok(())
 }
 
 /// Get the `FileState` (timestamp and witness) of a registered file hash.
@@ -181,7 +182,7 @@ fn get_file<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<Option<FileState>> {
     let file_hash: FileHash = ctx.parameter_cursor().get()?;
-    host.state().get_file_state(file_hash)
+    Ok(host.state().get_file_state(file_hash))
 }
 
 #[concordium_cfg_test]
@@ -206,7 +207,7 @@ mod tests {
 
         // Check the state.
         let state = init_result.expect_report("Contract Initialization failed");
-        claim_eq!(state.files.iter().count(), 0, "No files present after initialization");
+        claim!(state.files.is_empty(), "No files present after initialization");
     }
 
     /// Test registering file hash.
@@ -238,6 +239,7 @@ mod tests {
             timestamp: Timestamp::from_timestamp_millis(TIME),
         });
         claim!(logger.logs.contains(&to_bytes(&event)), "should contain event");
+        claim!(host.state().file_exists(&FILE_HASH), "state should contain file");
     }
 
     /// Test can not register a file hash twice.
@@ -269,6 +271,7 @@ mod tests {
             timestamp: Timestamp::from_timestamp_millis(TIME),
         });
         claim!(logger.logs.contains(&to_bytes(&event)), "should contain event");
+        claim!(host.state().file_exists(&FILE_HASH), "state should contain file");
 
         // Try to register the file hash a second time.
         let result = register_file(&ctx, &mut host, &mut logger);
