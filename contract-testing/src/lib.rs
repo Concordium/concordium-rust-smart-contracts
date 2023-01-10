@@ -74,20 +74,24 @@ impl Chain {
         }
     }
 
-    pub fn module_deploy<P: AsRef<Path>>(
+    /// Helper function that handles the actual logic of deploying the module
+    /// bytes.
+    ///
+    /// Parameters:
+    ///  - `sender`: the sender account.
+    ///  - `module_bytes`: the module **without** the contract version and
+    ///    module length bytes (8 bytes total).
+    fn module_deploy_aux(
         &mut self,
         sender: AccountAddress,
-        module_path: P,
+        module: &[u8],
     ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
-        // Load file
-        let module = std::fs::read(module_path)?;
-
         // Deserialize as wasm module (artifact)
         let artifact = wasm_transform::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
             &ConcordiumAllowedImports {
                 support_upgrade: true,
             },
-            &module[8..], // skip the 4 version bytes and 4 len bytes
+            &module,
         )
         .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
 
@@ -120,6 +124,32 @@ impl Chain {
             energy,
             transaction_fee,
         })
+    }
+
+    /// Deploy a raw wasm module, i.e. one **without** the prefix of 4 version
+    /// bytes and 4 module length bytes.
+    pub fn module_deploy_raw<P: AsRef<Path>>(
+        &mut self,
+        sender: AccountAddress,
+        module_path: P,
+    ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
+        // Load file
+        let module = std::fs::read(module_path)?;
+        self.module_deploy_aux(sender, &module)
+    }
+
+    /// Deploy a wasm module as it is output from `cargo concordium build`, i.e.
+    /// **including** the prefix of 4 version bytes and 4 module length bytes.
+    pub fn module_deploy<P: AsRef<Path>>(
+        &mut self,
+        sender: AccountAddress,
+        module_path: P,
+    ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
+        // Load file
+        let module = std::fs::read(module_path)?;
+        // Here, we skip the 8 bytes that encode the smart contract version and module
+        // length
+        self.module_deploy_aux(sender, &module[8..])
     }
 
     pub fn contract_init(
