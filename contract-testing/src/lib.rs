@@ -88,7 +88,7 @@ impl Chain {
     pub fn new() -> Self {
         Self::new_with_time_and_rates(
             Timestamp::from_timestamp_millis(0),
-            ExchangeRate::new_unchecked(16036807715944130560, 108919627567),
+            ExchangeRate::new_unchecked(147235241, 1),
             ExchangeRate::new_unchecked(1, 50000),
         )
     }
@@ -729,7 +729,23 @@ impl Chain {
             .and_then(|ci| Some(ci.self_balance))
     }
 
-    // FIXME: Compute without overflow
+    // Calculate the microCCD(mCCD) cost of energy(NRG) using the two exchange rates
+    // available:
+    //
+    // To find the mCCD/NRG exchange rate:
+    //
+    //  euro     mCCD   euro * mCCD   mCCD
+    //  ----  *  ---- = ----------- = ----
+    //  NRG      euro   NRG * euro    NRG
+    //
+    // To convert the `energy` parameter to mCCD:
+    //
+    //        mCCD   NRG * mCCD
+    //  NRG * ---- = ---------- = mCCD
+    //        NRG       NRG
+    //
+    //  TODO: If using a mCCD/euro exchange rate with large numbers, then this can
+    // overflow.
     pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
         let micro_ccd_per_energy_numerator =
             self.euro_per_energy.numerator() * self.micro_ccd_per_euro.numerator();
@@ -1726,7 +1742,7 @@ mod tests {
     #[test]
     fn update_with_fib_reentry_works() {
         let mut chain = Chain::new();
-        let initial_balance = Amount::from_ccd(10000);
+        let initial_balance = Amount::from_ccd(1000000);
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
