@@ -1157,7 +1157,30 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             self.process(resume_res)
                         }
-                        v1::Interrupt::QueryExchangeRates => todo!(),
+                        v1::Interrupt::QueryExchangeRates => {
+                            println!("Querying exchange rates");
+
+                            let exchange_rates =
+                                (self.chain.euro_per_energy, self.chain.micro_ccd_per_euro);
+
+                            let response = InvokeResponse::Success {
+                                new_balance: self.chain.get_instance(self.address)?.self_balance,
+                                data:        Some(to_bytes(&exchange_rates)),
+                            };
+
+                            let energy_after_invoke = remaining_energy - QUERY_EXCHANGE_RATE_COST;
+
+                            let resume_res = v1::resume_receive(
+                                config,
+                                response,
+                                InterpreterEnergy::from(energy_after_invoke),
+                                &mut self.mutable_state,
+                                false, // State never changes on queries.
+                                self.loader,
+                            );
+
+                            self.process(resume_res)
+                        }
                     }
                 }
                 x => Ok(x),
@@ -1922,7 +1945,7 @@ mod tests {
         assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
     }
 
-    mod account_balance {
+    mod query_account_balance {
         use super::*;
 
         /// Queries the balance of another account and asserts that it is as
@@ -2227,7 +2250,7 @@ mod tests {
         }
     }
 
-    mod contract_balance {
+    mod query_contract_balance {
         use super::*;
 
         /// Test querying the balance of another contract, which exists. Asserts
@@ -2426,6 +2449,55 @@ mod tests {
 
             // Non-existent contract address.
             let input_param = ContractAddress::new(123, 456);
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("query"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+    }
+
+    mod query_exchange_rates {
+
+        use super::*;
+
+        /// Test querying the exchange rates.
+        #[test]
+        fn test() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/queries-exchange-rates.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // Non-existent contract address.
+            let input_param = (chain.euro_per_energy, chain.micro_ccd_per_euro);
 
             let res_update = chain
                 .contract_update(
