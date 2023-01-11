@@ -1,5 +1,8 @@
 use anyhow::bail;
-use concordium_base::base::{Energy, ExchangeRate};
+use concordium_base::{
+    base::{Energy, ExchangeRate},
+    transactions::{self, cost},
+};
 use concordium_contracts_common::*;
 use sha2::{Digest, Sha256};
 use std::{
@@ -115,8 +118,31 @@ impl Chain {
         .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
 
         // Calculate transaction fee of deployment
-        let energy = Energy::from(module.len() as u64 / 10); // From: Concordium/Const/deployModuleCost.hs
+        // TODO: This is still slightly off.
+        // For the fib module
+        //   - This results in 18259 NRG
+        //   - Concordium-client says 18262 NRG
+        //   - The node charges for 18261 NRG
+        let energy = {
+            let payload_size =
+                1 + module.len() as u64 + transactions::construct::TRANSACTION_HEADER_SIZE; // +1 for the tag
+            let number_of_sigs = 1; // Accounts always have one signature here. TODO: Should we allow changing that?
+            let base_cost = cost::base_cost(payload_size, number_of_sigs);
+            let deploy_module_cost = cost::deploy_module(payload_size);
+            let total = base_cost + deploy_module_cost;
+            println!(
+                "Deploying module \
+                 cost:\n\tmodule_size:{}\n\tbase_cost:{}\n\tdeploy_module_cost:{}\n\ttotal:{}",
+                payload_size, base_cost, deploy_module_cost, total
+            );
+            total
+        };
         let transaction_fee = self.calculate_energy_cost(energy);
+        println!(
+            "Deploying module with size {}, resulting in {} NRG.",
+            module.len(),
+            energy
+        );
 
         // Try to subtract cost for account
         match self.accounts.entry(sender) {
