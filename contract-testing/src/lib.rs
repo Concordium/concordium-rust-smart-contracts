@@ -31,6 +31,8 @@ type ArtifactV1 = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFun
 const QUERY_ACCOUNT_BALANCE_COST: u64 = 200;
 const QUERY_CONTRACT_BALANCE_COST: u64 = 200;
 const QUERY_EXCHANGE_RATE_COST: u64 = 100;
+const INITIALIZE_CONTRACT_INSTANCE_BASE_COST: u64 = 300;
+const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: u64 = 200;
 
 pub struct Chain {
     /// The slot time viewable inside the smart contracts.
@@ -1104,7 +1106,74 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             self.process(resume_res)
                         }
-                        v1::Interrupt::Upgrade { module_ref } => todo!(),
+                        v1::Interrupt::Upgrade { module_ref } => {
+                            println!("Upgrading contract to {:?}", module_ref);
+
+                            // Add the interrupt event.
+                            self.chain_events.push(interrupt_event);
+
+                            // Charge a base cost.
+                            let mut energy_after_invoke =
+                                remaining_energy - INITIALIZE_CONTRACT_INSTANCE_BASE_COST;
+
+                            let response = match self.chain.modules.get(&module_ref) {
+                                None => InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
+                                },
+                                Some(artifact) => {
+                                    // Charge for the module lookup.
+                                    energy_after_invoke -=
+                                        self.chain.lookup_module_cost(&artifact).energy;
+
+                                    if artifact.export.contains_key(
+                                        self.contract_name.as_contract_name().get_chain_name(),
+                                    ) {
+                                        let instance = self.chain.get_instance_mut(self.address)?;
+                                        let old_module_ref = instance.module_reference;
+                                        // Update module reference for the instance.
+                                        instance.module_reference = module_ref;
+
+                                        // Charge for the initialization cost.
+                                        energy_after_invoke -=
+                                            INITIALIZE_CONTRACT_INSTANCE_CREATE_COST;
+
+                                        let upgrade_event = ChainEvent::Upgraded {
+                                            address: self.address,
+                                            from:    old_module_ref,
+                                            to:      module_ref,
+                                        };
+
+                                        self.chain_events.push(upgrade_event);
+
+                                        InvokeResponse::Success {
+                                            new_balance: instance.self_balance,
+                                            data:        None,
+                                        }
+                                    } else {
+                                        InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::UpgradeInvalidContractName,
+                                        }
+                                    }
+                                }
+                            };
+
+                            let success = matches!(response, InvokeResponse::Success { .. });
+                            self.chain_events.push(ChainEvent::Resumed {
+                                address: self.address,
+                                success,
+                            });
+
+                            let resume_res = v1::resume_receive(
+                                config,
+                                response,
+                                InterpreterEnergy::from(energy_after_invoke),
+                                &mut self.mutable_state,
+                                state_changed,
+                                self.loader,
+                            );
+
+                            self.process(resume_res)
+                        }
                         v1::Interrupt::QueryAccountBalance { address } => {
                             println!("Querying account balance of {}", address);
                             // When querying an account, the amounts from any `invoke_transfer`s
@@ -1506,7 +1575,6 @@ impl ContractParameter {
 mod tests {
     use super::*;
 
-    const NRG_PER_MICRO_CCD: u64 = 2404;
     const ACC_0: AccountAddress = AccountAddress([0; 32]);
     const ACC_1: AccountAddress = AccountAddress([1; 32]);
     const WASM_TEST_FOLDER: &str =
@@ -2538,6 +2606,139 @@ mod tests {
 
             assert!(matches!(res_update.chain_events[..], [
                 ChainEvent::Updated { .. }
+            ]));
+        }
+    }
+
+    mod contract_upgrade {
+
+        use super::*;
+
+        /// Test a basic upgrade, ensuring that the new module is in place by
+        /// checking the available entrypoints.
+        #[test]
+        fn test() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            // Deploy the two modules `upgrading_0`, `upgrading_1`
+            let res_deploy_0 = chain
+                .module_deploy_raw(ACC_0, format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_deploy_1 = chain
+                .module_deploy_raw(ACC_0, format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            // Initialize `upgrading_0`.
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy_0.module_reference,
+                    ContractName::new_unchecked("init_a"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            // Upgrade the contract to the `upgrading_1` module by calling the `bump`
+            // entrypoint.
+            let res_update_upgrade = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("bump"),
+                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            // Call the `newfun` entrypoint which only exists in `upgrading_1`.
+            let res_update_new = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("newfun"),
+                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating the `newfun` from the `upgrading_1` module should work");
+
+            println!("{:?}", res_update_upgrade.chain_events);
+            assert!(matches!(res_update_upgrade.chain_events[..], [
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Upgraded { .. },
+                ChainEvent::Resumed { .. },
+                ChainEvent::Updated { .. },
+            ]));
+            assert!(matches!(res_update_new.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+        }
+
+        /// The contract in this test, triggers an upgrade and then in the same
+        /// invocation, calls a function in the upgraded module.
+        /// Checking the new module is being used.
+        #[test]
+        fn test_self_invoke() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy_0 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+            let res_deploy_1 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy_0.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("upgrade"),
+                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                // Invoking `contract.name`
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Updated { .. },
+                ChainEvent::Resumed { .. },
+                // Making the upgrade
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Upgraded { .. },
+                ChainEvent::Resumed { .. },
+                // Invoking contract.name again
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Updated { .. },
+                ChainEvent::Resumed { .. },
+                // The successful update
+                ChainEvent::Updated { .. },
             ]));
         }
     }
