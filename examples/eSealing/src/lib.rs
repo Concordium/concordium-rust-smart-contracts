@@ -54,14 +54,11 @@ struct FileState {
     witness:   AccountAddress,
 }
 
-/// FileHash type is a fixed-length byte array.
-type FileHash = [u8; 32];
-
 /// The contract state.
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
-    files: StateMap<FileHash, FileState, S>,
+    files: StateMap<HashSha2256, FileState, S>,
 }
 
 impl<S: HasStateApi> State<S> {
@@ -73,7 +70,7 @@ impl<S: HasStateApi> State<S> {
     }
 
     /// Check if a file exists.
-    fn file_exists(&self, file_hash: &FileHash) -> bool {
+    fn file_exists(&self, file_hash: &HashSha2256) -> bool {
         let file = self.files.get(file_hash);
 
         file.is_some()
@@ -81,12 +78,12 @@ impl<S: HasStateApi> State<S> {
 
     /// Get recorded FileState (timestamp and witness) from a specific file
     /// hash.
-    fn get_file_state(&self, file_hash: FileHash) -> Option<FileState> {
+    fn get_file_state(&self, file_hash: HashSha2256) -> Option<FileState> {
         self.files.get(&file_hash).map(|v| *v)
     }
 
     /// Add a new file hash (replaces existing file if present).
-    fn add_file(&mut self, file_hash: FileHash, timestamp: Timestamp, witness: AccountAddress) {
+    fn add_file(&mut self, file_hash: HashSha2256, timestamp: Timestamp, witness: AccountAddress) {
         self.files.insert(file_hash, FileState {
             timestamp,
             witness,
@@ -104,7 +101,7 @@ enum Event {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct RegistrationEvent {
     /// Hash of the file to be registered by the witness (sender_account).
-    file_hash: FileHash,
+    file_hash: HashSha2256,
     /// Witness (sender_account) that registered the above file hash.
     witness:   AccountAddress,
     /// Timestamp when this file hash was registered in the smart contract.
@@ -129,7 +126,7 @@ fn contract_init<S: HasStateApi>(
 #[receive(
     contract = "eSealing",
     name = "registerFile",
-    parameter = "FileHash",
+    parameter = "HashSha2256",
     error = "ContractError",
     mutable,
     enable_logger
@@ -145,7 +142,7 @@ fn register_file<S: HasStateApi>(
         Address::Account(account_address) => account_address,
     };
 
-    let file_hash: FileHash = ctx.parameter_cursor().get()?;
+    let file_hash: HashSha2256 = ctx.parameter_cursor().get()?;
 
     // Ensure that the file hash hasn't been registered so far.
     ensure!(!host.state().file_exists(&file_hash), ContractError::AlreadyRegistered);
@@ -173,7 +170,7 @@ fn register_file<S: HasStateApi>(
 #[receive(
     contract = "eSealing",
     name = "getFile",
-    parameter = "FileHash",
+    parameter = "HashSha2256",
     error = "ContractError",
     return_value = "Option<FileState>"
 )]
@@ -181,7 +178,7 @@ fn get_file<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<Option<FileState>> {
-    let file_hash: FileHash = ctx.parameter_cursor().get()?;
+    let file_hash: HashSha2256 = ctx.parameter_cursor().get()?;
     Ok(host.state().get_file_state(file_hash))
 }
 
@@ -192,7 +189,7 @@ mod tests {
 
     const ACCOUNT_0: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const FILE_HASH: FileHash = [2u8; 32];
+    const FILE_HASH: HashSha2256 = concordium_std::HashSha2256([2u8; 32]);
     const TIME: u64 = 1;
 
     /// Test initializing contract.
