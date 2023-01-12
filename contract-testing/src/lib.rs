@@ -126,24 +126,14 @@ impl Chain {
         .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
 
         // Calculate transaction fee of deployment
-        // TODO: This is still slightly off.
-        // For the fib module
-        //   - This results in 18259 NRG
-        //   - Concordium-client says 18262 NRG
-        //   - The node charges for 18261 NRG
         let energy = {
+            // +1 for the tag, +8 for size and version
             let payload_size =
-                1 + module.len() as u64 + transactions::construct::TRANSACTION_HEADER_SIZE; // +1 for the tag
-            let number_of_sigs = 1; // Accounts always have one signature here. TODO: Should we allow changing that?
+                1 + 8 + module.len() as u64 + transactions::construct::TRANSACTION_HEADER_SIZE;
+            let number_of_sigs = self.get_account(sender)?.signature_count;
             let base_cost = cost::base_cost(payload_size, number_of_sigs);
-            let deploy_module_cost = cost::deploy_module(payload_size);
-            let total = base_cost + deploy_module_cost;
-            println!(
-                "Deploying module \
-                 cost:\n\tmodule_size:{}\n\tbase_cost:{}\n\tdeploy_module_cost:{}\n\ttotal:{}",
-                payload_size, base_cost, deploy_module_cost, total
-            );
-            total
+            let deploy_module_cost = cost::deploy_module(module.len() as u64);
+            base_cost + deploy_module_cost
         };
         let transaction_fee = self.calculate_energy_cost(energy);
         println!(
@@ -153,16 +143,11 @@ impl Chain {
         );
 
         // Try to subtract cost for account
-        match self.accounts.entry(sender) {
-            Vacant(_) => return Err(DeployModuleError::AccountDoesNotExist),
-            Occupied(mut acc) => {
-                let acc = acc.get_mut();
-                if acc.balance < transaction_fee {
-                    return Err(DeployModuleError::InsufficientFunds);
-                }
-                acc.balance -= transaction_fee;
-            }
+        let account = self.get_account_mut(sender)?;
+        if account.balance < transaction_fee {
+            return Err(DeployModuleError::InsufficientFunds);
         }
+        account.balance -= transaction_fee;
 
         // Save the module
         let module_reference = {
@@ -1328,9 +1313,12 @@ impl From<AccountMissing> for ContractUpdateError {
 #[derive(Clone)]
 pub struct AccountInfo {
     /// The account balance. TODO: Do we need the three types of balances?
-    pub balance: Amount,
+    pub balance:     Amount,
     /// Account policies.
-    policies:    v0::OwnedPolicyBytes,
+    policies:        v0::OwnedPolicyBytes,
+    /// The number of signatures. The number of signatures affect the cost of
+    /// every transaction for the account.
+    signature_count: u32,
 }
 
 pub struct TestPolicies(v0::OwnedPolicyBytes);
@@ -1344,14 +1332,43 @@ impl TestPolicies {
 }
 
 impl AccountInfo {
+    /// Create a new [`Self`] with the provided parameters.
+    /// The `signature_count` must be >= 1 for transaction costs to be
+    /// realistic.
+    pub fn new_with_policy_and_signature_count(
+        balance: Amount,
+        policies: TestPolicies,
+        signature_count: u32,
+    ) -> Self {
+        Self {
+            balance,
+            policies: policies.0,
+            signature_count,
+        }
+    }
+
+    /// Create new [`Self`] with empty account policies but the provided
+    /// `signature_count`. The `signature_count` must be >= 1 for transaction
+    /// costs to be realistic.
+    pub fn new_with_signature_count(balance: Amount, signature_count: u32) -> Self {
+        Self {
+            signature_count,
+            ..Self::new(balance)
+        }
+    }
+
+    /// Create new [`Self`] with empty account policies and a signature
+    /// count of `1`.
     pub fn new_with_policy(balance: Amount, policies: TestPolicies) -> Self {
         Self {
             balance,
             policies: policies.0,
+            signature_count: 1,
         }
     }
 
-    /// Create new account info with empty account policies.
+    /// Create new [`Self`] with empty account policies and a signature
+    /// count of `1`.
     pub fn new(balance: Amount) -> Self { Self::new_with_policy(balance, TestPolicies::empty()) }
 }
 
@@ -1459,6 +1476,10 @@ pub enum DeployModuleError {
 
 impl From<std::io::Error> for DeployModuleError {
     fn from(e: std::io::Error) -> Self { DeployModuleError::ReadFileError(e) }
+}
+
+impl From<AccountMissing> for DeployModuleError {
+    fn from(_: AccountMissing) -> Self { DeployModuleError::AccountDoesNotExist }
 }
 
 impl ContractError {
