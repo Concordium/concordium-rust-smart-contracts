@@ -1,17 +1,11 @@
 use anyhow::bail;
 use concordium_base::{
     base::{Energy, ExchangeRate},
+    contracts_common::*,
     transactions::{self, cost},
 };
-use concordium_contracts_common::*;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{
-        btree_map::Entry::{Occupied, Vacant},
-        BTreeMap,
-    },
-    path::Path,
-};
+use std::{collections::BTreeMap, path::Path};
 use thiserror::Error;
 use wasm_chain_integration::{
     v0,
@@ -28,40 +22,50 @@ use wasm_transform::artifact;
 type ArtifactV1 = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>;
 
 // Energy constants from Cost.hs in concordium-base.
-const QUERY_ACCOUNT_BALANCE_COST: u64 = 200;
-const QUERY_CONTRACT_BALANCE_COST: u64 = 200;
-const QUERY_EXCHANGE_RATE_COST: u64 = 100;
+
+/// Cost of querying the account balance from a within smart contract instance.
+const CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST: u64 = 200;
+/// Cost of querying the contract balance from a within smart contract instance.
+const CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST: u64 = 200;
+/// Cost of querying the current exchange rates from a within smart contract
+/// instance.
+const CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST: u64 = 100;
+/// The base cost of initializing a contract instance to cover administrative
+/// costs. Even if no code is run and no instance created.
 const INITIALIZE_CONTRACT_INSTANCE_BASE_COST: u64 = 300;
+/// Cost of creating an empty smart contract instance.
 const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: u64 = 200;
 
 pub struct Chain {
     /// The slot time viewable inside the smart contracts.
     /// Defaults to `0`.
-    slot_time:           SlotTime,
+    pub slot_time:           SlotTime,
     /// MicroCCD per Euro ratio.
-    micro_ccd_per_euro:  ExchangeRate,
+    pub micro_ccd_per_euro:  ExchangeRate,
     /// Euro per Energy ratio.
-    euro_per_energy:     ExchangeRate,
+    pub euro_per_energy:     ExchangeRate,
     /// Accounts and info about them.
-    accounts:            BTreeMap<AccountAddress, AccountInfo>,
+    pub accounts:            BTreeMap<AccountAddress, AccountInfo>,
     /// Smart contract modules.
-    modules:             BTreeMap<ModuleReference, ArtifactV1>,
+    pub modules:             BTreeMap<ModuleReference, ArtifactV1>,
     /// Smart contract instances.
-    contracts:           BTreeMap<ContractAddress, ContractInstance>,
+    pub contracts:           BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
-    next_contract_index: u64,
+    pub next_contract_index: u64,
 }
 
 #[derive(Clone)]
 pub struct ContractInstance {
-    module_reference: ModuleReference,
-    contract_name:    OwnedContractName,
-    state:            v1::trie::PersistentState,
-    owner:            AccountAddress,
-    self_balance:     Amount,
+    pub module_reference: ModuleReference,
+    pub contract_name:    OwnedContractName,
+    pub state:            v1::trie::PersistentState,
+    pub owner:            AccountAddress,
+    pub self_balance:     Amount,
 }
 
 impl Chain {
+    /// Create a new [`Self`] where all the configurable parameters are
+    /// provided.
     pub fn new_with_time_and_rates(
         slot_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
@@ -78,6 +82,9 @@ impl Chain {
         }
     }
 
+    /// Create a new [`Self`] with a specified `slot_time` where
+    ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
+    ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new_with_time(slot_time: SlotTime) -> Self {
         Self {
             slot_time,
@@ -87,8 +94,7 @@ impl Chain {
 
     /// Create a new [`Self`] where
     ///  - `slot_time` defaults to `0`,
-    ///  - `micro_ccd_per_euro` defaults to `16036807715944130560 /
-    ///    108919627567`,
+    ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new() -> Self {
         Self::new_with_time_and_rates(
@@ -103,8 +109,8 @@ impl Chain {
     ///
     /// Parameters:
     ///  - `sender`: the sender account.
-    ///  - `module_bytes`: the module **without** the contract version and
-    ///    module length bytes (8 bytes total).
+    ///  - `module`: the raw wasm module (i.e. **without** the contract version
+    ///    and module length bytes (8 bytes total)).
     fn module_deploy_aux(
         &mut self,
         sender: AccountAddress,
@@ -1209,7 +1215,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 },
                             };
 
-                            let energy_after_invoke = remaining_energy - QUERY_ACCOUNT_BALANCE_COST;
+                            let energy_after_invoke =
+                                remaining_energy - CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST;
 
                             let resume_res = v1::resume_receive(
                                 config,
@@ -1239,7 +1246,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             };
 
                             let energy_after_invoke =
-                                remaining_energy - QUERY_CONTRACT_BALANCE_COST;
+                                remaining_energy - CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST;
 
                             let resume_res = v1::resume_receive(
                                 config,
@@ -1263,7 +1270,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 
-                            let energy_after_invoke = remaining_energy - QUERY_EXCHANGE_RATE_COST;
+                            let energy_after_invoke =
+                                remaining_energy - CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST;
 
                             let resume_res = v1::resume_receive(
                                 config,
