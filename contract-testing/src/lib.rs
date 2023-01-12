@@ -1379,6 +1379,8 @@ pub enum ContractUpdateError {
     InsufficientFunds,
 }
 
+// TODO: Implementing (Partial)Eq for this and the other error/success types
+// would be nice. But `anyhow::Error` does not implement (Partial)Eq.
 #[derive(Debug)]
 pub enum FailedContractInteraction {
     Reject {
@@ -2668,13 +2670,12 @@ mod tests {
                 )
                 .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
-            println!("{:?}", res_update_upgrade.chain_events);
             assert!(matches!(res_update_upgrade.chain_events[..], [
                 ChainEvent::Interrupted { .. },
-                ChainEvent::Upgraded { .. },
+                ChainEvent::Upgraded { from, to, .. },
                 ChainEvent::Resumed { .. },
                 ChainEvent::Updated { .. },
-            ]));
+            ] if from == res_deploy_0.module_reference && to == res_deploy_1.module_reference));
             assert!(matches!(res_update_new.chain_events[..], [
                 ChainEvent::Updated { .. }
             ]));
@@ -2739,6 +2740,402 @@ mod tests {
                 ChainEvent::Resumed { .. },
                 // The successful update
                 ChainEvent::Updated { .. },
+            ]));
+        }
+
+        /// Test upgrading to a module that doesn't exist (it uses module
+        /// `[0u8;32]` inside the contract). The contract checks whether
+        /// the expected error is returned.
+        #[test]
+        fn test_missing_module() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-missing-module.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("upgrade"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Interrupted { .. },
+                // No upgrade event, as it is supposed to fail.
+                ChainEvent::Resumed { success, .. },
+                ChainEvent::Updated { .. },
+            ] if success == false));
+        }
+
+        /// Test upgrading to a module where there isn't a matching contract
+        /// name. The contract checks whether the expected error is
+        /// returned.
+        #[test]
+        fn test_missing_contract() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy_0 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-missing-contract0.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_deploy_1 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-missing-contract1.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy_0.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("upgrade"),
+                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                ChainEvent::Interrupted { .. },
+                // No upgrade event, as it is supposed to fail.
+                ChainEvent::Resumed { success, .. },
+                ChainEvent::Updated { .. },
+            ] if success == false));
+        }
+
+        /// Test upgrading twice in the same transaction. The effect of the
+        /// second upgrade should be in effect at the end.
+        #[test]
+        fn test_twice_in_one_transaction() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy_0 = chain
+                .module_deploy_raw(ACC_0, format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_deploy_1 = chain
+                .module_deploy_raw(ACC_0, format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_deploy_2 = chain
+                .module_deploy_raw(ACC_0, format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy_0.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let input_param = (res_deploy_1.module_reference, res_deploy_2.module_reference);
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("upgrade"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            assert!(matches!(res_update.chain_events[..], [
+                // Invoke the contract itself to check the name entrypoint return value.
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Updated { .. },
+                ChainEvent::Resumed { .. },
+                // Upgrade from module 0 to 1
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Upgraded { from: first_from, to: first_to, .. },
+                ChainEvent::Resumed { .. },
+                // Invoke the contract itself to check the name again.
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Updated { .. },
+                ChainEvent::Resumed { .. },
+                // Upgrade again
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Upgraded { from: second_from, to: second_to, .. },
+                ChainEvent::Resumed { .. },
+                // Invoke itself again to check name a final time.
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Updated { .. },
+                ChainEvent::Resumed { .. },
+                // Final update event
+                ChainEvent::Updated { .. },
+            ] if first_from == res_deploy_0.module_reference
+                && first_to == res_deploy_1.module_reference
+                && second_from == res_deploy_1.module_reference
+                && second_to == res_deploy_2.module_reference));
+        }
+
+        /// Test upgrading to a module where there isn't a matching contract
+        /// name. The contract checks whether the expected error is
+        /// returned.
+        #[test]
+        fn test_chained_contract() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let number_of_upgrades: u32 = 93; // TODO: Stack will overflow if larger than 93.
+            let input_param = (number_of_upgrades, res_deploy.module_reference);
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("upgrade"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(1000000u64),
+                )
+                .expect("Updating valid contract should work");
+
+            // Per upgrade: 3 events for invoking itself + 3 events for the upgrade.
+            // Ends with 4 extra events: 3 events for an upgrade and 1 event for succesful
+            // update.
+            assert_eq!(
+                res_update.chain_events.len() as u32,
+                6 * number_of_upgrades + 4
+            )
+        }
+
+        /// Tests whether a contract which triggers a succesful upgrade,
+        /// but rejects the transaction from another cause, rollbacks the
+        /// upgrade as well.
+        #[test]
+        fn test_reject() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy_0 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_deploy_1 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy_0.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update_upgrade = chain.contract_update(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("upgrade"),
+                ContractParameter::from_typed(&res_deploy_1.module_reference),
+                Amount::zero(),
+                Energy::from(1000000u64),
+            );
+
+            let res_update_new_feature = chain.contract_update(
+                ACC_0,
+                res_init.contract_address,
+                EntrypointName::new_unchecked("new_feature"),
+                ContractParameter::empty(),
+                Amount::zero(),
+                Energy::from(1000000u64),
+            );
+
+            // Check the return value manually returned by the contract.
+            assert!(matches!(res_update_upgrade,
+                         Err(ContractUpdateError::ValidChainError(FailedContractInteraction::Reject { reason, ..}))
+                         if reason == -1));
+
+            // Assert that the new_feature entrypoint doesn't exist since the upgrade
+            // failed.
+            assert!(matches!(
+            res_update_new_feature,
+            Err(ContractUpdateError::StringError(e)) if e == "Entrypoint does not exist."
+            ));
+        }
+
+        /// Tests calling an entrypoint introduced by an upgrade of the module
+        /// can be called and whether an entrypoint removed by an upgrade fail
+        /// with the appropriate reject reason.
+        #[test]
+        fn test_changing_entrypoint() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy_0 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-changing-entrypoints0.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_deploy_1 = chain
+                .module_deploy_raw(
+                    ACC_0,
+                    format!("{}/upgrading-changing-entrypoints1.wasm", WASM_TEST_FOLDER),
+                )
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy_0.module_reference,
+                    ContractName::new_unchecked("init_contract"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000u64),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update_old_feature_0 = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("old_feature"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(1000000u64),
+                )
+                .expect("Updating old_feature on old module should work.");
+
+            let res_update_new_feature_0 = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("new_feature"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(1000000u64),
+                )
+                .expect_err("Updating new_feature on old module should _not_ work");
+
+            let res_update_upgrade = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("upgrade"),
+                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    Amount::zero(),
+                    Energy::from(1000000u64),
+                )
+                .expect("Upgrading contract should work.");
+
+            let res_update_old_feature_1 = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("old_feature"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(1000000u64),
+                )
+                .expect_err("Updating old_feature on _new_ module should _not_ work.");
+
+            let res_update_new_feature_1 = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("new_feature"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(1000000u64),
+                )
+                .expect("Updating new_feature on _new_ module should work");
+
+            assert!(matches!(res_update_old_feature_0.chain_events[..], [
+                ChainEvent::Updated { .. }
+            ]));
+            assert!(
+                matches!(res_update_new_feature_0, ContractUpdateError::StringError(e) if e == "Entrypoint does not exist.")
+            );
+            assert!(matches!(res_update_upgrade.chain_events[..], [
+                ChainEvent::Interrupted { .. },
+                ChainEvent::Upgraded { .. },
+                ChainEvent::Resumed { .. },
+                ChainEvent::Updated { .. },
+            ]));
+            assert!(
+                matches!(res_update_old_feature_1, ContractUpdateError::StringError(e) if e == "Entrypoint does not exist.")
+            );
+            assert!(matches!(res_update_new_feature_1.chain_events[..], [
+                ChainEvent::Updated { .. }
             ]));
         }
     }
