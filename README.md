@@ -53,14 +53,14 @@ Changes to any of the packages must be such that
 
 Everything in this repository should build with rust version 1.53 (it should work with 1.51 and up, but we do not test regularly) however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
 ```
-cargo +nightly-2021-06-09 fmt
+cargo +nightly-2022-06-09 fmt
 ```
 
 (the exact version used by the CI can be found in [.github/workflows/linter.yml](.github/workflows/linter.yml) file).
 You will need to have a recent enough nightly version installed, which can be done via
 
 ```
-rustup toolchain install nightly-2021-06-09
+rustup toolchain install nightly-2022-06-09
 ```
 
 or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.
