@@ -1,7 +1,9 @@
 use anyhow::bail;
 use concordium_base::{
     base::{Energy, ExchangeRate},
+    common,
     contracts_common::*,
+    smart_contracts::{ModuleRef, ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost},
 };
 use sha2::{Digest, Sha256};
@@ -114,45 +116,48 @@ impl Chain {
     fn module_deploy_aux(
         &mut self,
         sender: AccountAddress,
-        module: &[u8],
+        wasm_module: WasmModule,
     ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
         // Deserialize as wasm module (artifact)
         let artifact = wasm_transform::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
             &ConcordiumAllowedImports {
                 support_upgrade: true,
             },
-            &module,
+            wasm_module.source.as_ref(),
         )
         .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
 
         // Calculate transaction fee of deployment
         let energy = {
             // +1 for the tag, +8 for size and version
-            let payload_size =
-                1 + 8 + module.len() as u64 + transactions::construct::TRANSACTION_HEADER_SIZE;
+            let payload_size = 1
+                + 8
+                + wasm_module.source.size() as u64
+                + transactions::construct::TRANSACTION_HEADER_SIZE;
             let number_of_sigs = self.get_account(sender)?.signature_count;
             let base_cost = cost::base_cost(payload_size, number_of_sigs);
-            let deploy_module_cost = cost::deploy_module(module.len() as u64);
+            let deploy_module_cost = cost::deploy_module(wasm_module.source.size());
             base_cost + deploy_module_cost
         };
         let transaction_fee = self.calculate_energy_cost(energy);
         println!(
             "Deploying module with size {}, resulting in {} NRG.",
-            module.len(),
+            wasm_module.source.size(),
             energy
         );
 
         // Try to subtract cost for account
         let account = self.get_account_mut(sender)?;
-        if account.balance < transaction_fee {
-            return Err(DeployModuleError::InsufficientFunds);
-        }
-        account.balance -= transaction_fee;
+        account
+            .balance
+            .checked_sub(transaction_fee)
+            .ok_or(DepoyModuleError::InsufficientFunds)?;
 
-        // Save the module
+        // Save the module TODO: Use wasm_module.get_module_ref() and find a proper way
+        // to convert ModuleRef to ModuleReference.
         let module_reference = {
             let mut hasher = Sha256::new();
-            hasher.update(module);
+            hasher.update(wasm_module.source.as_ref());
             let hash: [u8; 32] = hasher.finalize().into();
             ModuleReference::from(hash)
         };
@@ -166,30 +171,59 @@ impl Chain {
 
     /// Deploy a raw wasm module, i.e. one **without** the prefix of 4 version
     /// bytes and 4 module length bytes.
-    pub fn module_deploy_raw<P: AsRef<Path>>(
+    /// The module still has to a valid V1 smart contract module.
+    ///
+    /// - `sender`: The account paying for the transaction.
+    /// - `module_path`: Path to a module file.
+    pub fn module_deploy_wasm_v1<P: AsRef<Path>>(
         &mut self,
         sender: AccountAddress,
         module_path: P,
     ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
         // Load file
-        let module = std::fs::read(module_path)?;
-        self.module_deploy_aux(sender, &module)
+        let file_contents = std::fs::read(module_path)?;
+        let wasm_module = WasmModule {
+            version: WasmVersion::V1,
+            source:  ModuleSource::from(file_contents),
+        };
+        self.module_deploy_aux(sender, wasm_module)
     }
 
-    /// Deploy a wasm module as it is output from `cargo concordium build`, i.e.
-    /// **including** the prefix of 4 version bytes and 4 module length bytes.
-    pub fn module_deploy<P: AsRef<Path>>(
+    /// Deploy a v1 wasm module as it is output from `cargo concordium build`,
+    /// i.e. **including** the prefix of 4 version bytes and 4 module length
+    /// bytes.
+    ///
+    /// - `sender`: The account paying for the transaction.
+    /// - `module_path`: Path to a module file.
+    pub fn module_deploy_v1<P: AsRef<Path>>(
         &mut self,
         sender: AccountAddress,
         module_path: P,
     ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
         // Load file
-        let module = std::fs::read(module_path)?;
-        // Here, we skip the 8 bytes that encode the smart contract version and module
-        // length
-        self.module_deploy_aux(sender, &module[8..])
+        let file_contents = std::fs::read(module_path)?;
+        let mut cursor = std::io::Cursor::new(file_contents);
+        let wasm_module: WasmModule = common::Deserial::deserial(&mut cursor)
+            .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
+
+        if wasm_module.version != WasmVersion::V1 {
+            return Err(DeployModuleError::UnsupportedModuleVersion);
+        }
+        self.module_deploy_aux(sender, wasm_module)
     }
 
+    /// Initialize a contract.
+    ///
+    /// - `sender`: The account paying for the transaction. Will also become the
+    ///   owner of the instance created.
+    /// - `module_reference`: The reference to the a module that has already
+    ///   been deployed.
+    /// - `contract_name`: Name of the contract to initialize.
+    /// - `parameter`: Parameter provided to the init method.
+    /// - `amount`: The initial balance of the contract. Subtracted from the
+    ///   `sender` account.
+    /// - `energy_reserved`: Amount of energy reserved for executing the init
+    ///   method.
     pub fn contract_init(
         &mut self,
         sender: AccountAddress,
@@ -1472,6 +1506,7 @@ pub enum DeployModuleError {
     InvalidModule(String),
     InsufficientFunds,
     AccountDoesNotExist,
+    UnsupportedModuleVersion,
 }
 
 impl From<std::io::Error> for DeployModuleError {
@@ -1629,7 +1664,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         assert_eq!(chain.modules.len(), 1);
@@ -1646,7 +1681,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1673,7 +1708,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1708,7 +1743,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/icecream/icecream.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1769,7 +1804,7 @@ mod tests {
         chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1840,7 +1875,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1894,7 +1929,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/fib/a.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/fib/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -1955,7 +1990,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -2016,7 +2051,7 @@ mod tests {
         chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
             .expect("Deploying valid module should work");
 
         let input_param: u32 = 8;
@@ -2083,7 +2118,7 @@ mod tests {
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
                 )
@@ -2142,7 +2177,7 @@ mod tests {
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-            .module_deploy_raw(ACC_0, format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER)) // TODO: Add wasm files to the repo for tests.
+            .module_deploy_wasm_v1(ACC_0, format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER)) // TODO: Add wasm files to the repo for tests.
             .expect("Deploying valid module should work");
 
             let res_init = chain
@@ -2201,7 +2236,7 @@ mod tests {
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/queries-account-balance-transfer.wasm", WASM_TEST_FOLDER),
                 )
@@ -2269,7 +2304,7 @@ mod tests {
             chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
                 )
@@ -2326,7 +2361,7 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!(
                         "{}/queries-account-balance-missing-account.wasm",
@@ -2389,7 +2424,7 @@ mod tests {
             let init_amount = Amount::from_ccd(123);
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/queries-contract-balance.wasm", WASM_TEST_FOLDER),
                 )
@@ -2448,7 +2483,7 @@ mod tests {
             let update_amount = Amount::from_ccd(456);
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/queries-contract-balance.wasm", WASM_TEST_FOLDER),
                 )
@@ -2496,7 +2531,7 @@ mod tests {
             let transfer_amount = Amount::from_ccd(78);
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!(
                         "{}/queries-contract-balance-transfer.wasm",
@@ -2552,7 +2587,7 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!(
                         "{}/queries-contract-balance-missing-contract.wasm",
@@ -2604,7 +2639,7 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/queries-exchange-rates.wasm", WASM_TEST_FOLDER),
                 )
@@ -2655,11 +2690,11 @@ mod tests {
 
             // Deploy the two modules `upgrading_0`, `upgrading_1`
             let res_deploy_0 = chain
-                .module_deploy_raw(ACC_0, format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
+                .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
                 .expect("Deploying valid module should work");
 
             let res_deploy_1 = chain
-                .module_deploy_raw(ACC_0, format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
+                .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
                 .expect("Deploying valid module should work");
 
             // Initialize `upgrading_0`.
@@ -2720,13 +2755,13 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy_0 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER),
                 )
                 .expect("Deploying valid module should work");
             let res_deploy_1 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER),
                 )
@@ -2782,7 +2817,7 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-missing-module.wasm", WASM_TEST_FOLDER),
                 )
@@ -2828,14 +2863,14 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy_0 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-missing-contract0.wasm", WASM_TEST_FOLDER),
                 )
                 .expect("Deploying valid module should work");
 
             let res_deploy_1 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-missing-contract1.wasm", WASM_TEST_FOLDER),
                 )
@@ -2880,15 +2915,15 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy_0 = chain
-                .module_deploy_raw(ACC_0, format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
+                .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
                 .expect("Deploying valid module should work");
 
             let res_deploy_1 = chain
-                .module_deploy_raw(ACC_0, format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
+                .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
                 .expect("Deploying valid module should work");
 
             let res_deploy_2 = chain
-                .module_deploy_raw(ACC_0, format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
+                .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
                 .expect("Deploying valid module should work");
 
             let res_init = chain
@@ -2954,7 +2989,7 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER),
                 )
@@ -3004,14 +3039,14 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy_0 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER),
                 )
                 .expect("Deploying valid module should work");
 
             let res_deploy_1 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER),
                 )
@@ -3069,14 +3104,14 @@ mod tests {
             chain.create_account(ACC_0, AccountInfo::new(initial_balance));
 
             let res_deploy_0 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-changing-entrypoints0.wasm", WASM_TEST_FOLDER),
                 )
                 .expect("Deploying valid module should work");
 
             let res_deploy_1 = chain
-                .module_deploy_raw(
+                .module_deploy_wasm_v1(
                     ACC_0,
                     format!("{}/upgrading-changing-entrypoints1.wasm", WASM_TEST_FOLDER),
                 )
