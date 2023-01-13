@@ -3,7 +3,7 @@ use concordium_base::{
     base::{Energy, ExchangeRate},
     common,
     contracts_common::*,
-    smart_contracts::{ModuleRef, ModuleSource, WasmModule, WasmVersion},
+    smart_contracts::{ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost},
 };
 use sha2::{Digest, Sha256};
@@ -26,17 +26,17 @@ type ArtifactV1 = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFun
 // Energy constants from Cost.hs in concordium-base.
 
 /// Cost of querying the account balance from a within smart contract instance.
-const CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST: u64 = 200;
+const CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST: Energy = Energy { energy: 200 };
 /// Cost of querying the contract balance from a within smart contract instance.
-const CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST: u64 = 200;
+const CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST: Energy = Energy { energy: 200 };
 /// Cost of querying the current exchange rates from a within smart contract
 /// instance.
-const CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST: u64 = 100;
+const CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST: Energy = Energy { energy: 100 };
 /// The base cost of initializing a contract instance to cover administrative
 /// costs. Even if no code is run and no instance created.
-const INITIALIZE_CONTRACT_INSTANCE_BASE_COST: u64 = 300;
+const INITIALIZE_CONTRACT_INSTANCE_BASE_COST: Energy = Energy { energy: 300 };
 /// Cost of creating an empty smart contract instance.
-const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: u64 = 200;
+const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: Energy = Energy { energy: 200 };
 
 pub struct Chain {
     /// The slot time viewable inside the smart contracts.
@@ -148,10 +148,10 @@ impl Chain {
 
         // Try to subtract cost for account
         let account = self.get_account_mut(sender)?;
-        account
-            .balance
-            .checked_sub(transaction_fee)
-            .ok_or(DepoyModuleError::InsufficientFunds)?;
+        if account.balance < transaction_fee {
+            return Err(DeployModuleError::InsufficientFunds);
+        };
+        account.balance -= transaction_fee;
 
         // Save the module TODO: Use wasm_module.get_module_ref() and find a proper way
         // to convert ModuleRef to ModuleReference.
@@ -259,10 +259,7 @@ impl Chain {
                 amount,
                 init_name: contract_name.get_chain_name(),
                 parameter: &parameter.0,
-                energy: InterpreterEnergy {
-                    // TODO: Why do we have two separate energy types?
-                    energy: energy_reserved.energy,
-                },
+                energy: Chain::to_interpreter_energy(energy_reserved),
             },
             false,
             loader,
@@ -278,7 +275,10 @@ impl Chain {
                 mut state,
             } => {
                 let contract_address = self.create_contract_address();
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let energy_used = energy_reserved
+                    - Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
                 transaction_fee += self.calculate_energy_cost(energy_used);
 
                 let mut collector = v1::trie::SizeCollector::default();
@@ -309,7 +309,10 @@ impl Chain {
                 return_value,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let energy_used = energy_reserved
+                    - Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
                 transaction_fee += self.calculate_energy_cost(energy_used);
                 Err(ContractInitError::ValidChainError(
                     FailedContractInteraction::Reject {
@@ -325,7 +328,10 @@ impl Chain {
                 error,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let energy_used = energy_reserved
+                    - Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
                 transaction_fee += self.calculate_energy_cost(energy_used);
                 Err(ContractInitError::ValidChainError(
                     FailedContractInteraction::Trap {
@@ -441,9 +447,7 @@ impl Chain {
                 amount,
                 receive_name: receive_name.as_receive_name(),
                 parameter: &parameter,
-                energy: InterpreterEnergy {
-                    energy: remaining_energy.energy,
-                },
+                energy: Chain::to_interpreter_energy(remaining_energy),
             },
             instance_state,
             v1::ReceiveParams {
@@ -525,9 +529,13 @@ impl Chain {
                     logs,
                     state_changed,
                     return_value,
-                    remaining_energy,
+                    remaining_energy, /* TODO: Could we change this from `u64` to
+                                       * `InterpreterEnergy` in chain_integration? */
                 } => {
-                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let energy_used = energy_reserved
+                        - Chain::from_interpreter_energy(InterpreterEnergy {
+                            energy: remaining_energy,
+                        });
                     transaction_fee += self.calculate_energy_cost(energy_used);
                     Ok(SuccessfulContractUpdate {
                         chain_events,
@@ -544,7 +552,10 @@ impl Chain {
                     return_value,
                     remaining_energy,
                 } => {
-                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let energy_used = energy_reserved
+                        - Chain::from_interpreter_energy(InterpreterEnergy {
+                            energy: remaining_energy,
+                        });
                     transaction_fee += self.calculate_energy_cost(energy_used);
                     Err(ContractUpdateError::ValidChainError(
                         FailedContractInteraction::Reject {
@@ -560,7 +571,10 @@ impl Chain {
                     error,
                     remaining_energy,
                 } => {
-                    let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                    let energy_used = energy_reserved
+                        - Chain::from_interpreter_energy(InterpreterEnergy {
+                            energy: remaining_energy,
+                        });
                     transaction_fee += self.calculate_energy_cost(energy_used);
                     Err(ContractUpdateError::ValidChainError(
                         FailedContractInteraction::Trap {
@@ -668,9 +682,7 @@ impl Chain {
                 amount,
                 receive_name: receive_name.as_receive_name(),
                 parameter: &parameter.0,
-                energy: InterpreterEnergy {
-                    energy: energy_reserved.energy,
-                },
+                energy: Chain::to_interpreter_energy(energy_reserved),
             },
             instance_state,
             v1::ReceiveParams {
@@ -688,7 +700,10 @@ impl Chain {
                 return_value,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let energy_used = energy_reserved
+                    - Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 Ok(SuccessfulContractUpdate {
                     chain_events: Vec::new(), // TODO: add host events
@@ -705,7 +720,10 @@ impl Chain {
                 return_value,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let energy_used = energy_reserved
+                    - Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 Err(ContractUpdateError::ValidChainError(
                     FailedContractInteraction::Reject {
@@ -721,7 +739,10 @@ impl Chain {
                 error,
                 remaining_energy,
             } => {
-                let energy_used = Energy::from(energy_reserved.energy - remaining_energy);
+                let energy_used = energy_reserved
+                    - Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 Err(ContractUpdateError::ValidChainError(
                     FailedContractInteraction::Trap {
@@ -807,6 +828,20 @@ impl Chain {
         Amount::from_micro_ccd(
             energy.energy * micro_ccd_per_energy_numerator / micro_ccd_per_energy_denominator,
         )
+    }
+
+    /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.
+    fn to_interpreter_energy(energy: Energy) -> InterpreterEnergy {
+        InterpreterEnergy {
+            energy: energy.energy * 1000,
+        }
+    }
+
+    /// Convert [`InterpreterEnergy`] to [`Energy`] by dividing by `1000`.
+    fn from_interpreter_energy(interpreter_energy: InterpreterEnergy) -> Energy {
+        Energy {
+            energy: interpreter_energy.energy / 1000,
+        }
     }
 
     pub fn lookup_module_cost(&self, artifact: &ArtifactV1) -> Energy {
@@ -1021,7 +1056,9 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 parameter,
                                 amount,
                                 self.invoker_amount_reserved_for_nrg,
-                                Energy::from(remaining_energy),
+                                Chain::from_interpreter_energy(InterpreterEnergy {
+                                    energy: remaining_energy,
+                                }),
                                 &mut self.chain_events,
                             );
 
@@ -1138,8 +1175,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             self.chain_events.push(interrupt_event);
 
                             // Charge a base cost.
-                            let mut energy_after_invoke =
-                                remaining_energy - INITIALIZE_CONTRACT_INSTANCE_BASE_COST;
+                            let mut energy_after_invoke = remaining_energy
+                                - Chain::to_interpreter_energy(
+                                    INITIALIZE_CONTRACT_INSTANCE_BASE_COST,
+                                )
+                                .energy;
 
                             let response = match self.chain.modules.get(&module_ref) {
                                 None => InvokeResponse::Failure {
@@ -1147,8 +1187,10 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 },
                                 Some(artifact) => {
                                     // Charge for the module lookup.
-                                    energy_after_invoke -=
-                                        self.chain.lookup_module_cost(&artifact).energy;
+                                    energy_after_invoke -= Chain::to_interpreter_energy(
+                                        self.chain.lookup_module_cost(&artifact),
+                                    )
+                                    .energy;
 
                                     if artifact.export.contains_key(
                                         self.contract_name.as_contract_name().get_chain_name(),
@@ -1159,8 +1201,10 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                         instance.module_reference = module_ref;
 
                                         // Charge for the initialization cost.
-                                        energy_after_invoke -=
-                                            INITIALIZE_CONTRACT_INSTANCE_CREATE_COST;
+                                        energy_after_invoke -= Chain::to_interpreter_energy(
+                                            INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
+                                        )
+                                        .energy;
 
                                         let upgrade_event = ChainEvent::Upgraded {
                                             address: self.address,
@@ -1234,8 +1278,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 },
                             };
 
-                            let energy_after_invoke =
-                                remaining_energy - CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST;
+                            let energy_after_invoke = remaining_energy
+                                - Chain::to_interpreter_energy(
+                                    CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
+                                )
+                                .energy;
 
                             let resume_res = v1::resume_receive(
                                 config,
@@ -1264,8 +1311,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 },
                             };
 
-                            let energy_after_invoke =
-                                remaining_energy - CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST;
+                            let energy_after_invoke = remaining_energy
+                                - Chain::to_interpreter_energy(
+                                    CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
+                                )
+                                .energy;
 
                             let resume_res = v1::resume_receive(
                                 config,
@@ -1289,8 +1339,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 
-                            let energy_after_invoke =
-                                remaining_energy - CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST;
+                            let energy_after_invoke = remaining_energy
+                                - Chain::to_interpreter_energy(
+                                    CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
+                                )
+                                .energy;
 
                             let resume_res = v1::resume_receive(
                                 config,
@@ -1691,7 +1744,7 @@ mod tests {
                 ContractName::new_unchecked("init_weather"),
                 ContractParameter::from_bytes(vec![0u8]),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
         assert_eq!(
@@ -1718,7 +1771,7 @@ mod tests {
                 ContractName::new_unchecked("init_weather"),
                 ContractParameter::from_bytes(vec![99u8]), // Invalid param
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect_err("Initializing with invalid params should fail");
 
@@ -1753,7 +1806,7 @@ mod tests {
                 ContractName::new_unchecked("init_weather"),
                 ContractParameter::from_bytes(vec![0u8]), // Starts as 0
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
 
@@ -1764,7 +1817,7 @@ mod tests {
                 EntrypointName::new_unchecked("set"),
                 ContractParameter::from_bytes(vec![1u8]), // Updated to 1
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Updating valid contract should work");
 
@@ -1814,7 +1867,7 @@ mod tests {
                 ContractName::new_unchecked("init_integrate"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
 
@@ -1825,7 +1878,7 @@ mod tests {
                 EntrypointName::new_unchecked("receive"),
                 ContractParameter::from_typed(&ACC_1),
                 transfer_amount,
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Updating valid contract should work");
 
@@ -1836,7 +1889,7 @@ mod tests {
                 EntrypointName::new_unchecked("view"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Invoking get should work");
 
@@ -1885,7 +1938,7 @@ mod tests {
                 ContractName::new_unchecked("init_integrate"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
 
@@ -1895,7 +1948,7 @@ mod tests {
             EntrypointName::new_unchecked("receive"),
             ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
             transfer_amount,
-            Energy::from(100000u64),
+            Energy::from(100000),
         );
 
         match res_update {
@@ -1939,7 +1992,7 @@ mod tests {
                 ContractName::new_unchecked("init_fib"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
 
@@ -1950,7 +2003,7 @@ mod tests {
                 EntrypointName::new_unchecked("receive"),
                 ContractParameter::from_typed(&6u64),
                 Amount::zero(),
-                Energy::from(4000000u64),
+                Energy::from(4000000),
             )
             .expect("Updating valid contract should work");
 
@@ -1961,7 +2014,7 @@ mod tests {
                 EntrypointName::new_unchecked("view"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Invoking get should work");
 
@@ -2000,7 +2053,7 @@ mod tests {
                 ContractName::new_unchecked("init_integrate"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
 
@@ -2011,7 +2064,7 @@ mod tests {
                 EntrypointName::new_unchecked("recurse"),
                 ContractParameter::from_typed(&10u32),
                 Amount::zero(),
-                Energy::from(1000000u64),
+                Energy::from(1000000),
             )
             .expect("Updating valid contract should work");
 
@@ -2022,7 +2075,7 @@ mod tests {
                 EntrypointName::new_unchecked("view"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Invoking get should work");
 
@@ -2063,7 +2116,7 @@ mod tests {
                 ContractName::new_unchecked("init_integrate"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Initializing valid contract should work");
 
@@ -2074,7 +2127,7 @@ mod tests {
                 EntrypointName::new_unchecked("inc-fail-on-zero"),
                 ContractParameter::from_typed(&input_param),
                 Amount::zero(),
-                Energy::from(100000000u64),
+                Energy::from(100000000),
             )
             .expect("Updating valid contract should work");
 
@@ -2085,7 +2138,7 @@ mod tests {
                 EntrypointName::new_unchecked("view"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(10000u64),
+                Energy::from(10000),
             )
             .expect("Invoking get should work");
 
@@ -2131,7 +2184,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2148,7 +2201,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2187,12 +2240,12 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
             let update_amount = Amount::from_ccd(123);
-            let energy_limit = Energy::from(100000u64);
+            let energy_limit = Energy::from(100000);
             let invoker_reserved_amount = update_amount + chain.calculate_energy_cost(energy_limit);
 
             // The contract will query the balance of ACC_1, which is also the invoker, and
@@ -2251,7 +2304,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     amount_to_send, // Make sure the contract has CCD to transfer.
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2317,7 +2370,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2334,7 +2387,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2377,7 +2430,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2391,7 +2444,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2437,7 +2490,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2448,7 +2501,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     init_amount, // Set up another contract with `init_amount` balance
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2462,7 +2515,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2496,7 +2549,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     init_amount,
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2510,7 +2563,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     update_amount,
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2547,7 +2600,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     init_amount,
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2567,7 +2620,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     update_amount,
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2603,7 +2656,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2617,7 +2670,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2652,7 +2705,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2666,7 +2719,7 @@ mod tests {
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2705,7 +2758,7 @@ mod tests {
                     ContractName::new_unchecked("init_a"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2718,7 +2771,7 @@ mod tests {
                     EntrypointName::new_unchecked("bump"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2730,7 +2783,7 @@ mod tests {
                     EntrypointName::new_unchecked("newfun"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
@@ -2774,7 +2827,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2785,7 +2838,7 @@ mod tests {
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2830,7 +2883,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2841,7 +2894,7 @@ mod tests {
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2883,7 +2936,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2894,7 +2947,7 @@ mod tests {
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -2933,7 +2986,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -2946,7 +2999,7 @@ mod tests {
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(100000u64),
+                    Energy::from(100000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -3002,7 +3055,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -3016,7 +3069,7 @@ mod tests {
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&input_param),
                     Amount::zero(),
-                    Energy::from(1000000u64),
+                    Energy::from(1000000),
                 )
                 .expect("Updating valid contract should work");
 
@@ -3059,7 +3112,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -3069,7 +3122,7 @@ mod tests {
                 EntrypointName::new_unchecked("upgrade"),
                 ContractParameter::from_typed(&res_deploy_1.module_reference),
                 Amount::zero(),
-                Energy::from(1000000u64),
+                Energy::from(1000000),
             );
 
             let res_update_new_feature = chain.contract_update(
@@ -3078,7 +3131,7 @@ mod tests {
                 EntrypointName::new_unchecked("new_feature"),
                 ContractParameter::empty(),
                 Amount::zero(),
-                Energy::from(1000000u64),
+                Energy::from(1000000),
             );
 
             // Check the return value manually returned by the contract.
@@ -3124,7 +3177,7 @@ mod tests {
                     ContractName::new_unchecked("init_contract"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(10000u64),
+                    Energy::from(10000),
                 )
                 .expect("Initializing valid contract should work");
 
@@ -3135,7 +3188,7 @@ mod tests {
                     EntrypointName::new_unchecked("old_feature"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(1000000u64),
+                    Energy::from(1000000),
                 )
                 .expect("Updating old_feature on old module should work.");
 
@@ -3146,7 +3199,7 @@ mod tests {
                     EntrypointName::new_unchecked("new_feature"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(1000000u64),
+                    Energy::from(1000000),
                 )
                 .expect_err("Updating new_feature on old module should _not_ work");
 
@@ -3157,7 +3210,7 @@ mod tests {
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
                     Amount::zero(),
-                    Energy::from(1000000u64),
+                    Energy::from(1000000),
                 )
                 .expect("Upgrading contract should work.");
 
@@ -3168,7 +3221,7 @@ mod tests {
                     EntrypointName::new_unchecked("old_feature"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(1000000u64),
+                    Energy::from(1000000),
                 )
                 .expect_err("Updating old_feature on _new_ module should _not_ work.");
 
@@ -3179,7 +3232,7 @@ mod tests {
                     EntrypointName::new_unchecked("new_feature"),
                     ContractParameter::empty(),
                     Amount::zero(),
-                    Energy::from(1000000u64),
+                    Energy::from(1000000),
                 )
                 .expect("Updating new_feature on _new_ module should work");
 
