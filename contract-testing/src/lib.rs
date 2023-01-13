@@ -161,6 +161,10 @@ impl Chain {
             let hash: [u8; 32] = hasher.finalize().into();
             ModuleReference::from(hash)
         };
+        // Ensure module hasn't been deployed before.
+        if self.modules.contains_key(&module_reference) {
+            return Err(DeployModuleError::DuplicateModule);
+        }
         self.modules.insert(module_reference, artifact);
         Ok(SuccessfulModuleDeployment {
             module_reference,
@@ -286,8 +290,7 @@ impl Chain {
                 let contract_instance = ContractInstance {
                     module_reference,
                     contract_name: contract_name.to_owned(),
-                    state: state.freeze(&mut loader, &mut collector), /* TODO: Do we need to
-                                                                       * charge to storage? */
+                    state: state.freeze(&mut loader, &mut collector), // TODO: Charge for storage.
                     owner: sender,
                     self_balance: amount,
                 };
@@ -375,7 +378,7 @@ impl Chain {
         sender: Address,
         address: ContractAddress,
         entrypoint: OwnedEntrypointName,
-        parameter: Vec<u8>,
+        parameter: Parameter,
         amount: Amount,
         // The CCD amount reserved from the invoker account. While the amount
         // is reserved, it is not subtracted in the chain.accounts map.
@@ -446,7 +449,7 @@ impl Chain {
             v1::ReceiveInvocation {
                 amount,
                 receive_name: receive_name.as_receive_name(),
-                parameter: &parameter,
+                parameter: &parameter.0,
                 energy: Chain::to_interpreter_energy(remaining_energy),
             },
             instance_state,
@@ -512,7 +515,7 @@ impl Chain {
             Address::Account(invoker),
             address,
             entrypoint.to_owned(),
-            parameter.0,
+            Parameter(&parameter.0),
             amount,
             invoker_amount_reserved_for_nrg,
             energy_reserved,
@@ -951,9 +954,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                 } => {
                     println!("\tInterrupting contract {}", self.address);
 
-                    // Create the interrupt event, which will be included for transfers and calls,
-                    // but not for the remaining interrupts.
-                    // TODO: Or is it included in upgrades as well?
+                    // Create the interrupt event, which will be included for transfers, calls, and
+                    // upgrades, but not for the remaining interrupts.
                     let interrupt_event = ChainEvent::Interrupted {
                         address: self.address,
                         logs,
@@ -983,15 +985,20 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     }
                                 } else {
                                     // Move the CCD
-                                    self.chain
-                                        .get_account_mut(to)
-                                        .expect("Account is known to exist")
-                                        .balance += amount;
-                                    let instance = self
-                                        .chain
-                                        .get_instance_mut(self.address)
-                                        .expect("Contract is known to exist");
-                                    instance.self_balance -= amount;
+                                    let instance_new_balance = match (
+                                        self.chain.accounts.get_mut(&to),
+                                        self.chain.contracts.get_mut(&self.address),
+                                    ) {
+                                        (Some(acc), Some(contr)) => {
+                                            contr.self_balance -= amount;
+                                            acc.balance += amount;
+                                            contr.self_balance
+                                        }
+                                        _ => anyhow::bail!(
+                                            "Contract or Account missing when they are known to \
+                                             exist."
+                                        ),
+                                    };
 
                                     // Add transfer event
                                     self.chain_events.push(ChainEvent::Transferred {
@@ -1001,7 +1008,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     });
 
                                     InvokeResponse::Success {
-                                        new_balance: instance.self_balance,
+                                        new_balance: instance_new_balance,
                                         data:        None,
                                     }
                                 }
@@ -1053,7 +1060,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 Address::Contract(self.address),
                                 address,
                                 name,
-                                parameter,
+                                Parameter(&parameter),
                                 amount,
                                 self.invoker_amount_reserved_for_nrg,
                                 Chain::from_interpreter_energy(InterpreterEnergy {
@@ -1560,6 +1567,7 @@ pub enum DeployModuleError {
     InsufficientFunds,
     AccountDoesNotExist,
     UnsupportedModuleVersion,
+    DuplicateModule,
 }
 
 impl From<std::io::Error> for DeployModuleError {
