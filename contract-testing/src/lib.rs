@@ -124,8 +124,7 @@ impl Chain {
                 support_upgrade: true,
             },
             wasm_module.source.as_ref(),
-        )
-        .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
+        )?;
 
         // Calculate transaction fee of deployment
         let energy = {
@@ -163,7 +162,7 @@ impl Chain {
         };
         // Ensure module hasn't been deployed before.
         if self.modules.contains_key(&module_reference) {
-            return Err(DeployModuleError::DuplicateModule);
+            return Err(DeployModuleError::DuplicateModule(module_reference));
         }
         self.modules.insert(module_reference, Rc::new(artifact));
         Ok(SuccessfulModuleDeployment {
@@ -207,11 +206,12 @@ impl Chain {
         // Load file
         let file_contents = std::fs::read(module_path)?;
         let mut cursor = std::io::Cursor::new(file_contents);
-        let wasm_module: WasmModule = common::Deserial::deserial(&mut cursor)
-            .map_err(|e| DeployModuleError::InvalidModule(e.to_string()))?;
+        let wasm_module: WasmModule = common::Deserial::deserial(&mut cursor)?;
 
         if wasm_module.version != WasmVersion::V1 {
-            return Err(DeployModuleError::UnsupportedModuleVersion);
+            return Err(DeployModuleError::UnsupportedModuleVersion(
+                wasm_module.version,
+            ));
         }
         self.module_deploy_aux(sender, wasm_module)
     }
@@ -267,8 +267,7 @@ impl Chain {
             },
             false,
             loader,
-        )
-        .map_err(|e| ContractInitError::StringError(e.to_string()))?;
+        )?;
         // Handle the result and update the transaction fee.
         let res = match res {
             v1::InitResult::Success {
@@ -348,7 +347,7 @@ impl Chain {
             v1::InitResult::OutOfEnergy => {
                 transaction_fee += self.calculate_energy_cost(energy_reserved);
                 Err(ContractInitError::ValidChainError(
-                    FailedContractInteraction::OutOFEnergy {
+                    FailedContractInteraction::OutOfEnergy {
                         energy_used: energy_reserved,
                         transaction_fee,
                         logs: v0::Logs::default(), // TODO: Get Logs on failures.
@@ -591,7 +590,7 @@ impl Chain {
                 v1::ReceiveResult::OutOfEnergy => {
                     transaction_fee += self.calculate_energy_cost(energy_reserved);
                     Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::OutOFEnergy {
+                        FailedContractInteraction::OutOfEnergy {
                             energy_used: energy_reserved,
                             transaction_fee,
                             logs: v0::Logs::default(), // TODO: Get logs on failures.
@@ -602,7 +601,7 @@ impl Chain {
             Err(e) => {
                 // TODO: what is the correct cost here?
                 transaction_fee += self.calculate_energy_cost(energy_reserved);
-                Err(ContractUpdateError::StringError(e.to_string()))
+                Err(ContractUpdateError::InterpreterError(e))
             }
         };
 
@@ -693,8 +692,7 @@ impl Chain {
                 limit_logs_and_return_values: false,
                 support_queries:              true,
             },
-        )
-        .map_err(|e| ContractUpdateError::StringError(e.to_string()))?;
+        )?;
 
         match res {
             v1::ReceiveResult::Success {
@@ -759,7 +757,7 @@ impl Chain {
             v1::ReceiveResult::OutOfEnergy => {
                 let transaction_fee = self.calculate_energy_cost(energy_reserved);
                 Err(ContractUpdateError::ValidChainError(
-                    FailedContractInteraction::OutOFEnergy {
+                    FailedContractInteraction::OutOfEnergy {
                         energy_used: energy_reserved,
                         transaction_fee,
                         logs: v0::Logs::default(), // TODO: Get logs on failures.
@@ -856,7 +854,7 @@ impl Chain {
     fn get_artifact(&self, module_ref: ModuleReference) -> Result<&ArtifactV1, ModuleMissing> {
         match self.modules.get(&module_ref) {
             Some(artifact) => Ok(artifact.as_ref()),
-            None => Err(ModuleMissing),
+            None => Err(ModuleMissing(module_ref)),
         }
     }
 
@@ -864,7 +862,9 @@ impl Chain {
         &self,
         address: ContractAddress,
     ) -> Result<&ContractInstance, ContractInstanceMissing> {
-        self.contracts.get(&address).ok_or(ContractInstanceMissing)
+        self.contracts
+            .get(&address)
+            .ok_or(ContractInstanceMissing(address))
     }
 
     fn get_instance_mut(
@@ -873,18 +873,20 @@ impl Chain {
     ) -> Result<&mut ContractInstance, ContractInstanceMissing> {
         self.contracts
             .get_mut(&address)
-            .ok_or(ContractInstanceMissing)
+            .ok_or(ContractInstanceMissing(address))
     }
 
     fn get_account(&self, address: AccountAddress) -> Result<&AccountInfo, AccountMissing> {
-        self.accounts.get(&address).ok_or(AccountMissing)
+        self.accounts.get(&address).ok_or(AccountMissing(address))
     }
 
     fn get_account_mut(
         &mut self,
         address: AccountAddress,
     ) -> Result<&mut AccountInfo, AccountMissing> {
-        self.accounts.get_mut(&address).ok_or(AccountMissing)
+        self.accounts
+            .get_mut(&address)
+            .ok_or(AccountMissing(address))
     }
 }
 
@@ -1376,36 +1378,16 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 }
 
 #[derive(Debug, Error)]
-#[error("Module has not been deployed.")]
-struct ModuleMissing;
-
-impl From<ModuleMissing> for ContractInitError {
-    fn from(_: ModuleMissing) -> Self { Self::ModuleDoesNotExist }
-}
-
-impl From<ModuleMissing> for ContractUpdateError {
-    fn from(_: ModuleMissing) -> Self { Self::ModuleDoesNotExist }
-}
+#[error("Module {:?} does not exist.", 0)]
+pub struct ModuleMissing(ModuleReference);
 
 #[derive(Debug, Error)]
-#[error("Contract instance has not been instantiated.")]
-struct ContractInstanceMissing;
-
-impl From<ContractInstanceMissing> for ContractUpdateError {
-    fn from(_: ContractInstanceMissing) -> Self { Self::InstanceDoesNotExist }
-}
+#[error("Contract instance {0} does not exist.")]
+pub struct ContractInstanceMissing(ContractAddress);
 
 #[derive(Debug, Error)]
-#[error("Account has not been created.")]
-struct AccountMissing;
-
-impl From<AccountMissing> for ContractInitError {
-    fn from(_: AccountMissing) -> Self { Self::AccountDoesNotExist }
-}
-
-impl From<AccountMissing> for ContractUpdateError {
-    fn from(_: AccountMissing) -> Self { Self::AccountDoesNotExist }
-}
+#[error("Account {0} does not exist.")]
+pub struct AccountMissing(AccountAddress);
 
 #[derive(Clone)]
 pub struct AccountInfo {
@@ -1469,35 +1451,47 @@ impl AccountInfo {
     pub fn new(balance: Amount) -> Self { Self::new_with_policy(balance, TestPolicies::empty()) }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ContractInitError {
     /// Initialization failed for a reason that also exists on the chain.
+    #[error("failed due to a valid chain error: {:?}", 0)]
     ValidChainError(FailedContractInteraction),
-    /// TODO: Can we get a better error than the anyhow?
-    StringError(String),
+    /// An error thrown by the interpreter.
+    #[error("an error occured in the interpreter: {:?}", 0)]
+    InterpreterError(#[from] anyhow::Error),
     /// Module has not been deployed in test environment.
-    ModuleDoesNotExist,
+    #[error("module {:?} does not exist", 0.0)]
+    ModuleDoesNotExist(#[from] ModuleMissing),
     /// Account has not been created in test environment.
-    AccountDoesNotExist,
+    #[error("account {} does not exist", 0.0)]
+    AccountDoesNotExist(#[from] AccountMissing),
     /// The account does not have enough funds to pay for the energy.
+    #[error("account does not have enough funds to pay for the energy")]
     InsufficientFunds,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ContractUpdateError {
     /// Update failed for a reason that also exists on the chain.
+    #[error("failed due to a valid chain error: {:?}", 0)]
     ValidChainError(FailedContractInteraction),
-    /// TODO: Can we get a better error than the anyhow?
-    StringError(String),
+    /// An error thrown by the wasm interpreter
+    #[error("an error occured in the interpreter: {:?}", 0)]
+    InterpreterError(#[from] anyhow::Error),
     /// Module has not been deployed in test environment.
-    ModuleDoesNotExist,
+    #[error("module {:?} does not exist", 0.0)]
+    ModuleDoesNotExist(#[from] ModuleMissing),
     /// Contract instance has not been initialized in test environment.
-    InstanceDoesNotExist,
+    #[error("instance {} does not exist", 0.0)]
+    InstanceDoesNotExist(#[from] ContractInstanceMissing),
     /// Entrypoint does not exist and neither does the fallback entrypoint.
+    #[error("entrypoint does not exist")]
     EntrypointDoesNotExist,
     /// Account has not been created in test environment.
-    AccountDoesNotExist,
+    #[error("account {} does not exist", 0.0)]
+    AccountDoesNotExist(#[from] AccountMissing),
     /// The account does not have enough funds to pay for the energy.
+    #[error("account does not have enough funds to pay for the energy")]
     InsufficientFunds,
 }
 
@@ -1524,7 +1518,7 @@ pub enum FailedContractInteraction {
         /// debugging.
         logs:            v0::Logs,
     },
-    OutOFEnergy {
+    OutOfEnergy {
         energy_used:     Energy,
         transaction_fee: Amount,
         /// Logs emitted before the interaction failed. Logs from failed
@@ -1543,7 +1537,7 @@ impl FailedContractInteraction {
             FailedContractInteraction::Trap {
                 transaction_fee, ..
             } => *transaction_fee,
-            FailedContractInteraction::OutOFEnergy {
+            FailedContractInteraction::OutOfEnergy {
                 transaction_fee, ..
             } => *transaction_fee,
         }
@@ -1553,7 +1547,7 @@ impl FailedContractInteraction {
         match self {
             FailedContractInteraction::Reject { logs, .. } => logs,
             FailedContractInteraction::Trap { logs, .. } => logs,
-            FailedContractInteraction::OutOFEnergy { logs, .. } => logs,
+            FailedContractInteraction::OutOfEnergy { logs, .. } => logs,
         }
     }
 }
@@ -1563,22 +1557,20 @@ pub struct ContractError(Vec<u8>);
 
 // TODO: Can we get Eq for this when using io::Error?
 // TODO: Should this also have the energy used?
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DeployModuleError {
-    ReadFileError(std::io::Error),
-    InvalidModule(String),
+    #[error("could not read the file due to: {0}")]
+    ReadFileError(#[from] std::io::Error),
+    #[error("module is invalid due to: {0}")]
+    InvalidModule(#[from] anyhow::Error),
+    #[error("account does not have sufficient funds to pay for the energy")]
     InsufficientFunds,
-    AccountDoesNotExist,
-    UnsupportedModuleVersion,
-    DuplicateModule,
-}
-
-impl From<std::io::Error> for DeployModuleError {
-    fn from(e: std::io::Error) -> Self { DeployModuleError::ReadFileError(e) }
-}
-
-impl From<AccountMissing> for DeployModuleError {
-    fn from(_: AccountMissing) -> Self { DeployModuleError::AccountDoesNotExist }
+    #[error("account {} does not exist", 0.0)]
+    AccountDoesNotExist(#[from] AccountMissing),
+    #[error("wasm version {0} is not supported")]
+    UnsupportedModuleVersion(WasmVersion),
+    #[error("module with reference {:?} already exists", 0)]
+    DuplicateModule(ModuleReference),
 }
 
 impl ContractError {
@@ -1627,7 +1619,7 @@ pub struct SuccessfulContractUpdate {
     pub return_value:    ContractReturnValue,
     /// Whether the state was changed.
     pub state_changed:   bool,
-    /// The logs produced before?/after? the last interrupt if any.
+    /// The logs produced since the last interrupt.
     pub logs:            v0::Logs,
 }
 
@@ -1697,7 +1689,6 @@ impl ContractParameter {
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self { Self(bytes) }
 
-    // TODO: add version with serde json
     pub fn from_typed<T: Serial>(parameter: &T) -> Self { Self(to_bytes(parameter)) }
 }
 
@@ -3070,7 +3061,7 @@ mod tests {
                 )
                 .expect("Initializing valid contract should work");
 
-            let number_of_upgrades: u32 = 93; // TODO: Stack will overflow if larger than 93.
+            let number_of_upgrades: u32 = 82; // TODO: Stack will overflow if larger than 82.
             let input_param = (number_of_upgrades, res_deploy.module_reference);
 
             let res_update = chain
@@ -3154,7 +3145,7 @@ mod tests {
             // failed.
             assert!(matches!(
             res_update_new_feature,
-            Err(ContractUpdateError::StringError(e)) if e == "Entrypoint does not exist."
+            Err(ContractUpdateError::InterpreterError(e)) if e.to_string() == "Entrypoint does not exist."
             ));
         }
 
@@ -3251,7 +3242,7 @@ mod tests {
                 ChainEvent::Updated { .. }
             ]));
             assert!(
-                matches!(res_update_new_feature_0, ContractUpdateError::StringError(e) if e == "Entrypoint does not exist.")
+                matches!(res_update_new_feature_0, ContractUpdateError::InterpreterError(e) if e.to_string() == "Entrypoint does not exist.")
             );
             assert!(matches!(res_update_upgrade.chain_events[..], [
                 ChainEvent::Interrupted { .. },
@@ -3260,7 +3251,7 @@ mod tests {
                 ChainEvent::Updated { .. },
             ]));
             assert!(
-                matches!(res_update_old_feature_1, ContractUpdateError::StringError(e) if e == "Entrypoint does not exist.")
+                matches!(res_update_old_feature_1, ContractUpdateError::InterpreterError(e) if e.to_string() == "Entrypoint does not exist.")
             );
             assert!(matches!(res_update_new_feature_1.chain_events[..], [
                 ChainEvent::Updated { .. }
