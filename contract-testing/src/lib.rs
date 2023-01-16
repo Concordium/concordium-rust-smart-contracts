@@ -7,7 +7,7 @@ use concordium_base::{
     transactions::{self, cost},
 };
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, path::Path, rc::Rc};
 use thiserror::Error;
 use wasm_chain_integration::{
     v0,
@@ -49,7 +49,7 @@ pub struct Chain {
     /// Accounts and info about them.
     pub accounts:            BTreeMap<AccountAddress, AccountInfo>,
     /// Smart contract modules.
-    pub modules:             BTreeMap<ModuleReference, ArtifactV1>,
+    pub modules:             BTreeMap<ModuleReference, Rc<ArtifactV1>>,
     /// Smart contract instances.
     pub contracts:           BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
@@ -165,7 +165,7 @@ impl Chain {
         if self.modules.contains_key(&module_reference) {
             return Err(DeployModuleError::DuplicateModule);
         }
-        self.modules.insert(module_reference, artifact);
+        self.modules.insert(module_reference, Rc::new(artifact));
         Ok(SuccessfulModuleDeployment {
             module_reference,
             energy,
@@ -854,7 +854,10 @@ impl Chain {
     }
 
     fn get_artifact(&self, module_ref: ModuleReference) -> Result<&ArtifactV1, ModuleMissing> {
-        self.modules.get(&module_ref).ok_or(ModuleMissing)
+        match self.modules.get(&module_ref) {
+            Some(artifact) => Ok(artifact.as_ref()),
+            None => Err(ModuleMissing),
+        }
     }
 
     fn get_instance(
