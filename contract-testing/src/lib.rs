@@ -54,6 +54,7 @@ pub struct Chain {
     pub contracts:           BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
     pub next_contract_index: u64,
+    pub instance_changesets: BTreeMap<ContractAddress, InstanceChangeSet>,
 }
 
 #[derive(Clone)]
@@ -63,6 +64,32 @@ pub struct ContractInstance {
     pub state:            v1::trie::PersistentState,
     pub owner:            AccountAddress,
     pub self_balance:     Amount,
+}
+
+#[derive(Clone, Copy)]
+pub enum AmountDelta {
+    Positive(Amount),
+    Negative(Amount),
+}
+impl AmountDelta {
+    pub fn new() -> Self { Self::Positive(Amount::zero()) }
+}
+
+/// Data held for a contract instance during the execution of a transaction.
+#[derive(Clone)]
+pub struct InstanceChangeSet {
+    // modification_index ?
+    amount_changed: AmountDelta,
+    state:          MutableState,
+}
+
+impl InstanceChangeSet {
+    fn from_state(state: MutableState) -> Self {
+        Self {
+            amount_changed: AmountDelta::new(),
+            state,
+        }
+    }
 }
 
 impl Chain {
@@ -81,6 +108,7 @@ impl Chain {
             modules: BTreeMap::new(),
             contracts: BTreeMap::new(),
             next_contract_index: 0,
+            instance_changesets: BTreeMap::new(),
         }
     }
 
@@ -399,7 +427,7 @@ impl Chain {
 
         // Get the instance and artifact. To be used in several places.
         let instance = self.get_instance(address)?;
-        let artifact = self.get_artifact(instance.module_reference)?;
+        let artifact = self.get_artifact(instance.module_reference)?.clone();
         // Subtract the cost of looking up the module
         remaining_energy =
             Energy::from(remaining_energy.energy - self.lookup_module_cost(&artifact).energy);
@@ -435,15 +463,18 @@ impl Chain {
             },
         };
 
+        let contract_name = instance.contract_name.clone();
+
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let mut mutable_state = instance.state.thaw();
+        let mut changeset = self.instance_changeset(address);
+        let mut mutable_state = changeset.state.make_fresh_generation(&mut loader);
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
         // Get the initial result from invoking receive
         let res = v1::invoke_receive(
-            std::sync::Arc::new(artifact.clone()),
+            std::sync::Arc::new(artifact),
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
@@ -464,7 +495,7 @@ impl Chain {
         let mut data = ProcessReceiveData {
             invoker,
             address,
-            contract_name: instance.contract_name.clone(),
+            contract_name,
             amount,
             invoker_amount_reserved_for_nrg,
             entrypoint: entrypoint.to_owned(),
@@ -610,6 +641,15 @@ impl Chain {
             self.accounts = accounts_backup;
             self.contracts = contracts_backup;
         }
+
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        let mut collector = SizeCollector::default();
+        for (addr, changeset) in self.instance_changesets.iter_mut() {
+            self.contracts.get_mut(addr).expect("Must exist").state =
+                changeset.state.freeze(&mut loader, &mut collector);
+        }
+        self.instance_changesets.clear();
+        // TODO: Charge for size in collector;
 
         // Charge the transaction fee irrespective of the result
         self.get_account_mut(invoker)?.balance -= transaction_fee;
@@ -782,6 +822,16 @@ impl Chain {
         ContractAddress::new(index, subindex)
     }
 
+    /// Precondition: `address` exists in state.contracts.
+    fn instance_changeset(&mut self, address: ContractAddress) -> InstanceChangeSet {
+        self.instance_changesets
+            .entry(address)
+            .or_insert(InstanceChangeSet::from_state(
+                self.contracts[&address].state.thaw(),
+            ))
+            .clone()
+    }
+
     pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
 
     pub fn set_euro_per_energy(&mut self, euro_per_energy: ExchangeRate) {
@@ -932,14 +982,17 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                         amount:     self.amount,
                     };
                     if state_changed {
-                        let instance = self
-                            .chain
-                            .get_instance_mut(self.address)
-                            .expect("Instance known to exist");
-                        let mut collector = v1::trie::SizeCollector::default();
-                        instance.state =
-                            self.mutable_state.freeze(&mut self.loader, &mut collector);
-                        // TODO: Charge energy for this
+                        // let instance = self
+                        //     .chain
+                        //     .get_instance_mut(self.address)
+                        //     .expect("Instance known to exist");
+                        // let mut collector = v1::trie::SizeCollector::default();
+                        self.chain.instance_changeset(self.address).state =
+                            self.mutable_state.clone();
+                        // instance.state =
+                        //     self.mutable_state.freeze(&mut self.loader, &mut
+                        // collector); TODO: Charge
+                        // energy for this
                     }
                     // Add update event
                     self.chain_events.push(update_event);
@@ -1048,11 +1101,17 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             if state_changed {
                                 println!("\t\tState was changed. Saving prior to another call.");
-                                let mut collector = SizeCollector::default();
-                                let persistent_state =
-                                    self.mutable_state.freeze(&mut self.loader, &mut collector);
+                                // let mut collector = SizeCollector::default();
+                                let mut loader = v1::trie::Loader::new(&[][..]);
+                                // Make new generation so that we might roll back.
+                                self.chain.instance_changeset(self.address).state =
+                                    self.mutable_state.make_fresh_generation(&mut loader);
+                                // let persistent_state =
+                                //     self.mutable_state.freeze(&mut
+                                // self.loader, &mut collector);
                                 // TODO: Charge for size of new state.
-                                self.chain.get_instance_mut(address)?.state = persistent_state;
+                                // self.chain.get_instance_mut(address)?.state =
+                                // persistent_state;
                             }
 
                             println!(
@@ -1167,7 +1226,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Update the mutable state, since it might have been changed on
                             // reentry.
                             self.mutable_state =
-                                self.chain.get_instance(self.address)?.state.thaw();
+                                self.chain.instance_changeset(self.address).state.clone();
 
                             let resume_res = v1::resume_receive(
                                 config,
