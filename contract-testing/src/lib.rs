@@ -7,7 +7,7 @@ use concordium_base::{
     transactions::{self, cost},
 };
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::Path, rc::Rc};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 use thiserror::Error;
 use wasm_chain_integration::{
     v0,
@@ -49,7 +49,7 @@ pub struct Chain {
     /// Accounts and info about them.
     pub accounts:            BTreeMap<AccountAddress, AccountInfo>,
     /// Smart contract modules.
-    pub modules:             BTreeMap<ModuleReference, Rc<ArtifactV1>>,
+    pub modules:             BTreeMap<ModuleReference, Arc<ArtifactV1>>,
     /// Smart contract instances.
     pub contracts:           BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
@@ -192,7 +192,7 @@ impl Chain {
         if self.modules.contains_key(&module_reference) {
             return Err(DeployModuleError::DuplicateModule(module_reference));
         }
-        self.modules.insert(module_reference, Rc::new(artifact));
+        self.modules.insert(module_reference, Arc::new(artifact));
         Ok(SuccessfulModuleDeployment {
             module_reference,
             energy,
@@ -427,7 +427,7 @@ impl Chain {
 
         // Get the instance and artifact. To be used in several places.
         let instance = self.get_instance(address)?;
-        let artifact = self.get_artifact(instance.module_reference)?.clone();
+        let artifact = self.get_artifact(instance.module_reference)?;
         // Subtract the cost of looking up the module
         remaining_energy =
             Energy::from(remaining_energy.energy - self.lookup_module_cost(&artifact).energy);
@@ -474,7 +474,7 @@ impl Chain {
 
         // Get the initial result from invoking receive
         let res = v1::invoke_receive(
-            std::sync::Arc::new(artifact),
+            artifact,
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
@@ -717,8 +717,7 @@ impl Chain {
             v1::ReceiveContext<v0::OwnedPolicyBytes>,
             v1::ReceiveContext<v0::OwnedPolicyBytes>,
         >(
-            std::sync::Arc::new(artifact.clone()), /* TODO: I made ProcessedImports cloneable
-                                                    * for this to work. */
+            artifact,
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
@@ -901,11 +900,13 @@ impl Chain {
         Energy::from(artifact.code.len() as u64 / 50)
     }
 
-    fn get_artifact(&self, module_ref: ModuleReference) -> Result<&ArtifactV1, ModuleMissing> {
-        match self.modules.get(&module_ref) {
-            Some(artifact) => Ok(artifact.as_ref()),
-            None => Err(ModuleMissing(module_ref)),
-        }
+    /// Returns an Arc clone of the artifact.
+    fn get_artifact(&self, module_ref: ModuleReference) -> Result<Arc<ArtifactV1>, ModuleMissing> {
+        let artifact = self
+            .modules
+            .get(&module_ref)
+            .ok_or(ModuleMissing(module_ref))?;
+        Ok(Arc::clone(artifact))
     }
 
     fn get_instance(
