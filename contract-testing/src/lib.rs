@@ -66,7 +66,7 @@ pub struct ContractInstance {
     pub self_balance:     Amount,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum AmountDelta {
     Positive(Amount),
     Negative(Amount),
@@ -76,19 +76,41 @@ impl AmountDelta {
 }
 
 /// Data held for a contract instance during the execution of a transaction.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InstanceChangeSet {
     // modification_index ?
     amount_changed: AmountDelta,
-    state:          MutableState,
+    state_stack:    Vec<MutableState>,
 }
 
 impl InstanceChangeSet {
     fn from_state(state: MutableState) -> Self {
         Self {
             amount_changed: AmountDelta::new(),
-            state,
+            state_stack:    vec![state],
         }
+    }
+
+    /// This assumes that there always is /at least/ one state in the
+    /// `state_stack`, which should always be true.
+    /// Return InstanceState directly here?
+    fn get_last_state(&mut self) -> &mut MutableState {
+        let last_elem_pos = self.state_stack.len() - 1;
+        &mut self.state_stack[last_elem_pos]
+    }
+
+    /// Will remove the last state added to the stack. But will never remove the
+    /// initial state.
+    fn remove_last_state(&mut self) {
+        if self.state_stack.len() > 1 {
+            self.state_stack.pop();
+        }
+    }
+
+    fn add_new_checkpoint(&mut self) {
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        let new_mutable_state = self.get_last_state().make_fresh_generation(&mut loader);
+        self.state_stack.push(new_mutable_state);
     }
 }
 
@@ -467,8 +489,7 @@ impl Chain {
 
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let mut changeset = self.instance_changeset(address);
-        let mut mutable_state = changeset.state.make_fresh_generation(&mut loader);
+        let mutable_state = &self.instance_changeset(address).get_last_state();
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
@@ -501,7 +522,6 @@ impl Chain {
             entrypoint: entrypoint.to_owned(),
             chain: self,
             chain_events: Vec::new(),
-            mutable_state,
             loader,
         };
 
@@ -644,10 +664,15 @@ impl Chain {
 
         let mut loader = v1::trie::Loader::new(&[][..]);
         let mut collector = SizeCollector::default();
+        // Apply changes from changesets to the persisted data.
+        // TODO: We should make sure that only valid changesets are kept. I.e. if it
+        // made changes and failed, then it shouldn't be frozen.
         for (addr, changeset) in self.instance_changesets.iter_mut() {
-            self.contracts.get_mut(addr).expect("Must exist").state =
-                changeset.state.freeze(&mut loader, &mut collector);
+            self.contracts.get_mut(addr).expect("Must exist").state = changeset
+                .get_last_state()
+                .freeze(&mut loader, &mut collector);
         }
+        // Clear the changeset.
         self.instance_changesets.clear();
         // TODO: Charge for size in collector;
 
@@ -822,13 +847,12 @@ impl Chain {
     }
 
     /// Precondition: `address` exists in state.contracts.
-    fn instance_changeset(&mut self, address: ContractAddress) -> InstanceChangeSet {
+    fn instance_changeset(&mut self, address: ContractAddress) -> &mut InstanceChangeSet {
         self.instance_changesets
             .entry(address)
             .or_insert(InstanceChangeSet::from_state(
                 self.contracts[&address].state.thaw(),
             ))
-            .clone()
     }
 
     pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
@@ -949,11 +973,12 @@ struct ProcessReceiveData<'a, 'b> {
     /// The CCD amount reserved from the invoker account for the energy. While
     /// the amount is reserved, it is not subtracted in the chain.accounts
     /// map. Used to handle account balance queries for the invoker account.
+    /// TODO: We could use a changeset for accounts -> balance, and then look up
+    /// the "chain.accounts" values for chain queries.
     invoker_amount_reserved_for_nrg: Amount,
     entrypoint: OwnedEntrypointName,
     chain: &'a mut Chain,
     chain_events: Vec<ChainEvent>,
-    mutable_state: MutableState,
     loader: v1::trie::Loader<&'b [u8]>,
 }
 
@@ -982,19 +1007,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                         entrypoint: self.entrypoint.clone(),
                         amount:     self.amount,
                     };
-                    if state_changed {
-                        // let instance = self
-                        //     .chain
-                        //     .get_instance_mut(self.address)
-                        //     .expect("Instance known to exist");
-                        // let mut collector = v1::trie::SizeCollector::default();
-                        self.chain.instance_changeset(self.address).state =
-                            self.mutable_state.clone();
-                        // instance.state =
-                        //     self.mutable_state.freeze(&mut self.loader, &mut
-                        // collector); TODO: Charge
-                        // energy for this
-                    }
                     // Add update event
                     self.chain_events.push(update_event);
                     Ok(v1::ReceiveResult::Success {
@@ -1083,7 +1095,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(remaining_energy),
-                                &mut self.mutable_state,
+                                &mut self.chain.instance_changeset(self.address).get_last_state(),
                                 false, // never changes on transfers
                                 self.loader,
                             );
@@ -1100,20 +1112,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
 
-                            if state_changed {
-                                println!("\t\tState was changed. Saving prior to another call.");
-                                // let mut collector = SizeCollector::default();
-                                let mut loader = v1::trie::Loader::new(&[][..]);
-                                // Make new generation so that we might roll back.
-                                self.chain.instance_changeset(self.address).state =
-                                    self.mutable_state.make_fresh_generation(&mut loader);
-                                // let persistent_state =
-                                //     self.mutable_state.freeze(&mut
-                                // self.loader, &mut collector);
-                                // TODO: Charge for size of new state.
-                                // self.chain.get_instance_mut(address)?.state =
-                                // persistent_state;
-                            }
+                            // Make a checkpoint before calling another contract so that we may roll
+                            // back.
+                            self.chain
+                                .instance_changeset(self.address)
+                                .add_new_checkpoint();
 
                             println!(
                                 "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
@@ -1224,16 +1227,19 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             );
                             self.chain_events.push(resume_event);
 
-                            // Update the mutable state, since it might have been changed on
-                            // reentry.
-                            self.mutable_state =
-                                self.chain.instance_changeset(self.address).state.clone();
+                            // Remove the last state changes if the invocation failed.
+                            if !success {
+                                println!("---- Removing last state due to !success");
+                                self.chain
+                                    .instance_changeset(self.address)
+                                    .remove_last_state();
+                            };
 
                             let resume_res = v1::resume_receive(
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.mutable_state,
+                                self.chain.instance_changeset(self.address).get_last_state(),
                                 state_changed,
                                 self.loader,
                             );
@@ -1308,7 +1314,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.mutable_state,
+                                self.chain.instance_changeset(self.address).get_last_state(),
                                 state_changed,
                                 self.loader,
                             );
@@ -1360,7 +1366,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.mutable_state,
+                                self.chain.instance_changeset(self.address).get_last_state(),
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -1393,7 +1399,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.mutable_state,
+                                self.chain.instance_changeset(self.address).get_last_state(),
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -1421,7 +1427,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.mutable_state,
+                                self.chain.instance_changeset(self.address).get_last_state(),
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -3316,6 +3322,292 @@ mod tests {
             assert!(matches!(res_update_new_feature_1.chain_events[..], [
                 ChainEvent::Updated { .. }
             ]));
+        }
+    }
+
+    /// Tests related to checkpoints and rollbacks of the contract state.
+    mod checkpointing {
+        use super::*;
+
+        /// This test has the following call pattern:
+        /// A
+        ///  -->  B
+        ///         --> A
+        ///         <--
+        ///       B(trap)
+        /// A <--
+        /// The state at A should be left unchanged by the changes of the
+        /// 'inner' invocation on contract A. A correctly perceives B's
+        /// trapping signal. Only V1 contracts are being used.
+        #[test]
+        fn test_case_1() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_init_a = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_a"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_init_b = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_b"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let forward_parameter = (
+                res_init_a.contract_address,
+                0u16, // length of empty parameter
+                (EntrypointName::new_unchecked("a_modify"), Amount::zero()),
+            );
+            let forward_parameter_len = to_bytes(&forward_parameter).len();
+            let parameter = (
+                (
+                    res_init_b.contract_address,
+                    forward_parameter_len as u16,
+                    forward_parameter,
+                ),
+                EntrypointName::new_unchecked("b_forward_crash"),
+                Amount::zero(),
+            );
+
+            chain
+                .contract_update(
+                    ACC_0,
+                    res_init_a.contract_address,
+                    EntrypointName::new_unchecked("a_modify_proxy"),
+                    ContractParameter::from_typed(&parameter),
+                    // We supply one microCCD as we expect a trap
+                    // (see contract for details).
+                    Amount::from_micro_ccd(1),
+                    Energy::from(10000),
+                )
+                .expect("Updating contract should succeed");
+        }
+
+        /// This test has the following call pattern:
+        /// A
+        ///   -->  B
+        ///          --> A (no modification, but bump iterator)
+        ///          <--
+        ///        B
+        /// A <--
+        ///
+        /// The state at A should be left unchanged.
+        /// The iterator initialized at the outer A should point to the same
+        /// entry as before the call. That is, the iterator should not
+        /// be affected by the inner iterator. Only V1 contracts are
+        /// being used.
+        #[test]
+        fn test_case_2() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_init_a = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_a"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_init_b = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_b"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let forward_parameter = (
+                res_init_a.contract_address,
+                0u16, // length of empty parameter
+                (EntrypointName::new_unchecked("a_no_modify"), Amount::zero()),
+            );
+            let forward_parameter_len = to_bytes(&forward_parameter).len();
+            let parameter = (
+                (
+                    res_init_b.contract_address,
+                    forward_parameter_len as u16,
+                    forward_parameter,
+                ),
+                EntrypointName::new_unchecked("b_forward"),
+                Amount::zero(),
+            );
+
+            chain
+                .contract_update(
+                    ACC_0,
+                    res_init_a.contract_address,
+                    EntrypointName::new_unchecked("a_modify_proxy"),
+                    ContractParameter::from_typed(&parameter),
+                    // We supply zero microCCD as we're instructing the contract to not expect
+                    // state modifications. Also, the contract does not expect
+                    // errors, i.e., a trap signal from underlying invocations.
+                    // The 'inner' call to contract A does not modify the state.
+                    // See the contract for details.
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Updating contract should succeed");
+        }
+
+        /// This test has the following call pattern:
+        /// A
+        ///   -->  Transfer
+        /// A <--
+        ///
+        /// The state at A should be left unchanged.
+        /// The iterator initialized at A should after the call point to the
+        /// same entry as before the call. Only V1 contracts are being
+        /// used.
+        #[test]
+        fn test_case_3() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_init_a = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_a"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_init_b = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_b"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            chain
+                .contract_update(
+                    ACC_0,
+                    res_init_a.contract_address,
+                    EntrypointName::new_unchecked("a_modify_proxy"),
+                    ContractParameter::from_typed(&ACC_1),
+                    // We supply three micro CCDs as we're instructing the contract to carry out a
+                    // transfer instead of a call. See the contract for
+                    // details.
+                    Amount::from_micro_ccd(3),
+                    Energy::from(10000),
+                )
+                .expect("Updating contract should succeed");
+        }
+
+        /// This test has the following call pattern:
+        /// A
+        ///   -->  B
+        ///          --> A modify
+        ///          <--
+        ///        B
+        /// A <--
+        ///
+        /// The state at A should have changed according to the 'inner'
+        /// invocation on contract A. Only V1 contracts are being used.
+        #[test]
+        fn test_case_4() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("Deploying valid module should work");
+
+            let res_init_a = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_a"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_init_b = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_b"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let forward_parameter = (
+                res_init_a.contract_address,
+                0u16, // length of empty parameter
+                (EntrypointName::new_unchecked("a_modify"), Amount::zero()),
+            );
+            let forward_parameter_len = to_bytes(&forward_parameter).len();
+            let parameter = (
+                (
+                    res_init_b.contract_address,
+                    forward_parameter_len as u16,
+                    forward_parameter,
+                ),
+                EntrypointName::new_unchecked("b_forward"),
+                Amount::zero(),
+            );
+
+            chain
+                .contract_update(
+                    ACC_0,
+                    res_init_a.contract_address,
+                    EntrypointName::new_unchecked("a_modify_proxy"),
+                    ContractParameter::from_typed(&parameter),
+                    // We supply four CCDs as we're instructing the contract to expect state
+                    // modifications being made from the 'inner' contract A
+                    // call to be in effect when returned to the caller (a.a_modify_proxy).
+                    // See the contract for details.
+                    Amount::from_micro_ccd(4),
+                    Energy::from(10000),
+                )
+                .expect("Updating contract should succeed");
         }
     }
 }
