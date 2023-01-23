@@ -66,21 +66,47 @@ pub struct ContractInstance {
     pub self_balance:     Amount,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AmountDelta {
     Positive(Amount),
     Negative(Amount),
 }
 impl AmountDelta {
-    pub fn new() -> Self { Self::Positive(Amount::zero()) }
+    fn new() -> Self { Self::Positive(Amount::zero()) }
+
+    fn subtract(&mut self, amount: Amount) {
+        match self {
+            Self::Positive(current) => {
+                if *current >= amount {
+                    current.subtract_micro_ccd(amount.micro_ccd);
+                } else {
+                    *self = Self::Negative(amount.subtract_micro_ccd(current.micro_ccd));
+                }
+            }
+            Self::Negative(current) => {
+                *self = Self::Negative(current.add_micro_ccd(amount.micro_ccd));
+            }
+        }
+    }
+
+    fn add(&mut self, amount: Amount) {
+        match self {
+            Self::Positive(current) => {
+                current.add_micro_ccd(amount.micro_ccd);
+            }
+            Self::Negative(current) => {
+                if *current >= amount {
+                    *self = Self::Negative(current.subtract_micro_ccd(amount.micro_ccd));
+                } else {
+                    *self = Self::Positive(amount.subtract_micro_ccd(current.micro_ccd));
+                }
+            }
+        }
+    }
 }
 
-/// Data held for a contract instance during the execution of a transaction.
-#[derive(Clone, Debug)]
 pub struct InstanceChangeSet {
-    // modification_index ?
-    amount_changed: AmountDelta,
-    state_stack:    Vec<MutableState>,
+    stack: Vec<InstanceChanges>,
 }
 
 impl InstanceChangeSet {
@@ -3608,6 +3634,35 @@ mod tests {
                     Energy::from(10000),
                 )
                 .expect("Updating contract should succeed");
+        }
+    }
+
+    mod amount_delta {
+        use super::*;
+
+        #[test]
+        fn test() {
+            let mut x = AmountDelta::new();
+            assert_eq!(x, AmountDelta::Positive(Amount::zero()));
+
+            let one = Amount::from_ccd(1);
+            let two = Amount::from_ccd(2);
+            let three = Amount::from_ccd(3);
+            let five = Amount::from_ccd(5);
+
+            x.subtract(one); // -1 CCD
+            x.subtract(one); // -2 CCD
+            assert_eq!(x, AmountDelta::Negative(two));
+            x.add(five); // +3 CCD
+            assert_eq!(x, AmountDelta::Positive(three));
+            x.subtract(five); // -2 CCD
+            assert_eq!(x, AmountDelta::Negative(two));
+            x.add(two); // 0
+
+            x.add(Amount::from_micro_ccd(1)); // 1 mCCD
+            assert_eq!(x, AmountDelta::Positive(Amount::from_micro_ccd(1)));
+            x.subtract(Amount::from_micro_ccd(2)); // -1 mCCD
+            assert_eq!(x, AmountDelta::Negative(Amount::from_micro_ccd(1)));
         }
     }
 }
