@@ -416,7 +416,6 @@ impl Chain {
                         return_value,
                         energy_used,
                         transaction_fee,
-                        logs: v0::Logs::default(), // TODO: Get Logs on failures.
                     },
                 ))
             }
@@ -434,7 +433,6 @@ impl Chain {
                         error,
                         energy_used,
                         transaction_fee,
-                        logs: v0::Logs::default(), // TODO: Get Logs on failures.
                     },
                 ))
             }
@@ -444,7 +442,6 @@ impl Chain {
                     FailedContractInteraction::OutOfEnergy {
                         energy_used: energy_reserved,
                         transaction_fee,
-                        logs: v0::Logs::default(), // TODO: Get Logs on failures.
                     },
                 ))
             }
@@ -695,7 +692,6 @@ impl Chain {
                             return_value,
                             energy_used,
                             transaction_fee,
-                            logs: v0::Logs::default(), // TODO: Get logs on failures.
                         },
                     ))
                 }
@@ -713,7 +709,6 @@ impl Chain {
                             error,
                             energy_used,
                             transaction_fee,
-                            logs: v0::Logs::default(), // TODO: Get logs on failures.
                         },
                     ))
                 }
@@ -723,7 +718,6 @@ impl Chain {
                         FailedContractInteraction::OutOfEnergy {
                             energy_used: energy_reserved,
                             transaction_fee,
-                            logs: v0::Logs::default(), // TODO: Get logs on failures.
                         },
                     ))
                 }
@@ -883,7 +877,6 @@ impl Chain {
                         return_value,
                         energy_used,
                         transaction_fee,
-                        logs: v0::Logs::default(), // TODO: Get logs on failures.
                     },
                 ))
             }
@@ -901,7 +894,6 @@ impl Chain {
                         error,
                         energy_used,
                         transaction_fee,
-                        logs: v0::Logs::default(), // TODO: Get logs on failures.
                     },
                 ))
             }
@@ -911,7 +903,6 @@ impl Chain {
                     FailedContractInteraction::OutOfEnergy {
                         energy_used: energy_reserved,
                         transaction_fee,
-                        logs: v0::Logs::default(), // TODO: Get logs on failures.
                     },
                 ))
             }
@@ -1666,27 +1657,15 @@ pub enum FailedContractInteraction {
         return_value:    ReturnValue,
         energy_used:     Energy,
         transaction_fee: Amount,
-        /// Logs emitted before the interaction failed. Logs from failed
-        /// updates are not stored on the chain, but can be useful for
-        /// debugging.
-        logs:            v0::Logs,
     },
     Trap {
         error:           anyhow::Error,
         energy_used:     Energy,
         transaction_fee: Amount,
-        /// Logs emitted before the interaction failed. Logs from failed
-        /// updates are not stored on the chain, but can be useful for
-        /// debugging.
-        logs:            v0::Logs,
     },
     OutOfEnergy {
         energy_used:     Energy,
         transaction_fee: Amount,
-        /// Logs emitted before the interaction failed. Logs from failed
-        /// updates are not stored on the chain, but can be useful for
-        /// debugging.
-        logs:            v0::Logs,
     },
 }
 
@@ -1702,14 +1681,6 @@ impl FailedContractInteraction {
             FailedContractInteraction::OutOfEnergy {
                 transaction_fee, ..
             } => *transaction_fee,
-        }
-    }
-
-    pub fn logs(&self) -> &v0::Logs {
-        match self {
-            FailedContractInteraction::Reject { logs, .. } => logs,
-            FailedContractInteraction::Trap { logs, .. } => logs,
-            FailedContractInteraction::OutOfEnergy { logs, .. } => logs,
         }
     }
 }
