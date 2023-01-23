@@ -636,7 +636,7 @@ impl Chain {
         }
 
         let mut chain_events = Vec::new();
-        let res = self.contract_update_aux(
+        let receive_result = self.contract_update_aux(
             invoker,
             Address::Account(invoker),
             address,
@@ -648,86 +648,8 @@ impl Chain {
             &mut chain_events,
         );
 
-        let mut transaction_fee = Amount::zero();
-
-        // Convert the wasm_chain_integration result to the one used here and
-        // update the transaction fee.
-        let res = match res {
-            Ok(r) => match r {
-                v1::ReceiveResult::Success {
-                    logs,
-                    state_changed,
-                    return_value,
-                    remaining_energy, /* TODO: Could we change this from `u64` to
-                                       * `InterpreterEnergy` in chain_integration? */
-                } => {
-                    let energy_used = energy_reserved
-                        - Chain::from_interpreter_energy(InterpreterEnergy {
-                            energy: remaining_energy,
-                        });
-                    transaction_fee += self.calculate_energy_cost(energy_used);
-                    Ok(SuccessfulContractUpdate {
-                        chain_events,
-                        energy_used,
-                        transaction_fee,
-                        return_value: ContractReturnValue(return_value),
-                        state_changed,
-                        logs,
-                    })
-                }
-                v1::ReceiveResult::Interrupt { .. } => panic!("Should never happen"),
-                v1::ReceiveResult::Reject {
-                    reason,
-                    return_value,
-                    remaining_energy,
-                } => {
-                    let energy_used = energy_reserved
-                        - Chain::from_interpreter_energy(InterpreterEnergy {
-                            energy: remaining_energy,
-                        });
-                    transaction_fee += self.calculate_energy_cost(energy_used);
-                    Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::Reject {
-                            reason,
-                            return_value,
-                            energy_used,
-                            transaction_fee,
-                        },
-                    ))
-                }
-                v1::ReceiveResult::Trap {
-                    error,
-                    remaining_energy,
-                } => {
-                    let energy_used = energy_reserved
-                        - Chain::from_interpreter_energy(InterpreterEnergy {
-                            energy: remaining_energy,
-                        });
-                    transaction_fee += self.calculate_energy_cost(energy_used);
-                    Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::Trap {
-                            error,
-                            energy_used,
-                            transaction_fee,
-                        },
-                    ))
-                }
-                v1::ReceiveResult::OutOfEnergy => {
-                    transaction_fee += self.calculate_energy_cost(energy_reserved);
-                    Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::OutOfEnergy {
-                            energy_used: energy_reserved,
-                            transaction_fee,
-                        },
-                    ))
-                }
-            },
-            Err(e) => {
-                // TODO: what is the correct cost here?
-                transaction_fee += self.calculate_energy_cost(energy_reserved);
-                Err(ContractUpdateError::InterpreterError(e))
-            }
-        };
+        let (res, transaction_fee) =
+            self.convert_receive_result(receive_result, chain_events, energy_reserved);
 
         // Handle rollback
         if res.is_err() {
@@ -738,8 +660,6 @@ impl Chain {
         let mut loader = v1::trie::Loader::new(&[][..]);
         let mut collector = SizeCollector::default();
         // Apply changes from changesets to the persisted data.
-        // TODO: We should make sure that only valid changesets are kept. I.e. if it
-        // made changes and failed, then it shouldn't be frozen.
         for (addr, changeset) in self.instance_changesets.iter_mut() {
             if changeset.has_changes() {
                 println!(
@@ -774,139 +694,46 @@ impl Chain {
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        // Find contract instance and artifact
-        let instance = self.get_instance(address)?;
-        let artifact = self.get_artifact(instance.module_reference)?;
+        // Save backups of accounts and contracts so we can reset them after the invoke.
+        let accounts_backup = self.accounts.clone();
+        let contracts_backup = self.contracts.clone();
 
         println!(
-            "Invoking contract {} with parameter: {:?}",
+            "Invoking contract {}, with parameter: {:?}",
             address, parameter.0
         );
 
-        // Ensure account exists and can pay for the reserved energy
+        // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self.get_account(invoker)?;
-        if account_info.balance < self.calculate_energy_cost(energy_reserved) {
+        let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        if account_info.balance < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
-        // Construct the context
-        let receive_ctx = v1::ReceiveContext {
-            entrypoint: entrypoint.to_owned(),
-            common:     v0::ReceiveContext {
-                metadata: ChainMetadata {
-                    slot_time: self.slot_time,
-                },
-                invoker,
-                self_address: address,
-                self_balance: instance.self_balance + amount,
-                sender: Address::Account(invoker),
-                owner: instance.owner,
-                sender_policies: account_info.policies.clone(),
-            },
-        };
-        let receive_name = OwnedReceiveName::new_unchecked(format!(
-            "{}.{}",
-            instance.contract_name.as_contract_name().contract_name(),
-            entrypoint
-        ));
 
-        let mut loader = v1::trie::Loader::new(&[][..]);
-        let mut mutable_state = instance.state.thaw();
-        let inner = mutable_state.get_inner(&mut loader);
-        let instance_state = v1::InstanceState::new(loader, inner);
+        let mut chain_events = Vec::new();
+        let receive_result = self.contract_update_aux(
+            invoker,
+            Address::Account(invoker),
+            address,
+            entrypoint.to_owned(),
+            Parameter(&parameter.0),
+            amount,
+            invoker_amount_reserved_for_nrg,
+            energy_reserved,
+            &mut chain_events,
+        );
 
-        // Update the contract
-        let res = v1::invoke_receive::<
-            _,
-            _,
-            _,
-            _,
-            v1::ReceiveContext<v0::OwnedPolicyBytes>,
-            v1::ReceiveContext<v0::OwnedPolicyBytes>,
-        >(
-            artifact,
-            receive_ctx,
-            v1::ReceiveInvocation {
-                amount,
-                receive_name: receive_name.as_receive_name(),
-                parameter: &parameter.0,
-                energy: Chain::to_interpreter_energy(energy_reserved),
-            },
-            instance_state,
-            v1::ReceiveParams {
-                max_parameter_size:           65535,
-                limit_logs_and_return_values: false,
-                support_queries:              true,
-            },
-        )?;
+        let (res, _) = self.convert_receive_result(receive_result, chain_events, energy_reserved);
 
-        match res {
-            v1::ReceiveResult::Success {
-                logs,
-                state_changed,
-                return_value,
-                remaining_energy,
-            } => {
-                let energy_used = energy_reserved
-                    - Chain::from_interpreter_energy(InterpreterEnergy {
-                        energy: remaining_energy,
-                    });
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                Ok(SuccessfulContractUpdate {
-                    chain_events: Vec::new(), // TODO: add host events
-                    energy_used,
-                    transaction_fee,
-                    return_value: ContractReturnValue(return_value),
-                    state_changed, // TODO: Should we always set this to false?
-                    logs,
-                })
-            }
-            v1::ReceiveResult::Interrupt { .. } => todo!("Handle interrupts"),
-            v1::ReceiveResult::Reject {
-                reason,
-                return_value,
-                remaining_energy,
-            } => {
-                let energy_used = energy_reserved
-                    - Chain::from_interpreter_energy(InterpreterEnergy {
-                        energy: remaining_energy,
-                    });
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                Err(ContractUpdateError::ValidChainError(
-                    FailedContractInteraction::Reject {
-                        reason,
-                        return_value,
-                        energy_used,
-                        transaction_fee,
-                    },
-                ))
-            }
-            v1::ReceiveResult::Trap {
-                error,
-                remaining_energy,
-            } => {
-                let energy_used = energy_reserved
-                    - Chain::from_interpreter_energy(InterpreterEnergy {
-                        energy: remaining_energy,
-                    });
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                Err(ContractUpdateError::ValidChainError(
-                    FailedContractInteraction::Trap {
-                        error,
-                        energy_used,
-                        transaction_fee,
-                    },
-                ))
-            }
-            v1::ReceiveResult::OutOfEnergy => {
-                let transaction_fee = self.calculate_energy_cost(energy_reserved);
-                Err(ContractUpdateError::ValidChainError(
-                    FailedContractInteraction::OutOfEnergy {
-                        energy_used: energy_reserved,
-                        transaction_fee,
-                    },
-                ))
-            }
-        }
+        // Roll back any changes.
+        self.accounts = accounts_backup;
+        self.contracts = contracts_backup;
+        // Clear the changeset.
+        self.instance_changesets.clear();
+
+        // TODO: Add cost for size in collector to transaction_fee
+
+        res
     }
 
     /// Create an account. Will override existing account if already present.
@@ -1040,6 +867,110 @@ impl Chain {
         self.accounts
             .get_mut(&address)
             .ok_or(AccountMissing(address))
+    }
+
+    /// Convert the wasm_chain_integration result to the one used here and
+    /// calculate the transaction fee.
+    fn convert_receive_result(
+        &self,
+        receive_result: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
+        chain_events: Vec<ChainEvent>,
+        energy_reserved: Energy,
+    ) -> (
+        Result<SuccessfulContractUpdate, ContractUpdateError>,
+        Amount,
+    ) {
+        match receive_result {
+            Ok(r) => match r {
+                v1::ReceiveResult::Success {
+                    logs,
+                    state_changed,
+                    return_value,
+                    remaining_energy, /* TODO: Could we change this from `u64` to
+                                       * `InterpreterEnergy` in chain_integration? */
+                } => {
+                    let energy_used = energy_reserved
+                        - Chain::from_interpreter_energy(InterpreterEnergy {
+                            energy: remaining_energy,
+                        });
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                    (
+                        Ok(SuccessfulContractUpdate {
+                            chain_events,
+                            energy_used,
+                            transaction_fee,
+                            return_value: ContractReturnValue(return_value),
+                            state_changed,
+                            logs,
+                        }),
+                        transaction_fee,
+                    )
+                }
+                v1::ReceiveResult::Interrupt { .. } => panic!("Should never happen"),
+                v1::ReceiveResult::Reject {
+                    reason,
+                    return_value,
+                    remaining_energy,
+                } => {
+                    let energy_used = energy_reserved
+                        - Chain::from_interpreter_energy(InterpreterEnergy {
+                            energy: remaining_energy,
+                        });
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                    (
+                        Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::Reject {
+                                reason,
+                                return_value,
+                                energy_used,
+                                transaction_fee,
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                }
+                v1::ReceiveResult::Trap {
+                    error,
+                    remaining_energy,
+                } => {
+                    let energy_used = energy_reserved
+                        - Chain::from_interpreter_energy(InterpreterEnergy {
+                            energy: remaining_energy,
+                        });
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+                    (
+                        Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::Trap {
+                                error,
+                                energy_used,
+                                transaction_fee,
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                }
+                v1::ReceiveResult::OutOfEnergy => {
+                    let transaction_fee = self.calculate_energy_cost(energy_reserved);
+                    (
+                        Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::OutOfEnergy {
+                                energy_used: energy_reserved,
+                                transaction_fee,
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                }
+            },
+            Err(e) => {
+                // TODO: what is the correct cost here?
+                let transaction_fee = self.calculate_energy_cost(energy_reserved);
+                (
+                    Err(ContractUpdateError::InterpreterError(e)),
+                    transaction_fee,
+                )
+            }
+        }
     }
 }
 
