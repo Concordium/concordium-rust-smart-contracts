@@ -464,6 +464,8 @@ impl Chain {
     /// Returns:
     ///  - Everything the types can encode apart from
     ///    `Ok(v1::ReceiveResult::Interrupt)`
+    ///
+    ///  TODO: Change return type, so it can't return Interrupt.
     ///  TODO: Use proper error types instead of anyhow.
     fn contract_update_aux(
         &mut self,
@@ -580,19 +582,34 @@ impl Chain {
         // Process the receive invocation to the end.
         let res = data.process(res);
         // Append the new chain events if the invocation succeeded.
-        if matches!(res, Ok(v1::ReceiveResult::Success { .. })) {
-            chain_events.append(&mut data.chain_events);
-        } else {
-            let instance_changeset = self.instance_changeset(address);
-            println!(
-                "Removing checkpoints [{}..{}] for contract {}",
-                modification_index_before_invoke + 1,
-                instance_changeset.get_last().modification_index,
-                address,
-            );
-            // Pop a changeset if the invocation failed.
-            instance_changeset.remove_until_index(modification_index_before_invoke);
+
+        match res {
+            Ok(v1::ReceiveResult::Success { state_changed, .. }) => {
+                chain_events.append(&mut data.chain_events);
+                if !state_changed {
+                    let instance_changeset = self.instance_changeset(address);
+                    println!(
+                        "Removing checkpoints [{}..{}] for contract {}",
+                        modification_index_before_invoke + 1,
+                        instance_changeset.get_last().modification_index,
+                        address,
+                    );
+                    instance_changeset.remove_until_index(modification_index_before_invoke);
+                }
+            }
+            _ => {
+                let instance_changeset = self.instance_changeset(address);
+                println!(
+                    "Removing checkpoints [{}..{}] for contract {}",
+                    modification_index_before_invoke + 1,
+                    instance_changeset.get_last().modification_index,
+                    address,
+                );
+                // Pop a changeset if the invocation failed.
+                instance_changeset.remove_until_index(modification_index_before_invoke);
+            }
         }
+
         res
     }
 
@@ -1293,7 +1310,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             };
 
                             // Remove the last state changes if the invocation failed.
-                            if !success {
+                            if !success || !state_changed {
                                 println!(
                                     "\t\tRemove checkpoint due to !success for contract: {}",
                                     self.address
@@ -3589,7 +3606,7 @@ mod tests {
                 )
                 .expect("Initializing valid contract should work");
 
-            let res_init_b = chain
+            chain
                 .contract_init(
                     ACC_0,
                     res_deploy.module_reference,
