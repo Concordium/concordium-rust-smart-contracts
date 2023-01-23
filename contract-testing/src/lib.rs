@@ -6,6 +6,7 @@ use concordium_base::{
     smart_contracts::{ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost},
 };
+use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 use thiserror::Error;
@@ -796,17 +797,16 @@ impl Chain {
     //        mCCD   NRG * mCCD
     //  NRG * ---- = ---------- = mCCD
     //        NRG       NRG
-    //
-    //  TODO: If using a mCCD/euro exchange rate with large numbers, then this can
-    // overflow.
     pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
-        let micro_ccd_per_energy_numerator =
-            self.euro_per_energy.numerator() * self.micro_ccd_per_euro.numerator();
-        let micro_ccd_per_energy_denominator =
-            self.euro_per_energy.denominator() * self.micro_ccd_per_euro.denominator();
-        Amount::from_micro_ccd(
-            energy.energy * micro_ccd_per_energy_numerator / micro_ccd_per_energy_denominator,
-        )
+        let micro_ccd_per_energy_numerator: BigUint =
+            BigUint::from(self.euro_per_energy.numerator()) * self.micro_ccd_per_euro.numerator();
+        let micro_ccd_per_energy_denominator: BigUint =
+            BigUint::from(self.euro_per_energy.denominator())
+                * self.micro_ccd_per_euro.denominator();
+        let cost: BigUint =
+            (micro_ccd_per_energy_numerator * energy.energy) / micro_ccd_per_energy_denominator;
+        let cost: u64 = u64::try_from(cost).expect("Should never overflow due to use of BigUint");
+        Amount::from_micro_ccd(cost)
     }
 
     /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.
@@ -2222,6 +2222,18 @@ mod tests {
         assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
         // Assert that the updated state is persisted.
         assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
+    }
+
+    #[test]
+    fn calculate_cost_will_not_overflow() {
+        let chain = Chain::new_with_time_and_rates(
+            SlotTime::from_timestamp_millis(0),
+            ExchangeRate::new_unchecked(u64::MAX, u64::MAX - 1),
+            ExchangeRate::new_unchecked(u64::MAX - 2, u64::MAX - 3),
+        );
+
+        let energy = Energy::from(u64::MAX - 4);
+        chain.calculate_energy_cost(energy);
     }
 
     mod query_account_balance {
