@@ -111,33 +111,51 @@ pub struct InstanceChangeSet {
 
 impl InstanceChangeSet {
     fn from_state(state: MutableState) -> Self {
-        Self {
+        let initial_changeset = InstanceChanges {
+            modification_index: 0,
             amount_changed: AmountDelta::new(),
-            state_stack:    vec![state],
+            state,
+        };
+        Self {
+            stack: vec![initial_changeset],
         }
     }
 
-    /// This assumes that there always is /at least/ one state in the
-    /// `state_stack`, which should always be true.
-    /// Return InstanceState directly here?
-    fn get_last_state(&mut self) -> &mut MutableState {
-        let last_elem_pos = self.state_stack.len() - 1;
-        &mut self.state_stack[last_elem_pos]
+    /// Get a mutable reference to the last instance changeset.
+    /// Will panic if the stack is empty.
+    fn get_last(&mut self) -> &mut InstanceChanges {
+        let last_index = self.stack.len() - 1;
+        &mut self.stack[last_index]
     }
 
-    /// Will remove the last state added to the stack. But will never remove the
-    /// initial state.
-    fn remove_last_state(&mut self) {
-        if self.state_stack.len() > 1 {
-            self.state_stack.pop();
-        }
-    }
+    /// Remove from the stack until the index is reached, i.e. not including the
+    /// index. Will panic if the index is less than the number of elements
+    /// in the stack.
+    fn remove_until_index(&mut self, index: u32) { self.stack.truncate(index as usize + 1) }
 
-    fn add_new_checkpoint(&mut self) {
+    /// Make a new checkpoint.
+    /// Will panic if the stack is empty.
+    fn checkpoint(&mut self) {
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let new_mutable_state = self.get_last_state().make_fresh_generation(&mut loader);
-        self.state_stack.push(new_mutable_state);
+        let last = self.get_last();
+        let new_checkpoint = InstanceChanges {
+            modification_index: last.modification_index + 1,
+            amount_changed:     last.amount_changed,
+            state:              last.state.make_fresh_generation(&mut loader),
+        };
+        self.stack.push(new_checkpoint);
     }
+
+    /// Returns whether there are any changes to the instance, which means that
+    /// there are more than the original changeset element on the stack.
+    fn has_changes(&mut self) -> bool { self.stack.len() > 1 }
+}
+/// Data held for a contract instance during the execution of a transaction.
+#[derive(Clone, Debug)]
+pub struct InstanceChanges {
+    modification_index: u32,
+    amount_changed:     AmountDelta,
+    state:              MutableState,
 }
 
 impl Chain {
@@ -515,7 +533,15 @@ impl Chain {
 
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let mutable_state = &self.instance_changeset(address).get_last_state();
+        let instance_changeset = self.instance_changeset(address);
+        let modification_index_before_invoke = instance_changeset.get_last().modification_index;
+        println!(
+            "Checkpointing {} from {}",
+            address, modification_index_before_invoke,
+        );
+        // Make a checkpoint.
+        instance_changeset.checkpoint();
+        let mutable_state = &mut instance_changeset.get_last().state;
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
@@ -556,6 +582,16 @@ impl Chain {
         // Append the new chain events if the invocation succeeded.
         if matches!(res, Ok(v1::ReceiveResult::Success { .. })) {
             chain_events.append(&mut data.chain_events);
+        } else {
+            let instance_changeset = self.instance_changeset(address);
+            println!(
+                "Removing checkpoints [{}..{}] for contract {}",
+                modification_index_before_invoke + 1,
+                instance_changeset.get_last().modification_index,
+                address,
+            );
+            // Pop a changeset if the invocation failed.
+            instance_changeset.remove_until_index(modification_index_before_invoke);
         }
         res
     }
@@ -694,9 +730,17 @@ impl Chain {
         // TODO: We should make sure that only valid changesets are kept. I.e. if it
         // made changes and failed, then it shouldn't be frozen.
         for (addr, changeset) in self.instance_changesets.iter_mut() {
-            self.contracts.get_mut(addr).expect("Must exist").state = changeset
-                .get_last_state()
-                .freeze(&mut loader, &mut collector);
+            if changeset.has_changes() {
+                println!(
+                    "Freezing changeset {} of contract {}",
+                    changeset.get_last().modification_index,
+                    addr
+                );
+                self.contracts.get_mut(addr).expect("Must exist").state = changeset
+                    .get_last()
+                    .state
+                    .freeze(&mut loader, &mut collector);
+            }
         }
         // Clear the changeset.
         self.instance_changesets.clear();
@@ -1121,7 +1165,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(remaining_energy),
-                                &mut self.chain.instance_changeset(self.address).get_last_state(),
+                                &mut self.chain.instance_changeset(self.address).get_last().state,
                                 false, // never changes on transfers
                                 self.loader,
                             );
@@ -1140,9 +1184,15 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             // Make a checkpoint before calling another contract so that we may roll
                             // back.
-                            self.chain
-                                .instance_changeset(self.address)
-                                .add_new_checkpoint();
+                            let changeset = self.chain.instance_changeset(self.address);
+                            let modification_index_before_invoke =
+                                changeset.get_last().modification_index;
+                            println!(
+                                "\t\tCheckpointing addr {}, from index: {}",
+                                self.address,
+                                changeset.get_last().modification_index
+                            );
+                            changeset.checkpoint();
 
                             println!(
                                 "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
@@ -1242,6 +1292,17 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 success,
                             };
 
+                            // Remove the last state changes if the invocation failed.
+                            if !success {
+                                println!(
+                                    "\t\tRemove checkpoint due to !success for contract: {}",
+                                    self.address
+                                );
+                                self.chain
+                                    .instance_changeset(self.address)
+                                    .remove_until_index(modification_index_before_invoke);
+                            };
+
                             println!(
                                 "\tResuming contract {}\n\t\tafter {}",
                                 self.address,
@@ -1253,19 +1314,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             );
                             self.chain_events.push(resume_event);
 
-                            // Remove the last state changes if the invocation failed.
-                            if !success {
-                                println!("---- Removing last state due to !success");
-                                self.chain
-                                    .instance_changeset(self.address)
-                                    .remove_last_state();
-                            };
-
                             let resume_res = v1::resume_receive(
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                self.chain.instance_changeset(self.address).get_last_state(),
+                                &mut self.chain.instance_changeset(self.address).get_last().state,
                                 state_changed,
                                 self.loader,
                             );
@@ -1340,7 +1393,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                self.chain.instance_changeset(self.address).get_last_state(),
+                                &mut self.chain.instance_changeset(self.address).get_last().state,
                                 state_changed,
                                 self.loader,
                             );
@@ -1392,7 +1445,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                self.chain.instance_changeset(self.address).get_last_state(),
+                                &mut self.chain.instance_changeset(self.address).get_last().state,
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -1425,7 +1478,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                self.chain.instance_changeset(self.address).get_last_state(),
+                                &mut self.chain.instance_changeset(self.address).get_last().state,
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -1453,7 +1506,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                self.chain.instance_changeset(self.address).get_last_state(),
+                                &mut self.chain.instance_changeset(self.address).get_last().state,
                                 false, // State never changes on queries.
                                 self.loader,
                             );
