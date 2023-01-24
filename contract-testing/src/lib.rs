@@ -111,10 +111,10 @@ pub struct InstanceChangeSet {
 }
 
 impl InstanceChangeSet {
-    fn from_state(state: MutableState) -> Self {
+    fn new(self_balance: Amount, state: MutableState) -> Self {
         let initial_changeset = InstanceChanges {
             modification_index: 0,
-            amount_changed: AmountDelta::new(),
+            self_balance,
             state,
         };
         Self {
@@ -141,7 +141,7 @@ impl InstanceChangeSet {
         let last = self.get_last();
         let new_checkpoint = InstanceChanges {
             modification_index: last.modification_index + 1,
-            amount_changed:     last.amount_changed,
+            self_balance:       last.self_balance,
             state:              last.state.make_fresh_generation(&mut loader),
         };
         self.stack.push(new_checkpoint);
@@ -155,7 +155,8 @@ impl InstanceChangeSet {
 #[derive(Clone, Debug)]
 pub struct InstanceChanges {
     modification_index: u32,
-    amount_changed:     AmountDelta,
+    // amount_changed:     AmountDelta,
+    self_balance:       Amount,
     state:              MutableState,
 }
 
@@ -481,15 +482,28 @@ impl Chain {
         chain_events: &mut Vec<ChainEvent>,
     ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
         // Move the amount from the sender to the contract.
-        match sender {
+        let contract_sender_info = match sender {
             Address::Account(addr) => {
                 self.get_account_mut(addr)?.balance -= amount;
+                None
             }
             Address::Contract(addr) => {
-                self.get_instance_mut(addr)?.self_balance -= amount;
+                let instance_changeset = self.instance_changeset(addr);
+                let modification_index = instance_changeset.get_last().modification_index;
+                instance_changeset.checkpoint();
+                instance_changeset.get_last().self_balance -= amount;
+                Some((addr, modification_index))
             }
-        }
-        self.get_instance_mut(address)?.self_balance += amount;
+        };
+
+        let instance_changeset = self.instance_changeset(address);
+        let modification_index_before_invoke = instance_changeset.get_last().modification_index;
+        println!(
+            "Checkpointing {} from {}",
+            address, modification_index_before_invoke,
+        );
+        instance_changeset.checkpoint();
+        instance_changeset.get_last().self_balance += amount;
 
         // Get the instance and artifact. To be used in several places.
         let instance = self.get_instance(address)?;
@@ -533,15 +547,7 @@ impl Chain {
 
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let instance_changeset = self.instance_changeset(address);
-        let modification_index_before_invoke = instance_changeset.get_last().modification_index;
-        println!(
-            "Checkpointing {} from {}",
-            address, modification_index_before_invoke,
-        );
-        // Make a checkpoint.
-        instance_changeset.checkpoint();
-        let mutable_state = &mut instance_changeset.get_last().state;
+        let mutable_state = &mut self.instance_changeset(address).get_last().state;
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
@@ -605,6 +611,12 @@ impl Chain {
                 );
                 // Pop a changeset if the invocation failed.
                 instance_changeset.remove_until_index(modification_index_before_invoke);
+
+                // If the sender was a contract, remove the potential balance changes.
+                if let Some((addr, modification_index)) = contract_sender_info {
+                    self.instance_changeset(addr)
+                        .remove_until_index(modification_index)
+                }
             }
         }
 
@@ -668,10 +680,10 @@ impl Chain {
                     changeset.get_last().modification_index,
                     addr
                 );
-                self.contracts.get_mut(addr).expect("Must exist").state = changeset
-                    .get_last()
-                    .state
-                    .freeze(&mut loader, &mut collector);
+                let changes = changeset.get_last();
+                let contract = self.contracts.get_mut(&addr).expect("Known to exist.");
+                contract.state = changes.state.freeze(&mut loader, &mut collector);
+                contract.self_balance = changes.self_balance;
             }
         }
         // Clear the changeset.
@@ -684,8 +696,6 @@ impl Chain {
     }
 
     /// TODO: Should we make invoker and energy optional?
-    /// TODO: Only works with basic update functions. Rewrite to use
-    /// `contract_update_aux`.
     pub fn contract_invoke(
         &mut self,
         invoker: AccountAddress,
@@ -754,11 +764,10 @@ impl Chain {
 
     /// Precondition: `address` exists in state.contracts.
     fn instance_changeset(&mut self, address: ContractAddress) -> &mut InstanceChangeSet {
-        self.instance_changesets
-            .entry(address)
-            .or_insert(InstanceChangeSet::from_state(
-                self.contracts[&address].state.thaw(),
-            ))
+        self.instance_changesets.entry(address).or_insert({
+            let contract = &self.contracts[&address];
+            InstanceChangeSet::new(contract.self_balance, contract.state.thaw())
+        })
     }
 
     pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
@@ -1055,8 +1064,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     }
                                 } else if self
                                     .chain
-                                    .get_instance(self.address)
-                                    .expect("Contract is known to exist")
+                                    .instance_changeset(self.address)
+                                    .get_last()
                                     .self_balance
                                     < amount
                                 {
@@ -1065,20 +1074,14 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     }
                                 } else {
                                     // Move the CCD
-                                    let instance_new_balance = match (
-                                        self.chain.accounts.get_mut(&to),
-                                        self.chain.contracts.get_mut(&self.address),
-                                    ) {
-                                        (Some(acc), Some(contr)) => {
-                                            contr.self_balance -= amount;
-                                            acc.balance += amount;
-                                            contr.self_balance
-                                        }
-                                        _ => anyhow::bail!(
-                                            "Contract or Account missing when they are known to \
-                                             exist."
-                                        ),
-                                    };
+                                    self.chain
+                                        .accounts
+                                        .get_mut(&to)
+                                        .expect("Known to exist")
+                                        .balance += amount;
+                                    let instance_changes =
+                                        self.chain.instance_changeset(self.address).get_last();
+                                    instance_changes.self_balance -= amount;
 
                                     // Add transfer event
                                     self.chain_events.push(ChainEvent::Transferred {
@@ -1088,7 +1091,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     });
 
                                     InvokeResponse::Success {
-                                        new_balance: instance_new_balance,
+                                        new_balance: instance_changes.self_balance,
                                         data:        None,
                                     }
                                 }
@@ -1121,9 +1124,10 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
 
+                            // TODO: Check that contract has sufficient balance here.
+                            let changeset = self.chain.instance_changeset(self.address);
                             // Make a checkpoint before calling another contract so that we may roll
                             // back.
-                            let changeset = self.chain.instance_changeset(self.address);
                             let modification_index_before_invoke =
                                 changeset.get_last().modification_index;
                             println!(
@@ -1170,7 +1174,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                             InvokeResponse::Success {
                                                 new_balance: self
                                                     .chain
-                                                    .get_instance(self.address)?
+                                                    .instance_changeset(address)
+                                                    .get_last()
                                                     .self_balance,
                                                 data:        Some(return_value),
                                             },
@@ -1270,6 +1275,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event.
                             self.chain_events.push(interrupt_event);
 
+                            // TODO: Add module to changeset.
+
                             // Charge a base cost.
                             let mut energy_after_invoke = remaining_energy
                                 - Chain::to_interpreter_energy(
@@ -1364,7 +1371,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     InvokeResponse::Success {
                                         new_balance: self
                                             .chain
-                                            .get_instance(self.address)?
+                                            .instance_changeset(self.address)
+                                            .get_last()
                                             .self_balance,
                                         data:        Some(balances),
                                     }
@@ -1394,17 +1402,28 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                         v1::Interrupt::QueryContractBalance { address } => {
                             println!("Querying contract balance of {}", address);
 
-                            let response = match self.chain.contract_balance(address) {
-                                Some(balance) => InvokeResponse::Success {
+                            let response = if self.chain.contracts.contains_key(&address) {
+                                InvokeResponse::Success {
+                                    // Balance of contract querying. Won't change.
                                     new_balance: self
                                         .chain
-                                        .get_instance(self.address)?
+                                        .instance_changeset(self.address)
+                                        .get_last()
                                         .self_balance,
-                                    data:        Some(to_bytes(&balance)),
-                                },
-                                None => InvokeResponse::Failure {
+                                    // Balance of the queried contract. Notice the `address` vs
+                                    // `self.address`.
+                                    data:        Some(to_bytes(
+                                        &self
+                                            .chain
+                                            .instance_changeset(address)
+                                            .get_last()
+                                            .self_balance,
+                                    )),
+                                }
+                            } else {
+                                InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::NonExistentContract,
-                                },
+                                }
                             };
 
                             let energy_after_invoke = remaining_energy
@@ -1431,7 +1450,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 (self.chain.euro_per_energy, self.chain.micro_ccd_per_euro);
 
                             let response = InvokeResponse::Success {
-                                new_balance: self.chain.get_instance(self.address)?.self_balance,
+                                new_balance: self
+                                    .chain
+                                    .instance_changeset(self.address)
+                                    .get_last()
+                                    .self_balance,
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 
