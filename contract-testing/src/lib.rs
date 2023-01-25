@@ -634,7 +634,6 @@ impl Chain {
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         // Save backups of accounts and contracts in case of rollbacks.
         let accounts_backup = self.accounts.clone();
-        let contracts_backup = self.contracts.clone();
 
         println!(
             "Updating contract {}, with parameter: {:?}",
@@ -667,7 +666,6 @@ impl Chain {
         // Handle rollback
         if res.is_err() {
             self.accounts = accounts_backup;
-            self.contracts = contracts_backup;
         }
 
         let mut loader = v1::trie::Loader::new(&[][..]);
@@ -707,7 +705,6 @@ impl Chain {
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         // Save backups of accounts and contracts so we can reset them after the invoke.
         let accounts_backup = self.accounts.clone();
-        let contracts_backup = self.contracts.clone();
 
         println!(
             "Invoking contract {}, with parameter: {:?}",
@@ -738,7 +735,6 @@ impl Chain {
 
         // Roll back any changes.
         self.accounts = accounts_backup;
-        self.contracts = contracts_backup;
         // Clear the changeset.
         self.instance_changesets.clear();
 
