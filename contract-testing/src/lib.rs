@@ -1937,130 +1937,258 @@ mod tests {
         assert_eq!(res_invoke_get.return_value.0, [1u8]);
     }
 
-    #[test]
-    fn update_with_account_transfer_works() {
-        let mut chain = Chain::new();
-        let initial_balance = Amount::from_ccd(10000);
-        let transfer_amount = Amount::from_ccd(1);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-        chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+    /// Tests using the integrate contract defined in
+    /// concordium-rust-smart-contract on the 'kb/sc-integration-testing'
+    /// branch.
+    mod integrate_contract {
+        use super::*;
 
-        let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
-            .expect("Deploying valid module should work");
+        #[test]
+        fn update_with_account_transfer_works() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            let transfer_amount = Amount::from_ccd(1);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
-        let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_integrate"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Initializing valid contract should work");
+            let res_deploy = chain
+                .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+                .expect("Deploying valid module should work");
 
-        let res_update = chain
-            .contract_update(
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_integrate"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("receive"),
+                    ContractParameter::from_typed(&ACC_1),
+                    transfer_amount,
+                    Energy::from(10000),
+                )
+                .expect("Updating valid contract should work");
+
+            let res_view = chain
+                .contract_invoke(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("view"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Invoking get should work");
+
+            // This also asserts that the account wasn't charged for the invoke.
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                        - transfer_amount
+                )
+            );
+            assert_eq!(
+                chain.account_balance(ACC_1),
+                Some(initial_balance + transfer_amount)
+            );
+            assert_eq!(res_update.transfers(), [Transfer {
+                from:   res_init.contract_address,
+                amount: transfer_amount,
+                to:     ACC_1,
+            }]);
+            assert_eq!(chain.contracts.len(), 1);
+            assert!(res_update.state_changed);
+            assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
+            // Assert that the updated state is persisted.
+            assert_eq!(res_view.return_value.0, [2, 0, 0, 0]);
+        }
+
+        #[test]
+        fn update_with_account_transfer_to_missing_account_fails() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            let transfer_amount = Amount::from_ccd(1);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_integrate"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain.contract_update(
                 ACC_0,
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
-                ContractParameter::from_typed(&ACC_1),
+                ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
                 transfer_amount,
-                Energy::from(10000),
-            )
-            .expect("Updating valid contract should work");
+                Energy::from(100000),
+            );
 
-        let res_view = chain
-            .contract_invoke(
-                ACC_0,
-                res_init.contract_address,
-                EntrypointName::new_unchecked("view"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Invoking get should work");
-
-        // This also asserts that the account wasn't charged for the invoke.
-        assert_eq!(
-            chain.account_balance(ACC_0),
-            Some(
-                initial_balance
-                    - res_deploy.transaction_fee
-                    - res_init.transaction_fee
-                    - res_update.transaction_fee
-                    - transfer_amount
-            )
-        );
-        assert_eq!(
-            chain.account_balance(ACC_1),
-            Some(initial_balance + transfer_amount)
-        );
-        assert_eq!(res_update.transfers(), [Transfer {
-            from:   res_init.contract_address,
-            amount: transfer_amount,
-            to:     ACC_1,
-        }]);
-        assert_eq!(chain.contracts.len(), 1);
-        assert!(res_update.state_changed);
-        assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
-        // Assert that the updated state is persisted.
-        assert_eq!(res_view.return_value.0, [2, 0, 0, 0]);
-    }
-
-    #[test]
-    fn update_with_account_transfer_to_missing_account_fails() {
-        let mut chain = Chain::new();
-        let initial_balance = Amount::from_ccd(10000);
-        let transfer_amount = Amount::from_ccd(1);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-
-        let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
-            .expect("Deploying valid module should work");
-
-        let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_integrate"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Initializing valid contract should work");
-
-        let res_update = chain.contract_update(
-            ACC_0,
-            res_init.contract_address,
-            EntrypointName::new_unchecked("receive"),
-            ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
-            transfer_amount,
-            Energy::from(100000),
-        );
-
-        match res_update {
-            Err(ContractUpdateError::ValidChainError(FailedContractInteraction::Reject {
-                reason,
-                transaction_fee,
-                ..
-            })) => {
-                assert_eq!(reason, -3); // Corresponds to contract error TransactionErrorAccountMissing
-                assert_eq!(
-                    chain.account_balance(ACC_0),
-                    Some(
-                        initial_balance
-                            - res_deploy.transaction_fee
-                            - res_init.transaction_fee
-                            - transaction_fee
-                    )
-                );
+            match res_update {
+                Err(ContractUpdateError::ValidChainError(FailedContractInteraction::Reject {
+                    reason,
+                    transaction_fee,
+                    ..
+                })) => {
+                    assert_eq!(reason, -3); // Corresponds to contract error TransactionErrorAccountMissing
+                    assert_eq!(
+                        chain.account_balance(ACC_0),
+                        Some(
+                            initial_balance
+                                - res_deploy.transaction_fee
+                                - res_init.transaction_fee
+                                - transaction_fee
+                        )
+                    );
+                }
+                _ => panic!("Expected contract update to fail"),
             }
-            _ => panic!("Expected contract update to fail"),
+        }
+
+        #[test]
+        fn update_with_integrate_reentry_works() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+                .expect("Deploying valid module should work");
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_integrate"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("recurse"),
+                    ContractParameter::from_typed(&10u32),
+                    Amount::zero(),
+                    Energy::from(1000000),
+                )
+                .expect("Updating valid contract should work");
+
+            let res_view = chain
+                .contract_invoke(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("view"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Invoking get should work");
+
+            // This also asserts that the account wasn't charged for the invoke.
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                )
+            );
+            assert_eq!(chain.contracts.len(), 1);
+            assert!(res_update.state_changed);
+            let expected_res = 10 + 7 + 11 + 3 + 7 + 11;
+            assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
+            // Assert that the updated state is persisted.
+            assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
+        }
+
+        #[test]
+        fn update_with_rollback_and_reentry_works() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(1000000);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+            let res_deploy = chain
+                .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+                .expect("Deploying valid module should work");
+
+            let input_param: u32 = 8;
+
+            let res_init = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_integrate"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
+
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("inc-fail-on-zero"),
+                    ContractParameter::from_typed(&input_param),
+                    Amount::zero(),
+                    Energy::from(100000000),
+                )
+                .expect("Updating valid contract should work");
+
+            let res_view = chain
+                .contract_invoke(
+                    ACC_0,
+                    res_init.contract_address,
+                    EntrypointName::new_unchecked("view"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Invoking get should work");
+
+            assert_eq!(
+                chain.account_balance(ACC_0),
+                Some(
+                    initial_balance
+                        - res_deploy.transaction_fee
+                        - res_init.transaction_fee
+                        - res_update.transaction_fee
+                )
+            );
+            assert!(res_update.state_changed);
+            let expected_res = 2u32.pow(input_param) - 1;
+            assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
+            // Assert that the updated state is persisted.
+            assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
         }
     }
-
     // TODO: Add tests that check:
     // - Correct account balances after init / update failures (when Amount > 0)
     //
@@ -2123,128 +2251,6 @@ mod tests {
         assert_eq!(res_update.return_value.0, expected_res);
         // Assert that the updated state is persisted.
         assert_eq!(res_view.return_value.0, expected_res);
-    }
-
-    #[test]
-    fn update_with_integrate_reentry_works() {
-        let mut chain = Chain::new();
-        let initial_balance = Amount::from_ccd(10000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-
-        let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
-            .expect("Deploying valid module should work");
-
-        let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_integrate"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Initializing valid contract should work");
-
-        let res_update = chain
-            .contract_update(
-                ACC_0,
-                res_init.contract_address,
-                EntrypointName::new_unchecked("recurse"),
-                ContractParameter::from_typed(&10u32),
-                Amount::zero(),
-                Energy::from(1000000),
-            )
-            .expect("Updating valid contract should work");
-
-        let res_view = chain
-            .contract_invoke(
-                ACC_0,
-                res_init.contract_address,
-                EntrypointName::new_unchecked("view"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Invoking get should work");
-
-        // This also asserts that the account wasn't charged for the invoke.
-        assert_eq!(
-            chain.account_balance(ACC_0),
-            Some(
-                initial_balance
-                    - res_deploy.transaction_fee
-                    - res_init.transaction_fee
-                    - res_update.transaction_fee
-            )
-        );
-        assert_eq!(chain.contracts.len(), 1);
-        assert!(res_update.state_changed);
-        let expected_res = 10 + 7 + 11 + 3 + 7 + 11;
-        assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
-        // Assert that the updated state is persisted.
-        assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
-    }
-
-    #[test]
-    fn update_with_rollback_and_reentry_works() {
-        let mut chain = Chain::new();
-        let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-
-        let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
-            .expect("Deploying valid module should work");
-
-        let input_param: u32 = 8;
-
-        let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_integrate"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Initializing valid contract should work");
-
-        let res_update = chain
-            .contract_update(
-                ACC_0,
-                res_init.contract_address,
-                EntrypointName::new_unchecked("inc-fail-on-zero"),
-                ContractParameter::from_typed(&input_param),
-                Amount::zero(),
-                Energy::from(100000000),
-            )
-            .expect("Updating valid contract should work");
-
-        let res_view = chain
-            .contract_invoke(
-                ACC_0,
-                res_init.contract_address,
-                EntrypointName::new_unchecked("view"),
-                ContractParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
-            .expect("Invoking get should work");
-
-        assert_eq!(
-            chain.account_balance(ACC_0),
-            Some(
-                initial_balance
-                    - res_deploy.transaction_fee
-                    - res_init.transaction_fee
-                    - res_update.transaction_fee
-            )
-        );
-        assert!(res_update.state_changed);
-        let expected_res = 2u32.pow(input_param) - 1;
-        assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
-        // Assert that the updated state is persisted.
-        assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
     }
 
     #[test]
