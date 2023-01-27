@@ -277,6 +277,6 @@ pub use types::*;
 
 extern crate dlmalloc;
 // Use `globalDlmalloc` as the global allocator.
-#[global_allocator]
+#[cfg_attr(not(feature = "std"), global_allocator)]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 pub mod test_infrastructure;
