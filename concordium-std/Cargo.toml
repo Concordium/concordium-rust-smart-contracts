@@ -11,8 +11,7 @@ readme = "./README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-# Reduce code size, at the cost of performance in allocation heavy-code.
-wee_alloc="0.4.5"
+dlmalloc = { version = "0.2.4", features = ["global"]}
 sha2 = { version = "0.10", optional = true }
 sha3 = { version = "0.10", optional = true }
 secp256k1 = { version = "0.22", optional = true }

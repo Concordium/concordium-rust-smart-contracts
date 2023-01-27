@@ -190,6 +190,8 @@
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
+// Question: Getting errors trying to get this suggestion to work: #![cfg_attr(not(feature = "std"),
+// global_allocator)]
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
@@ -273,9 +275,8 @@ pub use impls::*;
 pub use traits::*;
 pub use types::*;
 
-extern crate wee_alloc;
-// Use `wee_alloc` as the global allocator to reduce code size.
+extern crate dlmalloc;
+// Use `globalDlmalloc` as the global allocator.
 #[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
+static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 pub mod test_infrastructure;
