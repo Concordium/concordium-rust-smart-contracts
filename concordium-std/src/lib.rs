@@ -18,12 +18,7 @@
 //! version 2.1+.
 //!
 //! # Global allocator
-//! Importing this library has a side-effect of setting  the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
-//! which is a memory allocator aimed at small code footprint.
-//! This allocator is designed to be used in contexts where there are a few
-//! large allocations up-front, and the memory is afterwards used by the program
-//! without many further allocations. Frequent small allocations will have bad
-//! performance, and should be avoided.
+//! DlMalloc is used as the global allocator.
 //!
 //! In the future it will be possible to opt-out of the global allocator via a
 //! feature.
@@ -190,8 +185,6 @@
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
-// Question: Getting errors trying to get this suggestion to work: #![cfg_attr(not(feature = "std"),
-// global_allocator)]
 #![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
@@ -277,6 +270,8 @@ pub use types::*;
 
 extern crate dlmalloc;
 // Use `globalDlmalloc` as the global allocator.
+#[allow(dead_code)]
 #[cfg_attr(not(feature = "std"), global_allocator)]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
+
 pub mod test_infrastructure;
