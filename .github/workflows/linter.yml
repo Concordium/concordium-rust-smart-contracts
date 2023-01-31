@@ -36,6 +36,7 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/marketplace-contract/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -483,6 +484,7 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/marketplace-contract/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -605,6 +607,7 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/marketplace-contract/Cargo.toml
 
     steps:
       - name: Checkout sources

@@ -2,10 +2,13 @@
 //! This module provides implementation of the marketplace contract.
 //! Marketplace Contract provides following functions
 //! - `list` : returns a list of buyable tokens added to the contract instance.
-//! - `add` : adds the token to the list of buyable tokens taking the price of the token as input.
-//! - `transfer` : transfer the authority of the input listed token from one address to another.
-//! 
-//! This code has not been checked for production readiness. Please use for reference purposes
+//! - `add` : adds the token to the list of buyable tokens taking the price of
+//!   the token as input.
+//! - `transfer` : transfer the authority of the input listed token from one
+//!   address to another.
+//!
+//! This code has not been checked for production readiness. Please use for
+//! reference purposes
 mod cis2_client;
 mod errors;
 mod params;
@@ -38,16 +41,15 @@ type ContractState<S> = State<S, ContractTokenId, ContractTokenAmount>;
 /// Initializes a new Marketplace Contract
 ///
 /// This function can be called by using InitParams.
-/// The commission should be less than the maximum allowed value of 10000 basis points
+/// The commission should be less than the maximum allowed value of 10000 basis
+/// points
 #[init(contract = "Market-NFT", parameter = "InitParams")]
 fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S, ContractTokenId, ContractTokenAmount>> {
-    let params: InitParams = ctx
-        .parameter_cursor()
-        .get()
-        .map_err(|_e| MarketplaceError::ParseParams)?;
+    let params: InitParams =
+        ctx.parameter_cursor().get().map_err(|_e| MarketplaceError::ParseParams)?;
 
     if params.commission > MAX_BASIS_POINTS {
         return InitResult::Err(Reject::from(MarketplaceError::InvalidCommission));
@@ -56,20 +58,13 @@ fn init<S: HasStateApi>(
     Ok(State::new(state_builder, params.commission))
 }
 
-#[receive(
-    contract = "Market-NFT",
-    name = "add",
-    parameter = "AddParams",
-    mutable
-)]
+#[receive(contract = "Market-NFT", name = "add", parameter = "AddParams", mutable)]
 fn add<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<ContractState<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: AddParams = ctx
-        .parameter_cursor()
-        .get()
-        .map_err(|_e| MarketplaceError::ParseParams)?;
+    let params: AddParams =
+        ctx.parameter_cursor().get().map_err(|_e| MarketplaceError::ParseParams)?;
 
     let sender_account_address: AccountAddress = match ctx.sender() {
         Address::Account(account_address) => Option::Some(account_address),
@@ -78,16 +73,16 @@ fn add<S: HasStateApi>(
     .ok_or(MarketplaceError::CalledByAContract)?;
 
     let token_info = TokenInfo {
-        address: params.nft_contract_address,
-        id: params.token_id,
+        address: params.cis_contract_address,
+        id:      params.token_id,
     };
 
-    ensure_supports_cis2(host, &params.nft_contract_address)?;
-    ensure_is_operator(host, ctx, &params.nft_contract_address)?;
+    ensure_supports_cis2(host, &params.cis_contract_address)?;
+    ensure_is_operator(host, ctx, &params.cis_contract_address)?;
     ensure_balance(
         host,
         params.token_id,
-        &params.nft_contract_address,
+        &params.cis_contract_address,
         sender_account_address,
         params.quantity,
     )?;
@@ -104,8 +99,9 @@ fn add<S: HasStateApi>(
 
 /// Allows for transferring the token specified by TransferParams.
 ///
-/// This function is the typical buuy function of a Marketplace where one account can transfer an Asset by paying a price.
-/// The transfer will fail of the Amount paid is < token_quantity * token_price
+/// This function is the typical buuy function of a Marketplace where one
+/// account can transfer an Asset by paying a price. The transfer will fail of
+/// the Amount paid is < token_quantity * token_price
 #[receive(
     contract = "Market-NFT",
     name = "transfer",
@@ -118,14 +114,12 @@ fn transfer<S: HasStateApi>(
     host: &mut impl HasHost<ContractState<S>, StateApiType = S>,
     amount: Amount,
 ) -> ContractResult<()> {
-    let params: TransferParams = ctx
-        .parameter_cursor()
-        .get()
-        .map_err(|_e| MarketplaceError::ParseParams)?;
+    let params: TransferParams =
+        ctx.parameter_cursor().get().map_err(|_e| MarketplaceError::ParseParams)?;
 
     let token_info = &TokenInfo {
-        id: params.token_id,
-        address: params.nft_contract_address,
+        id:      params.token_id,
+        address: params.cis_contract_address,
     };
 
     let listed_token = host
@@ -137,34 +131,22 @@ fn transfer<S: HasStateApi>(
     let price_per_unit = listed_token.1.price;
     let token_royalty_state = listed_token.0;
 
-    ensure!(
-        listed_quantity.cmp(&params.quantity).is_ge(),
-        MarketplaceError::InvalidTokenQuantity
-    );
+    ensure!(listed_quantity.cmp(&params.quantity).is_ge(), MarketplaceError::InvalidTokenQuantity);
 
     let price = price_per_unit.mul(params.quantity.0);
-    ensure!(
-        amount.cmp(&price).is_ge(),
-        MarketplaceError::InvalidAmountPaid
-    );
+    ensure!(amount.cmp(&price).is_ge(), MarketplaceError::InvalidAmountPaid);
 
     Cis2Client::transfer(
         host,
         params.token_id,
-        params.nft_contract_address,
+        params.cis_contract_address,
         params.quantity,
         params.owner,
         concordium_cis2::Receiver::Account(params.to),
     )
     .map_err(MarketplaceError::Cis2ClientError)?;
 
-    distribute_amounts(
-        host,
-        amount,
-        &params.owner,
-        &token_royalty_state,
-        &ctx.owner(),
-    )?;
+    distribute_amounts(host, amount, &params.owner, &token_royalty_state, &ctx.owner())?;
 
     host.state_mut().decrease_listed_quantity(
         &TokenOwnerInfo::from(token_info, &params.owner),
@@ -192,8 +174,8 @@ fn list<S: HasStateApi>(
 
 struct DistributableAmounts {
     to_primary_owner: Amount,
-    to_seller: Amount,
-    to_marketplace: Amount,
+    to_seller:        Amount,
+    to_marketplace:   Amount,
 }
 
 /// Calls the [supports](https://proposals.concordium.software/CIS/cis-0.html#supports) function of CIS2 contract.
@@ -204,16 +186,17 @@ fn ensure_supports_cis2<
     A: IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
 >(
     host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
-    nft_contract_address: &ContractAddress,
+    cis_contract_address: &ContractAddress,
 ) -> ContractResult<()> {
-    let supports_cis2 = Cis2Client::supports_cis2(host, nft_contract_address)
+    let supports_cis2 = Cis2Client::supports_cis2(host, cis_contract_address)
         .map_err(MarketplaceError::Cis2ClientError)?;
     ensure!(supports_cis2, MarketplaceError::CollectionNotCis2);
     Ok(())
 }
 
-/// Calls the [operatorOf](https://proposals.concordium.software/CIS/cis-2.html#operatorof) function of CIS contract. 
-/// Returns error if Current Contract Address is not an Operator of Transaction Sender.
+/// Calls the [operatorOf](https://proposals.concordium.software/CIS/cis-2.html#operatorof) function of CIS contract.
+/// Returns error if Current Contract Address is not an Operator of Transaction
+/// Sender.
 fn ensure_is_operator<
     S: HasStateApi,
     T: IsTokenId + Clone + Copy,
@@ -221,19 +204,19 @@ fn ensure_is_operator<
 >(
     host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
     ctx: &impl HasReceiveContext<()>,
-    nft_contract_address: &ContractAddress,
+    cis_contract_address: &ContractAddress,
 ) -> ContractResult<()> {
     let is_operator = cis2_client::Cis2Client::is_operator_of(
         host,
         ctx.sender(),
         ctx.self_address(),
-        nft_contract_address,
+        cis_contract_address,
     )
     .map_err(MarketplaceError::Cis2ClientError)?;
     ensure!(is_operator, MarketplaceError::NotOperator);
     Ok(())
 }
-/// Calls the [balanceOf](https://proposals.concordium.software/CIS/cis-2.html#balanceof) function of the CIS2 contract. 
+/// Calls the [balanceOf](https://proposals.concordium.software/CIS/cis-2.html#balanceof) function of the CIS2 contract.
 /// Returns error if the returned balance < input balance (balance param).
 fn ensure_balance<
     S: HasStateApi,
@@ -242,17 +225,13 @@ fn ensure_balance<
 >(
     host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
     token_id: T,
-    nft_contract_address: &ContractAddress,
+    cis_contract_address: &ContractAddress,
     owner: AccountAddress,
     balance: A,
 ) -> ContractResult<()> {
-    let contract_balance: A = Cis2Client::get_balance(
-        host,
-        token_id,
-        nft_contract_address,
-        Address::Account(owner),
-    )
-    .map_err(MarketplaceError::Cis2ClientError)?;
+    let contract_balance: A =
+        Cis2Client::get_balance(host, token_id, cis_contract_address, Address::Account(owner))
+            .map_err(MarketplaceError::Cis2ClientError)?;
 
     let has_balance = contract_balance.cmp(&balance).is_ge();
     ensure!(has_balance, MarketplaceError::NoBalance);
@@ -272,29 +251,17 @@ fn distribute_amounts<
     token_royalty_state: &TokenRoyaltyState,
     marketplace_owner: &AccountAddress,
 ) -> Result<(), MarketplaceError> {
-    let amounts = calculate_amounts(
-        &amount,
-        &host.state().commission,
-        token_royalty_state.royalty,
-    );
+    let amounts = calculate_amounts(&amount, &host.state().commission, token_royalty_state.royalty);
 
     host.invoke_transfer(token_owner, amounts.to_seller)
         .map_err(|_| MarketplaceError::InvokeTransferError)?;
 
-    if amounts
-        .to_marketplace
-        .cmp(&Amount::from_micro_ccd(0))
-        .is_gt()
-    {
+    if amounts.to_marketplace.cmp(&Amount::from_micro_ccd(0)).is_gt() {
         host.invoke_transfer(marketplace_owner, amounts.to_marketplace)
             .map_err(|_| MarketplaceError::InvokeTransferError)?;
     }
 
-    if amounts
-        .to_primary_owner
-        .cmp(&Amount::from_micro_ccd(0))
-        .is_gt()
-    {
+    if amounts.to_primary_owner.cmp(&Amount::from_micro_ccd(0)).is_gt() {
         host.invoke_transfer(&token_royalty_state.primary_owner, amounts.to_primary_owner)
             .map_err(|_| MarketplaceError::InvokeTransferError)?;
     };
@@ -302,30 +269,29 @@ fn distribute_amounts<
     Ok(())
 }
 
-/// Callculates the amounts (Commission, Royalty & Selling Price) to be distributed
+/// Callculates the amounts (Commission, Royalty & Selling Price) to be
+/// distributed
 fn calculate_amounts(
     amount: &Amount,
     commission: &Commission,
     royalty_percentage_basis: u16,
 ) -> DistributableAmounts {
-    let commission_amount = amount
-        .mul(commission.percentage_basis.into())
-        .quotient_remainder(MAX_BASIS_POINTS.into());
+    let commission_amount =
+        amount.mul(commission.percentage_basis.into()).quotient_remainder(MAX_BASIS_POINTS.into());
 
-    let royalty_amount = amount
-        .mul(royalty_percentage_basis.into())
-        .quotient_remainder(MAX_BASIS_POINTS.into());
+    let royalty_amount =
+        amount.mul(royalty_percentage_basis.into()).quotient_remainder(MAX_BASIS_POINTS.into());
 
     DistributableAmounts {
-        to_seller: amount
+        to_seller:        amount
             .subtract_micro_ccd(commission_amount.0.micro_ccd())
             .subtract_micro_ccd(royalty_amount.0.micro_ccd()),
-        to_marketplace: commission_amount.0,
+        to_marketplace:   commission_amount.0,
         to_primary_owner: royalty_amount.0,
     }
 }
 
-#[cfg(test)]
+#[concordium_cfg_test]
 mod test {
     use crate::{
         add, calculate_amounts,
@@ -343,12 +309,12 @@ mod test {
 
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const NFT_CONTRACT_ADDRESS: ContractAddress = ContractAddress {
-        index: 1,
+    const cis_contract_address: ContractAddress = ContractAddress {
+        index:    1,
         subindex: 0,
     };
     const MARKET_CONTRACT_ADDRESS: ContractAddress = ContractAddress {
-        index: 2,
+        index:    2,
         subindex: 0,
     };
 
@@ -363,7 +329,7 @@ mod test {
         ctx.set_self_address(MARKET_CONTRACT_ADDRESS);
 
         let add_params = AddParams {
-            nft_contract_address: NFT_CONTRACT_ADDRESS,
+            cis_contract_address,
             price,
             token_id: token_id_1,
             royalty: 0,
@@ -383,12 +349,9 @@ mod test {
             _s: &mut ContractState<TestStateApi>,
         ) -> Result<(bool, SupportsQueryResponse), CallContractError<SupportsQueryResponse>>
         {
-            Result::Ok((
-                false,
-                SupportsQueryResponse {
-                    results: vec![SupportResult::Support],
-                },
-            ))
+            Result::Ok((false, SupportsQueryResponse {
+                results: vec![SupportResult::Support],
+            }))
         }
 
         fn mock_is_operator_of(
@@ -398,7 +361,9 @@ mod test {
             _s: &mut ContractState<TestStateApi>,
         ) -> Result<(bool, OperatorOfQueryResponse), CallContractError<OperatorOfQueryResponse>>
         {
-            Result::Ok((false, OperatorOfQueryResponse { 0: vec![true] }))
+            Result::Ok((false, OperatorOfQueryResponse {
+                0: vec![true],
+            }))
         }
 
         fn mock_balance_of(
@@ -415,70 +380,53 @@ mod test {
 
         TestHost::setup_mock_entrypoint(
             &mut host,
-            NFT_CONTRACT_ADDRESS,
+            cis_contract_address,
             OwnedEntrypointName::new_unchecked(SUPPORTS_ENTRYPOINT_NAME.to_string()),
             MockFn::new_v1(mock_supports),
         );
 
         TestHost::setup_mock_entrypoint(
             &mut host,
-            NFT_CONTRACT_ADDRESS,
+            cis_contract_address,
             OwnedEntrypointName::new_unchecked(OPERATOR_OF_ENTRYPOINT_NAME.to_string()),
             MockFn::new_v1(mock_is_operator_of),
         );
 
         TestHost::setup_mock_entrypoint(
             &mut host,
-            NFT_CONTRACT_ADDRESS,
+            cis_contract_address,
             OwnedEntrypointName::new_unchecked(BALANCE_OF_ENTRYPOINT_NAME.to_string()),
             MockFn::new_v1(mock_balance_of),
         );
 
         let res = add(&ctx, &mut host);
 
-        unsafe {
-            claim!(res.is_ok(), "Results in rejection");
-            claim!(
-                host.state().token_prices.iter().count() != 0,
-                "Token not added"
-            );
-            claim!(
-                host.state().token_royalties.iter().count() != 0,
-                "Token not added"
-            );
-            claim_eq!(
-                host.state().commission,
-                Commission {
-                    percentage_basis: 250
-                }
-            );
+        claim!(res.is_ok(), "Results in rejection");
+        claim!(host.state().token_prices.iter().count() != 0, "Token not added");
+        claim!(host.state().token_royalties.iter().count() != 0, "Token not added");
+        claim_eq!(host.state().commission, Commission {
+            percentage_basis: 250,
+        });
 
-            let token_list_tuple = host
-                .state()
-                .get_listed(
-                    &TokenInfo {
-                        id: token_id_1,
-                        address: NFT_CONTRACT_ADDRESS,
-                    },
-                    &ACCOUNT_0,
-                )
-                .expect("Should not be None");
-
-            claim_eq!(
-                token_list_tuple.0.to_owned(),
-                TokenRoyaltyState {
-                    primary_owner: ACCOUNT_0,
-                    royalty: 0
-                }
-            );
-            claim_eq!(
-                token_list_tuple.1.to_owned(),
-                TokenPriceState {
-                    price,
-                    quantity: token_quantity_1
+        let token_list_tuple = host
+            .state()
+            .get_listed(
+                &TokenInfo {
+                    id:      token_id_1,
+                    address: cis_contract_address,
                 },
+                &ACCOUNT_0,
             )
-        }
+            .expect("Should not be None");
+
+        claim_eq!(token_list_tuple.0.to_owned(), TokenRoyaltyState {
+            primary_owner: ACCOUNT_0,
+            royalty:       0,
+        });
+        claim_eq!(token_list_tuple.1.to_owned(), TokenPriceState {
+            price,
+            quantity: token_quantity_1
+        },)
     }
 
     #[concordium_test]
@@ -497,8 +445,8 @@ mod test {
         let mut state = State::new(&mut state_builder, 250);
         state.list_token(
             &TokenInfo {
-                id: token_id_1,
-                address: NFT_CONTRACT_ADDRESS,
+                id:      token_id_1,
+                address: cis_contract_address,
             },
             &ACCOUNT_0,
             token_price_1,
@@ -507,8 +455,8 @@ mod test {
         );
         state.list_token(
             &TokenInfo {
-                id: token_id_2,
-                address: NFT_CONTRACT_ADDRESS,
+                id:      token_id_2,
+                address: cis_contract_address,
             },
             &ACCOUNT_0,
             token_price_2,
@@ -521,43 +469,33 @@ mod test {
         claim!(list_result.is_ok());
         let token_list = list_result.unwrap();
         let list = token_list.0;
-        unsafe {
-            claim_eq!(list.len(), 2);
-        }
+        claim_eq!(list.len(), 2);
 
         let first_token = list.first().unwrap();
         let second_token = list.last().unwrap();
 
-        unsafe {
-            claim_eq!(
-                first_token,
-                &TokenListItem {
-                    token_id: token_id_1,
-                    contract: NFT_CONTRACT_ADDRESS,
-                    price: token_price_1,
-                    owner: ACCOUNT_0,
-                    primary_owner: ACCOUNT_0,
-                    quantity: token_quantity_1,
-                    royalty: 0
-                }
-            );
+        claim_eq!(first_token, &TokenListItem {
+            token_id:      token_id_1,
+            contract:      cis_contract_address,
+            price:         token_price_1,
+            owner:         ACCOUNT_0,
+            primary_owner: ACCOUNT_0,
+            quantity:      token_quantity_1,
+            royalty:       0,
+        });
 
-            claim_eq!(
-                second_token,
-                &TokenListItem {
-                    token_id: token_id_2,
-                    contract: NFT_CONTRACT_ADDRESS,
-                    price: token_price_2,
-                    owner: ACCOUNT_0,
-                    primary_owner: ACCOUNT_0,
-                    quantity: token_quantity_1,
-                    royalty: 0
-                }
-            )
-        }
+        claim_eq!(second_token, &TokenListItem {
+            token_id:      token_id_2,
+            contract:      cis_contract_address,
+            price:         token_price_2,
+            owner:         ACCOUNT_0,
+            primary_owner: ACCOUNT_0,
+            quantity:      token_quantity_1,
+            royalty:       0,
+        })
     }
 
-    #[test]
+    #[concordium_test]
     fn callculate_commissions_test() {
         let commission_percentage_basis: u16 = 250;
         let royalty_percentage_basis: u16 = 1000;
@@ -570,26 +508,15 @@ mod test {
             royalty_percentage_basis,
         );
 
-        unsafe {
-            claim_eq!(
-                distributable_amounts.to_seller,
-                Amount::from_micro_ccd(9625000)
-            );
-            claim_eq!(
-                distributable_amounts.to_marketplace,
-                Amount::from_micro_ccd(275000)
-            );
-            claim_eq!(
-                distributable_amounts.to_primary_owner,
-                Amount::from_micro_ccd(1100000)
-            );
-            claim_eq!(
-                init_amount,
-                Amount::from_ccd(0)
-                    .add_micro_ccd(distributable_amounts.to_seller.micro_ccd())
-                    .add_micro_ccd(distributable_amounts.to_marketplace.micro_ccd())
-                    .add_micro_ccd(distributable_amounts.to_primary_owner.micro_ccd())
-            )
-        }
+        claim_eq!(distributable_amounts.to_seller, Amount::from_micro_ccd(9625000));
+        claim_eq!(distributable_amounts.to_marketplace, Amount::from_micro_ccd(275000));
+        claim_eq!(distributable_amounts.to_primary_owner, Amount::from_micro_ccd(1100000));
+        claim_eq!(
+            init_amount,
+            Amount::from_ccd(0)
+                .add_micro_ccd(distributable_amounts.to_seller.micro_ccd())
+                .add_micro_ccd(distributable_amounts.to_marketplace.micro_ccd())
+                .add_micro_ccd(distributable_amounts.to_primary_owner.micro_ccd())
+        )
     }
 }
