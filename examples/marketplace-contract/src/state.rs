@@ -6,19 +6,19 @@ use concordium_cis2::{IsTokenAmount, IsTokenId};
 use concordium_std::*;
 
 #[derive(Clone, Serialize, PartialEq, Eq, Debug)]
-pub struct TokenInfo<T: Serial + Deserial + Clone> {
+pub struct TokenInfo<T: Serial + Deserial> {
     pub id:      T,
     pub address: ContractAddress,
 }
 
 #[derive(Clone, Serialize, PartialEq, Eq, Debug)]
-pub struct TokenOwnerInfo<T: Serial + Deserial + Clone> {
+pub struct TokenOwnerInfo<T: Serial + Deserial> {
     pub id:      T,
     pub address: ContractAddress,
     pub owner:   AccountAddress,
 }
 
-impl<T: Serial + Deserial + Clone + Copy> TokenOwnerInfo<T> {
+impl<T: Serial + Deserial + Copy> TokenOwnerInfo<T> {
     pub fn from(token_info: &TokenInfo<T>, owner: &AccountAddress) -> Self {
         TokenOwnerInfo {
             owner:   *owner,
@@ -29,7 +29,7 @@ impl<T: Serial + Deserial + Clone + Copy> TokenOwnerInfo<T> {
 }
 
 #[derive(Clone, Serialize, Copy, PartialEq, Eq, Debug)]
-pub struct TokenPriceState<A: IsTokenAmount + Clone> {
+pub struct TokenPriceState<A: IsTokenAmount> {
     pub quantity: A,
     pub price:    Amount,
 }
@@ -68,18 +68,15 @@ pub struct TokenListItem<T: IsTokenId, A: IsTokenAmount> {
 pub(crate) struct State<S, T, A>
 where
     S: HasStateApi,
-    T: IsTokenId + Clone + Copy,
-    A: IsTokenAmount + Clone + ops::Sub<Output = A> + Copy, {
+    T: IsTokenId,
+    A: IsTokenAmount + Copy, {
     pub(crate) commission:      Commission,
     pub(crate) token_royalties: StateMap<TokenInfo<T>, TokenRoyaltyState, S>,
     pub(crate) token_prices:    StateMap<TokenOwnerInfo<T>, TokenPriceState<A>, S>,
 }
 
-impl<
-        S: HasStateApi,
-        T: IsTokenId + Clone + Copy,
-        A: IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
-    > State<S, T, A>
+impl<S: HasStateApi, T: IsTokenId + Copy, A: IsTokenAmount + Copy + ops::Sub<Output = A>>
+    State<S, T, A>
 {
     pub(crate) fn new(state_builder: &mut StateBuilder<S>, commission: u16) -> Self {
         State {
@@ -116,12 +113,12 @@ impl<
     pub(crate) fn decrease_listed_quantity(&mut self, token_info: &TokenOwnerInfo<T>, delta: A) {
         let price = match self.token_prices.get(token_info) {
             Option::None => return,
-            Option::Some(price) => *price,
+            Option::Some(price) => price,
         };
 
         self.token_prices.insert(token_info.clone(), TokenPriceState {
             quantity: price.quantity - delta,
-            ..price
+            price:    price.price,
         });
     }
 

@@ -9,8 +9,6 @@
 //! - `get_balance` : Calls [`balanceOf`](https://proposals.concordium.software/CIS/cis-2.html#balanceof)
 //! - `transfer` : Calls [`transfer`](https://proposals.concordium.software/CIS/cis-2.html#transfer)
 
-use std::vec;
-
 use concordium_cis2::*;
 use concordium_std::*;
 
@@ -24,11 +22,7 @@ pub const TRANSFER_ENTRYPOINT_NAME: &str = "transfer";
 pub struct Cis2Client;
 
 impl Cis2Client {
-    pub(crate) fn supports_cis2<
-        S: HasStateApi,
-        T: IsTokenId + Clone + Copy,
-        A: IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
-    >(
+    pub(crate) fn supports_cis2<S: HasStateApi, T: IsTokenId, A: IsTokenAmount + Copy>(
         host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
         cis_contract_address: &ContractAddress,
     ) -> Result<bool, Cis2ClientError> {
@@ -53,11 +47,7 @@ impl Cis2Client {
         Ok(supports_cis2)
     }
 
-    pub(crate) fn is_operator_of<
-        S: HasStateApi,
-        T: IsTokenId + Clone + Copy,
-        A: IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
-    >(
+    pub(crate) fn is_operator_of<S: HasStateApi, T: IsTokenId, A: IsTokenAmount + Copy>(
         host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
         owner: Address,
         current_contract_address: ContractAddress,
@@ -83,18 +73,12 @@ impl Cis2Client {
         Ok(is_operator)
     }
 
-    pub(crate) fn get_balance<
-        S,
-        T: IsTokenId + Clone + Copy,
-        A: std::default::Default + IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
-    >(
+    pub(crate) fn get_balance<S: HasStateApi, T: IsTokenId, A: IsTokenAmount + Copy>(
         host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
         token_id: T,
         cis_contract_address: &ContractAddress,
         owner: Address,
-    ) -> Result<A, Cis2ClientError>
-    where
-        S: HasStateApi, {
+    ) -> Result<Option<A>, Cis2ClientError> {
         let params = BalanceOfQueryParams {
             queries: vec![BalanceOfQuery {
                 token_id,
@@ -109,26 +93,17 @@ impl Cis2Client {
             &params,
         )?;
 
-        let ret = parsed_res.0.first().map_or(A::default(), |f| *f);
-
-        Result::Ok(ret)
+        Ok(parsed_res.0.first().copied())
     }
 
-    pub(crate) fn transfer<
-        S,
-        T: IsTokenId + Clone + Copy,
-        A: IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
-    >(
+    pub(crate) fn transfer<S: HasStateApi, T: IsTokenId, A: IsTokenAmount + Copy>(
         host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
         token_id: T,
         cis_contract_address: ContractAddress,
         amount: A,
         from: AccountAddress,
         to: Receiver,
-    ) -> Result<bool, Cis2ClientError>
-    where
-        S: HasStateApi,
-        A: IsTokenAmount, {
+    ) -> Result<bool, Cis2ClientError> {
         let params = TransferParams(vec![Transfer {
             token_id,
             amount,
@@ -144,15 +119,15 @@ impl Cis2Client {
             &params,
         )?;
 
-        Result::Ok(true)
+        Ok(true)
     }
 
     fn invoke_contract_read_only<
         S: HasStateApi,
         R: Deserial,
         P: Serial,
-        T: IsTokenId + Clone + Copy,
-        A: IsTokenAmount + Clone + Copy + ops::Sub<Output = A>,
+        T: IsTokenId,
+        A: IsTokenAmount + Copy,
     >(
         host: &mut impl HasHost<State<S, T, A>, StateApiType = S>,
         contract_address: &ContractAddress,
