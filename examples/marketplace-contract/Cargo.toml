@@ -1,21 +1,22 @@
 [package]
 name = "marketplace-contract"
 version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-concordium-std = { version = "*", default-features = false }
-concordium-cis2 = { version = "*", default-features = false }
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[profile.release]
-codegen-units = 1
-opt-level = "s"
+authors = [ "Concordium <developers@concordium.com>" ]
+edition = "2018"
+license = "MPL-2.0"
+description = "cis2-marketplace-project"
 
 [features]
 default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
+
+[dependencies]
+concordium-std = {path = "../../concordium-std", default-features = false}
+concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+codegen-units = 1
+opt-level = "s"

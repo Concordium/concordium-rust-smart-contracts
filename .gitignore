@@ -23,3 +23,4 @@ Cargo.lock
 
 *.wasm.v1
 *.wasm.v0
+tmp
