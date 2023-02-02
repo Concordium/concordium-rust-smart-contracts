@@ -11,9 +11,10 @@ license = "MPL-2.0"
 concordium-std = {path = "../../concordium-std"}
 
 [features]
-default = ["std"]
+default = ["std", "wee-alloc"]
 std = ["concordium-std/std"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
+wee-alloc = ["concordium-std/wee-alloc"]
 
 [lib]
 crate-type=["cdylib", "rlib"]
