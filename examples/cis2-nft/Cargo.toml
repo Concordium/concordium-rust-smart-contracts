@@ -7,9 +7,8 @@ license = "MPL-2.0"
 description = "cis2-nft-project"
 
 [features]
-default = ["std", "wee-alloc"]
+default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
-wee-alloc = ["concordium-std/wee-alloc"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
