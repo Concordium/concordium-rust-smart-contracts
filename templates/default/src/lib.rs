@@ -55,8 +55,8 @@ fn receive<S: HasStateApi>(
 
 /// View function that returns the content of the state.
 #[receive(contract = "{{crate_name}}", name = "view", return_value = "State")]
-fn view<'a, 'b, S: HasStateApi>(
-    _ctx: &'a impl HasReceiveContext,
+fn view<'b, S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
     host: &'b impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<&'b State> {
     Ok(host.state())
