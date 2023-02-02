@@ -6,9 +6,11 @@ edition = "2018"
 license = "MPL-2.0"
 
 [features]
-default = ["std", "crypto-primitives"]
+default = ["std", "crypto-primitives", "wee-alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 std = ["concordium-std/std", "concordium-cis2/std"]
+wee-alloc = ["concordium-std/wee-alloc"]
+dl-malloc = ["concordium-std/dl-malloc"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}

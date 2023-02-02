@@ -18,7 +18,16 @@
 //! version 2.1+.
 //!
 //! # Global allocator
-//! DlMalloc is used as the global allocator.
+//! When importing this library either the wee-alloc feature or the dl-malloc
+//! feature should be enabled. We recommend useing the wee-alloc feature as a
+//! standard in your project. The wee-alloc feature sets the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
+//! which is a memory allocator aimed at small code footprint.
+//! This allocator is designed to be used in contexts where there are a few
+//! large allocations up-front, and the memory is afterward used by the program
+//! without many further allocations. Frequent small allocations will have bad
+//! performance, and should be avoided. This allocator is unmaintained at the
+//! moment and produces a security warning. Therefore, the allocator can alternatively be set to [dlmalloc](https://docs.rs/dlmalloc/).
+//! Dlmalloc produces large module sizes.
 //!
 //! In the future it will be possible to opt-out of the global allocator via a
 //! feature.
@@ -268,10 +277,19 @@ pub use impls::*;
 pub use traits::*;
 pub use types::*;
 
+#[cfg(feature = "dl-malloc")]
 extern crate dlmalloc;
 // Use `globalDlmalloc` as the global allocator.
 #[allow(dead_code)]
+#[cfg(feature = "dl-malloc")]
 #[cfg_attr(not(feature = "std"), global_allocator)]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
+
+#[cfg(feature = "wee-alloc")]
+extern crate wee_alloc;
+// Use `wee_alloc` as the global allocator to reduce code size.
+#[global_allocator]
+#[cfg(feature = "wee-alloc")]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 pub mod test_infrastructure;

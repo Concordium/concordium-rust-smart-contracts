@@ -11,7 +11,9 @@ readme = "./README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-dlmalloc = { version = "0.2.4", features = ["global"]}
+# Reduce code size, at the cost of performance in allocation heavy-code.
+wee_alloc= { version = "0.4.5", optional = true}
+dlmalloc = { version = "0.2.4", features = ["global"], optional = true}
 sha2 = { version = "0.10", optional = true }
 sha3 = { version = "0.10", optional = true }
 secp256k1 = { version = "0.22", optional = true }
@@ -30,7 +32,8 @@ default-features = false
 
 [features]
 default = ["std"]
-
+wee-alloc = ["wee_alloc"]
+dl-malloc = ["dlmalloc"]
 std = ["concordium-contracts-common/std"]
 wasm-test = ["concordium-std-derive/wasm-test"]
 build-schema = ["concordium-std-derive/build-schema"]
