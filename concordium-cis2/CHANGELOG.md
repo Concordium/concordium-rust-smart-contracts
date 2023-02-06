@@ -2,7 +2,7 @@
 
 ## Unreleased changes
 
-- Add `use-wee-alloc` feature to enable the `use-wee-alloc` feature of
+- Add `wee_alloc` feature to enable the `wee_alloc` feature of
   `concordium-std`.
 
 ## concordium-cis2 2.0.0 (2022-11-21)

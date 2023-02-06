@@ -31,7 +31,6 @@ default-features = false
 
 [features]
 default = ["std"]
-use-wee-alloc = ["wee_alloc"]
 std = ["concordium-contracts-common/std"]
 wasm-test = ["concordium-std-derive/wasm-test"]
 build-schema = ["concordium-std-derive/build-schema"]

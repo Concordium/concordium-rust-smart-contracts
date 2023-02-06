@@ -21,7 +21,7 @@ default-features = false
 [features]
 default = ["std"]
 std = ["concordium-std/std"]
-use-wee-alloc = ["concordium-std/use-wee-alloc"]
+wee_alloc = ["concordium-std/wee_alloc"]
 u256_amount = []
 
 [lib]

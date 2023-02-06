@@ -32,7 +32,7 @@
 //! [`build-schema`](#build-schema-build-for-generating-a-module-schema),
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
 //! [`crypto-primitives`][crypto-feature], and
-//! [`use-wee-alloc`](#use-a-custom-allocator)
+//! [`wee_alloc`](#use-a-custom-allocator)
 //!
 //! [crypto-feature]:
 //! #crypto-primitives-for-testing-crypto-with-actual-implementations
@@ -111,7 +111,7 @@
 //!
 //! In the past `concordium-std` hard-coded the use of [wee_alloc](https://docs.rs/wee_alloc/)
 //! however since version `5.2.0` this is no longer the case.
-//! Instead no allocator is set by default, however there is a `use-wee-alloc`
+//! Instead no allocator is set by default, however there is a `wee_alloc`
 //! feature (disabled by default) that can be enabled which sets the allocator
 //! to `wee_alloc`. This can be used both with and without the `std` feature.
 //!
@@ -294,8 +294,8 @@ pub use traits::*;
 pub use types::*;
 
 // Use `wee_alloc` as the global allocator to reduce code size.
-#[cfg(feature = "use-wee-alloc")]
-#[cfg_attr(feature = "use-wee-alloc", global_allocator)]
+#[cfg(feature = "wee_alloc")]
+#[cfg_attr(feature = "wee_alloc", global_allocator)]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 pub mod test_infrastructure;

@@ -13,9 +13,9 @@ readme = "../README.md"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["std", "use-wee-alloc"]
+default = ["std", "wee_alloc"]
 std = ["concordium-std/std"]
-use-wee-alloc = ["concordium-std/use-wee-alloc"]
+wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies.concordium-std]
 version = "5"
