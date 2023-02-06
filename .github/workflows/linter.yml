@@ -379,7 +379,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features wee-alloc
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features use-wee-alloc
 
   check-no-std-examples:
     name: Build on nightly,
@@ -419,7 +419,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features wee-alloc
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features use-wee-alloc
 
   check-crypto-examples:
     name: Check crypto examples

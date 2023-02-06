@@ -2,7 +2,12 @@
 
 ## Unreleased changes
 
-- Wee_alloc is not the default allocator in `concordium-std` anymore but can be enabled as a feature.
+- [`wee_alloc`](https://docs.rs/wee_alloc/latest/wee_alloc/index.html) is no
+  longer set as the allocator in `concordium-std` but can be enabled via the
+  feature `use-wee-alloc`. The consequence is that unless `std` feature is
+  enabled either `use-wee-alloc` must be enabled, or another global allocator
+  must be set in the smart contract. In `std` builds, unless `use-wee-alloc`
+  feature is used, the allocator provided by the Rust standard library is used.
 
 ## concordium-std 5.1.0 (2022-12-14)
 

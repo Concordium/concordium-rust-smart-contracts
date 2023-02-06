@@ -8,9 +8,9 @@ license = "MPL-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["std", "wee-alloc"]
+default = ["std", "use-wee-alloc"]
 std = ["concordium-std/std"]
-wee-alloc = ["concordium-std/wee-alloc"]
+use-wee-alloc = ["concordium-std/use-wee-alloc"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}

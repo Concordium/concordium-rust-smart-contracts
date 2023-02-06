@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "5.1.0"
+version = "5.2.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -31,7 +31,7 @@ default-features = false
 
 [features]
 default = ["std"]
-wee-alloc = ["wee_alloc"]
+use-wee-alloc = ["wee_alloc"]
 std = ["concordium-contracts-common/std"]
 wasm-test = ["concordium-std-derive/wasm-test"]
 build-schema = ["concordium-std-derive/build-schema"]
