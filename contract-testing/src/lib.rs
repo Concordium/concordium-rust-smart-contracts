@@ -8,7 +8,11 @@ use concordium_base::{
 };
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{
+    collections::{btree_map, BTreeMap},
+    path::Path,
+    sync::Arc,
+};
 use thiserror::Error;
 use wasm_chain_integration::{
     v0,
@@ -55,7 +59,7 @@ pub struct Chain {
     pub contracts:           BTreeMap<ContractAddress, ContractInstance>,
     /// Next contract index to use when creating a new instance.
     pub next_contract_index: u64,
-    pub instance_changesets: BTreeMap<ContractAddress, InstanceChangeSet>,
+    changeset:               ChangeSet,
 }
 
 #[derive(Clone)]
@@ -72,93 +76,656 @@ pub enum AmountDelta {
     Positive(Amount),
     Negative(Amount),
 }
+
 impl AmountDelta {
     fn new() -> Self { Self::Positive(Amount::zero()) }
 
-    fn subtract(&mut self, amount: Amount) {
+    fn subtract_amount(self, amount: Amount) -> Self {
         match self {
             Self::Positive(current) => {
-                if *current >= amount {
-                    current.subtract_micro_ccd(amount.micro_ccd);
+                if current >= amount {
+                    Self::Positive(current.subtract_micro_ccd(amount.micro_ccd))
                 } else {
-                    *self = Self::Negative(amount.subtract_micro_ccd(current.micro_ccd));
+                    Self::Negative(amount.subtract_micro_ccd(current.micro_ccd))
                 }
             }
-            Self::Negative(current) => {
-                *self = Self::Negative(current.add_micro_ccd(amount.micro_ccd));
-            }
+            Self::Negative(current) => Self::Negative(current.add_micro_ccd(amount.micro_ccd)),
         }
     }
 
-    fn add(&mut self, amount: Amount) {
+    fn add_amount(self, amount: Amount) -> Self {
         match self {
-            Self::Positive(current) => {
-                current.add_micro_ccd(amount.micro_ccd);
-            }
+            Self::Positive(current) => Self::Positive(current.add_micro_ccd(amount.micro_ccd)),
             Self::Negative(current) => {
-                if *current >= amount {
-                    *self = Self::Negative(current.subtract_micro_ccd(amount.micro_ccd));
+                if current >= amount {
+                    Self::Negative(current.subtract_micro_ccd(amount.micro_ccd))
                 } else {
-                    *self = Self::Positive(amount.subtract_micro_ccd(current.micro_ccd));
+                    Self::Positive(amount.subtract_micro_ccd(current.micro_ccd))
                 }
             }
         }
     }
-}
 
-pub struct InstanceChangeSet {
-    stack: Vec<InstanceChanges>,
-}
-
-impl InstanceChangeSet {
-    fn new(self_balance: Amount, state: MutableState) -> Self {
-        let initial_changeset = InstanceChanges {
-            modification_index: 0,
-            self_balance,
-            state,
-        };
-        Self {
-            stack: vec![initial_changeset],
+    fn add_delta(self, delta: AmountDelta) -> Self {
+        match delta {
+            AmountDelta::Positive(d) => self.add_amount(d),
+            AmountDelta::Negative(d) => self.subtract_amount(d),
         }
     }
 
-    /// Get a mutable reference to the last instance changeset.
-    /// Will panic if the stack is empty.
-    fn get_last(&mut self) -> &mut InstanceChanges {
-        let last_index = self.stack.len() - 1;
-        &mut self.stack[last_index]
+    fn is_zero(&self) -> bool {
+        match self {
+            AmountDelta::Positive(d) => d.micro_ccd == 0,
+            AmountDelta::Negative(d) => d.micro_ccd == 0,
+        }
     }
 
-    /// Remove from the stack until the index is reached, i.e. not including the
-    /// index. Will panic if the index is less than the number of elements
-    /// in the stack.
-    fn remove_until_index(&mut self, index: u32) { self.stack.truncate(index as usize + 1) }
-
-    /// Make a new checkpoint.
-    /// Will panic if the stack is empty.
-    fn checkpoint(&mut self) {
-        let mut loader = v1::trie::Loader::new(&[][..]);
-        let last = self.get_last();
-        let new_checkpoint = InstanceChanges {
-            modification_index: last.modification_index + 1,
-            self_balance:       last.self_balance,
-            state:              last.state.make_fresh_generation(&mut loader),
-        };
-        self.stack.push(new_checkpoint);
+    /// Returns a new balance with the `AmountDelta` applied, or, an
+    /// error if `balance + self < 0`.
+    ///
+    /// Panics if an overflow occurs.
+    fn apply_to_balance(&self, balance: Amount) -> Result<Amount, UnderflowError> {
+        match self {
+            AmountDelta::Positive(d) => Ok(balance
+                .checked_add(*d)
+                .expect("Overflow occured when adding Amounts.")), // TODO: Should we return an
+            // error for this?
+            AmountDelta::Negative(d) => balance.checked_sub(*d).ok_or(UnderflowError),
+        }
     }
-
-    /// Returns whether there are any changes to the instance, which means that
-    /// there are more than the original changeset element on the stack.
-    fn has_changes(&mut self) -> bool { self.stack.len() > 1 }
 }
+
 /// Data held for a contract instance during the execution of a transaction.
 #[derive(Clone, Debug)]
 pub struct InstanceChanges {
     modification_index: u32,
-    // amount_changed:     AmountDelta,
-    self_balance:       Amount,
-    state:              MutableState,
+    balance_delta:      AmountDelta,
+    /// Should never be modified.
+    original_balance:   Amount,
+    state:              Option<MutableState>,
+    module:             Option<ModuleReference>,
 }
+
+impl InstanceChanges {
+    /// Create a new `Self`. The original balance must be provided, all other
+    /// fields take on default values.
+    fn new(original_balance: Amount) -> Self {
+        Self {
+            modification_index: 0,
+            balance_delta: AmountDelta::new(),
+            original_balance,
+            state: None,
+            module: None,
+        }
+    }
+
+    /// Get the current balance by adding the original balance and the balance
+    /// delta.
+    ///
+    /// Preconditions:
+    ///  - `balance_delta + original_balance` must be larger than `0`.
+    fn current_balance(&self) -> Amount {
+        self.balance_delta
+            .apply_to_balance(self.original_balance)
+            .expect("Precondition violation: invalid `balance_delta`.")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountChanges {
+    /// Should never be modified.
+    original_balance: Amount,
+    balance_delta:    AmountDelta,
+}
+
+impl AccountChanges {
+    /// Get the current balance by adding the original balance and the balance
+    /// delta.
+    ///
+    /// Preconditions:
+    ///  - `balance_delta + original_balance` must be larger than `0`.
+    fn current_balance(&self) -> Amount {
+        self.balance_delta
+            .apply_to_balance(self.original_balance)
+            .expect("Precondition violation: invalid `balance_delta`.")
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Changes {
+    contracts: BTreeMap<ContractAddress, InstanceChanges>,
+    accounts:  BTreeMap<AccountAddress, AccountChanges>,
+}
+
+struct ChangeSet {
+    stack: Vec<Changes>,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+struct EmptyChainSetError;
+
+impl ChangeSet {
+    /// Creates a new stack with one empty changeset.
+    fn new() -> Self {
+        Self {
+            stack: vec![Changes {
+                contracts: BTreeMap::new(),
+                accounts:  BTreeMap::new(),
+            }],
+        }
+    }
+
+    /// Add a clone of the top-most element to the stack.
+    fn checkpoint(&mut self) -> Result<(), EmptyChainSetError> {
+        let cloned_top_element = self.get()?.clone();
+        self.stack.push(cloned_top_element);
+        Ok(())
+    }
+
+    /// Pop the last top-most element of the stack.
+    fn pop(&mut self) -> Result<(), EmptyChainSetError> {
+        if self.stack.is_empty() {
+            return Err(EmptyChainSetError);
+        }
+        self.stack.pop();
+        Ok(())
+    }
+
+    /// Get an immutable reference the last checkpoint.
+    fn get(&self) -> Result<&Changes, EmptyChainSetError> {
+        self.stack.last().ok_or(EmptyChainSetError)
+    }
+
+    /// Get a mutable reference to the last checkpoint.
+    fn get_mut(&mut self) -> Result<&mut Changes, EmptyChainSetError> {
+        self.stack.last_mut().ok_or(EmptyChainSetError)
+    }
+
+    /// Clear all changes. This replaces the `Self` with a completely new
+    /// `Self`.
+    fn clear(&mut self) { *self = Self::new() }
+}
+
+// Private methods
+impl Chain {
+    /// Check whether an account exists.
+    fn account_exists(&self, address: AccountAddress) -> bool {
+        self.accounts.contains_key(&address)
+    }
+
+    /// Check whether a contract exists.
+    fn contract_exists(&self, address: ContractAddress) -> bool {
+        self.contracts.contains_key(&address)
+    }
+
+    /// Make a transfer from a contract to an account in the changeset.
+    /// Returns the new balances of both.
+    ///
+    /// Precondition:
+    /// - Assumes that `from` contract exists.
+    fn transfer_contract_to_account(
+        &mut self,
+        amount: Amount,
+        from: ContractAddress,
+        to: AccountAddress,
+    ) -> Result<NewBalances, ContractTransferError> {
+        // Ensure the `to` account exists.
+        if !self.account_exists(to) {
+            return Err(ContractTransferError::ToMissing);
+        }
+
+        // Make the transfer.
+        let new_balance_from = self.change_contract_balance(from, AmountDelta::Negative(amount))?;
+        let new_balance_to = self
+            .change_account_balance(to, AmountDelta::Positive(amount))
+            .expect("Cannot fail when adding");
+
+        Ok(NewBalances {
+            new_balance_from,
+            new_balance_to,
+        })
+    }
+
+    /// Make a transfer between contracts in the changeset.
+    /// Returns the new balances of both.
+    ///
+    /// Precondition:
+    /// - Assumes that `from` contract exists.
+    fn transfer_contract_to_contract(
+        &mut self,
+        amount: Amount,
+        from: ContractAddress,
+        to: ContractAddress,
+    ) -> Result<NewBalances, ContractTransferError> {
+        // Ensure the `to` contract exists.
+        if !self.contract_exists(to) {
+            return Err(ContractTransferError::ToMissing);
+        }
+
+        // Make the transfer.
+        let new_balance_from = self.change_contract_balance(from, AmountDelta::Negative(amount))?;
+        let new_balance_to = self
+            .change_contract_balance(to, AmountDelta::Positive(amount))
+            .expect("Cannot fail when adding");
+
+        Ok(NewBalances {
+            new_balance_from,
+            new_balance_to,
+        })
+    }
+
+    /// Make a transfer from an account to a contract in the changeset.
+    /// Returns the new balance of `from`.
+    ///
+    /// Precondition:
+    /// - Assumes that `from` account exists.
+    fn transfer_account_to_contract(
+        &mut self,
+        amount: Amount,
+        from: AccountAddress,
+        to: ContractAddress,
+    ) -> Result<NewBalances, AccountTransferError> {
+        // Ensure the `to` account exists.
+        if !self.contract_exists(to) {
+            return Err(AccountTransferError::ToMissing);
+        }
+
+        // Make the transfer.
+        let new_balance_from = self.change_account_balance(from, AmountDelta::Negative(amount))?;
+        let new_balance_to = self
+            .change_contract_balance(to, AmountDelta::Positive(amount))
+            .expect("Cannot fail when adding");
+
+        Ok(NewBalances {
+            new_balance_from,
+            new_balance_to,
+        })
+    }
+
+    // TODO: Should we handle overflows explicitly?
+    /// Changes the contract balance in the topmost checkpoint on the changeset.
+    /// If contract isn't already present in the changeset, it is added.
+    /// Returns the new balance.
+    ///
+    /// Precondition:
+    ///  - Contract must exist.
+    fn change_contract_balance(
+        &mut self,
+        address: ContractAddress,
+        delta: AmountDelta,
+    ) -> Result<Amount, InsufficientBalanceError> {
+        match self
+            .changeset
+            .get_mut()
+            .expect("change set should never be empty.")
+            .contracts
+            .entry(address)
+        {
+            btree_map::Entry::Vacant(vac) => {
+                // get original balance
+                let original_balance = self
+                    .contracts
+                    .get(&address)
+                    .expect("Precondition violation: contract assumed to exist")
+                    .self_balance;
+                // Try to apply the balance or return an error if insufficient funds.
+                let new_contract_balance = delta.apply_to_balance(original_balance)?;
+                // Insert the changes into the changeset.
+                vac.insert(InstanceChanges {
+                    balance_delta: delta,
+                    ..InstanceChanges::new(original_balance)
+                });
+                return Ok(new_contract_balance);
+            }
+            btree_map::Entry::Occupied(mut occ) => {
+                let contract_changes = occ.get_mut();
+                let new_delta = contract_changes.balance_delta.add_delta(delta);
+                // Try to apply the balance or return an error if insufficient funds.
+                let new_contract_balance =
+                    new_delta.apply_to_balance(contract_changes.original_balance)?;
+                contract_changes.balance_delta = new_delta;
+                return Ok(new_contract_balance);
+            }
+        }
+    }
+
+    // TODO: Should we handle overflows explicitly?
+    /// Changes the account balance in the topmost checkpoint on the changeset.
+    /// If account isn't already present in the changeset, it is added.
+    /// Returns the new balance.
+    ///
+    /// Precondition:
+    ///  - Account must exist.
+    fn change_account_balance(
+        &mut self,
+        address: AccountAddress,
+        delta: AmountDelta,
+    ) -> Result<Amount, InsufficientBalanceError> {
+        match self
+            .changeset
+            .get_mut()
+            .expect("change set should never be empty.")
+            .accounts
+            .entry(address)
+        {
+            btree_map::Entry::Vacant(vac) => {
+                // get original balance
+                let original_balance = self
+                    .accounts
+                    .get(&address)
+                    .expect("Precondition violation: account assumed to exist")
+                    .balance;
+                // Try to apply the balance or return an error if insufficient funds.
+                let new_account_balance = delta.apply_to_balance(original_balance)?;
+                // Insert the changes into the changeset.
+                vac.insert(AccountChanges {
+                    original_balance,
+                    balance_delta: delta,
+                });
+                return Ok(new_account_balance);
+            }
+            btree_map::Entry::Occupied(mut occ) => {
+                let account_changes = occ.get_mut();
+                let new_delta = account_changes.balance_delta.add_delta(delta);
+                // Try to apply the balance or return an error if insufficient funds.
+                let new_account_balance =
+                    new_delta.apply_to_balance(account_changes.original_balance)?;
+                account_changes.balance_delta = new_delta;
+                return Ok(new_account_balance);
+            }
+        }
+    }
+
+    /// Returns the contract balance from the topmost checkpoint on the
+    /// changeset. Or, alternatively, from persistence.
+    ///
+    /// TODO: Find better names for these methods. Perhaps moving them to an
+    /// inner struct.
+    ///
+    /// Preconditions:
+    ///  - Contract must exist.
+    fn changeset_contract_balance_unchecked(&self, address: ContractAddress) -> Amount {
+        self.changeset_contract_balance(address)
+            .expect("Precondition violation: contract must exist")
+    }
+
+    /// Looks up the contract balance from the topmost checkpoint on the
+    /// changeset. Or, alternatively, from persistence.
+    fn changeset_contract_balance(&self, address: ContractAddress) -> Option<Amount> {
+        match self
+            .changeset
+            .get()
+            .expect("change set should never be empty.")
+            .contracts
+            .get(&address)
+        {
+            Some(changes) => Some(changes.current_balance()),
+            None => self.contracts.get(&address).map(|c| c.self_balance),
+        }
+    }
+
+    /// Returns the contract module (artifact) from the topmost checkpoint on
+    /// the changeset. Or, alternatively, from persistence.
+    ///
+    /// Preconditions:
+    ///  - Contract instance must exist (and therefore also the artifact).
+    ///  - If the changeset contains a module reference, then it must refer a
+    ///    deployed module.
+    fn contract_module(&self, address: ContractAddress) -> Arc<ArtifactV1> {
+        match self
+            .changeset
+            .get()
+            .expect("change set should never be empty.")
+            .contracts
+            .get(&address)
+            .and_then(|c| c.module)
+        {
+            // Contract has been upgrade, new module exists.
+            Some(new_module) => Arc::clone(
+                self.modules
+                    .get(&new_module)
+                    .expect("Precondition violation: module must exist."),
+            ),
+            // Contract hasn't been upgraded. Use persisted module.
+            None => {
+                let module_ref = self
+                    .contracts
+                    .get(&address)
+                    .expect("Precondition violation: contract must exist.")
+                    .module_reference;
+                Arc::clone(
+                    self.modules
+                        .get(&module_ref)
+                        .expect("Precondition violation: module must exist."),
+                )
+            }
+        }
+    }
+
+    /// Get the contract state, either from the changeset or by thawing it from
+    /// persistence. TODO: Should this return a &mut MutableState or is cloning
+    /// ok?
+    ///
+    /// Preconditions:
+    ///  - Contract instance must exist.
+    fn contract_state(&self, address: ContractAddress) -> MutableState {
+        match self
+            .changeset
+            .get()
+            .expect("change set should never be empty")
+            .contracts
+            .get(&address)
+            .and_then(|c| c.state.clone())
+        {
+            // Contract state has been modified.
+            Some(modified_state) => modified_state.clone(),
+            // Contract state hasn't been modified. Thaw from persistence.
+            None => self
+                .contracts
+                .get(&address)
+                .expect("Precondition violation: contract must exist")
+                .state
+                .thaw(),
+        }
+    }
+
+    /// Looks up the account balance for an account by first checking the
+    /// changeset, then the persisted values.
+    fn account_balance_from_changeset(&self, address: AccountAddress) -> Option<Amount> {
+        match self
+            .changeset
+            .get()
+            .expect("Change set should never be empty")
+            .accounts
+            .get(&address)
+            .map(|a| a.current_balance())
+        {
+            // Account exists in changeset.
+            Some(bal) => Some(bal),
+            // Account doesn't exist in changeset.
+            None => self.accounts.get(&address).map(|a| a.balance),
+        }
+    }
+
+    /// Persist all changes from the changeset, then clear the changeset.
+    /// Returns the number of bytes additional bytes added to contract states,
+    /// to be charged for subsequently.
+    ///
+    /// Preconditions:
+    ///  - All contracts, modules, accounts referred must exist in persistence.
+    ///  - All amount deltas must be valid (i.e. not cause underflows when added
+    ///    to balance).
+    fn persist_changes(&mut self) -> u64 {
+        let changes = self
+            .changeset
+            .get_mut()
+            .expect("change set should never be empty");
+        // Persist contract changes and collect the total increase in states sizes.
+        let mut collector = SizeCollector::default();
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        for (addr, changes) in changes.contracts.iter_mut() {
+            let mut contract = self
+                .contracts
+                .get_mut(&addr)
+                .expect("Precondition violation: contract must exist");
+            // Update balance.
+            if !changes.balance_delta.is_zero() {
+                contract.self_balance = changes
+                    .balance_delta
+                    .apply_to_balance(changes.original_balance)
+                    .expect("Precondition violation: amount delta causes underflow");
+            }
+            // Update module reference.
+            if let Some(new_module_ref) = changes.module {
+                contract.module_reference = new_module_ref;
+            }
+            // Update state.
+            if let Some(modified_state) = &mut changes.state {
+                contract.state = modified_state.freeze(&mut loader, &mut collector);
+            }
+        }
+        // Persist account changes.
+        for (addr, changes) in changes.accounts.iter() {
+            let mut account = self
+                .accounts
+                .get_mut(&addr)
+                .expect("Precondition violation: account must exist");
+            // Update balance.
+            if !changes.balance_delta.is_zero() {
+                account.balance = changes
+                    .balance_delta
+                    .apply_to_balance(changes.original_balance)
+                    .expect("Precondition violation: amount delta causes underflow");
+            }
+        }
+        // Clear the changeset.
+        self.changeset.clear();
+
+        // Return the state size increase in bytes.
+        let state_size_increase_in_bytes = collector.collect();
+        state_size_increase_in_bytes
+    }
+
+    /// Saves the a mutable state for a contract in the changeset.
+    /// If the contract already has an entry in the changeset, the old state
+    /// will be replaced. Otherwise, the entry is created and the state is
+    /// added.
+    ///
+    /// Preconditions:
+    ///  - Contract must exist.
+    fn save_state_changes(&mut self, address: ContractAddress, state: MutableState) {
+        self.changeset
+            .get_mut()
+            .expect("change set should never be empty")
+            .contracts
+            .entry(address)
+            .and_modify(|changes| changes.state = Some(state.clone()))
+            .or_insert({
+                let original_balance = self
+                    .contracts
+                    .get(&address)
+                    .expect("Precondition violation: contract must exist.")
+                    .self_balance;
+                InstanceChanges {
+                    state: Some(state),
+                    ..InstanceChanges::new(original_balance)
+                }
+            });
+    }
+
+    /// Returns the modification index for a contract.
+    /// It looks it up in the changeset, and if it isn't there, it will return
+    /// `0`.
+    fn modification_index(&self, address: ContractAddress) -> u32 {
+        self.changeset
+            .get()
+            .expect("change set should never be empty")
+            .contracts
+            .get(&address)
+            .map_or(0, |c| c.modification_index)
+    }
+
+    /// Increments the modification index of a contract in the changeset.
+    /// If the contract isn't present in the changeset, it is added with index
+    /// 1.
+    ///
+    /// Preconditions:
+    ///  - Contract must exist.
+    fn increment_modification_index(&mut self, address: ContractAddress) {
+        self.changeset
+            .get_mut()
+            .expect("change set should never be empty")
+            .contracts
+            .entry(address)
+            .and_modify(|changes| changes.modification_index += 1)
+            .or_insert({
+                let original_balance = self
+                    .contracts
+                    .get(&address)
+                    .expect("Precondition violation: contract must exist.")
+                    .self_balance;
+                InstanceChanges {
+                    modification_index: 1, /* Contract not present in changeset, default index is
+                                            * 0,
+                                            * now incremented to 1. */
+                    ..InstanceChanges::new(original_balance)
+                }
+            });
+    }
+}
+
+struct NewBalances {
+    new_balance_from: Amount,
+    new_balance_to:   Amount,
+}
+
+#[derive(Debug)]
+struct InsufficientBalanceError;
+
+#[derive(Debug)]
+struct UnderflowError;
+
+impl From<UnderflowError> for InsufficientBalanceError {
+    fn from(_: UnderflowError) -> Self { InsufficientBalanceError }
+}
+
+impl From<InsufficientBalanceError> for ContractTransferError {
+    fn from(_: InsufficientBalanceError) -> Self { Self::InsufficientBalance }
+}
+
+impl From<InsufficientBalanceError> for AccountTransferError {
+    fn from(_: InsufficientBalanceError) -> Self { Self::InsufficientBalance }
+}
+
+// checkpoint: clone + put on top of stack (what happens in withRollback in
+// scheduler)
+//
+// rollback: pop
+//
+// save_to_persistence:
+//  - Save any changes still on the stack.
+//
+// get_current_state: from newest changeset or persistence
+//    -> look on top of stack to see if state = some(State)
+//    -- same behavior for modules
+//
+// stack only modified right before invoke (push) or right after entrypoint
+// execution (maybe pop)
+//
+// modification_index: inc if state_changed prior to invoke_contract
+//    -> on resume:
+//       - save mod index prior to invoke
+//       - invoke
+//       - get newest state + mod index
+//       - if new mod_idx != old_mod_idx => state_modified (will always be >=)
+//         - This is where state_modified != state_changed (because of
+//           intermediate calls)
+//            - if state_changed then commit the current state to the changeset
+//              (TODO: find out where this should be handled) (in scheduler:
+//              withInstanceStateV1)
+//
+// on any res::Success, commit state to changeset
+// on res::Other, stack.pop() checkpoint
 
 impl Chain {
     /// Create a new [`Self`] where all the configurable parameters are
@@ -176,7 +743,7 @@ impl Chain {
             modules: BTreeMap::new(),
             contracts: BTreeMap::new(),
             next_contract_index: 0,
-            instance_changesets: BTreeMap::new(),
+            changeset: ChangeSet::new(),
         }
     }
 
@@ -481,33 +1048,27 @@ impl Chain {
         mut remaining_energy: Energy,
         chain_events: &mut Vec<ChainEvent>,
     ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
-        // Move the amount from the sender to the contract.
-        let contract_sender_info = match sender {
-            Address::Account(addr) => {
-                self.get_account_mut(addr)?.balance -= amount;
-                None
+        // Move the amount from the sender to the contract, if any.
+        // And get the new self_balance.
+        let instance_self_balance = if amount.micro_ccd() > 0 {
+            match sender {
+                Address::Account(sender_account) => {
+                    self.transfer_account_to_contract(amount, sender_account, address)?
+                        .new_balance_to
+                }
+                Address::Contract(sender_contract) => {
+                    self.transfer_contract_to_contract(amount, sender_contract, address)?
+                        .new_balance_to
+                }
             }
-            Address::Contract(addr) => {
-                let instance_changeset = self.instance_changeset(addr);
-                let modification_index = instance_changeset.get_last().modification_index;
-                instance_changeset.checkpoint();
-                instance_changeset.get_last().self_balance -= amount;
-                Some((addr, modification_index))
-            }
+        } else {
+            self.changeset_contract_balance_unchecked(address)
         };
-
-        let instance_changeset = self.instance_changeset(address);
-        let modification_index_before_invoke = instance_changeset.get_last().modification_index;
-        println!(
-            "Checkpointing {} from {}",
-            address, modification_index_before_invoke,
-        );
-        instance_changeset.checkpoint();
-        instance_changeset.get_last().self_balance += amount;
 
         // Get the instance and artifact. To be used in several places.
         let instance = self.get_instance(address)?;
-        let artifact = self.get_artifact(instance.module_reference)?;
+        let artifact = self.contract_module(address);
+
         // Subtract the cost of looking up the module
         remaining_energy =
             Energy::from(remaining_energy.energy - self.lookup_module_cost(&artifact).energy);
@@ -536,7 +1097,7 @@ impl Chain {
                 },
                 invoker,
                 self_address: address,
-                self_balance: instance.self_balance,
+                self_balance: instance_self_balance,
                 sender,
                 owner: instance.owner,
                 sender_policies: self.get_account(invoker)?.policies.clone(),
@@ -547,7 +1108,7 @@ impl Chain {
 
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let mutable_state = &mut self.instance_changeset(address).get_last().state;
+        let mut mutable_state = self.contract_state(address);
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
@@ -579,45 +1140,17 @@ impl Chain {
             invoker_amount_reserved_for_nrg,
             entrypoint: entrypoint.to_owned(),
             chain: self,
+            state: mutable_state,
             chain_events: Vec::new(),
             loader,
         };
 
         // Process the receive invocation to the end.
         let res = data.process(res);
+
         // Append the new chain events if the invocation succeeded.
-
-        match res {
-            Ok(v1::ReceiveResult::Success { state_changed, .. }) => {
-                chain_events.append(&mut data.chain_events);
-                if !state_changed {
-                    let instance_changeset = self.instance_changeset(address);
-                    println!(
-                        "Removing checkpoints [{}..{}] for contract {}",
-                        modification_index_before_invoke + 1,
-                        instance_changeset.get_last().modification_index,
-                        address,
-                    );
-                    instance_changeset.remove_until_index(modification_index_before_invoke);
-                }
-            }
-            _ => {
-                let instance_changeset = self.instance_changeset(address);
-                println!(
-                    "Removing checkpoints [{}..{}] for contract {}",
-                    modification_index_before_invoke + 1,
-                    instance_changeset.get_last().modification_index,
-                    address,
-                );
-                // Pop a changeset if the invocation failed.
-                instance_changeset.remove_until_index(modification_index_before_invoke);
-
-                // If the sender was a contract, remove the potential balance changes.
-                if let Some((addr, modification_index)) = contract_sender_info {
-                    self.instance_changeset(addr)
-                        .remove_until_index(modification_index)
-                }
-            }
+        if matches!(res, Ok(v1::ReceiveResult::Success { .. })) {
+            chain_events.append(&mut data.chain_events);
         }
 
         res
@@ -632,21 +1165,21 @@ impl Chain {
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        // Save backups of accounts and contracts in case of rollbacks.
-        let accounts_backup = self.accounts.clone();
-
         println!(
             "Updating contract {}, with parameter: {:?}",
             address, parameter.0
         );
 
         // Ensure account exists and can pay for the reserved energy and amount
+        // TODO: Could we just remove this amount in the changeset and then put back the
+        // to_ccd(remaining_energy) afterwards?
         let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
         if account_info.balance < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
+        // TODO: Should chain events be part of the changeset?
         let mut chain_events = Vec::new();
         let receive_result = self.contract_update_aux(
             invoker,
@@ -663,32 +1196,17 @@ impl Chain {
         let (res, transaction_fee) =
             self.convert_receive_result(receive_result, chain_events, energy_reserved);
 
-        // Handle rollback
-        if res.is_err() {
-            self.accounts = accounts_backup;
+        // Persist changes from changeset.
+        if res.is_ok() {
+            let _state_size_increase_in_bytes = self.persist_changes();
+            // TODO: Charge for size in collector;
+        } else {
+            self.changeset.clear();
         }
 
-        let mut loader = v1::trie::Loader::new(&[][..]);
-        let mut collector = SizeCollector::default();
-        // Apply changes from changesets to the persisted data.
-        for (addr, changeset) in self.instance_changesets.iter_mut() {
-            if changeset.has_changes() {
-                println!(
-                    "Freezing changeset {} of contract {}",
-                    changeset.get_last().modification_index,
-                    addr
-                );
-                let changes = changeset.get_last();
-                let contract = self.contracts.get_mut(&addr).expect("Known to exist.");
-                contract.state = changes.state.freeze(&mut loader, &mut collector);
-                contract.self_balance = changes.self_balance;
-            }
-        }
-        // Clear the changeset.
-        self.instance_changesets.clear();
-        // TODO: Charge for size in collector;
-
-        // Charge the transaction fee irrespective of the result
+        // Charge the transaction fee irrespective of the result.
+        // TODO: If we charge up front, then we should return to_ccd(remaining_energy)
+        // here instead.
         self.get_account_mut(invoker)?.balance -= transaction_fee;
         res
     }
@@ -703,9 +1221,6 @@ impl Chain {
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        // Save backups of accounts and contracts so we can reset them after the invoke.
-        let accounts_backup = self.accounts.clone();
-
         println!(
             "Invoking contract {}, with parameter: {:?}",
             address, parameter.0
@@ -733,10 +1248,8 @@ impl Chain {
 
         let (res, _) = self.convert_receive_result(receive_result, chain_events, energy_reserved);
 
-        // Roll back any changes.
-        self.accounts = accounts_backup;
         // Clear the changeset.
-        self.instance_changesets.clear();
+        self.changeset.clear();
 
         // TODO: Add cost for size in collector to transaction_fee
 
@@ -758,14 +1271,6 @@ impl Chain {
         ContractAddress::new(index, subindex)
     }
 
-    /// Precondition: `address` exists in state.contracts.
-    fn instance_changeset(&mut self, address: ContractAddress) -> &mut InstanceChangeSet {
-        self.instance_changesets.entry(address).or_insert({
-            let contract = &self.contracts[&address];
-            InstanceChangeSet::new(contract.self_balance, contract.state.thaw())
-        })
-    }
-
     pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
 
     pub fn set_euro_per_energy(&mut self, euro_per_energy: ExchangeRate) {
@@ -777,11 +1282,13 @@ impl Chain {
     }
 
     /// Returns the balance of an account if it exists.
+    // This will always be the persisted account balance.
     pub fn account_balance(&self, address: AccountAddress) -> Option<Amount> {
         self.accounts.get(&address).and_then(|ai| Some(ai.balance))
     }
 
     /// Returns the balance of an contract if it exists.
+    // This will always be the persisted contract balance.
     pub fn contract_balance(&self, address: ContractAddress) -> Option<Amount> {
         self.contracts
             .get(&address)
@@ -835,6 +1342,7 @@ impl Chain {
     }
 
     /// Returns an Arc clone of the artifact.
+    /// TODO: Look in changeset first.
     fn get_artifact(&self, module_ref: ModuleReference) -> Result<Arc<ArtifactV1>, ModuleMissing> {
         let artifact = self
             .modules
@@ -979,6 +1487,25 @@ impl Chain {
     }
 }
 
+/// Errors related to transfers from contract to an account.
+#[derive(PartialEq, Eq, Debug, Error)]
+enum ContractTransferError {
+    #[error("The receiver does not exist.")]
+    ToMissing,
+    #[error("The sender does not have sufficient balance.")]
+    InsufficientBalance,
+}
+
+/// Errors related to "transfers" (fx when updating with an amount) from an
+/// account to a contract.
+#[derive(PartialEq, Eq, Debug, Error)]
+enum AccountTransferError {
+    #[error("The receiver does not exist.")]
+    ToMissing,
+    #[error("The sender does not have sufficient balance.")]
+    InsufficientBalance,
+}
+
 struct ProcessReceiveData<'a, 'b> {
     invoker: AccountAddress,
     address: ContractAddress,
@@ -992,6 +1519,7 @@ struct ProcessReceiveData<'a, 'b> {
     invoker_amount_reserved_for_nrg: Amount,
     entrypoint: OwnedEntrypointName,
     chain: &'a mut Chain,
+    state: MutableState,
     chain_events: Vec<ChainEvent>,
     loader: v1::trie::Loader<&'b [u8]>,
 }
@@ -1023,6 +1551,14 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                     };
                     // Add update event
                     self.chain_events.push(update_event);
+
+                    // Save changes to changeset.
+                    if state_changed {
+                        self.chain
+                            .save_state_changes(self.address, self.state.clone());
+                        // TODO: Is it ok to clone here?
+                    }
+
                     Ok(v1::ReceiveResult::Success {
                         logs,
                         state_changed,
@@ -1050,49 +1586,39 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
 
-                            println!("Transferring {} CCD to {}", amount, to);
+                            println!("\t\tTransferring {} CCD to {}", amount, to);
 
-                            let response = {
-                                // Check if receiver account exists
-                                if !self.chain.accounts.contains_key(&to) {
-                                    InvokeResponse::Failure {
-                                        kind: v1::InvokeFailure::NonExistentAccount,
-                                    }
-                                } else if self
-                                    .chain
-                                    .instance_changeset(self.address)
-                                    .get_last()
-                                    .self_balance
-                                    < amount
-                                {
-                                    InvokeResponse::Failure {
-                                        kind: v1::InvokeFailure::InsufficientAmount,
-                                    }
-                                } else {
-                                    // Move the CCD
-                                    self.chain
-                                        .accounts
-                                        .get_mut(&to)
-                                        .expect("Known to exist")
-                                        .balance += amount;
-                                    let instance_changes =
-                                        self.chain.instance_changeset(self.address).get_last();
-                                    instance_changes.self_balance -= amount;
-
-                                    // Add transfer event
-                                    self.chain_events.push(ChainEvent::Transferred {
-                                        from: self.address,
-                                        amount,
-                                        to,
-                                    });
-
-                                    InvokeResponse::Success {
-                                        new_balance: instance_changes.self_balance,
-                                        data:        None,
-                                    }
+                            let response = match self.chain.transfer_contract_to_account(
+                                amount,
+                                self.address,
+                                to,
+                            ) {
+                                Ok(new_balances) => InvokeResponse::Success {
+                                    new_balance: new_balances.new_balance_from,
+                                    data:        None,
+                                },
+                                Err(err) => {
+                                    let kind = match err {
+                                        ContractTransferError::ToMissing => {
+                                            v1::InvokeFailure::NonExistentAccount
+                                        }
+                                        ContractTransferError::InsufficientBalance => {
+                                            v1::InvokeFailure::InsufficientAmount
+                                        }
+                                    };
+                                    InvokeResponse::Failure { kind }
                                 }
                             };
+
                             let success = matches!(response, InvokeResponse::Success { .. });
+                            if success {
+                                // Add transfer event
+                                self.chain_events.push(ChainEvent::Transferred {
+                                    from: self.address,
+                                    amount,
+                                    to,
+                                });
+                            }
                             // Add resume event
                             self.chain_events.push(ChainEvent::Resumed {
                                 address: self.address,
@@ -1103,7 +1629,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(remaining_energy),
-                                &mut self.chain.instance_changeset(self.address).get_last().state,
+                                &mut self.state,
                                 false, // never changes on transfers
                                 self.loader,
                             );
@@ -1120,18 +1646,23 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
 
-                            // TODO: Check that contract has sufficient balance here.
-                            let changeset = self.chain.instance_changeset(self.address);
+                            if state_changed {
+                                self.chain
+                                    .save_state_changes(self.address, self.state.clone());
+                                // TODO: Is it ok to clone here?
+                            }
+
                             // Make a checkpoint before calling another contract so that we may roll
                             // back.
-                            let modification_index_before_invoke =
-                                changeset.get_last().modification_index;
-                            println!(
-                                "\t\tCheckpointing addr {}, from index: {}",
-                                self.address,
-                                changeset.get_last().modification_index
-                            );
-                            changeset.checkpoint();
+                            self.chain
+                                .changeset
+                                .checkpoint()
+                                .expect("Change set should never be empty");
+
+                            // Save the modification index before the invoke.
+                            let mod_idx_before_invoke = self.chain.modification_index(self.address);
+                            // Increment the modification index.
+                            self.chain.increment_modification_index(self.address);
 
                             println!(
                                 "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
@@ -1152,13 +1683,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 &mut self.chain_events,
                             );
 
-                            let (success, response, energy_after_invoke, state_changed) = match res
-                            {
+                            let (success, response, energy_after_invoke) = match res {
                                 Ok(r) => match r {
                                     v1::ReceiveResult::Success {
                                         return_value,
                                         remaining_energy,
-                                        state_changed,
                                         ..
                                     } => {
                                         println!(
@@ -1170,13 +1699,10 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                             InvokeResponse::Success {
                                                 new_balance: self
                                                     .chain
-                                                    .instance_changeset(address)
-                                                    .get_last()
-                                                    .self_balance,
+                                                    .changeset_contract_balance_unchecked(address),
                                                 data:        Some(return_value),
                                             },
                                             remaining_energy,
-                                            state_changed,
                                         )
                                     }
                                     v1::ReceiveResult::Interrupt { .. } => {
@@ -1195,7 +1721,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                             },
                                         },
                                         remaining_energy,
-                                        false,
                                     ),
                                     v1::ReceiveResult::Trap {
                                         remaining_energy, ..
@@ -1205,7 +1730,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                             kind: v1::InvokeFailure::RuntimeError,
                                         },
                                         remaining_energy,
-                                        false,
                                     ),
                                     v1::ReceiveResult::OutOfEnergy => (
                                         false,
@@ -1213,7 +1737,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                             kind: v1::InvokeFailure::RuntimeError,
                                         },
                                         0,
-                                        false,
                                     ), // TODO: What is the correct error here?
                                 },
                                 Err(_e) => (
@@ -1222,7 +1745,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                         kind: v1::InvokeFailure::RuntimeError,
                                     },
                                     0,
-                                    false,
                                 ), // TODO: Correct energy here?
                             };
 
@@ -1233,14 +1755,26 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             };
 
                             // Remove the last state changes if the invocation failed.
-                            if !success || !state_changed {
-                                println!(
-                                    "\t\tRemove checkpoint due to !success for contract: {}",
-                                    self.address
-                                );
+                            let state_changed = if !success {
                                 self.chain
-                                    .instance_changeset(self.address)
-                                    .remove_until_index(modification_index_before_invoke);
+                                    .changeset
+                                    .pop()
+                                    .expect("Change set should never be empty");
+                                false // We rolled back, so no changes were made
+                                      // to this contract.
+                            } else {
+                                let mod_idx_after_invoke =
+                                    self.chain.modification_index(self.address);
+                                let state_changed = mod_idx_after_invoke != mod_idx_before_invoke;
+                                if state_changed {
+                                    // Update the state field with the newest value from the
+                                    // changeset.
+                                    self.state = self.chain.contract_state(self.address);
+                                }
+                                // TODO: Notes say that we should commit the state changes to the
+                                // changeset at this point. But the state changes would already
+                                // exist in the changeset at this point.
+                                state_changed
                             };
 
                             println!(
@@ -1258,7 +1792,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.chain.instance_changeset(self.address).get_last().state,
+                                &mut self.state,
                                 state_changed,
                                 self.loader,
                             );
@@ -1335,7 +1869,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.chain.instance_changeset(self.address).get_last().state,
+                                &mut self.state,
                                 state_changed,
                                 self.loader,
                             );
@@ -1343,12 +1877,14 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             self.process(resume_res)
                         }
                         v1::Interrupt::QueryAccountBalance { address } => {
-                            println!("Querying account balance of {}", address);
+                            println!("\t\tQuerying account balance of {}", address);
                             // When querying an account, the amounts from any `invoke_transfer`s
                             // should be included. That is handled by
                             // the `chain` struct already. transaction.
                             // However, that is hand
-                            let response = match self.chain.account_balance(address) {
+                            let response = match self.chain.account_balance_from_changeset(address)
+                            {
+                                // TODO: next
                                 Some(acc_bal) => {
                                     // If you query the invoker account, it should also
                                     // take into account the send-amount and the amount reserved for
@@ -1360,6 +1896,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     } else {
                                         acc_bal
                                     };
+                                    println!("\t\t\tBalance found to be {}", acc_bal);
 
                                     // TODO: Do we need non-zero staked and shielded balances?
                                     let balances =
@@ -1367,9 +1904,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     InvokeResponse::Success {
                                         new_balance: self
                                             .chain
-                                            .instance_changeset(self.address)
-                                            .get_last()
-                                            .self_balance,
+                                            .changeset_contract_balance_unchecked(self.address),
                                         data:        Some(balances),
                                     }
                                 }
@@ -1388,7 +1923,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.chain.instance_changeset(self.address).get_last().state,
+                                &mut self.state,
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -1398,28 +1933,18 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                         v1::Interrupt::QueryContractBalance { address } => {
                             println!("Querying contract balance of {}", address);
 
-                            let response = if self.chain.contracts.contains_key(&address) {
-                                InvokeResponse::Success {
-                                    // Balance of contract querying. Won't change.
+                            let response = match self.chain.changeset_contract_balance(address) {
+                                None => InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentContract,
+                                },
+                                Some(bal) => InvokeResponse::Success {
+                                    // Balance of contract querying. Won't change. Notice the
+                                    // `self.address`.
                                     new_balance: self
                                         .chain
-                                        .instance_changeset(self.address)
-                                        .get_last()
-                                        .self_balance,
-                                    // Balance of the queried contract. Notice the `address` vs
-                                    // `self.address`.
-                                    data:        Some(to_bytes(
-                                        &self
-                                            .chain
-                                            .instance_changeset(address)
-                                            .get_last()
-                                            .self_balance,
-                                    )),
-                                }
-                            } else {
-                                InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::NonExistentContract,
-                                }
+                                        .changeset_contract_balance_unchecked(self.address),
+                                    data:        Some(to_bytes(&bal)),
+                                },
                             };
 
                             let energy_after_invoke = remaining_energy
@@ -1432,7 +1957,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.chain.instance_changeset(self.address).get_last().state,
+                                &mut self.state,
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -1448,9 +1973,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             let response = InvokeResponse::Success {
                                 new_balance: self
                                     .chain
-                                    .instance_changeset(self.address)
-                                    .get_last()
-                                    .self_balance,
+                                    .changeset_contract_balance_unchecked(self.address),
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 
@@ -1464,7 +1987,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 config,
                                 response,
                                 InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.chain.instance_changeset(self.address).get_last().state,
+                                &mut self.state,
                                 false, // State never changes on queries.
                                 self.loader,
                             );
@@ -2184,10 +2707,60 @@ mod tests {
             // Assert that the updated state is persisted.
             assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
         }
+
+        //     #[test]
+        //     fn rollback_of_account_balances_after_failed_contract_invoke() {
+        //         let mut chain = Chain::new();
+        //         let initial_balance = Amount::from_ccd(10000);
+        //         let transfer_amount = Amount::from_ccd(2);
+        //         chain.create_account(ACC_0,
+        // AccountInfo::new(initial_balance));         chain.
+        // create_account(ACC_1, AccountInfo::new(initial_balance));
+
+        //         let res_deploy = chain
+        //             .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+        //             .expect("Deploying valid module should work");
+
+        //         let res_init_0 = chain
+        //             .contract_init(
+        //                 ACC_0,
+        //                 res_deploy.module_reference,
+        //                 ContractName::new_unchecked("init_integrate"),
+        //                 ContractParameter::empty(),
+        //                 Amount::zero(),
+        //                 Energy::from(10000),
+        //             )
+        //             .expect("Initializing valid contract should work");
+
+        //         let res_init_1 = chain
+        //             .contract_init(
+        //                 ACC_0,
+        //                 res_deploy.module_reference,
+        //                 ContractName::new_unchecked("init_integrate_other"),
+        //                 ContractParameter::empty(),
+        //                 Amount::zero(),
+        //                 Energy::from(10000),
+        //             )
+        //             .expect("Initializing valid contract should work");
+
+        //         let param = (res_init_1.contract_address, initial_balance,
+        // ACC_1);
+
+        //         let res_update = chain
+        //             .contract_update(
+        //                 ACC_0,
+        //                 res_init_0.contract_address,
+        //                 EntrypointName::new_unchecked("mutate_and_forward"),
+        //                 ContractParameter::from_typed(&param),
+        //                 transfer_amount,
+        //                 Energy::from(100000),
+        //             )
+        //             .expect("Update should succeed");
+        //     }
     }
     // TODO: Add tests that check:
     // - Correct account balances after init / update failures (when Amount > 0)
-    //
+
     #[test]
     fn update_with_fib_reentry_works() {
         let mut chain = Chain::new();
@@ -3659,18 +4232,18 @@ mod tests {
             let three = Amount::from_ccd(3);
             let five = Amount::from_ccd(5);
 
-            x.subtract(one); // -1 CCD
-            x.subtract(one); // -2 CCD
+            x = x.subtract_amount(one); // -1 CCD
+            x = x.subtract_amount(one); // -2 CCD
             assert_eq!(x, AmountDelta::Negative(two));
-            x.add(five); // +3 CCD
+            x = x.add_amount(five); // +3 CCD
             assert_eq!(x, AmountDelta::Positive(three));
-            x.subtract(five); // -2 CCD
+            x = x.subtract_amount(five); // -2 CCD
             assert_eq!(x, AmountDelta::Negative(two));
-            x.add(two); // 0
+            x = x.add_amount(two); // 0
 
-            x.add(Amount::from_micro_ccd(1)); // 1 mCCD
+            x = x.add_amount(Amount::from_micro_ccd(1)); // 1 mCCD
             assert_eq!(x, AmountDelta::Positive(Amount::from_micro_ccd(1)));
-            x.subtract(Amount::from_micro_ccd(2)); // -1 mCCD
+            x = x.subtract_amount(Amount::from_micro_ccd(2)); // -1 mCCD
             assert_eq!(x, AmountDelta::Negative(Amount::from_micro_ccd(1)));
         }
     }
