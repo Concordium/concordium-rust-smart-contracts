@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "2.1.0"
+version = "3.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -11,7 +11,7 @@ readme = "./README.md"
 
 [dependencies.concordium-std]
 path = "../concordium-std"
-version = ">=5.2"
+version = "6"
 default-features = false
 
 [dependencies.primitive-types]
@@ -21,7 +21,6 @@ default-features = false
 [features]
 default = ["std"]
 std = ["concordium-std/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
 u256_amount = []
 
 [lib]

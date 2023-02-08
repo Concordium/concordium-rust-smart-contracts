@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std 6.0.0 (2023-02-08)
+
 - [`wee_alloc`](https://docs.rs/wee_alloc/latest/wee_alloc/index.html) is no
   longer set as the allocator in `concordium-std` but can be enabled via the
   feature `wee_alloc`. The consequence is that unless `std` feature is
