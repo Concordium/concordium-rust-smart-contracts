@@ -17,17 +17,6 @@
 //! Also note that `concordium-std` version 4 only works with `cargo-concordium`
 //! version 2.1+.
 //!
-//! # Global allocator
-//! Importing this library has a side-effect of setting  the allocator to [wee_alloc](https://docs.rs/wee_alloc/)
-//! which is a memory allocator aimed at small code footprint.
-//! This allocator is designed to be used in contexts where there are a few
-//! large allocations up-front, and the memory is afterwards used by the program
-//! without many further allocations. Frequent small allocations will have bad
-//! performance, and should be avoided.
-//!
-//! In the future it will be possible to opt-out of the global allocator via a
-//! feature.
-//!
 //! # Panic handler
 //! When compiled without the `std` feature this crate sets the panic handler
 //! so that it terminates the process immediately, without any unwinding or
@@ -41,8 +30,9 @@
 //! This library has the following features:
 //! [`std`](#std-build-with-the-rust-standard-library),
 //! [`build-schema`](#build-schema-build-for-generating-a-module-schema),
-//! [`wasm-test`](#wasm-test-build-for-testing-in-wasm), and
-//! [`crypto-primitives`][crypto-feature].
+//! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
+//! [`crypto-primitives`][crypto-feature], and
+//! [`wee_alloc`](#use-a-custom-allocator)
 //!
 //! [crypto-feature]:
 //! #crypto-primitives-for-testing-crypto-with-actual-implementations
@@ -109,6 +99,36 @@
 //! **WARNING**: It is not possible to build this crate on macOS with the
 //! `crypto-primitives` feature when targeting `wasm32-unknown-unknown`.
 //! The issue arises when compiling the [`secp256k1`](https://docs.rs/secp256k1/latest/secp256k1/) crate.
+//!
+//! ## Use a custom allocator
+//!
+//! Some operations in `concordium-std` need to dynamically allocate memory.
+//! Rust programs compiled with default compiler settings have access to a
+//! [standard allocator](https://doc.rust-lang.org/std/alloc/struct.System.html)
+//! implemented in the Rust standard library. When using the
+//! `no-std` feature there is no default allocator provided by the Rust
+//! toolchain, and so one must be set explicitly.
+//!
+//! In the past `concordium-std` hard-coded the use of [wee_alloc](https://docs.rs/wee_alloc/)
+//! however since version `5.2.0` this is no longer the case.
+//! Instead no allocator is set by default, however there is a `wee_alloc`
+//! feature (disabled by default) that can be enabled which sets the allocator
+//! to `wee_alloc`. This can be used both with and without the `std` feature.
+//!
+//! The main reason for using `wee_alloc` instead of the default allocator, even
+//! in `std` builds, is that `wee_alloc` has a smaller code footprint, i.e, the
+//! resulting smart contracts are going to be smaller by about 6-10kB, which
+//! means they are cheaper to deploy and run. The downside is that this
+//! allocator is designed to be used in contexts where there are a few
+//! large allocations up-front, and the memory is afterward used by the program
+//! without many further allocations. Frequent small allocations will have bad
+//! performance, and should be avoided. **Do note that this allocator is
+//! at present unmaintained.** There are other allocators available, for example [dlmalloc](https://docs.rs/dlmalloc/).
+//!
+//! We only provide `wee_alloc` via a feature for backwards compatibility.
+//! Configuration of other allocators should follow their respective
+//! documentation, however note that there can only be one allocator set.
+//! See Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute) documentation for more context and details.
 //!
 //! # Traits
 //! To support testing of smart contracts most of the functionality is
@@ -273,9 +293,9 @@ pub use impls::*;
 pub use traits::*;
 pub use types::*;
 
-extern crate wee_alloc;
 // Use `wee_alloc` as the global allocator to reduce code size.
-#[global_allocator]
+#[cfg(feature = "wee_alloc")]
+#[cfg_attr(feature = "wee_alloc", global_allocator)]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 pub mod test_infrastructure;

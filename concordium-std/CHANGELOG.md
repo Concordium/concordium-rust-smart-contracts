@@ -2,6 +2,15 @@
 
 ## Unreleased changes
 
+## concordium-std 6.0.0 (2023-02-08)
+
+- [`wee_alloc`](https://docs.rs/wee_alloc/latest/wee_alloc/index.html) is no
+  longer set as the allocator in `concordium-std` but can be enabled via the
+  feature `wee_alloc`. The consequence is that unless `std` feature is
+  enabled either `wee_alloc` must be enabled, or another global allocator
+  must be set in the smart contract. In `std` builds, unless `wee_alloc`
+  feature is used, the allocator provided by the Rust standard library is used.
+
 ## concordium-std 5.1.0 (2022-12-14)
 
 - Add a new primitive `get_random` for generating random numbers in Wasm code testing; `get_random` can be used in tests only, not available for smart contracts on the chain.
