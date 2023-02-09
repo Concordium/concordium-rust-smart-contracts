@@ -1072,7 +1072,7 @@ where
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants and the order of their fields
 // cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub enum Receiver {
     /// The receiver is an account address.
     Account(
@@ -1127,7 +1127,7 @@ impl From<AccountAddress> for Receiver {
 }
 
 /// Additional information to include with a transfer.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
 
 impl schema::SchemaType for AdditionalData {
