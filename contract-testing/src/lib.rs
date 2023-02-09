@@ -28,6 +28,8 @@ use wasm_transform::artifact;
 /// A V1 artifact, with concrete types for the generic parameters.
 type ArtifactV1 = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>;
 
+const VERBOSE_DEBUG: bool = true;
+
 // Energy constants from Cost.hs in concordium-base.
 
 /// Cost of querying the account balance from a within smart contract instance.
@@ -197,6 +199,7 @@ struct Changes {
     accounts:  BTreeMap<AccountAddress, AccountChanges>,
 }
 
+#[derive(Debug)]
 struct ChangeSet {
     stack: Vec<Changes>,
 }
@@ -1639,6 +1642,12 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 .checkpoint()
                                 .expect("Change set should never be empty");
 
+                            if VERBOSE_DEBUG {
+                                println!(
+                                    "Before call (after checkpoint): {:#?}",
+                                    self.chain.changeset.get().unwrap()
+                                );
+                            }
 
                             println!(
                                 "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
@@ -1724,9 +1733,9 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 ), // TODO: Correct energy here?
                             };
 
-
                             // Remove the last state changes if the invocation failed.
                             let state_changed = if !success {
+                                println!("Rolling back");
                                 self.chain
                                     .changeset
                                     .pop()
@@ -1738,6 +1747,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     self.chain.modification_index(self.address);
                                 let state_changed = mod_idx_after_invoke != mod_idx_before_invoke;
                                 if state_changed {
+                                    println!("State change detected via mod_idx");
                                     // Update the state field with the newest value from the
                                     // changeset.
                                     self.state = self.chain.contract_state(self.address);
@@ -1747,6 +1757,13 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 // exist in the changeset at this point.
                                 state_changed
                             };
+
+                            if VERBOSE_DEBUG {
+                                println!(
+                                    "After call (and potential rollback):\n{:#?}",
+                                    self.chain.changeset.get().unwrap()
+                                );
+                            }
 
                             println!(
                                 "\tResuming contract {}\n\t\tafter {}",
@@ -3988,7 +4005,7 @@ mod tests {
         /// This test has the following call pattern:
         /// A
         ///   -->  B
-        ///          --> A (no modification, but bump iterator)
+        ///          --> A (no modification, just lookup entry)
         ///          <--
         ///        B
         /// A <--
