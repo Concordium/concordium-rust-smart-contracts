@@ -147,6 +147,10 @@ enum CustomContractError {
     InvokeContractError,
     /// TODO comments
     AccountAlreadyRegistered,
+    /// TODO comments
+    NoPublicKey,
+    /// TODO comments
+    WrongSignature,
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
@@ -716,9 +720,9 @@ fn contract_public_key_of<S: HasStateApi>(
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
-        // Query the state for balance.
-        let amount = host.state().public_key(&query.account)?;
-        response.push(amount);
+        // Query the state for public_key.
+        let public_key = host.state().public_key(&query.account)?;
+        response.push(public_key);
     }
     let result = ContractPublicKeyQueryResponse::from(response);
     Ok(result)
@@ -820,6 +824,105 @@ fn contract_set_implementor<S: HasStateApi>(
     Ok(())
 }
 
+#[derive(SchemaType, Serialize)]
+struct VerificationParameter {
+    signature: SignatureEd25519,
+    from:      AccountAddress,
+    to:        Receiver,
+    amount:    ContractTokenAmount,
+    token_id:  ContractTokenId,
+    data:      AdditionalData,
+}
+
+#[derive(SchemaType, Serialize)]
+struct Message {
+    from:   AccountAddress,
+    amount: ContractTokenAmount,
+}
+
+/// TODO: update comment
+/// Verify a ed25519 signature and allows to transfer an NFT token. Expects a
+/// [`VerificationParameter`] as the parameter.
+#[receive(
+    contract = "cis3_nft",
+    name = "permitTransfer",
+    parameter = "VerificationParameter",
+    return_value = "bool",
+    crypto_primitives,
+    mutable,
+    enable_logger
+)]
+fn contract_receive<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ReceiveResult<bool> {
+    let param: VerificationParameter = ctx.parameter_cursor().get()?;
+
+    let message = Message {
+        from:   param.from,
+        amount: param.amount,
+    };
+
+    let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&message)).0;
+
+    let public_key = host.state().public_key(&param.from)?;
+
+    match public_key {
+        Some(public_key) => {
+            let is_valid = crypto_primitives.verify_ed25519_signature(
+                public_key,
+                param.signature,
+                &message_hash,
+            );
+
+            let token_id = param.token_id;
+            let amount = param.amount;
+            let from = Address::Account(param.from);
+            let data = param.data;
+            let to_address = param.to.address();
+
+            match is_valid {
+                true => {
+                    let (state, builder) = host.state_and_builder();
+                    // Update the contract state
+                    state.transfer(&token_id, amount, &from, &to_address, builder)?;
+
+                    // Log transfer event
+                    logger.log(&Cis2Event::Transfer(TransferEvent {
+                        token_id,
+                        amount,
+                        from,
+                        to: to_address,
+                    }))?;
+
+                    // If the receiver is a contract: invoke the receive hook function.
+                    if let Receiver::Contract(address, function) = param.to {
+                        let parameter = OnReceivingCis2Params {
+                            token_id,
+                            amount,
+                            from,
+                            data,
+                        };
+                        host.invoke_contract(
+                            &address,
+                            &parameter,
+                            function.as_entrypoint_name(),
+                            Amount::zero(),
+                        )?;
+                    }
+                    Ok(true)
+                }
+                false => {
+                    bail!(CustomContractError::WrongSignature.into())
+                }
+            }
+        }
+        None => bail!(CustomContractError::NoPublicKey.into()),
+    }
+}
+
 // Tests
 
 #[concordium_cfg_test]
@@ -837,6 +940,10 @@ mod tests {
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         53, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
+        234, 138, 118, 62, 147, 74, 134, 113, 205, 126, 68, 100, 153,
+    ]);
+    const PUBLIC_KEY_2: PublicKeyEd25519 = PublicKeyEd25519([
+        55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
         234, 138, 118, 62, 147, 74, 134, 113, 205, 126, 68, 100, 153,
     ]);
 
@@ -1266,5 +1373,81 @@ mod tests {
             })),
             "Incorrect event emitted"
         )
+    }
+
+    /// Test can NOT update the public key.
+    #[concordium_test]
+    fn test_can_not_update_public_key() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let register_public_key_params = RegisterPublicKeyParams {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+        let parameter_bytes = to_bytes(&register_public_key_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // and parameter.
+        let register_public_key_params = RegisterPublicKeyParams {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY_2,
+        };
+        let parameter_bytes = to_bytes(&register_public_key_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(
+            err,
+            concordium_cis2::Cis2Error::Custom(CustomContractError::AccountAlreadyRegistered),
+            "Error is expected to be AccountAlreadyRegistered"
+        )
+    }
+
+    /// Test only owner can register a public key.
+    #[concordium_test]
+    fn test_only_owner_can_register_public_key() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_1);
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let register_public_key_params = RegisterPublicKeyParams {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+        let parameter_bytes = to_bytes(&register_public_key_params);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
     }
 }
