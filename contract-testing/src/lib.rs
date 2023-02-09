@@ -611,15 +611,23 @@ impl Chain {
     /// will be replaced. Otherwise, the entry is created and the state is
     /// added.
     ///
+    /// This also increments the modification index. It will be set to 1 if the
+    /// contract has no entry in the changeset.
+    ///
     /// Preconditions:
     ///  - Contract must exist.
-    fn save_state_changes(&mut self, address: ContractAddress, state: MutableState) {
+    fn save_state_changes(&mut self, address: ContractAddress, state: &mut MutableState) {
+        println!("Saving state for {}", address);
+        let mut loader = v1::trie::Loader::new(&[][..]);
         self.changeset
             .get_mut()
             .expect("change set should never be empty")
             .contracts
             .entry(address)
-            .and_modify(|changes| changes.state = Some(state.clone()))
+            .and_modify(|changes| {
+                changes.state = Some(state.make_fresh_generation(&mut loader));
+                changes.modification_index += 1;
+            })
             .or_insert({
                 let original_balance = self
                     .contracts
@@ -627,7 +635,8 @@ impl Chain {
                     .expect("Precondition violation: contract must exist.")
                     .self_balance;
                 InstanceChanges {
-                    state: Some(state),
+                    state: Some(state.make_fresh_generation(&mut loader)),
+                    modification_index: 1, // Increment from default, 0, to 1.
                     ..InstanceChanges::new(original_balance)
                 }
             });
@@ -643,34 +652,6 @@ impl Chain {
             .contracts
             .get(&address)
             .map_or(0, |c| c.modification_index)
-    }
-
-    /// Increments the modification index of a contract in the changeset.
-    /// If the contract isn't present in the changeset, it is added with index
-    /// 1.
-    ///
-    /// Preconditions:
-    ///  - Contract must exist.
-    fn increment_modification_index(&mut self, address: ContractAddress) {
-        self.changeset
-            .get_mut()
-            .expect("change set should never be empty")
-            .contracts
-            .entry(address)
-            .and_modify(|changes| changes.modification_index += 1)
-            .or_insert({
-                let original_balance = self
-                    .contracts
-                    .get(&address)
-                    .expect("Precondition violation: contract must exist.")
-                    .self_balance;
-                InstanceChanges {
-                    modification_index: 1, /* Contract not present in changeset, default index is
-                                            * 0,
-                                            * now incremented to 1. */
-                    ..InstanceChanges::new(original_balance)
-                }
-            });
     }
 }
 
@@ -1554,9 +1535,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                     // Save changes to changeset.
                     if state_changed {
-                        self.chain
-                            .save_state_changes(self.address, self.state.clone());
-                        // TODO: Is it ok to clone here?
+                        self.chain.save_state_changes(self.address, &mut self.state);
                     }
 
                     Ok(v1::ReceiveResult::Success {
@@ -1646,10 +1625,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
 
+                            // Save the modification index before the invoke.
+                            let mod_idx_before_invoke = self.chain.modification_index(self.address);
+
                             if state_changed {
-                                self.chain
-                                    .save_state_changes(self.address, self.state.clone());
-                                // TODO: Is it ok to clone here?
+                                self.chain.save_state_changes(self.address, &mut self.state);
                             }
 
                             // Make a checkpoint before calling another contract so that we may roll
@@ -1659,10 +1639,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 .checkpoint()
                                 .expect("Change set should never be empty");
 
-                            // Save the modification index before the invoke.
-                            let mod_idx_before_invoke = self.chain.modification_index(self.address);
-                            // Increment the modification index.
-                            self.chain.increment_modification_index(self.address);
 
                             println!(
                                 "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
@@ -1748,11 +1724,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 ), // TODO: Correct energy here?
                             };
 
-                            // Add resume event
-                            let resume_event = ChainEvent::Resumed {
-                                address: self.address,
-                                success,
-                            };
 
                             // Remove the last state changes if the invocation failed.
                             let state_changed = if !success {
@@ -1786,6 +1757,13 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     "failed invocation"
                                 }
                             );
+
+                            // Add resume event
+                            let resume_event = ChainEvent::Resumed {
+                                address: self.address,
+                                success,
+                            };
+
                             self.chain_events.push(resume_event);
 
                             let resume_res = v1::resume_receive(
@@ -2708,55 +2686,53 @@ mod tests {
             assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
         }
 
-        //     #[test]
-        //     fn rollback_of_account_balances_after_failed_contract_invoke() {
-        //         let mut chain = Chain::new();
-        //         let initial_balance = Amount::from_ccd(10000);
-        //         let transfer_amount = Amount::from_ccd(2);
-        //         chain.create_account(ACC_0,
-        // AccountInfo::new(initial_balance));         chain.
-        // create_account(ACC_1, AccountInfo::new(initial_balance));
+        #[test]
+        fn rollback_of_account_balances_after_failed_contract_invoke() {
+            let mut chain = Chain::new();
+            let initial_balance = Amount::from_ccd(10000);
+            let transfer_amount = Amount::from_ccd(2);
+            chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+            chain.create_account(ACC_1, AccountInfo::new(initial_balance));
 
-        //         let res_deploy = chain
-        //             .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
-        //             .expect("Deploying valid module should work");
+            let res_deploy = chain
+                .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+                .expect("Deploying valid module should work");
 
-        //         let res_init_0 = chain
-        //             .contract_init(
-        //                 ACC_0,
-        //                 res_deploy.module_reference,
-        //                 ContractName::new_unchecked("init_integrate"),
-        //                 ContractParameter::empty(),
-        //                 Amount::zero(),
-        //                 Energy::from(10000),
-        //             )
-        //             .expect("Initializing valid contract should work");
+            let res_init_0 = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_integrate"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
 
-        //         let res_init_1 = chain
-        //             .contract_init(
-        //                 ACC_0,
-        //                 res_deploy.module_reference,
-        //                 ContractName::new_unchecked("init_integrate_other"),
-        //                 ContractParameter::empty(),
-        //                 Amount::zero(),
-        //                 Energy::from(10000),
-        //             )
-        //             .expect("Initializing valid contract should work");
+            let res_init_1 = chain
+                .contract_init(
+                    ACC_0,
+                    res_deploy.module_reference,
+                    ContractName::new_unchecked("init_integrate_other"),
+                    ContractParameter::empty(),
+                    Amount::zero(),
+                    Energy::from(10000),
+                )
+                .expect("Initializing valid contract should work");
 
-        //         let param = (res_init_1.contract_address, initial_balance,
-        // ACC_1);
+            let param = (res_init_1.contract_address, initial_balance, ACC_1);
 
-        //         let res_update = chain
-        //             .contract_update(
-        //                 ACC_0,
-        //                 res_init_0.contract_address,
-        //                 EntrypointName::new_unchecked("mutate_and_forward"),
-        //                 ContractParameter::from_typed(&param),
-        //                 transfer_amount,
-        //                 Energy::from(100000),
-        //             )
-        //             .expect("Update should succeed");
-        //     }
+            let res_update = chain
+                .contract_update(
+                    ACC_0,
+                    res_init_0.contract_address,
+                    EntrypointName::new_unchecked("mutate_and_forward"),
+                    ContractParameter::from_typed(&param),
+                    transfer_amount,
+                    Energy::from(100000),
+                )
+                .expect("Update should succeed");
+        }
     }
     // TODO: Add tests that check:
     // - Correct account balances after init / update failures (when Amount > 0)
