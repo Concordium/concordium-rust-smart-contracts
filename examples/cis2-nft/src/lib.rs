@@ -694,6 +694,7 @@ mod tests {
     const TOKEN_0: ContractTokenId = TokenIdU32(0);
     const TOKEN_1: ContractTokenId = TokenIdU32(42);
     const TOKEN_2: ContractTokenId = TokenIdU32(43);
+    const TOKEN_3: ContractTokenId = TokenIdU32(44);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`
@@ -1049,3 +1050,26 @@ mod tests {
         )
     }
 }
+
+// message signed to be signed
+// println!("{:?}",hex::encode(message_hash.to_vec()));
+// message signed e.g.:
+// 0x71b2ab8c95408163f3cf93b58da3bd450af49782f3b266c854bc5d39add03280
+// remove '0x' and input https://cyphr.me/ed25519_applet/ed.html
+
+// get signature from hex to bytes:
+
+// let signature
+// ="22A06E5DEA3AC6980C0BC3C48F63106969C52AF3591510574D99281F8C27CCFD51281821256668A7EBBA7AEA21C24674FA91A138C3B3C046B096109DB5936900"
+// ;
+
+// let mut decoded = [0; 64];
+// hex::decode_to_slice(signature, &mut decoded);
+// println!("signature: {:?}",decoded);
+
+// let public_key
+// ="4645833FA6BE55C68523E5BBB826DB2D90961072EDC65ADC39042095AD394DDF";
+
+// let mut decoded = [0; 32];
+// hex::decode_to_slice(public_key, &mut decoded);
+// println!("public_key: {:?}",decoded);
