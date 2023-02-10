@@ -451,6 +451,43 @@ fn contract_mint<S: HasStateApi>(
 
 type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
+fn _transfer<S: HasStateApi>(
+    token_id: ContractTokenId,
+    amount: ContractTokenAmount,
+    from: Address,
+    to: Receiver,
+    data: AdditionalData,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    let (state, builder) = host.state_and_builder();
+
+    let to_address = to.address();
+    // Update the contract state
+    state.transfer(&token_id, amount, &from, &to_address, builder)?;
+
+    // Log transfer event
+    logger.log(&Cis2Event::Transfer(TransferEvent {
+        token_id,
+        amount,
+        from,
+        to: to_address,
+    }))?;
+
+    // If the receiver is a contract: invoke the receive hook function.
+    if let Receiver::Contract(address, function) = to {
+        let parameter = OnReceivingCis2Params {
+            token_id,
+            amount,
+            from,
+            data,
+        };
+        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;
+    }
+
+    Ok(())
+}
+
 /// Execute a list of token transfers, in the order of the list.
 ///
 /// Logs a `Transfer` event and invokes a receive hook function for every
@@ -491,36 +528,13 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
-        let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
-        let to_address = to.address();
-        // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address, builder)?;
+        ensure!(
+            from == sender || host.state().is_operator(&sender, &from),
+            ContractError::Unauthorized
+        );
 
-        // Log transfer event
-        logger.log(&Cis2Event::Transfer(TransferEvent {
-            token_id,
-            amount,
-            from,
-            to: to_address,
-        }))?;
-
-        // If the receiver is a contract: invoke the receive hook function.
-        if let Receiver::Contract(address, function) = to {
-            let parameter = OnReceivingCis2Params {
-                token_id,
-                amount,
-                from,
-                data,
-            };
-            host.invoke_contract(
-                &address,
-                &parameter,
-                function.as_entrypoint_name(),
-                Amount::zero(),
-            )?;
-        }
+        _transfer(token_id, amount, from, to, data, host, logger)?;
     }
     Ok(())
 }
@@ -599,44 +613,46 @@ fn contract_permit_transfer<S: HasStateApi>(
                         bail!(CustomContractError::WrongSignature.into())
                     }
                     true => {
-                        let token_id = param.token_id;
-                        let amount = param.amount;
-                        let from = Address::Account(param.from);
-                        let data = param.data;
-                        let to_address = param.to.address();
-
-                        let (state, builder) = host.state_and_builder();
-                        // Update the contract state
-                        state.transfer(&token_id, amount, &from, &to_address, builder)?;
-
-                        // Log transfer event
-                        logger.log(&Cis2Event::Transfer(TransferEvent {
-                            token_id,
-                            amount,
-                            from,
-                            to: to_address,
-                        }))?;
-
-                        // If the receiver is a contract: invoke the receive hook function.
-                        if let Receiver::Contract(address, function) = param.to {
-                            let parameter = OnReceivingCis2Params {
-                                token_id,
-                                amount,
-                                from,
-                                data,
-                            };
-                            host.invoke_contract(
-                                &address,
-                                &parameter,
-                                function.as_entrypoint_name(),
-                                Amount::zero(),
-                            )?;
-                        }
+                        _transfer(
+                            param.token_id,
+                            param.amount,
+                            Address::Account(param.from),
+                            param.to,
+                            param.data,
+                            host,
+                            logger,
+                        )?;
                     }
                 }
             }
         }
     }
+    Ok(())
+}
+
+fn _update_operator<S: HasStateApi>(
+    update: OperatorUpdate,
+    sender: Address,
+    operator: Address,
+    state: &mut State<S>,
+    builder: &mut StateBuilder<S>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Update the operator in the state.
+    match update {
+        OperatorUpdate::Add => state.add_operator(&sender, &operator, builder),
+        OperatorUpdate::Remove => state.remove_operator(&sender, &operator),
+    }
+
+    // Log the appropriate event
+    logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+        UpdateOperatorEvent {
+            owner: sender,
+            operator,
+            update,
+        },
+    ))?;
+
     Ok(())
 }
 
@@ -665,22 +681,8 @@ fn contract_update_operator<S: HasStateApi>(
     let sender = ctx.sender();
     let (state, builder) = host.state_and_builder();
     for param in params {
-        // Update the operator in the state.
-        match param.update {
-            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, builder),
-            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
-        }
-
-        // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
-        ))?;
+        _update_operator(param.update, sender, param.operator, state, builder, logger)?;
     }
-
     Ok(())
 }
 
@@ -759,28 +761,13 @@ fn contract_permit_update_operator<S: HasStateApi>(
                     true => {
                         let (state, builder) = host.state_and_builder();
 
-                        // Update the operator in the state.
-                        match param.update {
-                            OperatorUpdate::Add => state.add_operator(
-                                &concordium_std::Address::Account(param.owner),
-                                &param.operator,
-                                builder,
-                            ),
-                            OperatorUpdate::Remove => state.remove_operator(
-                                &concordium_std::Address::Account(param.owner),
-                                &param.operator,
-                            ),
-                        }
-
-                        //  Log the appropriate event
-                        logger.log(
-                            &Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                                UpdateOperatorEvent {
-                                    owner:    concordium_std::Address::Account(param.owner),
-                                    operator: param.operator,
-                                    update:   param.update,
-                                },
-                            ),
+                        _update_operator(
+                            param.update,
+                            concordium_std::Address::Account(param.owner),
+                            param.operator,
+                            state,
+                            builder,
+                            logger,
                         )?;
                     }
                 }
