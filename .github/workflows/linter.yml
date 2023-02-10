@@ -395,7 +395,6 @@ jobs:
           - examples/two-step-transfer/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
           - examples/cis2-nft/Cargo.toml
-          - examples/cis3-nft-gasless-txs/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/nametoken/Cargo.toml
 
@@ -439,6 +438,7 @@ jobs:
         crates:
           - examples/nametoken/Cargo.toml
           - examples/signature-verifier/Cargo.toml
+          - examples/cis3-nft-gasless-txs/Cargo.toml
 
     steps:
       - name: Checkout sources
