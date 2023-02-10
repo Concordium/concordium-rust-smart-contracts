@@ -22,7 +22,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::*;
-use concordium_std::*;
+use concordium_std::{collections::BTreeMap, *};
 
 /// The baseurl for the token metadata, gets appended with the token ID as hex
 /// encoding before emitted in the TokenMetadata event.
@@ -1210,25 +1210,3 @@ mod tests {
     }
 }
 
-// message signed to be signed
-// println!("{:?}",hex::encode(message_hash.to_vec()));
-// message signed e.g.:
-// 0x71b2ab8c95408163f3cf93b58da3bd450af49782f3b266c854bc5d39add03280
-// remove '0x' and input https://cyphr.me/ed25519_applet/ed.html
-
-// get signature from hex to bytes:
-
-// let signature
-// ="7B645367FB383AE26743BBECAC22A7699346F4B9CAEADDF97CF57544D9C9F9689659CCE8F767D0A12AA0FD87742F2800DF500D19E33E31E3BC588FB5204D7307"
-// ;
-
-// let mut decoded = [0; 64];
-// hex::decode_to_slice(signature, &mut decoded);
-// println!("signature: {:?}",decoded);
-
-// let public_key
-// ="4645833FA6BE55C68523E5BBB826DB2D90961072EDC65ADC39042095AD394DDF";
-
-// let mut decoded = [0; 32];
-// hex::decode_to_slice(public_key, &mut decoded);
-// println!("public_key: {:?}",decoded);
