@@ -99,6 +99,56 @@ struct SetImplementorsParams {
     implementors: Vec<ContractAddress>,
 }
 
+/// TODO: add comment
+#[derive(SchemaType, Serialize)]
+struct PermitTransferParams {
+    signature:        SignatureEd25519,
+    from:             AccountAddress,
+    to:               Receiver,
+    data:             AdditionalData,
+    amount:           ContractTokenAmount,
+    token_id:         ContractTokenId,
+    contract_address: ContractAddress,
+    entry_point:      OwnedEntrypointName,
+    nonce:            u64,
+}
+
+/// TODO: add comment
+#[derive(SchemaType, Serialize)]
+struct PermitTransferMessage {
+    from:             AccountAddress,
+    to:               Receiver,
+    data:             AdditionalData,
+    amount:           ContractTokenAmount,
+    token_id:         ContractTokenId,
+    contract_address: ContractAddress,
+    entry_point:      OwnedEntrypointName,
+    nonce:            u64,
+}
+
+/// TODO: add comment
+#[derive(SchemaType, Serialize)]
+struct PermitUpdateOperatorParams {
+    signature:        SignatureEd25519,
+    owner:            AccountAddress,
+    update:           OperatorUpdate,
+    operator:         Address,
+    contract_address: ContractAddress,
+    entry_point:      OwnedEntrypointName,
+    nonce:            u64,
+}
+
+/// TODO: add comment
+#[derive(SchemaType, Serialize)]
+struct PermitUpdateOperatorMessage {
+    owner:            AccountAddress,
+    update:           OperatorUpdate,
+    operator:         Address,
+    contract_address: ContractAddress,
+    entry_point:      OwnedEntrypointName,
+    nonce:            u64,
+}
+
 /// The custom errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum CustomContractError {
@@ -473,6 +523,115 @@ fn contract_transfer<S: HasStateApi>(
         }
     }
     Ok(())
+}
+
+/// TODO: update comment
+/// Verify a ed25519 signature and allows to transfer an NFT token. Expects a
+/// [`PermitTransferParams`] as the parameter.
+#[receive(
+    contract = "cis3_nft",
+    name = "permitTransfer",
+    parameter = "PermitTransferParams",
+    crypto_primitives,
+    mutable,
+    enable_logger
+)]
+fn contract_permit_transfer<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<()> {
+    let param: PermitTransferParams = ctx.parameter_cursor().get()?;
+
+    let nonce = host
+        .state_mut()
+        .nonces
+        .entry(param.from)
+        .or_insert_with(|| 0u64)
+        .modify(|nonce| *nonce + 1);
+
+    ensure_eq!(param.nonce, nonce, CustomContractError::NonceMismatch.into());
+
+    ensure_eq!(
+        param.contract_address,
+        ctx.self_address(),
+        CustomContractError::WrongContract.into()
+    );
+
+    ensure_eq!(
+        param.entry_point,
+        ctx.named_entrypoint(),
+        CustomContractError::WrongEntryPoint.into()
+    );
+
+    let message = PermitTransferMessage {
+        contract_address: param.contract_address,
+        entry_point:      param.entry_point,
+        nonce:            param.nonce,
+        token_id:         param.token_id,
+        amount:           param.amount,
+        from:             param.from,
+        data:             param.data.clone(),
+        to:               param.to.clone(),
+    };
+
+    let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&message)).0;
+
+    let public_key = host.state().public_key(&param.from)?;
+
+    match public_key {
+        Some(public_key) => {
+            let is_valid = crypto_primitives.verify_ed25519_signature(
+                public_key,
+                param.signature,
+                &message_hash,
+            );
+
+            match is_valid {
+                true => {
+                    let token_id = param.token_id;
+                    let amount = param.amount;
+                    let from = Address::Account(param.from);
+                    let data = param.data;
+                    let to_address = param.to.address();
+
+                    let (state, builder) = host.state_and_builder();
+                    // Update the contract state
+                    state.transfer(&token_id, amount, &from, &to_address, builder)?;
+
+                    // Log transfer event
+                    logger.log(&Cis2Event::Transfer(TransferEvent {
+                        token_id,
+                        amount,
+                        from,
+                        to: to_address,
+                    }))?;
+
+                    // If the receiver is a contract: invoke the receive hook function.
+                    if let Receiver::Contract(address, function) = param.to {
+                        let parameter = OnReceivingCis2Params {
+                            token_id,
+                            amount,
+                            from,
+                            data,
+                        };
+                        host.invoke_contract(
+                            &address,
+                            &parameter,
+                            function.as_entrypoint_name(),
+                            Amount::zero(),
+                        )?;
+                    }
+                    Ok(())
+                }
+                false => {
+                    bail!(CustomContractError::WrongSignature.into())
+                }
+            }
+        }
+        None => bail!(CustomContractError::NoPublicKey.into()),
+    }
 }
 
 /// Enable or disable addresses as operators of the sender address.
@@ -1060,7 +1219,7 @@ mod tests {
 // get signature from hex to bytes:
 
 // let signature
-// ="22A06E5DEA3AC6980C0BC3C48F63106969C52AF3591510574D99281F8C27CCFD51281821256668A7EBBA7AEA21C24674FA91A138C3B3C046B096109DB5936900"
+// ="7B645367FB383AE26743BBECAC22A7699346F4B9CAEADDF97CF57544D9C9F9689659CCE8F767D0A12AA0FD87742F2800DF500D19E33E31E3BC588FB5204D7307"
 // ;
 
 // let mut decoded = [0; 64];

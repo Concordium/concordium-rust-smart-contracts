@@ -1200,7 +1200,7 @@ impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<
 /// The update to an the operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
