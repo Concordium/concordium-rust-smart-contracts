@@ -1628,12 +1628,12 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
 
-                            // Save the modification index before the invoke.
-                            let mod_idx_before_invoke = self.chain.modification_index(self.address);
-
                             if state_changed {
                                 self.chain.save_state_changes(self.address, &mut self.state);
                             }
+
+                            // Save the modification index before the invoke.
+                            let mod_idx_before_invoke = self.chain.modification_index(self.address);
 
                             // Make a checkpoint before calling another contract so that we may roll
                             // back.
