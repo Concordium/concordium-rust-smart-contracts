@@ -10,6 +10,7 @@ use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{btree_map, BTreeMap},
+    fmt,
     path::Path,
     sync::Arc,
 };
@@ -18,7 +19,7 @@ use wasm_chain_integration::{
     v0,
     v1::{
         self,
-        trie::{MutableState, SizeCollector},
+        trie::{MutableState, PersistentState, SizeCollector},
         ConcordiumAllowedImports, InvokeResponse, ReturnValue,
     },
     ExecResult, InterpreterEnergy,
@@ -28,7 +29,7 @@ use wasm_transform::artifact;
 /// A V1 artifact, with concrete types for the generic parameters.
 type ArtifactV1 = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>;
 
-const VERBOSE_DEBUG: bool = true;
+const VERBOSE_DEBUG: bool = false;
 
 // Energy constants from Cost.hs in concordium-base.
 
@@ -550,15 +551,26 @@ impl Chain {
         }
     }
 
-    /// Persist all changes from the changeset, then clear the changeset.
-    /// Returns the number of bytes additional bytes added to contract states,
-    /// to be charged for subsequently.
+    /// Try to persist all changes from the changeset.
     ///
-    /// Preconditions:
+    /// Always clears the changeset.
+    ///
+    /// If the energy needed for storing extra state is larger than the
+    /// `remaining_energy`, then:
+    ///  - no changes will be persisted,
+    ///  - an [`OutOfEnergy`] error is returned.
+    ///
+    /// Otherwise, it returns the [`Energy`] to be charged for the additional
+    /// bytes added to contract states.
+    ///
+    /// *Preconditions:*
     ///  - All contracts, modules, accounts referred must exist in persistence.
     ///  - All amount deltas must be valid (i.e. not cause underflows when added
     ///    to balance).
-    fn persist_changes(&mut self) -> u64 {
+    fn persist_changes_and_clear(
+        &mut self,
+        remaining_energy: Energy,
+    ) -> Result<Energy, OutOfEnergy> {
         let changes = self
             .changeset
             .get_mut()
@@ -566,6 +578,34 @@ impl Chain {
         // Persist contract changes and collect the total increase in states sizes.
         let mut collector = SizeCollector::default();
         let mut loader = v1::trie::Loader::new(&[][..]);
+
+        let mut frozen_states: BTreeMap<ContractAddress, PersistentState> = BTreeMap::new();
+
+        // Create frozen versions of all the states, to compute the energy needed.
+        for (addr, changes) in changes.contracts.iter_mut() {
+            if let Some(modified_state) = &mut changes.state {
+                frozen_states.insert(*addr, modified_state.freeze(&mut loader, &mut collector));
+            }
+        }
+
+        // One energy per extra byte of state.
+        let energy_for_state_increase = Energy::from(collector.collect());
+
+        println!(
+            "persist_changes: remaining: {}, state: {}",
+            remaining_energy, energy_for_state_increase
+        );
+
+        // Return an error if out of energy, and clear the changeset.
+        if remaining_energy
+            .checked_sub(energy_for_state_increase)
+            .is_none()
+        {
+            self.changeset.clear();
+            return Err(OutOfEnergy);
+        }
+
+        // Then persist all the changes.
         for (addr, changes) in changes.contracts.iter_mut() {
             let mut contract = self
                 .contracts
@@ -583,8 +623,11 @@ impl Chain {
                 contract.module_reference = new_module_ref;
             }
             // Update state.
-            if let Some(modified_state) = &mut changes.state {
-                contract.state = modified_state.freeze(&mut loader, &mut collector);
+            if changes.state.is_some() {
+                // Replace with the frozen state we created earlier.
+                contract.state = frozen_states
+                    .remove(addr)
+                    .expect("Known to exist since we just added it.");
             }
         }
         // Persist account changes.
@@ -604,9 +647,47 @@ impl Chain {
         // Clear the changeset.
         self.changeset.clear();
 
-        // Return the state size increase in bytes.
-        let state_size_increase_in_bytes = collector.collect();
-        state_size_increase_in_bytes
+        Ok(energy_for_state_increase)
+    }
+
+    /// Traverses the last checkpoint in the changeset and collects the energy
+    /// needed to be charged for additional state bytes.
+    ///
+    /// Always clears the changeset.
+    ///
+    /// Returns an [`OutOfEnergy`] error if the energy needed for storing the
+    /// extra state is larger than `remaining_energy`. Otherwise, it returns
+    /// the [`Energy`] needed for storing the extra state.
+    fn collect_energy_for_extra_state_and_clear(
+        &mut self,
+        remaining_energy: Energy,
+    ) -> Result<Energy, OutOfEnergy> {
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        let mut collector = SizeCollector::default();
+        for (_, changes) in self
+            .changeset
+            .get_mut()
+            .expect("change set should never be empty")
+            .contracts
+            .iter_mut()
+        {
+            if let Some(modified_state) = &mut changes.state {
+                modified_state.freeze(&mut loader, &mut collector);
+            }
+        }
+        // Clear the changeset.
+        self.changeset.clear();
+
+        // One energy per extra byte in the state.
+        let energy_for_state_increase = Energy::from(collector.collect());
+
+        if remaining_energy
+            .checked_sub(energy_for_state_increase)
+            .is_none()
+        {
+            return Err(OutOfEnergy);
+        }
+        Ok(energy_for_state_increase)
     }
 
     /// Saves the a mutable state for a contract in the changeset.
@@ -1068,7 +1149,7 @@ impl Chain {
             } else if artifact.has_entrypoint(fallback_receive_name.as_str()) {
                 OwnedReceiveName::new_unchecked(fallback_receive_name)
             } else {
-                bail!("Entrypoint does not exist.");
+                bail!(EntrypointDoesNotExist(entrypoint));
             }
         };
 
@@ -1177,16 +1258,40 @@ impl Chain {
             &mut chain_events,
         );
 
-        let (res, transaction_fee) =
-            self.convert_receive_result(receive_result, chain_events, energy_reserved);
+        // Get the energy to be charged for extra state bytes. Or return an error if out
+        // of energy.
+        let energy_for_state_increase = match receive_result {
+            Ok(v1::ReceiveResult::Success {
+                remaining_energy, ..
+            }) => {
+                println!("Remaining energy u64: {}", remaining_energy);
+                match self.persist_changes_and_clear(Chain::from_interpreter_energy(
+                    InterpreterEnergy::from(remaining_energy),
+                )) {
+                    Ok(energy) => energy,
+                    Err(_) => {
+                        return Err(ContractUpdateError::ValidChainError(
+                            FailedContractInteraction::OutOfEnergy {
+                                energy_used:     energy_reserved,
+                                transaction_fee: self.calculate_energy_cost(energy_reserved),
+                            },
+                        ))
+                    }
+                }
+            }
+            _ => {
+                // An error occured, so we don't save the changes. Just clear.
+                self.changeset.clear();
+                Energy::from(0)
+            }
+        };
 
-        // Persist changes from changeset.
-        if res.is_ok() {
-            let _state_size_increase_in_bytes = self.persist_changes();
-            // TODO: Charge for size in collector;
-        } else {
-            self.changeset.clear();
-        }
+        let (res, transaction_fee) = self.convert_receive_result(
+            receive_result,
+            chain_events,
+            energy_reserved,
+            energy_for_state_increase,
+        );
 
         // Charge the transaction fee irrespective of the result.
         // TODO: If we charge up front, then we should return to_ccd(remaining_energy)
@@ -1195,7 +1300,6 @@ impl Chain {
         res
     }
 
-    /// TODO: Should we make invoker and energy optional?
     pub fn contract_invoke(
         &mut self,
         invoker: AccountAddress,
@@ -1230,12 +1334,35 @@ impl Chain {
             &mut chain_events,
         );
 
-        let (res, _) = self.convert_receive_result(receive_result, chain_events, energy_reserved);
+        let energy_for_state_increase = match receive_result {
+            Ok(v1::ReceiveResult::Success {
+                remaining_energy, ..
+            }) => match self.collect_energy_for_extra_state_and_clear(
+                Chain::from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
+            ) {
+                Ok(energy) => energy,
+                Err(_) => {
+                    return Err(ContractUpdateError::ValidChainError(
+                        FailedContractInteraction::OutOfEnergy {
+                            energy_used:     energy_reserved,
+                            transaction_fee: self.calculate_energy_cost(energy_reserved),
+                        },
+                    ))
+                }
+            },
+            _ => {
+                // An error occured, so we just clear the changeset.
+                self.changeset.clear();
+                Energy::from(0)
+            }
+        };
 
-        // Clear the changeset.
-        self.changeset.clear();
-
-        // TODO: Add cost for size in collector to transaction_fee
+        let (res, _) = self.convert_receive_result(
+            receive_result,
+            chain_events,
+            energy_reserved,
+            energy_for_state_increase,
+        );
 
         res
     }
@@ -1368,11 +1495,20 @@ impl Chain {
 
     /// Convert the wasm_chain_integration result to the one used here and
     /// calculate the transaction fee.
+    ///
+    /// The `energy_for_state_increase` is only used if the result was a
+    /// success.
+    ///
+    /// *Precondition*:
+    /// - The `receive_result` should never be
+    ///   `Ok(v1::ReceiveResult::Interrupt(_))`.
+    /// - `energy_reserved - remaining_energy + energy_for_state_increase >= 0`
     fn convert_receive_result(
         &self,
         receive_result: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
         chain_events: Vec<ChainEvent>,
         energy_reserved: Energy,
+        energy_for_state_increase: Energy,
     ) -> (
         Result<SuccessfulContractUpdate, ContractUpdateError>,
         Amount,
@@ -1386,10 +1522,14 @@ impl Chain {
                     remaining_energy, /* TODO: Could we change this from `u64` to
                                        * `InterpreterEnergy` in chain_integration? */
                 } => {
-                    let energy_used = energy_reserved
-                        - Chain::from_interpreter_energy(InterpreterEnergy {
-                            energy: remaining_energy,
-                        });
+                    let remaining_energy =
+                        Chain::from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+                    println!(
+                        "reserved: {}, remaining: {}, state: {}",
+                        energy_reserved, remaining_energy, energy_for_state_increase
+                    );
+                    let energy_used =
+                        energy_reserved - remaining_energy + energy_for_state_increase;
                     let transaction_fee = self.calculate_energy_cost(energy_used);
                     (
                         Ok(SuccessfulContractUpdate {
@@ -1403,16 +1543,17 @@ impl Chain {
                         transaction_fee,
                     )
                 }
-                v1::ReceiveResult::Interrupt { .. } => panic!("Should never happen"),
+                v1::ReceiveResult::Interrupt { .. } => {
+                    panic!("Precondition violation: Got `ReceiveResult::Interrupt`.")
+                }
                 v1::ReceiveResult::Reject {
                     reason,
                     return_value,
                     remaining_energy,
                 } => {
-                    let energy_used = energy_reserved
-                        - Chain::from_interpreter_energy(InterpreterEnergy {
-                            energy: remaining_energy,
-                        });
+                    let remaining_energy =
+                        Chain::from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+                    let energy_used = energy_reserved - remaining_energy;
                     let transaction_fee = self.calculate_energy_cost(energy_used);
                     (
                         Err(ContractUpdateError::ValidChainError(
@@ -1430,10 +1571,10 @@ impl Chain {
                     error,
                     remaining_energy,
                 } => {
-                    let energy_used = energy_reserved
-                        - Chain::from_interpreter_energy(InterpreterEnergy {
-                            energy: remaining_energy,
-                        });
+                    let remaining_energy = Chain::from_interpreter_energy(InterpreterEnergy {
+                        energy: remaining_energy,
+                    });
+                    let energy_used = energy_reserved - remaining_energy;
                     let transaction_fee = self.calculate_energy_cost(energy_used);
                     (
                         Err(ContractUpdateError::ValidChainError(
@@ -1459,14 +1600,18 @@ impl Chain {
                     )
                 }
             },
-            Err(e) => {
-                // TODO: what is the correct cost here?
-                let transaction_fee = self.calculate_energy_cost(energy_reserved);
-                (
-                    Err(ContractUpdateError::InterpreterError(e)),
-                    transaction_fee,
-                )
-            }
+            Err(e) => match e.downcast::<EntrypointDoesNotExist>() {
+                // The user tried to call `contract_update` or `contract_invoke` with an entrypoint
+                // which does not exist. This is caught up front and nothing is put
+                // on chain, so the cost is zero.
+                Ok(err) => (
+                    Err(ContractUpdateError::EntrypointDoesNotExist(err)),
+                    Amount::zero(),
+                ),
+                // An internal precondition has been violated, which caused an error in the
+                // interpreter.
+                Err(e) => panic!("Internal error: {}", e),
+            },
         }
     }
 }
@@ -1488,6 +1633,19 @@ enum AccountTransferError {
     ToMissing,
     #[error("The sender does not have sufficient balance.")]
     InsufficientBalance,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+struct OutOfEnergy;
+
+/// The entrypoint does not exist.
+#[derive(PartialEq, Eq, Debug, Error)]
+pub struct EntrypointDoesNotExist(OwnedEntrypointName);
+
+impl fmt::Display for EntrypointDoesNotExist {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "The entrypoint '{}' does not exist.", self.0)
+    }
 }
 
 struct ProcessReceiveData<'a, 'b> {
@@ -2107,7 +2265,7 @@ pub enum ContractUpdateError {
     InstanceDoesNotExist(#[from] ContractInstanceMissing),
     /// Entrypoint does not exist and neither does the fallback entrypoint.
     #[error("entrypoint does not exist")]
-    EntrypointDoesNotExist,
+    EntrypointDoesNotExist(#[from] EntrypointDoesNotExist),
     /// Account has not been created in test environment.
     #[error("account {} does not exist", 0.0)]
     AccountDoesNotExist(#[from] AccountMissing),
@@ -2739,7 +2897,7 @@ mod tests {
 
             let param = (res_init_1.contract_address, initial_balance, ACC_1);
 
-            let res_update = chain
+            chain
                 .contract_update(
                     ACC_0,
                     res_init_0.contract_address,
@@ -3812,7 +3970,7 @@ mod tests {
             // failed.
             assert!(matches!(
             res_update_new_feature,
-            Err(ContractUpdateError::InterpreterError(e)) if e.to_string() == "Entrypoint does not exist."
+            Err(ContractUpdateError::EntrypointDoesNotExist(EntrypointDoesNotExist(entrypoint))) if entrypoint.to_string() == "new_feature"
             ));
         }
 
@@ -3909,7 +4067,7 @@ mod tests {
                 ChainEvent::Updated { .. }
             ]));
             assert!(
-                matches!(res_update_new_feature_0, ContractUpdateError::InterpreterError(e) if e.to_string() == "Entrypoint does not exist.")
+                matches!(res_update_new_feature_0, ContractUpdateError::EntrypointDoesNotExist(EntrypointDoesNotExist(entrypoint)) if entrypoint.to_string() == "new_feature")
             );
             assert!(matches!(res_update_upgrade.chain_events[..], [
                 ChainEvent::Interrupted { .. },
@@ -3918,7 +4076,7 @@ mod tests {
                 ChainEvent::Updated { .. },
             ]));
             assert!(
-                matches!(res_update_old_feature_1, ContractUpdateError::InterpreterError(e) if e.to_string() == "Entrypoint does not exist.")
+                matches!(res_update_old_feature_1, ContractUpdateError::EntrypointDoesNotExist(EntrypointDoesNotExist(entrypoint)) if entrypoint.to_string() == "old_feature")
             );
             assert!(matches!(res_update_new_feature_1.chain_events[..], [
                 ChainEvent::Updated { .. }
