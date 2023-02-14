@@ -287,13 +287,23 @@ impl Default for Chain {
 // Private methods
 impl Chain {
     /// Check whether an account exists.
-    fn account_exists(&self, address: AccountAddress) -> bool {
+    fn persistence_account_exists(&self, address: AccountAddress) -> bool {
         self.accounts.contains_key(&address)
     }
 
     /// Check whether a contract exists.
-    fn contract_exists(&self, address: ContractAddress) -> bool {
+    fn persistence_contract_exists(&self, address: ContractAddress) -> bool {
         self.contracts.contains_key(&address)
+    }
+
+    /// Check whether the address exists in persistence. I.e. if it is an
+    /// account, whether the account exists, and if it is a contract, whether
+    /// the contract exists.
+    fn persistence_address_exists(&self, address: Address) -> bool {
+        match address {
+            Address::Account(acc) => self.persistence_account_exists(acc),
+            Address::Contract(contr) => self.persistence_contract_exists(contr),
+        }
     }
 
     /// Make a transfer from a contract to an account in the changeset.
@@ -308,7 +318,7 @@ impl Chain {
         to: AccountAddress,
     ) -> Result<NewBalances, ContractTransferError> {
         // Ensure the `to` account exists.
-        if !self.account_exists(to) {
+        if !self.persistence_account_exists(to) {
             return Err(ContractTransferError::ToMissing);
         }
 
@@ -337,7 +347,7 @@ impl Chain {
         to: ContractAddress,
     ) -> Result<NewBalances, ContractTransferError> {
         // Ensure the `to` contract exists.
-        if !self.contract_exists(to) {
+        if !self.persistence_contract_exists(to) {
             return Err(ContractTransferError::ToMissing);
         }
 
@@ -366,7 +376,7 @@ impl Chain {
         to: ContractAddress,
     ) -> Result<NewBalances, AccountTransferError> {
         // Ensure the `to` account exists.
-        if !self.contract_exists(to) {
+        if !self.persistence_contract_exists(to) {
             return Err(AccountTransferError::ToMissing);
         }
 
@@ -984,6 +994,7 @@ impl Chain {
             loader,
         )?;
         // Handle the result and update the transaction fee.
+        // TODO: Extract to helper function.
         let res = match res {
             v1::InitResult::Success {
                 logs,
@@ -1078,6 +1089,7 @@ impl Chain {
     /// Preconditions:
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
+    ///  - `sender` exists
     ///
     /// Returns:
     ///  - Everything the types can encode apart from
@@ -1213,7 +1225,8 @@ impl Chain {
     /// If successful, any changes will be saved.
     pub fn contract_update(
         &mut self,
-        invoker: AccountAddress, // TODO: Should we add a sender field and allow contract senders?
+        invoker: AccountAddress,
+        sender: Address,
         address: ContractAddress,
         entrypoint: EntrypointName,
         parameter: ContractParameter,
@@ -1224,6 +1237,11 @@ impl Chain {
             "Updating contract {}, with parameter: {:?}",
             address, parameter.0
         );
+
+        // Ensure the sender exists.
+        if !self.persistence_address_exists(sender) {
+            return Err(ContractUpdateError::SenderDoesNotExist(sender));
+        }
 
         // Ensure account exists and can pay for the reserved energy and amount
         // TODO: Could we just remove this amount in the changeset and then put back the
@@ -1238,7 +1256,7 @@ impl Chain {
         let mut chain_events = Vec::new();
         let receive_result = self.contract_update_aux(
             invoker,
-            Address::Account(invoker),
+            sender,
             address,
             entrypoint.to_owned(),
             Parameter(&parameter.0),
@@ -1296,6 +1314,7 @@ impl Chain {
     pub fn contract_invoke(
         &mut self,
         invoker: AccountAddress,
+        sender: Address,
         address: ContractAddress,
         entrypoint: EntrypointName,
         parameter: ContractParameter,
@@ -1307,6 +1326,11 @@ impl Chain {
             address, parameter.0
         );
 
+        // Ensure the sender exists.
+        if !self.persistence_address_exists(sender) {
+            return Err(ContractUpdateError::SenderDoesNotExist(sender));
+        }
+
         // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self.persistence_get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
@@ -1317,7 +1341,7 @@ impl Chain {
         let mut chain_events = Vec::new();
         let receive_result = self.contract_update_aux(
             invoker,
-            Address::Account(invoker),
+            sender,
             address,
             entrypoint.to_owned(),
             Parameter(&parameter.0),
@@ -1920,9 +1944,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     // changeset.
                                     self.state = self.chain.changeset_contract_state(self.address);
                                 }
-                                // TODO: Notes say that we should commit the state changes to the
-                                // changeset at this point. But the state changes would already
-                                // exist in the changeset at this point.
                                 state_changed
                             };
 
@@ -2282,9 +2303,12 @@ pub enum ContractUpdateError {
     /// Entrypoint does not exist and neither does the fallback entrypoint.
     #[error("entrypoint does not exist")]
     EntrypointDoesNotExist(#[from] EntrypointDoesNotExist),
-    /// Account has not been created in test environment.
-    #[error("account {} does not exist", 0.0)]
-    AccountDoesNotExist(#[from] AccountMissing),
+    /// The invoker account has not been created in test environment.
+    #[error("invoker account {} does not exist", 0.0)]
+    InvokerDoesNotExist(#[from] AccountMissing),
+    /// The sender does not exist in the test environment.
+    #[error("sender {0} does not exist")]
+    SenderDoesNotExist(Address),
     /// The account does not have enough funds to pay for the energy.
     #[error("account does not have enough funds to pay for the energy")]
     InsufficientFunds,
@@ -2633,6 +2657,7 @@ mod tests {
         let res_update = chain
             .contract_update(
                 ACC_0,
+                Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("set"),
                 ContractParameter::from_bytes(vec![1u8]), // Updated to 1
@@ -2644,6 +2669,7 @@ mod tests {
         let res_invoke_get = chain
             .contract_invoke(
                 ACC_0,
+                Address::Contract(res_init.contract_address), // Invoke with a contract as sender.
                 res_init.contract_address,
                 EntrypointName::new_unchecked("get"),
                 ContractParameter::empty(),
@@ -2666,6 +2692,85 @@ mod tests {
         assert!(res_update.state_changed);
         // Assert that the updated state is persisted.
         assert_eq!(res_invoke_get.return_value.0, [1u8]);
+    }
+
+    /// Test that updates and invocations where the sender is missing fail.
+    #[test]
+    fn updating_and_invoking_with_missing_sender_fails() {
+        let mut chain = Chain::new();
+        let initial_balance = Amount::from_ccd(10000);
+        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+
+        let missing_account = Address::Account(ACC_1);
+        let missing_contract = Address::Contract(ContractAddress::new(100, 0));
+
+        let res_deploy = chain
+            .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
+            .expect("Deploying valid module should work");
+
+        let res_init = chain
+            .contract_init(
+                ACC_0,
+                res_deploy.module_reference,
+                ContractName::new_unchecked("init_weather"),
+                ContractParameter::from_bytes(vec![0u8]), // Starts as 0
+                Amount::zero(),
+                Energy::from(10000),
+            )
+            .expect("Initializing valid contract should work");
+
+        let res_update_acc = chain.contract_update(
+            ACC_0,
+            missing_account,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            ContractParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        );
+
+        let res_invoke_acc = chain.contract_invoke(
+            ACC_0,
+            missing_account,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            ContractParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        );
+
+        let res_update_contr = chain.contract_update(
+            ACC_0,
+            missing_contract,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            ContractParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        );
+
+        let res_invoke_contr = chain.contract_invoke(
+            ACC_0,
+            missing_contract,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            ContractParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        );
+
+        assert!(matches!(
+            res_update_acc,
+            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_account));
+        assert!(matches!(
+            res_invoke_acc,
+            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_account));
+        assert!(matches!(
+            res_update_contr,
+            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_contract));
+        assert!(matches!(
+            res_invoke_contr,
+            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_contract));
     }
 
     /// Tests using the integrate contract defined in
@@ -2700,6 +2805,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("receive"),
                     ContractParameter::from_typed(&ACC_1),
@@ -2711,6 +2817,7 @@ mod tests {
             let res_view = chain
                 .contract_invoke(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("view"),
                     ContractParameter::empty(),
@@ -2770,6 +2877,7 @@ mod tests {
 
             let res_update = chain.contract_update(
                 ACC_0,
+                Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
                 ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
@@ -2822,6 +2930,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("recurse"),
                     ContractParameter::from_typed(&10u32),
@@ -2833,6 +2942,7 @@ mod tests {
             let res_view = chain
                 .contract_invoke(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("view"),
                     ContractParameter::empty(),
@@ -2885,6 +2995,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("inc-fail-on-zero"),
                     ContractParameter::from_typed(&input_param),
@@ -2896,6 +3007,7 @@ mod tests {
             let res_view = chain
                 .contract_invoke(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("view"),
                     ContractParameter::empty(),
@@ -2959,6 +3071,7 @@ mod tests {
             chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init_0.contract_address,
                     EntrypointName::new_unchecked("mutate_and_forward"),
                     ContractParameter::from_typed(&param),
@@ -2995,6 +3108,7 @@ mod tests {
         let res_update = chain
             .contract_update(
                 ACC_0,
+                Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
                 ContractParameter::from_typed(&6u64),
@@ -3006,6 +3120,7 @@ mod tests {
         let res_view = chain
             .contract_invoke(
                 ACC_0,
+                Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("view"),
                 ContractParameter::empty(),
@@ -3083,6 +3198,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3142,6 +3258,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_1,
+                    Address::Account(ACC_1),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3205,6 +3322,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3269,6 +3387,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3326,6 +3445,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3397,6 +3517,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3445,6 +3566,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3502,6 +3624,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3552,6 +3675,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3601,6 +3725,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
                     ContractParameter::from_typed(&input_param),
@@ -3653,6 +3778,7 @@ mod tests {
             let res_update_upgrade = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("bump"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
@@ -3665,6 +3791,7 @@ mod tests {
             let res_update_new = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("newfun"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
@@ -3720,6 +3847,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
@@ -3776,6 +3904,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::empty(),
@@ -3829,6 +3958,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
@@ -3881,6 +4011,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&input_param),
@@ -3951,6 +4082,7 @@ mod tests {
             let res_update = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&input_param),
@@ -4004,6 +4136,7 @@ mod tests {
 
             let res_update_upgrade = chain.contract_update(
                 ACC_0,
+                Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("upgrade"),
                 ContractParameter::from_typed(&res_deploy_1.module_reference),
@@ -4013,6 +4146,7 @@ mod tests {
 
             let res_update_new_feature = chain.contract_update(
                 ACC_0,
+                Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("new_feature"),
                 ContractParameter::empty(),
@@ -4070,6 +4204,7 @@ mod tests {
             let res_update_old_feature_0 = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("old_feature"),
                     ContractParameter::empty(),
@@ -4081,6 +4216,7 @@ mod tests {
             let res_update_new_feature_0 = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("new_feature"),
                     ContractParameter::empty(),
@@ -4092,6 +4228,7 @@ mod tests {
             let res_update_upgrade = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
                     ContractParameter::from_typed(&res_deploy_1.module_reference),
@@ -4103,6 +4240,7 @@ mod tests {
             let res_update_old_feature_1 = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("old_feature"),
                     ContractParameter::empty(),
@@ -4114,6 +4252,7 @@ mod tests {
             let res_update_new_feature_1 = chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("new_feature"),
                     ContractParameter::empty(),
@@ -4208,6 +4347,7 @@ mod tests {
             chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
                     ContractParameter::from_typed(&parameter),
@@ -4283,6 +4423,7 @@ mod tests {
             chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
                     ContractParameter::from_typed(&parameter),
@@ -4342,6 +4483,7 @@ mod tests {
             chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
                     ContractParameter::from_typed(&ACC_1),
@@ -4415,6 +4557,7 @@ mod tests {
             chain
                 .contract_update(
                     ACC_0,
+                    Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
                     ContractParameter::from_typed(&parameter),
