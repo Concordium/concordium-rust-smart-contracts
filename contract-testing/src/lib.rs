@@ -191,7 +191,7 @@ impl ContractChanges {
     /// Get the current balance by adding the original balance and the balance
     /// delta.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - `balance_delta + original_balance` must be larger than `0`.
     fn current_balance(&self) -> Amount {
         self.self_balance_delta
@@ -213,7 +213,7 @@ impl AccountChanges {
     /// Get the current balance by adding the original balance and the balance
     /// delta.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - `balance_delta + original_balance` must be larger than `0`.
     fn current_balance(&self) -> Amount {
         self.balance_delta
@@ -478,7 +478,7 @@ impl Chain {
     /// Returns the contract balance from the topmost checkpoint on the
     /// changeset. Or, alternatively, from persistence.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - Contract must exist.
     fn changeset_contract_balance_unchecked(&self, address: ContractAddress) -> Amount {
         self.changeset_contract_balance(address)
@@ -497,7 +497,7 @@ impl Chain {
     /// Returns the contract module from the topmost checkpoint on
     /// the changeset. Or, alternatively, from persistence.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - Contract instance must exist (and therefore also the artifact).
     ///  - If the changeset contains a module reference, then it must refer a
     ///    deployed module.
@@ -534,7 +534,7 @@ impl Chain {
     /// Get the contract state, either from the changeset or by thawing it from
     /// persistence.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - Contract instance must exist.
     fn changeset_contract_state(&self, address: ContractAddress) -> MutableState {
         match self
@@ -703,7 +703,8 @@ impl Chain {
         Ok(energy_for_state_increase)
     }
 
-    /// Saves the a mutable state for a contract in the changeset.
+    /// Saves a mutable state for a contract in the changeset.
+    ///
     /// If the contract already has an entry in the changeset, the old state
     /// will be replaced. Otherwise, the entry is created and the state is
     /// added.
@@ -711,10 +712,9 @@ impl Chain {
     /// This also increments the modification index. It will be set to 1 if the
     /// contract has no entry in the changeset.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - Contract must exist.
     fn changeset_save_state_changes(&mut self, address: ContractAddress, state: &mut MutableState) {
-        println!("Saving state for {}", address);
         let mut loader = v1::trie::Loader::new(&[][..]);
         self.changeset
             .current_mut()
@@ -738,7 +738,55 @@ impl Chain {
             });
     }
 
+    /// Saves a new module reference for the contract in the changeset.
+    ///
+    /// If the contract already has an entry in the changeset, the old module is
+    /// replaced. Otherwise, the entry is created and the module is added.
+    ///
+    /// Returns the previous module, which is either the one from persistence,
+    /// or the most recent one from the changeset.
+    ///
+    /// *Preconditions:*
+    ///  - Contract must exist.
+    ///  - Module must exist.
+    fn changeset_save_module_upgrade(
+        &mut self,
+        address: ContractAddress,
+        module_reference: ModuleReference,
+    ) -> ModuleReference {
+        match self.changeset.current_mut().contracts.entry(address) {
+            btree_map::Entry::Vacant(vac) => {
+                let contract = self
+                    .contracts
+                    .get(&address)
+                    .expect("Precondition violation: contract must exist.");
+                let old_module_ref = contract.module_reference;
+                let original_balance = contract.self_balance;
+                vac.insert(ContractChanges {
+                    module: Some(module_reference),
+                    ..ContractChanges::new(original_balance)
+                });
+                old_module_ref
+            }
+            btree_map::Entry::Occupied(mut occ) => {
+                let changes = occ.get_mut();
+                let old_module_ref = match changes.module {
+                    Some(old_module) => old_module,
+                    None => {
+                        self.contracts
+                            .get(&address)
+                            .expect("Precondition violation: contract must exist.")
+                            .module_reference
+                    }
+                };
+                changes.module = Some(module_reference);
+                old_module_ref
+            }
+        }
+    }
+
     /// Returns the modification index for a contract.
+    ///
     /// It looks it up in the changeset, and if it isn't there, it will return
     /// `0`.
     fn changeset_modification_index(&self, address: ContractAddress) -> u32 {
@@ -1086,7 +1134,7 @@ impl Chain {
 
     /// Used for handling contract invokes internally.
     ///
-    /// Preconditions:
+    /// *Preconditions:*
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
     ///  - `sender` exists
@@ -1490,16 +1538,6 @@ impl Chain {
     ) -> Result<&Contract, ContractInstanceMissing> {
         self.contracts
             .get(&address)
-            .ok_or(ContractInstanceMissing(address))
-    }
-
-    /// Returns a mutable reference to a [`Contract`] from persistence.
-    fn persistence_get_contract_mut(
-        &mut self,
-        address: ContractAddress,
-    ) -> Result<&mut Contract, ContractInstanceMissing> {
-        self.contracts
-            .get_mut(&address)
             .ok_or(ContractInstanceMissing(address))
     }
 
@@ -2002,22 +2040,22 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 None => InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
                                 },
-                                Some(artifact) => {
+                                Some(module) => {
                                     // Charge for the module lookup.
                                     energy_after_invoke -= Chain::to_interpreter_energy(
-                                        self.chain.lookup_module_cost(artifact),
+                                        self.chain.lookup_module_cost(module),
                                     )
                                     .energy;
 
-                                    if artifact.export.contains_key(
+                                    if module.export.contains_key(
                                         self.contract_name.as_contract_name().get_chain_name(),
                                     ) {
-                                        let instance = self
-                                            .chain
-                                            .persistence_get_contract_mut(self.address)?;
-                                        let old_module_ref = instance.module_reference;
-                                        // Update module reference for the instance.
-                                        instance.module_reference = module_ref;
+                                        // Update module reference in the changeset.
+                                        let old_module_ref =
+                                            self.chain.changeset_save_module_upgrade(
+                                                self.address,
+                                                module_ref,
+                                            );
 
                                         // Charge for the initialization cost.
                                         energy_after_invoke -= Chain::to_interpreter_energy(
@@ -2034,7 +2072,9 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                         self.chain_events.push(upgrade_event);
 
                                         InvokeResponse::Success {
-                                            new_balance: instance.self_balance,
+                                            new_balance: self
+                                                .chain
+                                                .changeset_contract_balance_unchecked(self.address),
                                             data:        None,
                                         }
                                     } else {
