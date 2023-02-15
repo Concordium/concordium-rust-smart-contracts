@@ -1,4 +1,3 @@
-use anyhow::bail;
 use concordium_base::{
     base::{Energy, ExchangeRate},
     common,
@@ -19,7 +18,7 @@ use wasm_chain_integration::{
     v1::{
         self,
         trie::{MutableState, PersistentState, SizeCollector},
-        ConcordiumAllowedImports, InvokeResponse, ReturnValue,
+        ConcordiumAllowedImports, InvokeFailure, InvokeResponse, ReturnValue,
     },
     ExecResult, InterpreterEnergy,
 };
@@ -316,10 +315,10 @@ impl Chain {
         amount: Amount,
         from: ContractAddress,
         to: AccountAddress,
-    ) -> Result<NewBalances, ContractTransferError> {
+    ) -> Result<NewBalances, TransferError> {
         // Ensure the `to` account exists.
         if !self.persistence_account_exists(to) {
-            return Err(ContractTransferError::ToMissing);
+            return Err(TransferError::ToMissing);
         }
 
         // Make the transfer.
@@ -345,10 +344,10 @@ impl Chain {
         amount: Amount,
         from: ContractAddress,
         to: ContractAddress,
-    ) -> Result<NewBalances, ContractTransferError> {
+    ) -> Result<NewBalances, TransferError> {
         // Ensure the `to` contract exists.
         if !self.persistence_contract_exists(to) {
-            return Err(ContractTransferError::ToMissing);
+            return Err(TransferError::ToMissing);
         }
 
         // Make the transfer.
@@ -374,10 +373,10 @@ impl Chain {
         amount: Amount,
         from: AccountAddress,
         to: ContractAddress,
-    ) -> Result<NewBalances, AccountTransferError> {
+    ) -> Result<NewBalances, TransferError> {
         // Ensure the `to` account exists.
         if !self.persistence_contract_exists(to) {
-            return Err(AccountTransferError::ToMissing);
+            return Err(TransferError::ToMissing);
         }
 
         // Make the transfer.
@@ -583,7 +582,8 @@ impl Chain {
     ///  - an [`OutOfEnergy`] error is returned.
     ///
     /// Otherwise, it returns the [`Energy`] to be charged for the additional
-    /// bytes added to contract states.
+    /// bytes added to contract states. It also returns whether the state of the
+    /// provided `invoked_contract` was changed.
     ///
     /// *Preconditions:*
     ///  - All contracts, modules, accounts referred must exist in persistence.
@@ -592,7 +592,9 @@ impl Chain {
     fn changeset_persist_and_clear(
         &mut self,
         remaining_energy: Energy,
-    ) -> Result<Energy, OutOfEnergy> {
+        invoked_contract: ContractAddress,
+    ) -> Result<(Energy, bool), OutOfEnergy> {
+        let mut invoked_contract_has_state_changes = false;
         let changes = self.changeset.current_mut();
         // Persist contract changes and collect the total increase in states sizes.
         let mut collector = SizeCollector::default();
@@ -609,11 +611,6 @@ impl Chain {
 
         // One energy per extra byte of state.
         let energy_for_state_increase = Energy::from(collector.collect());
-
-        println!(
-            "persist_changes: remaining: {}, state: {}",
-            remaining_energy, energy_for_state_increase
-        );
 
         // Return an error if out of energy, and clear the changeset.
         if remaining_energy
@@ -643,6 +640,9 @@ impl Chain {
             }
             // Update state.
             if changes.state.is_some() {
+                if *addr == invoked_contract {
+                    invoked_contract_has_state_changes = true;
+                }
                 // Replace with the frozen state we created earlier.
                 contract.state = frozen_states
                     .remove(addr)
@@ -666,7 +666,10 @@ impl Chain {
         // Clear the changeset.
         self.changeset_clear();
 
-        Ok(energy_for_state_increase)
+        Ok((
+            energy_for_state_increase,
+            invoked_contract_has_state_changes,
+        ))
     }
 
     /// Traverses the last checkpoint in the changeset and collects the energy
@@ -675,16 +678,24 @@ impl Chain {
     /// Always clears the changeset.
     ///
     /// Returns an [`OutOfEnergy`] error if the energy needed for storing the
-    /// extra state is larger than `remaining_energy`. Otherwise, it returns
-    /// the [`Energy`] needed for storing the extra state.
+    /// extra state is larger than `remaining_energy`.
+    ///
+    /// Otherwise, it returns
+    /// the [`Energy`] needed for storing the extra state. It also returns
+    /// whether the state of the provided `invoked_contract` has changed.
     fn changeset_collect_energy_for_state_and_clear(
         &mut self,
         remaining_energy: Energy,
-    ) -> Result<Energy, OutOfEnergy> {
+        invoked_contract: ContractAddress,
+    ) -> Result<(Energy, bool), OutOfEnergy> {
+        let mut invoked_contract_has_state_changes = false;
         let mut loader = v1::trie::Loader::new(&[][..]);
         let mut collector = SizeCollector::default();
-        for (_, changes) in self.changeset.current_mut().contracts.iter_mut() {
+        for (addr, changes) in self.changeset.current_mut().contracts.iter_mut() {
             if let Some(modified_state) = &mut changes.state {
+                if *addr == invoked_contract {
+                    invoked_contract_has_state_changes = true;
+                }
                 modified_state.freeze(&mut loader, &mut collector);
             }
         }
@@ -700,7 +711,10 @@ impl Chain {
         {
             return Err(OutOfEnergy);
         }
-        Ok(energy_for_state_increase)
+        Ok((
+            energy_for_state_increase,
+            invoked_contract_has_state_changes,
+        ))
     }
 
     /// Saves a mutable state for a contract in the changeset.
@@ -829,12 +843,21 @@ impl From<UnderflowError> for InsufficientBalanceError {
     fn from(_: UnderflowError) -> Self { InsufficientBalanceError }
 }
 
-impl From<InsufficientBalanceError> for ContractTransferError {
+impl From<InsufficientBalanceError> for TransferError {
     fn from(_: InsufficientBalanceError) -> Self { Self::InsufficientBalance }
 }
 
-impl From<InsufficientBalanceError> for AccountTransferError {
-    fn from(_: InsufficientBalanceError) -> Self { Self::InsufficientBalance }
+struct UpdateAuxResponse {
+    /// The result from the invoke.
+    invoke_response:  InvokeResponse,
+    /// Will be `Some` if and only if `invoke_response` is `Success`.
+    logs:             Option<v0::Logs>,
+    /// The remaining energy after the invocation.
+    remaining_energy: InterpreterEnergy,
+}
+
+impl UpdateAuxResponse {
+    fn is_success(&self) -> bool { matches!(self.invoke_response, InvokeResponse::Success { .. }) }
 }
 
 impl Chain {
@@ -1040,17 +1063,17 @@ impl Chain {
             },
             false,
             loader,
-        )?;
+        );
         // Handle the result and update the transaction fee.
         // TODO: Extract to helper function.
         let res = match res {
-            v1::InitResult::Success {
+            Ok(v1::InitResult::Success {
                 logs,
                 return_value: _, /* Ignore return value for now, since our tools do not support
                                   * it for inits, currently. */
                 remaining_energy,
                 mut state,
-            } => {
+            }) => {
                 let contract_address = self.create_contract_address();
                 let energy_used = energy_reserved
                     - Chain::from_interpreter_energy(InterpreterEnergy {
@@ -1080,11 +1103,11 @@ impl Chain {
                     transaction_fee,
                 })
             }
-            v1::InitResult::Reject {
+            Ok(v1::InitResult::Reject {
                 reason,
                 return_value,
                 remaining_energy,
-            } => {
+            }) => {
                 let energy_used = energy_reserved
                     - Chain::from_interpreter_energy(InterpreterEnergy {
                         energy: remaining_energy,
@@ -1099,10 +1122,10 @@ impl Chain {
                     },
                 ))
             }
-            v1::InitResult::Trap {
-                error,
+            Ok(v1::InitResult::Trap {
+                error: _, // TODO: Should we forward this to the user?
                 remaining_energy,
-            } => {
+            }) => {
                 let energy_used = energy_reserved
                     - Chain::from_interpreter_energy(InterpreterEnergy {
                         energy: remaining_energy,
@@ -1110,13 +1133,12 @@ impl Chain {
                 transaction_fee += self.calculate_energy_cost(energy_used);
                 Err(ContractInitError::ValidChainError(
                     FailedContractInteraction::Trap {
-                        error,
                         energy_used,
                         transaction_fee,
                     },
                 ))
             }
-            v1::InitResult::OutOfEnergy => {
+            Ok(v1::InitResult::OutOfEnergy) => {
                 transaction_fee += self.calculate_energy_cost(energy_reserved);
                 Err(ContractInitError::ValidChainError(
                     FailedContractInteraction::OutOfEnergy {
@@ -1125,6 +1147,7 @@ impl Chain {
                     },
                 ))
             }
+            Err(e) => panic!("Internal error: init failed with interpreter error: {}", e),
         };
         // Charge the account.
         // We have to get the account info again because of the borrow checker.
@@ -1138,18 +1161,13 @@ impl Chain {
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
     ///  - `sender` exists
-    ///
-    /// Returns:
-    ///  - Everything the types can encode apart from
-    ///    `Ok(v1::ReceiveResult::Interrupt)`
-    ///
-    ///  TODO: Change return type, so it can't return Interrupt.
-    ///  TODO: Use proper error types instead of anyhow.
+    ///  - if the contract (`contract_address`) exists, then its `module` must
+    ///    also exist.
     fn contract_update_aux(
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        address: ContractAddress,
+        contract_address: ContractAddress,
         entrypoint: OwnedEntrypointName,
         parameter: Parameter,
         amount: Amount,
@@ -1157,33 +1175,69 @@ impl Chain {
         // is reserved, it is not subtracted in the chain.accounts map.
         // Used to handle account balance queries for the invoker account.
         invoker_amount_reserved_for_nrg: Amount,
-        mut remaining_energy: Energy,
+        // Uses [`Interpreter`] energy to avoid rounding issues when converting to and fro
+        // [`Energy`].
+        mut remaining_energy: InterpreterEnergy,
         chain_events: &mut Vec<ChainEvent>,
-    ) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>> {
+    ) -> UpdateAuxResponse {
         // Move the amount from the sender to the contract, if any.
         // And get the new self_balance.
         let instance_self_balance = if amount.micro_ccd() > 0 {
-            match sender {
-                Address::Account(sender_account) => {
-                    self.changeset_transfer_account_to_contract(amount, sender_account, address)?
-                        .new_balance_to
-                }
-                Address::Contract(sender_contract) => {
-                    self.changeset_transfer_contract_to_contract(amount, sender_contract, address)?
-                        .new_balance_to
+            let transfer_result = match sender {
+                Address::Account(sender_account) => self.changeset_transfer_account_to_contract(
+                    amount,
+                    sender_account,
+                    contract_address,
+                ),
+                Address::Contract(sender_contract) => self.changeset_transfer_contract_to_contract(
+                    amount,
+                    sender_contract,
+                    contract_address,
+                ),
+            };
+            match transfer_result {
+                Ok(new_balances) => new_balances.new_balance_from,
+                Err(transfer_error) => {
+                    let kind = match transfer_error {
+                        TransferError::InsufficientBalance => InvokeFailure::InsufficientAmount,
+                        TransferError::ToMissing => InvokeFailure::NonExistentContract,
+                    };
+                    // Return early.
+                    // TODO: Should we charge any energy for this?
+                    return UpdateAuxResponse {
+                        invoke_response: InvokeResponse::Failure { kind },
+                        logs: None,
+                        remaining_energy,
+                    };
                 }
             }
         } else {
-            self.changeset_contract_balance_unchecked(address)
+            match self.changeset_contract_balance(contract_address) {
+                Some(self_balance) => self_balance,
+                None => {
+                    // Return early.
+                    // TODO: For the top-most update, we should catch this in `contract_update` and
+                    // return `ContractUpdateError::EntrypointMissing`.
+                    return UpdateAuxResponse {
+                        invoke_response: InvokeResponse::Failure {
+                            kind: InvokeFailure::NonExistentContract,
+                        },
+                        logs: None,
+                        remaining_energy,
+                    };
+                }
+            }
         };
 
         // Get the instance and artifact. To be used in several places.
-        let instance = self.persistence_get_contract(address)?;
-        let artifact = self.changeset_contract_module(address);
+        let instance = self
+            .persistence_get_contract(contract_address)
+            .expect("Contract known to exist at this point");
+        let artifact = self.changeset_contract_module(contract_address);
 
         // Subtract the cost of looking up the module
-        remaining_energy =
-            Energy::from(remaining_energy.energy - self.lookup_module_cost(&artifact).energy);
+        remaining_energy = remaining_energy
+            .subtract(Chain::to_interpreter_energy(self.lookup_module_cost(&artifact)).energy);
 
         // Construct the receive name (or fallback receive name) and ensure its presence
         // in the contract.
@@ -1196,7 +1250,14 @@ impl Chain {
             } else if artifact.has_entrypoint(fallback_receive_name.as_str()) {
                 OwnedReceiveName::new_unchecked(fallback_receive_name)
             } else {
-                bail!(EntrypointDoesNotExist(entrypoint));
+                // Return early.
+                return UpdateAuxResponse {
+                    invoke_response: InvokeResponse::Failure {
+                        kind: InvokeFailure::NonExistentEntrypoint,
+                    },
+                    logs: None,
+                    remaining_energy,
+                };
             }
         };
 
@@ -1208,11 +1269,15 @@ impl Chain {
                     slot_time: self.slot_time,
                 },
                 invoker,
-                self_address: address,
+                self_address: contract_address,
                 self_balance: instance_self_balance,
                 sender,
                 owner: instance.owner,
-                sender_policies: self.persistence_get_account(invoker)?.policies.clone(),
+                sender_policies: self
+                    .persistence_get_account(invoker)
+                    .expect("Precondition violation: invoker must exist.")
+                    .policies
+                    .clone(),
             },
         };
 
@@ -1220,19 +1285,19 @@ impl Chain {
 
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let mut mutable_state = self.changeset_contract_state(address);
+        let mut mutable_state = self.changeset_contract_state(contract_address);
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
         // Get the initial result from invoking receive
-        let res = v1::invoke_receive(
+        let initial_result = v1::invoke_receive(
             artifact,
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
                 receive_name: receive_name.as_receive_name(),
                 parameter: parameter.0,
-                energy: Chain::to_interpreter_energy(remaining_energy),
+                energy: remaining_energy,
             },
             instance_state,
             v1::ReceiveParams {
@@ -1246,7 +1311,7 @@ impl Chain {
         // i.e. beyond interrupts.
         let mut data = ProcessReceiveData {
             invoker,
-            address,
+            address: contract_address,
             contract_name,
             amount,
             invoker_amount_reserved_for_nrg,
@@ -1257,15 +1322,85 @@ impl Chain {
             loader,
         };
 
-        // Process the receive invocation to the end.
-        let res = data.process(res);
+        // Process the receive invocation to the completion.
+        let result = data.process(initial_result);
+        let mut new_chain_events = data.chain_events;
+
+        let result = match result {
+            Ok(r) => match r {
+                v1::ReceiveResult::Success {
+                    logs,
+                    state_changed: _, /* This only reflects changes since last interrupt, we use
+                                       * the changeset later to get a more precise result. */
+                    return_value,
+                    remaining_energy,
+                } => {
+                    let remaining_energy = InterpreterEnergy::from(remaining_energy);
+                    UpdateAuxResponse {
+                        invoke_response: InvokeResponse::Success {
+                            new_balance: self
+                                .changeset_contract_balance_unchecked(contract_address),
+                            data:        Some(return_value),
+                        },
+                        logs: Some(logs),
+                        remaining_energy,
+                    }
+                }
+                v1::ReceiveResult::Interrupt { .. } => {
+                    panic!("Internal error: `data.process` returned an interrupt.")
+                }
+                v1::ReceiveResult::Reject {
+                    reason,
+                    return_value,
+                    remaining_energy,
+                } => {
+                    let remaining_energy = InterpreterEnergy::from(remaining_energy);
+                    UpdateAuxResponse {
+                        invoke_response: InvokeResponse::Failure {
+                            kind: InvokeFailure::ContractReject {
+                                code: reason,
+                                data: return_value,
+                            },
+                        },
+                        logs: None,
+                        remaining_energy,
+                    }
+                }
+                v1::ReceiveResult::Trap {
+                    error: _, // TODO: Should we return this to the user?
+                    remaining_energy,
+                } => {
+                    let remaining_energy = InterpreterEnergy::from(remaining_energy);
+                    UpdateAuxResponse {
+                        invoke_response: InvokeResponse::Failure {
+                            kind: InvokeFailure::RuntimeError,
+                        },
+                        logs: None,
+                        remaining_energy,
+                    }
+                }
+                v1::ReceiveResult::OutOfEnergy => {
+                    let remaining_energy = InterpreterEnergy::from(0);
+                    UpdateAuxResponse {
+                        invoke_response: InvokeResponse::Failure {
+                            kind: InvokeFailure::RuntimeError,
+                        },
+                        logs: None,
+                        remaining_energy,
+                    }
+                }
+            },
+            Err(internal_error) => {
+                panic!("Internal error: Got interpreter error {}", internal_error)
+            }
+        };
 
         // Append the new chain events if the invocation succeeded.
-        if matches!(res, Ok(v1::ReceiveResult::Success { .. })) {
-            chain_events.append(&mut data.chain_events);
+        if result.is_success() {
+            chain_events.append(&mut new_chain_events);
         }
 
-        res
+        result
     }
 
     /// Update a contract by calling one of its entrypoints.
@@ -1275,7 +1410,7 @@ impl Chain {
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        address: ContractAddress,
+        contract_address: ContractAddress,
         entrypoint: EntrypointName,
         parameter: ContractParameter,
         amount: Amount,
@@ -1283,7 +1418,7 @@ impl Chain {
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         println!(
             "Updating contract {}, with parameter: {:?}",
-            address, parameter.0
+            contract_address, parameter.0
         );
 
         // Ensure the sender exists.
@@ -1302,50 +1437,45 @@ impl Chain {
 
         // TODO: Should chain events be part of the changeset?
         let mut chain_events = Vec::new();
-        let receive_result = self.contract_update_aux(
+        let result = self.contract_update_aux(
             invoker,
             sender,
-            address,
+            contract_address,
             entrypoint.to_owned(),
             Parameter(&parameter.0),
             amount,
             invoker_amount_reserved_for_nrg,
-            energy_reserved,
+            Chain::to_interpreter_energy(energy_reserved),
             &mut chain_events,
         );
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
-        let energy_for_state_increase = match receive_result {
-            Ok(v1::ReceiveResult::Success {
-                remaining_energy, ..
-            }) => {
-                match self.changeset_persist_and_clear(Chain::from_interpreter_energy(
-                    InterpreterEnergy::from(remaining_energy),
-                )) {
-                    Ok(energy) => energy,
-                    Err(_) => {
-                        return Err(ContractUpdateError::ValidChainError(
-                            FailedContractInteraction::OutOfEnergy {
-                                energy_used:     energy_reserved,
-                                transaction_fee: self.calculate_energy_cost(energy_reserved),
-                            },
-                        ))
-                    }
+        let (energy_for_state_increase, state_changed) = if result.is_success() {
+            match self.changeset_persist_and_clear(
+                Chain::from_interpreter_energy(result.remaining_energy),
+                contract_address,
+            ) {
+                Ok(energy) => energy,
+                Err(_) => {
+                    return Err(ContractUpdateError::OutOfEnergy {
+                        energy_used:     energy_reserved,
+                        transaction_fee: self.calculate_energy_cost(energy_reserved),
+                    });
                 }
             }
-            _ => {
-                // An error occured, so we don't save the changes. Just clear.
-                self.changeset_clear();
-                Energy::from(0)
-            }
+        } else {
+            // An error occured, so we don't save the changes. Just clear.
+            self.changeset_clear();
+            (Energy::from(0), false)
         };
 
-        let (res, transaction_fee) = self.convert_receive_result(
-            receive_result,
+        let (res, transaction_fee) = self.convert_update_aux_response(
+            result,
             chain_events,
             energy_reserved,
             energy_for_state_increase,
+            state_changed,
         );
 
         // Charge the transaction fee irrespective of the result.
@@ -1363,7 +1493,7 @@ impl Chain {
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        address: ContractAddress,
+        contract_address: ContractAddress,
         entrypoint: EntrypointName,
         parameter: ContractParameter,
         amount: Amount,
@@ -1371,7 +1501,7 @@ impl Chain {
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
         println!(
             "Invoking contract {}, with parameter: {:?}",
-            address, parameter.0
+            contract_address, parameter.0
         );
 
         // Ensure the sender exists.
@@ -1387,49 +1517,46 @@ impl Chain {
         }
 
         let mut chain_events = Vec::new();
-        let receive_result = self.contract_update_aux(
+        let result = self.contract_update_aux(
             invoker,
             sender,
-            address,
+            contract_address,
             entrypoint.to_owned(),
             Parameter(&parameter.0),
             amount,
             invoker_amount_reserved_for_nrg,
-            energy_reserved,
+            Chain::to_interpreter_energy(energy_reserved),
             &mut chain_events,
         );
 
-        let energy_for_state_increase = match receive_result {
-            Ok(v1::ReceiveResult::Success {
-                remaining_energy, ..
-            }) => match self.changeset_collect_energy_for_state_and_clear(
-                Chain::from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
+        let (energy_for_state_increase, state_changed) = if result.is_success() {
+            match self.changeset_collect_energy_for_state_and_clear(
+                Chain::from_interpreter_energy(result.remaining_energy),
+                contract_address,
             ) {
                 Ok(energy) => energy,
                 Err(_) => {
-                    return Err(ContractUpdateError::ValidChainError(
-                        FailedContractInteraction::OutOfEnergy {
-                            energy_used:     energy_reserved,
-                            transaction_fee: self.calculate_energy_cost(energy_reserved),
-                        },
-                    ))
+                    return Err(ContractUpdateError::OutOfEnergy {
+                        energy_used:     energy_reserved,
+                        transaction_fee: self.calculate_energy_cost(energy_reserved),
+                    });
                 }
-            },
-            _ => {
-                // An error occured, so we just clear the changeset.
-                self.changeset_clear();
-                Energy::from(0)
             }
+        } else {
+            // An error occured, so we just clear the changeset.
+            self.changeset_clear();
+            (Energy::from(0), false)
         };
 
-        let (res, _) = self.convert_receive_result(
-            receive_result,
+        let (result, _) = self.convert_update_aux_response(
+            result,
             chain_events,
             energy_reserved,
             energy_for_state_increase,
+            state_changed,
         );
 
-        res
+        result
     }
 
     /// Create an account. Will override existing account if already present.
@@ -1565,138 +1692,55 @@ impl Chain {
     /// The `energy_for_state_increase` is only used if the result was a
     /// success.
     ///
-    /// *Precondition*:
-    /// - The `receive_result` should never be
-    ///   `Ok(v1::ReceiveResult::Interrupt(_))`.
+    /// The `state_changed` should refer to whether the state of the top-level
+    /// contract invoked has changed.
+    ///
+    /// *Preconditions*:
     /// - `energy_reserved - remaining_energy + energy_for_state_increase >= 0`
-    fn convert_receive_result(
+    fn convert_update_aux_response(
         &self,
-        receive_result: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
+        update_aux_response: UpdateAuxResponse,
         chain_events: Vec<ChainEvent>,
         energy_reserved: Energy,
         energy_for_state_increase: Energy,
+        state_changed: bool,
     ) -> (
         Result<SuccessfulContractUpdate, ContractUpdateError>,
         Amount,
     ) {
-        match receive_result {
-            Ok(r) => match r {
-                v1::ReceiveResult::Success {
-                    logs,
+        let remaining_energy = Chain::from_interpreter_energy(update_aux_response.remaining_energy);
+        match update_aux_response.invoke_response {
+            InvokeResponse::Success { new_balance, data } => {
+                let energy_used = energy_reserved - remaining_energy + energy_for_state_increase;
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                let result = Ok(SuccessfulContractUpdate {
+                    chain_events,
+                    energy_used,
+                    transaction_fee,
+                    return_value: ContractReturnValue(data.unwrap_or_default()),
                     state_changed,
-                    return_value,
-                    remaining_energy, /* TODO: Could we change this from `u64` to
-                                       * `InterpreterEnergy` in chain_integration? */
-                } => {
-                    let remaining_energy =
-                        Chain::from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
-                    println!(
-                        "reserved: {}, remaining: {}, state: {}",
-                        energy_reserved, remaining_energy, energy_for_state_increase
-                    );
-                    let energy_used =
-                        energy_reserved - remaining_energy + energy_for_state_increase;
-                    let transaction_fee = self.calculate_energy_cost(energy_used);
-                    (
-                        Ok(SuccessfulContractUpdate {
-                            chain_events,
-                            energy_used,
-                            transaction_fee,
-                            return_value: ContractReturnValue(return_value),
-                            state_changed,
-                            logs,
-                        }),
-                        transaction_fee,
-                    )
-                }
-                v1::ReceiveResult::Interrupt { .. } => {
-                    panic!("Precondition violation: Got `ReceiveResult::Interrupt`.")
-                }
-                v1::ReceiveResult::Reject {
-                    reason,
-                    return_value,
-                    remaining_energy,
-                } => {
-                    let remaining_energy =
-                        Chain::from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
-                    let energy_used = energy_reserved - remaining_energy;
-                    let transaction_fee = self.calculate_energy_cost(energy_used);
-                    (
-                        Err(ContractUpdateError::ValidChainError(
-                            FailedContractInteraction::Reject {
-                                reason,
-                                return_value,
-                                energy_used,
-                                transaction_fee,
-                            },
-                        )),
-                        transaction_fee,
-                    )
-                }
-                v1::ReceiveResult::Trap {
-                    error,
-                    remaining_energy,
-                } => {
-                    let remaining_energy = Chain::from_interpreter_energy(InterpreterEnergy {
-                        energy: remaining_energy,
-                    });
-                    let energy_used = energy_reserved - remaining_energy;
-                    let transaction_fee = self.calculate_energy_cost(energy_used);
-                    (
-                        Err(ContractUpdateError::ValidChainError(
-                            FailedContractInteraction::Trap {
-                                error,
-                                energy_used,
-                                transaction_fee,
-                            },
-                        )),
-                        transaction_fee,
-                    )
-                }
-                v1::ReceiveResult::OutOfEnergy => {
-                    let transaction_fee = self.calculate_energy_cost(energy_reserved);
-                    (
-                        Err(ContractUpdateError::ValidChainError(
-                            FailedContractInteraction::OutOfEnergy {
-                                energy_used: energy_reserved,
-                                transaction_fee,
-                            },
-                        )),
-                        transaction_fee,
-                    )
-                }
-            },
-            Err(e) => match e.downcast::<EntrypointDoesNotExist>() {
-                // The user tried to call `contract_update` or `contract_invoke` with an entrypoint
-                // which does not exist. This is caught up front and nothing is put
-                // on chain, so the cost is zero.
-                Ok(err) => (
-                    Err(ContractUpdateError::EntrypointDoesNotExist(err)),
-                    Amount::zero(),
-                ),
-                // An internal precondition has been violated, which caused an error in the
-                // interpreter.
-                Err(e) => panic!("Internal error: {}", e),
-            },
+                    new_balance,
+                    logs: update_aux_response.logs.unwrap_or_default(),
+                });
+                (result, transaction_fee)
+            }
+            InvokeResponse::Failure { kind } => {
+                let energy_used = energy_reserved - remaining_energy + energy_for_state_increase;
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                let result = Err(ContractUpdateError::ExecutionError {
+                    failure_kind: kind,
+                    energy_used,
+                    transaction_fee,
+                });
+                (result, transaction_fee)
+            }
         }
     }
 }
 
-/// Errors related to transfers from contract to an account.
+/// Errors related to transfers.
 #[derive(PartialEq, Eq, Debug, Error)]
-enum ContractTransferError {
-    /// The receiver does not exist.
-    #[error("The receiver does not exist.")]
-    ToMissing,
-    /// The sender does not have sufficient balance.
-    #[error("The sender does not have sufficient balance.")]
-    InsufficientBalance,
-}
-
-/// Errors related to "transfers" (fx when updating with an amount) from an
-/// account to a contract.
-#[derive(PartialEq, Eq, Debug, Error)]
-enum AccountTransferError {
+enum TransferError {
     /// The receiver does not exist.
     #[error("The receiver does not exist.")]
     ToMissing,
@@ -1817,11 +1861,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 },
                                 Err(err) => {
                                     let kind = match err {
-                                        ContractTransferError::ToMissing => {
-                                            v1::InvokeFailure::NonExistentAccount
+                                        TransferError::ToMissing => {
+                                            InvokeFailure::NonExistentAccount
                                         }
-                                        ContractTransferError::InsufficientBalance => {
-                                            v1::InvokeFailure::InsufficientAmount
+                                        TransferError::InsufficientBalance => {
+                                            InvokeFailure::InsufficientAmount
                                         }
                                     };
                                     InvokeResponse::Failure { kind }
@@ -1897,76 +1941,11 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 Parameter(&parameter),
                                 amount,
                                 self.invoker_amount_reserved_for_nrg,
-                                Chain::from_interpreter_energy(InterpreterEnergy {
-                                    energy: remaining_energy,
-                                }),
+                                InterpreterEnergy::from(remaining_energy),
                                 &mut self.chain_events,
                             );
 
-                            let (success, response, energy_after_invoke) = match res {
-                                Ok(r) => match r {
-                                    v1::ReceiveResult::Success {
-                                        return_value,
-                                        remaining_energy,
-                                        ..
-                                    } => {
-                                        println!(
-                                            "\t\tInvoke returned with value: {:?}",
-                                            return_value
-                                        );
-                                        (
-                                            true,
-                                            InvokeResponse::Success {
-                                                new_balance: self
-                                                    .chain
-                                                    .changeset_contract_balance_unchecked(address),
-                                                data:        Some(return_value),
-                                            },
-                                            remaining_energy,
-                                        )
-                                    }
-                                    v1::ReceiveResult::Interrupt { .. } => {
-                                        panic!("Internal error: Should never return on interrupts.")
-                                    }
-                                    v1::ReceiveResult::Reject {
-                                        reason,
-                                        return_value,
-                                        remaining_energy,
-                                    } => (
-                                        false,
-                                        InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::ContractReject {
-                                                code: reason,
-                                                data: return_value,
-                                            },
-                                        },
-                                        remaining_energy,
-                                    ),
-                                    v1::ReceiveResult::Trap {
-                                        remaining_energy, ..
-                                    } => (
-                                        false,
-                                        InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::RuntimeError,
-                                        },
-                                        remaining_energy,
-                                    ),
-                                    v1::ReceiveResult::OutOfEnergy => (
-                                        false,
-                                        InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::RuntimeError,
-                                        },
-                                        0,
-                                    ), // TODO: What is the correct error here?
-                                },
-                                Err(_e) => (
-                                    false,
-                                    InvokeResponse::Failure {
-                                        kind: v1::InvokeFailure::RuntimeError,
-                                    },
-                                    0,
-                                ), // TODO: Correct energy here?
-                            };
+                            let success = res.is_success();
 
                             // Remove the last state changes if the invocation failed.
                             let state_changed = if !success {
@@ -2012,8 +1991,8 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             let resume_res = v1::resume_receive(
                                 config,
-                                response,
-                                InterpreterEnergy::from(energy_after_invoke),
+                                res.invoke_response,
+                                res.remaining_energy,
                                 &mut self.state,
                                 state_changed,
                                 self.loader,
@@ -2027,8 +2006,6 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Add the interrupt event.
                             self.chain_events.push(interrupt_event);
 
-                            // TODO: Add module to changeset.
-
                             // Charge a base cost.
                             let mut energy_after_invoke = remaining_energy
                                 - Chain::to_interpreter_energy(
@@ -2038,7 +2015,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             let response = match self.chain.modules.get(&module_ref) {
                                 None => InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
+                                    kind: InvokeFailure::UpgradeInvalidModuleRef,
                                 },
                                 Some(module) => {
                                     // Charge for the module lookup.
@@ -2079,7 +2056,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                         }
                                     } else {
                                         InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::UpgradeInvalidContractName,
+                                            kind: InvokeFailure::UpgradeInvalidContractName,
                                         }
                                     }
                                 }
@@ -2132,7 +2109,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                     }
                                 }
                                 None => InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                    kind: InvokeFailure::NonExistentAccount,
                                 },
                             };
 
@@ -2158,7 +2135,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             let response = match self.chain.changeset_contract_balance(address) {
                                 None => InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::NonExistentContract,
+                                    kind: InvokeFailure::NonExistentContract,
                                 },
                                 Some(bal) => InvokeResponse::Success {
                                     // Balance of contract querying. Won't change. Notice the
@@ -2311,10 +2288,7 @@ pub enum ContractInitError {
     /// Initialization failed for a reason that also exists on the chain.
     #[error("failed due to a valid chain error: {:?}", 0)]
     ValidChainError(FailedContractInteraction),
-    /// An error thrown by the interpreter.
-    #[error("an error occured in the interpreter: {:?}", 0)]
-    InterpreterError(#[from] anyhow::Error),
-    /// Module has not been deployed in test environment.
+    /// Module has not been deployed in the test environment.
     #[error("module {:?} does not exist", 0.0)]
     ModuleDoesNotExist(#[from] ModuleMissing),
     /// Account has not been created in test environment.
@@ -2325,25 +2299,38 @@ pub enum ContractInitError {
     InsufficientFunds,
 }
 
-/// Errors that can occur during a contract update or invocation.
+/// Errors that can occur during a [`Chain::contract_update]` or
+/// [`Chain::contract_invoke`] call.
+///
+/// There are two categories of errors here:
+///  - `ExecutionError` and `OutOfEnergy` can occur if the preconditions for the
+///    function is valid, and a contract is executed.
+///  - The rest represent incorrect usage of the function, where some
+///    precondition wasn't met.
 #[derive(Debug, Error)]
 pub enum ContractUpdateError {
     /// Update failed for a reason that also exists on the chain.
-    #[error("failed due to a valid chain error: {:?}", 0)]
-    ValidChainError(FailedContractInteraction),
-    /// An error thrown by the wasm interpreter
-    #[error("an error occured in the interpreter: {:?}", 0)]
-    InterpreterError(#[from] anyhow::Error),
+    #[error("failed during execution")]
+    ExecutionError {
+        failure_kind:    InvokeFailure,
+        energy_used:     Energy,
+        transaction_fee: Amount,
+    },
+    #[error("ran out of energy")]
+    OutOfEnergy {
+        energy_used:     Energy,
+        transaction_fee: Amount,
+    },
     /// Module has not been deployed in test environment.
     #[error("module {:?} does not exist", 0.0)]
     ModuleDoesNotExist(#[from] ModuleMissing),
-    /// Contract instance has not been initialized in test environment.
+    /// Contract instance has not been initialized in the test environment.
     #[error("instance {} does not exist", 0.0)]
     InstanceDoesNotExist(#[from] ContractInstanceMissing),
     /// Entrypoint does not exist and neither does the fallback entrypoint.
     #[error("entrypoint does not exist")]
     EntrypointDoesNotExist(#[from] EntrypointDoesNotExist),
-    /// The invoker account has not been created in test environment.
+    /// The invoker account has not been created in the test environment.
     #[error("invoker account {} does not exist", 0.0)]
     InvokerDoesNotExist(#[from] AccountMissing),
     /// The sender does not exist in the test environment.
@@ -2354,7 +2341,8 @@ pub enum ContractUpdateError {
     InsufficientFunds,
 }
 
-/// Represents a failed interaction, i.e. update or invocation, of a contract.
+/// Represents a failed contract interaction, i.e. an initialization, update, or
+/// invocation.
 #[derive(Debug)]
 pub enum FailedContractInteraction {
     /// The contract rejected.
@@ -2370,8 +2358,6 @@ pub enum FailedContractInteraction {
     },
     /// The contract trapped.
     Trap {
-        /// The error message.
-        error:           anyhow::Error,
         /// The amount of energy used before rejecting.
         energy_used:     Energy,
         /// The transaction fee to be paid by the invoker for the interaction.
@@ -2491,6 +2477,8 @@ pub struct SuccessfulContractUpdate {
     pub return_value:    ContractReturnValue,
     /// Whether the state was changed.
     pub state_changed:   bool,
+    /// The new balance of the smart contract.
+    pub new_balance:     Amount,
     /// The logs produced since the last interrupt.
     pub logs:            v0::Logs,
 }
@@ -2926,12 +2914,12 @@ mod tests {
             );
 
             match res_update {
-                Err(ContractUpdateError::ValidChainError(FailedContractInteraction::Reject {
-                    reason,
+                Err(ContractUpdateError::ExecutionError {
+                    failure_kind: InvokeFailure::ContractReject { code, .. },
                     transaction_fee,
                     ..
-                })) => {
-                    assert_eq!(reason, -3); // Corresponds to contract error TransactionErrorAccountMissing
+                }) => {
+                    assert_eq!(code, -3); // The custom contract error code for missing account.
                     assert_eq!(
                         chain.persistence_account_balance(ACC_0),
                         Some(
@@ -4195,15 +4183,24 @@ mod tests {
             );
 
             // Check the return value manually returned by the contract.
-            assert!(matches!(res_update_upgrade,
-                         Err(ContractUpdateError::ValidChainError(FailedContractInteraction::Reject { reason, ..}))
-                         if reason == -1));
+            match res_update_upgrade {
+                Err(ContractUpdateError::ExecutionError { failure_kind, .. }) => match failure_kind
+                {
+                    InvokeFailure::ContractReject { code, .. } if code == -1 => (),
+                    _ => panic!("Expected ContractReject with code == -1"),
+                },
+                _ => panic!("Expected Err(ContractUpdateError::ExecutionError)"),
+            }
 
             // Assert that the new_feature entrypoint doesn't exist since the upgrade
             // failed.
             assert!(matches!(
-            res_update_new_feature,
-            Err(ContractUpdateError::EntrypointDoesNotExist(EntrypointDoesNotExist(entrypoint))) if entrypoint.to_string() == "new_feature"
+                res_update_new_feature,
+                Err(ContractUpdateError::ExecutionError {
+                    failure_kind:    InvokeFailure::NonExistentEntrypoint,
+                    energy_used:     _,
+                    transaction_fee: _,
+                })
             ));
         }
 
@@ -4304,18 +4301,28 @@ mod tests {
             assert!(matches!(res_update_old_feature_0.chain_events[..], [
                 ChainEvent::Updated { .. }
             ]));
-            assert!(
-                matches!(res_update_new_feature_0, ContractUpdateError::EntrypointDoesNotExist(EntrypointDoesNotExist(entrypoint)) if entrypoint.to_string() == "new_feature")
-            );
+            assert!(matches!(
+                res_update_new_feature_0,
+                ContractUpdateError::ExecutionError {
+                    failure_kind:    InvokeFailure::NonExistentEntrypoint,
+                    energy_used:     _,
+                    transaction_fee: _,
+                }
+            ));
             assert!(matches!(res_update_upgrade.chain_events[..], [
                 ChainEvent::Interrupted { .. },
                 ChainEvent::Upgraded { .. },
                 ChainEvent::Resumed { .. },
                 ChainEvent::Updated { .. },
             ]));
-            assert!(
-                matches!(res_update_old_feature_1, ContractUpdateError::EntrypointDoesNotExist(EntrypointDoesNotExist(entrypoint)) if entrypoint.to_string() == "old_feature")
-            );
+            assert!(matches!(
+                res_update_old_feature_1,
+                ContractUpdateError::ExecutionError {
+                    failure_kind:    InvokeFailure::NonExistentEntrypoint,
+                    energy_used:     _,
+                    transaction_fee: _,
+                }
+            ));
             assert!(matches!(res_update_new_feature_1.chain_events[..], [
                 ChainEvent::Updated { .. }
             ]));
