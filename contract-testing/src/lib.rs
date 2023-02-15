@@ -1007,7 +1007,7 @@ impl Chain {
         sender: AccountAddress,
         module_reference: ModuleReference,
         contract_name: ContractName,
-        parameter: ContractParameter,
+        parameter: OwnedParameter,
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractInit, ContractInitError> {
@@ -1390,7 +1390,7 @@ impl Chain {
         sender: Address,
         contract_address: ContractAddress,
         entrypoint: EntrypointName,
-        parameter: ContractParameter,
+        parameter: OwnedParameter,
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
@@ -1473,7 +1473,7 @@ impl Chain {
         sender: Address,
         contract_address: ContractAddress,
         entrypoint: EntrypointName,
-        parameter: ContractParameter,
+        parameter: OwnedParameter,
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
@@ -1695,7 +1695,7 @@ impl Chain {
                     chain_events,
                     energy_used,
                     transaction_fee,
-                    return_value: ContractReturnValue(data.unwrap_or_default()),
+                    return_value: data.unwrap_or_default(),
                     state_changed,
                     new_balance,
                     logs: update_aux_response.logs.unwrap_or_default(),
@@ -2452,7 +2452,7 @@ pub struct SuccessfulContractUpdate {
     /// Cost of transaction.
     pub transaction_fee: Amount,
     /// The returned value.
-    pub return_value:    ContractReturnValue,
+    pub return_value:    ReturnValue,
     /// Whether the state was changed.
     pub state_changed:   bool,
     /// The new balance of the smart contract.
@@ -2516,24 +2516,6 @@ pub struct SuccessfulContractInit {
     pub transaction_fee:  Amount,
 }
 
-/// A value returned by a contract.
-#[derive(Debug)]
-pub struct ContractReturnValue(Vec<u8>);
-
-/// The parameter to a contract.
-pub struct ContractParameter(pub Vec<u8>);
-
-impl ContractParameter {
-    /// Create an empty [`Self`].
-    pub fn empty() -> Self { Self(Vec::new()) }
-
-    /// Create a [`Self`] from a byte array.
-    pub fn from_bytes(bytes: Vec<u8>) -> Self { Self(bytes) }
-
-    /// Create a [`Self`] by serializing a `T`.
-    pub fn from_typed<T: Serial>(parameter: &T) -> Self { Self(to_bytes(parameter)) }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2592,7 +2574,7 @@ mod tests {
                 ACC_0,
                 res_deploy.module_reference,
                 ContractName::new_unchecked("init_weather"),
-                ContractParameter::from_bytes(vec![0u8]),
+                OwnedParameter::from_bytes(vec![0u8]),
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -2619,7 +2601,7 @@ mod tests {
                 ACC_0,
                 res_deploy.module_reference,
                 ContractName::new_unchecked("init_weather"),
-                ContractParameter::from_bytes(vec![99u8]), // Invalid param
+                OwnedParameter::from_bytes(vec![99u8]), // Invalid param
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -2654,7 +2636,7 @@ mod tests {
                 ACC_0,
                 res_deploy.module_reference,
                 ContractName::new_unchecked("init_weather"),
-                ContractParameter::from_bytes(vec![0u8]), // Starts as 0
+                OwnedParameter::from_bytes(vec![0u8]), // Starts as 0
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -2666,7 +2648,7 @@ mod tests {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("set"),
-                ContractParameter::from_bytes(vec![1u8]), // Updated to 1
+                OwnedParameter::from_bytes(vec![1u8]), // Updated to 1
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -2678,7 +2660,7 @@ mod tests {
                 Address::Contract(res_init.contract_address), // Invoke with a contract as sender.
                 res_init.contract_address,
                 EntrypointName::new_unchecked("get"),
-                ContractParameter::empty(),
+                OwnedParameter::empty(),
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -2697,7 +2679,7 @@ mod tests {
         assert_eq!(chain.contracts.len(), 1);
         assert!(res_update.state_changed);
         // Assert that the updated state is persisted.
-        assert_eq!(res_invoke_get.return_value.0, [1u8]);
+        assert_eq!(res_invoke_get.return_value, [1u8]);
     }
 
     /// Test that updates and invocations where the sender is missing fail.
@@ -2719,7 +2701,7 @@ mod tests {
                 ACC_0,
                 res_deploy.module_reference,
                 ContractName::new_unchecked("init_weather"),
-                ContractParameter::from_bytes(vec![0u8]), // Starts as 0
+                OwnedParameter::from_bytes(vec![0u8]), // Starts as 0
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -2730,7 +2712,7 @@ mod tests {
             missing_account,
             res_init.contract_address,
             EntrypointName::new_unchecked("get"),
-            ContractParameter::empty(),
+            OwnedParameter::empty(),
             Amount::zero(),
             Energy::from(10000),
         );
@@ -2740,7 +2722,7 @@ mod tests {
             missing_account,
             res_init.contract_address,
             EntrypointName::new_unchecked("get"),
-            ContractParameter::empty(),
+            OwnedParameter::empty(),
             Amount::zero(),
             Energy::from(10000),
         );
@@ -2750,7 +2732,7 @@ mod tests {
             missing_contract,
             res_init.contract_address,
             EntrypointName::new_unchecked("get"),
-            ContractParameter::empty(),
+            OwnedParameter::empty(),
             Amount::zero(),
             Energy::from(10000),
         );
@@ -2760,7 +2742,7 @@ mod tests {
             missing_contract,
             res_init.contract_address,
             EntrypointName::new_unchecked("get"),
-            ContractParameter::empty(),
+            OwnedParameter::empty(),
             Amount::zero(),
             Energy::from(10000),
         );
@@ -2802,7 +2784,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_integrate"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -2814,7 +2796,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("receive"),
-                    ContractParameter::from_typed(&ACC_1),
+                    OwnedParameter::new(&ACC_1),
                     transfer_amount,
                     Energy::from(10000),
                 )
@@ -2826,7 +2808,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("view"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -2854,9 +2836,9 @@ mod tests {
             }]);
             assert_eq!(chain.contracts.len(), 1);
             assert!(res_update.state_changed);
-            assert_eq!(res_update.return_value.0, [2, 0, 0, 0]);
+            assert_eq!(res_update.return_value, [2, 0, 0, 0]);
             // Assert that the updated state is persisted.
-            assert_eq!(res_view.return_value.0, [2, 0, 0, 0]);
+            assert_eq!(res_view.return_value, [2, 0, 0, 0]);
         }
 
         #[test]
@@ -2875,7 +2857,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_integrate"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -2886,7 +2868,7 @@ mod tests {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
-                ContractParameter::from_typed(&ACC_1), // We haven't created ACC_1.
+                OwnedParameter::new(&ACC_1), // We haven't created ACC_1.
                 transfer_amount,
                 Energy::from(100000),
             );
@@ -2927,7 +2909,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_integrate"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -2939,7 +2921,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("recurse"),
-                    ContractParameter::from_typed(&10u32),
+                    OwnedParameter::new(&10u32),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -2951,7 +2933,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("view"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -2970,9 +2952,9 @@ mod tests {
             assert_eq!(chain.contracts.len(), 1);
             assert!(res_update.state_changed);
             let expected_res = 10 + 7 + 11 + 3 + 7 + 11;
-            assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
+            assert_eq!(res_update.return_value, u32::to_le_bytes(expected_res));
             // Assert that the updated state is persisted.
-            assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
+            assert_eq!(res_view.return_value, u32::to_le_bytes(expected_res));
         }
 
         #[test]
@@ -2992,7 +2974,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_integrate"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3004,7 +2986,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("inc-fail-on-zero"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000000),
                 )
@@ -3016,7 +2998,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("view"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3033,9 +3015,9 @@ mod tests {
             );
             assert!(res_update.state_changed);
             let expected_res = 2u32.pow(input_param) - 1;
-            assert_eq!(res_update.return_value.0, u32::to_le_bytes(expected_res));
+            assert_eq!(res_update.return_value, u32::to_le_bytes(expected_res));
             // Assert that the updated state is persisted.
-            assert_eq!(res_view.return_value.0, u32::to_le_bytes(expected_res));
+            assert_eq!(res_view.return_value, u32::to_le_bytes(expected_res));
         }
 
         #[test]
@@ -3055,7 +3037,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_integrate"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3066,7 +3048,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_integrate_other"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3080,7 +3062,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init_0.contract_address,
                     EntrypointName::new_unchecked("mutate_and_forward"),
-                    ContractParameter::from_typed(&param),
+                    OwnedParameter::new(&param),
                     transfer_amount,
                     Energy::from(100000),
                 )
@@ -3105,7 +3087,7 @@ mod tests {
                 ACC_0,
                 res_deploy.module_reference,
                 ContractName::new_unchecked("init_fib"),
-                ContractParameter::empty(),
+                OwnedParameter::empty(),
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -3117,7 +3099,7 @@ mod tests {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
-                ContractParameter::from_typed(&6u64),
+                OwnedParameter::new(&6u64),
                 Amount::zero(),
                 Energy::from(4000000),
             )
@@ -3129,7 +3111,7 @@ mod tests {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("view"),
-                ContractParameter::empty(),
+                OwnedParameter::empty(),
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -3148,9 +3130,9 @@ mod tests {
         assert_eq!(chain.contracts.len(), 1);
         assert!(res_update.state_changed);
         let expected_res = u64::to_le_bytes(13);
-        assert_eq!(res_update.return_value.0, expected_res);
+        assert_eq!(res_update.return_value, expected_res);
         // Assert that the updated state is persisted.
-        assert_eq!(res_view.return_value.0, expected_res);
+        assert_eq!(res_view.return_value, expected_res);
     }
 
     #[test]
@@ -3189,7 +3171,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3207,7 +3189,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3246,7 +3228,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3267,7 +3249,7 @@ mod tests {
                     Address::Account(ACC_1),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     update_amount,
                     energy_limit,
                 )
@@ -3311,7 +3293,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     amount_to_send, // Make sure the contract has CCD to transfer.
                     Energy::from(10000),
                 )
@@ -3331,7 +3313,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3378,7 +3360,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3396,7 +3378,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3439,7 +3421,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3454,7 +3436,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3500,7 +3482,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3511,7 +3493,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     init_amount, // Set up another contract with `init_amount` balance
                     Energy::from(10000),
                 )
@@ -3526,7 +3508,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3560,7 +3542,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     init_amount,
                     Energy::from(10000),
                 )
@@ -3575,7 +3557,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     update_amount,
                     Energy::from(100000),
                 )
@@ -3612,7 +3594,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     init_amount,
                     Energy::from(10000),
                 )
@@ -3633,7 +3615,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     update_amount,
                     Energy::from(100000),
                 )
@@ -3669,7 +3651,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3684,7 +3666,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3719,7 +3701,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3734,7 +3716,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("query"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3773,7 +3755,7 @@ mod tests {
                     ACC_0,
                     res_deploy_0.module_reference,
                     ContractName::new_unchecked("init_a"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3787,7 +3769,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("bump"),
-                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    OwnedParameter::new(&res_deploy_1.module_reference),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3800,7 +3782,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("newfun"),
-                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    OwnedParameter::new(&res_deploy_1.module_reference),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3844,7 +3826,7 @@ mod tests {
                     ACC_0,
                     res_deploy_0.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3856,7 +3838,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
-                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    OwnedParameter::new(&res_deploy_1.module_reference),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3901,7 +3883,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3913,7 +3895,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -3955,7 +3937,7 @@ mod tests {
                     ACC_0,
                     res_deploy_0.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -3967,7 +3949,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
-                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    OwnedParameter::new(&res_deploy_1.module_reference),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -4006,7 +3988,7 @@ mod tests {
                     ACC_0,
                     res_deploy_0.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4020,7 +4002,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(100000),
                 )
@@ -4076,7 +4058,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4091,7 +4073,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
-                    ContractParameter::from_typed(&input_param),
+                    OwnedParameter::new(&input_param),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -4134,7 +4116,7 @@ mod tests {
                     ACC_0,
                     res_deploy_0.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4145,7 +4127,7 @@ mod tests {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("upgrade"),
-                ContractParameter::from_typed(&res_deploy_1.module_reference),
+                OwnedParameter::new(&res_deploy_1.module_reference),
                 Amount::zero(),
                 Energy::from(1000000),
             );
@@ -4155,7 +4137,7 @@ mod tests {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("new_feature"),
-                ContractParameter::empty(),
+                OwnedParameter::empty(),
                 Amount::zero(),
                 Energy::from(1000000),
             );
@@ -4210,7 +4192,7 @@ mod tests {
                     ACC_0,
                     res_deploy_0.module_reference,
                     ContractName::new_unchecked("init_contract"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4222,7 +4204,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("old_feature"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -4234,7 +4216,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("new_feature"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -4246,7 +4228,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("upgrade"),
-                    ContractParameter::from_typed(&res_deploy_1.module_reference),
+                    OwnedParameter::new(&res_deploy_1.module_reference),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -4258,7 +4240,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("old_feature"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -4270,7 +4252,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init.contract_address,
                     EntrypointName::new_unchecked("new_feature"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(1000000),
                 )
@@ -4336,7 +4318,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_a"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4347,7 +4329,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_b"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4375,7 +4357,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
-                    ContractParameter::from_typed(&parameter),
+                    OwnedParameter::new(&parameter),
                     // We supply one microCCD as we expect a trap
                     // (see contract for details).
                     Amount::from_micro_ccd(1),
@@ -4412,7 +4394,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_a"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4423,7 +4405,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_b"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4451,7 +4433,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
-                    ContractParameter::from_typed(&parameter),
+                    OwnedParameter::new(&parameter),
                     // We supply zero microCCD as we're instructing the contract to not expect
                     // state modifications. Also, the contract does not expect
                     // errors, i.e., a trap signal from underlying invocations.
@@ -4488,7 +4470,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_a"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4499,7 +4481,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_b"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4511,7 +4493,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
-                    ContractParameter::from_typed(&ACC_1),
+                    OwnedParameter::new(&ACC_1),
                     // We supply three micro CCDs as we're instructing the contract to carry out a
                     // transfer instead of a call. See the contract for
                     // details.
@@ -4546,7 +4528,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_a"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4557,7 +4539,7 @@ mod tests {
                     ACC_0,
                     res_deploy.module_reference,
                     ContractName::new_unchecked("init_b"),
-                    ContractParameter::empty(),
+                    OwnedParameter::empty(),
                     Amount::zero(),
                     Energy::from(10000),
                 )
@@ -4585,7 +4567,7 @@ mod tests {
                     Address::Account(ACC_0),
                     res_init_a.contract_address,
                     EntrypointName::new_unchecked("a_modify_proxy"),
-                    ContractParameter::from_typed(&parameter),
+                    OwnedParameter::new(&parameter),
                     // We supply four CCDs as we're instructing the contract to expect state
                     // modifications being made from the 'inner' contract A
                     // call to be in effect when returned to the caller (a.a_modify_proxy).
