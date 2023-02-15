@@ -306,7 +306,7 @@ impl Chain {
     }
 
     /// Make a transfer from a contract to an account in the changeset.
-    /// Returns the new balances of both.
+    /// Returns the new balance of `from`.
     ///
     /// Precondition:
     /// - Assumes that `from` contract exists.
@@ -315,27 +315,23 @@ impl Chain {
         amount: Amount,
         from: ContractAddress,
         to: AccountAddress,
-    ) -> Result<NewBalances, TransferError> {
+    ) -> Result<Amount, TransferError> {
         // Ensure the `to` account exists.
         if !self.persistence_account_exists(to) {
             return Err(TransferError::ToMissing);
         }
 
         // Make the transfer.
-        let new_balance_from =
+        let new_balance =
             self.changeset_change_contract_balance(from, AmountDelta::Negative(amount))?;
-        let new_balance_to = self
-            .changeset_change_account_balance(to, AmountDelta::Positive(amount))
+        self.changeset_change_account_balance(to, AmountDelta::Positive(amount))
             .expect("Cannot fail when adding");
 
-        Ok(NewBalances {
-            new_balance_from,
-            new_balance_to,
-        })
+        Ok(new_balance)
     }
 
     /// Make a transfer between contracts in the changeset.
-    /// Returns the new balances of both.
+    /// Returns the new balance of `from`.
     ///
     /// Precondition:
     /// - Assumes that `from` contract exists.
@@ -344,23 +340,19 @@ impl Chain {
         amount: Amount,
         from: ContractAddress,
         to: ContractAddress,
-    ) -> Result<NewBalances, TransferError> {
+    ) -> Result<Amount, TransferError> {
         // Ensure the `to` contract exists.
         if !self.persistence_contract_exists(to) {
             return Err(TransferError::ToMissing);
         }
 
         // Make the transfer.
-        let new_balance_from =
+        let new_balance =
             self.changeset_change_contract_balance(from, AmountDelta::Negative(amount))?;
-        let new_balance_to = self
-            .changeset_change_contract_balance(to, AmountDelta::Positive(amount))
+        self.changeset_change_contract_balance(to, AmountDelta::Positive(amount))
             .expect("Cannot fail when adding");
 
-        Ok(NewBalances {
-            new_balance_from,
-            new_balance_to,
-        })
+        Ok(new_balance)
     }
 
     /// Make a transfer from an account to a contract in the changeset.
@@ -373,23 +365,18 @@ impl Chain {
         amount: Amount,
         from: AccountAddress,
         to: ContractAddress,
-    ) -> Result<NewBalances, TransferError> {
+    ) -> Result<Amount, TransferError> {
         // Ensure the `to` account exists.
         if !self.persistence_contract_exists(to) {
             return Err(TransferError::ToMissing);
         }
 
         // Make the transfer.
-        let new_balance_from =
+        let new_balance =
             self.changeset_change_account_balance(from, AmountDelta::Negative(amount))?;
-        let new_balance_to = self
-            .changeset_change_contract_balance(to, AmountDelta::Positive(amount))
+        self.changeset_change_contract_balance(to, AmountDelta::Positive(amount))
             .expect("Cannot fail when adding");
-
-        Ok(NewBalances {
-            new_balance_from,
-            new_balance_to,
-        })
+        Ok(new_balance)
     }
 
     // TODO: Should we handle overflows explicitly?
@@ -821,15 +808,6 @@ impl Chain {
     fn changeset_rollback(&mut self) { self.changeset.rollback(); }
 }
 
-/// The resulting new balances after making a transfer between an accounts or
-/// contracts.
-struct NewBalances {
-    /// The new balance of the sender.
-    new_balance_from: Amount,
-    /// The new balance of the receiver.
-    new_balance_to:   Amount,
-}
-
 /// A transfer of [`Amount`]s failed because the sender had insufficient
 /// balance.
 #[derive(Debug)]
@@ -1196,7 +1174,7 @@ impl Chain {
                 ),
             };
             match transfer_result {
-                Ok(new_balances) => new_balances.new_balance_from,
+                Ok(new_balance_from) => new_balance_from,
                 Err(transfer_error) => {
                     let kind = match transfer_error {
                         TransferError::InsufficientBalance => InvokeFailure::InsufficientAmount,
@@ -1855,9 +1833,9 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                                 self.address,
                                 to,
                             ) {
-                                Ok(new_balances) => InvokeResponse::Success {
-                                    new_balance: new_balances.new_balance_from,
-                                    data:        None,
+                                Ok(new_balance) => InvokeResponse::Success {
+                                    new_balance,
+                                    data: None,
                                 },
                                 Err(err) => {
                                     let kind = match err {
