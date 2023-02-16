@@ -23,6 +23,7 @@ use wasm_chain_integration::{
     ExecResult, InterpreterEnergy,
 };
 use wasm_transform::artifact;
+mod constants;
 
 /// A V1 artifact, with concrete types for the generic parameters.
 type ContractModule = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>;
@@ -30,21 +31,6 @@ type ContractModule = artifact::Artifact<v1::ProcessedImports, artifact::Compile
 /// Whether the current [`Changes`] should be printed before and after an
 /// internal contract invoke. TODO: Remove before publishing.
 const VERBOSE_DEBUG: bool = false;
-
-// Energy constants from Cost.hs in concordium-base.
-
-/// Cost of querying the account balance from a within smart contract instance.
-const CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST: Energy = Energy { energy: 200 };
-/// Cost of querying the contract balance from a within smart contract instance.
-const CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST: Energy = Energy { energy: 200 };
-/// Cost of querying the current exchange rates from a within smart contract
-/// instance.
-const CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST: Energy = Energy { energy: 100 };
-/// The base cost of initializing a contract instance to cover administrative
-/// costs. Even if no code is run and no instance created.
-const INITIALIZE_CONTRACT_INSTANCE_BASE_COST: Energy = Energy { energy: 300 };
-/// Cost of creating an empty smart contract instance.
-const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: Energy = Energy { energy: 200 };
 
 /// Represents the block chain and supports a number of operations, including
 /// creating accounts, deploying modules, initializing contract, updating
@@ -1987,7 +1973,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
                             // Charge a base cost.
                             let mut energy_after_invoke = remaining_energy
                                 - Chain::to_interpreter_energy(
-                                    INITIALIZE_CONTRACT_INSTANCE_BASE_COST,
+                                    constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST,
                                 )
                                 .energy;
 
@@ -2014,7 +2000,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                                         // Charge for the initialization cost.
                                         energy_after_invoke -= Chain::to_interpreter_energy(
-                                            INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
+                                            constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
                                         )
                                         .energy;
 
@@ -2093,7 +2079,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             let energy_after_invoke = remaining_energy
                                 - Chain::to_interpreter_energy(
-                                    CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
+                                    constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
                                 )
                                 .energy;
 
@@ -2127,7 +2113,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             let energy_after_invoke = remaining_energy
                                 - Chain::to_interpreter_energy(
-                                    CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
+                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
                                 )
                                 .energy;
 
@@ -2157,7 +2143,7 @@ impl<'a, 'b> ProcessReceiveData<'a, 'b> {
 
                             let energy_after_invoke = remaining_energy
                                 - Chain::to_interpreter_energy(
-                                    CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
+                                    constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
                                 )
                                 .energy;
 
