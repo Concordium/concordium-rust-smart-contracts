@@ -517,16 +517,6 @@ impl Chain {
         Ok(Arc::clone(module))
     }
 
-    /// Returns an immutable reference to a [`Contract`] from persistence.
-    fn persistence_get_contract(
-        &self,
-        address: ContractAddress,
-    ) -> Result<&Contract, ContractInstanceMissing> {
-        self.contracts
-            .get(&address)
-            .ok_or(ContractInstanceMissing(address))
-    }
-
     /// Returns an immutable reference to [`AccountInfo`] from persistence.
     fn persistence_get_account(
         &self,
@@ -618,7 +608,7 @@ impl Chain {
 
     /// Helper function for converting [`Energy`] to [`Amount`] using the two
     /// [`ExchangeRate`]s `euro_per_energy` and `micro_ccd_per_euro`.
-    fn calculate_energy_cost(&self, energy: Energy) -> Amount {
+    pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
         energy_to_amount(energy, self.euro_per_energy, self.micro_ccd_per_euro)
     }
 }
@@ -758,11 +748,32 @@ pub(crate) fn energy_to_amount(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ACC_0: AccountAddress = AccountAddress([0; 32]);
+    const ACC_1: AccountAddress = AccountAddress([1; 32]);
+
     #[test]
     fn calculate_cost_will_not_overflow() {
         let micro_ccd_per_euro = ExchangeRate::new_unchecked(u64::MAX, u64::MAX - 1);
         let euro_per_energy = ExchangeRate::new_unchecked(u64::MAX - 2, u64::MAX - 3);
         let energy = Energy::from(u64::MAX - 4);
         energy_to_amount(energy, euro_per_energy, micro_ccd_per_euro);
+    }
+
+    #[test]
+    fn creating_accounts_work() {
+        let mut chain = Chain::new();
+        chain.create_account(ACC_0, AccountInfo::new(Amount::from_ccd(1)));
+        chain.create_account(ACC_1, AccountInfo::new(Amount::from_ccd(2)));
+
+        assert_eq!(chain.accounts.len(), 2);
+        assert_eq!(
+            chain.persistence_account_balance(ACC_0),
+            Some(Amount::from_ccd(1))
+        );
+        assert_eq!(
+            chain.persistence_account_balance(ACC_1),
+            Some(Amount::from_ccd(2))
+        );
     }
 }

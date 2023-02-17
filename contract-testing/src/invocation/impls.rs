@@ -1380,3 +1380,34 @@ impl From<UnderflowError> for InsufficientBalanceError {
 impl From<InsufficientBalanceError> for TransferError {
     fn from(_: InsufficientBalanceError) -> Self { Self::InsufficientBalance }
 }
+
+#[cfg(test)]
+mod tests {
+    mod amount_delta {
+        use crate::{invocation::types::AmountDelta, Amount};
+        #[test]
+        fn test() {
+            let mut x = AmountDelta::new();
+            assert_eq!(x, AmountDelta::Positive(Amount::zero()));
+
+            let one = Amount::from_ccd(1);
+            let two = Amount::from_ccd(2);
+            let three = Amount::from_ccd(3);
+            let five = Amount::from_ccd(5);
+
+            x = x.subtract_amount(one); // -1 CCD
+            x = x.subtract_amount(one); // -2 CCD
+            assert_eq!(x, AmountDelta::Negative(two));
+            x = x.add_amount(five); // +3 CCD
+            assert_eq!(x, AmountDelta::Positive(three));
+            x = x.subtract_amount(five); // -2 CCD
+            assert_eq!(x, AmountDelta::Negative(two));
+            x = x.add_amount(two); // 0
+
+            x = x.add_amount(Amount::from_micro_ccd(1)); // 1 mCCD
+            assert_eq!(x, AmountDelta::Positive(Amount::from_micro_ccd(1)));
+            x = x.subtract_amount(Amount::from_micro_ccd(2)); // -1 mCCD
+            assert_eq!(x, AmountDelta::Negative(Amount::from_micro_ccd(1)));
+        }
+    }
+}
