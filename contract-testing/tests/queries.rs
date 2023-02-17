@@ -20,8 +20,8 @@ mod query_account_balance {
     fn test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-        chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(
@@ -60,7 +60,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.persistence_account_balance(ACC_0),
+            chain.account_balance(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -80,8 +80,8 @@ mod query_account_balance {
     fn invoker_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-        chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(ACC_0, format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER)) // TODO: Add wasm files to the repo for tests.
@@ -120,11 +120,11 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.persistence_account_balance(ACC_0),
+            chain.account_balance(ACC_0),
             Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
         );
         assert_eq!(
-            chain.persistence_account_balance(ACC_1),
+            chain.account_balance(ACC_1),
             // Differs from `expected_balance` as it only includes the actual amount charged
             // for the NRG use. Not the reserved amount.
             Some(initial_balance - res_update.transaction_fee - update_amount)
@@ -140,8 +140,8 @@ mod query_account_balance {
     fn transfer_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-        chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(
@@ -184,7 +184,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.persistence_account_balance(ACC_0),
+            chain.account_balance(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -194,7 +194,7 @@ mod query_account_balance {
             )
         );
         assert_eq!(
-            chain.persistence_account_balance(ACC_1),
+            chain.account_balance(ACC_1),
             Some(initial_balance + amount_to_send)
         );
         assert!(matches!(res_update.chain_events[..], [
@@ -209,8 +209,8 @@ mod query_account_balance {
     fn balance_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
-        chain.create_account(ACC_1, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(
@@ -249,7 +249,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.persistence_account_balance(ACC_0),
+            chain.account_balance(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -268,7 +268,7 @@ mod query_account_balance {
     fn missing_account_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(
@@ -307,7 +307,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.persistence_account_balance(ACC_0),
+            chain.account_balance(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -330,7 +330,7 @@ mod query_contract_balance {
     fn test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
 
         let init_amount = Amount::from_ccd(123);
 
@@ -389,7 +389,7 @@ mod query_contract_balance {
     fn query_self_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
 
         let init_amount = Amount::from_ccd(123);
         let update_amount = Amount::from_ccd(456);
@@ -437,7 +437,7 @@ mod query_contract_balance {
     fn query_self_after_transfer_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
 
         let init_amount = Amount::from_ccd(123);
         let update_amount = Amount::from_ccd(456);
@@ -498,7 +498,7 @@ mod query_contract_balance {
     fn missing_contract_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(
@@ -551,7 +551,7 @@ mod query_exchange_rates {
     fn test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, AccountInfo::new(initial_balance));
+        chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
             .module_deploy_wasm_v1(

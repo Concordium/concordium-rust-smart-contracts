@@ -15,7 +15,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use wasm_chain_integration::{v0, v1, InterpreterEnergy};
 
 use crate::{
-    invocation::{ContractInvocation, UpdateAuxResponse},
+    invocation::{EntrypointInvocationHandler, InvokeEntrypointResult},
     types::*,
 };
 
@@ -91,7 +91,7 @@ impl Chain {
                 + 8
                 + wasm_module.source.size()
                 + transactions::construct::TRANSACTION_HEADER_SIZE;
-            let number_of_sigs = self.persistence_get_account(sender)?.signature_count;
+            let number_of_sigs = self.get_account(sender)?.signature_count;
             let base_cost = cost::base_cost(payload_size, number_of_sigs);
             let deploy_module_cost = cost::deploy_module(wasm_module.source.size());
             base_cost + deploy_module_cost
@@ -104,7 +104,7 @@ impl Chain {
         );
 
         // Try to subtract cost for account
-        let account = self.persistence_get_account_mut(sender)?;
+        let account = self.get_account_mut(sender)?;
         if account.balance < transaction_fee {
             return Err(DeployModuleError::InsufficientFunds);
         };
@@ -196,11 +196,11 @@ impl Chain {
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractInit, ContractInitError> {
         // Lookup artifact
-        let artifact = self.persistence_contract_module(module_reference)?;
+        let artifact = self.contract_module(module_reference)?;
         let mut transaction_fee = self.calculate_energy_cost(lookup_module_cost(&artifact));
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
-        let account_info = self.persistence_get_account(sender)?;
+        let account_info = self.get_account(sender)?;
         if account_info.balance < self.calculate_energy_cost(energy_reserved) + amount {
             return Err(ContractInitError::InsufficientFunds);
         }
@@ -227,7 +227,6 @@ impl Chain {
             loader,
         );
         // Handle the result and update the transaction fee.
-        // TODO: Extract to helper function.
         let res = match res {
             Ok(v1::InitResult::Success {
                 logs,
@@ -254,7 +253,7 @@ impl Chain {
                 // Save the contract instance
                 self.contracts.insert(contract_address, contract_instance);
                 // Subtract the from the invoker.
-                self.persistence_get_account_mut(sender)?.balance -= amount;
+                self.get_account_mut(sender)?.balance -= amount;
 
                 Ok(SuccessfulContractInit {
                     contract_address,
@@ -307,7 +306,7 @@ impl Chain {
         };
         // Charge the account.
         // We have to get the account info again because of the borrow checker.
-        self.persistence_get_account_mut(sender)?.balance -= transaction_fee;
+        self.get_account_mut(sender)?.balance -= transaction_fee;
         res
     }
 
@@ -330,31 +329,32 @@ impl Chain {
         );
 
         // Ensure the sender exists.
-        if !self.persistence_address_exists(sender) {
+        if !self.address_exists(sender) {
             return Err(ContractUpdateError::SenderDoesNotExist(sender));
         }
 
         // Ensure account exists and can pay for the reserved energy and amount
         // TODO: Could we just remove this amount in the changeset and then put back the
         // to_ccd(remaining_energy) afterwards?
-        let account_info = self.persistence_get_account(invoker)?;
+        let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
         if account_info.balance < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
         // TODO: Should chain events be part of the changeset?
-        let (changeset, result, chain_events) = ContractInvocation::execute(
-            &self,
-            invoker,
-            sender,
-            contract_address,
-            entrypoint.to_owned(),
-            Parameter(&parameter.0),
-            amount,
-            invoker_amount_reserved_for_nrg,
-            energy_reserved,
-        );
+        let (result, changeset, chain_events) =
+            EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
+                &self,
+                invoker,
+                sender,
+                contract_address,
+                entrypoint.to_owned(),
+                Parameter(&parameter.0),
+                amount,
+                invoker_amount_reserved_for_nrg,
+                energy_reserved,
+            );
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
@@ -378,7 +378,7 @@ impl Chain {
             (Energy::from(0), false)
         };
 
-        let (res, transaction_fee) = self.convert_update_aux_response(
+        let (res, transaction_fee) = self.convert_invoke_entrypoint_result(
             result,
             chain_events,
             energy_reserved,
@@ -389,7 +389,7 @@ impl Chain {
         // Charge the transaction fee irrespective of the result.
         // TODO: If we charge up front, then we should return to_ccd(remaining_energy)
         // here instead.
-        self.persistence_get_account_mut(invoker)?.balance -= transaction_fee;
+        self.get_account_mut(invoker)?.balance -= transaction_fee;
         res
     }
 
@@ -413,28 +413,29 @@ impl Chain {
         );
 
         // Ensure the sender exists.
-        if !self.persistence_address_exists(sender) {
+        if !self.address_exists(sender) {
             return Err(ContractUpdateError::SenderDoesNotExist(sender));
         }
 
         // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.persistence_get_account(invoker)?;
+        let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
         if account_info.balance < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
-        let (changeset, result, chain_events) = ContractInvocation::execute(
-            &self,
-            invoker,
-            sender,
-            contract_address,
-            entrypoint.to_owned(),
-            Parameter(&parameter.0),
-            amount,
-            invoker_amount_reserved_for_nrg,
-            energy_reserved,
-        );
+        let (result, changeset, chain_events) =
+            EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
+                &self,
+                invoker,
+                sender,
+                contract_address,
+                entrypoint.to_owned(),
+                Parameter(&parameter.0),
+                amount,
+                invoker_amount_reserved_for_nrg,
+                energy_reserved,
+            );
 
         let (energy_for_state_increase, state_changed) = if result.is_success() {
             match changeset.collect_energy_for_state(
@@ -454,7 +455,7 @@ impl Chain {
             (Energy::from(0), false)
         };
 
-        let (result, _) = self.convert_update_aux_response(
+        let (result, _) = self.convert_invoke_entrypoint_result(
             result,
             chain_events,
             energy_reserved,
@@ -466,7 +467,7 @@ impl Chain {
     }
 
     /// Create an account. Will override existing account if already present.
-    pub fn create_account(&mut self, account: AccountAddress, account_info: AccountInfo) {
+    pub fn create_account(&mut self, account: AccountAddress, account_info: Account) {
         self.accounts.insert(account, account_info);
     }
 
@@ -494,19 +495,17 @@ impl Chain {
     }
 
     /// Returns the balance of an account if it exists.
-    /// This will always be the persisted account balance.
-    pub fn persistence_account_balance(&self, address: AccountAddress) -> Option<Amount> {
+    pub fn account_balance(&self, address: AccountAddress) -> Option<Amount> {
         self.accounts.get(&address).map(|ai| ai.balance)
     }
 
     /// Returns the balance of an contract if it exists.
-    /// This will always be the persisted contract balance.
-    pub fn persistence_contract_balance(&self, address: ContractAddress) -> Option<Amount> {
+    pub fn contract_balance(&self, address: ContractAddress) -> Option<Amount> {
         self.contracts.get(&address).map(|ci| ci.self_balance)
     }
 
-    /// Returns an Arc clone of the [`ContractModule`] from persistence.
-    fn persistence_contract_module(
+    /// Returns an [`Arc`] clone of the [`ContractModule`].
+    fn contract_module(
         &self,
         module_ref: ModuleReference,
     ) -> Result<Arc<ContractModule>, ModuleMissing> {
@@ -517,46 +516,39 @@ impl Chain {
         Ok(Arc::clone(module))
     }
 
-    /// Returns an immutable reference to [`AccountInfo`] from persistence.
-    fn persistence_get_account(
-        &self,
-        address: AccountAddress,
-    ) -> Result<&AccountInfo, AccountMissing> {
+    /// Returns an immutable reference to an [`Account`].
+    pub fn get_account(&self, address: AccountAddress) -> Result<&Account, AccountMissing> {
         self.accounts.get(&address).ok_or(AccountMissing(address))
     }
 
-    /// Returns a mutable reference to [`AccountInfo`] from persistence.
-    fn persistence_get_account_mut(
-        &mut self,
-        address: AccountAddress,
-    ) -> Result<&mut AccountInfo, AccountMissing> {
+    /// Returns a mutable reference to [`Account`].
+    fn get_account_mut(&mut self, address: AccountAddress) -> Result<&mut Account, AccountMissing> {
         self.accounts
             .get_mut(&address)
             .ok_or(AccountMissing(address))
     }
 
-    /// Check whether an account exists.
-    fn persistence_account_exists(&self, address: AccountAddress) -> bool {
+    /// Check whether an [`Account`] exists.
+    pub fn account_exists(&self, address: AccountAddress) -> bool {
         self.accounts.contains_key(&address)
     }
 
-    /// Check whether a contract exists.
-    fn persistence_contract_exists(&self, address: ContractAddress) -> bool {
+    /// Check whether a [`Contract`] exists.
+    pub fn contract_exists(&self, address: ContractAddress) -> bool {
         self.contracts.contains_key(&address)
     }
 
-    /// Check whether the address exists in persistence. I.e. if it is an
+    /// Check whether the [`Address`] exists. I.e. if it is an
     /// account, whether the account exists, and if it is a contract, whether
     /// the contract exists.
-    fn persistence_address_exists(&self, address: Address) -> bool {
+    fn address_exists(&self, address: Address) -> bool {
         match address {
-            Address::Account(acc) => self.persistence_account_exists(acc),
-            Address::Contract(contr) => self.persistence_contract_exists(contr),
+            Address::Account(acc) => self.account_exists(acc),
+            Address::Contract(contr) => self.contract_exists(contr),
         }
     }
 
-    /// Convert the wasm_chain_integration result to the one used here and
-    /// calculate the transaction fee.
+    /// Convert the [`InvokeEntrypointResult`] to a contract success or error.
     ///
     /// The `energy_for_state_increase` is only used if the result was a
     /// success.
@@ -566,9 +558,9 @@ impl Chain {
     ///
     /// *Preconditions*:
     /// - `energy_reserved - remaining_energy + energy_for_state_increase >= 0`
-    fn convert_update_aux_response(
+    fn convert_invoke_entrypoint_result(
         &self,
-        update_aux_response: UpdateAuxResponse,
+        update_aux_response: InvokeEntrypointResult,
         chain_events: Vec<ChainEvent>,
         energy_reserved: Energy,
         energy_for_state_increase: Energy,
@@ -621,7 +613,7 @@ impl TestPolicies {
     // TODO: Add helper functions for creating arbitrary valid policies.
 }
 
-impl AccountInfo {
+impl Account {
     /// Create a new [`Self`] with the provided parameters.
     /// The `signature_count` must be >= 1 for transaction costs to be
     /// realistic.
@@ -763,17 +755,11 @@ mod tests {
     #[test]
     fn creating_accounts_work() {
         let mut chain = Chain::new();
-        chain.create_account(ACC_0, AccountInfo::new(Amount::from_ccd(1)));
-        chain.create_account(ACC_1, AccountInfo::new(Amount::from_ccd(2)));
+        chain.create_account(ACC_0, Account::new(Amount::from_ccd(1)));
+        chain.create_account(ACC_1, Account::new(Amount::from_ccd(2)));
 
         assert_eq!(chain.accounts.len(), 2);
-        assert_eq!(
-            chain.persistence_account_balance(ACC_0),
-            Some(Amount::from_ccd(1))
-        );
-        assert_eq!(
-            chain.persistence_account_balance(ACC_1),
-            Some(Amount::from_ccd(2))
-        );
+        assert_eq!(chain.account_balance(ACC_0), Some(Amount::from_ccd(1)));
+        assert_eq!(chain.account_balance(ACC_1), Some(Amount::from_ccd(2)));
     }
 }

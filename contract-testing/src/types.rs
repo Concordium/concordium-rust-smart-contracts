@@ -30,7 +30,7 @@ pub struct Chain {
     /// Euro per Energy ratio.
     pub euro_per_energy:     ExchangeRate,
     /// Accounts and info about them.
-    pub accounts:            BTreeMap<AccountAddress, AccountInfo>,
+    pub accounts:            BTreeMap<AccountAddress, Account>,
     /// Smart contract modules.
     pub modules:             BTreeMap<ModuleReference, Arc<ContractModule>>,
     /// Smart contract instances.
@@ -39,7 +39,7 @@ pub struct Chain {
     pub next_contract_index: u64,
 }
 
-/// A smart contract instance along.
+/// A smart contract instance.
 #[derive(Clone)]
 pub struct Contract {
     /// The module which contains this contract.
@@ -57,9 +57,9 @@ pub struct Contract {
 /// Account policies for testing.
 pub struct TestPolicies(pub v0::OwnedPolicyBytes);
 
-/// Data about an [`AccountAddress`].
+/// An account.
 #[derive(Clone)]
-pub struct AccountInfo {
+pub struct Account {
     /// The account balance. TODO: Add all three types of balances.
     pub balance:         Amount,
     /// Account policies.

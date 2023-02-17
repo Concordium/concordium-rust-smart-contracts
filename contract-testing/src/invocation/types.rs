@@ -1,4 +1,4 @@
-use crate::types::{AccountInfo, ChainEvent, Contract, ContractModule};
+use crate::types::{Account, ChainEvent, Contract, ContractModule};
 use concordium_base::contracts_common::{
     AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
     OwnedEntrypointName, SlotTime,
@@ -10,8 +10,8 @@ use wasm_chain_integration::{
     InterpreterEnergy,
 };
 
-// TODO: Find a better name.
-pub(crate) struct UpdateAuxResponse {
+/// The result of invoking an entrypoint.
+pub(crate) struct InvokeEntrypointResult {
     /// The result from the invoke.
     pub(crate) invoke_response:  InvokeResponse,
     /// Will be `Some` if and only if `invoke_response` is `Success`.
@@ -20,9 +20,10 @@ pub(crate) struct UpdateAuxResponse {
     pub(crate) remaining_energy: InterpreterEnergy,
 }
 
-pub(crate) struct ContractInvocation {
+/// A type that supports invoking a contract entrypoint.
+pub(crate) struct EntrypointInvocationHandler {
     pub(super) changeset:          ChangeSet,
-    pub(super) accounts:           BTreeMap<AccountAddress, AccountInfo>,
+    pub(super) accounts:           BTreeMap<AccountAddress, Account>,
     pub(super) modules:            BTreeMap<ModuleReference, Arc<ContractModule>>,
     pub(super) contracts:          BTreeMap<ContractAddress, Contract>,
     pub(super) slot_time:          SlotTime,
@@ -38,7 +39,7 @@ pub(crate) struct ChangeSet {
 }
 
 /// Data held for accounts and contracts during the execution of a contract
-/// update or invocation.
+/// entrypoint.
 #[derive(Clone, Debug)]
 pub(super) struct Changes {
     /// The contracts which have changes.
@@ -47,8 +48,7 @@ pub(super) struct Changes {
     pub(super) accounts:  BTreeMap<AccountAddress, AccountChanges>,
 }
 
-/// Data held for an account during the execution of an update or invoke
-/// transaction.
+/// Data held for an account during the execution of a contract entrypoint.
 #[derive(Clone, Debug)]
 pub(super) struct AccountChanges {
     /// Should never be modified.
@@ -56,8 +56,7 @@ pub(super) struct AccountChanges {
     pub(super) balance_delta:    AmountDelta,
 }
 
-/// Data held for a contract during the execution of a contract update or
-/// invocation.
+/// Data held for a contract during the execution of a contract entrypoint.
 #[derive(Clone, Debug)]
 pub(super) struct ContractChanges {
     /// An index that is used to check whether a caller contract has been
@@ -74,9 +73,14 @@ pub(super) struct ContractChanges {
     pub(super) module:                Option<ModuleReference>,
 }
 
-/// Data needed to recursively process a contract update or invocation to
-/// completion.
-pub(super) struct ProcessReceiveData<'a, 'b> {
+/// Data needed to recursively process a contract entrypoint to completion.
+///
+/// In particular, this keeps the data necessary for resuming a contract
+/// entrypoint after an interrupt.
+///
+/// One `InvocationData` is created for each time
+/// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
+pub(super) struct InvocationData<'a, 'b> {
     /// The invoker.
     pub(super) invoker: AccountAddress,
     /// The contract being called.
@@ -94,7 +98,7 @@ pub(super) struct ProcessReceiveData<'a, 'b> {
     /// The entrypoint to execute.
     pub(super) entrypoint: OwnedEntrypointName,
     /// A reference to the chain.
-    pub(super) chain: &'a mut ContractInvocation,
+    pub(super) chain: &'a mut EntrypointInvocationHandler,
     /// The current state.
     pub(super) state: MutableState,
     /// Chain events that have occurred during the execution.
@@ -116,6 +120,6 @@ pub(super) enum AmountDelta {
 #[derive(Debug)]
 pub(super) struct UnderflowError;
 
-/// The contract ran out of energy during execution of an update or invocation.
+/// The contract ran out of energy during execution of a contract entrypoint.
 #[derive(PartialEq, Eq, Debug)]
 pub(crate) struct OutOfEnergy;
