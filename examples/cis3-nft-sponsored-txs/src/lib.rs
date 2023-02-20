@@ -1,12 +1,7 @@
-<<<<<<< HEAD:examples/cis2-nft/src/lib.rs
 //! A NFT smart contract example using the Concordium Token Standard CIS2.
-=======
-//! A NFT smart contract example using the Concordium Token Standard CIS3 with
-//! sponsored transactions.
->>>>>>> Rename  to gasless to sponsored:examples/cis3-nft-sponsored-txs/src/lib.rs
 //!
 //! # Description
-//! An instance of this smart contract can contain a number of different token
+//! An instance of this smart contract can contain a number of different tokens
 //! each identified by a token ID. A token is then globally identified by the
 //! contract address together with the token ID.
 //!
@@ -18,14 +13,6 @@
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
-<<<<<<< HEAD:examples/cis2-nft/src/lib.rs
-//! As follows from the CIS2 specification, the contract has a `transfer`
-//! function for transferring an amount of a specific token type from one
-//! address to another address. An address can enable and disable one or more
-//! addresses as operators. An operator of some address is allowed to transfer
-//! any tokens owned by this address.
-
-=======
 //! The Concordium Token Standard CIS3 includes all the features of the Token
 //! Standard CIS2. In addition, CIS3 includes features for sponsored
 //! transactions.
@@ -42,14 +29,15 @@
 //! to execute the transaction on-chain.
 //!
 //! Concordium smart contracts currently have no way to query the corresponding
-//! public key/keys of an account within the smart contract code. For
+//! public key(s) of an account within the smart contract code. For
 //! the time being this smart contract uses a `public_key_registry` that
-//! allows only the owner of the contract instance (or the account iteself) to
-//! register a public key to a given account. Once an account has a public key
-//! registered it can not be updated anymore. The users/clients are advised to
-//! check if the correct public key is registered to their account or register
-//! a public key themselves (if they don't want to make use of the sponsored
-//! transaction feature of this smart contract). This smart contract assumes a
+//! allows only the owner of the contract instance (or the account itself) to
+//! register a public key for a given account. Once an account has a public key
+//! registered, the mapping between the public key and the account can not be
+//! updated anymore. The users/clients are advised to check if the correct
+//! public key is registered to their account or register a public key
+//! themselves (if they don't want to make use of the sponsored transaction
+//! feature of this smart contract). This smart contract assumes a
 //! trusted third-party service provider since the use case is for users/clients
 //! that pay fiat money off-chain to the third-party service to request the
 //! submission of sponsored transactions on their behalf.
@@ -57,10 +45,7 @@
 //! The Concordium team is working on exposing the public key within the smart
 //! contract code and this feature is planned to be included in the next
 //! protocol update in 6-12 months. After that protocol update, the
-//! `public_key_registry` will not be necessary anymore and except for that the
-//! third-party service can refuse to submit a transaction on behalf of the
-//! user, no trust assumption needs to be given to the third-party service
-//! anymore.
+//! `public_key_registry` will not be necessary anymore.
 //!
 //! As follows from the CIS3 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
@@ -68,10 +53,9 @@
 //! addresses as operators. An operator of some address is allowed to transfer
 //! any tokens owned by this address. The `permitTransfer` and
 //! `permitUpdateOperator` functions are the sponsored counterparts and can be
-//! executed by anyone on hehalf of an account given a signed transaction by the
+//! executed by anyone on behalf of an account given a signed transaction by the
 //! private key corresponding to the public key that is registered for that
 //! account.
->>>>>>> Rename  to gasless to sponsored:examples/cis3-nft-sponsored-txs/src/lib.rs
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::*;
@@ -81,11 +65,111 @@ use concordium_std::{collections::BTreeMap, *};
 /// encoding before emitted in the TokenMetadata event.
 const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
-/// List of supported standards by this contract address.
-const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
-    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
+/// The standard identifier for the CIS-3: Concordium Token Standard 3.
+pub const CIS3_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-3");
 
-// Types
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] =
+    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER, CIS3_STANDARD_IDENTIFIER];
+
+/// Tag for the CIS3 Registration event.
+pub const REGISTRATION_EVENT_TAG: u8 = 0u8;
+
+/// Tagged events to be serialized for the event log.
+#[derive(Debug, Serial)]
+enum Event {
+    /// Registration of a public key for a given account. The
+    /// corresponding private key will have to sign the transactions that
+    /// can be executed via the `permitTransfer` or the
+    /// `permitUpdateOperator` functions.
+    Registration(RegistrationEvent),
+}
+
+/// The RegistrationEvent is logged when a new public key is registered.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct RegistrationEvent {
+    /// Account that a public key will be registered to.
+    account:    AccountAddress,
+    /// The public key that should be linked to the above account.
+    public_key: PublicKeyEd25519,
+}
+
+// Implementing a custom schemaType to the `Event` combining all CIS2/CIS3
+// events.
+impl schema::SchemaType for Event {
+    fn get_type() -> schema::Type {
+        let mut event_map = BTreeMap::new();
+        event_map.insert(
+            REGISTRATION_EVENT_TAG,
+            (
+                "Registration".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("account"), AccountAddress::get_type()),
+                    (String::from("public_key"), PublicKeyEd25519::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            TRANSFER_EVENT_TAG,
+            (
+                "Transfer".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
+                    (String::from("from"), Address::get_type()),
+                    (String::from("to"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            MINT_EVENT_TAG,
+            (
+                "Mint".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            BURN_EVENT_TAG,
+            (
+                "Burn".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            UPDATE_OPERATOR_EVENT_TAG,
+            (
+                "UpdateOperator".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("update"), OperatorUpdate::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                    (String::from("operator"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            TOKEN_METADATA_EVENT_TAG,
+            (
+                "TokenMetadata".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("metadata_url"), MetadataUrl::get_type()),
+                ]),
+            ),
+        );
+        schema::Type::TaggedEnum(event_map)
+    }
+}
+
+// Type aliases
 
 /// Contract token ID type.
 /// To save bytes we use a token ID type limited to a `u32`.
@@ -138,9 +222,6 @@ struct State<S> {
     all_tokens:   StateSet<ContractTokenId, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-<<<<<<< HEAD:examples/cis2-nft/src/lib.rs
-    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-=======
     implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// A registry to link an account to an public key. The
     /// corresponding private key registered here has full access to the
@@ -152,15 +233,14 @@ struct State<S> {
     nonces:              StateMap<AccountAddress, u64, S>,
 }
 
-/// The parameter type for the contract function `registerPublicKey`.
+/// Part of the parameter type for the contract function `registerPublicKey`.
 /// Takes the account and the public key that should be linked.
 #[derive(Debug, Serialize, SchemaType)]
-struct RegisterPublicKeyParams {
+pub struct RegisterPublicKeyParam {
     /// Account that a public key will be registered to.
     account:    AccountAddress,
     /// The public key that should be linked to the above account.
     public_key: PublicKeyEd25519,
->>>>>>> Rename  to gasless to sponsored:examples/cis3-nft-sponsored-txs/src/lib.rs
 }
 
 /// The parameter type for the contract function `setImplementors`.
@@ -475,17 +555,19 @@ fn contract_init<S: HasStateApi>(
 }
 
 /// Part of the return paramter of the `view` function.
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Debug, PartialEq)]
 struct ViewAddressState {
     owned_tokens: Vec<ContractTokenId>,
     operators:    Vec<Address>,
 }
 
 /// Return paramter of the `view` function.
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Debug)]
 struct ViewState {
-    state:      Vec<(Address, ViewAddressState)>,
-    all_tokens: Vec<ContractTokenId>,
+    state:           Vec<(Address, ViewAddressState)>,
+    all_tokens:      Vec<ContractTokenId>,
+    all_nonces:      Vec<(AccountAddress, u64)>,
+    all_public_keys: Vec<(AccountAddress, PublicKeyEd25519)>,
 }
 
 /// View function that returns the entire contents of the state. Meant for
@@ -506,20 +588,41 @@ fn contract_view<S: HasStateApi>(
             operators,
         }));
     }
+
     let all_tokens = state.all_tokens.iter().map(|x| *x).collect();
+
+    let mut all_nonces = Vec::new();
+    for (account_address, nonce) in state.nonces.iter() {
+        all_nonces.push((*account_address, *nonce));
+    }
+
+    let mut all_public_keys = Vec::new();
+    for (account_address, public_key) in state.public_key_registry.iter() {
+        all_public_keys.push((*account_address, *public_key));
+    }
 
     Ok(ViewState {
         state: inner_state,
         all_tokens,
+        all_nonces,
+        all_public_keys,
     })
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD:examples/cis2-nft/src/lib.rs
 =======
 /// Register a public key to a given account. The corresponding private
+=======
+/// The parameter type for the contract function `registerPublicKey`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct RegisterPublicKeyParams(#[concordium(size_length = 2)] pub Vec<RegisterPublicKeyParam>);
+
+/// Register a public key for a given account. The corresponding private
+>>>>>>> Add batching to registerPublicKey function
 /// key can sign messages that can be submitted to the `permitTransfer` and the
 /// `permitUpdateOperator` functions. Can only be called by the contract owner
-/// (third-party provider offering sponsored transaction services) or the the
+/// (third-party provider offering sponsored transaction services) or the
 /// account itself. Once registered, the public key cannot be updated. Logs a
 /// `Registration` event for each account. Use this function with care, the
 /// corresponding private key registered here has full access to the tokens
@@ -549,27 +652,29 @@ fn contract_register_public_key<S: HasStateApi>(
     let sender = ctx.sender();
 
     // Parse the parameter.
-    let params: RegisterPublicKeyParams = ctx.parameter_cursor().get()?;
+    let RegisterPublicKeyParams(params) = ctx.parameter_cursor().get()?;
 
-    // Only the contract instance owner or the account itself can add a public key.
-    ensure!(
-        sender.matches_account(&owner) || sender.matches_account(&params.account),
-        ContractError::Unauthorized
-    );
+    for param in params {
+        // Only the contract instance owner or the account itself can add a public key.
+        ensure!(
+            sender.matches_account(&owner) || sender.matches_account(&param.account),
+            ContractError::Unauthorized
+        );
 
-    // Register the public key.
-    let old_public_key =
-        host.state_mut().public_key_registry.insert(params.account, params.public_key);
+        // Register the public key.
+        let old_public_key =
+            host.state_mut().public_key_registry.insert(param.account, param.public_key);
 
-    // Return an error if the owner tries to update/re-write a new public key to an
-    // already registered account.
-    ensure!(old_public_key.is_none(), CustomContractError::AccountAlreadyRegistered.into());
+        // Return an error if the owner tries to update/re-write a new public key for an
+        // already registered account.
+        ensure!(old_public_key.is_none(), CustomContractError::AccountAlreadyRegistered.into());
 
-    // Log the registration event.
-    logger.log(&Event::Registration(RegistrationEvent {
-        account:    params.account,
-        public_key: params.public_key,
-    }))?;
+        // Log the registration event.
+        logger.log(&Event::Registration(RegistrationEvent {
+            account:    param.account,
+            public_key: param.public_key,
+        }))?;
+    }
 
     Ok(())
 }
@@ -644,7 +749,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 /// Internal `transfer/permitTransfer` helper function. Invokes the `transfer`
 /// function of the state. Logs a `Transfer` event and invokes a receive hook
 /// function.
-fn _transfer<S: HasStateApi>(
+fn transfer<S: HasStateApi>(
     token_id: ContractTokenId,
     amount: ContractTokenAmount,
     from: Address,
@@ -727,7 +832,7 @@ fn contract_transfer<S: HasStateApi>(
             ContractError::Unauthorized
         );
 
-        _transfer(token_id, amount, from, to, data, host, logger)?;
+        transfer(token_id, amount, from, to, data, host, logger)?;
     }
     Ok(())
 }
@@ -826,23 +931,20 @@ fn contract_permit_transfer<S: HasStateApi>(
                     &message_hash,
                 );
 
-                match is_valid {
-                    // Throw an error if the signature cannot be validated.
-                    false => {
-                        bail!(CustomContractError::WrongSignature.into())
-                    }
+                if is_valid {
                     // Transfer the tokens.
-                    true => {
-                        _transfer(
-                            param.token_id,
-                            param.amount,
-                            Address::Account(param.from),
-                            param.to,
-                            param.data,
-                            host,
-                            logger,
-                        )?;
-                    }
+                    transfer(
+                        param.token_id,
+                        param.amount,
+                        Address::Account(param.from),
+                        param.to,
+                        param.data,
+                        host,
+                        logger,
+                    )?;
+                } else {
+                    // Throw an error if the signature cannot be validated.
+                    bail!(CustomContractError::WrongSignature.into())
                 }
             }
         }
@@ -853,7 +955,7 @@ fn contract_permit_transfer<S: HasStateApi>(
 /// Internal `updateOperator/permitUpdateOperator` helper function. Invokes the
 /// `add_operator/remove_operator` function of the state.
 /// Logs a `UpdateOperator` event.
-fn _update_operator<S: HasStateApi>(
+fn update_operator<S: HasStateApi>(
     update: OperatorUpdate,
     sender: Address,
     operator: Address,
@@ -904,7 +1006,7 @@ fn contract_update_operator<S: HasStateApi>(
     let sender = ctx.sender();
     let (state, builder) = host.state_and_builder();
     for param in params {
-        _update_operator(param.update, sender, param.operator, state, builder, logger)?;
+        update_operator(param.update, sender, param.operator, state, builder, logger)?;
     }
     Ok(())
 }
@@ -1007,7 +1109,7 @@ fn contract_permit_update_operator<S: HasStateApi>(
                     true => {
                         let (state, builder) = host.state_and_builder();
 
-                        _update_operator(
+                        update_operator(
                             param.update,
                             concordium_std::Address::Account(param.owner),
                             param.operator,
@@ -1555,4 +1657,475 @@ mod tests {
             "Incorrect event emitted"
         )
     }
+<<<<<<< HEAD
+=======
+
+    /// Test `view` function.
+    #[concordium_test]
+    fn test_view() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        let mut state_builder = TestStateBuilder::new();
+
+        // Create the state values
+        let mut public_key_registry = state_builder.new_map();
+        public_key_registry.insert(ACCOUNT_1, PUBLIC_KEY);
+        public_key_registry.insert(ACCOUNT_2, OTHER_PUBLIC_KEY);
+
+        let mut nonces = state_builder.new_map();
+        nonces.insert(ACCOUNT_1, 3);
+        nonces.insert(ACCOUNT_2, 5);
+
+        let mut all_tokens = state_builder.new_set();
+        all_tokens.insert(TOKEN_0);
+        all_tokens.insert(TOKEN_1);
+
+        let mut state = state_builder.new_map();
+        let mut operators = state_builder.new_set();
+        operators.insert(ADDRESS_2);
+        let mut owned_tokens = state_builder.new_set();
+        owned_tokens.insert(TOKEN_0);
+        owned_tokens.insert(TOKEN_1);
+        state.insert(ADDRESS_1, AddressState {
+            owned_tokens,
+            operators,
+        });
+
+        let state = State {
+            state,
+            all_tokens,
+            implementors: state_builder.new_map(),
+            public_key_registry,
+            nonces,
+        };
+
+        let host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result = contract_view(&ctx, &host);
+
+        let returned_view_state = result.expect_report("Failed getting contract_view result value");
+
+        claim_eq!(
+            returned_view_state.all_public_keys,
+            [(ACCOUNT_1, PUBLIC_KEY), (ACCOUNT_2, OTHER_PUBLIC_KEY)],
+            "Correct public keys should be returned by the view function"
+        );
+
+        claim_eq!(
+            returned_view_state.all_nonces,
+            [(ACCOUNT_1, 3), (ACCOUNT_2, 5)],
+            "Correct nonces should be returned by the view function"
+        );
+
+        claim_eq!(
+            returned_view_state.all_tokens,
+            vec![TOKEN_0, TOKEN_1],
+            "Correct tokens should be returned by the view function"
+        );
+
+        claim_eq!(
+            returned_view_state.state[0].0,
+            ADDRESS_1,
+            "Correct address in state should be returned by the view function"
+        );
+
+        claim_eq!(
+            returned_view_state.state[0].1,
+            ViewAddressState {
+                owned_tokens: vec![TOKEN_0, TOKEN_1],
+                operators:    vec![concordium_std::Address::Account(ACCOUNT_2)],
+            },
+            "Correct ViewAddressState should be returned by the view function"
+        );
+    }
+
+    /// Test register a public key.
+    #[concordium_test]
+    fn test_register_public_key() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let register_public_key_param_0 = RegisterPublicKeyParam {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+
+        let register_public_key_param_1 = RegisterPublicKeyParam {
+            account:    ACCOUNT_2,
+            public_key: OTHER_PUBLIC_KEY,
+        };
+
+        let parameter =
+            RegisterPublicKeyParams(vec![register_public_key_param_0, register_public_key_param_1]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        let public_key = host.state().public_key(&ACCOUNT_1);
+        claim_eq!(
+            public_key.expect_report("Expect a public key"),
+            Some(PUBLIC_KEY),
+            "Account_1 should have a public key registered"
+        );
+
+        // Check the state.
+        let public_key = host.state().public_key(&ACCOUNT_2);
+        claim_eq!(
+            public_key.expect_report("Expect a public key"),
+            Some(OTHER_PUBLIC_KEY),
+            "Account_2 should have a public key registered"
+        );
+
+        // Checking that `ACCOUNT_1/ACCOUNT_2` has the correct public key registered and
+        // there is no public key registered for `ACCOUNT_0`.
+        let public_key_of_query_vector = PublicKeyOfQueryParams {
+            queries: vec![
+                PublicKeyQuery {
+                    account: ACCOUNT_0,
+                },
+                PublicKeyQuery {
+                    account: ACCOUNT_1,
+                },
+                PublicKeyQuery {
+                    account: ACCOUNT_2,
+                },
+            ],
+        };
+        let parameter_bytes = to_bytes(&public_key_of_query_vector);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        // Checking the return value of the `contract_public_key_of` function
+        let result: ContractResult<ContractPublicKeyQueryResponse> =
+            contract_public_key_of(&ctx, &host);
+
+        claim_eq!(
+            result.expect_report("Failed getting result value").0,
+            [None, Some(PUBLIC_KEY), Some(OTHER_PUBLIC_KEY)],
+            "ACCOUNT_1/ACCOUNT_2 should have a public key registered and ACCOUNT_0 should have no \
+             public key registered"
+        );
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 2, "Two events should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&Event::Registration(RegistrationEvent {
+                account:    ACCOUNT_1,
+                public_key: PUBLIC_KEY,
+            })),
+            "Incorrect event emitted"
+        );
+        claim_eq!(
+            logger.logs[1],
+            to_bytes(&Event::Registration(RegistrationEvent {
+                account:    ACCOUNT_2,
+                public_key: OTHER_PUBLIC_KEY,
+            })),
+            "Incorrect event emitted"
+        )
+    }
+
+    /// Test can NOT update the public key.
+    #[concordium_test]
+    fn test_can_not_update_public_key() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let register_public_key_param = RegisterPublicKeyParam {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+
+        let parameter = RegisterPublicKeyParams(vec![register_public_key_param]);
+        let parameter_bytes = to_bytes(&parameter);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // and parameter.
+        let register_public_key_param = RegisterPublicKeyParam {
+            account:    ACCOUNT_1,
+            public_key: OTHER_PUBLIC_KEY,
+        };
+
+        let parameter = RegisterPublicKeyParams(vec![register_public_key_param]);
+        let parameter_bytes = to_bytes(&parameter);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(
+            err,
+            concordium_cis2::Cis2Error::Custom(CustomContractError::AccountAlreadyRegistered),
+            "Error is expected to be AccountAlreadyRegistered"
+        )
+    }
+
+    /// Test other can not register a public key.
+    #[concordium_test]
+    fn test_other_can_not_register_public_key() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_2);
+        ctx.set_owner(ACCOUNT_0);
+
+        // and parameter.
+        let register_public_key_param = RegisterPublicKeyParam {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+
+        let parameter = RegisterPublicKeyParams(vec![register_public_key_param]);
+        let parameter_bytes = to_bytes(&parameter);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        let err = result.expect_err_report("Expected to fail");
+        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
+    }
+
+    /// Test permitTransfer.
+    #[concordium_test]
+    fn test_permit_transfer() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_self_address(ContractAddress {
+            index:    0,
+            subindex: 0,
+        });
+        ctx.set_named_entrypoint(OwnedEntrypointName::new_unchecked(
+            "contract_permit_transfer".into(),
+        ));
+
+        // and parameter.
+        let register_public_key_param = RegisterPublicKeyParam {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+
+        let parameter = RegisterPublicKeyParams(vec![register_public_key_param]);
+        let parameter_bytes = to_bytes(&parameter);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Register public key.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Mint token to ACCOUNT_1
+        let mut tokens = collections::BTreeSet::new();
+        tokens.insert(TOKEN_3);
+        let parameter = MintParams {
+            tokens,
+            owner: concordium_std::Address::Account(ACCOUNT_1),
+        };
+
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Call the contract function.
+        let result: ContractResult<()> = contract_mint(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Create input parematers for the `permitTransfer` function.
+        let permit_transfer_param = PermitTransferParam {
+            signature:        SIGNATURE_TRANSFER,
+            from:             ACCOUNT_1,
+            to:               concordium_cis2::Receiver::Account(ACCOUNT_0),
+            data:             AdditionalData::from(vec![]),
+            amount:           ContractTokenAmount::from(1),
+            token_id:         TOKEN_3,
+            contract_address: ContractAddress {
+                index:    0,
+                subindex: 0,
+            },
+            entry_point:      OwnedEntrypointName::new_unchecked("contract_permit_transfer".into()),
+            nonce:            1,
+        };
+        let parameter = PermitTransferParams(vec![permit_transfer_param]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Inovke `permitTransfer` function.
+        let result: ContractResult<()> =
+            contract_permit_transfer(&ctx, &mut host, &mut logger, &crypto_primitives);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        let balance0 =
+            host.state().balance(&TOKEN_3, &ADDRESS_0).expect_report("Token is expected to exist");
+        let balance1 = host
+            .state_mut()
+            .balance(&TOKEN_3, &ADDRESS_1)
+            .expect_report("Token is expected to exist");
+        claim_eq!(
+            balance0,
+            1.into(),
+            "Token receiver balance should be increased by the transferred amount"
+        );
+        claim_eq!(
+            balance1,
+            0.into(),
+            "Token owner balance should be decreased by the transferred amount"
+        );
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 4, "Four events should be logged");
+        claim_eq!(
+            logger.logs[3],
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
+                from:     ADDRESS_1,
+                to:       ADDRESS_0,
+                token_id: TOKEN_3,
+                amount:   ContractTokenAmount::from(1),
+            })),
+            "Incorrect event emitted"
+        )
+    }
+
+    /// Test permitUpdateOperator.
+    #[concordium_test]
+    fn test_permit_update_operator() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_self_address(ContractAddress {
+            index:    0,
+            subindex: 0,
+        });
+        ctx.set_named_entrypoint(OwnedEntrypointName::new_unchecked(
+            "contract_permit_update_operator".into(),
+        ));
+
+        // and parameter.
+        let register_public_key_param = RegisterPublicKeyParam {
+            account:    ACCOUNT_1,
+            public_key: PUBLIC_KEY,
+        };
+
+        let parameter = RegisterPublicKeyParams(vec![register_public_key_param]);
+        let parameter_bytes = to_bytes(&parameter);
+
+        ctx.set_parameter(&parameter_bytes);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+
+        // Register public key.
+        let result: ContractResult<()> = contract_register_public_key(&ctx, &mut host, &mut logger);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Create input parematers for the `permitUpdateOperator` function.
+        let permit_update_operator_param = PermitUpdateOperatorParam {
+            signature:        SIGNATURE_UPDATE_OPERATOR,
+            owner:            ACCOUNT_1,
+            update:           OperatorUpdate::Add,
+            operator:         ADDRESS_0,
+            contract_address: ContractAddress {
+                index:    0,
+                subindex: 0,
+            },
+            entry_point:      OwnedEntrypointName::new_unchecked(
+                "contract_permit_update_operator".into(),
+            ),
+            nonce:            1,
+        };
+
+        let parameter = PermitUpdateOperatorParams(vec![permit_update_operator_param]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
+
+        let crypto_primitives = TestCryptoPrimitives::new();
+
+        // Inovke `permit_update_operator` function.
+        let result: ContractResult<()> =
+            contract_permit_update_operator(&ctx, &mut host, &mut logger, &crypto_primitives);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        let is_operator = host.state().is_operator(&ADDRESS_0, &ADDRESS_1);
+        claim!(is_operator, "Account should be an operator");
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 2, "Two events should be logged");
+        claim_eq!(
+            logger.logs[1],
+            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner:    ADDRESS_1,
+                    operator: ADDRESS_0,
+                    update:   OperatorUpdate::Add,
+                }
+            )),
+            "Incorrect event emitted"
+        )
+    }
+>>>>>>> Add batching to registerPublicKey function
 }
