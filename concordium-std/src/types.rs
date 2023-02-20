@@ -1,8 +1,7 @@
-use concordium_contracts_common::{Amount, ExchangeRate};
+use concordium_contracts_common::{AccountBalance, Amount, ExchangeRate};
 
 use crate::{
-    cell::UnsafeCell, cmp::max, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial,
-    Vec,
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
 
 #[derive(Debug)]
@@ -582,41 +581,6 @@ impl ExternCallResponse {
 /// serialize values into.
 pub struct ExternReturnValue {
     pub(crate) current_position: u32,
-}
-
-/// The current public balances of an account.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AccountBalance {
-    /// The total balance of the account. Note that part of this balance might
-    /// be staked and/or locked in scheduled transfers.
-    pub total:  Amount,
-    /// The current staked amount of the account. This amount is used for
-    /// staking.
-    pub staked: Amount,
-    /// The current amount locked in releases that resulted from transfers with
-    /// schedule. A locked amount can still be used for staking.
-    pub locked: Amount,
-}
-
-impl AccountBalance {
-    /// Construct a new account balance, ensuring that both the staked amount
-    /// and the locked amount is smaller than or equal to the total balance.
-    pub fn new(total: Amount, staked: Amount, locked: Amount) -> Option<Self> {
-        if total < staked || total < locked {
-            None
-        } else {
-            Some(Self {
-                total,
-                staked,
-                locked,
-            })
-        }
-    }
-
-    /// The current available balance of the account. This is the amount
-    /// an account currently have available for transfering and is not
-    /// staked or locked in releases by scheduled transfers.
-    pub fn available(&self) -> Amount { self.total - max(self.locked, self.staked) }
 }
 
 /// The current exchange rates.

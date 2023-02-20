@@ -2904,26 +2904,6 @@ impl Deserial for ExchangeRates {
     }
 }
 
-impl Serial for AccountBalance {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        self.total.serial(out)?;
-        self.staked.serial(out)?;
-        self.locked.serial(out)?;
-        Ok(())
-    }
-}
-
-impl Deserial for AccountBalance {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let bytes: [u8; 24] = source.read_array()?;
-        let chunks = unsafe { mem::transmute::<[u8; 24], [[u8; 8]; 3]>(bytes) };
-        let total = Amount::from_micro_ccd(u64::from_le_bytes(chunks[0]));
-        let staked = Amount::from_micro_ccd(u64::from_le_bytes(chunks[1]));
-        let locked = Amount::from_micro_ccd(u64::from_le_bytes(chunks[2]));
-        Self::new(total, staked, locked).ok_or_else(ParseError::default)
-    }
-}
-
 impl schema::SchemaType for HashKeccak256 {
     fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
