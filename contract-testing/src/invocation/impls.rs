@@ -237,7 +237,7 @@ impl EntrypointInvocationHandler {
             amount,
             invoker_amount_reserved_for_nrg,
             entrypoint,
-            chain: self,
+            invocation_handler: self,
             state: mutable_state,
             chain_events: Vec::new(),
             loader,
@@ -974,8 +974,8 @@ impl<'a, 'b> InvocationData<'a, 'b> {
     /// Process a receive function until completion.
     ///
     /// *Preconditions*:
-    /// - Contract instance exists in `chain.contracts`.
-    /// - Account exists in `chain.accounts`.
+    /// - Contract instance exists in `invocation_handler.contracts`.
+    /// - Account exists in `invocation_handler.accounts`.
     fn process(
         &mut self,
         res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
@@ -1000,7 +1000,8 @@ impl<'a, 'b> InvocationData<'a, 'b> {
 
                     // Save changes to changeset.
                     if state_changed {
-                        self.chain.save_state_changes(self.address, &mut self.state);
+                        self.invocation_handler
+                            .save_state_changes(self.address, &mut self.state);
                     }
 
                     Ok(v1::ReceiveResult::Success {
@@ -1032,11 +1033,10 @@ impl<'a, 'b> InvocationData<'a, 'b> {
 
                             println!("\t\tTransferring {} CCD to {}", amount, to);
 
-                            let response = match self.chain.transfer_from_contract_to_account(
-                                amount,
-                                self.address,
-                                to,
-                            ) {
+                            let response = match self
+                                .invocation_handler
+                                .transfer_from_contract_to_account(amount, self.address, to)
+                            {
                                 Ok(new_balance) => v1::InvokeResponse::Success {
                                     new_balance,
                                     data: None,
@@ -1091,22 +1091,24 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                             self.chain_events.push(interrupt_event);
 
                             if state_changed {
-                                self.chain.save_state_changes(self.address, &mut self.state);
+                                self.invocation_handler
+                                    .save_state_changes(self.address, &mut self.state);
                             }
 
                             // Save the modification index before the invoke.
-                            let mod_idx_before_invoke = self.chain.modification_index(self.address);
+                            let mod_idx_before_invoke =
+                                self.invocation_handler.modification_index(self.address);
 
                             // Make a checkpoint before calling another contract so that we may roll
                             // back.
-                            self.chain.checkpoint();
+                            self.invocation_handler.checkpoint();
 
                             println!(
                                 "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
                                 address, parameter
                             );
 
-                            let res = self.chain.invoke_entrypoint(
+                            let res = self.invocation_handler.invoke_entrypoint(
                                 self.invoker,
                                 Address::Contract(self.address),
                                 address,
@@ -1122,17 +1124,18 @@ impl<'a, 'b> InvocationData<'a, 'b> {
 
                             // Remove the last state changes if the invocation failed.
                             let state_changed = if !success {
-                                self.chain.rollback();
+                                self.invocation_handler.rollback();
                                 false // We rolled back, so no changes were made
                                       // to this contract.
                             } else {
                                 let mod_idx_after_invoke =
-                                    self.chain.modification_index(self.address);
+                                    self.invocation_handler.modification_index(self.address);
                                 let state_changed = mod_idx_after_invoke != mod_idx_before_invoke;
                                 if state_changed {
                                     // Update the state field with the newest value from the
                                     // changeset.
-                                    self.state = self.chain.contract_state(self.address);
+                                    self.state =
+                                        self.invocation_handler.contract_state(self.address);
                                 }
                                 state_changed
                             };
@@ -1179,7 +1182,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 )
                                 .energy;
 
-                            let response = match self.chain.modules.get(&module_ref) {
+                            let response = match self.invocation_handler.modules.get(&module_ref) {
                                 None => v1::InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
                                 },
@@ -1193,7 +1196,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                     ) {
                                         // Update module reference in the changeset.
                                         let old_module_ref = self
-                                            .chain
+                                            .invocation_handler
                                             .save_module_upgrade(self.address, module_ref);
 
                                         // Charge for the initialization cost.
@@ -1212,7 +1215,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
 
                                         v1::InvokeResponse::Success {
                                             new_balance: self
-                                                .chain
+                                                .invocation_handler
                                                 .contract_balance_unchecked(self.address),
                                             data:        None,
                                         }
@@ -1246,7 +1249,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                             // When querying an account, the amounts from any `invoke_transfer`s
                             // should be included. That is handled by
                             // the `chain` struct already.
-                            let response = match self.chain.account_balance(address) {
+                            let response = match self.invocation_handler.account_balance(address) {
                                 Some(mut balance) => {
                                     // If you query the invoker account, it should also
                                     // take into account the send-amount and the amount reserved for
@@ -1258,7 +1261,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                     }
                                     v1::InvokeResponse::Success {
                                         new_balance: self
-                                            .chain
+                                            .invocation_handler
                                             .contract_balance_unchecked(self.address),
                                         data:        Some(to_bytes(&balance)),
                                     }
@@ -1288,7 +1291,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         v1::Interrupt::QueryContractBalance { address } => {
                             println!("Querying contract balance of {}", address);
 
-                            let response = match self.chain.contract_balance(address) {
+                            let response = match self.invocation_handler.contract_balance(address) {
                                 None => v1::InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::NonExistentContract,
                                 },
@@ -1296,7 +1299,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                     // Balance of contract querying. Won't change. Notice the
                                     // `self.address`.
                                     new_balance: self
-                                        .chain
+                                        .invocation_handler
                                         .contract_balance_unchecked(self.address),
                                     data:        Some(to_bytes(&bal)),
                                 },
@@ -1322,11 +1325,15 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         v1::Interrupt::QueryExchangeRates => {
                             println!("Querying exchange rates");
 
-                            let exchange_rates =
-                                (self.chain.euro_per_energy, self.chain.micro_ccd_per_euro);
+                            let exchange_rates = (
+                                self.invocation_handler.euro_per_energy,
+                                self.invocation_handler.micro_ccd_per_euro,
+                            );
 
                             let response = v1::InvokeResponse::Success {
-                                new_balance: self.chain.contract_balance_unchecked(self.address),
+                                new_balance: self
+                                    .invocation_handler
+                                    .contract_balance_unchecked(self.address),
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 

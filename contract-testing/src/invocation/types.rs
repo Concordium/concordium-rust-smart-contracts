@@ -97,8 +97,9 @@ pub(super) struct InvocationData<'a, 'b> {
     pub(super) invoker_amount_reserved_for_nrg: Amount,
     /// The entrypoint to execute.
     pub(super) entrypoint: OwnedEntrypointName,
-    /// A reference to the chain.
-    pub(super) chain: &'a mut EntrypointInvocationHandler,
+    /// A reference to the [`EntrypointInvocationHandler`], which is used to for
+    /// handling interrupts and for querying chain data.
+    pub(super) invocation_handler: &'a mut EntrypointInvocationHandler,
     /// The current state.
     pub(super) state: MutableState,
     /// Chain events that have occurred during the execution.
