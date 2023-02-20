@@ -17,7 +17,7 @@ fn deploying_valid_module_works() {
 
     assert_eq!(chain.modules.len(), 1);
     assert_eq!(
-        chain.account_balance(ACC_0),
+        chain.account_balance_available(ACC_0),
         Some(initial_balance - res.transaction_fee)
     );
 }
@@ -43,7 +43,7 @@ fn initializing_valid_contract_works() {
         )
         .expect("Initializing valid contract should work");
     assert_eq!(
-        chain.account_balance(ACC_0),
+        chain.account_balance_available(ACC_0),
         Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
     );
     assert_eq!(chain.contracts.len(), 1);
@@ -77,7 +77,7 @@ fn initializing_with_invalid_parameter_fails() {
             transaction_fee,
             ..
         }) => assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(initial_balance - res_deploy.transaction_fee - transaction_fee)
         ),
         _ => panic!("Expected valid chain error."),
@@ -131,7 +131,7 @@ fn updating_valid_contract_works() {
 
     // This also asserts that the account wasn't charged for the invoke.
     assert_eq!(
-        chain.account_balance(ACC_0),
+        chain.account_balance_available(ACC_0),
         Some(
             initial_balance
                 - res_deploy.transaction_fee
@@ -279,7 +279,7 @@ mod integrate_contract {
 
         // This also asserts that the account wasn't charged for the invoke.
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -289,7 +289,7 @@ mod integrate_contract {
             )
         );
         assert_eq!(
-            chain.account_balance(ACC_1),
+            chain.account_balance_available(ACC_1),
             Some(initial_balance + transfer_amount)
         );
         assert_eq!(res_update.transfers(), [Transfer {
@@ -344,7 +344,7 @@ mod integrate_contract {
             }) => {
                 assert_eq!(code, -3); // The custom contract error code for missing account.
                 assert_eq!(
-                    chain.account_balance(ACC_0),
+                    chain.account_balance_available(ACC_0),
                     Some(
                         initial_balance
                             - res_deploy.transaction_fee
@@ -404,7 +404,7 @@ mod integrate_contract {
 
         // This also asserts that the account wasn't charged for the invoke.
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -468,7 +468,7 @@ mod integrate_contract {
             .expect("Invoking get should work");
 
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -580,7 +580,7 @@ fn update_with_fib_reentry_works() {
 
     // This also asserts that the account wasn't charged for the invoke.
     assert_eq!(
-        chain.account_balance(ACC_0),
+        chain.account_balance_available(ACC_0),
         Some(
             initial_balance
                 - res_deploy.transaction_fee

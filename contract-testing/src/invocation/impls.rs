@@ -460,7 +460,8 @@ impl EntrypointInvocationHandler {
                     .accounts
                     .get(&address)
                     .expect("Precondition violation: account assumed to exist")
-                    .balance;
+                    .balance
+                    .available();
                 // Try to apply the balance or return an error if insufficient funds.
                 let new_account_balance = delta.apply_to_balance(original_balance)?;
                 // Insert the changes into the changeset.
@@ -563,8 +564,8 @@ impl EntrypointInvocationHandler {
         }
     }
 
-    /// Looks up the account balance for an account by first checking the
-    /// changeset, then the persisted values.
+    /// Looks up the available account balance for an account by first checking
+    /// the changeset, then the persisted values.
     fn account_balance(&self, address: AccountAddress) -> Option<Amount> {
         match self
             .changeset
@@ -576,7 +577,7 @@ impl EntrypointInvocationHandler {
             // Account exists in changeset.
             Some(bal) => Some(bal),
             // Account doesn't exist in changeset.
-            None => self.accounts.get(&address).map(|a| a.balance),
+            None => self.accounts.get(&address).map(|a| a.balance.available()),
         }
     }
 
@@ -802,7 +803,7 @@ impl ChangeSet {
                 .expect("Precondition violation: account must exist");
             // Update balance.
             if !changes.balance_delta.is_zero() {
-                account.balance = changes
+                account.balance.total = changes
                     .balance_delta
                     .apply_to_balance(changes.original_balance)
                     .expect("Precondition violation: amount delta causes underflow");

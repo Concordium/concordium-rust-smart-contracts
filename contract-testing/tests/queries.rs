@@ -60,7 +60,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -120,11 +120,11 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
         );
         assert_eq!(
-            chain.account_balance(ACC_1),
+            chain.account_balance_available(ACC_1),
             // Differs from `expected_balance` as it only includes the actual amount charged
             // for the NRG use. Not the reserved amount.
             Some(initial_balance - res_update.transaction_fee - update_amount)
@@ -184,7 +184,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -194,7 +194,7 @@ mod query_account_balance {
             )
         );
         assert_eq!(
-            chain.account_balance(ACC_1),
+            chain.account_balance_available(ACC_1),
             Some(initial_balance + amount_to_send)
         );
         assert!(matches!(res_update.chain_events[..], [
@@ -249,7 +249,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee
@@ -307,7 +307,7 @@ mod query_account_balance {
             .expect("Updating valid contract should work");
 
         assert_eq!(
-            chain.account_balance(ACC_0),
+            chain.account_balance_available(ACC_0),
             Some(
                 initial_balance
                     - res_deploy.transaction_fee

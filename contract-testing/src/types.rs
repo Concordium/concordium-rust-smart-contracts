@@ -4,8 +4,8 @@ use thiserror::Error;
 use concordium_base::{
     base::Energy,
     contracts_common::{
-        AccountAddress, Address, Amount, ContractAddress, ExchangeRate, ModuleReference,
-        OwnedContractName, OwnedEntrypointName, SlotTime,
+        AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
+        ModuleReference, OwnedContractName, OwnedEntrypointName, SlotTime,
     },
     smart_contracts::WasmVersion,
 };
@@ -60,8 +60,8 @@ pub struct TestPolicies(pub v0::OwnedPolicyBytes);
 /// An account.
 #[derive(Clone)]
 pub struct Account {
-    /// The account balance. TODO: Add all three types of balances.
-    pub balance:         Amount,
+    /// The account balance.
+    pub balance:         AccountBalance,
     /// Account policies.
     pub policies:        v0::OwnedPolicyBytes,
     /// The number of signatures. The number of signatures affect the cost of

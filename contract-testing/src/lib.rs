@@ -4,6 +4,7 @@ mod invocation;
 pub mod types;
 pub use types::*;
 
+// Re-export types.
 pub use concordium_base::{
     base::Energy,
     contracts_common::{

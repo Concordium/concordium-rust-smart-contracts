@@ -2,9 +2,9 @@ use concordium_base::{
     base::Energy,
     common,
     contracts_common::{
-        AccountAddress, Address, Amount, ChainMetadata, ContractAddress, ContractName,
-        EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, Parameter, SlotTime,
-        Timestamp,
+        AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
+        ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, Parameter,
+        SlotTime, Timestamp,
     },
     smart_contracts::{ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost},
@@ -105,10 +105,10 @@ impl Chain {
 
         // Try to subtract cost for account
         let account = self.get_account_mut(sender)?;
-        if account.balance < transaction_fee {
+        if account.balance.available() < transaction_fee {
             return Err(DeployModuleError::InsufficientFunds);
         };
-        account.balance -= transaction_fee;
+        account.balance.total -= transaction_fee;
 
         // Save the module TODO: Use wasm_module.get_module_ref() and find a proper way
         // to convert ModuleRef to ModuleReference.
@@ -201,7 +201,7 @@ impl Chain {
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
         let account_info = self.get_account(sender)?;
-        if account_info.balance < self.calculate_energy_cost(energy_reserved) + amount {
+        if account_info.balance.available() < self.calculate_energy_cost(energy_reserved) + amount {
             return Err(ContractInitError::InsufficientFunds);
         }
         // Construct the context.
@@ -253,7 +253,7 @@ impl Chain {
                 // Save the contract instance
                 self.contracts.insert(contract_address, contract_instance);
                 // Subtract the from the invoker.
-                self.get_account_mut(sender)?.balance -= amount;
+                self.get_account_mut(sender)?.balance.total -= amount;
 
                 Ok(SuccessfulContractInit {
                     contract_address,
@@ -306,7 +306,7 @@ impl Chain {
         };
         // Charge the account.
         // We have to get the account info again because of the borrow checker.
-        self.get_account_mut(sender)?.balance -= transaction_fee;
+        self.get_account_mut(sender)?.balance.total -= transaction_fee;
         res
     }
 
@@ -338,7 +338,7 @@ impl Chain {
         // to_ccd(remaining_energy) afterwards?
         let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
-        if account_info.balance < invoker_amount_reserved_for_nrg + amount {
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
@@ -389,7 +389,7 @@ impl Chain {
         // Charge the transaction fee irrespective of the result.
         // TODO: If we charge up front, then we should return to_ccd(remaining_energy)
         // here instead.
-        self.get_account_mut(invoker)?.balance -= transaction_fee;
+        self.get_account_mut(invoker)?.balance.total -= transaction_fee;
         res
     }
 
@@ -420,7 +420,7 @@ impl Chain {
         // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
-        if account_info.balance < invoker_amount_reserved_for_nrg + amount {
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
@@ -495,8 +495,13 @@ impl Chain {
     }
 
     /// Returns the balance of an account if it exists.
-    pub fn account_balance(&self, address: AccountAddress) -> Option<Amount> {
+    pub fn account_balance(&self, address: AccountAddress) -> Option<AccountBalance> {
         self.accounts.get(&address).map(|ai| ai.balance)
+    }
+
+    /// Returns the available balance of an account if it exists.
+    pub fn account_balance_available(&self, address: AccountAddress) -> Option<Amount> {
+        self.accounts.get(&address).map(|ai| ai.balance.available())
     }
 
     /// Returns the balance of an contract if it exists.
@@ -618,7 +623,7 @@ impl Account {
     /// The `signature_count` must be >= 1 for transaction costs to be
     /// realistic.
     pub fn new_with_policy_and_signature_count(
-        balance: Amount,
+        balance: AccountBalance,
         policies: TestPolicies,
         signature_count: u32,
     ) -> Self {
@@ -632,16 +637,16 @@ impl Account {
     /// Create new [`Self`] with empty account policies but the provided
     /// `signature_count`. The `signature_count` must be >= 1 for transaction
     /// costs to be realistic.
-    pub fn new_with_signature_count(balance: Amount, signature_count: u32) -> Self {
+    pub fn new_with_signature_count(balance: AccountBalance, signature_count: u32) -> Self {
         Self {
             signature_count,
-            ..Self::new(balance)
+            ..Self::new_with_balance(balance)
         }
     }
 
     /// Create new [`Self`] with empty account policies and a signature
     /// count of `1`.
-    pub fn new_with_policy(balance: Amount, policies: TestPolicies) -> Self {
+    pub fn new_with_policy(balance: AccountBalance, policies: TestPolicies) -> Self {
         Self {
             balance,
             policies: policies.0,
@@ -651,7 +656,24 @@ impl Account {
 
     /// Create new [`Self`] with empty account policies and a signature
     /// count of `1`.
-    pub fn new(balance: Amount) -> Self { Self::new_with_policy(balance, TestPolicies::empty()) }
+    pub fn new_with_balance(balance: AccountBalance) -> Self {
+        Self::new_with_policy(balance, TestPolicies::empty())
+    }
+
+    /// Create new [`Self`] with
+    ///  - empty account policies,
+    ///  - a signature count of `1`,
+    ///  - an [`AccountBalance`] from the `total_balance` provided.
+    pub fn new(total_balance: Amount) -> Self {
+        Self::new_with_policy(
+            AccountBalance {
+                total:  total_balance,
+                staked: Amount::zero(),
+                locked: Amount::zero(),
+            },
+            TestPolicies::empty(),
+        )
+    }
 }
 
 impl FailedContractInteraction {
@@ -759,7 +781,13 @@ mod tests {
         chain.create_account(ACC_1, Account::new(Amount::from_ccd(2)));
 
         assert_eq!(chain.accounts.len(), 2);
-        assert_eq!(chain.account_balance(ACC_0), Some(Amount::from_ccd(1)));
-        assert_eq!(chain.account_balance(ACC_1), Some(Amount::from_ccd(2)));
+        assert_eq!(
+            chain.account_balance_available(ACC_0),
+            Some(Amount::from_ccd(1))
+        );
+        assert_eq!(
+            chain.account_balance_available(ACC_1),
+            Some(Amount::from_ccd(2))
+        );
     }
 }
