@@ -711,6 +711,32 @@ impl SuccessfulContractUpdate {
             })
             .collect()
     }
+
+    /// Get the chain events grouped by which contract they originated from.
+    pub fn chain_events_per_contract(&self) -> BTreeMap<ContractAddress, Vec<ChainEvent>> {
+        let mut map: BTreeMap<ContractAddress, Vec<ChainEvent>> = BTreeMap::new();
+        for event in self.chain_events.iter() {
+            map.entry(event.contract_address())
+                .and_modify(|v| v.push(event.clone()))
+                .or_insert(vec![event.clone()]);
+        }
+        map
+    }
+}
+
+impl ChainEvent {
+    /// Get the contract address that this event relates to.
+    /// This means the `address` field for all variant except `Transferred`,
+    /// where it returns the `from`.
+    pub fn contract_address(&self) -> ContractAddress {
+        match self {
+            ChainEvent::Interrupted { address, .. } => *address,
+            ChainEvent::Resumed { address, .. } => *address,
+            ChainEvent::Upgraded { address, .. } => *address,
+            ChainEvent::Updated { address, .. } => *address,
+            ChainEvent::Transferred { from, .. } => *from,
+        }
+    }
 }
 
 /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.
