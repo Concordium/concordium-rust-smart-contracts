@@ -10,8 +10,8 @@ use crate::{
 use concordium_base::{
     base::Energy,
     contracts_common::{
-        to_bytes, AccountAddress, Address, Amount, ChainMetadata, ContractAddress, ModuleReference,
-        OwnedEntrypointName, OwnedReceiveName, Parameter,
+        to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
+        ModuleReference, OwnedEntrypointName, OwnedReceiveName, Parameter,
     },
 };
 use std::{
@@ -564,9 +564,10 @@ impl EntrypointInvocationHandler {
         }
     }
 
-    /// Looks up the available account balance for an account by first checking
+    /// Looks up the account balance for an account by first checking
     /// the changeset, then the persisted values.
-    fn account_balance(&self, address: AccountAddress) -> Option<Amount> {
+    fn account_balance(&self, address: AccountAddress) -> Option<AccountBalance> {
+        let account_balance = self.accounts.get(&address).map(|a| a.balance)?;
         match self
             .changeset
             .current()
@@ -575,9 +576,15 @@ impl EntrypointInvocationHandler {
             .map(|a| a.current_balance())
         {
             // Account exists in changeset.
-            Some(bal) => Some(bal),
+            // Return the staked and locked balances from persistence, as they can't change during
+            // entrypoint invocation.
+            Some(total) => Some(AccountBalance {
+                total,
+                staked: account_balance.staked,
+                locked: account_balance.locked,
+            }),
             // Account doesn't exist in changeset.
-            None => self.accounts.get(&address).map(|a| a.balance.available()),
+            None => Some(account_balance),
         }
     }
 
@@ -1238,29 +1245,22 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                             println!("\t\tQuerying account balance of {}", address);
                             // When querying an account, the amounts from any `invoke_transfer`s
                             // should be included. That is handled by
-                            // the `chain` struct already. transaction.
-                            // However, that is hand
+                            // the `chain` struct already.
                             let response = match self.chain.account_balance(address) {
-                                Some(acc_bal) => {
+                                Some(mut balance) => {
                                     // If you query the invoker account, it should also
                                     // take into account the send-amount and the amount reserved for
                                     // the reserved max energy. The former is handled in
-                                    // `contract_update_aux`, but the latter is represented in
+                                    // `invoke_entrypoint`, but the latter is represented in
                                     // `self.invoker_amount_reserved_for_nrg`.
-                                    let acc_bal = if address == self.invoker {
-                                        acc_bal - self.invoker_amount_reserved_for_nrg
-                                    } else {
-                                        acc_bal
-                                    };
-
-                                    // TODO: Do we need non-zero staked and shielded balances?
-                                    let balances =
-                                        to_bytes(&(acc_bal, Amount::zero(), Amount::zero()));
+                                    if address == self.invoker {
+                                        balance.total -= self.invoker_amount_reserved_for_nrg;
+                                    }
                                     v1::InvokeResponse::Success {
                                         new_balance: self
                                             .chain
                                             .contract_balance_unchecked(self.address),
-                                        data:        Some(balances),
+                                        data:        Some(to_bytes(&balance)),
                                     }
                                 }
                                 None => v1::InvokeResponse::Failure {
