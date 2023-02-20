@@ -6,7 +6,7 @@ use concordium_base::contracts_common::{
 use std::{collections::BTreeMap, sync::Arc};
 use wasm_chain_integration::{
     v0,
-    v1::{self, trie::MutableState, InvokeResponse},
+    v1::{trie::MutableState, InvokeResponse},
     InterpreterEnergy,
 };
 
@@ -80,7 +80,7 @@ pub(super) struct ContractChanges {
 ///
 /// One `InvocationData` is created for each time
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
-pub(super) struct InvocationData<'a, 'b> {
+pub(super) struct InvocationData<'a> {
     /// The invoker.
     pub(super) invoker: AccountAddress,
     /// The contract being called.
@@ -104,8 +104,6 @@ pub(super) struct InvocationData<'a, 'b> {
     pub(super) state: MutableState,
     /// Chain events that have occurred during the execution.
     pub(super) chain_events: Vec<ChainEvent>,
-    ///
-    pub(super) loader: v1::trie::Loader<&'b [u8]>,
 }
 
 /// A positive or negative delta in for an [`Amount`].

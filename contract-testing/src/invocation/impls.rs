@@ -240,7 +240,6 @@ impl EntrypointInvocationHandler {
             invocation_handler: self,
             state: mutable_state,
             chain_events: Vec::new(),
-            loader,
         };
 
         // Process the receive invocation to the completion.
@@ -970,7 +969,7 @@ impl AccountChanges {
     }
 }
 
-impl<'a, 'b> InvocationData<'a, 'b> {
+impl<'a> InvocationData<'a> {
     /// Process a receive function until completion.
     ///
     /// *Preconditions*:
@@ -1075,7 +1074,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 InterpreterEnergy::from(remaining_energy),
                                 &mut self.state,
                                 false, // never changes on transfers
-                                self.loader,
+                                v1::trie::Loader::new(&[][..]),
                             );
 
                             // Resume
@@ -1164,7 +1163,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 res.remaining_energy,
                                 &mut self.state,
                                 state_changed,
-                                self.loader,
+                                v1::trie::Loader::new(&[][..]),
                             );
 
                             self.process(resume_res)
@@ -1239,7 +1238,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 InterpreterEnergy::from(energy_after_invoke),
                                 &mut self.state,
                                 state_changed,
-                                self.loader,
+                                v1::trie::Loader::new(&[][..]),
                             );
 
                             self.process(resume_res)
@@ -1283,7 +1282,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 InterpreterEnergy::from(energy_after_invoke),
                                 &mut self.state,
                                 false, // State never changes on queries.
-                                self.loader,
+                                v1::trie::Loader::new(&[][..]),
                             );
 
                             self.process(resume_res)
@@ -1317,7 +1316,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 InterpreterEnergy::from(energy_after_invoke),
                                 &mut self.state,
                                 false, // State never changes on queries.
-                                self.loader,
+                                v1::trie::Loader::new(&[][..]),
                             );
 
                             self.process(resume_res)
@@ -1349,7 +1348,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                 InterpreterEnergy::from(energy_after_invoke),
                                 &mut self.state,
                                 false, // State never changes on queries.
-                                self.loader,
+                                v1::trie::Loader::new(&[][..]),
                             );
 
                             self.process(resume_res)
