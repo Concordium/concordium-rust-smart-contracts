@@ -235,6 +235,9 @@ impl Chain {
         // Charge the cost for looking up the module.
         remaining_energy = remaining_energy.saturating_sub(lookup_cost);
 
+        // TODO: Should we return another kind of error than `ExecutionError` if we run
+        // out of energy before invoking?
+
         // Construct the context.
         let init_ctx = v0::InitContext {
             metadata:        ChainMetadata {
@@ -287,12 +290,11 @@ impl Chain {
                     // Ran out of energy. Charge the `energy_reserved`.
                     let transaction_fee = self.calculate_energy_cost(energy_reserved);
                     (
-                        Err(ContractInitError::ValidChainError(
-                            FailedContractInteraction::OutOfEnergy {
-                                energy_used:     energy_reserved,
-                                transaction_fee: self.calculate_energy_cost(energy_reserved),
-                            },
-                        )),
+                        Err(ContractInitError::ExecutionError {
+                            failure_kind:    InitFailure::OutOfEnergy,
+                            energy_used:     energy_reserved,
+                            transaction_fee: self.calculate_energy_cost(energy_reserved),
+                        }),
                         transaction_fee,
                     )
                 } else {
@@ -343,14 +345,14 @@ impl Chain {
                 );
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 (
-                    Err(ContractInitError::ValidChainError(
-                        FailedContractInteraction::Reject {
+                    Err(ContractInitError::ExecutionError {
+                        failure_kind: InitFailure::Reject {
                             reason,
                             return_value,
-                            energy_used,
-                            transaction_fee,
                         },
-                    )),
+                        energy_used,
+                        transaction_fee,
+                    }),
                     transaction_fee,
                 )
             }
@@ -364,24 +366,22 @@ impl Chain {
                 );
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 (
-                    Err(ContractInitError::ValidChainError(
-                        FailedContractInteraction::Trap {
-                            energy_used,
-                            transaction_fee,
-                        },
-                    )),
+                    Err(ContractInitError::ExecutionError {
+                        failure_kind: InitFailure::Trap,
+                        energy_used,
+                        transaction_fee,
+                    }),
                     transaction_fee,
                 )
             }
             Ok(v1::InitResult::OutOfEnergy) => {
                 let transaction_fee = self.calculate_energy_cost(energy_reserved);
                 (
-                    Err(ContractInitError::ValidChainError(
-                        FailedContractInteraction::OutOfEnergy {
-                            energy_used: energy_reserved,
-                            transaction_fee,
-                        },
-                    )),
+                    Err(ContractInitError::ExecutionError {
+                        failure_kind: InitFailure::OutOfEnergy,
+                        energy_used: energy_reserved,
+                        transaction_fee,
+                    }),
                     transaction_fee,
                 )
             }
@@ -757,23 +757,6 @@ impl Account {
             },
             TestPolicies::empty(),
         )
-    }
-}
-
-impl FailedContractInteraction {
-    /// Get the transaction fee.
-    pub fn transaction_fee(&self) -> Amount {
-        match self {
-            FailedContractInteraction::Reject {
-                transaction_fee, ..
-            } => *transaction_fee,
-            FailedContractInteraction::Trap {
-                transaction_fee, ..
-            } => *transaction_fee,
-            FailedContractInteraction::OutOfEnergy {
-                transaction_fee, ..
-            } => *transaction_fee,
-        }
     }
 }
 

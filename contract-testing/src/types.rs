@@ -156,12 +156,13 @@ pub enum DeployModuleError {
     /// The module provided is not valid.
     #[error("module is invalid due to: {0}")]
     InvalidModule(#[from] anyhow::Error),
-    /// The account does not have sufficient funds to pay for the deployment.
-    #[error("account does not have sufficient funds to pay for the energy")]
+    /// The invoker account does not have sufficient funds to pay for the
+    /// deployment.
+    #[error("invoker does not have sufficient funds to pay for the energy")]
     InsufficientFunds,
-    /// The account deploying the module does not exist.
-    #[error("account {} does not exist", 0.0)]
-    AccountDoesNotExist(#[from] AccountMissing),
+    /// The sender account deploying the module does not exist.
+    #[error("sender account {} does not exist", 0.0)]
+    SenderDoesNotExist(#[from] AccountMissing),
     /// The module version is not supported.
     #[error("wasm version {0} is not supported")]
     UnsupportedModuleVersion(WasmVersion),
@@ -188,16 +189,39 @@ pub struct SuccessfulContractInit {
 pub enum ContractInitError {
     /// Initialization failed for a reason that also exists on the chain.
     #[error("failed due to a valid chain error: {:?}", 0)]
-    ValidChainError(FailedContractInteraction),
+    ExecutionError {
+        /// The reason for why the contract initialization failed.
+        failure_kind:    InitFailure,
+        /// The energy used.
+        energy_used:     Energy,
+        /// The transaction fee charged.
+        transaction_fee: Amount,
+    },
     /// Module has not been deployed in the test environment.
     #[error("module {:?} does not exist", 0.0)]
     ModuleDoesNotExist(#[from] ModuleMissing),
-    /// Account has not been created in test environment.
-    #[error("account {} does not exist", 0.0)]
-    AccountDoesNotExist(#[from] AccountMissing),
-    /// The account does not have enough funds to pay for the energy.
-    #[error("account does not have enough funds to pay for the energy")]
+    /// The sender account has not been created in test environment.
+    #[error("sender account {} does not exist", 0.0)]
+    SenderDoesNotExist(#[from] AccountMissing),
+    /// The invoker account does not have enough funds to pay for the energy.
+    #[error("invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
+}
+
+/// The reason for why a contract initialization failed during execution.
+#[derive(Debug)]
+pub enum InitFailure {
+    /// The contract rejected.
+    Reject {
+        /// The error code for why it rejected.
+        reason:       i32,
+        /// The return value.
+        return_value: ReturnValue,
+    },
+    /// The contract trapped.
+    Trap,
+    /// The contract ran out of energy.
+    OutOfEnergy,
 }
 
 /// Represents a successful contract update (or invocation).
@@ -258,40 +282,9 @@ pub enum ContractUpdateError {
     /// The sender does not exist in the test environment.
     #[error("sender {0} does not exist")]
     SenderDoesNotExist(Address),
-    /// The account does not have enough funds to pay for the energy.
-    #[error("account does not have enough funds to pay for the energy")]
+    /// The invoker account does not have enough funds to pay for the energy.
+    #[error("invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
-}
-
-/// Represents a failed contract interaction, i.e. an initialization, update, or
-/// invocation.
-#[derive(Debug)]
-pub enum FailedContractInteraction {
-    /// The contract rejected.
-    Reject {
-        /// The error code for why it rejected.
-        reason:          i32,
-        /// The return value.
-        return_value:    ReturnValue,
-        /// The amount of energy used before rejecting.
-        energy_used:     Energy,
-        /// The transaction fee to be paid by the invoker for the interaction.
-        transaction_fee: Amount,
-    },
-    /// The contract trapped.
-    Trap {
-        /// The amount of energy used before rejecting.
-        energy_used:     Energy,
-        /// The transaction fee to be paid by the invoker for the interaction.
-        transaction_fee: Amount,
-    },
-    /// The contract ran out of energy.
-    OutOfEnergy {
-        /// The amount of energy used before rejecting.
-        energy_used:     Energy,
-        /// The transaction fee to be paid by the invoker for the interaction.
-        transaction_fee: Amount,
-    },
 }
 
 /// A transfer of [`Amount`]s failed because the sender had insufficient
