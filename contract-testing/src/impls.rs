@@ -10,7 +10,6 @@ use concordium_base::{
     transactions::{self, cost, InitContractPayload},
 };
 use num_bigint::BigUint;
-use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 use wasm_chain_integration::{v0, v1, InterpreterEnergy};
 
@@ -111,14 +110,8 @@ impl Chain {
         };
         account.balance.total -= transaction_fee;
 
-        // Save the module TODO: Use wasm_module.get_module_ref() and find a proper way
-        // to convert ModuleRef to ModuleReference.
-        let module_reference = {
-            let mut hasher = Sha256::new();
-            hasher.update(wasm_module.source.as_ref());
-            let hash: [u8; 32] = hasher.finalize().into();
-            ModuleReference::from(hash)
-        };
+        // Save the module
+        let module_reference: ModuleReference = wasm_module.get_module_ref().into();
         // Ensure module hasn't been deployed before.
         if self.modules.contains_key(&module_reference) {
             return Err(DeployModuleError::DuplicateModule(module_reference));
