@@ -1,13 +1,13 @@
 use concordium_base::{
-    base::Energy,
-    common,
+    base::{self, Energy},
+    common::{self, to_bytes},
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, Parameter,
         SlotTime, Timestamp,
     },
     smart_contracts::{ModuleSource, WasmModule, WasmVersion},
-    transactions::{self, cost},
+    transactions::{self, cost, InitContractPayload},
 };
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
@@ -15,6 +15,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use wasm_chain_integration::{v0, v1, InterpreterEnergy};
 
 use crate::{
+    constants,
     invocation::{EntrypointInvocationHandler, InvokeEntrypointResult},
     types::*,
 };
@@ -122,10 +123,13 @@ impl Chain {
         if self.modules.contains_key(&module_reference) {
             return Err(DeployModuleError::DuplicateModule(module_reference));
         }
-        self.modules.insert(module_reference, Arc::new(artifact));
+        self.modules.insert(module_reference, ContractModule {
+            size:     wasm_module.source.size(),
+            artifact: Arc::new(artifact),
+        });
         Ok(SuccessfulModuleDeployment {
             module_reference,
-            energy,
+            energy_used: energy,
             transaction_fee,
         })
     }
@@ -195,15 +199,49 @@ impl Chain {
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractInit, ContractInitError> {
-        // Lookup artifact
-        let artifact = self.contract_module(module_reference)?;
-        let mut transaction_fee = self.calculate_energy_cost(lookup_module_cost(&artifact));
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
         let account_info = self.get_account(sender)?;
         if account_info.balance.available() < self.calculate_energy_cost(energy_reserved) + amount {
             return Err(ContractInitError::InsufficientFunds);
         }
+
+        let mut remaining_energy = energy_reserved;
+
+        // Compute the base cost for checking the transaction header.
+        let check_header_cost = {
+            let payload = InitContractPayload {
+                amount,
+                mod_ref: module_reference.into(),
+                init_name: contract_name.to_owned(),
+                param: parameter.clone().into(),
+            };
+            let pre_account_trx = transactions::construct::init_contract(
+                account_info.signature_count,
+                sender,
+                base::Nonce::from(0), // Value not matter, only used for serialized size.
+                common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
+                                       * used for serialized size. */
+                payload,
+                energy_reserved,
+            );
+            let transaction_size = to_bytes(&pre_account_trx).len() as u64;
+            transactions::cost::base_cost(transaction_size, account_info.signature_count)
+        };
+
+        // Charge the header cost.
+        remaining_energy = remaining_energy.saturating_sub(check_header_cost);
+
+        // Charge the base cost for initializing a contract.
+        remaining_energy =
+            remaining_energy.saturating_sub(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST);
+
+        // Lookup module.
+        let module = self.contract_module(module_reference)?;
+        let lookup_cost = lookup_module_cost(&module);
+        // Charge the cost for looking up the module.
+        remaining_energy = remaining_energy.saturating_sub(lookup_cost);
+
         // Construct the context.
         let init_ctx = v0::InitContext {
             metadata:        ChainMetadata {
@@ -215,19 +253,19 @@ impl Chain {
         // Initialize contract
         let mut loader = v1::trie::Loader::new(&[][..]);
         let res = v1::invoke_init(
-            artifact,
+            module.artifact,
             init_ctx,
             v1::InitInvocation {
                 amount,
                 init_name: contract_name.get_chain_name(),
                 parameter: &parameter.0,
-                energy: to_interpreter_energy(energy_reserved),
+                energy: to_interpreter_energy(remaining_energy),
             },
             false,
             loader,
         );
-        // Handle the result and update the transaction fee.
-        let res = match res {
+        // Handle the result and compute the transaction fee.
+        let (res, transaction_fee) = match res {
             Ok(v1::InitResult::Success {
                 logs,
                 return_value: _, /* Ignore return value for now, since our tools do not support
@@ -236,71 +274,123 @@ impl Chain {
                 mut state,
             }) => {
                 let contract_address = self.create_contract_address();
-                let energy_used = energy_reserved
-                    - from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
-                transaction_fee += self.calculate_energy_cost(energy_used);
-
                 let mut collector = v1::trie::SizeCollector::default();
 
-                let contract_instance = Contract {
-                    module_reference,
-                    contract_name: contract_name.to_owned(),
-                    state: state.freeze(&mut loader, &mut collector), // TODO: Charge for storage.
-                    owner: sender,
-                    self_balance: amount,
-                };
+                let persisted_state = state.freeze(&mut loader, &mut collector);
 
-                // Save the contract instance
-                self.contracts.insert(contract_address, contract_instance);
-                // Subtract the from the invoker.
-                self.get_account_mut(sender)?.balance.total -= amount;
+                let mut remaining_energy = InterpreterEnergy::from(remaining_energy);
 
-                Ok(SuccessfulContractInit {
-                    contract_address,
-                    logs,
-                    energy_used,
-                    transaction_fee,
-                })
+                // Charge one energy per stored state byte.
+                let energy_for_state_storage =
+                    to_interpreter_energy(Energy::from(collector.collect()));
+                remaining_energy = remaining_energy.saturating_sub(energy_for_state_storage);
+
+                // Charge the constant cost for initializing a contract.
+                remaining_energy = remaining_energy.saturating_sub(to_interpreter_energy(
+                    constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
+                ));
+
+                if remaining_energy.energy == 0 {
+                    // Ran out of energy. Charge the `energy_reserved`.
+                    let transaction_fee = self.calculate_energy_cost(energy_reserved);
+                    (
+                        Err(ContractInitError::ValidChainError(
+                            FailedContractInteraction::OutOfEnergy {
+                                energy_used:     energy_reserved,
+                                transaction_fee: self.calculate_energy_cost(energy_reserved),
+                            },
+                        )),
+                        transaction_fee,
+                    )
+                } else {
+                    // Perform the subtraction in the more finegrained (*1000) `InterpreterEnergy`,
+                    // and *then* convert to `Energy`. This is how it is done in the node, and if we
+                    // swap the operations, it can result in a small discrepancy due to rounding.
+                    let energy_reserved = to_interpreter_energy(energy_reserved);
+                    let energy_used =
+                        from_interpreter_energy(energy_reserved.saturating_sub(remaining_energy));
+                    let transaction_fee = self.calculate_energy_cost(energy_used);
+
+                    let contract_instance = Contract {
+                        module_reference,
+                        contract_name: contract_name.to_owned(),
+                        state: persisted_state,
+                        owner: sender,
+                        self_balance: amount,
+                    };
+
+                    // Save the contract instance
+                    self.contracts.insert(contract_address, contract_instance);
+
+                    // Subtract the amount from the invoker.
+                    self.get_account_mut(sender)
+                        .expect("Account known to exist")
+                        .balance
+                        .total -= amount;
+
+                    (
+                        Ok(SuccessfulContractInit {
+                            contract_address,
+                            logs,
+                            energy_used,
+                            transaction_fee,
+                        }),
+                        transaction_fee,
+                    )
+                }
             }
             Ok(v1::InitResult::Reject {
                 reason,
                 return_value,
                 remaining_energy,
             }) => {
-                let energy_used = energy_reserved
-                    - from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
-                transaction_fee += self.calculate_energy_cost(energy_used);
-                Err(ContractInitError::ValidChainError(
-                    FailedContractInteraction::Reject {
-                        reason,
-                        return_value,
-                        energy_used,
-                        transaction_fee,
-                    },
-                ))
+                let energy_reserved = to_interpreter_energy(energy_reserved);
+                let energy_used = from_interpreter_energy(
+                    energy_reserved.saturating_sub(InterpreterEnergy::from(remaining_energy)),
+                );
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                (
+                    Err(ContractInitError::ValidChainError(
+                        FailedContractInteraction::Reject {
+                            reason,
+                            return_value,
+                            energy_used,
+                            transaction_fee,
+                        },
+                    )),
+                    transaction_fee,
+                )
             }
             Ok(v1::InitResult::Trap {
                 error: _, // TODO: Should we forward this to the user?
                 remaining_energy,
             }) => {
-                let energy_used = energy_reserved
-                    - from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
-                transaction_fee += self.calculate_energy_cost(energy_used);
-                Err(ContractInitError::ValidChainError(
-                    FailedContractInteraction::Trap {
-                        energy_used,
-                        transaction_fee,
-                    },
-                ))
+                let energy_reserved = to_interpreter_energy(energy_reserved);
+                let energy_used = from_interpreter_energy(
+                    energy_reserved.saturating_sub(InterpreterEnergy::from(remaining_energy)),
+                );
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                (
+                    Err(ContractInitError::ValidChainError(
+                        FailedContractInteraction::Trap {
+                            energy_used,
+                            transaction_fee,
+                        },
+                    )),
+                    transaction_fee,
+                )
             }
             Ok(v1::InitResult::OutOfEnergy) => {
-                transaction_fee += self.calculate_energy_cost(energy_reserved);
-                Err(ContractInitError::ValidChainError(
-                    FailedContractInteraction::OutOfEnergy {
-                        energy_used: energy_reserved,
-                        transaction_fee,
-                    },
-                ))
+                let transaction_fee = self.calculate_energy_cost(energy_reserved);
+                (
+                    Err(ContractInitError::ValidChainError(
+                        FailedContractInteraction::OutOfEnergy {
+                            energy_used: energy_reserved,
+                            transaction_fee,
+                        },
+                    )),
+                    transaction_fee,
+                )
             }
             Err(e) => panic!("Internal error: init failed with interpreter error: {}", e),
         };
@@ -509,16 +599,17 @@ impl Chain {
         self.contracts.get(&address).map(|ci| ci.self_balance)
     }
 
-    /// Returns an [`Arc`] clone of the [`ContractModule`].
+    /// Return a clone of the [`ContractModule`] (which has an `Arc` around the
+    /// artifact).
     fn contract_module(
         &self,
         module_ref: ModuleReference,
-    ) -> Result<Arc<ContractModule>, ModuleMissing> {
+    ) -> Result<ContractModule, ModuleMissing> {
         let module = self
             .modules
             .get(&module_ref)
             .ok_or(ModuleMissing(module_ref))?;
-        Ok(Arc::clone(module))
+        Ok(module.clone())
     }
 
     /// Returns an immutable reference to an [`Account`].
@@ -751,9 +842,8 @@ pub(crate) fn from_interpreter_energy(interpreter_energy: InterpreterEnergy) -> 
 
 /// Calculate the energy energy for looking up a [`ContractModule`].
 pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
-    // TODO: Is it just the `.code`?
-    // Comes from Concordium/Cost.hs::lookupModule
-    Energy::from(module.code.len() as u64 / 50)
+    // The ratio is from Concordium/Cost.hs::lookupModule
+    Energy::from(module.size / 50)
 }
 
 /// Calculate the microCCD(mCCD) cost of energy(NRG) using the two exchange

@@ -16,7 +16,13 @@ use wasm_chain_integration::{
 use wasm_transform::artifact;
 
 /// A V1 artifact, with concrete types for the generic parameters.
-pub type ContractModule = artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>;
+#[derive(Debug, Clone)]
+pub struct ContractModule {
+    /// Size of the module in bytes. Used for cost accounting.
+    pub(crate) size:     u64,
+    /// The runnable module (artifact).
+    pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
+}
 
 /// Represents the block chain and supports a number of operations, including
 /// creating accounts, deploying modules, initializing contract, updating
@@ -32,7 +38,7 @@ pub struct Chain {
     /// Accounts and info about them.
     pub accounts:            BTreeMap<AccountAddress, Account>,
     /// Smart contract modules.
-    pub modules:             BTreeMap<ModuleReference, Arc<ContractModule>>,
+    pub modules:             BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
     pub contracts:           BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
@@ -134,7 +140,7 @@ pub struct SuccessfulModuleDeployment {
     /// The reference of the module deployed.
     pub module_reference: ModuleReference,
     /// The energy used for deployment.
-    pub energy:           Energy,
+    pub energy_used:      Energy,
     /// Cost of transaction.
     pub transaction_fee:  Amount,
 }

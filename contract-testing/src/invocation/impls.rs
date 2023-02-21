@@ -14,10 +14,7 @@ use concordium_base::{
         ModuleReference, OwnedEntrypointName, OwnedReceiveName, Parameter,
     },
 };
-use std::{
-    collections::{btree_map, BTreeMap},
-    sync::Arc,
-};
+use std::collections::{btree_map, BTreeMap};
 use wasm_chain_integration::{
     v0,
     v1::{self, trie},
@@ -153,11 +150,11 @@ impl EntrypointInvocationHandler {
             .contracts
             .get(&contract_address)
             .expect("Contract known to exist at this point");
-        let artifact = self.contract_module(contract_address);
+        let module = self.contract_module(contract_address);
 
         // Subtract the cost of looking up the module
         remaining_energy =
-            remaining_energy.subtract(to_interpreter_energy(lookup_module_cost(&artifact)).energy);
+            remaining_energy.subtract(to_interpreter_energy(lookup_module_cost(&module)).energy);
 
         // Construct the receive name (or fallback receive name) and ensure its presence
         // in the contract.
@@ -165,9 +162,12 @@ impl EntrypointInvocationHandler {
             let contract_name = instance.contract_name.as_contract_name().contract_name();
             let receive_name = format!("{}.{}", contract_name, entrypoint);
             let fallback_receive_name = format!("{}.", contract_name);
-            if artifact.has_entrypoint(receive_name.as_str()) {
+            if module.artifact.has_entrypoint(receive_name.as_str()) {
                 OwnedReceiveName::new_unchecked(receive_name)
-            } else if artifact.has_entrypoint(fallback_receive_name.as_str()) {
+            } else if module
+                .artifact
+                .has_entrypoint(fallback_receive_name.as_str())
+            {
                 OwnedReceiveName::new_unchecked(fallback_receive_name)
             } else {
                 // Return early.
@@ -212,7 +212,7 @@ impl EntrypointInvocationHandler {
 
         // Get the initial result from invoking receive
         let initial_result = v1::invoke_receive(
-            artifact,
+            module.artifact,
             receive_ctx,
             v1::ReceiveInvocation {
                 amount,
@@ -508,7 +508,7 @@ impl EntrypointInvocationHandler {
     ///  - Contract instance must exist (and therefore also the artifact).
     ///  - If the changeset contains a module reference, then it must refer a
     ///    deployed module.
-    fn contract_module(&self, address: ContractAddress) -> Arc<ContractModule> {
+    fn contract_module(&self, address: ContractAddress) -> ContractModule {
         match self
             .changeset
             .current()
@@ -517,11 +517,11 @@ impl EntrypointInvocationHandler {
             .and_then(|c| c.module)
         {
             // Contract has been upgrade, new module exists.
-            Some(new_module) => Arc::clone(
-                self.modules
-                    .get(&new_module)
-                    .expect("Precondition violation: module must exist."),
-            ),
+            Some(new_module) => self
+                .modules
+                .get(&new_module)
+                .expect("Precondition violation: module must exist.")
+                .clone(),
             // Contract hasn't been upgraded. Use persisted module.
             None => {
                 let module_ref = self
@@ -529,11 +529,10 @@ impl EntrypointInvocationHandler {
                     .get(&address)
                     .expect("Precondition violation: contract must exist.")
                     .module_reference;
-                Arc::clone(
-                    self.modules
-                        .get(&module_ref)
-                        .expect("Precondition violation: module must exist."),
-                )
+                self.modules
+                    .get(&module_ref)
+                    .expect("Precondition violation: module must exist.")
+                    .clone()
             }
         }
     }
@@ -1190,7 +1189,7 @@ impl<'a> InvocationData<'a> {
                                     energy_after_invoke -=
                                         to_interpreter_energy(lookup_module_cost(module)).energy;
 
-                                    if module.export.contains_key(
+                                    if module.artifact.export.contains_key(
                                         self.contract_name.as_contract_name().get_chain_name(),
                                     ) {
                                         // Update module reference in the changeset.

@@ -3,7 +3,7 @@ use concordium_base::contracts_common::{
     AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
     OwnedEntrypointName, SlotTime,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use wasm_chain_integration::{
     v0,
     v1::{trie::MutableState, InvokeResponse},
@@ -24,7 +24,7 @@ pub(crate) struct InvokeEntrypointResult {
 pub(crate) struct EntrypointInvocationHandler {
     pub(super) changeset:          ChangeSet,
     pub(super) accounts:           BTreeMap<AccountAddress, Account>,
-    pub(super) modules:            BTreeMap<ModuleReference, Arc<ContractModule>>,
+    pub(super) modules:            BTreeMap<ModuleReference, ContractModule>,
     pub(super) contracts:          BTreeMap<ContractAddress, Contract>,
     pub(super) slot_time:          SlotTime,
     pub(super) euro_per_energy:    ExchangeRate,

@@ -534,6 +534,35 @@ mod integrate_contract {
 }
 
 #[test]
+fn init_with_less_energy_than_module_lookup() {
+    let mut chain = Chain::new();
+    let initial_balance = Amount::from_ccd(1000000);
+    chain.create_account(ACC_0, Account::new(initial_balance));
+
+    let res_deploy = chain
+        .module_deploy_v1(ACC_0, "examples/fib/a.wasm.v1")
+        .expect("Deploying valid module should work");
+
+    let reserved_energy = Energy::from(10);
+
+    let res_init = chain.contract_init(
+        ACC_0,
+        res_deploy.module_reference,
+        ContractName::new_unchecked("init_fib"),
+        OwnedParameter::empty(),
+        Amount::zero(),
+        reserved_energy,
+    );
+    match res_init {
+        Err(ContractInitError::ValidChainError(FailedContractInteraction::OutOfEnergy {
+            energy_used,
+            ..
+        })) if energy_used == reserved_energy => (),
+        _ => panic!("Expected to fail with out of energy."),
+    }
+}
+
+#[test]
 fn update_with_fib_reentry_works() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
@@ -588,6 +617,10 @@ fn update_with_fib_reentry_works() {
                 - res_update.transaction_fee
         )
     );
+    // TODO: These values come from executing the same transactions on the node.
+    // Perhaps we should remove them once the cost accounting is in place.
+    assert_eq!(res_deploy.energy_used, Energy::from(17547));
+    assert_eq!(res_init.energy_used, Energy::from(1072));
     assert_eq!(chain.contracts.len(), 1);
     assert!(res_update.state_changed);
     let expected_res = u64::to_le_bytes(13);
