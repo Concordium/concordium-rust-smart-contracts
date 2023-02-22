@@ -20,3 +20,7 @@ pub(crate) const INITIALIZE_CONTRACT_INSTANCE_BASE_COST: Energy = Energy { energ
 
 /// Cost of creating an empty smart contract instance.
 pub(crate) const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: Energy = Energy { energy: 200 };
+
+/// The base cost of updating a contract instance to cover administrative
+/// costs. Even if no code is run.
+pub(crate) const UPDATE_CONTRACT_INSTANCE_BASE_COST: Energy = Energy { energy: 300 };

@@ -6,8 +6,8 @@ use concordium_base::{
         ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, Parameter,
         SlotTime, Timestamp,
     },
-    smart_contracts::{ModuleSource, WasmModule, WasmVersion},
-    transactions::{self, cost, InitContractPayload},
+    smart_contracts::{ModuleSource, OwnedReceiveName, WasmModule, WasmVersion},
+    transactions::{self, cost},
 };
 use num_bigint::BigUint;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
@@ -203,7 +203,7 @@ impl Chain {
 
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
-            let payload = InitContractPayload {
+            let payload = transactions::InitContractPayload {
                 amount,
                 mod_ref: module_reference.into(),
                 init_name: contract_name.to_owned(),
@@ -425,6 +425,45 @@ impl Chain {
             return Err(ContractUpdateError::InsufficientFunds);
         }
 
+        let mut remaining_energy = energy_reserved;
+
+        // Compute the base cost for checking the transaction header.
+        let check_header_cost = {
+            let receive_name = {
+                let contract_name = self
+                    .contracts
+                    .get(&contract_address)
+                    .ok_or(ContractUpdateError::InstanceDoesNotExist(
+                        ContractInstanceMissing(contract_address),
+                    ))?
+                    .contract_name
+                    .as_contract_name();
+                OwnedReceiveName::construct_unchecked(contract_name, entrypoint)
+            };
+
+            let payload = transactions::UpdateContractPayload {
+                amount,
+                address: contract_address,
+                receive_name,
+                message: parameter.clone().into(),
+            };
+
+            let pre_account_trx = transactions::construct::update_contract(
+                account_info.signature_count,
+                invoker,
+                base::Nonce::from(0), // Value not matter, only used for serialized size.
+                common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
+                                       * used for serialized size. */
+                payload,
+                energy_reserved,
+            );
+            let transaction_size = to_bytes(&pre_account_trx).len() as u64;
+            transactions::cost::base_cost(transaction_size, account_info.signature_count)
+        };
+
+        // Charge the header cost.
+        remaining_energy = remaining_energy.saturating_sub(check_header_cost);
+
         // TODO: Should chain events be part of the changeset?
         let (result, changeset, chain_events) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
@@ -436,12 +475,17 @@ impl Chain {
                 Parameter(&parameter.0),
                 amount,
                 invoker_amount_reserved_for_nrg,
-                energy_reserved,
+                remaining_energy,
             );
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
         let (energy_for_state_increase, state_changed) = if result.is_success() {
+            let remaining_energy = from_interpreter_energy(result.remaining_energy);
+            println!(
+                ">>> contract_update before state cost: {}",
+                remaining_energy
+            );
             match changeset.persist(
                 from_interpreter_energy(result.remaining_energy),
                 contract_address,

@@ -590,9 +590,9 @@ fn update_with_fib_reentry_works() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("receive"),
-            OwnedParameter::new(&6u64),
+            OwnedParameter::new(&3u64),
             Amount::zero(),
-            Energy::from(4000000),
+            Energy::from(10000),
         )
         .expect("Updating valid contract should work");
 
@@ -619,9 +619,12 @@ fn update_with_fib_reentry_works() {
         )
     );
     // TODO: These values come from executing the same transactions on the node.
-    // Perhaps we should remove them once the cost accounting is in place.
-    assert_eq!(res_deploy.energy_used, Energy::from(17547));
-    assert_eq!(res_init.energy_used, Energy::from(1072));
+    // Since they differ slightly dependent on which machine that built it, we
+    // should remove them once cost accounting is in place.
+    assert_eq!(res_deploy.energy_used, Energy::from(18225));
+    assert_eq!(res_init.energy_used, Energy::from(1085));
+    assert_eq!(res_update.energy_used, Energy::from(3496));
+    assert_eq!(res_view.energy_used, Energy::from(631));
     assert_eq!(chain.contracts.len(), 1);
     assert!(res_update.state_changed);
     let expected_res = u64::to_le_bytes(13);

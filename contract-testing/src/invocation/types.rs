@@ -1,7 +1,10 @@
 use crate::types::{Account, ChainEvent, Contract, ContractModule};
-use concordium_base::contracts_common::{
-    AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
-    OwnedEntrypointName, SlotTime,
+use concordium_base::{
+    base::Energy,
+    contracts_common::{
+        AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
+        OwnedEntrypointName, SlotTime,
+    },
 };
 use std::collections::BTreeMap;
 use wasm_chain_integration::{

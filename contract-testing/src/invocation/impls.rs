@@ -1,7 +1,7 @@
 use super::types::*;
 use crate::{
     constants,
-    impls::{lookup_module_cost, to_interpreter_energy},
+    impls::{from_interpreter_energy, lookup_module_cost, to_interpreter_energy},
     types::{
         Account, Chain, ChainEvent, Contract, ContractModule, InsufficientBalanceError,
         TransferError,
@@ -67,7 +67,7 @@ impl EntrypointInvocationHandler {
             parameter,
             amount,
             invoker_amount_reserved_for_nrg,
-            to_interpreter_energy(reserved_energy),
+            reserved_energy,
             &mut chain_events,
         );
         (result, contract_invocation.changeset, chain_events)
@@ -93,11 +93,14 @@ impl EntrypointInvocationHandler {
         // is reserved, it is not subtracted in the chain.accounts map.
         // Used to handle account balance queries for the invoker account.
         invoker_amount_reserved_for_nrg: Amount,
-        // Uses [`Interpreter`] energy to avoid rounding issues when converting to and fro
-        // [`Energy`].
-        mut remaining_energy: InterpreterEnergy,
+        mut remaining_energy: Energy,
         chain_events: &mut Vec<ChainEvent>,
     ) -> InvokeEntrypointResult {
+        println!(
+            ">>> invoke_entrypoint before base cost: {}",
+            remaining_energy
+        );
+
         // Move the amount from the sender to the contract, if any.
         // And get the new self_balance.
         let instance_self_balance = if amount.micro_ccd() > 0 {
@@ -121,9 +124,9 @@ impl EntrypointInvocationHandler {
                     // Return early.
                     // TODO: Should we charge any energy for this?
                     return InvokeEntrypointResult {
-                        invoke_response: v1::InvokeResponse::Failure { kind },
-                        logs: None,
-                        remaining_energy,
+                        invoke_response:  v1::InvokeResponse::Failure { kind },
+                        logs:             None,
+                        remaining_energy: to_interpreter_energy(remaining_energy),
                     };
                 }
             }
@@ -135,11 +138,11 @@ impl EntrypointInvocationHandler {
                     // TODO: For the top-most update, we should catch this in `contract_update` and
                     // return `ContractUpdateError::EntrypointMissing`.
                     return InvokeEntrypointResult {
-                        invoke_response: v1::InvokeResponse::Failure {
+                        invoke_response:  v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::NonExistentContract,
                         },
-                        logs: None,
-                        remaining_energy,
+                        logs:             None,
+                        remaining_energy: to_interpreter_energy(remaining_energy),
                     };
                 }
             }
@@ -152,9 +155,16 @@ impl EntrypointInvocationHandler {
             .expect("Contract known to exist at this point");
         let module = self.contract_module(contract_address);
 
-        // Subtract the cost of looking up the module
+        // Charge the base cost for updating a contract.
         remaining_energy =
-            remaining_energy.subtract(to_interpreter_energy(lookup_module_cost(&module)).energy);
+            remaining_energy.saturating_sub(constants::UPDATE_CONTRACT_INSTANCE_BASE_COST);
+
+        // Subtract the cost of looking up the module
+        remaining_energy = remaining_energy.saturating_sub(lookup_module_cost(&module));
+        println!(
+            ">>> invoke_entrypoint after module lookup: {}",
+            remaining_energy
+        );
 
         // Construct the receive name (or fallback receive name) and ensure its presence
         // in the contract.
@@ -172,11 +182,11 @@ impl EntrypointInvocationHandler {
             } else {
                 // Return early.
                 return InvokeEntrypointResult {
-                    invoke_response: v1::InvokeResponse::Failure {
+                    invoke_response:  v1::InvokeResponse::Failure {
                         kind: v1::InvokeFailure::NonExistentEntrypoint,
                     },
-                    logs: None,
-                    remaining_energy,
+                    logs:             None,
+                    remaining_energy: to_interpreter_energy(remaining_energy),
                 };
             }
         };
@@ -211,22 +221,24 @@ impl EntrypointInvocationHandler {
         let instance_state = v1::InstanceState::new(loader, inner);
 
         // Get the initial result from invoking receive
-        let initial_result = v1::invoke_receive(
-            module.artifact,
-            receive_ctx,
-            v1::ReceiveInvocation {
-                amount,
-                receive_name: receive_name.as_receive_name(),
-                parameter: parameter.0,
-                energy: remaining_energy,
-            },
-            instance_state,
-            v1::ReceiveParams {
-                max_parameter_size:           65535,
-                limit_logs_and_return_values: false,
-                support_queries:              true,
-            },
-        );
+        let initial_result = run_interpreter(remaining_energy, |energy| {
+            v1::invoke_receive(
+                module.artifact,
+                receive_ctx,
+                v1::ReceiveInvocation {
+                    amount,
+                    receive_name: receive_name.as_receive_name(),
+                    parameter: parameter.0,
+                    energy,
+                },
+                instance_state,
+                v1::ReceiveParams {
+                    max_parameter_size:           65535,
+                    limit_logs_and_return_values: false,
+                    support_queries:              true,
+                },
+            )
+        });
 
         // Set up some data needed for recursively processing the receive until the end,
         // i.e. beyond interrupts.
@@ -687,6 +699,75 @@ impl EntrypointInvocationHandler {
     fn rollback(&mut self) { self.changeset.rollback(); }
 }
 
+fn run_interpreter<F>(
+    available_energy: Energy,
+    f: F,
+) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>
+where
+    F: FnOnce(InterpreterEnergy) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>, {
+    let available_interpreter_energy = to_interpreter_energy(available_energy);
+    let res = f(available_interpreter_energy);
+    if let Ok(res) = res {
+        let subtract_then_convert = |remaining_energy| -> u64 {
+            let remaining_energy = InterpreterEnergy::from(remaining_energy);
+            println!(
+                ">>> Inside run_interpreter:\n\tavailable: {}\n\tremaining: {}",
+                available_interpreter_energy, remaining_energy
+            );
+            let used_energy = from_interpreter_energy(
+                available_interpreter_energy.saturating_sub(remaining_energy),
+            );
+            to_interpreter_energy(available_energy.saturating_sub(used_energy)).energy
+        };
+        match res {
+            v1::ReceiveResult::Success {
+                logs,
+                state_changed,
+                return_value,
+                remaining_energy,
+            } => Ok(v1::ReceiveResult::Success {
+                logs,
+                state_changed,
+                return_value,
+                remaining_energy: subtract_then_convert(remaining_energy),
+            }),
+
+            v1::ReceiveResult::Interrupt {
+                remaining_energy,
+                state_changed,
+                logs,
+                config,
+                interrupt,
+            } => Ok(v1::ReceiveResult::Interrupt {
+                remaining_energy: subtract_then_convert(remaining_energy),
+                state_changed,
+                logs,
+                config,
+                interrupt,
+            }),
+            v1::ReceiveResult::Reject {
+                reason,
+                return_value,
+                remaining_energy,
+            } => Ok(v1::ReceiveResult::Reject {
+                reason,
+                return_value,
+                remaining_energy: subtract_then_convert(remaining_energy),
+            }),
+            v1::ReceiveResult::Trap {
+                error,
+                remaining_energy,
+            } => Ok(v1::ReceiveResult::Trap {
+                error,
+                remaining_energy: subtract_then_convert(remaining_energy),
+            }),
+            v1::ReceiveResult::OutOfEnergy => Ok(v1::ReceiveResult::OutOfEnergy),
+        }
+    } else {
+        res
+    }
+}
+
 impl ChangeSet {
     /// Creates a new changeset with one empty [`Changes`] element on the
     /// stack..
@@ -1067,13 +1148,18 @@ impl<'a> InvocationData<'a> {
                                 success,
                             });
 
-                            let resume_res = v1::resume_receive(
-                                config,
-                                response,
-                                InterpreterEnergy::from(remaining_energy),
-                                &mut self.state,
-                                false, // never changes on transfers
-                                v1::trie::Loader::new(&[][..]),
+                            let resume_res = run_interpreter(
+                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
+                                |energy| {
+                                    v1::resume_receive(
+                                        config,
+                                        response,
+                                        energy,
+                                        &mut self.state,
+                                        false, // never changes on transfers
+                                        v1::trie::Loader::new(&[][..]),
+                                    )
+                                },
                             );
 
                             // Resume
@@ -1106,6 +1192,8 @@ impl<'a> InvocationData<'a> {
                                 address, parameter
                             );
 
+                            println!(">>> Before internal call: {}", remaining_energy);
+
                             let res = self.invocation_handler.invoke_entrypoint(
                                 self.invoker,
                                 Address::Contract(self.address),
@@ -1114,7 +1202,7 @@ impl<'a> InvocationData<'a> {
                                 Parameter(&parameter),
                                 amount,
                                 self.invoker_amount_reserved_for_nrg,
-                                InterpreterEnergy::from(remaining_energy),
+                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
                                 &mut self.chain_events,
                             );
 
@@ -1156,13 +1244,25 @@ impl<'a> InvocationData<'a> {
 
                             self.chain_events.push(resume_event);
 
-                            let resume_res = v1::resume_receive(
-                                config,
-                                res.invoke_response,
-                                res.remaining_energy,
-                                &mut self.state,
-                                state_changed,
-                                v1::trie::Loader::new(&[][..]),
+                            println!(
+                                ">>> After internal call: {} (state changed: {})",
+                                res.remaining_energy, state_changed
+                            );
+
+                            let resume_res = run_interpreter(
+                                from_interpreter_energy(InterpreterEnergy::from(
+                                    res.remaining_energy,
+                                )),
+                                |energy| {
+                                    v1::resume_receive(
+                                        config,
+                                        res.invoke_response,
+                                        energy,
+                                        &mut self.state,
+                                        state_changed,
+                                        v1::trie::Loader::new(&[][..]),
+                                    )
+                                },
                             );
 
                             self.process(resume_res)
@@ -1173,12 +1273,12 @@ impl<'a> InvocationData<'a> {
                             // Add the interrupt event.
                             self.chain_events.push(interrupt_event);
 
+                            let mut remaining_energy =
+                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+
                             // Charge a base cost.
-                            let mut energy_after_invoke = remaining_energy
-                                - to_interpreter_energy(
-                                    constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST,
-                                )
-                                .energy;
+                            remaining_energy = remaining_energy
+                                .saturating_sub(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST);
 
                             let response = match self.invocation_handler.modules.get(&module_ref) {
                                 None => v1::InvokeResponse::Failure {
@@ -1186,8 +1286,8 @@ impl<'a> InvocationData<'a> {
                                 },
                                 Some(module) => {
                                     // Charge for the module lookup.
-                                    energy_after_invoke -=
-                                        to_interpreter_energy(lookup_module_cost(module)).energy;
+                                    remaining_energy =
+                                        remaining_energy.saturating_sub(lookup_module_cost(module));
 
                                     if module.artifact.export.contains_key(
                                         self.contract_name.as_contract_name().get_chain_name(),
@@ -1198,10 +1298,9 @@ impl<'a> InvocationData<'a> {
                                             .save_module_upgrade(self.address, module_ref);
 
                                         // Charge for the initialization cost.
-                                        energy_after_invoke -= to_interpreter_energy(
+                                        remaining_energy = remaining_energy.saturating_sub(
                                             constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
-                                        )
-                                        .energy;
+                                        );
 
                                         let upgrade_event = ChainEvent::Upgraded {
                                             address: self.address,
@@ -1231,14 +1330,16 @@ impl<'a> InvocationData<'a> {
                                 success,
                             });
 
-                            let resume_res = v1::resume_receive(
-                                config,
-                                response,
-                                InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.state,
-                                state_changed,
-                                v1::trie::Loader::new(&[][..]),
-                            );
+                            let resume_res = run_interpreter(remaining_energy, |energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    state_changed,
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            });
 
                             self.process(resume_res)
                         }
@@ -1269,20 +1370,22 @@ impl<'a> InvocationData<'a> {
                                 },
                             };
 
-                            let energy_after_invoke = remaining_energy
-                                - to_interpreter_energy(
-                                    constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
-                                )
-                                .energy;
-
-                            let resume_res = v1::resume_receive(
-                                config,
-                                response,
-                                InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.state,
-                                false, // State never changes on queries.
-                                v1::trie::Loader::new(&[][..]),
+                            let mut remaining_energy =
+                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+                            remaining_energy = remaining_energy.saturating_sub(
+                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
                             );
+
+                            let resume_res = run_interpreter(remaining_energy, |energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // State never changes on queries.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            });
 
                             self.process(resume_res)
                         }
@@ -1303,20 +1406,22 @@ impl<'a> InvocationData<'a> {
                                 },
                             };
 
-                            let energy_after_invoke = remaining_energy
-                                - to_interpreter_energy(
-                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
-                                )
-                                .energy;
-
-                            let resume_res = v1::resume_receive(
-                                config,
-                                response,
-                                InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.state,
-                                false, // State never changes on queries.
-                                v1::trie::Loader::new(&[][..]),
+                            let mut remaining_energy =
+                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+                            remaining_energy = remaining_energy.saturating_sub(
+                                constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
                             );
+
+                            let resume_res = run_interpreter(remaining_energy, |energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // State never changes on queries.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            });
 
                             self.process(resume_res)
                         }
@@ -1335,20 +1440,22 @@ impl<'a> InvocationData<'a> {
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 
-                            let energy_after_invoke = remaining_energy
-                                - to_interpreter_energy(
-                                    constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
-                                )
-                                .energy;
-
-                            let resume_res = v1::resume_receive(
-                                config,
-                                response,
-                                InterpreterEnergy::from(energy_after_invoke),
-                                &mut self.state,
-                                false, // State never changes on queries.
-                                v1::trie::Loader::new(&[][..]),
+                            let mut remaining_energy =
+                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+                            remaining_energy = remaining_energy.saturating_sub(
+                                constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
                             );
+
+                            let resume_res = run_interpreter(remaining_energy, |energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // State never changes on queries.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            });
 
                             self.process(resume_res)
                         }
