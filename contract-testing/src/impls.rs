@@ -636,6 +636,13 @@ impl Chain {
         self.contracts.get(&address).map(|ci| ci.self_balance)
     }
 
+    /// Helper method for looking up part of the state of a smart contract,
+    /// which is a trie.
+    pub fn contract_state_lookup(&self, address: ContractAddress, key: &[u8]) -> Option<Vec<u8>> {
+        let mut loader = v1::trie::Loader::new(&[][..]);
+        self.contracts.get(&address)?.state.lookup(&mut loader, key)
+    }
+
     /// Return a clone of the [`ContractModule`] (which has an `Arc` around the
     /// artifact).
     fn contract_module(
