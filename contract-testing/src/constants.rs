@@ -24,3 +24,7 @@ pub(crate) const INITIALIZE_CONTRACT_INSTANCE_CREATE_COST: Energy = Energy { ene
 /// The base cost of updating a contract instance to cover administrative
 /// costs. Even if no code is run.
 pub(crate) const UPDATE_CONTRACT_INSTANCE_BASE_COST: Energy = Energy { energy: 300 };
+
+/// The cost for a simple transfer (simple because it is not an encrypted or
+/// scheduled transfer).
+pub(crate) const SIMPLE_TRANSFER_COST: Energy = Energy { energy: 300 };
