@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Fix testing of crypto primitives using secp256k1 signature scheme.
+
 ## concordium-std 6.0.0 (2023-02-08)
 
 - [`wee_alloc`](https://docs.rs/wee_alloc/latest/wee_alloc/index.html) is no
