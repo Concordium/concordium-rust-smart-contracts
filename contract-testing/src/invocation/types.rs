@@ -82,28 +82,22 @@ pub(super) struct ContractChanges {
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
 pub(super) struct InvocationData<'a> {
     /// The invoker.
-    pub(super) invoker: AccountAddress,
+    pub(super) invoker:            AccountAddress,
     /// The contract being called.
-    pub(super) address: ContractAddress,
+    pub(super) address:            ContractAddress,
     /// The name of the contract.
-    pub(super) contract_name: OwnedContractName,
+    pub(super) contract_name:      OwnedContractName,
     /// The amount sent from the sender to the contract.
-    pub(super) amount: Amount,
-    /// The CCD amount reserved from the invoker account for the energy. While
-    /// the amount is reserved, it is not subtracted in the chain.accounts
-    /// map. Used to handle account balance queries for the invoker account.
-    /// TODO: We could use a changeset for accounts -> balance, and then look up
-    /// the "chain.accounts" values for chain queries.
-    pub(super) invoker_amount_reserved_for_nrg: Amount,
+    pub(super) amount:             Amount,
     /// The entrypoint to execute.
-    pub(super) entrypoint: OwnedEntrypointName,
+    pub(super) entrypoint:         OwnedEntrypointName,
     /// A reference to the [`EntrypointInvocationHandler`], which is used to for
     /// handling interrupts and for querying chain data.
     pub(super) invocation_handler: &'a mut EntrypointInvocationHandler,
     /// The current state.
-    pub(super) state: MutableState,
+    pub(super) state:              MutableState,
     /// Chain events that have occurred during the execution.
-    pub(super) chain_events: Vec<ChainEvent>,
+    pub(super) chain_events:       Vec<ChainEvent>,
 }
 
 /// A positive or negative delta in for an [`Amount`].

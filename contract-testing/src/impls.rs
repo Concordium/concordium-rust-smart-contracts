@@ -416,14 +416,16 @@ impl Chain {
             return Err(ContractUpdateError::SenderDoesNotExist(sender));
         }
 
-        // Ensure account exists and can pay for the reserved energy and amount
-        // TODO: Could we just remove this amount in the changeset and then put back the
-        // to_ccd(remaining_energy) afterwards?
-        let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        // Ensure account exists and can pay for the reserved energy and amount
+        let account_info = self.get_account_mut(invoker)?;
+        let invoker_signature_count = account_info.signature_count;
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
+        // Charge account for the reserved energy up front. This is to ensure that
+        // contract queries for the invoker balance are correct.
+        account_info.balance.total -= invoker_amount_reserved_for_nrg;
 
         let mut remaining_energy = energy_reserved;
 
@@ -449,16 +451,16 @@ impl Chain {
             };
 
             let pre_account_trx = transactions::construct::update_contract(
-                account_info.signature_count,
+                invoker_signature_count,
                 invoker,
-                base::Nonce::from(0), // Value not matter, only used for serialized size.
+                base::Nonce::from(0), // Value does not matter, only used for serialized size.
                 common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
                                        * used for serialized size. */
                 payload,
                 energy_reserved,
             );
             let transaction_size = to_bytes(&pre_account_trx).len() as u64;
-            transactions::cost::base_cost(transaction_size, account_info.signature_count)
+            transactions::cost::base_cost(transaction_size, invoker_signature_count)
         };
 
         // Charge the header cost.
@@ -474,18 +476,12 @@ impl Chain {
                 entrypoint.to_owned(),
                 Parameter(&parameter.0),
                 amount,
-                invoker_amount_reserved_for_nrg,
                 remaining_energy,
             );
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
         let (energy_for_state_increase, state_changed) = if result.is_success() {
-            let remaining_energy = from_interpreter_energy(result.remaining_energy);
-            println!(
-                ">>> contract_update before state cost: {}",
-                remaining_energy
-            );
             match changeset.persist(
                 from_interpreter_energy(result.remaining_energy),
                 contract_address,
@@ -513,10 +509,13 @@ impl Chain {
             state_changed,
         );
 
-        // Charge the transaction fee irrespective of the result.
-        // TODO: If we charge up front, then we should return to_ccd(remaining_energy)
-        // here instead.
-        self.get_account_mut(invoker)?.balance.total -= transaction_fee;
+        // The `invoker` was charged for all the `reserved_energy` up front.
+        // Here, we return the amount for any remaining energy.
+        let return_amount = invoker_amount_reserved_for_nrg - transaction_fee;
+        self.get_account_mut(invoker)
+            .expect("Known to exist")
+            .balance
+            .total += return_amount;
         res
     }
 
@@ -544,12 +543,15 @@ impl Chain {
             return Err(ContractUpdateError::SenderDoesNotExist(sender));
         }
 
-        // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.get_account(invoker)?;
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        // Ensure account exists and can pay for the reserved energy and amount
+        let account_info = self.get_account_mut(invoker)?;
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
+        // Charge account for the reserved energy up front. This is to ensure that
+        // contract queries for the invoker balance are correct.
+        account_info.balance.total -= invoker_amount_reserved_for_nrg;
 
         let (result, changeset, chain_events) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
@@ -560,7 +562,6 @@ impl Chain {
                 entrypoint.to_owned(),
                 Parameter(&parameter.0),
                 amount,
-                invoker_amount_reserved_for_nrg,
                 energy_reserved,
             );
 
@@ -589,6 +590,13 @@ impl Chain {
             energy_for_state_increase,
             state_changed,
         );
+
+        // Return the amount charged for the reserved energy, as this is not a
+        // transaction.
+        self.get_account_mut(invoker)
+            .expect("Known to exist")
+            .balance
+            .total += invoker_amount_reserved_for_nrg;
 
         result
     }

@@ -40,10 +40,6 @@ impl EntrypointInvocationHandler {
         entrypoint: OwnedEntrypointName,
         parameter: Parameter,
         amount: Amount,
-        // The CCD amount reserved from the invoker account. While the amount
-        // is reserved, it is not subtracted in the chain.accounts map.
-        // Used to handle account balance queries for the invoker account.
-        invoker_amount_reserved_for_nrg: Amount,
         reserved_energy: Energy,
     ) -> (InvokeEntrypointResult, ChangeSet, Vec<ChainEvent>) {
         let mut contract_invocation = Self {
@@ -66,7 +62,6 @@ impl EntrypointInvocationHandler {
             entrypoint,
             parameter,
             amount,
-            invoker_amount_reserved_for_nrg,
             reserved_energy,
             &mut chain_events,
         );
@@ -89,10 +84,6 @@ impl EntrypointInvocationHandler {
         entrypoint: OwnedEntrypointName,
         parameter: Parameter,
         amount: Amount,
-        // The CCD amount reserved from the invoker account. While the amount
-        // is reserved, it is not subtracted in the chain.accounts map.
-        // Used to handle account balance queries for the invoker account.
-        invoker_amount_reserved_for_nrg: Amount,
         mut remaining_energy: Energy,
         chain_events: &mut Vec<ChainEvent>,
     ) -> InvokeEntrypointResult {
@@ -238,7 +229,6 @@ impl EntrypointInvocationHandler {
             address: contract_address,
             contract_name,
             amount,
-            invoker_amount_reserved_for_nrg,
             entrypoint,
             invocation_handler: self,
             state: mutable_state,
@@ -1211,7 +1201,6 @@ impl<'a> InvocationData<'a> {
                                 name,
                                 Parameter(&parameter),
                                 amount,
-                                self.invoker_amount_reserved_for_nrg,
                                 from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
                                 &mut self.chain_events,
                             );
@@ -1350,26 +1339,13 @@ impl<'a> InvocationData<'a> {
                         }
                         v1::Interrupt::QueryAccountBalance { address } => {
                             println!("\t\tQuerying account balance of {}", address);
-                            // When querying an account, the amounts from any `invoke_transfer`s
-                            // should be included. That is handled by
-                            // the `chain` struct already.
                             let response = match self.invocation_handler.account_balance(address) {
-                                Some(mut balance) => {
-                                    // If you query the invoker account, it should also
-                                    // take into account the send-amount and the amount reserved for
-                                    // the reserved max energy. The former is handled in
-                                    // `invoke_entrypoint`, but the latter is represented in
-                                    // `self.invoker_amount_reserved_for_nrg`.
-                                    if address == self.invoker {
-                                        balance.total -= self.invoker_amount_reserved_for_nrg;
-                                    }
-                                    v1::InvokeResponse::Success {
-                                        new_balance: self
-                                            .invocation_handler
-                                            .contract_balance_unchecked(self.address),
-                                        data:        Some(to_bytes(&balance)),
-                                    }
-                                }
+                                Some(balance) => v1::InvokeResponse::Success {
+                                    new_balance: self
+                                        .invocation_handler
+                                        .contract_balance_unchecked(self.address),
+                                    data:        Some(to_bytes(&balance)),
+                                },
                                 None => v1::InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::NonExistentAccount,
                                 },
