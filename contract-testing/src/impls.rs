@@ -402,7 +402,7 @@ impl Chain {
         sender: Address,
         contract_address: ContractAddress,
         entrypoint: EntrypointName,
-        parameter: OwnedParameter,
+        parameter: OwnedParameter, // TODO: Should we check size <= 65535?
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
