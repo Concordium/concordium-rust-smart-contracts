@@ -76,7 +76,7 @@ pub struct Account {
 }
 
 /// An event that occurred during a contract update or invocation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChainEvent {
     /// A contract was interrupted.
     Interrupted {
