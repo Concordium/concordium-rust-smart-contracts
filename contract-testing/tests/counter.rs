@@ -57,7 +57,8 @@ fn test_counter() {
     let parameter = (
         res_init.contract_address,
         OwnedParameter::empty(),
-        (EntrypointName::new_unchecked("inc"), Amount::zero()),
+        EntrypointName::new_unchecked("inc"),
+        Amount::zero(),
     );
     chain
         .contract_update(

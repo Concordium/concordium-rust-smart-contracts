@@ -55,15 +55,14 @@ fn test_case_1() {
     let forward_parameter = (
         res_init_a.contract_address,
         0u16, // length of empty parameter
-        (EntrypointName::new_unchecked("a_modify"), Amount::zero()),
+        EntrypointName::new_unchecked("a_modify"),
+        Amount::zero(),
     );
     let forward_parameter_len = to_bytes(&forward_parameter).len();
     let parameter = (
-        (
-            res_init_b.contract_address,
-            forward_parameter_len as u16,
-            forward_parameter,
-        ),
+        res_init_b.contract_address,
+        forward_parameter_len as u16,
+        forward_parameter,
         EntrypointName::new_unchecked("b_forward_crash"),
         Amount::zero(),
     );
@@ -131,15 +130,14 @@ fn test_case_2() {
     let forward_parameter = (
         res_init_a.contract_address,
         0u16, // length of empty parameter
-        (EntrypointName::new_unchecked("a_no_modify"), Amount::zero()),
+        EntrypointName::new_unchecked("a_no_modify"),
+        Amount::zero(),
     );
     let forward_parameter_len = to_bytes(&forward_parameter).len();
     let parameter = (
-        (
-            res_init_b.contract_address,
-            forward_parameter_len as u16,
-            forward_parameter,
-        ),
+        res_init_b.contract_address,
+        forward_parameter_len as u16,
+        forward_parameter,
         EntrypointName::new_unchecked("b_forward"),
         Amount::zero(),
     );
@@ -265,15 +263,14 @@ fn test_case_4() {
     let forward_parameter = (
         res_init_a.contract_address,
         0u16, // length of empty parameter
-        (EntrypointName::new_unchecked("a_modify"), Amount::zero()),
+        EntrypointName::new_unchecked("a_modify"),
+        Amount::zero(),
     );
     let forward_parameter_len = to_bytes(&forward_parameter).len();
     let parameter = (
-        (
-            res_init_b.contract_address,
-            forward_parameter_len as u16,
-            forward_parameter,
-        ),
+        res_init_b.contract_address,
+        forward_parameter_len as u16,
+        forward_parameter,
         EntrypointName::new_unchecked("b_forward"),
         Amount::zero(),
     );

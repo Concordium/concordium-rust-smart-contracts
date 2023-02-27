@@ -41,11 +41,9 @@ mod query_account_balance {
             )
             .expect("Initializing valid contract should work");
 
-        // TODO: Implement serial for four-tuples in contracts-common. Nesting tuples to
-        // get around it here.
         // The contract will query the balance of ACC_1 and assert that the three
         // balances match this input.
-        let input_param = (ACC_1, (initial_balance, Amount::zero(), Amount::zero()));
+        let input_param = (ACC_1, initial_balance, Amount::zero(), Amount::zero());
 
         let res_update = chain
             .contract_update(
@@ -105,7 +103,7 @@ mod query_account_balance {
         // The contract will query the balance of ACC_1, which is also the invoker, and
         // assert that the three balances match this input.
         let expected_balance = initial_balance - invoker_reserved_amount;
-        let input_param = (ACC_1, (expected_balance, Amount::zero(), Amount::zero()));
+        let input_param = (ACC_1, expected_balance, Amount::zero(), Amount::zero());
 
         let res_update = chain
             .contract_update(
@@ -168,7 +166,9 @@ mod query_account_balance {
         let input_param = (
             ACC_1,
             amount_to_send,
-            (expected_balance, Amount::zero(), Amount::zero()),
+            expected_balance,
+            Amount::zero(),
+            Amount::zero(),
         );
 
         let res_update = chain
@@ -234,7 +234,7 @@ mod query_account_balance {
         // get around it here.
         // The contract will query the balance of ACC_1 and assert that the three
         // balances match this input.
-        let input_param = (ACC_1, (initial_balance, Amount::zero(), Amount::zero()));
+        let input_param = (ACC_1, initial_balance, Amount::zero(), Amount::zero());
 
         let res_update = chain
             .contract_update(
@@ -467,10 +467,8 @@ mod query_contract_balance {
         let input_param = (
             ACC_0,
             transfer_amount,
-            (
-                res_init.contract_address,
-                init_amount + update_amount - transfer_amount,
-            ),
+            res_init.contract_address,
+            init_amount + update_amount - transfer_amount,
         );
 
         let res_update = chain

@@ -39,11 +39,9 @@ fn test_error_codes() {
     let parameter_0 = (
         1u32, // instruction
         res_init.contract_address,
-        (
-            OwnedParameter::empty(),
-            EntrypointName::new_unchecked("fail"),
-            Amount::zero(),
-        ),
+        OwnedParameter::empty(),
+        EntrypointName::new_unchecked("fail"),
+        Amount::zero(),
     );
     let res_update_0 = chain
         .contract_update(
@@ -71,11 +69,9 @@ fn test_error_codes() {
     let parameter_1 = (
         1u32, // instruction
         res_init.contract_address,
-        (
-            OwnedParameter::empty(),
-            EntrypointName::new_unchecked("fail"),
-            Amount::from_micro_ccd(10_000),
-        ),
+        OwnedParameter::empty(),
+        EntrypointName::new_unchecked("fail"),
+        Amount::from_micro_ccd(10_000),
     );
     let res_update_1 = chain
         .contract_update(
@@ -131,11 +127,9 @@ fn test_error_codes() {
     let parameter_3 = (
         1u32,                             // instruction
         ContractAddress::new(1234, 5678), // Address which does not exist.
-        (
-            OwnedParameter::empty(),
-            EntrypointName::new_unchecked("fail"),
-            Amount::zero(),
-        ),
+        OwnedParameter::empty(),
+        EntrypointName::new_unchecked("fail"),
+        Amount::zero(),
     );
     let res_update_3 = chain
         .contract_update(
@@ -163,11 +157,9 @@ fn test_error_codes() {
     let parameter_4 = (
         1u32, // instruction
         res_init.contract_address,
-        (
-            OwnedParameter::empty(),
-            EntrypointName::new_unchecked("nonexisting"),
-            Amount::zero(),
-        ),
+        OwnedParameter::empty(),
+        EntrypointName::new_unchecked("nonexisting"),
+        Amount::zero(),
     );
     let res_update_4 = chain
         .contract_update(
@@ -198,11 +190,9 @@ fn test_error_codes() {
     let parameter_6 = (
         1u32, // instruction
         res_init.contract_address,
-        (
-            OwnedParameter::empty(),
-            EntrypointName::new_unchecked("trap"),
-            Amount::zero(),
-        ),
+        OwnedParameter::empty(),
+        EntrypointName::new_unchecked("trap"),
+        Amount::zero(),
     );
     let res_update_6 = chain
         .contract_update(
