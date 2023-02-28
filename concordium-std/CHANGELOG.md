@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std 6.0.1 (2023-02-28)
+
 - Fix testing of crypto primitives using secp256k1 signature scheme.
 
 ## concordium-std 6.0.0 (2023-02-08)
