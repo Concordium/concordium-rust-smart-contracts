@@ -1,7 +1,8 @@
 //! Functionality and types for invoking contract entrypoints.
 //!
 //! Contract invocation is effectful and transactional.
-//! We therefore keep track of changes during execution in a [`ChangeSet`].
+//! We therefore keep track of changes during execution in a
+//! [`ChangeSet`][types::ChangeSet].
 //!
 //! Once the execution (transaction) has finished, the changes can then be
 //! persisted (saved) or discarded, dependent on whether it succeeded or not.

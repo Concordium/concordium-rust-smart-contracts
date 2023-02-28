@@ -26,7 +26,7 @@ impl EntrypointInvocationHandler {
     /// Invoke an entrypoint and get the result, [`Changeset`], and chain
     /// events.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
     ///  - `sender` exists
@@ -70,7 +70,7 @@ impl EntrypointInvocationHandler {
 
     /// Used for handling contract entrypoint invocations internally.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - `invoker` exists
     ///  - `invoker` has sufficient balance to pay for `remaining_energy`
     ///  - `sender` exists
@@ -318,8 +318,8 @@ impl EntrypointInvocationHandler {
     /// Make a transfer from a contract to an account in the changeset.
     /// Returns the new balance of `from`.
     ///
-    /// Precondition:
-    /// - Assumes that `from` contract exists.
+    /// **Preconditions:**
+    ///  - Assumes that `from` contract exists.
     fn transfer_from_contract_to_account(
         &mut self,
         amount: Amount,
@@ -343,8 +343,8 @@ impl EntrypointInvocationHandler {
     ///
     /// Returns the new balance of `from`.
     ///
-    /// Precondition:
-    /// - Assumes that `from` contract exists.
+    /// **Preconditions:**
+    ///  - Assumes that `from` contract exists.
     fn transfer_from_contract_to_contract(
         &mut self,
         amount: Amount,
@@ -368,8 +368,8 @@ impl EntrypointInvocationHandler {
     ///
     /// Returns the new balance of `from`.
     ///
-    /// Precondition:
-    /// - Assumes that `from` account exists.
+    /// **Preconditions:**
+    ///  - Assumes that `from` account exists.
     fn transfer_from_account_to_contract(
         &mut self,
         amount: Amount,
@@ -395,7 +395,7 @@ impl EntrypointInvocationHandler {
     ///
     /// Returns the new balance.
     ///
-    /// Precondition:
+    /// **Preconditions:**
     ///  - Contract must exist.
     fn change_contract_balance(
         &mut self,
@@ -438,7 +438,7 @@ impl EntrypointInvocationHandler {
     ///
     /// Returns the new balance.
     ///
-    /// Precondition:
+    /// **Preconditions:**
     ///  - Account must exist.
     fn change_account_balance(
         &mut self,
@@ -478,7 +478,7 @@ impl EntrypointInvocationHandler {
     /// Returns the contract balance from the topmost checkpoint on the
     /// changeset. Or, alternatively, from persistence.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - Contract must exist.
     fn contract_balance_unchecked(&self, address: ContractAddress) -> Amount {
         self.contract_balance(address)
@@ -497,7 +497,7 @@ impl EntrypointInvocationHandler {
     /// Returns the contract module from the topmost checkpoint on
     /// the changeset. Or, alternatively, from persistence.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - Contract instance must exist (and therefore also the artifact).
     ///  - If the changeset contains a module reference, then it must refer a
     ///    deployed module.
@@ -533,7 +533,7 @@ impl EntrypointInvocationHandler {
     /// Get the contract state, either from the changeset or by thawing it from
     /// persistence.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - Contract instance must exist.
     fn contract_state(&self, address: ContractAddress) -> trie::MutableState {
         match self
@@ -592,7 +592,7 @@ impl EntrypointInvocationHandler {
     /// This also increments the modification index. It will be set to 1 if the
     /// contract has no entry in the changeset.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - Contract must exist.
     fn save_state_changes(
         &mut self,
@@ -635,7 +635,7 @@ impl EntrypointInvocationHandler {
     /// Returns the previous module, which is either the one from persistence,
     /// or the most recent one from the changeset.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - Contract must exist.
     ///  - Module must exist.
     fn save_module_upgrade(
@@ -812,7 +812,7 @@ impl ChangeSet {
     /// bytes added to contract states. It also returns whether the state of the
     /// provided `invoked_contract` was changed.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - All contracts, modules, accounts referred must exist in persistence.
     ///  - All amount deltas must be valid (i.e. not cause underflows when added
     ///    to balance).
@@ -1021,7 +1021,7 @@ impl ContractChanges {
     /// Get the current balance by adding the original balance and the balance
     /// delta.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - `balance_delta + original_balance` must be larger than `0`.
     fn current_balance(&self) -> Amount {
         self.self_balance_delta
@@ -1034,7 +1034,7 @@ impl AccountChanges {
     /// Get the current balance by adding the original balance and the balance
     /// delta.
     ///
-    /// *Preconditions:*
+    /// **Preconditions:**
     ///  - `balance_delta + original_balance` must be larger than `0`.
     fn current_balance(&self) -> Amount {
         self.balance_delta
@@ -1046,9 +1046,9 @@ impl AccountChanges {
 impl<'a> InvocationData<'a> {
     /// Process a receive function until completion.
     ///
-    /// *Preconditions*:
-    /// - Contract instance exists in `invocation_handler.contracts`.
-    /// - Account exists in `invocation_handler.accounts`.
+    /// **Preconditions**:
+    ///  - Contract instance exists in `invocation_handler.contracts`.
+    ///  - Account exists in `invocation_handler.accounts`.
     fn process(
         &mut self,
         res: ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,

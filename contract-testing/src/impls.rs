@@ -91,7 +91,7 @@ impl Chain {
                 + 8
                 + wasm_module.source.size()
                 + transactions::construct::TRANSACTION_HEADER_SIZE;
-            let number_of_sigs = self.get_account(sender)?.signature_count;
+            let number_of_sigs = self.account(sender)?.signature_count;
             let base_cost = cost::base_cost(payload_size, number_of_sigs);
             let deploy_module_cost = cost::deploy_module(wasm_module.source.size());
             base_cost + deploy_module_cost
@@ -99,7 +99,7 @@ impl Chain {
         let transaction_fee = self.calculate_energy_cost(energy);
 
         // Try to subtract cost for account
-        let account = self.get_account_mut(sender)?;
+        let account = self.account_mut(sender)?;
         if account.balance.available() < transaction_fee {
             return Err(DeployModuleError::InsufficientFunds);
         };
@@ -126,8 +126,9 @@ impl Chain {
     /// bytes and 4 module length bytes.
     /// The module still has to a valid V1 smart contract module.
     ///
-    /// - `sender`: The account paying for the transaction.
-    /// - `module_path`: Path to a module file.
+    /// **Parameters:**
+    ///  - `sender`: The account paying for the transaction.
+    ///  - `module_path`: Path to a module file.
     pub fn module_deploy_wasm_v1<P: AsRef<Path>>(
         &mut self,
         sender: AccountAddress,
@@ -146,8 +147,9 @@ impl Chain {
     /// i.e. **including** the prefix of 4 version bytes and 4 module length
     /// bytes.
     ///
-    /// - `sender`: The account paying for the transaction.
-    /// - `module_path`: Path to a module file.
+    /// **Parameters:**
+    ///  - `sender`: The account paying for the transaction.
+    ///  - `module_path`: Path to a module file.
     pub fn module_deploy_v1<P: AsRef<Path>>(
         &mut self,
         sender: AccountAddress,
@@ -168,15 +170,16 @@ impl Chain {
 
     /// Initialize a contract.
     ///
-    /// - `sender`: The account paying for the transaction. Will also become the
-    ///   owner of the instance created.
-    /// - `module_reference`: The reference to the a module that has already
-    ///   been deployed.
-    /// - `contract_name`: Name of the contract to initialize.
-    /// - `parameter`: Parameter provided to the init method.
-    /// - `amount`: The initial balance of the contract. Subtracted from the
+    /// **Parameters:**
+    ///  - `sender`: The account paying for the transaction. Will also become
+    ///    the owner of the instance created.
+    ///  - `module_reference`: The reference to the a module that has already
+    ///    been deployed.
+    ///  - `contract_name`: Name of the contract to initialize.
+    ///  - `parameter`: Parameter provided to the init method.
+    ///  - `amount`: The initial balance of the contract. Subtracted from the
     ///   `sender` account.
-    /// - `energy_reserved`: Amount of energy reserved for executing the init
+    ///  - `energy_reserved`: Amount of energy reserved for executing the init
     ///   method.
     pub fn contract_init(
         &mut self,
@@ -189,7 +192,7 @@ impl Chain {
     ) -> Result<SuccessfulContractInit, ContractInitError> {
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
-        let account_info = self.get_account(sender)?;
+        let account_info = self.account(sender)?;
         if account_info.balance.available() < self.calculate_energy_cost(energy_reserved) + amount {
             return Err(ContractInitError::InsufficientFunds);
         }
@@ -318,7 +321,7 @@ impl Chain {
                     self.contracts.insert(contract_address, contract_instance);
 
                     // Subtract the amount from the invoker.
-                    self.get_account_mut(sender)
+                    self.account_mut(sender)
                         .expect("Account known to exist")
                         .balance
                         .total -= amount;
@@ -389,13 +392,22 @@ impl Chain {
         };
         // Charge the account.
         // We have to get the account info again because of the borrow checker.
-        self.get_account_mut(sender)?.balance.total -= transaction_fee;
+        self.account_mut(sender)?.balance.total -= transaction_fee;
         res
     }
 
     /// Update a contract by calling one of its entrypoints.
     ///
-    /// If successful, any changes will be saved.
+    /// If successful, all changes will be saved.
+    ///
+    /// **Parameters:**
+    ///  - `invoker`: the account paying for the transaction.
+    ///  - `sender`: the sender of the transaction, can also be a contract.
+    ///  - `contract_address`: the contract to update.
+    ///  - `entrypoint`: the entrypoint to call.
+    ///  - `parameter`: the contract parameter.
+    ///  - `amount`: the amount sent to the contract.
+    ///  - `energy_reserved`: the maximum energy that can be used in the update.
     pub fn contract_update(
         &mut self,
         invoker: AccountAddress,
@@ -413,7 +425,7 @@ impl Chain {
 
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
         // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.get_account_mut(invoker)?;
+        let account_info = self.account_mut(invoker)?;
         let invoker_signature_count = account_info.signature_count;
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
@@ -513,7 +525,7 @@ impl Chain {
         // The `invoker` was charged for all the `reserved_energy` up front.
         // Here, we return the amount for any remaining energy.
         let return_amount = invoker_amount_reserved_for_nrg - transaction_fee;
-        self.get_account_mut(invoker)
+        self.account_mut(invoker)
             .expect("Known to exist")
             .balance
             .total += return_amount;
@@ -522,8 +534,17 @@ impl Chain {
 
     /// Invoke a contract by calling an entrypoint.
     ///
-    /// Similar to [`contract_update`] except that all changes are discarded
-    /// afterwards. Typically used for "view" functions.
+    /// Similar to [`Self::contract_update`] except that all changes are
+    /// discarded afterwards. Typically used for "view" functions.
+    ///
+    /// **Parameters:**
+    ///  - `invoker`: the account paying for the transaction.
+    ///  - `sender`: the sender of the transaction, can also be a contract.
+    ///  - `contract_address`: the contract to update.
+    ///  - `entrypoint`: the entrypoint to call.
+    ///  - `parameter`: the contract parameter.
+    ///  - `amount`: the amount sent to the contract.
+    ///  - `energy_reserved`: the maximum energy that can be used in the update.
     pub fn contract_invoke(
         &mut self,
         invoker: AccountAddress,
@@ -541,7 +562,7 @@ impl Chain {
 
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
         // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.get_account_mut(invoker)?;
+        let account_info = self.account_mut(invoker)?;
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
@@ -595,7 +616,7 @@ impl Chain {
 
         // Return the amount charged for the reserved energy, as this is not a
         // transaction.
-        self.get_account_mut(invoker)
+        self.account_mut(invoker)
             .expect("Known to exist")
             .balance
             .total += invoker_amount_reserved_for_nrg;
@@ -603,32 +624,23 @@ impl Chain {
         result
     }
 
-    /// Create an account. Will override existing account if already present.
+    /// Create an account.
+    ///
+    /// Will override existing account if already present.
     pub fn create_account(&mut self, account: AccountAddress, account_info: Account) {
         self.accounts.insert(account, account_info);
     }
 
-    /// Creates a contract address with an index one above the highest
-    /// currently used. Next call to `contract_init` will skip this
-    /// address.
+    /// Create a contract address.
+    ///
+    /// It will have an index one above the previously highest contract index.
+    ///
+    /// Next call to `contract_init` will skip this address.
     pub fn create_contract_address(&mut self) -> ContractAddress {
         let index = self.next_contract_index;
         let subindex = 0;
         self.next_contract_index += 1;
         ContractAddress::new(index, subindex)
-    }
-
-    /// Set the chain's slot time.
-    pub fn set_slot_time(&mut self, slot_time: SlotTime) { self.slot_time = slot_time; }
-
-    /// Set the chain's Euro per NRG conversion rate.
-    pub fn set_euro_per_energy(&mut self, euro_per_energy: ExchangeRate) {
-        self.euro_per_energy = euro_per_energy;
-    }
-
-    /// Set the chain's microCCD per Euro conversion rate.
-    pub fn set_micro_ccd_per_euro(&mut self, micro_ccd_per_euro: ExchangeRate) {
-        self.micro_ccd_per_euro = micro_ccd_per_euro;
     }
 
     /// Returns the balance of an account if it exists.
@@ -667,12 +679,12 @@ impl Chain {
     }
 
     /// Returns an immutable reference to an [`Account`].
-    pub fn get_account(&self, address: AccountAddress) -> Result<&Account, AccountMissing> {
+    pub fn account(&self, address: AccountAddress) -> Result<&Account, AccountMissing> {
         self.accounts.get(&address).ok_or(AccountMissing(address))
     }
 
     /// Returns a mutable reference to [`Account`].
-    fn get_account_mut(&mut self, address: AccountAddress) -> Result<&mut Account, AccountMissing> {
+    fn account_mut(&mut self, address: AccountAddress) -> Result<&mut Account, AccountMissing> {
         self.accounts
             .get_mut(&address)
             .ok_or(AccountMissing(address))
@@ -688,9 +700,10 @@ impl Chain {
         self.contracts.contains_key(&address)
     }
 
-    /// Check whether the [`Address`] exists. I.e. if it is an
-    /// account, whether the account exists, and if it is a contract, whether
-    /// the contract exists.
+    /// Check whether the [`Address`] exists.
+    ///
+    /// I.e. if it is an account, whether the account exists,
+    /// and if it is a contract, whether the contract exists.
     fn address_exists(&self, address: Address) -> bool {
         match address {
             Address::Account(acc) => self.account_exists(acc),
@@ -707,7 +720,7 @@ impl Chain {
     /// contract invoked has changed.
     ///
     /// *Preconditions*:
-    /// - `energy_reserved - remaining_energy + energy_for_state_increase >= 0`
+    ///  - `energy_reserved - remaining_energy + energy_for_state_increase >= 0`
     fn convert_invoke_entrypoint_result(
         &self,
         update_aux_response: InvokeEntrypointResult,
@@ -765,6 +778,7 @@ impl TestPolicies {
 
 impl Account {
     /// Create a new [`Self`] with the provided parameters.
+    ///
     /// The `signature_count` must be >= 1 for transaction costs to be
     /// realistic.
     pub fn new_with_policy_and_signature_count(
@@ -780,7 +794,9 @@ impl Account {
     }
 
     /// Create new [`Self`] with empty account policies but the provided
-    /// `signature_count`. The `signature_count` must be >= 1 for transaction
+    /// `signature_count`.
+    ///
+    /// The `signature_count` must be >= 1 for transaction
     /// costs to be realistic.
     pub fn new_with_signature_count(balance: AccountBalance, signature_count: u32) -> Self {
         Self {
@@ -789,7 +805,7 @@ impl Account {
         }
     }
 
-    /// Create new [`Self`] with empty account policies and a signature
+    /// Create new [`Self`] with the provided account policies and a signature
     /// count of `1`.
     pub fn new_with_policy(balance: AccountBalance, policies: TestPolicies) -> Self {
         Self {

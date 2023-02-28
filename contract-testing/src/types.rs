@@ -15,12 +15,12 @@ use wasm_chain_integration::{
 };
 use wasm_transform::artifact;
 
-/// A V1 artifact, with concrete types for the generic parameters.
+/// A smart contract module.
 #[derive(Debug, Clone)]
 pub struct ContractModule {
     /// Size of the module in bytes. Used for cost accounting.
     pub(crate) size:     u64,
-    /// The runnable module (artifact).
+    /// The runnable module.
     pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
