@@ -206,6 +206,9 @@ pub enum ContractInitError {
     /// The invoker account does not have enough funds to pay for the energy.
     #[error("invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
+    /// The parameter is too large.
+    #[error("the provided parameter exceeds the max size allowed")]
+    ParameterTooLarge,
 }
 
 /// The reason for why a contract initialization failed during execution.
@@ -285,6 +288,9 @@ pub enum ContractUpdateError {
     /// The invoker account does not have enough funds to pay for the energy.
     #[error("invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
+    /// The parameter is too large.
+    #[error("the provided parameter exceeds the max size allowed")]
+    ParameterTooLarge,
 }
 
 /// A transfer of [`Amount`]s failed because the sender had insufficient

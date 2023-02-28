@@ -97,11 +97,6 @@ impl Chain {
             base_cost + deploy_module_cost
         };
         let transaction_fee = self.calculate_energy_cost(energy);
-        println!(
-            "Deploying module with size {}, resulting in {} NRG.",
-            wasm_module.source.size(),
-            energy
-        );
 
         // Try to subtract cost for account
         let account = self.get_account_mut(sender)?;
@@ -197,6 +192,11 @@ impl Chain {
         let account_info = self.get_account(sender)?;
         if account_info.balance.available() < self.calculate_energy_cost(energy_reserved) + amount {
             return Err(ContractInitError::InsufficientFunds);
+        }
+
+        // Ensure that the parameter has a valid size (+2 for the length of parameter).
+        if parameter.0.len() + 2 > constants::MAX_PARAMETER_SIZE {
+            return Err(ContractInitError::ParameterTooLarge);
         }
 
         let mut remaining_energy = energy_reserved;
@@ -402,15 +402,10 @@ impl Chain {
         sender: Address,
         contract_address: ContractAddress,
         entrypoint: EntrypointName,
-        parameter: OwnedParameter, // TODO: Should we check size <= 65535?
+        parameter: OwnedParameter,
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        println!(
-            "Updating contract {}, with parameter: {:?}",
-            contract_address, parameter.0
-        );
-
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             return Err(ContractUpdateError::SenderDoesNotExist(sender));
@@ -423,6 +418,12 @@ impl Chain {
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
+
+        // Ensure that the parameter has a valid size (+2 for the length of parameter).
+        if parameter.0.len() + 2 > constants::MAX_PARAMETER_SIZE {
+            return Err(ContractUpdateError::ParameterTooLarge);
+        }
+
         // Charge account for the reserved energy up front. This is to ensure that
         // contract queries for the invoker balance are correct.
         account_info.balance.total -= invoker_amount_reserved_for_nrg;
@@ -533,11 +534,6 @@ impl Chain {
         amount: Amount,
         energy_reserved: Energy,
     ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
-        println!(
-            "Invoking contract {}, with parameter: {:?}",
-            contract_address, parameter.0
-        );
-
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             return Err(ContractUpdateError::SenderDoesNotExist(sender));
@@ -549,6 +545,12 @@ impl Chain {
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
             return Err(ContractUpdateError::InsufficientFunds);
         }
+
+        // Ensure that the parameter has a valid size (+2 for the length of parameter).
+        if parameter.0.len() + 2 > constants::MAX_PARAMETER_SIZE {
+            return Err(ContractUpdateError::ParameterTooLarge);
+        }
+
         // Charge account for the reserved energy up front. This is to ensure that
         // contract queries for the invoker balance are correct.
         account_info.balance.total -= invoker_amount_reserved_for_nrg;

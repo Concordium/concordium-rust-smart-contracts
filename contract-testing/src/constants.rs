@@ -2,6 +2,9 @@
 
 use concordium_base::base::Energy;
 
+/// The maximum size of parameters in PV 5+;
+pub(crate) const MAX_PARAMETER_SIZE: usize = 65_535;
+
 // Energy constants from Cost.hs in concordium-base.
 
 /// Cost of querying the account balance from a within smart contract instance.

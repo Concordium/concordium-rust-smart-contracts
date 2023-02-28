@@ -114,6 +114,7 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
 fn mk_parameter(internal_param_size: u16, desired_size: u32) -> OwnedParameter {
     let entrypoint = OwnedEntrypointName::new_unchecked("param-aux".into());
     let filler_size = desired_size
+        - 2 // length of the parameter itself
         - 2 // internal_param_size
         - 2 // entrypoint name len
         - 9 // entrypoint name

@@ -1061,7 +1061,6 @@ impl<'a> InvocationData<'a> {
                     return_value,
                     remaining_energy,
                 } => {
-                    println!("\tSuccessful contract update {}", self.address);
                     let update_event = ChainEvent::Updated {
                         address:    self.address,
                         contract:   self.contract_name.clone(),
@@ -1094,8 +1093,6 @@ impl<'a> InvocationData<'a> {
                     config,
                     interrupt,
                 } => {
-                    println!("\tInterrupting contract {}", self.address);
-
                     // Create the interrupt event, which will be included for transfers, calls, and
                     // upgrades, but not for the remaining interrupts.
                     let interrupt_event = ChainEvent::Interrupted {
@@ -1106,8 +1103,6 @@ impl<'a> InvocationData<'a> {
                         v1::Interrupt::Transfer { to, amount } => {
                             // Add the interrupt event
                             self.chain_events.push(interrupt_event);
-
-                            println!("\t\tTransferring {} CCD to {}", amount, to);
 
                             let response = match self
                                 .invocation_handler
@@ -1189,11 +1184,6 @@ impl<'a> InvocationData<'a> {
                             // back.
                             self.invocation_handler.checkpoint();
 
-                            println!(
-                                "\t\tCalling contract {}\n\t\t\twith parameter: {:?}",
-                                address, parameter
-                            );
-
                             let res = self.invocation_handler.invoke_entrypoint(
                                 self.invoker,
                                 Address::Contract(self.address),
@@ -1225,16 +1215,6 @@ impl<'a> InvocationData<'a> {
                                 state_changed
                             };
 
-                            println!(
-                                "\tResuming contract {}\n\t\tafter {}",
-                                self.address,
-                                if success {
-                                    "succesful invocation"
-                                } else {
-                                    "failed invocation"
-                                }
-                            );
-
                             // Add resume event
                             let resume_event = ChainEvent::Resumed {
                                 address: self.address,
@@ -1262,8 +1242,6 @@ impl<'a> InvocationData<'a> {
                             self.process(resume_res)
                         }
                         v1::Interrupt::Upgrade { module_ref } => {
-                            println!("Upgrading contract to {:?}", module_ref);
-
                             // Add the interrupt event.
                             self.chain_events.push(interrupt_event);
 
@@ -1338,7 +1316,6 @@ impl<'a> InvocationData<'a> {
                             self.process(resume_res)
                         }
                         v1::Interrupt::QueryAccountBalance { address } => {
-                            println!("\t\tQuerying account balance of {}", address);
                             let response = match self.invocation_handler.account_balance(address) {
                                 Some(balance) => v1::InvokeResponse::Success {
                                     new_balance: self
@@ -1371,8 +1348,6 @@ impl<'a> InvocationData<'a> {
                             self.process(resume_res)
                         }
                         v1::Interrupt::QueryContractBalance { address } => {
-                            println!("Querying contract balance of {}", address);
-
                             let response = match self.invocation_handler.contract_balance(address) {
                                 None => v1::InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::NonExistentContract,
@@ -1407,8 +1382,6 @@ impl<'a> InvocationData<'a> {
                             self.process(resume_res)
                         }
                         v1::Interrupt::QueryExchangeRates => {
-                            println!("Querying exchange rates");
-
                             let exchange_rates = (
                                 self.invocation_handler.euro_per_energy,
                                 self.invocation_handler.micro_ccd_per_euro,
