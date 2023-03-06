@@ -2027,7 +2027,8 @@ fn invoke_contract_construct_parameter(
     method: EntrypointName,
     amount: Amount,
 ) -> Vec<u8> {
-    let mut data = Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
+    let mut data =
+        Vec::with_capacity(16 + parameter.as_ref().len() + 2 + method.size() as usize + 2 + 8);
     let mut cursor = Cursor::new(&mut data);
     to.serial(&mut cursor).unwrap_abort();
     parameter.serial(&mut cursor).unwrap_abort();

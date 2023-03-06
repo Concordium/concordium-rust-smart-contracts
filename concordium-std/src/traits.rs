@@ -284,7 +284,7 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType> {
         let param = to_bytes(parameter);
-        self.invoke_contract_raw(to, Parameter(&param), method, amount)
+        self.invoke_contract_raw(to, Parameter::new_unchecked(&param), method, amount)
     }
 
     /// Upgrade the module for this instance to a given module. The new module
@@ -354,7 +354,7 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> ReadOnlyCallContractResult<Self::ReturnValueType> {
         let param = to_bytes(parameter);
-        self.invoke_contract_raw_read_only(to, Parameter(&param), method, amount)
+        self.invoke_contract_raw_read_only(to, Parameter::new_unchecked(&param), method, amount)
     }
 
     /// Get the current exchange rates used by the chain. That is a Euro per
