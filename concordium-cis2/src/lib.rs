@@ -1150,7 +1150,7 @@ impl AsRef<[u8]> for AdditionalData {
 /// A single transfer of some amount of a token.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -1178,7 +1178,7 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Transfer<T, A> {
 }
 
 /// The parameter type for the contract function `transfer`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
     #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
 );
@@ -1200,7 +1200,7 @@ impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<
 /// The update to an the operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Copy)]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -1220,7 +1220,7 @@ impl schema::SchemaType for OperatorUpdate {
 /// A single update of an operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,
@@ -1240,7 +1240,7 @@ impl schema::SchemaType for UpdateOperator {
 }
 
 /// The parameter type for the contract function `updateOperator`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
 
 impl schema::SchemaType for UpdateOperatorParams {
