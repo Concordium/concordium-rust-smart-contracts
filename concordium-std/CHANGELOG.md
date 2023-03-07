@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased changes
+- Add `Display` implementation for `OwnedParameter` and `Parameter`, which uses
+  hex encoding.
+- Replace `From<Vec<u8>>` instance for `OwnedParameter`/`Parameter` with a `TryFrom`,
+  which ensures a valid length, and the unchecked method `new_unchecked`.
+  - Migrate from `From`/`Into`: Use `new_unchecked` instead (if known to be
+    valid length).
+- Make inner field in `OwnedParameter`/`Parameter` private, but add a `From`
+  implementation for getting the raw bytes.
+  - Migrate from `parameter.0`: use `parameter.into()` instead (for both of the affected
+    types).
+- For `ModuleReference`, replace `AsRef<[u8;32]>` with `AsRef<[u8]>` and make
+  inner bytes public.
+  - The change was necessary for internal reasons.
+  - Migrate from `module_reference.as_ref()`: use `&module_reference.bytes` instead.
 
 ## concordium-std 6.0.1 (2023-02-28)
 

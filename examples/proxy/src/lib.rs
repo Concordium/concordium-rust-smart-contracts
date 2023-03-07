@@ -59,7 +59,8 @@ fn receive_fallback<S: HasStateApi>(
     let return_value = host
         .invoke_contract_raw(
             &proxied_contract,
-            Parameter(&parameter_buffer[..]),
+            // The parameter size must be valid since this receive function has been executed.
+            Parameter::new_unchecked(&parameter_buffer[..]),
             entrypoint.as_entrypoint_name(),
             amount,
         )?
@@ -110,7 +111,7 @@ mod tests {
             proxied_contract,
             proxied_entrypoint,
             MockFn::new_v1(|parameter, _, &mut _, &mut _| {
-                let mut rv = parameter.0.to_vec();
+                let mut rv = Into::<&[u8]>::into(parameter).to_vec();
                 rv.extend_from_slice(b", world!");
                 Ok((false, RawReturnValue(Some(rv))))
             }),
