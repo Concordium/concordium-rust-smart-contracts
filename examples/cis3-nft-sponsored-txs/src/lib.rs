@@ -1,5 +1,5 @@
 //! A NFT smart contract example using the Concordium Token Standard CIS2 with
-//! sponsored transactions (Concordium Token Standard CIS3).
+//! sponsored transactions (CIS3).
 //!
 //! # Description
 //! An instance of this smart contract can contain a number of different tokens
@@ -14,8 +14,8 @@
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
-//! The Concordium Token Standard CIS3 includes all the features of the Token
-//! Standard CIS2. In addition, CIS3 includes features for sponsored
+//! This contract implements the Concordium Token Standard CIS2. In addition, it
+//! implements the CIS3 standard which includes features for sponsored
 //! transactions.
 //!
 //! The use case for this smart contract is for third-party service providers
@@ -282,9 +282,12 @@ struct PermitMessage {
 /// Takes a signature, the signer, and the message that was signed.
 #[derive(Serialize, SchemaType)]
 pub struct PermitParam {
-    /// Signature.
-    signature: SignatureEd25519,
-    /// Signer that signed the above signature.
+    /// Signature/s. The CIS3 standard supports multi-sig accounts but because
+    /// the `public_key_registry` in this contract maps one public key to one
+    /// account, only one signature has to be provided for this contract. This
+    /// signature has to be at the key 0 in both maps below.
+    signature: BTreeMap<u8, BTreeMap<u8, SignatureEd25519>>,
+    /// Account that created the above signature.
     signer:    AccountAddress,
     /// Message that was signed.
     message:   PermitMessage,
@@ -323,6 +326,8 @@ enum CustomContractError {
     WrongEntryPoint,
     /// Failed signature verification: Signature is expired.
     SignatureExpired,
+    /// Failed signature verification: Signature map is misconfigured.
+    SignatureMapMisconfigured,
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
@@ -808,6 +813,20 @@ fn contract_permit<S: HasStateApi>(
     // Parse the parameter.
     let param: PermitParam = ctx.parameter_cursor().get()?;
 
+    ensure!(
+        param.signature.len() == 1
+            && param.signature.get(&0).ok_or(CustomContractError::SignatureMapMisconfigured)?.len()
+                == 1,
+        CustomContractError::SignatureMapMisconfigured.into()
+    );
+
+    let signature = *param
+        .signature
+        .get(&0)
+        .ok_or(CustomContractError::SignatureMapMisconfigured)?
+        .get(&0)
+        .ok_or(CustomContractError::SignatureMapMisconfigured)?;
+
     // Update the nonce.
     host.state_mut().public_key_registry.entry(param.signer).and_modify(|(_, a)| *a += 1u64);
 
@@ -816,9 +835,9 @@ fn contract_permit<S: HasStateApi>(
         .state_mut()
         .public_key_registry
         .get(&param.signer)
-        .ok_or(CustomContractError::NoPublicKey);
-    let public_key = entry.as_ref().unwrap().0;
-    let nonce = entry.as_ref().unwrap().1;
+        .ok_or(CustomContractError::NoPublicKey)?;
+    let public_key = entry.0;
+    let nonce = entry.1;
 
     // Check the nonce to prevent replay attacks.
     ensure_eq!(param.message.nonce, nonce, CustomContractError::NonceMismatch.into());
@@ -841,7 +860,7 @@ fn contract_permit<S: HasStateApi>(
 
     // Check signature.
     ensure!(
-        crypto_primitives.verify_ed25519_signature(public_key, param.signature, &message_hash),
+        crypto_primitives.verify_ed25519_signature(public_key, signature, &message_hash),
         CustomContractError::WrongSignature.into()
     );
 
@@ -1911,8 +1930,14 @@ mod tests {
         };
         let payload = TransferParams::from(vec![transfer]);
 
+        let mut inner_signature_map = BTreeMap::new();
+        inner_signature_map.insert(0, SIGNATURE_TRANSFER);
+
+        let mut signature_map = BTreeMap::new();
+        signature_map.insert(0, inner_signature_map);
+
         let permit_transfer_param = PermitParam {
-            signature: SIGNATURE_TRANSFER,
+            signature: signature_map,
             signer:    ACCOUNT_1,
             message:   PermitMessage {
                 timestamp:        Timestamp::from_timestamp_millis(10000000000),
@@ -2028,8 +2053,14 @@ mod tests {
         };
         let payload = UpdateOperatorParams(vec![update_operator]);
 
+        let mut inner_signature_map = BTreeMap::new();
+        inner_signature_map.insert(0, SIGNATURE_UPDATE_OPERATOR);
+
+        let mut signature_map = BTreeMap::new();
+        signature_map.insert(0, inner_signature_map);
+
         let permit_transfer_param = PermitParam {
-            signature: SIGNATURE_UPDATE_OPERATOR,
+            signature: signature_map,
             signer:    ACCOUNT_1,
             message:   PermitMessage {
                 timestamp:        Timestamp::from_timestamp_millis(10000000000),
