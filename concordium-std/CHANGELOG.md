@@ -15,6 +15,12 @@
   inner `bytes` field public.
   - The change was necessary for internal reasons.
   - Migrate from `module_reference.as_ref()`: use `&module_reference.bytes` instead.
+- Replace `OwnedParameter::new` with `OwnedParameter::from_serial`, which also
+  ensures a valid length.
+  - Migrate from `new(x)`: Use `from_serial(x).unwrap()` (if known to be valid length).
+- Add an `empty` method for both `OwnedParameter` and `Parameter`.
+- Implement `Default` for `Parameter`.
+
 
 ## concordium-std 6.0.1 (2023-02-28)
 

@@ -100,7 +100,7 @@ fn contract_buy_icecream<S: HasStateApi>(
     let weather = host
         .invoke_contract_raw(
             &weather_service,
-            Parameter::new_unchecked(&[]),
+            Parameter::empty(),
             EntrypointName::new_unchecked("get"),
             Amount::zero(),
         )?
