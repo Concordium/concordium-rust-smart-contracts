@@ -12,7 +12,7 @@
   - Migrate from `parameter.0`: use `parameter.into()` instead (for both of the affected
     types).
 - For `ModuleReference`, replace `AsRef<[u8;32]>` with `AsRef<[u8]>` and make
-  inner bytes public.
+  inner `bytes` field public.
   - The change was necessary for internal reasons.
   - Migrate from `module_reference.as_ref()`: use `&module_reference.bytes` instead.
 
