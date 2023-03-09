@@ -771,6 +771,70 @@ fn contract_transfer<S: HasStateApi>(
     Ok(())
 }
 
+/// Helper function to calculate the message hash used in the permit function.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The message was intended for a different contract.
+/// - The message was intended for a different `entry_point`.
+/// - The message is expired.
+
+#[receive(
+    contract = "cis3_nft",
+    name = "calculateMessageHash",
+    parameter = "PermitMessage",
+    return_value = "[u8;32]",
+    crypto_primitives,
+    mutable
+)]
+fn contract_calculate_message_hash<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<[u8; 32]> {
+    // Parse the parameter.
+    let param: PermitMessage = ctx.parameter_cursor().get()?;
+
+    // Check that the message was intended for this contract.
+    ensure_eq!(
+        param.contract_address,
+        ctx.self_address(),
+        CustomContractError::WrongContract.into()
+    );
+
+    // Check message is not expired.
+    ensure!(
+        param.timestamp > ctx.metadata().slot_time(),
+        CustomContractError::SignatureExpired.into()
+    );
+
+    let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&param)).0;
+
+    match param.payload {
+        // Transfer the tokens.
+        PermitPayload::Transfer(_) => {
+            // Check that the message was intended for this `entry_point`.
+            ensure_eq!(
+                param.entry_point,
+                OwnedEntrypointName::new_unchecked("contract_transfer".into()),
+                CustomContractError::WrongEntryPoint.into()
+            );
+        }
+        // Update the operator.
+        PermitPayload::UpdateOperator(_) => {
+            // Check that the message was intended for this `entry_point`.
+            ensure_eq!(
+                param.entry_point,
+                OwnedEntrypointName::new_unchecked("contract_update_operator".into()),
+                CustomContractError::WrongEntryPoint.into()
+            );
+        }
+    }
+
+    // Return the message hash.
+    Ok(message_hash)
+}
+
 /// Verify an ed25519 signature and allow the transfer of tokens or update of an
 /// operator.
 ///
@@ -2059,6 +2123,8 @@ mod tests {
         let mut signature_map = BTreeMap::new();
         signature_map.insert(0, inner_signature_map);
 
+        let crypto_primitives = TestCryptoPrimitives::new();
+
         let permit_transfer_param = PermitParam {
             signature: signature_map,
             signer:    ACCOUNT_1,
@@ -2078,8 +2144,6 @@ mod tests {
 
         let parameter_bytes = to_bytes(&permit_transfer_param);
         ctx.set_parameter(&parameter_bytes);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
 
         // Inovke `permit` function.
         let result: ContractResult<()> =
