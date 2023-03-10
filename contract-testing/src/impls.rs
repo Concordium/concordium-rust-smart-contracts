@@ -740,7 +740,7 @@ impl Chain {
                     return_value: data.unwrap_or_default(),
                     state_changed,
                     new_balance,
-                    logs: update_aux_response.logs.unwrap_or_default(),
+                    logs: update_aux_response.logs,
                 });
                 (result, transaction_fee)
             }

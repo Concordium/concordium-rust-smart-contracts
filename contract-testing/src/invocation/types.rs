@@ -14,8 +14,9 @@ use std::collections::BTreeMap;
 pub(crate) struct InvokeEntrypointResult {
     /// The result from the invoke.
     pub(crate) invoke_response:  InvokeResponse,
-    /// Will be `Some` if and only if `invoke_response` is `Success`.
-    pub(crate) logs:             Option<v0::Logs>,
+    /// Logs created during the invocation.
+    /// Has entries if and only if `invoke_response` is `Success`.
+    pub(crate) logs:             v0::Logs,
     /// The remaining energy after the invocation.
     pub(crate) remaining_energy: InterpreterEnergy,
 }

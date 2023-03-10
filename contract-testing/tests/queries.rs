@@ -82,7 +82,10 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(ACC_0, format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER)) // TODO: Add wasm files to the repo for tests.
+            .module_deploy_wasm_v1(
+                ACC_0,
+                format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
+            )
             .expect("Deploying valid module should work");
 
         let res_init = chain

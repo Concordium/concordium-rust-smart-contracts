@@ -111,7 +111,7 @@ impl EntrypointInvocationHandler {
                     // TODO: Should we charge any energy for this?
                     return InvokeEntrypointResult {
                         invoke_response:  v1::InvokeResponse::Failure { kind },
-                        logs:             None,
+                        logs:             v0::Logs::new(),
                         remaining_energy: to_interpreter_energy(remaining_energy),
                     };
                 }
@@ -127,7 +127,7 @@ impl EntrypointInvocationHandler {
                         invoke_response:  v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::NonExistentContract,
                         },
-                        logs:             None,
+                        logs:             v0::Logs::new(),
                         remaining_energy: to_interpreter_energy(remaining_energy),
                     };
                 }
@@ -167,7 +167,7 @@ impl EntrypointInvocationHandler {
                     invoke_response:  v1::InvokeResponse::Failure {
                         kind: v1::InvokeFailure::NonExistentEntrypoint,
                     },
-                    logs:             None,
+                    logs:             v0::Logs::new(),
                     remaining_energy: to_interpreter_energy(remaining_energy),
                 };
             }
@@ -254,7 +254,7 @@ impl EntrypointInvocationHandler {
                             new_balance: self.contract_balance_unchecked(contract_address),
                             data:        Some(return_value),
                         },
-                        logs: Some(logs),
+                        logs,
                         remaining_energy,
                     }
                 }
@@ -274,7 +274,7 @@ impl EntrypointInvocationHandler {
                                 data: return_value,
                             },
                         },
-                        logs: None,
+                        logs: v0::Logs::new(),
                         remaining_energy,
                     }
                 }
@@ -287,7 +287,7 @@ impl EntrypointInvocationHandler {
                         invoke_response: v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::RuntimeError,
                         },
-                        logs: None,
+                        logs: v0::Logs::new(),
                         remaining_energy,
                     }
                 }
@@ -297,7 +297,7 @@ impl EntrypointInvocationHandler {
                         invoke_response: v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::RuntimeError,
                         },
-                        logs: None,
+                        logs: v0::Logs::new(),
                         remaining_energy,
                     }
                 }
