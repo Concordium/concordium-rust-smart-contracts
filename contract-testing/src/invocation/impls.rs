@@ -1142,8 +1142,9 @@ impl<'a> InvocationData<'a> {
 
                             let mut remaining_energy =
                                 from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
-                            remaining_energy =
-                                remaining_energy.saturating_sub(constants::SIMPLE_TRANSFER_COST);
+                            remaining_energy = remaining_energy.saturating_sub(
+                                concordium_base::transactions::cost::SIMPLE_TRANSFER,
+                            );
 
                             let resume_res = run_interpreter(remaining_energy, |energy| {
                                 v1::resume_receive(

@@ -2,7 +2,7 @@ use concordium_base::{
     base::{self, Energy},
     common::{self, to_bytes},
     contracts_common::{
-        AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
+        self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, SlotTime,
         Timestamp,
     },
@@ -198,7 +198,7 @@ impl Chain {
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > constants::MAX_PARAMETER_SIZE {
+        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(ContractInitError::ParameterTooLarge);
         }
 
@@ -432,7 +432,7 @@ impl Chain {
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > constants::MAX_PARAMETER_SIZE {
+        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(ContractUpdateError::ParameterTooLarge);
         }
 
@@ -568,7 +568,7 @@ impl Chain {
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > constants::MAX_PARAMETER_SIZE {
+        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(ContractUpdateError::ParameterTooLarge);
         }
 
