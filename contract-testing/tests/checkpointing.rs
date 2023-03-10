@@ -6,7 +6,7 @@
 //! fails.
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 const ACC_1: AccountAddress = AccountAddress([1; 32]);
 
@@ -73,7 +73,7 @@ fn test_case_1() {
             Address::Account(ACC_0),
             res_init_a.contract_address,
             EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::new(&parameter),
+            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
             // We supply one microCCD as we expect a trap
             // (see contract for details).
             Amount::from_micro_ccd(1),
@@ -148,7 +148,7 @@ fn test_case_2() {
             Address::Account(ACC_0),
             res_init_a.contract_address,
             EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::new(&parameter),
+            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
             // We supply zero microCCD as we're instructing the contract to not expect
             // state modifications. Also, the contract does not expect
             // errors, i.e., a trap signal from underlying invocations.
@@ -208,7 +208,7 @@ fn test_case_3() {
             Address::Account(ACC_0),
             res_init_a.contract_address,
             EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::new(&ACC_1),
+            OwnedParameter::from_serial(&ACC_1).expect("Parameter has valid size"),
             // We supply three micro CCDs as we're instructing the contract to carry out a
             // transfer instead of a call. See the contract for
             // details.
@@ -281,7 +281,7 @@ fn test_case_4() {
             Address::Account(ACC_0),
             res_init_a.contract_address,
             EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::new(&parameter),
+            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
             // We supply four CCDs as we're instructing the contract to expect state
             // modifications being made from the 'inner' contract A
             // call to be in effect when returned to the caller (a.a_modify_proxy).

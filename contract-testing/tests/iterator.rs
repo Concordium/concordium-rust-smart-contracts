@@ -6,7 +6,7 @@
 
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 #[test]

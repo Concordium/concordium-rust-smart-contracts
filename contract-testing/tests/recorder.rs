@@ -2,7 +2,7 @@
 
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 #[test]
@@ -35,7 +35,7 @@ fn test_recorder() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("record_u64"),
-            OwnedParameter::new(&20u64),
+            OwnedParameter::from_serial(&20u64).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -46,7 +46,7 @@ fn test_recorder() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("record_u64"),
-            OwnedParameter::new(&40u64),
+            OwnedParameter::from_serial(&40u64).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )

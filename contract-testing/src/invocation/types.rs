@@ -3,12 +3,12 @@ use concordium_base::contracts_common::{
     AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
     OwnedEntrypointName, SlotTime,
 };
-use std::collections::BTreeMap;
-use wasm_chain_integration::{
+use concordium_smart_contract_engine::{
     v0,
     v1::{trie::MutableState, InvokeResponse},
     InterpreterEnergy,
 };
+use std::collections::BTreeMap;
 
 /// The result of invoking an entrypoint.
 pub(crate) struct InvokeEntrypointResult {

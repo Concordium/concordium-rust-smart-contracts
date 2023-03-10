@@ -12,7 +12,10 @@ fn deploying_valid_module_works() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res = chain
-        .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+        )
         .expect("Deploying valid module should work.");
 
     assert_eq!(chain.modules.len(), 1);
@@ -29,7 +32,10 @@ fn initializing_valid_contract_works() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
@@ -37,7 +43,7 @@ fn initializing_valid_contract_works() {
             ACC_0,
             res_deploy.module_reference,
             ContractName::new_unchecked("init_weather"),
-            OwnedParameter::from_bytes(vec![0u8]),
+            OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -56,7 +62,10 @@ fn initializing_with_invalid_parameter_fails() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
@@ -64,7 +73,7 @@ fn initializing_with_invalid_parameter_fails() {
             ACC_0,
             res_deploy.module_reference,
             ContractName::new_unchecked("init_weather"),
-            OwnedParameter::from_bytes(vec![99u8]), // Invalid param
+            OwnedParameter::try_from(vec![99u8]).expect("Parameter has valid size."), // Invalid param
             Amount::zero(),
             Energy::from(10000),
         )
@@ -91,7 +100,10 @@ fn updating_valid_contract_works() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
@@ -99,7 +111,7 @@ fn updating_valid_contract_works() {
             ACC_0,
             res_deploy.module_reference,
             ContractName::new_unchecked("init_weather"),
-            OwnedParameter::from_bytes(vec![0u8]), // Starts as 0
+            OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
             Amount::zero(),
             Energy::from(10000),
         )
@@ -111,7 +123,7 @@ fn updating_valid_contract_works() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("set"),
-            OwnedParameter::from_bytes(vec![1u8]), // Updated to 1
+            OwnedParameter::try_from(vec![1u8]).expect("Parameter has valid size."), // Updated to 1
             Amount::zero(),
             Energy::from(10000),
         )
@@ -156,7 +168,10 @@ fn updating_and_invoking_with_missing_sender_fails() {
     let missing_contract = Address::Contract(ContractAddress::new(100, 0));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, "examples/icecream/icecream.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
@@ -164,7 +179,7 @@ fn updating_and_invoking_with_missing_sender_fails() {
             ACC_0,
             res_deploy.module_reference,
             ContractName::new_unchecked("init_weather"),
-            OwnedParameter::from_bytes(vec![0u8]), // Starts as 0
+            OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
             Amount::zero(),
             Energy::from(10000),
         )
@@ -239,7 +254,10 @@ mod integrate_contract {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(
+                ACC_0,
+                "../../concordium-rust-smart-contracts/examples/integrate/a.wasm.v1",
+            )
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -259,7 +277,7 @@ mod integrate_contract {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("receive"),
-                OwnedParameter::new(&ACC_1),
+                OwnedParameter::from_serial(&ACC_1).expect("Parameter has valid size"),
                 transfer_amount,
                 Energy::from(10000),
             )
@@ -312,7 +330,10 @@ mod integrate_contract {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(
+                ACC_0,
+                "../../concordium-rust-smart-contracts/examples/integrate/a.wasm.v1",
+            )
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -331,7 +352,9 @@ mod integrate_contract {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("receive"),
-            OwnedParameter::new(&ACC_1), // We haven't created ACC_1.
+            OwnedParameter::from_serial(&ACC_1).expect(
+                "Parameter has valid size",
+            ), // We haven't created ACC_1.
             transfer_amount,
             Energy::from(100000),
         );
@@ -364,7 +387,10 @@ mod integrate_contract {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(
+                ACC_0,
+                "../../concordium-rust-smart-contracts/examples/integrate/a.wasm.v1",
+            )
             .expect("Deploying valid module should work");
 
         let res_init = chain
@@ -384,7 +410,10 @@ mod integrate_contract {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("recurse"),
-                OwnedParameter::new(&10u32),
+                OwnedParameter::from_serial(&10u32).expect(
+                    "Parameter has
+valid size",
+                ),
                 Amount::zero(),
                 Energy::from(1000000),
             )
@@ -427,7 +456,10 @@ mod integrate_contract {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(
+                ACC_0,
+                "../../concordium-rust-smart-contracts/examples/integrate/a.wasm.v1",
+            )
             .expect("Deploying valid module should work");
 
         let input_param: u32 = 8;
@@ -449,7 +481,10 @@ mod integrate_contract {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("inc-fail-on-zero"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect(
+                    "Parameter
+has valid size",
+                ),
                 Amount::zero(),
                 Energy::from(100000000),
             )
@@ -492,7 +527,10 @@ mod integrate_contract {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(ACC_0, "examples/integrate/a.wasm.v1")
+            .module_deploy_v1(
+                ACC_0,
+                "../../concordium-rust-smart-contracts/examples/integrate/a.wasm.v1",
+            )
             .expect("Deploying valid module should work");
 
         let res_init_0 = chain
@@ -525,7 +563,7 @@ mod integrate_contract {
                 Address::Account(ACC_0),
                 res_init_0.contract_address,
                 EntrypointName::new_unchecked("mutate_and_forward"),
-                OwnedParameter::new(&param),
+                OwnedParameter::from_serial(&param).expect("Parameter has valid size."),
                 transfer_amount,
                 Energy::from(100000),
             )
@@ -540,7 +578,10 @@ fn init_with_less_energy_than_module_lookup() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, "examples/fib/a.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1",
+        )
         .expect("Deploying valid module should work");
 
     let reserved_energy = Energy::from(10);
@@ -570,7 +611,10 @@ fn update_with_fib_reentry_works() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, "examples/fib/a.wasm.v1")
+        .module_deploy_v1(
+            ACC_0,
+            "../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1",
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
@@ -590,7 +634,7 @@ fn update_with_fib_reentry_works() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("receive"),
-            OwnedParameter::new(&6u64),
+            OwnedParameter::from_serial(&6u64).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )

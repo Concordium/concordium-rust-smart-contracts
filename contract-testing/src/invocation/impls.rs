@@ -14,13 +14,13 @@ use concordium_base::{
         ModuleReference, OwnedEntrypointName, OwnedReceiveName, Parameter,
     },
 };
-use std::collections::{btree_map, BTreeMap};
-use wasm_chain_integration::{
+use concordium_smart_contract_engine::{
     v0,
     v1::{self, trie},
     ExecResult, InterpreterEnergy,
 };
-use wasm_transform::artifact;
+use concordium_wasm::artifact;
+use std::collections::{btree_map, BTreeMap};
 
 impl EntrypointInvocationHandler {
     /// Invoke an entrypoint and get the result, [`Changeset`], and chain
@@ -210,7 +210,7 @@ impl EntrypointInvocationHandler {
                 v1::ReceiveInvocation {
                     amount,
                     receive_name: receive_name.as_receive_name(),
-                    parameter: parameter.0,
+                    parameter: parameter.as_ref(),
                     energy,
                 },
                 instance_state,
@@ -1189,7 +1189,7 @@ impl<'a> InvocationData<'a> {
                                 Address::Contract(self.address),
                                 address,
                                 name,
-                                Parameter(&parameter),
+                                Parameter::new_unchecked(&parameter),
                                 amount,
                                 from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
                                 &mut self.chain_events,

@@ -3,15 +3,15 @@ use concordium_base::{
     common::{self, to_bytes},
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, Parameter,
-        SlotTime, Timestamp,
+        ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, SlotTime,
+        Timestamp,
     },
     smart_contracts::{ModuleSource, OwnedReceiveName, WasmModule, WasmVersion},
     transactions::{self, cost},
 };
+use concordium_smart_contract_engine::{v0, v1, InterpreterEnergy};
 use num_bigint::BigUint;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
-use wasm_chain_integration::{v0, v1, InterpreterEnergy};
 
 use crate::{
     constants,
@@ -77,7 +77,7 @@ impl Chain {
         wasm_module: WasmModule,
     ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
         // Deserialize as wasm module (artifact)
-        let artifact = wasm_transform::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
+        let artifact = concordium_wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
             &v1::ConcordiumAllowedImports {
                 support_upgrade: true,
             },
@@ -198,7 +198,7 @@ impl Chain {
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.0.len() + 2 > constants::MAX_PARAMETER_SIZE {
+        if parameter.as_ref().len() + 2 > constants::MAX_PARAMETER_SIZE {
             return Err(ContractInitError::ParameterTooLarge);
         }
 
@@ -257,7 +257,7 @@ impl Chain {
             v1::InitInvocation {
                 amount,
                 init_name: contract_name.get_chain_name(),
-                parameter: &parameter.0,
+                parameter: parameter.as_ref(),
                 energy: to_interpreter_energy(remaining_energy),
             },
             false,
@@ -432,7 +432,7 @@ impl Chain {
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.0.len() + 2 > constants::MAX_PARAMETER_SIZE {
+        if parameter.as_ref().len() + 2 > constants::MAX_PARAMETER_SIZE {
             return Err(ContractUpdateError::ParameterTooLarge);
         }
 
@@ -487,7 +487,7 @@ impl Chain {
                 sender,
                 contract_address,
                 entrypoint.to_owned(),
-                Parameter(&parameter.0),
+                parameter.as_parameter(),
                 amount,
                 remaining_energy,
             );
@@ -568,7 +568,7 @@ impl Chain {
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.0.len() + 2 > constants::MAX_PARAMETER_SIZE {
+        if parameter.as_ref().len() + 2 > constants::MAX_PARAMETER_SIZE {
             return Err(ContractUpdateError::ParameterTooLarge);
         }
 
@@ -583,7 +583,7 @@ impl Chain {
                 sender,
                 contract_address,
                 entrypoint.to_owned(),
-                Parameter(&parameter.0),
+                parameter.as_parameter(),
                 amount,
                 energy_reserved,
             );
@@ -771,9 +771,13 @@ impl Chain {
 impl TestPolicies {
     // TODO: Make correctly structured policies ~= Vec<Tuple<Credential,
     // PolicyBytes>>.
-    pub fn empty() -> Self { Self(v0::OwnedPolicyBytes::new()) }
+    pub fn empty() -> Self { Self(Vec::new()) }
 
     // TODO: Add helper functions for creating arbitrary valid policies.
+}
+
+impl AsRef<[u8]> for TestPolicies {
+    fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
 impl Account {

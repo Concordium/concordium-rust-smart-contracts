@@ -4,7 +4,7 @@
 
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 #[test]
@@ -49,7 +49,7 @@ fn test_error_codes() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("call"),
-            OwnedParameter::new(&parameter_0),
+            OwnedParameter::from_serial(&parameter_0).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -79,7 +79,7 @@ fn test_error_codes() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("call"),
-            OwnedParameter::new(&parameter_1),
+            OwnedParameter::from_serial(&parameter_1).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -107,7 +107,7 @@ fn test_error_codes() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("call"),
-            OwnedParameter::new(&parameter_2),
+            OwnedParameter::from_serial(&parameter_2).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -137,7 +137,7 @@ fn test_error_codes() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("call"),
-            OwnedParameter::new(&parameter_3),
+            OwnedParameter::from_serial(&parameter_3).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -167,7 +167,7 @@ fn test_error_codes() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("call"),
-            OwnedParameter::new(&parameter_4),
+            OwnedParameter::from_serial(&parameter_4).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -200,7 +200,7 @@ fn test_error_codes() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("call"),
-            OwnedParameter::new(&parameter_6),
+            OwnedParameter::from_serial(&parameter_6).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )

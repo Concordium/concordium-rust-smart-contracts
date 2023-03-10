@@ -28,7 +28,7 @@
 //!         ACC, // Invoker account.
 //!         deployment.module_reference, // Module to initialize from.
 //!         ContractName::new_unchecked("init_my_contract"), // Contract to init.
-//!         OwnedParameter::new(&"my_param"), // Any type implementing [`Serial`] can be used.
+//!         OwnedParameter::from_serial(&"my_param").unwrap(), // Any type implementing [`Serial`] can be used.
 //!         Amount::zero(), // CCD to send the contract.
 //!         Energy::from(10000), // Maximum energy allowed for initializing.
 //!     )
@@ -41,7 +41,7 @@
 //!         Address::Account(ACC), // Sender (can also be a contract).
 //!         initialization.contract_address, // The contract to update.
 //!         EntrypointName::new_unchecked("my_entrypoint"), // The entrypoint to call.
-//!         OwnedParameter::new(&42u8), // Another type of parameter.
+//!         OwnedParameter::from_serial(&42u8).unwrap(), // Another type of parameter.
 //!         Amount::from_ccd(100), // Sending the contract 100 CCD.
 //!         Energy::from(10000),  // Maximum energy allowed for the update.
 //!     )
@@ -78,4 +78,4 @@ pub use concordium_base::{
         OwnedParameter, Parameter, SlotTime,
     },
 };
-pub use wasm_chain_integration::v1::InvokeFailure;
+pub use concordium_smart_contract_engine::v1::InvokeFailure;

@@ -4,7 +4,7 @@
 
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 #[test]
@@ -66,7 +66,7 @@ fn test_counter() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("inc10"),
-            OwnedParameter::new(&parameter),
+            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )

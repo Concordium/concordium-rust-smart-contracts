@@ -2,7 +2,7 @@
 
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 #[test]
@@ -31,8 +31,9 @@ fn test_fallback() {
             ACC_0,
             res_deploy.module_reference,
             ContractName::new_unchecked("init_one"),
-            OwnedParameter::new(&res_init_two.contract_address), /* Pass in address of contract
-                                                                  * "two". */
+            OwnedParameter::from_serial(&res_init_two.contract_address)
+                .expect("Parameter has valid size"), /* Pass in address of contract
+                                                      * "two". */
             Amount::zero(),
             Energy::from(10000),
         )
@@ -59,7 +60,7 @@ fn test_fallback() {
     }
 
     // Invoke "two.do" via "one.do" and the fallback.
-    let parameter = OwnedParameter::new(&"ASDF");
+    let parameter = OwnedParameter::from_serial(&"ASDF").expect("Parameter has valid size.");
     let res_invoke_2 = chain
         .contract_invoke(
             ACC_0,
@@ -71,6 +72,7 @@ fn test_fallback() {
             Energy::from(10000),
         )
         .expect("Invoke should succeed.");
-    assert_eq!(res_invoke_2.return_value, parameter.0); // Parameter is returned
-                                                        // via the fallback.
+    assert_eq!(res_invoke_2.return_value, parameter.as_ref()); // Parameter is
+                                                               // returned
+                                                               // via the fallback.
 }

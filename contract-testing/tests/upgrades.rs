@@ -2,7 +2,7 @@
 //! functionality.
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 /// Test a basic upgrade, ensuring that the new module is in place by
@@ -42,7 +42,7 @@ fn test() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("bump"),
-            OwnedParameter::new(&res_deploy_1.module_reference),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -55,7 +55,7 @@ fn test() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("newfun"),
-            OwnedParameter::new(&res_deploy_1.module_reference),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -111,7 +111,7 @@ fn test_self_invoke() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::new(&res_deploy_1.module_reference),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -222,7 +222,7 @@ fn test_missing_contract() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::new(&res_deploy_1.module_reference),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -275,7 +275,7 @@ fn test_twice_in_one_transaction() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::new(&input_param),
+            OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -346,7 +346,7 @@ fn test_chained_contract() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::new(&input_param),
+            OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(1000000),
         )
@@ -400,7 +400,7 @@ fn test_reject() {
         Address::Account(ACC_0),
         res_init.contract_address,
         EntrypointName::new_unchecked("upgrade"),
-        OwnedParameter::new(&res_deploy_1.module_reference),
+        OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
         Amount::zero(),
         Energy::from(1000000),
     );
@@ -500,7 +500,7 @@ fn test_changing_entrypoint() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::new(&res_deploy_1.module_reference),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(1000000),
         )

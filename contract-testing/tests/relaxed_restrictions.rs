@@ -13,7 +13,7 @@
 //!     - Of size > 1 kb: base cost + 1NRG / 1 *byte*
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 /// Test the new parameter size limit.
@@ -45,7 +45,7 @@ fn test_new_return_value_limit() {
             Address::Account(ACC_0),
             contract_address,
             EntrypointName::new_unchecked("return-value"),
-            OwnedParameter::new(&100_000u32),
+            OwnedParameter::from_serial(&100_000u32).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -63,7 +63,7 @@ fn test_new_log_limit() {
             Address::Account(ACC_0),
             contract_address,
             EntrypointName::new_unchecked("logs"),
-            OwnedParameter::new(&64u32),
+            OwnedParameter::from_serial(&64u32).expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(10000),
         )
@@ -120,5 +120,6 @@ fn mk_parameter(internal_param_size: u16, desired_size: u32) -> OwnedParameter {
         - 9 // entrypoint name
         - 4; // length of filler vector
     let filler = vec![1u8; filler_size as usize];
-    OwnedParameter::new(&(internal_param_size, entrypoint, filler))
+    OwnedParameter::from_serial(&(internal_param_size, entrypoint, filler))
+        .expect("Parameter has valid size.")
 }

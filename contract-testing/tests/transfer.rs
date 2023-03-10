@@ -1,9 +1,9 @@
 //! This module contains tests for transfers fr&om a contract to an account.
 //! See more details about the specific test inside the `transfer.wat` file.
 use concordium_smart_contract_testing::*;
-use wasm_chain_integration::v0::Logs;
+use concordium_smart_contract_engine::v0::Logs;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
 #[test]
@@ -35,7 +35,7 @@ fn test_transfer() {
             Address::Account(ACC_0),
             contract_address,
             EntrypointName::new_unchecked("forward"),
-            OwnedParameter::new(&ACC_0),
+            OwnedParameter::from_serial(&ACC_0).expect("Parameter has valid size"),
             Amount::from_micro_ccd(123),
             Energy::from(10000),
         )
@@ -65,7 +65,7 @@ fn test_transfer() {
             Address::Account(ACC_0),
             contract_address,
             EntrypointName::new_unchecked("send"),
-            OwnedParameter::new(&(ACC_0, Amount::from_micro_ccd(17))), /* Tell it to send 17
+            OwnedParameter::from_serial(&(ACC_0, Amount::from_micro_ccd(17))).expect("Parameter has valid size"), /* Tell it to send 17
                                                                         * mCCD to ACC_0. */
             Amount::zero(),
             Energy::from(10000),

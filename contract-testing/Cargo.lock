@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "concordium-contracts-common"
-version = "5.0.0"
+version = "5.2.0"
 dependencies = [
  "bs58",
  "chrono",
@@ -302,16 +302,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "concordium-smart-contract-engine"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "concordium-contracts-common",
+ "concordium-wasm",
+ "derive_more",
+ "ed25519-zebra",
+ "libc",
+ "num_enum",
+ "rand 0.8.5",
+ "secp256k1",
+ "serde",
+ "sha2 0.10.6",
+ "sha3",
+ "slab",
+ "thiserror",
+ "tinyvec",
+]
+
+[[package]]
 name = "concordium-smart-contract-testing"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "concordium-smart-contract-engine",
+ "concordium-wasm",
  "concordium_base",
  "num-bigint 0.4.3",
  "sha2 0.10.6",
  "thiserror",
- "wasm-chain-integration",
- "wasm-transform",
+]
+
+[[package]]
+name = "concordium-wasm"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "concordium-contracts-common",
+ "derive_more",
+ "leb128",
+ "num_enum",
 ]
 
 [[package]]
@@ -320,6 +353,7 @@ version = "0.1.0"
 dependencies = [
  "aggregate_sig",
  "anyhow",
+ "bs58",
  "byteorder",
  "chrono",
  "concordium-contracts-common",
@@ -334,6 +368,7 @@ dependencies = [
  "hex",
  "id",
  "itertools",
+ "leb128",
  "libc",
  "num",
  "num-bigint 0.4.3",
@@ -692,7 +727,6 @@ dependencies = [
  "rand 0.7.3",
  "random_oracle",
  "serde",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -718,13 +752,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "ffi_helpers"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -874,7 +901,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.6",
  "thiserror",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1424,9 +1450,9 @@ checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
 name = "secp256k1"
-version = "0.22.1"
+version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26947345339603ae8395f68e2f3d85a6b0a8ddfe6315818e80b8504415099db0"
+checksum = "295642060261c80709ac034f52fca8e5a9fa2c7d341ded5cdb164b7c33768b2a"
 dependencies = [
  "secp256k1-sys",
 ]
@@ -1720,40 +1746,6 @@ name = "wasm-bindgen-shared"
 version = "0.2.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c38c045535d93ec4f0b4defec448e4291638ee608530863b1e2ba115d4fff7f"
-
-[[package]]
-name = "wasm-chain-integration"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "byteorder",
- "concordium-contracts-common",
- "derive_more",
- "ed25519-zebra",
- "ffi_helpers",
- "libc",
- "num_enum",
- "rand 0.8.5",
- "secp256k1",
- "serde",
- "sha2 0.10.6",
- "sha3",
- "slab",
- "thiserror",
- "tinyvec",
- "wasm-transform",
-]
-
-[[package]]
-name = "wasm-transform"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "concordium-contracts-common",
- "derive_more",
- "leb128",
- "num_enum",
-]
 
 [[package]]
 name = "winapi"

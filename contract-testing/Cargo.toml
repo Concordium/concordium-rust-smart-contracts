@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 concordium_base = {path = "../concordium-base/rust-src/concordium_base"}
-wasm-chain-integration = {path = "../concordium-base/smart-contracts/wasm-chain-integration"}
-wasm-transform = {path = "../concordium-base/smart-contracts/wasm-transform"}
+concordium-smart-contract-engine = {path = "../concordium-base/smart-contracts/wasm-chain-integration"}
+concordium-wasm = {path = "../concordium-base/smart-contracts/wasm-transform"}
 sha2 = "0.10"
 anyhow = "1"
 thiserror = "1.0"

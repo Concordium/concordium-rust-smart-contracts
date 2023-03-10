@@ -7,7 +7,7 @@
 //!  - the exhange rates.
 use concordium_smart_contract_testing::*;
 
-const WASM_TEST_FOLDER: &str = "../../concordium-node/concordium-consensus/testdata/contracts/v1";
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 const ACC_1: AccountAddress = AccountAddress([1; 32]);
 
@@ -51,7 +51,7 @@ mod query_account_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(100000),
             )
@@ -111,7 +111,7 @@ mod query_account_balance {
                 Address::Account(ACC_1),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 update_amount,
                 energy_limit,
             )
@@ -177,7 +177,7 @@ mod query_account_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(10000),
             )
@@ -242,7 +242,7 @@ mod query_account_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(100000),
             )
@@ -300,7 +300,7 @@ mod query_account_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(100000),
             )
@@ -372,7 +372,7 @@ mod query_contract_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(100000),
             )
@@ -421,7 +421,7 @@ mod query_contract_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 update_amount,
                 Energy::from(100000),
             )
@@ -477,7 +477,7 @@ mod query_contract_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 update_amount,
                 Energy::from(100000),
             )
@@ -528,7 +528,7 @@ mod query_contract_balance {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(100000),
             )
@@ -578,7 +578,7 @@ mod query_exchange_rates {
                 Address::Account(ACC_0),
                 res_init.contract_address,
                 EntrypointName::new_unchecked("query"),
-                OwnedParameter::new(&input_param),
+                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
                 Amount::zero(),
                 Energy::from(100000),
             )

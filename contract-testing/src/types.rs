@@ -9,11 +9,11 @@ use concordium_base::{
     },
     smart_contracts::WasmVersion,
 };
-use wasm_chain_integration::{
+use concordium_smart_contract_engine::{
     v0,
     v1::{self, trie, ReturnValue},
 };
-use wasm_transform::artifact;
+use concordium_wasm::artifact;
 
 /// A smart contract module.
 #[derive(Debug, Clone)]
@@ -61,7 +61,8 @@ pub struct Contract {
 }
 
 /// Account policies for testing.
-pub struct TestPolicies(pub v0::OwnedPolicyBytes);
+#[derive(Clone, Debug)]
+pub struct TestPolicies(pub Vec<u8>);
 
 /// An account.
 #[derive(Clone)]
@@ -69,7 +70,7 @@ pub struct Account {
     /// The account balance.
     pub balance:         AccountBalance,
     /// Account policies.
-    pub policies:        v0::OwnedPolicyBytes,
+    pub policies:        Vec<u8>, // TODO: Decide how policies should be represented.
     /// The number of signatures. The number of signatures affect the cost of
     /// every transaction for the account.
     pub signature_count: u32,
