@@ -106,7 +106,7 @@ impl Chain {
         account.balance.total -= transaction_fee;
 
         // Save the module
-        let module_reference: ModuleReference = wasm_module.get_module_ref().into();
+        let module_reference: ModuleReference = wasm_module.get_module_ref();
         // Ensure module hasn't been deployed before.
         if self.modules.contains_key(&module_reference) {
             return Err(DeployModuleError::DuplicateModule(module_reference));
@@ -158,7 +158,7 @@ impl Chain {
         // Load file
         let file_contents = std::fs::read(module_path)?;
         let mut cursor = std::io::Cursor::new(file_contents);
-        let wasm_module: WasmModule = common::Deserial::deserial(&mut cursor)?;
+        let wasm_module: WasmModule = common::from_bytes(&mut cursor)?;
 
         if wasm_module.version != WasmVersion::V1 {
             return Err(DeployModuleError::UnsupportedModuleVersion(
@@ -208,9 +208,9 @@ impl Chain {
         let check_header_cost = {
             let payload = transactions::InitContractPayload {
                 amount,
-                mod_ref: module_reference.into(),
+                mod_ref: module_reference,
                 init_name: contract_name.to_owned(),
-                param: parameter.clone().into(),
+                param: parameter.clone(),
             };
             let pre_account_trx = transactions::construct::init_contract(
                 account_info.signature_count,
@@ -237,9 +237,6 @@ impl Chain {
         let lookup_cost = lookup_module_cost(&module);
         // Charge the cost for looking up the module.
         remaining_energy = remaining_energy.saturating_sub(lookup_cost);
-
-        // TODO: Should we return another kind of error than `ExecutionError` if we run
-        // out of energy before invoking?
 
         // Construct the context.
         let init_ctx = v0::InitContext {
@@ -269,15 +266,13 @@ impl Chain {
                 logs,
                 return_value: _, /* Ignore return value for now, since our tools do not support
                                   * it for inits, currently. */
-                remaining_energy,
+                mut remaining_energy,
                 mut state,
             }) => {
                 let contract_address = self.create_contract_address();
                 let mut collector = v1::trie::SizeCollector::default();
 
                 let persisted_state = state.freeze(&mut loader, &mut collector);
-
-                let mut remaining_energy = InterpreterEnergy::from(remaining_energy);
 
                 // Charge one energy per stored state byte.
                 let energy_for_state_storage =
@@ -343,9 +338,8 @@ impl Chain {
                 remaining_energy,
             }) => {
                 let energy_reserved = to_interpreter_energy(energy_reserved);
-                let energy_used = from_interpreter_energy(
-                    energy_reserved.saturating_sub(InterpreterEnergy::from(remaining_energy)),
-                );
+                let energy_used =
+                    from_interpreter_energy(energy_reserved.saturating_sub(remaining_energy));
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 (
                     Err(ContractInitError::ExecutionError {
@@ -364,9 +358,8 @@ impl Chain {
                 remaining_energy,
             }) => {
                 let energy_reserved = to_interpreter_energy(energy_reserved);
-                let energy_used = from_interpreter_energy(
-                    energy_reserved.saturating_sub(InterpreterEnergy::from(remaining_energy)),
-                );
+                let energy_used =
+                    from_interpreter_energy(energy_reserved.saturating_sub(remaining_energy));
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 (
                     Err(ContractInitError::ExecutionError {
@@ -460,7 +453,7 @@ impl Chain {
                 amount,
                 address: contract_address,
                 receive_name,
-                message: parameter.clone().into(),
+                message: parameter.clone(),
             };
 
             let pre_account_trx = transactions::construct::update_contract(
@@ -479,10 +472,9 @@ impl Chain {
         // Charge the header cost.
         remaining_energy = remaining_energy.saturating_sub(check_header_cost);
 
-        // TODO: Should chain events be part of the changeset?
         let (result, changeset, chain_events) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
-                &self,
+                self,
                 invoker,
                 sender,
                 contract_address,
@@ -578,7 +570,7 @@ impl Chain {
 
         let (result, changeset, chain_events) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
-                &self,
+                self,
                 invoker,
                 sender,
                 contract_address,
@@ -626,9 +618,13 @@ impl Chain {
 
     /// Create an account.
     ///
-    /// Will override existing account if already present.
-    pub fn create_account(&mut self, account: AccountAddress, account_info: Account) {
-        self.accounts.insert(account, account_info);
+    /// Will override an existing account and return it.
+    pub fn create_account(
+        &mut self,
+        account: AccountAddress,
+        account_info: Account,
+    ) -> Option<Account> {
+        self.accounts.insert(account, account_info)
     }
 
     /// Create a contract address.

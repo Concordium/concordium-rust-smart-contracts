@@ -1225,9 +1225,7 @@ impl<'a> InvocationData<'a> {
                             self.chain_events.push(resume_event);
 
                             let resume_res = run_interpreter(
-                                from_interpreter_energy(InterpreterEnergy::from(
-                                    res.remaining_energy,
-                                )),
+                                from_interpreter_energy(res.remaining_energy),
                                 |energy| {
                                     v1::resume_receive(
                                         config,

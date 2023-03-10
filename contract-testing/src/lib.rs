@@ -1,7 +1,7 @@
 //! # Concordium Smart Contract Testing
 //!
-//! This library supports integration testing of Concordium smart contracts
-//! written in Rust.
+//! This library supports writing integration tests in Rust for Concordium smart
+//! contracts.
 //!
 //! ## Basic usage
 //!
