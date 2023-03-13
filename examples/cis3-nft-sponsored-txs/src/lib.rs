@@ -892,16 +892,13 @@ fn contract_permit<S: HasStateApi>(
         .ok_or(CustomContractError::SignatureMapMisconfigured)?;
 
     // Update the nonce.
-    host.state_mut().public_key_registry.entry(param.signer).and_modify(|(_, a)| *a += 1u64);
-
+    let mut entry = host.state_mut().public_key_registry.entry(param.signer).occupied_or(CustomContractError::NoPublicKey)?;
+   // bump nonce
+    entry.1 += 1;
     // Get the public key and the current nonce.
-    let entry = host
-        .state_mut()
-        .public_key_registry
-        .get(&param.signer)
-        .ok_or(CustomContractError::NoPublicKey)?;
     let public_key = entry.0;
     let nonce = entry.1;
+    drop(entry);
 
     // Check the nonce to prevent replay attacks.
     ensure_eq!(param.message.nonce, nonce, CustomContractError::NonceMismatch.into());
