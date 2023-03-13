@@ -22,7 +22,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::*;
-use concordium_std::{collections::BTreeMap, *};
+use concordium_std::*;
 
 /// The baseurl for the token metadata, gets appended with the token ID as hex
 /// encoding before emitted in the TokenMetadata event.
@@ -97,108 +97,6 @@ struct SetImplementorsParams {
     id:           StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     implementors: Vec<ContractAddress>,
-}
-
-/// The parameter type for the contract function `permitTransfer`.
-/// Takes a signature, all input parameters to the regular `transfer` function,
-/// the `contract_address`/`entry_point` that the signature is intended for, and
-/// a `nonce` to prevent replay attacks.
-#[derive(SchemaType, Serialize, Debug)]
-pub struct PermitTransferParam {
-    /// A signature generated from the corresponding public key that is
-    /// registered in this contract.
-    signature:        SignatureEd25519,
-    /// The `from` parameter from the regular `transfer` function. Because only
-    /// an `accountAddress` can generate a signature, the `from` has
-    /// to be an `accountAddress`.
-    from:             AccountAddress,
-    /// The `to` parameter from the regular `transfer` function.
-    to:               Receiver,
-    /// The `data` parameter from the regular `transfer` function.
-    data:             AdditionalData,
-    /// The `amount` parameter from the regular `transfer` function.
-    amount:           ContractTokenAmount,
-    /// The `token_id` parameter from the regular `transfer` function.
-    token_id:         ContractTokenId,
-    /// The contract_address that the signature is intended for.
-    contract_address: ContractAddress,
-    /// The entry_point that the signature is intended for.
-    entry_point:      OwnedEntrypointName,
-    /// A nonce to prevent replay attacks.
-    nonce:            u64,
-}
-
-/// The message struct that is signed in the `permitTransfer` function.
-/// Takes all input parameters to the regular `transfer` function,
-/// the `contract_address`/`entry_point` that the signature is intended for, and
-/// a `nonce` to prevent replay attacks.
-#[derive(SchemaType, Serialize)]
-struct PermitTransferMessage {
-    /// The `from` parameter from the regular `transfer` function. Because only
-    /// an `accountAddress` can generate a signature, the `from` has
-    /// to be an `accountAddress`.
-    from:             AccountAddress,
-    /// The `to` parameter from the regular `transfer` function.
-    to:               Receiver,
-    /// The `data` parameter from the regular `transfer` function.
-    data:             AdditionalData,
-    /// The `amount` parameter from the regular `transfer` function.
-    amount:           ContractTokenAmount,
-    /// The `token_id` parameter from the regular `transfer` function.
-    token_id:         ContractTokenId,
-    /// The contract_address that the signature is intended for.
-    contract_address: ContractAddress,
-    /// The entry_point that the signature is intended for.
-    entry_point:      OwnedEntrypointName,
-    /// A nonce to prevent replay attacks.
-    nonce:            u64,
-}
-
-/// The parameter type for the contract function `permitUpdateOperator`.
-/// Takes a signature, all input parameters to the regular `updateOperator`
-/// function, the `contract_address`/`entry_point` that the signature is
-/// intended for, and a `nonce` to prevent replay attacks.
-#[derive(SchemaType, Serialize, Debug)]
-pub struct PermitUpdateOperatorParam {
-    /// A signature generated from the corresponding public key that is
-    /// registered in this contract.
-    signature:        SignatureEd25519,
-    /// The `owner` parameter from the regular `updateOperator` function.
-    /// Because only an `accountAddress` can generate a signature, the `owner`
-    /// has to be an `accountAddress`.
-    owner:            AccountAddress,
-    /// The `update` parameter from the regular `updateOperator` function.
-    update:           OperatorUpdate,
-    /// The `operator` parameter from the regular `updateOperator` function.
-    operator:         Address,
-    /// The contract_address that the signature is intended for.
-    contract_address: ContractAddress,
-    /// The entry_point that the signature is intended for.
-    entry_point:      OwnedEntrypointName,
-    /// A nonce to prevent replay attacks.
-    nonce:            u64,
-}
-
-/// The message struct that is signed in the `permitUpdateOperator` function.
-/// Takes all input parameters to the regular `updateOperator` function,
-/// the `contract_address`/`entry_point` that the signature is intended for, and
-/// a `nonce` to prevent replay attacks.
-#[derive(SchemaType, Serialize)]
-struct PermitUpdateOperatorMessage {
-    /// The `owner` parameter from the regular `updateOperator` function.
-    /// Because only an `accountAddress` can generate a signature, the `owner`
-    /// has to be an `accountAddress`.
-    owner:            AccountAddress,
-    /// The `update` parameter from the regular `updateOperator` function.
-    update:           OperatorUpdate,
-    /// The `operator` parameter from the regular `updateOperator` function.
-    operator:         Address,
-    /// The contract_address that the signature is intended for.
-    contract_address: ContractAddress,
-    /// The entry_point that the signature is intended for.
-    entry_point:      OwnedEntrypointName,
-    /// A nonce to prevent replay attacks.
-    nonce:            u64,
 }
 
 /// The custom errors the contract can produce.
@@ -399,14 +297,12 @@ fn contract_init<S: HasStateApi>(
     Ok(State::empty(state_builder))
 }
 
-/// Part of the return paramter of the `view` function.
 #[derive(Serialize, SchemaType)]
 struct ViewAddressState {
     owned_tokens: Vec<ContractTokenId>,
     operators:    Vec<Address>,
 }
 
-/// Return paramter of the `view` function.
 #[derive(Serialize, SchemaType)]
 struct ViewState {
     state:      Vec<(Address, ViewAddressState)>,
@@ -505,46 +401,6 @@ fn contract_mint<S: HasStateApi>(
 
 type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
-/// Internal `transfer/permitTransfer` helper function. Invokes the `transfer`
-/// function of the state. Logs a `Transfer` event and invokes a receive hook
-/// function.
-fn _transfer<S: HasStateApi>(
-    token_id: ContractTokenId,
-    amount: ContractTokenAmount,
-    from: Address,
-    to: Receiver,
-    data: AdditionalData,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    let (state, builder) = host.state_and_builder();
-
-    let to_address = to.address();
-    // Update the contract state
-    state.transfer(&token_id, amount, &from, &to_address, builder)?;
-
-    // Log transfer event
-    logger.log(&Cis2Event::Transfer(TransferEvent {
-        token_id,
-        amount,
-        from,
-        to: to_address,
-    }))?;
-
-    // If the receiver is a contract: invoke the receive hook function.
-    if let Receiver::Contract(address, function) = to {
-        let parameter = OnReceivingCis2Params {
-            token_id,
-            amount,
-            from,
-            data,
-        };
-        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;
-    }
-
-    Ok(())
-}
-
 /// Execute a list of token transfers, in the order of the list.
 ///
 /// Logs a `Transfer` event and invokes a receive hook function for every
@@ -585,161 +441,37 @@ fn contract_transfer<S: HasStateApi>(
         data,
     } in transfers
     {
+        let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
-        ensure!(
-            from == sender || host.state().is_operator(&sender, &from),
-            ContractError::Unauthorized
-        );
+        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        let to_address = to.address();
+        // Update the contract state
+        state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
-        _transfer(token_id, amount, from, to, data, host, logger)?;
-    }
-    Ok(())
-}
+        // Log transfer event
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id,
+            amount,
+            from,
+            to: to_address,
+        }))?;
 
-/// The parameter type for the contract function `permitTransfer`.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct PermitTransferParams(#[concordium(size_length = 2)] pub Vec<PermitTransferParam>);
-
-/// Verify an ed25519 signature and allow the transfer of tokens. Execute a list
-/// of token transfers, in the order of the list.
-///
-/// Logs a `Transfer` event and invokes a receive hook function for every
-/// transfer in the list.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - A different nonce is expected.
-/// - The signature was intended for a different contract.
-/// - The signature was intended for a different `entry_point`.
-/// - No public key was registered for the given account.
-/// - The signature can not be validated.
-/// - Any of the transfers fail to be executed, which could be if:
-///     - The `token_id` does not exist.
-///     - The token is not owned by the `from`.
-/// - Fails to log event.
-/// - Any of the receive hook function calls rejects.
-#[receive(
-    contract = "cis3_nft",
-    name = "permitTransfer",
-    parameter = "PermitTransferParams",
-    crypto_primitives,
-    mutable,
-    enable_logger
-)]
-fn contract_permit_transfer<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
-    crypto_primitives: &impl HasCryptoPrimitives,
-) -> ContractResult<()> {
-    // Parse the parameter.
-    let PermitTransferParams(params) = ctx.parameter_cursor().get()?;
-
-    for param in params {
-        // Get the next consecutive nonce.
-        let nonce = host
-            .state_mut()
-            .nonces
-            .entry(param.from)
-            .or_insert_with(|| 0u64)
-            .modify(|nonce| *nonce + 1);
-
-        // Check the nonce to prevent replay attacks.
-        ensure_eq!(param.nonce, nonce, CustomContractError::NonceMismatch.into());
-
-        // Check that the signature was intended for this contract.
-        ensure_eq!(
-            param.contract_address,
-            ctx.self_address(),
-            CustomContractError::WrongContract.into()
-        );
-
-        // Check that the signature was intended for this `entry_point`.
-        ensure_eq!(
-            param.entry_point,
-            ctx.named_entrypoint(),
-            CustomContractError::WrongEntryPoint.into()
-        );
-
-        // Create the message struct that was signed.
-        let message = PermitTransferMessage {
-            contract_address: param.contract_address,
-            entry_point:      param.entry_point,
-            nonce:            param.nonce,
-            token_id:         param.token_id,
-            amount:           param.amount,
-            from:             param.from,
-            data:             param.data.clone(),
-            to:               param.to.clone(),
-        };
-
-        // Calculate the message hash.
-        let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&message)).0;
-
-        // Get the public key that was registered for the given account.
-        let public_key = host.state().public_key(&param.from)?;
-
-        match public_key {
-            // Throw an error if no public key is found.
-            None => bail!(CustomContractError::NoPublicKey.into()),
-            Some(public_key) => {
-                // Check signature.
-                let is_valid = crypto_primitives.verify_ed25519_signature(
-                    public_key,
-                    param.signature,
-                    &message_hash,
-                );
-
-                match is_valid {
-                    // Throw an error if the signature cannot be validated.
-                    false => {
-                        bail!(CustomContractError::WrongSignature.into())
-                    }
-                    // Transfer the tokens.
-                    true => {
-                        _transfer(
-                            param.token_id,
-                            param.amount,
-                            Address::Account(param.from),
-                            param.to,
-                            param.data,
-                            host,
-                            logger,
-                        )?;
-                    }
-                }
-            }
+        // If the receiver is a contract: invoke the receive hook function.
+        if let Receiver::Contract(address, function) = to {
+            let parameter = OnReceivingCis2Params {
+                token_id,
+                amount,
+                from,
+                data,
+            };
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_entrypoint_name(),
+                Amount::zero(),
+            )?;
         }
     }
-    Ok(())
-}
-
-/// Internal `updateOperator/permitUpdateOperator` helper function. Invokes the
-/// `add_operator/remove_operator` function of the state.
-/// Logs a `UpdateOperator` event.
-fn _update_operator<S: HasStateApi>(
-    update: OperatorUpdate,
-    sender: Address,
-    operator: Address,
-    state: &mut State<S>,
-    builder: &mut StateBuilder<S>,
-    logger: &mut impl HasLogger,
-) -> ContractResult<()> {
-    // Update the operator in the state.
-    match update {
-        OperatorUpdate::Add => state.add_operator(&sender, &operator, builder),
-        OperatorUpdate::Remove => state.remove_operator(&sender, &operator),
-    }
-
-    // Log the appropriate event
-    logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-        UpdateOperatorEvent {
-            owner: sender,
-            operator,
-            update,
-        },
-    ))?;
-
     Ok(())
 }
 
@@ -768,122 +500,22 @@ fn contract_update_operator<S: HasStateApi>(
     let sender = ctx.sender();
     let (state, builder) = host.state_and_builder();
     for param in params {
-        _update_operator(param.update, sender, param.operator, state, builder, logger)?;
-    }
-    Ok(())
-}
-
-/// The parameter type for the contract function `permitUpdateOperator`.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct PermitUpdateOperatorParams(
-    #[concordium(size_length = 2)] pub Vec<PermitUpdateOperatorParam>,
-);
-
-/// Verify an ed25519 signature and enable or disable addresses as operators of
-/// the given account. Execute a list of updates, in the order of the list.
-///
-/// Logs an `UpdateOperator` event.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - A different nonce is expected.
-/// - The signature was intended for a different contract.
-/// - The signature was intended for a different `entry_point`.
-/// - No public key was registered for the given account.
-/// - The signature can not be validated.
-/// - Fails to log event.
-#[receive(
-    contract = "cis3_nft",
-    name = "permitUpdateOperator",
-    parameter = "PermitUpdateOperatorParams",
-    crypto_primitives,
-    mutable,
-    enable_logger
-)]
-fn contract_permit_update_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
-    crypto_primitives: &impl HasCryptoPrimitives,
-) -> ContractResult<()> {
-    // Parse the parameter.
-    let PermitUpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
-
-    for param in params {
-        // Get the next consecutive nonce.
-        let nonce = host
-            .state_mut()
-            .nonces
-            .entry(param.owner)
-            .or_insert_with(|| 0u64)
-            .modify(|nonce| *nonce + 1);
-
-        // Check the nonce to prevent replay attacks.
-        ensure_eq!(param.nonce, nonce, CustomContractError::NonceMismatch.into());
-
-        // Check that the signature was intended for this contract.
-        ensure_eq!(
-            param.contract_address,
-            ctx.self_address(),
-            CustomContractError::WrongContract.into()
-        );
-
-        // Check that the signature was intended for this `entry_point`.
-        ensure_eq!(
-            param.entry_point,
-            ctx.named_entrypoint(),
-            CustomContractError::WrongEntryPoint.into()
-        );
-
-        // Create the message struct that was signed.
-        let message = PermitUpdateOperatorMessage {
-            owner:            param.owner,
-            update:           param.update.clone(),
-            operator:         param.operator,
-            contract_address: param.contract_address,
-            entry_point:      param.entry_point,
-            nonce:            param.nonce,
-        };
-
-        // Calculate the message hash.
-        let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&message)).0;
-
-        // Get the public key that was registered for the given account.
-        let public_key = host.state().public_key(&param.owner)?;
-
-        match public_key {
-            // Throw an error if no public key is found.
-            None => bail!(CustomContractError::NoPublicKey.into()),
-            Some(public_key) => {
-                // Check signature.
-                let is_valid = crypto_primitives.verify_ed25519_signature(
-                    public_key,
-                    param.signature,
-                    &message_hash,
-                );
-
-                match is_valid {
-                    // Throw an error if the signature cannot be validated.
-                    false => {
-                        bail!(CustomContractError::WrongSignature.into())
-                    }
-                    // Update the operator.
-                    true => {
-                        let (state, builder) = host.state_and_builder();
-
-                        _update_operator(
-                            param.update,
-                            concordium_std::Address::Account(param.owner),
-                            param.operator,
-                            state,
-                            builder,
-                            logger,
-                        )?;
-                    }
-                }
-            }
+        // Update the operator in the state.
+        match param.update {
+            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, builder),
+            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
         }
+
+        // Log the appropriate event
+        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+            UpdateOperatorEvent {
+                owner:    sender,
+                operator: param.operator,
+                update:   param.update,
+            },
+        ))?;
     }
+
     Ok(())
 }
 
@@ -1059,12 +691,9 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const ACCOUNT_2: AccountAddress = AccountAddress([2u8; 32]);
-    const ADDRESS_2: Address = Address::Account(ACCOUNT_2);
     const TOKEN_0: ContractTokenId = TokenIdU32(0);
     const TOKEN_1: ContractTokenId = TokenIdU32(42);
     const TOKEN_2: ContractTokenId = TokenIdU32(43);
-    const TOKEN_3: ContractTokenId = TokenIdU32(44);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` and id `TOKEN_1` owned by `ADDRESS_0`

@@ -218,9 +218,9 @@ impl<S: HasStateApi> AddressState<S> {
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state for each address.
-    state:        StateMap<Address, AddressState<S>, S>,
+    state:               StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    all_tokens:   StateSet<ContractTokenId, S>,
+    all_tokens:          StateSet<ContractTokenId, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -325,7 +325,7 @@ enum CustomContractError {
     /// entry_point.
     WrongEntryPoint,
     /// Failed signature verification: Signature is expired.
-    SignatureExpired,
+    Expired,
     /// Failed signature verification: Signature map is misconfigured.
     SignatureMapMisconfigured,
 }
@@ -503,7 +503,7 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with no token types initially.
-#[init(contract = "cis2_nft", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
+#[init(contract = "cis3_nft", event = "Event")]
 fn contract_init<S: HasStateApi>(
     _ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -529,7 +529,7 @@ struct ViewState {
 
 /// View function that returns the entire contents of the state. Meant for
 /// testing.
-#[receive(contract = "cis2_nft", name = "view", return_value = "ViewState")]
+#[receive(contract = "cis3_nft", name = "view", return_value = "ViewState")]
 fn contract_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -565,13 +565,12 @@ fn contract_view<S: HasStateApi>(
 pub struct RegisterPublicKeyParams(#[concordium(size_length = 2)] pub Vec<RegisterPublicKeyParam>);
 
 /// Register a public key for a given account. The corresponding private
-/// key can sign messages that can be submitted to the `permitTransfer` and the
-/// `permitUpdateOperator` functions. Can only be called by the contract owner
-/// (third-party provider offering sponsored transaction services) or the
-/// account itself. Once registered, the public key cannot be updated. Logs a
-/// `Registration` event for each account. Use this function with care, the
-/// corresponding private key registered here has full access to the tokens
-/// controlled by the account.
+/// key can sign messages that can be submitted to the `permit` function. Can
+/// only be called by the contract owner (third-party provider offering
+/// sponsored transaction services) or the account itself. Once registered, the
+/// public key cannot be updated. Logs a `Registration` event for each account.
+/// Use this function with care, the corresponding private key registered here
+/// has full access to the tokens controlled by the account.
 ///
 /// It rejects if:
 /// - The sender is not the contract instance owner or the account itself.
@@ -624,7 +623,6 @@ fn contract_register_public_keys<S: HasStateApi>(
     Ok(())
 }
 
->>>>>>> Rename  to gasless to sponsored:examples/cis3-nft-sponsored-txs/src/lib.rs
 /// Mint new tokens with a given address as the owner of these tokens.
 /// Can only be called by the contract owner.
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
@@ -642,7 +640,7 @@ fn contract_register_public_keys<S: HasStateApi>(
 /// Note: Can at most mint 32 token types in one call due to the limit on the
 /// number of logs a smart contract can produce on each function call.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "mint",
     parameter = "MintParams",
     error = "ContractError",
@@ -742,7 +740,7 @@ fn transfer<S: HasStateApi>(
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "transfer",
     parameter = "TransferParameter",
     error = "ContractError",
@@ -803,10 +801,7 @@ fn contract_calculate_message_hash<S: HasStateApi>(
     );
 
     // Check message is not expired.
-    ensure!(
-        param.timestamp > ctx.metadata().slot_time(),
-        CustomContractError::SignatureExpired.into()
-    );
+    ensure!(param.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
     let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&param)).0;
 
@@ -892,8 +887,12 @@ fn contract_permit<S: HasStateApi>(
         .ok_or(CustomContractError::SignatureMapMisconfigured)?;
 
     // Update the nonce.
-    let mut entry = host.state_mut().public_key_registry.entry(param.signer).occupied_or(CustomContractError::NoPublicKey)?;
-   // bump nonce
+    let mut entry = host
+        .state_mut()
+        .public_key_registry
+        .entry(param.signer)
+        .occupied_or(CustomContractError::NoPublicKey)?;
+    // bump nonce
     entry.1 += 1;
     // Get the public key and the current nonce.
     let public_key = entry.0;
@@ -913,7 +912,7 @@ fn contract_permit<S: HasStateApi>(
     // Check signature is not expired.
     ensure!(
         param.message.timestamp > ctx.metadata().slot_time(),
-        CustomContractError::SignatureExpired.into()
+        CustomContractError::Expired.into()
     );
 
     // Calculate the message hash.
@@ -1012,7 +1011,7 @@ fn update_operator<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Fails to log event.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     error = "ContractError",
@@ -1041,7 +1040,7 @@ fn contract_update_operator<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
     return_value = "OperatorOfQueryResponse",
@@ -1077,7 +1076,7 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
     return_value = "ContractBalanceOfQueryResponse",
@@ -1176,7 +1175,7 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
     return_value = "TokenMetadataQueryResponse",
@@ -1210,7 +1209,7 @@ fn contract_token_metadata<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "supports",
     parameter = "SupportsQueryParams",
     return_value = "SupportsQueryResponse",
@@ -1243,7 +1242,7 @@ fn contract_supports<S: HasStateApi>(
 /// - Sender is not the owner of the contract instance.
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_nft",
+    contract = "cis3_nft",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
     error = "ContractError",

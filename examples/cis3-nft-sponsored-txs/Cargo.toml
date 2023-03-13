@@ -1,9 +1,5 @@
 [package]
-<<<<<<< HEAD:examples/cis2-wccd/Cargo.toml
-name = "cis2_wccd"
-=======
 name = "cis3_nft_sponsored_txs"
->>>>>>> Rename  to gasless to sponsored:examples/cis3-nft-sponsored-txs/Cargo.toml
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2018"
