@@ -2083,16 +2083,25 @@ where
         }
     }
 
+    /// Provide clone of [`HasStateApi`] instance and new key prefix
+    /// for any container-like type wishing to store its data on blockchain
+    ///
+    /// Contract developers can use this method to implement their own
+    /// containers
+    pub fn new_state_container(&mut self) -> (S, [u8; 8]) {
+        (self.state_api.clone(), self.get_and_update_item_prefix())
+    }
+
     /// Create a new empty [`StateMap`].
     pub fn new_map<K, V>(&mut self) -> StateMap<K, V, S> {
-        let prefix = self.get_and_update_item_prefix();
-        StateMap::open(self.state_api.clone(), prefix)
+        let (state_api, prefix) = self.new_state_container();
+        StateMap::open(state_api, prefix)
     }
 
     /// Create a new empty [`StateSet`].
     pub fn new_set<T>(&mut self) -> StateSet<T, S> {
-        let prefix = self.get_and_update_item_prefix();
-        StateSet::open(self.state_api.clone(), prefix)
+        let (state_api, prefix) = self.new_state_container();
+        StateSet::open(state_api, prefix)
     }
 
     /// Create a new [`StateBox`] and insert the `value` into the state.
@@ -2133,12 +2142,12 @@ where
     /// ```
     #[must_use]
     pub fn new_box<T: Serial>(&mut self, value: T) -> StateBox<T, S> {
-        let prefix = self.get_and_update_item_prefix();
+        let (state_api, prefix) = self.new_state_container();
 
         // Insert the value into the state
         let mut state_entry = self.state_api.create_entry(&prefix).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
-        StateBox::new(value, self.state_api.clone(), state_entry)
+        StateBox::new(value, state_api, state_entry)
     }
 
     fn get_and_update_item_prefix(&mut self) -> [u8; 8] {
