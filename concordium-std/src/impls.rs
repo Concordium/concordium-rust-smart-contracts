@@ -2084,10 +2084,32 @@ where
     }
 
     /// Provide clone of [`HasStateApi`] instance and new key prefix
-    /// for any container-like type wishing to store its data on blockchain
+    /// for any container-like type wishing to store its data on blockchain.
     ///
-    /// Contract developers can use this method to implement their own
-    /// containers
+    /// Container types [`StateBox`], [`StateSet`], [`StateMap`] provided by
+    /// Concordium SDK are created using this method internally.
+    /// Contract developers can use it to implement their own
+    /// containers.
+    ///
+    /// Any container type which provides more ergonomic APIs and behavior atop
+    /// raw storage is expected to have two items:
+    /// * Handle-like object which implements [`HasStateApi`]. It provides
+    ///   access to contract VM features, including storage management. This
+    ///   object is not serialized, instead it's provided by executon
+    ///   environment. Can be treated as handle, relatively cheap to clone.
+    /// * Prefix for keys of all entries managed by new container. Storage of
+    ///   Concordium contract behaves like flat key-value dictionary, so each
+    ///   container must have unique prefix for the keys of any entries it
+    ///   stores to avoid collisions with other containers. This prefix is
+    ///   serialized as (part of) persistent representation of container.
+    ///
+    /// # Returns
+    /// A pair of:
+    /// * Object which gives access to low-level storage API. Same as the one
+    ///   held by [`StateBuilder`] itself and usually the one which refers to
+    ///   current contract storage.
+    /// * New unique key prefix for this container
+    #[must_use]
     pub fn new_state_container(&mut self) -> (S, [u8; 8]) {
         (self.state_api.clone(), self.get_and_update_item_prefix())
     }
