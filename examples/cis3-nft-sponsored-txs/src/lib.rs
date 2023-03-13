@@ -286,6 +286,7 @@ pub struct PermitParam {
     /// the `public_key_registry` in this contract maps one public key to one
     /// account, only one signature has to be provided for this contract. This
     /// signature has to be at the key 0 in both maps below.
+    #[concordium(size_length = 1)]
     signature: BTreeMap<u8, BTreeMap<u8, SignatureEd25519>>,
     /// Account that created the above signature.
     signer:    AccountAddress,
