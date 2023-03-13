@@ -20,6 +20,8 @@
   - Migrate from `new(x)`: Use `from_serial(x).unwrap()` (if known to be valid length).
 - Add an `empty` method for both `OwnedParameter` and `Parameter`.
 - Implement `Default` for `Parameter`.
+- Add `StateBuilder::new_state_container` method which allows contract developers to use
+  their own container types atop blockchain storage
 
 
 ## concordium-std 6.0.1 (2023-02-28)
