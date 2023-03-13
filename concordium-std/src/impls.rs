@@ -2108,7 +2108,7 @@ where
     /// * Object which gives access to low-level storage API. Same as the one
     ///   held by [`StateBuilder`] itself and usually the one which refers to
     ///   current contract storage.
-    /// * New unique key prefix for this container
+    /// * New unique key prefix for this container.
     #[must_use]
     pub fn new_state_container(&mut self) -> (S, [u8; 8]) {
         (self.state_api.clone(), self.get_and_update_item_prefix())
