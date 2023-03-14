@@ -9,10 +9,11 @@ description = "{{description}}"
 [features]
 default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
+wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies]
-concordium-std = "5.0.0"
-concordium-cis2 = "2.0.0"
+concordium-std = {version = "6.0", default-features = false}
+concordium-cis2 = {version = "3.0", default-features = false}
 
 [lib]
 crate-type=["cdylib", "rlib"]

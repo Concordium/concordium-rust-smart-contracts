@@ -2027,7 +2027,8 @@ fn invoke_contract_construct_parameter(
     method: EntrypointName,
     amount: Amount,
 ) -> Vec<u8> {
-    let mut data = Vec::with_capacity(16 + parameter.0.len() + 2 + method.size() as usize + 2 + 8);
+    let mut data =
+        Vec::with_capacity(16 + parameter.as_ref().len() + 2 + method.size() as usize + 2 + 8);
     let mut cursor = Cursor::new(&mut data);
     to.serial(&mut cursor).unwrap_abort();
     parameter.serial(&mut cursor).unwrap_abort();
@@ -2082,16 +2083,47 @@ where
         }
     }
 
+    /// Provide clone of [`HasStateApi`] instance and new key prefix
+    /// for any container-like type wishing to store its data on blockchain.
+    ///
+    /// Container types [`StateBox`], [`StateSet`], [`StateMap`] provided by
+    /// Concordium SDK are created using this method internally.
+    /// Contract developers can use it to implement their own
+    /// containers.
+    ///
+    /// Any container type which provides more ergonomic APIs and behavior atop
+    /// raw storage is expected to have two items:
+    /// * Handle-like object which implements [`HasStateApi`]. It provides
+    ///   access to contract VM features, including storage management. This
+    ///   object is not serialized, instead it's provided by executon
+    ///   environment. Can be treated as handle, relatively cheap to clone.
+    /// * Prefix for keys of all entries managed by new container. Storage of
+    ///   Concordium contract behaves like flat key-value dictionary, so each
+    ///   container must have unique prefix for the keys of any entries it
+    ///   stores to avoid collisions with other containers. This prefix is
+    ///   serialized as (part of) persistent representation of container.
+    ///
+    /// # Returns
+    /// A pair of:
+    /// * Object which gives access to low-level storage API. Same as the one
+    ///   held by [`StateBuilder`] itself and usually the one which refers to
+    ///   current contract storage.
+    /// * New unique key prefix for this container.
+    #[must_use]
+    pub fn new_state_container(&mut self) -> (S, [u8; 8]) {
+        (self.state_api.clone(), self.get_and_update_item_prefix())
+    }
+
     /// Create a new empty [`StateMap`].
     pub fn new_map<K, V>(&mut self) -> StateMap<K, V, S> {
-        let prefix = self.get_and_update_item_prefix();
-        StateMap::open(self.state_api.clone(), prefix)
+        let (state_api, prefix) = self.new_state_container();
+        StateMap::open(state_api, prefix)
     }
 
     /// Create a new empty [`StateSet`].
     pub fn new_set<T>(&mut self) -> StateSet<T, S> {
-        let prefix = self.get_and_update_item_prefix();
-        StateSet::open(self.state_api.clone(), prefix)
+        let (state_api, prefix) = self.new_state_container();
+        StateSet::open(state_api, prefix)
     }
 
     /// Create a new [`StateBox`] and insert the `value` into the state.
@@ -2132,12 +2164,12 @@ where
     /// ```
     #[must_use]
     pub fn new_box<T: Serial>(&mut self, value: T) -> StateBox<T, S> {
-        let prefix = self.get_and_update_item_prefix();
+        let (state_api, prefix) = self.new_state_container();
 
         // Insert the value into the state
         let mut state_entry = self.state_api.create_entry(&prefix).unwrap_abort();
         value.serial(&mut state_entry).unwrap_abort();
-        StateBox::new(value, self.state_api.clone(), state_entry)
+        StateBox::new(value, state_api, state_entry)
     }
 
     fn get_and_update_item_prefix(&mut self) -> [u8; 8] {

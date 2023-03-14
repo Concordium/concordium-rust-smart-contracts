@@ -36,7 +36,7 @@ fn contract_receive<StateApi: HasStateApi>(
         let mut n2 = host
             .invoke_contract_raw(
                 &self_address,
-                Parameter(&(n - 2).to_le_bytes()[..]),
+                Parameter::new_unchecked(&(n - 2).to_le_bytes()[..]),
                 EntrypointName::new_unchecked("receive"),
                 Amount::zero(),
             )
@@ -49,7 +49,7 @@ fn contract_receive<StateApi: HasStateApi>(
         let mut n1 = host
             .invoke_contract_raw(
                 &self_address,
-                Parameter(&(n - 1).to_le_bytes()[..]),
+                Parameter::new_unchecked(&(n - 1).to_le_bytes()[..]),
                 EntrypointName::new_unchecked("receive"),
                 Amount::zero(),
             )
@@ -114,7 +114,7 @@ mod tests {
             contract_address,
             OwnedEntrypointName::new_unchecked("receive".into()),
             MockFn::new_v1(|parameter, _amount, _balance, state: &mut State| {
-                let n: u64 = match from_bytes(parameter.0) {
+                let n: u64 = match from_bytes(parameter.into()) {
                     Ok(n) => n,
                     Err(_) => return Err(CallContractError::Trap),
                 };

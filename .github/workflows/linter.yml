@@ -21,9 +21,11 @@ jobs:
           - concordium-std/Cargo.toml
           - concordium-cis2/Cargo.toml
           - examples/voting/Cargo.toml
+          - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
+          - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
@@ -187,8 +189,8 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/\"5.0.0\"/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/\"2.0.0\"/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"6.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"3.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
 
@@ -418,7 +420,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }}
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features wee_alloc
 
   check-crypto-examples:
     name: Check crypto examples
@@ -436,6 +438,7 @@ jobs:
         crates:
           - examples/nametoken/Cargo.toml
           - examples/signature-verifier/Cargo.toml
+          - examples/cis3-nft-sponsored-txs/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -468,9 +471,11 @@ jobs:
 
         crates:
           - examples/voting/Cargo.toml
+          - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
+          - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
@@ -590,9 +595,11 @@ jobs:
 
         crates:
           - examples/voting/Cargo.toml
+          - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-nft/Cargo.toml
+          - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml

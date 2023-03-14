@@ -1,8 +1,7 @@
-use concordium_contracts_common::{AccountBalance, Amount, ExchangeRate};
-
 use crate::{
     cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
+use concordium_contracts_common::{AccountBalance, Amount, ExchangeRate};
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -715,7 +714,9 @@ pub struct AttributesCursor {
 }
 
 /// An iterator over the attributes of a policy.
-/// The iterator returns pairs of [`AttributeTag`] and [`AttributeValue`].
+/// The iterator returns pairs of
+/// [`AttributeTag`](concordium_contracts_common::AttributeTag) and
+/// [`AttributeValue`](concordium_contracts_common::AttributeValue).
 #[repr(transparent)]
 pub struct PolicyAttributesIter {
     pub(crate) cursor: AttributesCursor,

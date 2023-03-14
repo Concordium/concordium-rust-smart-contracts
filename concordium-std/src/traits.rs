@@ -225,6 +225,13 @@ pub trait HasStateApi: Clone {
     /// See the [`iterator`][HasStateApi::iterator] method for why this is
     /// necessary.
     fn delete_iterator(&mut self, iter: Self::IterType);
+
+    /// Read and deserialize the state stored at the root of the state trie.
+    /// If such a state does not exist, or cannot be deserialized into the
+    /// provided type, then this returns an error.
+    fn read_root<A: DeserialWithState<Self>>(&self) -> ParseResult<A> {
+        A::deserial_with_state(self, &mut self.lookup_entry(&[]).ok_or(ParseError {})?)
+    }
 }
 
 /// A type that can serve as the host, meaning that it supports interactions
@@ -277,7 +284,7 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> CallContractResult<Self::ReturnValueType> {
         let param = to_bytes(parameter);
-        self.invoke_contract_raw(to, Parameter(&param), method, amount)
+        self.invoke_contract_raw(to, Parameter::new_unchecked(&param), method, amount)
     }
 
     /// Upgrade the module for this instance to a given module. The new module
@@ -320,12 +327,13 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> ReadOnlyCallContractResult<Self::ReturnValueType>;
 
-    /// Like [`invoke_contract_raw`](Self::invoke_contract_raw), except that the
-    /// parameter is automatically serialized. If the parameter already
-    /// implements [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply
-    /// converted to a byte array, then
-    /// [`invoke_contract_raw`](Self::invoke_contract_raw) should be
-    /// used, since it avoids intermediate allocations.
+    /// Like [`invoke_contract_raw_read_only`][0], except that the parameter is
+    /// automatically serialized. If the parameter already implements
+    /// [`AsRef<[u8]>`](AsRef) or can be equivalently cheaply converted to a
+    /// byte array, then [`invoke_contract_raw`](Self::invoke_contract_raw)
+    /// should be used, since it avoids intermediate allocations.
+    ///
+    /// [0]: Self::invoke_contract_raw_read_only
     ///
     /// <div class="example-wrap" style="display:inline-block"><pre
     /// class="compile_fail" style="white-space:normal;font:inherit;">
@@ -346,7 +354,7 @@ pub trait HasHost<State>: Sized {
         amount: Amount,
     ) -> ReadOnlyCallContractResult<Self::ReturnValueType> {
         let param = to_bytes(parameter);
-        self.invoke_contract_raw_read_only(to, Parameter(&param), method, amount)
+        self.invoke_contract_raw_read_only(to, Parameter::new_unchecked(&param), method, amount)
     }
 
     /// Get the current exchange rates used by the chain. That is a Euro per
@@ -354,7 +362,8 @@ pub trait HasHost<State>: Sized {
     fn exchange_rates(&self) -> ExchangeRates;
 
     /// Get the current public balance of an account. Here public means
-    /// unencrypted or unshielded. See [`AccountBalance`] for more.
+    /// unencrypted or unshielded. See
+    /// [`AccountBalance`](crate::types::AccountBalance) for more.
     /// This query will fail if the provided address does not exist on chain.
     ///
     /// Any amount received by transfers during the transaction

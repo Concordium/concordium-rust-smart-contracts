@@ -1943,7 +1943,7 @@ mod test {
 
         host.invoke_contract_raw(
             &other_address,
-            Parameter(&[]),
+            Parameter::empty(),
             entrypoint.as_entrypoint_name(),
             Amount::from_micro_ccd(1000),
         )

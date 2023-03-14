@@ -31,3 +31,4 @@ The list of contracts is as follows
 - [nametoken](./nametoken) An example of how to register and manage names as tokens in a smart contract.
 - [voting](./voting) An example of how to conduct an election using a smart contract.
 - [transfer-policy-check](./transfer-policy-check) A contract that showcases how to use policies.
+- [eSealing](./eSealing) A contract implementing an eSealing service.

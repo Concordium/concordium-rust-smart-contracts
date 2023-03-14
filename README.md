@@ -18,8 +18,9 @@ with low-level details of how the interaction with the chain works.
 - `concordium-std` **prior to** version 3 supported version 0 contracts
 - `concordium-std` version 3 only supports building version 1 contracts
 
-Also note that `concordium-std` version 4 only works with `cargo-concordium` version 2.1+.
-Also note that `concordium-std` version 5 only works with `cargo-concordium` version 2.4+.
+### `cargo-concordium` version dependencies
+- `concordium-std` version 4 only works with `cargo-concordium` version 2.1+.
+- `concordium-std` version 5 only works with `cargo-concordium` version 2.4+.
 
 ## Examples
 
@@ -52,14 +53,14 @@ Changes to any of the packages must be such that
 
 Everything in this repository should build with rust version 1.53 (it should work with 1.51 and up, but we do not test regularly) however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
 ```
-cargo +nightly-2021-06-09 fmt
+cargo +nightly-2022-06-09 fmt
 ```
 
 (the exact version used by the CI can be found in [.github/workflows/linter.yml](.github/workflows/linter.yml) file).
 You will need to have a recent enough nightly version installed, which can be done via
 
 ```
-rustup toolchain install nightly-2021-06-09
+rustup toolchain install nightly-2022-06-09
 ```
 
 or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.

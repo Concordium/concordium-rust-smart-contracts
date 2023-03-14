@@ -1,9 +1,48 @@
 # Changelog
 
 ## Unreleased changes
+- Add `Display` implementation for `OwnedParameter` and `Parameter`, which uses
+  hex encoding.
+- Replace `From<Vec<u8>>` instance for `OwnedParameter`/`Parameter` with a `TryFrom`,
+  which ensures a valid length, and the unchecked method `new_unchecked`.
+  - Migrate from `From`/`Into`: Use `new_unchecked` instead (if known to be
+    valid length).
+- Make inner field in `OwnedParameter`/`Parameter` private, but add a `From`
+  implementation for getting the raw bytes.
+  - Migrate from `parameter.0`: use `parameter.into()` instead (for both of the affected
+    types).
+- For `ModuleReference`, replace `AsRef<[u8;32]>` with `AsRef<[u8]>` and make
+  inner `bytes` field public.
+  - The change was necessary for internal reasons.
+  - Migrate from `module_reference.as_ref()`: use `&module_reference.bytes` instead.
+- Replace `OwnedParameter::new` with `OwnedParameter::from_serial`, which also
+  ensures a valid length.
+  - Migrate from `new(x)`: Use `from_serial(x).unwrap()` (if known to be valid length).
+- Add an `empty` method for both `OwnedParameter` and `Parameter`.
+- Implement `Default` for `Parameter`.
+- Add `StateBuilder::new_state_container` method which allows contract developers to use
+  their own container types atop blockchain storage
+- Move the type `AccountBalance` to `concordium-contracts-common`.
+
+
+
+## concordium-std 6.0.1 (2023-02-28)
+
+- Fix testing of crypto primitives using secp256k1 signature scheme.
+
+## concordium-std 6.0.0 (2023-02-08)
+
+- [`wee_alloc`](https://docs.rs/wee_alloc/latest/wee_alloc/index.html) is no
+  longer set as the allocator in `concordium-std` but can be enabled via the
+  feature `wee_alloc`. The consequence is that unless `std` feature is
+  enabled either `wee_alloc` must be enabled, or another global allocator
+  must be set in the smart contract. In `std` builds, unless `wee_alloc`
+  feature is used, the allocator provided by the Rust standard library is used.
+
+## concordium-std 5.1.0 (2022-12-14)
 
 - Add a new primitive `get_random` for generating random numbers in Wasm code testing; `get_random` can be used in tests only, not available for smart contracts on the chain.
-- Move the type `AccountBalance` to `concordium-contracts-common`.
+- Fix a linking issue when compiling contracts to native code on Windows and OSX.
 
 ## concordium-std 5.0.0 (2022-11-21)
 

@@ -287,7 +287,7 @@ extern "C" {
 }
 
 // For every external function, we must provide a dummy function.
-// This is nescessary to compile to x86_64 during unit tests on Windows and OSX.
+// This is necessary to compile to x86_64 during unit tests on Windows and OSX.
 #[cfg(not(target_arch = "wasm32"))]
 mod host_dummy_functions {
     #[no_mangle]
@@ -297,6 +297,10 @@ mod host_dummy_functions {
     #[no_mangle]
     fn write_output(_start: *const u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
+    }
+    #[no_mangle]
+    fn upgrade(_module_ref: *const u8) -> u64 {
+        unimplemented!("Dummy function! Not to be executed.")
     }
     #[no_mangle]
     extern "C" fn get_parameter_size(_i: u32) -> i32 {
