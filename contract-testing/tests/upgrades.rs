@@ -42,7 +42,8 @@ fn test() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("bump"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                .expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -55,7 +56,8 @@ fn test() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("newfun"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                .expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -111,7 +113,8 @@ fn test_self_invoke() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                .expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -222,7 +225,8 @@ fn test_missing_contract() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                .expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(100000),
         )
@@ -395,29 +399,34 @@ fn test_reject() {
         )
         .expect("Initializing valid contract should work");
 
-    let res_update_upgrade = chain.contract_update(
-        ACC_0,
-        Address::Account(ACC_0),
-        res_init.contract_address,
-        EntrypointName::new_unchecked("upgrade"),
-        OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
-        Amount::zero(),
-        Energy::from(1000000),
-    );
+    let res_update_upgrade = chain
+        .contract_update(
+            ACC_0,
+            Address::Account(ACC_0),
+            res_init.contract_address,
+            EntrypointName::new_unchecked("upgrade"),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                .expect("Parameter has valid size"),
+            Amount::zero(),
+            Energy::from(1000000),
+        )
+        .expect_err("should fail");
 
-    let res_update_new_feature = chain.contract_update(
-        ACC_0,
-        Address::Account(ACC_0),
-        res_init.contract_address,
-        EntrypointName::new_unchecked("new_feature"),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        Energy::from(1000000),
-    );
+    let res_update_new_feature = chain
+        .contract_update(
+            ACC_0,
+            Address::Account(ACC_0),
+            res_init.contract_address,
+            EntrypointName::new_unchecked("new_feature"),
+            OwnedParameter::empty(),
+            Amount::zero(),
+            Energy::from(1000000),
+        )
+        .expect_err("should fail");
 
     // Check the return value manually returned by the contract.
-    match res_update_upgrade {
-        Err(ContractUpdateError::ExecutionError { failure_kind, .. }) => match failure_kind {
+    match res_update_upgrade.kind {
+        ContractInvocationErrorKind::ExecutionError { failure_kind, .. } => match failure_kind {
             InvokeFailure::ContractReject { code, .. } if code == -1 => (),
             _ => panic!("Expected ContractReject with code == -1"),
         },
@@ -427,12 +436,10 @@ fn test_reject() {
     // Assert that the new_feature entrypoint doesn't exist since the upgrade
     // failed.
     assert!(matches!(
-        res_update_new_feature,
-        Err(ContractUpdateError::ExecutionError {
-            failure_kind:    InvokeFailure::NonExistentEntrypoint,
-            energy_used:     _,
-            transaction_fee: _,
-        })
+        res_update_new_feature.kind,
+        ContractInvocationErrorKind::ExecutionError {
+            failure_kind: InvokeFailure::NonExistentEntrypoint,
+        }
     ));
 }
 
@@ -500,7 +507,8 @@ fn test_changing_entrypoint() {
             Address::Account(ACC_0),
             res_init.contract_address,
             EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference).expect("Parameter has valid size"),
+            OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                .expect("Parameter has valid size"),
             Amount::zero(),
             Energy::from(1000000),
         )
@@ -534,11 +542,9 @@ fn test_changing_entrypoint() {
         ChainEvent::Updated { .. }
     ]));
     assert!(matches!(
-        res_update_new_feature_0,
-        ContractUpdateError::ExecutionError {
-            failure_kind:    InvokeFailure::NonExistentEntrypoint,
-            energy_used:     _,
-            transaction_fee: _,
+        res_update_new_feature_0.kind,
+        ContractInvocationErrorKind::ExecutionError {
+            failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));
     assert!(matches!(res_update_upgrade.chain_events[..], [
@@ -548,11 +554,9 @@ fn test_changing_entrypoint() {
         ChainEvent::Updated { .. },
     ]));
     assert!(matches!(
-        res_update_old_feature_1,
-        ContractUpdateError::ExecutionError {
-            failure_kind:    InvokeFailure::NonExistentEntrypoint,
-            energy_used:     _,
-            transaction_fee: _,
+        res_update_old_feature_1.kind,
+        ContractInvocationErrorKind::ExecutionError {
+            failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));
     assert!(matches!(res_update_new_feature_1.chain_events[..], [

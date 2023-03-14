@@ -1,5 +1,6 @@
+use crate::{constants, invocation::EntrypointInvocationHandler, types::*};
 use concordium_base::{
-    base::{self, Energy},
+    base::{self, Energy, OutOfEnergy},
     common::{self, to_bytes},
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
@@ -12,12 +13,6 @@ use concordium_base::{
 use concordium_smart_contract_engine::{v0, v1, InterpreterEnergy};
 use num_bigint::BigUint;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
-
-use crate::{
-    constants,
-    invocation::{EntrypointInvocationHandler, InvokeEntrypointResult},
-    types::*,
-};
 
 impl Default for Chain {
     fn default() -> Self { Self::new() }
@@ -389,6 +384,104 @@ impl Chain {
         res
     }
 
+    /// Helper method that handles contract invocation.
+    ///
+    /// *Preconditions:*
+    ///  - `invoker` exists.
+    ///  - `sender` exists.
+    ///  - `invoker`s balance is >= `amount`.
+    fn contract_invocation_worker(
+        &mut self,
+        invoker: AccountAddress,
+        sender: Address,
+        contract_address: ContractAddress,
+        entrypoint: EntrypointName,
+        parameter: OwnedParameter,
+        amount: Amount,
+        energy_reserved: Energy,
+        remaining_energy: &mut Energy,
+        should_persist: bool,
+    ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+        // Ensure that the parameter has a valid size (+2 for the length of parameter).
+        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
+            return Err(self.from_invocation_error_kind(
+                ContractInvocationErrorKind::ParameterTooLarge,
+                energy_reserved,
+                *remaining_energy,
+            ));
+        }
+
+        let (result, changeset, chain_events) =
+            EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
+                self,
+                invoker,
+                sender,
+                contract_address,
+                entrypoint.to_owned(),
+                parameter.as_parameter(),
+                amount,
+                *remaining_energy,
+            );
+
+        // Update the remaining energy. TODO: Should we tick here instead?
+        *remaining_energy = from_interpreter_energy(result.remaining_energy);
+
+        // Get the energy to be charged for extra state bytes. Or return an error if out
+        // of energy.
+        let state_changed = if result.is_success() {
+            let res = if should_persist {
+                changeset.persist(
+                    *remaining_energy,
+                    contract_address,
+                    &mut self.accounts,
+                    &mut self.contracts,
+                )
+            } else {
+                changeset.collect_energy_for_state(*remaining_energy, contract_address)
+            };
+
+            let (energy_for_state_increase, state_changed) = res.map_err(|error| {
+                self.from_invocation_error_kind(error.into(), energy_reserved, *remaining_energy)
+            })?;
+            // Charge for the potential state size increase.
+            remaining_energy
+                .tick_energy(energy_for_state_increase)
+                .map_err(|error| {
+                    self.from_invocation_error_kind(
+                        error.into(),
+                        energy_reserved,
+                        *remaining_energy,
+                    )
+                })?;
+
+            state_changed
+        } else {
+            // An error occured, so state hasn't changed.
+            false
+        };
+
+        match result.invoke_response {
+            v1::InvokeResponse::Success { new_balance, data } => {
+                let energy_used = energy_reserved - *remaining_energy;
+                let transaction_fee = self.calculate_energy_cost(energy_used);
+                Ok(ContractInvocationSuccess {
+                    chain_events,
+                    energy_used,
+                    transaction_fee,
+                    return_value: data.unwrap_or_default(),
+                    state_changed,
+                    new_balance,
+                    logs: result.logs,
+                })
+            }
+            v1::InvokeResponse::Failure { kind } => Err(self.from_invocation_error_kind(
+                ContractInvocationErrorKind::ExecutionError { failure_kind: kind },
+                energy_reserved,
+                *remaining_energy,
+            )),
+        }
+    }
+
     /// Update a contract by calling one of its entrypoints.
     ///
     /// If successful, all changes will be saved.
@@ -410,45 +503,48 @@ impl Chain {
         parameter: OwnedParameter,
         amount: Amount,
         energy_reserved: Energy,
-    ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
+    ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+        // Ensure the invoker exists.
+        if !self.account_exists(invoker) {
+            return Err(ContractInvocationError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(AccountMissing(
+                    invoker,
+                )),
+            });
+        }
         // Ensure the sender exists.
         if !self.address_exists(sender) {
-            return Err(ContractUpdateError::SenderDoesNotExist(sender));
+            // TODO: Should we charge the header cost if the invoker exists but the sender
+            // doesn't?
+            return Err(ContractInvocationError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvocationErrorKind::SenderDoesNotExist(sender),
+            });
         }
 
-        let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
-        // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.account_mut(invoker)?;
-        let invoker_signature_count = account_info.signature_count;
-        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
-            return Err(ContractUpdateError::InsufficientFunds);
-        }
-
-        // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
-            return Err(ContractUpdateError::ParameterTooLarge);
-        }
-
-        // Charge account for the reserved energy up front. This is to ensure that
-        // contract queries for the invoker balance are correct.
-        account_info.balance.total -= invoker_amount_reserved_for_nrg;
-
-        let mut remaining_energy = energy_reserved;
+        // Get the signature count. TODO: Add as parameter instead?
+        let invoker_signature_count = self
+            .account_mut(invoker)
+            .expect("existence already checked")
+            .signature_count;
 
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
             let receive_name = {
-                let contract_name = self
-                    .contracts
-                    .get(&contract_address)
-                    .ok_or(ContractUpdateError::InstanceDoesNotExist(
-                        ContractInstanceMissing(contract_address),
-                    ))?
-                    .contract_name
-                    .as_contract_name();
+                let contract_name = if let Some(contract) = self.contracts.get(&contract_address) {
+                    contract.contract_name.as_contract_name()
+                } else {
+                    // Contract does not exist, but we should not just throw an error.
+                    // We still need to charge the invoker account.
+                    // Use the empty name for calculating the size of the transaction.
+                    // TODO: Check existence of contract in worker.
+                    ContractName::new_unchecked("")
+                };
                 OwnedReceiveName::construct_unchecked(contract_name, entrypoint)
             };
-
             let payload = transactions::UpdateContractPayload {
                 amount,
                 address: contract_address,
@@ -470,57 +566,63 @@ impl Chain {
         };
 
         // Charge the header cost.
-        remaining_energy = remaining_energy.saturating_sub(check_header_cost);
+        let mut remaining_energy =
+            energy_reserved
+                .checked_sub(check_header_cost)
+                .ok_or(ContractInvocationError {
+                    energy_used:     Energy::from(0),
+                    transaction_fee: Amount::zero(),
+                    // TODO: Consider adding a string or different kind for this type of OOE.
+                    kind:            ContractInvocationErrorKind::OutOfEnergy,
+                })?;
 
-        let (result, changeset, chain_events) =
-            EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
-                self,
-                invoker,
-                sender,
-                contract_address,
-                entrypoint.to_owned(),
-                parameter.as_parameter(),
-                amount,
-                remaining_energy,
-            );
+        let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        let account_info = self
+            .account_mut(invoker)
+            .expect("existence already checked");
 
-        // Get the energy to be charged for extra state bytes. Or return an error if out
-        // of energy.
-        let (energy_for_state_increase, state_changed) = if result.is_success() {
-            match changeset.persist(
-                from_interpreter_energy(result.remaining_energy),
-                contract_address,
-                &mut self.accounts,
-                &mut self.contracts,
-            ) {
-                Ok(energy) => energy,
-                Err(_) => {
-                    return Err(ContractUpdateError::OutOfEnergy {
-                        energy_used:     energy_reserved,
-                        transaction_fee: self.calculate_energy_cost(energy_reserved),
-                    });
-                }
-            }
-        } else {
-            // An error occured, so no energy should be charged for storing the state.
-            (Energy::from(0), false)
-        };
+        // Ensure the account has sufficient funds to pay for the energy and amount.
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
+            let energy_used = energy_reserved - remaining_energy;
+            return Err(ContractInvocationError {
+                energy_used,
+                transaction_fee: self.calculate_energy_cost(energy_used),
+                kind: ContractInvocationErrorKind::InsufficientFunds,
+            });
+        }
 
-        let (res, transaction_fee) = self.convert_invoke_entrypoint_result(
-            result,
-            chain_events,
+        // Charge account for the reserved energy up front. This is to ensure that
+        // contract queries for the invoker balance are correct.
+        // The `amount` is handled in contract_invocation_worker.
+        //
+        // *It is vital that we do not return early before returning the amount for
+        // remaining energy.*
+        account_info.balance.total -= invoker_amount_reserved_for_nrg;
+
+        let res = self.contract_invocation_worker(
+            invoker,
+            sender,
+            contract_address,
+            entrypoint,
+            parameter,
+            amount,
             energy_reserved,
-            energy_for_state_increase,
-            state_changed,
+            &mut remaining_energy,
+            true,
         );
 
+        let transaction_fee = match &res {
+            Ok(s) => s.transaction_fee,
+            Err(e) => e.transaction_fee,
+        };
         // The `invoker` was charged for all the `reserved_energy` up front.
         // Here, we return the amount for any remaining energy.
         let return_amount = invoker_amount_reserved_for_nrg - transaction_fee;
         self.account_mut(invoker)
-            .expect("Known to exist")
+            .expect("existence already checked")
             .balance
             .total += return_amount;
+
         res
     }
 
@@ -546,64 +648,57 @@ impl Chain {
         parameter: OwnedParameter,
         amount: Amount,
         energy_reserved: Energy,
-    ) -> Result<SuccessfulContractUpdate, ContractUpdateError> {
+    ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+        // Ensure the invoker exists.
+        if !self.account_exists(invoker) {
+            return Err(ContractInvocationError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(AccountMissing(
+                    invoker,
+                )),
+            });
+        }
         // Ensure the sender exists.
         if !self.address_exists(sender) {
-            return Err(ContractUpdateError::SenderDoesNotExist(sender));
+            return Err(ContractInvocationError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvocationErrorKind::SenderDoesNotExist(sender),
+            });
         }
 
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
         // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self.account_mut(invoker)?;
-        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
-            return Err(ContractUpdateError::InsufficientFunds);
-        }
+        let account_info = self
+            .account_mut(invoker)
+            .expect("existence already checked");
 
-        // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
-            return Err(ContractUpdateError::ParameterTooLarge);
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
+            let energy_used = Energy::from(0);
+            return Err(ContractInvocationError {
+                energy_used,
+                transaction_fee: self.calculate_energy_cost(energy_used),
+                kind: ContractInvocationErrorKind::InsufficientFunds,
+            });
         }
 
         // Charge account for the reserved energy up front. This is to ensure that
         // contract queries for the invoker balance are correct.
         account_info.balance.total -= invoker_amount_reserved_for_nrg;
 
-        let (result, changeset, chain_events) =
-            EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
-                self,
-                invoker,
-                sender,
-                contract_address,
-                entrypoint.to_owned(),
-                parameter.as_parameter(),
-                amount,
-                energy_reserved,
-            );
+        let mut remaining_energy = energy_reserved;
 
-        let (energy_for_state_increase, state_changed) = if result.is_success() {
-            match changeset.collect_energy_for_state(
-                from_interpreter_energy(result.remaining_energy),
-                contract_address,
-            ) {
-                Ok(energy) => energy,
-                Err(_) => {
-                    return Err(ContractUpdateError::OutOfEnergy {
-                        energy_used:     energy_reserved,
-                        transaction_fee: self.calculate_energy_cost(energy_reserved),
-                    });
-                }
-            }
-        } else {
-            // An error occured, so no energy should be charged for storing state.
-            (Energy::from(0), false)
-        };
-
-        let (result, _) = self.convert_invoke_entrypoint_result(
-            result,
-            chain_events,
+        let result = self.contract_invocation_worker(
+            invoker,
+            sender,
+            contract_address,
+            entrypoint,
+            parameter,
+            amount,
             energy_reserved,
-            energy_for_state_increase,
-            state_changed,
+            &mut remaining_energy,
+            false,
         );
 
         // Return the amount charged for the reserved energy, as this is not a
@@ -707,53 +802,18 @@ impl Chain {
         }
     }
 
-    /// Convert the [`InvokeEntrypointResult`] to a contract success or error.
-    ///
-    /// The `energy_for_state_increase` is only used if the result was a
-    /// success.
-    ///
-    /// The `state_changed` should refer to whether the state of the top-level
-    /// contract invoked has changed.
-    ///
-    /// *Preconditions*:
-    ///  - `energy_reserved - remaining_energy + energy_for_state_increase >= 0`
-    fn convert_invoke_entrypoint_result(
+    fn from_invocation_error_kind(
         &self,
-        update_aux_response: InvokeEntrypointResult,
-        chain_events: Vec<ChainEvent>,
+        kind: ContractInvocationErrorKind,
         energy_reserved: Energy,
-        energy_for_state_increase: Energy,
-        state_changed: bool,
-    ) -> (
-        Result<SuccessfulContractUpdate, ContractUpdateError>,
-        Amount,
-    ) {
-        let remaining_energy = from_interpreter_energy(update_aux_response.remaining_energy);
-        match update_aux_response.invoke_response {
-            v1::InvokeResponse::Success { new_balance, data } => {
-                let energy_used = energy_reserved - remaining_energy + energy_for_state_increase;
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                let result = Ok(SuccessfulContractUpdate {
-                    chain_events,
-                    energy_used,
-                    transaction_fee,
-                    return_value: data.unwrap_or_default(),
-                    state_changed,
-                    new_balance,
-                    logs: update_aux_response.logs,
-                });
-                (result, transaction_fee)
-            }
-            v1::InvokeResponse::Failure { kind } => {
-                let energy_used = energy_reserved - remaining_energy + energy_for_state_increase;
-                let transaction_fee = self.calculate_energy_cost(energy_used);
-                let result = Err(ContractUpdateError::ExecutionError {
-                    failure_kind: kind,
-                    energy_used,
-                    transaction_fee,
-                });
-                (result, transaction_fee)
-            }
+        remaining_energy: Energy,
+    ) -> ContractInvocationError {
+        let energy_used = energy_reserved - remaining_energy;
+        let transaction_fee = self.calculate_energy_cost(energy_used);
+        ContractInvocationError {
+            energy_used,
+            transaction_fee,
+            kind,
         }
     }
 
@@ -837,7 +897,7 @@ impl Account {
     }
 }
 
-impl SuccessfulContractUpdate {
+impl ContractInvocationSuccess {
     /// Get a list of all transfers that were made from contracts to accounts.
     pub fn transfers(&self) -> Vec<Transfer> {
         self.chain_events
@@ -881,6 +941,10 @@ impl ChainEvent {
             ChainEvent::Transferred { from, .. } => *from,
         }
     }
+}
+
+impl From<OutOfEnergy> for ContractInvocationErrorKind {
+    fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
 }
 
 /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.

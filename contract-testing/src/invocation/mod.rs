@@ -14,4 +14,4 @@
 
 mod impls;
 mod types;
-pub(crate) use types::{EntrypointInvocationHandler, InvokeEntrypointResult};
+pub(crate) use types::EntrypointInvocationHandler;

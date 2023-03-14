@@ -113,7 +113,3 @@ pub(super) enum AmountDelta {
 /// An underflow occurred.
 #[derive(Debug)]
 pub(super) struct UnderflowError;
-
-/// The contract ran out of energy during execution of a contract entrypoint.
-#[derive(PartialEq, Eq, Debug)]
-pub(crate) struct OutOfEnergy;

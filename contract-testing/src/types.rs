@@ -231,7 +231,7 @@ pub enum InitFailure {
 /// Represents a successful contract update (or invocation).
 // TODO: Consider adding function to aggregate all logs from the host_events.
 #[derive(Debug)]
-pub struct SuccessfulContractUpdate {
+pub struct ContractInvocationSuccess {
     /// Host events that occured. This includes interrupts, resumes, and
     /// upgrades.
     pub chain_events:    Vec<ChainEvent>,
@@ -249,6 +249,13 @@ pub struct SuccessfulContractUpdate {
     pub logs:            v0::Logs,
 }
 
+#[derive(Debug)]
+pub struct ContractInvocationError {
+    pub energy_used:     Energy,
+    pub transaction_fee: Amount,
+    pub kind:            ContractInvocationErrorKind,
+}
+
 /// Errors that can occur during a [`Chain::contract_update]` or
 /// [`Chain::contract_invoke`] call.
 ///
@@ -258,19 +265,12 @@ pub struct SuccessfulContractUpdate {
 ///  - The rest represent incorrect usage of the function, where some
 ///    precondition wasn't met.
 #[derive(Debug, Error)]
-pub enum ContractUpdateError {
+pub enum ContractInvocationErrorKind {
     /// Update failed for a reason that also exists on the chain.
     #[error("failed during execution")]
-    ExecutionError {
-        failure_kind:    v1::InvokeFailure,
-        energy_used:     Energy,
-        transaction_fee: Amount,
-    },
+    ExecutionError { failure_kind: v1::InvokeFailure },
     #[error("ran out of energy")]
-    OutOfEnergy {
-        energy_used:     Energy,
-        transaction_fee: Amount,
-    },
+    OutOfEnergy,
     /// Module has not been deployed in test environment.
     #[error("module {:?} does not exist", 0.0)]
     ModuleDoesNotExist(#[from] ModuleMissing),
@@ -286,7 +286,8 @@ pub enum ContractUpdateError {
     /// The sender does not exist in the test environment.
     #[error("sender {0} does not exist")]
     SenderDoesNotExist(Address),
-    /// The invoker account does not have enough funds to pay for the energy.
+    /// The invoker account does not have enough funds to pay for the energy and
+    /// amount sent.
     #[error("invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
     /// The parameter is too large.

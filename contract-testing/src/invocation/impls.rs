@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use concordium_base::{
-    base::Energy,
+    base::{Energy, OutOfEnergy},
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ModuleReference, OwnedEntrypointName, OwnedReceiveName, Parameter,

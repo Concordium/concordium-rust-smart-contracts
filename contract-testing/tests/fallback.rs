@@ -42,20 +42,22 @@ fn test_fallback() {
     // Invoke the fallback directly. This should fail with execution failure/trap
     // because it will redirect to "two." which does not exist. Hence this will fail
     // and the fallback will try to look up a non-existing return value.
-    let res_invoke_1 = chain.contract_invoke(
-        ACC_0,
-        Address::Account(ACC_0),
-        res_init_one.contract_address,
-        EntrypointName::new_unchecked(""),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        Energy::from(10000),
-    );
-    match res_invoke_1 {
-        Err(ContractUpdateError::ExecutionError {
+    let res_invoke_1 = chain
+        .contract_invoke(
+            ACC_0,
+            Address::Account(ACC_0),
+            res_init_one.contract_address,
+            EntrypointName::new_unchecked(""),
+            OwnedParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        )
+        .expect_err("should fail");
+    match res_invoke_1.kind {
+        ContractInvocationErrorKind::ExecutionError {
             failure_kind: InvokeFailure::RuntimeError,
             ..
-        }) => (),
+        } => (),
         _ => panic!("Test failed, expected a runtime error."),
     }
 

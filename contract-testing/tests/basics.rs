@@ -185,58 +185,66 @@ fn updating_and_invoking_with_missing_sender_fails() {
         )
         .expect("Initializing valid contract should work");
 
-    let res_update_acc = chain.contract_update(
-        ACC_0,
-        missing_account,
-        res_init.contract_address,
-        EntrypointName::new_unchecked("get"),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        Energy::from(10000),
-    );
+    let res_update_acc = chain
+        .contract_update(
+            ACC_0,
+            missing_account,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            OwnedParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        )
+        .expect_err("should fail");
 
-    let res_invoke_acc = chain.contract_invoke(
-        ACC_0,
-        missing_account,
-        res_init.contract_address,
-        EntrypointName::new_unchecked("get"),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        Energy::from(10000),
-    );
+    let res_invoke_acc = chain
+        .contract_invoke(
+            ACC_0,
+            missing_account,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            OwnedParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        )
+        .expect_err("should fail");
 
-    let res_update_contr = chain.contract_update(
-        ACC_0,
-        missing_contract,
-        res_init.contract_address,
-        EntrypointName::new_unchecked("get"),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        Energy::from(10000),
-    );
+    let res_update_contr = chain
+        .contract_update(
+            ACC_0,
+            missing_contract,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            OwnedParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        )
+        .expect_err("should fail");
 
-    let res_invoke_contr = chain.contract_invoke(
-        ACC_0,
-        missing_contract,
-        res_init.contract_address,
-        EntrypointName::new_unchecked("get"),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        Energy::from(10000),
-    );
+    let res_invoke_contr = chain
+        .contract_invoke(
+            ACC_0,
+            missing_contract,
+            res_init.contract_address,
+            EntrypointName::new_unchecked("get"),
+            OwnedParameter::empty(),
+            Amount::zero(),
+            Energy::from(10000),
+        )
+        .expect_err("should fail");
 
     assert!(matches!(
-            res_update_acc,
-            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_account));
+            res_update_acc.kind,
+            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
     assert!(matches!(
-            res_invoke_acc,
-            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_account));
+            res_invoke_acc.kind,
+            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
     assert!(matches!(
-            res_update_contr,
-            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_contract));
+            res_update_contr.kind,
+            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
     assert!(matches!(
-            res_invoke_contr,
-            Err(ContractUpdateError::SenderDoesNotExist(addr)) if addr == missing_contract));
+            res_invoke_contr.kind,
+            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
 }
 
 #[test]
