@@ -174,7 +174,7 @@ pub enum DeployModuleError {
 
 /// Represents a successful initialization of a contract.
 #[derive(Debug)]
-pub struct SuccessfulContractInit {
+pub struct ContractInitSuccess {
     /// The address of the new instance.
     pub contract_address: ContractAddress,
     /// Logs produced during initialization.
@@ -185,19 +185,30 @@ pub struct SuccessfulContractInit {
     pub transaction_fee:  Amount,
 }
 
-/// Errors that can occur while initializing a contract.
+/// An error that occured in [`Chain::contract_init`].
+#[derive(Debug)]
+pub struct ContractInitError {
+    /// Energy used.
+    pub energy_used:     Energy,
+    /// The transaction fee. This is the amount charged to the `sender`
+    /// account.
+    pub transaction_fee: Amount,
+    /// The specific reason for why the initialization failed.
+    pub kind:            ContractInitErrorKind,
+}
+
+/// Types of errors that can occur in [`Chain::contract_init`].
 #[derive(Debug, Error)]
-pub enum ContractInitError {
+pub enum ContractInitErrorKind {
     /// Initialization failed for a reason that also exists on the chain.
     #[error("failed due to a valid chain error: {:?}", 0)]
     ExecutionError {
         /// The reason for why the contract initialization failed.
-        failure_kind:    InitFailure,
-        /// The energy used.
-        energy_used:     Energy,
-        /// The transaction fee charged.
-        transaction_fee: Amount,
+        failure_kind: InitFailure,
     },
+    /// Ran out of energy.
+    #[error("ran out of energy")]
+    OutOfEnergy,
     /// Module has not been deployed in the test environment.
     #[error("module {:?} does not exist", 0.0)]
     ModuleDoesNotExist(#[from] ModuleMissing),
@@ -249,26 +260,27 @@ pub struct ContractInvocationSuccess {
     pub logs:            v0::Logs,
 }
 
+/// An error that occured during a [`Chain::contract_update`] or
+/// [`Chain::contract_invoke`].
 #[derive(Debug)]
 pub struct ContractInvocationError {
+    /// The energy used.
     pub energy_used:     Energy,
+    /// The transaction fee. For [`Chain::contract_update`], this is the amount
+    /// charged to the `invoker` account.
     pub transaction_fee: Amount,
+    /// The specific reason for why the invocation failed.
     pub kind:            ContractInvocationErrorKind,
 }
 
-/// Errors that can occur during a [`Chain::contract_update]` or
-/// [`Chain::contract_invoke`] call.
-///
-/// There are two categories of errors here:
-///  - `ExecutionError` and `OutOfEnergy` can occur if the preconditions for the
-///    function is valid, and a contract is executed.
-///  - The rest represent incorrect usage of the function, where some
-///    precondition wasn't met.
+/// The error kinds that can occur during [`Chain::contract_update`] or
+/// [`Chain::contract_invoke`].
 #[derive(Debug, Error)]
 pub enum ContractInvocationErrorKind {
     /// Update failed for a reason that also exists on the chain.
     #[error("failed during execution")]
     ExecutionError { failure_kind: v1::InvokeFailure },
+    /// Ran out of energy.
     #[error("ran out of energy")]
     OutOfEnergy,
     /// Module has not been deployed in test environment.

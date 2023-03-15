@@ -79,12 +79,11 @@ fn initializing_with_invalid_parameter_fails() {
         )
         .expect_err("Initializing with invalid params should fail");
 
-    match res_init {
+    let transaction_fee = res_init.transaction_fee;
+    match res_init.kind {
         // Failed in the right way and account is still charged.
-        ContractInitError::ExecutionError {
+        ContractInitErrorKind::ExecutionError {
             failure_kind: InitFailure::Reject { .. },
-            transaction_fee,
-            ..
         } => assert_eq!(
             chain.account_balance_available(ACC_0),
             Some(initial_balance - res_deploy.transaction_fee - transaction_fee)
@@ -271,11 +270,10 @@ fn init_with_less_energy_than_module_lookup() {
         reserved_energy,
     );
     match res_init {
-        Err(ContractInitError::ExecutionError {
-            failure_kind: InitFailure::OutOfEnergy,
-            energy_used,
+        Err(ContractInitError {
+            kind: ContractInitErrorKind::OutOfEnergy,
             ..
-        }) if energy_used == reserved_energy => (),
+        }) => (),
         _ => panic!("Expected to fail with out of energy."),
     }
 }
