@@ -70,41 +70,105 @@ impl Chain {
         &mut self,
         sender: AccountAddress,
         wasm_module: WasmModule,
-    ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
-        // Deserialize as wasm module (artifact)
-        let artifact = concordium_wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
-            &v1::ConcordiumAllowedImports {
-                support_upgrade: true,
-            },
-            wasm_module.source.as_ref(),
-        )?;
+    ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
+        // Ensure sender account exists.
+        if !self.account_exists(sender) {
+            return Err(ModuleDeployError {
+                kind:            ModuleDeployErrorKind::SenderDoesNotExist(AccountMissing(sender)),
+                energy_used:     0.into(),
+                transaction_fee: Amount::zero(),
+            });
+        }
 
-        // Calculate transaction fee of deployment
-        let energy = {
+        let check_header_energy = {
             // +1 for the tag, +8 for size and version
             let payload_size = 1
                 + 8
                 + wasm_module.source.size()
                 + transactions::construct::TRANSACTION_HEADER_SIZE;
-            let number_of_sigs = self.account(sender)?.signature_count;
-            let base_cost = cost::base_cost(payload_size, number_of_sigs);
-            let deploy_module_cost = cost::deploy_module(wasm_module.source.size());
-            base_cost + deploy_module_cost
+            let number_of_sigs = self
+                .account(sender)
+                .expect("existence already checked")
+                .signature_count;
+            cost::base_cost(payload_size, number_of_sigs)
         };
-        let transaction_fee = self.calculate_energy_cost(energy);
+        let check_header_cost = self.calculate_energy_cost(check_header_energy);
 
-        // Try to subtract cost for account
-        let account = self.account_mut(sender)?;
-        if account.balance.available() < transaction_fee {
-            return Err(DeployModuleError::InsufficientFunds);
+        if self
+            .account(sender)
+            .expect("existence already checked")
+            .balance
+            .available()
+            < check_header_cost
+        {
+            return Err(ModuleDeployError {
+                kind:            ModuleDeployErrorKind::InsufficientFunds,
+                energy_used:     0.into(),
+                transaction_fee: Amount::zero(),
+            });
+        }
+
+        // Only v1 modules are supported in this testing library.
+        if wasm_module.version != WasmVersion::V1 {
+            return Err(ModuleDeployError {
+                kind:            ModuleDeployErrorKind::UnsupportedModuleVersion(
+                    wasm_module.version,
+                ),
+                energy_used:     0.into(),
+                transaction_fee: Amount::zero(),
+            });
+        }
+
+        let account = self.account_mut(sender).expect("existence already checked");
+
+        // TODO: Ensure that this matches the node for both invalid and valid modules.
+        // to_ccd(header_cost) + to_ccd(deploy_cost) != to_ccd(header_cost +
+        // deploy_cost).
+        account.balance.total -= check_header_cost;
+
+        // Construct the artifact.
+        let artifact =
+            match concordium_wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
+                &v1::ConcordiumAllowedImports {
+                    support_upgrade: true,
+                },
+                wasm_module.source.as_ref(),
+            ) {
+                Ok(artifact) => artifact,
+                Err(err) => {
+                    return Err(ModuleDeployError {
+                        kind:            err.into(),
+                        energy_used:     check_header_energy,
+                        transaction_fee: check_header_cost,
+                    })
+                }
+            };
+
+        // Calculate the deploy module cost.
+        let deploy_module_energy = cost::deploy_module(wasm_module.source.size());
+        let deploy_module_cost = self.calculate_energy_cost(deploy_module_energy);
+
+        // Subtract the cost from the account if it has sufficient funds.
+        let account = self.account_mut(sender).expect("existence already checked");
+        if account.balance.available() < deploy_module_cost {
+            return Err(ModuleDeployError {
+                kind:            ModuleDeployErrorKind::InsufficientFunds,
+                energy_used:     check_header_energy,
+                transaction_fee: check_header_cost,
+            });
         };
-        account.balance.total -= transaction_fee;
+        account.balance.total -= deploy_module_cost;
 
-        // Save the module
+        // Save the module.
         let module_reference: ModuleReference = wasm_module.get_module_ref();
+
         // Ensure module hasn't been deployed before.
         if self.modules.contains_key(&module_reference) {
-            return Err(DeployModuleError::DuplicateModule(module_reference));
+            return Err(ModuleDeployError {
+                kind:            ModuleDeployErrorKind::DuplicateModule(module_reference),
+                energy_used:     check_header_energy + deploy_module_energy,
+                transaction_fee: check_header_cost + deploy_module_cost,
+            });
         }
         self.modules.insert(module_reference, ContractModule {
             size:     wasm_module.source.size(),
@@ -112,11 +176,12 @@ impl Chain {
         });
         Ok(SuccessfulModuleDeployment {
             module_reference,
-            energy_used: energy,
-            transaction_fee,
+            energy_used: check_header_energy + deploy_module_energy,
+            transaction_fee: check_header_cost + deploy_module_cost,
         })
     }
 
+    // TODO: Make this function return a wasm module to be used with aux instead.
     /// Deploy a raw wasm module, i.e. one **without** the prefix of 4 version
     /// bytes and 4 module length bytes.
     /// The module still has to a valid V1 smart contract module.
@@ -128,9 +193,13 @@ impl Chain {
         &mut self,
         sender: AccountAddress,
         module_path: P,
-    ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
+    ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
         // Load file
-        let file_contents = std::fs::read(module_path)?;
+        let file_contents = std::fs::read(module_path).map_err(|e| ModuleDeployError {
+            kind:            e.into(),
+            energy_used:     0.into(),
+            transaction_fee: Amount::zero(),
+        })?;
         let wasm_module = WasmModule {
             version: WasmVersion::V1,
             source:  ModuleSource::from(file_contents),
@@ -138,6 +207,7 @@ impl Chain {
         self.module_deploy_aux(sender, wasm_module)
     }
 
+    // TODO: Make this function return a wasm module to be used with aux instead.
     /// Deploy a v1 wasm module as it is output from `cargo concordium build`,
     /// i.e. **including** the prefix of 4 version bytes and 4 module length
     /// bytes.
@@ -149,17 +219,20 @@ impl Chain {
         &mut self,
         sender: AccountAddress,
         module_path: P,
-    ) -> Result<SuccessfulModuleDeployment, DeployModuleError> {
+    ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
         // Load file
-        let file_contents = std::fs::read(module_path)?;
+        let file_contents = std::fs::read(module_path).map_err(|e| ModuleDeployError {
+            kind:            e.into(),
+            energy_used:     0.into(),
+            transaction_fee: Amount::zero(),
+        })?;
         let mut cursor = std::io::Cursor::new(file_contents);
-        let wasm_module: WasmModule = common::from_bytes(&mut cursor)?;
-
-        if wasm_module.version != WasmVersion::V1 {
-            return Err(DeployModuleError::UnsupportedModuleVersion(
-                wasm_module.version,
-            ));
-        }
+        let wasm_module: WasmModule =
+            common::from_bytes(&mut cursor).map_err(|e| ModuleDeployError {
+                kind:            e.into(),
+                energy_used:     0.into(),
+                transaction_fee: Amount::zero(),
+            })?;
         self.module_deploy_aux(sender, wasm_module)
     }
 

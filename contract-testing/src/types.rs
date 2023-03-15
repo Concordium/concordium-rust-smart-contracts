@@ -146,11 +146,22 @@ pub struct SuccessfulModuleDeployment {
     pub transaction_fee:  Amount,
 }
 
-/// An error that can occur while deploying a [`ContractModule`].
-// TODO: Can we get Eq for this when using io::Error?
-// TODO: Should this also have the energy used?
+/// An error that occured while deploying a [`ContractModule`].
+#[derive(Debug)]
+pub struct ModuleDeployError {
+    /// The energy used for deployment.
+    pub energy_used:     Energy,
+    /// The transaction fee. This is the amount charged to the `sender`
+    /// account.
+    pub transaction_fee: Amount,
+    /// The specific reason for why the deployment failed.
+    pub kind:            ModuleDeployErrorKind,
+}
+
+/// The specific kind of error that occured while deploying a
+/// [`ContractModule`].
 #[derive(Debug, Error)]
-pub enum DeployModuleError {
+pub enum ModuleDeployErrorKind {
     /// Failed to read the module file.
     #[error("could not read the file due to: {0}")]
     ReadFileError(#[from] std::io::Error),
