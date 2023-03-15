@@ -601,7 +601,6 @@ impl Chain {
                 .ok_or(ContractInvocationError {
                     energy_used:     Energy::from(0),
                     transaction_fee: Amount::zero(),
-                    // TODO: Consider adding a string or different kind for this type of OOE.
                     kind:            ContractInvocationErrorKind::OutOfEnergy,
                 })?;
 
