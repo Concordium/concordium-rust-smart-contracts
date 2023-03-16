@@ -26,11 +26,13 @@
 //! let initialization = chain
 //!     .contract_init(
 //!         ACC, // Invoker account.
-//!         deployment.module_reference, // Module to initialize from.
-//!         ContractName::new_unchecked("init_my_contract"), // Contract to init.
-//!         OwnedParameter::from_serial(&"my_param").unwrap(), // Any type implementing [`Serial`] can be used.
-//!         Amount::zero(), // CCD to send the contract.
 //!         Energy::from(10000), // Maximum energy allowed for initializing.
+//!         InitContractPayload {
+//!             mod_ref: deployment.module_reference, // Module to initialize from.
+//!             init_name: OwnedContractName::new_unchecked("init_my_contract".into()), // Contract to init.
+//!             param: OwnedParameter::from_serial(&"my_param").unwrap(), // Any type implementing [`Serial`] can be used.
+//!             amount: Amount::zero(), // CCD to send the contract.
+//!         }
 //!     )
 //!     .unwrap();
 //!
@@ -39,11 +41,13 @@
 //!     .contract_update(
 //!         ACC, // Invoker account.
 //!         Address::Account(ACC), // Sender (can also be a contract).
-//!         initialization.contract_address, // The contract to update.
-//!         EntrypointName::new_unchecked("my_entrypoint"), // The entrypoint to call.
-//!         OwnedParameter::from_serial(&42u8).unwrap(), // Another type of parameter.
-//!         Amount::from_ccd(100), // Sending the contract 100 CCD.
 //!         Energy::from(10000),  // Maximum energy allowed for the update.
+//!         UpdateContractPayload {
+//!             address: initialization.contract_address, // The contract to update.
+//!             receive_name: OwnedReceiveName::new_unchecked("my_contract.my_entrypoint".into()), // The receive function to call.
+//!             message: OwnedParameter::from_serial(&42u8).unwrap(), // The parameter sent to the contract.
+//!             amount: Amount::from_ccd(100), // Sending the contract 100 CCD.
+//!         }
 //!     )
 //!     .unwrap();
 //!
@@ -75,7 +79,8 @@ pub use concordium_base::{
     contracts_common::{
         from_bytes, to_bytes, AccountAddress, Address, Amount, ContractAddress, ContractName,
         EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
-        OwnedParameter, Parameter, SlotTime,
+        OwnedParameter, OwnedReceiveName, Parameter, ReceiveName, SlotTime,
     },
+    transactions::{InitContractPayload, UpdateContractPayload},
 };
 pub use concordium_smart_contract_engine::v1::InvokeFailure;

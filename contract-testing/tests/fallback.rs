@@ -12,31 +12,31 @@ fn test_fallback() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/fallback.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/fallback.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init_two = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_two"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_two".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_init_one = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_one"),
-            OwnedParameter::from_serial(&res_init_two.contract_address)
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_one".into()),
+            param:     OwnedParameter::from_serial(&res_init_two.contract_address)
                 .expect("Parameter has valid size"), /* Pass in address of contract
                                                       * "two". */
-            Amount::zero(),
-            Energy::from(10000),
-        )
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     // Invoke the fallback directly. This should fail with execution failure/trap
@@ -46,11 +46,13 @@ fn test_fallback() {
         .contract_invoke(
             ACC_0,
             Address::Account(ACC_0),
-            res_init_one.contract_address,
-            EntrypointName::new_unchecked(""),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init_one.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("one.".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect_err("should fail");
     match res_invoke_1.kind {
@@ -67,11 +69,13 @@ fn test_fallback() {
         .contract_invoke(
             ACC_0,
             Address::Account(ACC_0),
-            res_init_one.contract_address,
-            EntrypointName::new_unchecked("do"),
-            parameter.clone(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init_one.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("one.do".into()),
+                message:      parameter.clone(),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Invoke should succeed.");
     assert_eq!(res_invoke_2.return_value, parameter.as_ref()); // Parameter is

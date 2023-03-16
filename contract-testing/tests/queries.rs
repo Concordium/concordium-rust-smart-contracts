@@ -35,14 +35,12 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         // The contract will query the balance of ACC_1 and assert that the three
@@ -53,11 +51,14 @@ mod query_account_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -97,14 +98,12 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         let update_amount = Amount::from_ccd(123);
@@ -120,11 +119,14 @@ mod query_account_balance {
             .contract_update(
                 ACC_1,
                 Address::Account(ACC_1),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                update_amount,
                 energy_limit,
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       update_amount,
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -166,14 +168,12 @@ mod query_account_balance {
         let amount_to_send = Amount::from_ccd(123);
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                amount_to_send, // Make sure the contract has CCD to transfer.
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    amount_to_send, // Make sure the contract has CCD to transfer.
+            })
             .expect("Initializing valid contract should work");
 
         let amount_to_send = Amount::from_ccd(123);
@@ -190,11 +190,14 @@ mod query_account_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(10000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -239,14 +242,12 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         // TODO: Implement serial for four-tuples in contracts-common. Nesting tuples to
@@ -259,11 +260,14 @@ mod query_account_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -301,14 +305,12 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         // The account to query, which doesn't exist in this test case.
@@ -318,11 +320,14 @@ mod query_account_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -366,25 +371,21 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         let res_init_other = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                init_amount, // Set up another contract with `init_amount` balance
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    init_amount, // Set up another contract with `init_amount` balance
+            })
             .expect("Initializing valid contract should work");
 
         // check that the other contract has `self_balance == init_amount`.
@@ -394,11 +395,14 @@ mod query_contract_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -430,14 +434,12 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                init_amount,
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    init_amount,
+            })
             .expect("Initializing valid contract should work");
 
         // check that the other contract has `self_balance == init_amount`.
@@ -447,11 +449,14 @@ mod query_contract_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                update_amount,
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       update_amount,
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -483,14 +488,12 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                init_amount,
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    init_amount,
+            })
             .expect("Initializing valid contract should work");
 
         let input_param = (
@@ -504,11 +507,14 @@ mod query_contract_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                update_amount,
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       update_amount,
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -539,14 +545,12 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         // Non-existent contract address.
@@ -556,11 +560,14 @@ mod query_contract_balance {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 
@@ -593,14 +600,12 @@ mod query_exchange_rates {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(
-                ACC_0,
-                res_deploy.module_reference,
-                ContractName::new_unchecked("init_contract"),
-                OwnedParameter::empty(),
-                Amount::zero(),
-                Energy::from(10000),
-            )
+            .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            })
             .expect("Initializing valid contract should work");
 
         // Non-existent contract address.
@@ -610,11 +615,14 @@ mod query_exchange_rates {
             .contract_update(
                 ACC_0,
                 Address::Account(ACC_0),
-                res_init.contract_address,
-                EntrypointName::new_unchecked("query"),
-                OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-                Amount::zero(),
                 Energy::from(100000),
+                UpdateContractPayload {
+                    address:      res_init.contract_address,
+                    receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
+                    message:      OwnedParameter::from_serial(&input_param)
+                        .expect("Parameter has valid size"),
+                    amount:       Amount::zero(),
+                },
             )
             .expect("Updating valid contract should work");
 

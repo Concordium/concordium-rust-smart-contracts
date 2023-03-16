@@ -1,7 +1,7 @@
 //! This module contains tests for transfers fr&om a contract to an account.
 //! See more details about the specific test inside the `transfer.wat` file.
-use concordium_smart_contract_testing::*;
 use concordium_smart_contract_engine::v0::Logs;
+use concordium_smart_contract_testing::*;
 
 const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
@@ -13,18 +13,20 @@ fn test_transfer() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/transfer.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/transfer.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_transfer"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_transfer".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let contract_address = res_init.contract_address;
@@ -33,11 +35,14 @@ fn test_transfer() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            contract_address,
-            EntrypointName::new_unchecked("forward"),
-            OwnedParameter::from_serial(&ACC_0).expect("Parameter has valid size"),
-            Amount::from_micro_ccd(123),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("transfer.forward".into()),
+                message:      OwnedParameter::from_serial(&ACC_0)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::from_micro_ccd(123),
+            },
         )
         .expect("Updating contract should succeed");
     // Contract should have forwarded the amount and thus have balance == 0.
@@ -51,11 +56,13 @@ fn test_transfer() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            contract_address,
-            EntrypointName::new_unchecked("deposit"),
-            OwnedParameter::empty(),
-            Amount::from_micro_ccd(1000),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("transfer.deposit".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::from_micro_ccd(1000),
+            },
         )
         .expect("Updating contract should succeed");
 
@@ -63,12 +70,15 @@ fn test_transfer() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            contract_address,
-            EntrypointName::new_unchecked("send"),
-            OwnedParameter::from_serial(&(ACC_0, Amount::from_micro_ccd(17))).expect("Parameter has valid size"), /* Tell it to send 17
-                                                                        * mCCD to ACC_0. */
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("transfer.send".into()),
+                message:      OwnedParameter::from_serial(&(ACC_0, Amount::from_micro_ccd(17)))
+                    .expect("Parameter has valid size"), /* Tell it to send 17
+                                                          * mCCD to ACC_0. */
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating contract should succeed");
     // Contract should have 1000 - 17 microCCD in balance.

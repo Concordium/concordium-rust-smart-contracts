@@ -14,29 +14,33 @@ fn test_counter() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/call-counter.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/call-counter.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_counter"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_counter".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("inc"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("counter.inc".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_counter_state(&mut chain, res_init.contract_address, 1);
@@ -45,11 +49,13 @@ fn test_counter() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("inc"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("counter.inc".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_counter_state(&mut chain, res_init.contract_address, 2);
@@ -64,11 +70,14 @@ fn test_counter() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("inc10"),
-            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("counter.inc10".into()),
+                message:      OwnedParameter::from_serial(&parameter)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_counter_state(&mut chain, res_init.contract_address, 12);

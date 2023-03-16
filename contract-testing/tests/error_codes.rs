@@ -14,18 +14,20 @@ fn test_error_codes() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/caller.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/caller.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_caller"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_caller".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     // Invoke an entrypoint that calls the "fail" entrypoint.
@@ -47,11 +49,14 @@ fn test_error_codes() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("call"),
-            OwnedParameter::from_serial(&parameter_0).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
+                message:      OwnedParameter::from_serial(&parameter_0)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_eq!(
@@ -77,11 +82,14 @@ fn test_error_codes() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("call"),
-            OwnedParameter::from_serial(&parameter_1).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
+                message:      OwnedParameter::from_serial(&parameter_1)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_eq!(
@@ -105,11 +113,14 @@ fn test_error_codes() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("call"),
-            OwnedParameter::from_serial(&parameter_2).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
+                message:      OwnedParameter::from_serial(&parameter_2)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_eq!(
@@ -135,11 +146,14 @@ fn test_error_codes() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("call"),
-            OwnedParameter::from_serial(&parameter_3).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
+                message:      OwnedParameter::from_serial(&parameter_3)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_eq!(
@@ -165,11 +179,14 @@ fn test_error_codes() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("call"),
-            OwnedParameter::from_serial(&parameter_4).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
+                message:      OwnedParameter::from_serial(&parameter_4)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_eq!(
@@ -198,11 +215,14 @@ fn test_error_codes() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("call"),
-            OwnedParameter::from_serial(&parameter_6).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
+                message:      OwnedParameter::from_serial(&parameter_6)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
     assert_eq!(

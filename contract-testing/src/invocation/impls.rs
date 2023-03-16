@@ -11,8 +11,10 @@ use concordium_base::{
     base::{Energy, OutOfEnergy},
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ModuleReference, OwnedEntrypointName, OwnedReceiveName, Parameter,
+        ModuleReference, OwnedReceiveName,
     },
+    smart_contracts::{OwnedContractName, OwnedParameter},
+    transactions::UpdateContractPayload,
 };
 use concordium_smart_contract_engine::{
     v0,
@@ -36,11 +38,8 @@ impl EntrypointInvocationHandler {
         chain: &Chain,
         invoker: AccountAddress,
         sender: Address,
-        contract_address: ContractAddress,
-        entrypoint: OwnedEntrypointName,
-        parameter: Parameter,
-        amount: Amount,
         reserved_energy: Energy,
+        payload: UpdateContractPayload,
     ) -> (InvokeEntrypointResult, ChangeSet, Vec<ChainEvent>) {
         let mut contract_invocation = Self {
             changeset:          ChangeSet::new(),
@@ -58,11 +57,8 @@ impl EntrypointInvocationHandler {
         let result = contract_invocation.invoke_entrypoint(
             invoker,
             sender,
-            contract_address,
-            entrypoint,
-            parameter,
-            amount,
             reserved_energy,
+            payload,
             &mut chain_events,
         );
         (result, contract_invocation.changeset, chain_events)
@@ -80,11 +76,8 @@ impl EntrypointInvocationHandler {
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        contract_address: ContractAddress,
-        entrypoint: OwnedEntrypointName,
-        parameter: Parameter,
-        amount: Amount,
         mut remaining_energy: Energy,
+        payload: UpdateContractPayload,
         chain_events: &mut Vec<ChainEvent>,
     ) -> InvokeEntrypointResult {
         // Charge the base cost for updating a contract.
@@ -98,15 +91,17 @@ impl EntrypointInvocationHandler {
 
         // Move the amount from the sender to the contract, if any.
         // And get the new self_balance.
-        let instance_self_balance = if amount.micro_ccd() > 0 {
+        let instance_self_balance = if payload.amount.micro_ccd() > 0 {
             let transfer_result = match sender {
-                Address::Account(sender_account) => {
-                    self.transfer_from_account_to_contract(amount, sender_account, contract_address)
-                }
+                Address::Account(sender_account) => self.transfer_from_account_to_contract(
+                    payload.amount,
+                    sender_account,
+                    payload.address,
+                ),
                 Address::Contract(sender_contract) => self.transfer_from_contract_to_contract(
-                    amount,
+                    payload.amount,
                     sender_contract,
-                    contract_address,
+                    payload.address,
                 ),
             };
             match transfer_result {
@@ -125,7 +120,7 @@ impl EntrypointInvocationHandler {
                 }
             }
         } else {
-            match self.contract_balance(contract_address) {
+            match self.contract_balance(payload.address) {
                 Some(self_balance) => self_balance,
                 None => {
                     // Return early.
@@ -145,9 +140,9 @@ impl EntrypointInvocationHandler {
         // Get the instance and artifact. To be used in several places.
         let instance = self
             .contracts
-            .get(&contract_address)
+            .get(&payload.address)
             .expect("Contract known to exist at this point");
-        let module = self.contract_module(contract_address);
+        let module = self.contract_module(payload.address);
 
         // Subtract the cost of looking up the module
         remaining_energy = if let Some(remaining_energy) =
@@ -159,18 +154,31 @@ impl EntrypointInvocationHandler {
         };
 
         // Construct the receive name (or fallback receive name) and ensure its presence
-        // in the contract.
-        let receive_name = {
-            let contract_name = instance.contract_name.as_contract_name().contract_name();
-            let receive_name = format!("{}.{}", contract_name, entrypoint);
+        // in the contract. Also returns the contract name and entrypoint name as they
+        // are needed further down.
+        let (contract_name, receive_name, entrypoint_name) = {
+            let borrowed_receive_name = payload.receive_name.as_receive_name();
+            let contract_name = borrowed_receive_name.contract_name();
+            let owned_contract_name =
+                OwnedContractName::new_unchecked(format!("init_{}", contract_name));
+            let owned_entrypoint_name = borrowed_receive_name.entrypoint_name().to_owned();
+            let receive_name = borrowed_receive_name.get_chain_name();
             let fallback_receive_name = format!("{}.", contract_name);
-            if module.artifact.has_entrypoint(receive_name.as_str()) {
-                OwnedReceiveName::new_unchecked(receive_name)
+            if module.artifact.has_entrypoint(receive_name) {
+                (
+                    owned_contract_name,
+                    payload.receive_name,
+                    owned_entrypoint_name,
+                )
             } else if module
                 .artifact
                 .has_entrypoint(fallback_receive_name.as_str())
             {
-                OwnedReceiveName::new_unchecked(fallback_receive_name)
+                (
+                    owned_contract_name,
+                    OwnedReceiveName::new_unchecked(fallback_receive_name),
+                    owned_entrypoint_name,
+                )
             } else {
                 // Return early.
                 return InvokeEntrypointResult {
@@ -185,13 +193,16 @@ impl EntrypointInvocationHandler {
 
         // Construct the receive context
         let receive_ctx = v1::ReceiveContext {
-            entrypoint: entrypoint.to_owned(),
+            // This should be the entrypoint specified, even if we end up
+            // calling the fallback entrypoint, as this will be visible to the
+            // contract via a host function.
+            entrypoint: entrypoint_name.clone(),
             common:     v0::ReceiveContext {
                 metadata: ChainMetadata {
                     slot_time: self.block_time,
                 },
                 invoker,
-                self_address: contract_address,
+                self_address: payload.address,
                 self_balance: instance_self_balance,
                 sender,
                 owner: instance.owner,
@@ -204,11 +215,9 @@ impl EntrypointInvocationHandler {
             },
         };
 
-        let contract_name = instance.contract_name.clone();
-
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]);
-        let mut mutable_state = self.contract_state(contract_address);
+        let mut mutable_state = self.contract_state(payload.address);
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
@@ -218,9 +227,10 @@ impl EntrypointInvocationHandler {
                 module.artifact,
                 receive_ctx,
                 v1::ReceiveInvocation {
-                    amount,
+                    amount: payload.amount,
+                    // This will either be the one provided on the fallback receive name.
                     receive_name: receive_name.as_receive_name(),
-                    parameter: parameter.as_ref(),
+                    parameter: payload.message.as_ref(),
                     energy,
                 },
                 instance_state,
@@ -236,10 +246,10 @@ impl EntrypointInvocationHandler {
         // i.e. beyond interrupts.
         let mut data = InvocationData {
             invoker,
-            address: contract_address,
+            address: payload.address,
             contract_name,
-            amount,
-            entrypoint,
+            amount: payload.amount,
+            entrypoint: entrypoint_name,
             invocation_handler: self,
             state: mutable_state,
             chain_events: Vec::new(),
@@ -261,7 +271,7 @@ impl EntrypointInvocationHandler {
                     let remaining_energy = InterpreterEnergy::from(remaining_energy);
                     InvokeEntrypointResult {
                         invoke_response: v1::InvokeResponse::Success {
-                            new_balance: self.contract_balance_unchecked(contract_address),
+                            new_balance: self.contract_balance_unchecked(payload.address),
                             data:        Some(return_value),
                         },
                         logs,
@@ -1183,16 +1193,42 @@ impl<'a> InvocationData<'a> {
                             // back.
                             self.invocation_handler.checkpoint();
 
-                            let res = self.invocation_handler.invoke_entrypoint(
-                                self.invoker,
-                                Address::Contract(self.address),
-                                address,
-                                name,
-                                Parameter::new_unchecked(&parameter),
-                                amount,
-                                from_interpreter_energy(InterpreterEnergy::from(remaining_energy)),
-                                &mut self.chain_events,
-                            );
+                            let res = match self
+                                .invocation_handler
+                                .contracts
+                                .get(&address)
+                                .map(|c| c.contract_name.as_contract_name())
+                            {
+                                // The contract to call does not exist.
+                                None => InvokeEntrypointResult {
+                                    invoke_response:  v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::NonExistentContract,
+                                    },
+                                    logs:             v0::Logs::new(),
+                                    remaining_energy: InterpreterEnergy::from(remaining_energy),
+                                },
+                                Some(contract_name) => {
+                                    let receive_name = OwnedReceiveName::construct_unchecked(
+                                        contract_name,
+                                        name.as_entrypoint_name(),
+                                    );
+                                    let message = OwnedParameter::new_unchecked(parameter);
+                                    self.invocation_handler.invoke_entrypoint(
+                                        self.invoker,
+                                        Address::Contract(self.address),
+                                        from_interpreter_energy(InterpreterEnergy::from(
+                                            remaining_energy,
+                                        )),
+                                        UpdateContractPayload {
+                                            amount,
+                                            address,
+                                            receive_name,
+                                            message,
+                                        },
+                                        &mut self.chain_events,
+                                    )
+                                }
+                            };
 
                             let success = res.is_success();
 

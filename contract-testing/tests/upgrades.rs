@@ -32,14 +32,13 @@ fn test() {
 
     // Initialize `upgrading_0`.
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy_0.module_reference,
-            ContractName::new_unchecked("init_a"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            init_name: OwnedContractName::new_unchecked("init_a".into()),
+            mod_ref:   res_deploy_0.module_reference,
+
+            param:  OwnedParameter::empty(),
+            amount: Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     // Upgrade the contract to the `upgrading_1` module by calling the `bump`
@@ -48,12 +47,14 @@ fn test() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("bump"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference)
-                .expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("a.bump".into()),
+                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -62,12 +63,14 @@ fn test() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("newfun"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference)
-                .expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("a.newfun".into()),
+                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
@@ -107,26 +110,26 @@ fn test_self_invoke() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy_0.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            mod_ref:   res_deploy_0.module_reference,
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_update = chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference)
-                .expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -169,25 +172,25 @@ fn test_missing_module() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_update = chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -231,26 +234,27 @@ fn test_missing_contract() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy_0.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            mod_ref:   res_deploy_0.module_reference,
+
+            amount: Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_update = chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference)
-                .expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -295,14 +299,13 @@ fn test_twice_in_one_transaction() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy_0.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            mod_ref:   res_deploy_0.module_reference,
+
+            amount: Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let input_param = (res_deploy_1.module_reference, res_deploy_2.module_reference);
@@ -311,11 +314,14 @@ fn test_twice_in_one_transaction() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::from_serial(&input_param)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -366,14 +372,12 @@ fn test_chained_contract() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let number_of_upgrades: u32 = 82; // TODO: Stack will overflow if larger than 82.
@@ -383,11 +387,14 @@ fn test_chained_contract() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&input_param).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::from_serial(&input_param)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -426,26 +433,26 @@ fn test_reject() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy_0.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy_0.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_update_upgrade = chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference)
-                .expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect_err("should fail");
 
@@ -453,11 +460,13 @@ fn test_reject() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("new_feature"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.new_feature".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect_err("should fail");
 
@@ -512,25 +521,26 @@ fn test_changing_entrypoint() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy_0.module_reference,
-            ContractName::new_unchecked("init_contract"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            init_name: OwnedContractName::new_unchecked("init_contract".into()),
+            param:     OwnedParameter::empty(),
+            mod_ref:   res_deploy_0.module_reference,
+
+            amount: Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_update_old_feature_0 = chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("old_feature"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.old_feature".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating old_feature on old module should work.");
 
@@ -538,11 +548,13 @@ fn test_changing_entrypoint() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("new_feature"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.new_feature".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect_err("Updating new_feature on old module should _not_ work");
 
@@ -550,12 +562,14 @@ fn test_changing_entrypoint() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("upgrade"),
-            OwnedParameter::from_serial(&res_deploy_1.module_reference)
-                .expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
+                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Upgrading contract should work.");
 
@@ -563,11 +577,13 @@ fn test_changing_entrypoint() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("old_feature"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.old_feature".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect_err("Updating old_feature on _new_ module should _not_ work.");
 
@@ -575,11 +591,13 @@ fn test_changing_entrypoint() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("new_feature"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(1000000),
+            UpdateContractPayload {
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("contract.new_feature".into()),
+                message:      OwnedParameter::empty(),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating new_feature on _new_ module should work");
 

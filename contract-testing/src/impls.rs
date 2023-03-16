@@ -4,11 +4,10 @@ use concordium_base::{
     common::{self, to_bytes},
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ContractName, EntrypointName, ExchangeRate, ModuleReference, OwnedParameter, SlotTime,
-        Timestamp,
+        ExchangeRate, ModuleReference, SlotTime, Timestamp,
     },
-    smart_contracts::{ModuleSource, OwnedReceiveName, WasmModule, WasmVersion},
-    transactions::{self, cost},
+    smart_contracts::{ModuleSource, WasmModule, WasmVersion},
+    transactions::{self, cost, InitContractPayload, UpdateContractPayload},
 };
 use concordium_smart_contract_engine::{v0, v1, InterpreterEnergy};
 use num_bigint::BigUint;
@@ -224,22 +223,20 @@ impl Chain {
     /// **Parameters:**
     ///  - `sender`: The account paying for the transaction. Will also become
     ///    the owner of the instance created.
-    ///  - `module_reference`: The reference to the a module that has already
-    ///    been deployed.
-    ///  - `contract_name`: Name of the contract to initialize.
-    ///  - `parameter`: Parameter provided to the init method.
-    ///  - `amount`: The initial balance of the contract. Subtracted from the
-    ///   `sender` account.
     ///  - `energy_reserved`: Amount of energy reserved for executing the init
     ///   method.
+    ///  - `payload`:
+    ///    - `amount`: The initial balance of the contract. Subtracted from the
+    ///      `sender` account.
+    ///    - `mod_ref`: The reference to the a module that has already been
+    ///      deployed.
+    ///    - `init_name`: Name of the contract to initialize.
+    ///    - `param`: Parameter provided to the init method.
     pub fn contract_init(
         &mut self,
         sender: AccountAddress,
-        module_reference: ModuleReference,
-        contract_name: ContractName,
-        parameter: OwnedParameter,
-        amount: Amount,
         energy_reserved: Energy,
+        payload: InitContractPayload,
     ) -> Result<ContractInitSuccess, ContractInitError> {
         let mut remaining_energy = energy_reserved;
         if !self.account_exists(sender) {
@@ -250,15 +247,8 @@ impl Chain {
             ));
         }
 
-        let res = self.contract_init_worker(
-            sender,
-            module_reference,
-            contract_name,
-            parameter,
-            amount,
-            energy_reserved,
-            &mut remaining_energy,
-        );
+        let res =
+            self.contract_init_worker(sender, energy_reserved, payload, &mut remaining_energy);
 
         let (res, transaction_fee) = match res {
             Ok(s) => {
@@ -289,40 +279,33 @@ impl Chain {
     fn contract_init_worker(
         &mut self,
         sender: AccountAddress,
-        module_reference: ModuleReference,
-        contract_name: ContractName,
-        parameter: OwnedParameter,
-        amount: Amount,
         energy_reserved: Energy,
+        payload: InitContractPayload,
         remaining_energy: &mut Energy,
     ) -> Result<ContractInitSuccess, ContractInitErrorKind> {
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
         let account_info = self.account(sender)?;
-        if account_info.balance.available() < self.calculate_energy_cost(energy_reserved) + amount {
+        if account_info.balance.available()
+            < self.calculate_energy_cost(energy_reserved) + payload.amount
+        {
             return Err(ContractInitErrorKind::InsufficientFunds);
         }
 
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
+        if payload.param.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(ContractInitErrorKind::ParameterTooLarge);
         }
 
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
-            let payload = transactions::InitContractPayload {
-                amount,
-                mod_ref: module_reference,
-                init_name: contract_name.to_owned(),
-                param: parameter.clone(),
-            };
             let pre_account_trx = transactions::construct::init_contract(
                 account_info.signature_count,
                 sender,
                 base::Nonce::from(0), // Value not matter, only used for serialized size.
                 common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
                                        * used for serialized size. */
-                payload,
+                payload.clone(),
                 energy_reserved,
             );
             let transaction_size = to_bytes(&pre_account_trx).len() as u64;
@@ -336,7 +319,7 @@ impl Chain {
         remaining_energy.tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
 
         // Lookup module.
-        let module = self.contract_module(module_reference)?;
+        let module = self.contract_module(payload.mod_ref)?;
         let lookup_cost = lookup_module_cost(&module);
         // Charge the cost for looking up the module.
         remaining_energy.tick_energy(lookup_cost)?;
@@ -357,10 +340,10 @@ impl Chain {
             module.artifact,
             init_ctx,
             v1::InitInvocation {
-                amount,
-                init_name: contract_name.get_chain_name(),
-                parameter: parameter.as_ref(),
-                energy: energy_given_to_interpreter,
+                amount:    payload.amount,
+                init_name: payload.init_name.as_contract_name().get_chain_name(),
+                parameter: payload.param.as_ref(),
+                energy:    energy_given_to_interpreter,
             },
             false,
             loader,
@@ -396,11 +379,11 @@ impl Chain {
                     .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST)?;
 
                 let contract_instance = Contract {
-                    module_reference,
-                    contract_name: contract_name.to_owned(),
-                    state: persisted_state,
-                    owner: sender,
-                    self_balance: amount,
+                    module_reference: payload.mod_ref,
+                    contract_name:    payload.init_name,
+                    state:            persisted_state,
+                    owner:            sender,
+                    self_balance:     payload.amount,
                 };
 
                 // Save the contract instance
@@ -410,7 +393,7 @@ impl Chain {
                 self.account_mut(sender)
                     .expect("Account known to exist")
                     .balance
-                    .total -= amount;
+                    .total -= payload.amount;
 
                 let energy_used = energy_reserved - *remaining_energy;
                 let transaction_fee = self.calculate_energy_cost(energy_used);
@@ -470,34 +453,28 @@ impl Chain {
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        contract_address: ContractAddress,
-        entrypoint: EntrypointName,
-        parameter: OwnedParameter,
-        amount: Amount,
         energy_reserved: Energy,
+        payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
         should_persist: bool,
     ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
         // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if parameter.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
+        if payload.message.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(self.from_invocation_error_kind(
                 ContractInvocationErrorKind::ParameterTooLarge,
                 energy_reserved,
                 *remaining_energy,
             ));
         }
-
+        let contract_address = payload.address;
         let energy_given_to_interpreter = *remaining_energy;
         let (result, changeset, chain_events) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
                 self,
                 invoker,
                 sender,
-                contract_address,
-                entrypoint.to_owned(),
-                parameter.as_parameter(),
-                amount,
                 energy_given_to_interpreter,
+                payload,
             );
 
         // Update the remaining energy. Subtract in interpreter energy, then convert to
@@ -583,11 +560,8 @@ impl Chain {
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        contract_address: ContractAddress,
-        entrypoint: EntrypointName,
-        parameter: OwnedParameter,
-        amount: Amount,
         energy_reserved: Energy,
+        payload: UpdateContractPayload,
     ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
         // Ensure the invoker exists.
         if !self.account_exists(invoker) {
@@ -618,32 +592,13 @@ impl Chain {
 
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
-            let receive_name = {
-                let contract_name = if let Some(contract) = self.contracts.get(&contract_address) {
-                    contract.contract_name.as_contract_name()
-                } else {
-                    // Contract does not exist, but we should not just throw an error.
-                    // We still need to charge the invoker account.
-                    // Use the empty name for calculating the size of the transaction.
-                    // TODO: Check existence of contract in worker.
-                    ContractName::new_unchecked("")
-                };
-                OwnedReceiveName::construct_unchecked(contract_name, entrypoint)
-            };
-            let payload = transactions::UpdateContractPayload {
-                amount,
-                address: contract_address,
-                receive_name,
-                message: parameter.clone(),
-            };
-
             let pre_account_trx = transactions::construct::update_contract(
                 invoker_signature_count,
                 invoker,
                 base::Nonce::from(0), // Value does not matter, only used for serialized size.
                 common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
                                        * used for serialized size. */
-                payload,
+                payload.clone(),
                 energy_reserved,
             );
             let transaction_size = to_bytes(&pre_account_trx).len() as u64;
@@ -666,7 +621,7 @@ impl Chain {
             .expect("existence already checked");
 
         // Ensure the account has sufficient funds to pay for the energy and amount.
-        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
             let energy_used = energy_reserved - remaining_energy;
             return Err(ContractInvocationError {
                 energy_used,
@@ -686,11 +641,8 @@ impl Chain {
         let res = self.contract_invocation_worker(
             invoker,
             sender,
-            contract_address,
-            entrypoint,
-            parameter,
-            amount,
             energy_reserved,
+            payload,
             &mut remaining_energy,
             true,
         );
@@ -727,11 +679,8 @@ impl Chain {
         &mut self,
         invoker: AccountAddress,
         sender: Address,
-        contract_address: ContractAddress,
-        entrypoint: EntrypointName,
-        parameter: OwnedParameter,
-        amount: Amount,
         energy_reserved: Energy,
+        payload: UpdateContractPayload,
     ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
         // Ensure the invoker exists.
         if !self.account_exists(invoker) {
@@ -758,7 +707,7 @@ impl Chain {
             .account_mut(invoker)
             .expect("existence already checked");
 
-        if account_info.balance.available() < invoker_amount_reserved_for_nrg + amount {
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
             let energy_used = Energy::from(0);
             return Err(ContractInvocationError {
                 energy_used,
@@ -776,11 +725,8 @@ impl Chain {
         let result = self.contract_invocation_worker(
             invoker,
             sender,
-            contract_address,
-            entrypoint,
-            parameter,
-            amount,
             energy_reserved,
+            payload,
             &mut remaining_energy,
             false,
         );

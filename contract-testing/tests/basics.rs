@@ -45,14 +45,12 @@ fn initializing_valid_contract_works() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_weather"),
-            OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            amount:    Amount::zero(),
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_weather".into()),
+            param:     OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."),
+        })
         .expect("Initializing valid contract should work");
     assert_eq!(
         chain.account_balance_available(ACC_0),
@@ -80,11 +78,13 @@ fn initializing_with_invalid_parameter_fails() {
     let res_init = chain
         .contract_init(
             ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_weather"),
-            OwnedParameter::try_from(vec![99u8]).expect("Parameter has valid size."), // Invalid param
-            Amount::zero(),
             Energy::from(10000),
+            InitContractPayload{
+                amount: Amount::zero(),
+                mod_ref: res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_weather".into()),
+                param: OwnedParameter::try_from(vec![99u8]).expect("Parameter has valid size."), // Invalid param
+            }
         )
         .expect_err("Initializing with invalid params should fail");
 
@@ -120,11 +120,13 @@ fn updating_valid_contract_works() {
     let res_init = chain
         .contract_init(
             ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_weather"),
-            OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
-            Amount::zero(),
             Energy::from(10000),
+            InitContractPayload{
+                amount: Amount::zero(),
+                mod_ref: res_deploy.module_reference,
+                init_name:    OwnedContractName::new_unchecked("init_weather".into()),
+                param:   OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
+            }
         )
         .expect("Initializing valid contract should work");
 
@@ -132,11 +134,14 @@ fn updating_valid_contract_works() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("set"),
-            OwnedParameter::try_from(vec![1u8]).expect("Parameter has valid size."), // Updated to 1
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("weather.set".into()),
+                message:      OwnedParameter::try_from(vec![1u8])
+                    .expect("Parameter has valid size."), // Updated to 1
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -144,11 +149,13 @@ fn updating_valid_contract_works() {
         .contract_invoke(
             ACC_0,
             Address::Contract(res_init.contract_address), // Invoke with a contract as sender.
-            res_init.contract_address,
-            EntrypointName::new_unchecked("get"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
+                message:      OwnedParameter::empty(),
+            },
         )
         .expect("Invoking get should work");
 
@@ -191,11 +198,13 @@ fn updating_and_invoking_with_missing_sender_fails() {
     let res_init = chain
         .contract_init(
             ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_weather"),
-            OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
-            Amount::zero(),
             Energy::from(10000),
+            InitContractPayload{
+                amount: Amount::zero(),
+                mod_ref: res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_weather".into()),
+            param: OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
+            }
         )
         .expect("Initializing valid contract should work");
 
@@ -203,11 +212,13 @@ fn updating_and_invoking_with_missing_sender_fails() {
         .contract_update(
             ACC_0,
             missing_account,
-            res_init.contract_address,
-            EntrypointName::new_unchecked("get"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
+                message:      OwnedParameter::empty(),
+            },
         )
         .expect_err("should fail");
 
@@ -215,11 +226,13 @@ fn updating_and_invoking_with_missing_sender_fails() {
         .contract_invoke(
             ACC_0,
             missing_account,
-            res_init.contract_address,
-            EntrypointName::new_unchecked("get"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
+                message:      OwnedParameter::empty(),
+            },
         )
         .expect_err("should fail");
 
@@ -227,11 +240,13 @@ fn updating_and_invoking_with_missing_sender_fails() {
         .contract_update(
             ACC_0,
             missing_contract,
-            res_init.contract_address,
-            EntrypointName::new_unchecked("get"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
+                message:      OwnedParameter::empty(),
+            },
         )
         .expect_err("should fail");
 
@@ -239,11 +254,13 @@ fn updating_and_invoking_with_missing_sender_fails() {
         .contract_invoke(
             ACC_0,
             missing_contract,
-            res_init.contract_address,
-            EntrypointName::new_unchecked("get"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
+                message:      OwnedParameter::empty(),
+            },
         )
         .expect_err("should fail");
 
@@ -277,14 +294,13 @@ fn init_with_less_energy_than_module_lookup() {
 
     let reserved_energy = Energy::from(10);
 
-    let res_init = chain.contract_init(
-        ACC_0,
-        res_deploy.module_reference,
-        ContractName::new_unchecked("init_fib"),
-        OwnedParameter::empty(),
-        Amount::zero(),
-        reserved_energy,
-    );
+    let res_init = chain.contract_init(ACC_0, reserved_energy, InitContractPayload {
+        amount:  Amount::zero(),
+        mod_ref: res_deploy.module_reference,
+
+        init_name: OwnedContractName::new_unchecked("init_fib".into()),
+        param:     OwnedParameter::empty(),
+    });
     match res_init {
         Err(ContractInitError {
             kind: ContractInitErrorKind::OutOfEnergy,
@@ -309,25 +325,25 @@ fn update_with_fib_reentry_works() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_fib"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            amount:    Amount::zero(),
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_fib".into()),
+            param:     OwnedParameter::empty(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_update = chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("receive"),
-            OwnedParameter::from_serial(&6u64).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(100000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("fib.receive".into()),
+                message:      OwnedParameter::from_serial(&6u64).expect("Parameter has valid size"),
+            },
         )
         .expect("Updating valid contract should work");
 
@@ -335,11 +351,13 @@ fn update_with_fib_reentry_works() {
         .contract_invoke(
             ACC_0,
             Address::Account(ACC_0),
-            res_init.contract_address,
-            EntrypointName::new_unchecked("view"),
-            OwnedParameter::empty(),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      res_init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("fib.view".into()),
+                message:      OwnedParameter::empty(),
+            },
         )
         .expect("Invoking get should work");
 

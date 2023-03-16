@@ -27,29 +27,29 @@ fn test_case_1() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_a"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_a".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_init_b = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_b"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_b".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let forward_parameter = (
@@ -71,13 +71,16 @@ fn test_case_1() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init_a.contract_address,
-            EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
-            // We supply one microCCD as we expect a trap
-            // (see contract for details).
-            Amount::from_micro_ccd(1),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init_a.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
+                message:      OwnedParameter::from_serial(&parameter)
+                    .expect("Parameter has valid size"),
+                // We supply one microCCD as we expect a trap
+                // (see contract for details).
+                amount:       Amount::from_micro_ccd(1),
+            },
         )
         .expect("Updating contract should succeed");
 }
@@ -102,29 +105,29 @@ fn test_case_2() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_a"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_a".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_init_b = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_b"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_b".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let forward_parameter = (
@@ -146,16 +149,19 @@ fn test_case_2() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init_a.contract_address,
-            EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
-            // We supply zero microCCD as we're instructing the contract to not expect
-            // state modifications. Also, the contract does not expect
-            // errors, i.e., a trap signal from underlying invocations.
-            // The 'inner' call to contract A does not modify the state.
-            // See the contract for details.
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init_a.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
+                message:      OwnedParameter::from_serial(&parameter)
+                    .expect("Parameter has valid size"),
+                // We supply zero microCCD as we're instructing the contract to not expect
+                // state modifications. Also, the contract does not expect
+                // errors, i.e., a trap signal from underlying invocations.
+                // The 'inner' call to contract A does not modify the state.
+                // See the contract for details.
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating contract should succeed");
 }
@@ -177,43 +183,46 @@ fn test_case_3() {
     chain.create_account(ACC_1, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_a"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_a".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_b"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_b".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     chain
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init_a.contract_address,
-            EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::from_serial(&ACC_1).expect("Parameter has valid size"),
-            // We supply three micro CCDs as we're instructing the contract to carry out a
-            // transfer instead of a call. See the contract for
-            // details.
-            Amount::from_micro_ccd(3),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init_a.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
+                message:      OwnedParameter::from_serial(&ACC_1)
+                    .expect("Parameter has valid size"),
+                // We supply three micro CCDs as we're instructing the contract to carry out a
+                // transfer instead of a call. See the contract for
+                // details.
+                amount:       Amount::from_micro_ccd(3),
+            },
         )
         .expect("Updating contract should succeed");
 }
@@ -235,29 +244,29 @@ fn test_case_4() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_a"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_a".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let res_init_b = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_b"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_b".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
 
     let forward_parameter = (
@@ -279,15 +288,18 @@ fn test_case_4() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            res_init_a.contract_address,
-            EntrypointName::new_unchecked("a_modify_proxy"),
-            OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
-            // We supply four CCDs as we're instructing the contract to expect state
-            // modifications being made from the 'inner' contract A
-            // call to be in effect when returned to the caller (a.a_modify_proxy).
-            // See the contract for details.
-            Amount::from_micro_ccd(4),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      res_init_a.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
+                message:      OwnedParameter::from_serial(&parameter)
+                    .expect("Parameter has valid size"),
+                // We supply four CCDs as we're instructing the contract to expect state
+                // modifications being made from the 'inner' contract A
+                // call to be in effect when returned to the caller (a.a_modify_proxy).
+                // See the contract for details.
+                amount:       Amount::from_micro_ccd(4),
+            },
         )
         .expect("Updating contract should succeed");
 }

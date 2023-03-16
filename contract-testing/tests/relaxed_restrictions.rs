@@ -25,11 +25,13 @@ fn test_new_parameter_limit() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            contract_address,
-            EntrypointName::new_unchecked("param"),
-            mk_parameter(65535, 65535),
-            Amount::zero(),
             Energy::from(700000),
+            UpdateContractPayload {
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("relax.param".into()),
+                message:      mk_parameter(65535, 65535),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating contract should succeed");
 }
@@ -43,11 +45,14 @@ fn test_new_return_value_limit() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            contract_address,
-            EntrypointName::new_unchecked("return-value"),
-            OwnedParameter::from_serial(&100_000u32).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("relax.return-value".into()),
+                message:      OwnedParameter::from_serial(&100_000u32)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating contract should succeed");
 }
@@ -61,11 +66,14 @@ fn test_new_log_limit() {
         .contract_update(
             ACC_0,
             Address::Account(ACC_0),
-            contract_address,
-            EntrypointName::new_unchecked("logs"),
-            OwnedParameter::from_serial(&64u32).expect("Parameter has valid size"),
-            Amount::zero(),
             Energy::from(10000),
+            UpdateContractPayload {
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("relax.logs".into()),
+                message:      OwnedParameter::from_serial(&64u32)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
         )
         .expect("Updating contract should succeed");
 }
@@ -80,19 +88,18 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER)).expect("module should exist"),
+            Chain::module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(
-            ACC_0,
-            res_deploy.module_reference,
-            ContractName::new_unchecked("init_relax"),
-            OwnedParameter::empty(),
-            Amount::zero(),
-            Energy::from(10000),
-        )
+        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_relax".into()),
+            param:     OwnedParameter::empty(),
+            amount:    Amount::zero(),
+        })
         .expect("Initializing valid contract should work");
     (chain, res_init.contract_address)
 }
