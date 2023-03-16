@@ -19,7 +19,7 @@
 //!
 //! // Deploy a smart contract module (built with [Cargo Concordium](https://developer.concordium.software/en/mainnet/smart-contracts/guides/setup-tools.html#cargo-concordium)).
 //! let deployment = chain
-//!     .module_deploy_v1(ACC, "path/to/contract.wasm.v1")
+//!     .module_deploy_v1(ACC, Chain::module_load_v1("path/to/contract.wasm.v1").unwrap())
 //!     .unwrap();
 //!
 //! // Initialize a smart contract from the deployed module.

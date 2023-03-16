@@ -27,7 +27,7 @@ fn test_case_1() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
@@ -102,7 +102,7 @@ fn test_case_2() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
@@ -177,7 +177,7 @@ fn test_case_3() {
     chain.create_account(ACC_1, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
@@ -235,7 +235,7 @@ fn test_case_4() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
         .expect("Deploying valid module should work");
 
     let res_init_a = chain

@@ -15,9 +15,9 @@ fn test_all_new_host_functions() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/all-new-host-functions.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/all-new-host-functions.wasm", WASM_TEST_FOLDER)).expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 }

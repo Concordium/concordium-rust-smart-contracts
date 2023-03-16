@@ -14,7 +14,10 @@ fn deploying_valid_module_works() {
     let res = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            Chain::module_load_v1(
+                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            )
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work.");
 
@@ -34,7 +37,10 @@ fn initializing_valid_contract_works() {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            Chain::module_load_v1(
+                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            )
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -64,7 +70,10 @@ fn initializing_with_invalid_parameter_fails() {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            Chain::module_load_v1(
+                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            )
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -101,7 +110,10 @@ fn updating_valid_contract_works() {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            Chain::module_load_v1(
+                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            )
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -169,7 +181,10 @@ fn updating_and_invoking_with_missing_sender_fails() {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            Chain::module_load_v1(
+                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
+            )
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -255,7 +270,8 @@ fn init_with_less_energy_than_module_lookup() {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1",
+            Chain::module_load_v1("../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1")
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -287,7 +303,8 @@ fn update_with_fib_reentry_works() {
     let res_deploy = chain
         .module_deploy_v1(
             ACC_0,
-            "../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1",
+            Chain::module_load_v1("../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1")
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 

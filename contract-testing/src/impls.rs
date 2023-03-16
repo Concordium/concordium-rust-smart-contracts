@@ -59,14 +59,15 @@ impl Chain {
         )
     }
 
-    /// Helper function that handles the actual logic of deploying the module
-    /// bytes.
+    /// Deploy a smart contract module.
+    ///
+    /// The `WasmModule` can be loaded from disk with either
+    /// [`Chain::load_module_v1`] or [`Chain::load_module_v1_raw`].
     ///
     /// Parameters:
     ///  - `sender`: the sender account.
-    ///  - `module`: the raw wasm module (i.e. **without** the contract version
-    ///    and module length bytes (8 bytes total)).
-    fn module_deploy_aux(
+    ///  - `module`: the v1 wasm module.
+    pub fn module_deploy_v1(
         &mut self,
         sender: AccountAddress,
         wasm_module: WasmModule,
@@ -137,7 +138,7 @@ impl Chain {
                 Ok(artifact) => artifact,
                 Err(err) => {
                     return Err(ModuleDeployError {
-                        kind:            err.into(),
+                        kind:            InvalidModuleError(err).into(),
                         energy_used:     check_header_energy,
                         transaction_fee: check_header_cost,
                     })
@@ -181,59 +182,31 @@ impl Chain {
         })
     }
 
-    // TODO: Make this function return a wasm module to be used with aux instead.
-    /// Deploy a raw wasm module, i.e. one **without** the prefix of 4 version
+    /// Load a raw wasm module, i.e. one **without** the prefix of 4 version
     /// bytes and 4 module length bytes.
-    /// The module still has to a valid V1 smart contract module.
-    ///
-    /// **Parameters:**
-    ///  - `sender`: The account paying for the transaction.
-    ///  - `module_path`: Path to a module file.
-    pub fn module_deploy_wasm_v1<P: AsRef<Path>>(
-        &mut self,
-        sender: AccountAddress,
-        module_path: P,
-    ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
-        // Load file
-        let file_contents = std::fs::read(module_path).map_err(|e| ModuleDeployError {
-            kind:            e.into(),
-            energy_used:     0.into(),
-            transaction_fee: Amount::zero(),
-        })?;
-        let wasm_module = WasmModule {
+    /// The module still has to be a valid V1 smart contract module.
+    pub fn module_load_v1_raw(
+        module_path: impl AsRef<Path>,
+    ) -> Result<WasmModule, ModuleLoadError> {
+        let file_contents = std::fs::read(module_path)?;
+        Ok(WasmModule {
             version: WasmVersion::V1,
             source:  ModuleSource::from(file_contents),
-        };
-        self.module_deploy_aux(sender, wasm_module)
+        })
     }
 
-    // TODO: Make this function return a wasm module to be used with aux instead.
-    /// Deploy a v1 wasm module as it is output from `cargo concordium build`,
+    /// Load a v1 wasm module as it is output from `cargo concordium build`,
     /// i.e. **including** the prefix of 4 version bytes and 4 module length
     /// bytes.
-    ///
-    /// **Parameters:**
-    ///  - `sender`: The account paying for the transaction.
-    ///  - `module_path`: Path to a module file.
-    pub fn module_deploy_v1<P: AsRef<Path>>(
-        &mut self,
-        sender: AccountAddress,
-        module_path: P,
-    ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
-        // Load file
-        let file_contents = std::fs::read(module_path).map_err(|e| ModuleDeployError {
-            kind:            e.into(),
-            energy_used:     0.into(),
-            transaction_fee: Amount::zero(),
-        })?;
+    pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, ModuleLoadError> {
+        let file_contents = std::fs::read(module_path)?;
         let mut cursor = std::io::Cursor::new(file_contents);
-        let wasm_module: WasmModule =
-            common::from_bytes(&mut cursor).map_err(|e| ModuleDeployError {
-                kind:            e.into(),
-                energy_used:     0.into(),
-                transaction_fee: Amount::zero(),
-            })?;
-        self.module_deploy_aux(sender, wasm_module)
+        let module: WasmModule =
+            common::from_bytes(&mut cursor).map_err(|e| InvalidModuleError(e))?;
+        if module.version != WasmVersion::V1 {
+            return Err(ModuleLoadError::UnsupportedModuleVersion(module.version));
+        }
+        Ok(module)
     }
 
     /// Initialize a contract.

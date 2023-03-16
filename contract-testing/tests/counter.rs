@@ -14,7 +14,7 @@ fn test_counter() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/call-counter.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(ACC_0, Chain::module_load_v1_raw(format!("{}/call-counter.wasm", WASM_TEST_FOLDER)).expect("module should exist"))
         .expect("Deploying valid module should work");
 
     let res_init = chain

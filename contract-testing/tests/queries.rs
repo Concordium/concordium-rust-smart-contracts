@@ -24,9 +24,13 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-account-balance.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -82,9 +86,13 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-account-balance.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -145,9 +153,13 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-account-balance-transfer.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-account-balance-transfer.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -216,9 +228,13 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-account-balance.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -274,12 +290,13 @@ mod query_account_balance {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!(
+                Chain::module_load_v1_raw(format!(
                     "{}/queries-account-balance-missing-account.wasm",
                     WASM_TEST_FOLDER
-                ),
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -338,9 +355,13 @@ mod query_contract_balance {
         let init_amount = Amount::from_ccd(123);
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-contract-balance.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-contract-balance.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -398,9 +419,13 @@ mod query_contract_balance {
         let update_amount = Amount::from_ccd(456);
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-contract-balance.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-contract-balance.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -447,12 +472,13 @@ mod query_contract_balance {
         let transfer_amount = Amount::from_ccd(78);
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!(
+                Chain::module_load_v1_raw(format!(
                     "{}/queries-contract-balance-transfer.wasm",
                     WASM_TEST_FOLDER
-                ),
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -502,12 +528,13 @@ mod query_contract_balance {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!(
+                Chain::module_load_v1_raw(format!(
                     "{}/queries-contract-balance-missing-contract.wasm",
                     WASM_TEST_FOLDER
-                ),
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -555,9 +582,13 @@ mod query_exchange_rates {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_wasm_v1(
+            .module_deploy_v1(
                 ACC_0,
-                format!("{}/queries-exchange-rates.wasm", WASM_TEST_FOLDER),
+                Chain::module_load_v1_raw(format!(
+                    "{}/queries-exchange-rates.wasm",
+                    WASM_TEST_FOLDER
+                ))
+                .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 

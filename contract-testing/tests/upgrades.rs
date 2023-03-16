@@ -15,11 +15,19 @@ fn test() {
 
     // Deploy the two modules `upgrading_0`, `upgrading_1`
     let res_deploy_0 = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     // Initialize `upgrading_0`.
@@ -84,15 +92,17 @@ fn test_self_invoke() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
     let res_deploy_1 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -148,9 +158,13 @@ fn test_missing_module() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-missing-module.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!(
+                "{}/upgrading-missing-module.wasm",
+                WASM_TEST_FOLDER
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -195,16 +209,24 @@ fn test_missing_contract() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-missing-contract0.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!(
+                "{}/upgrading-missing-contract0.wasm",
+                WASM_TEST_FOLDER
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-missing-contract1.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!(
+                "{}/upgrading-missing-contract1.wasm",
+                WASM_TEST_FOLDER
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -249,15 +271,27 @@ fn test_twice_in_one_transaction() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_deploy_2 = chain
-        .module_deploy_wasm_v1(ACC_0, format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
         .expect("Deploying valid module should work");
 
     let res_init = chain
@@ -324,9 +358,10 @@ fn test_chained_contract() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -375,16 +410,18 @@ fn test_reject() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -453,16 +490,24 @@ fn test_changing_entrypoint() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-changing-entrypoints0.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!(
+                "{}/upgrading-changing-entrypoints0.wasm",
+                WASM_TEST_FOLDER
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/upgrading-changing-entrypoints1.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!(
+                "{}/upgrading-changing-entrypoints1.wasm",
+                WASM_TEST_FOLDER
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 

@@ -12,9 +12,9 @@ fn test_recorder() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_wasm_v1(
+        .module_deploy_v1(
             ACC_0,
-            format!("{}/record-parameters.wasm", WASM_TEST_FOLDER),
+            Chain::module_load_v1_raw(format!("{}/record-parameters.wasm", WASM_TEST_FOLDER)).expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 

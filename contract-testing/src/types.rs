@@ -162,26 +162,43 @@ pub struct ModuleDeployError {
 /// [`ContractModule`].
 #[derive(Debug, Error)]
 pub enum ModuleDeployErrorKind {
-    /// Failed to read the module file.
-    #[error("could not read the file due to: {0}")]
-    ReadFileError(#[from] std::io::Error),
     /// The module provided is not valid.
     #[error("module is invalid due to: {0}")]
-    InvalidModule(#[from] anyhow::Error),
-    /// The invoker account does not have sufficient funds to pay for the
+    InvalidModule(#[from] InvalidModuleError),
+    /// The sender account does not have sufficient funds to pay for the
     /// deployment.
-    #[error("invoker does not have sufficient funds to pay for the energy")]
+    #[error("sender does not have sufficient funds to pay for the energy")]
     InsufficientFunds,
     /// The sender account deploying the module does not exist.
     #[error("sender account {} does not exist", 0.0)]
     SenderDoesNotExist(#[from] AccountMissing),
-    /// The module version is not supported.
-    #[error("wasm version {0} is not supported")]
-    UnsupportedModuleVersion(WasmVersion),
     /// The module has already been deployed.
     #[error("module with reference {:?} already exists", 0)]
     DuplicateModule(ModuleReference),
+    /// The module version is not supported.
+    #[error("wasm version {0} is not supported")]
+    UnsupportedModuleVersion(WasmVersion),
 }
+
+/// An error that can occur while loading a smart contract module.
+#[derive(Debug, Error)]
+pub enum ModuleLoadError {
+    /// Failed to read the module file.
+    #[error("could not read the file due to: {0}")]
+    ReadFileError(#[from] std::io::Error),
+    /// The module version is not supported.
+    #[error("wasm version {0} is not supported")]
+    UnsupportedModuleVersion(WasmVersion),
+    /// The module provided is not valid.
+    #[error("module is invalid due to: {0}")]
+    InvalidModule(#[from] InvalidModuleError),
+}
+
+/// The error produced when trying to load or deploy an invalid smart contract
+/// module.
+#[derive(Debug, Error)]
+#[error("The module is invalid due to: {0}")]
+pub struct InvalidModuleError(pub(crate) anyhow::Error);
 
 /// Represents a successful initialization of a contract.
 #[derive(Debug)]
