@@ -188,7 +188,12 @@ impl Chain {
     pub fn module_load_v1_raw(
         module_path: impl AsRef<Path>,
     ) -> Result<WasmModule, ModuleLoadError> {
-        let file_contents = std::fs::read(module_path)?;
+        let module_path = module_path.as_ref();
+        let file_contents =
+            std::fs::read(module_path).map_err(|e| ModuleLoadError::ReadFileError {
+                path:  module_path.to_path_buf(),
+                error: e,
+            })?;
         Ok(WasmModule {
             version: WasmVersion::V1,
             source:  ModuleSource::from(file_contents),
@@ -199,7 +204,12 @@ impl Chain {
     /// i.e. **including** the prefix of 4 version bytes and 4 module length
     /// bytes.
     pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, ModuleLoadError> {
-        let file_contents = std::fs::read(module_path)?;
+        let module_path = module_path.as_ref();
+        let file_contents =
+            std::fs::read(module_path).map_err(|e| ModuleLoadError::ReadFileError {
+                path:  module_path.to_path_buf(),
+                error: e,
+            })?;
         let mut cursor = std::io::Cursor::new(file_contents);
         let module: WasmModule =
             common::from_bytes(&mut cursor).map_err(|e| InvalidModuleError(e))?;

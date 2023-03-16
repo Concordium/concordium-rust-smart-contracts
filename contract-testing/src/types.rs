@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use thiserror::Error;
 
 use concordium_base::{
@@ -184,8 +184,11 @@ pub enum ModuleDeployErrorKind {
 #[derive(Debug, Error)]
 pub enum ModuleLoadError {
     /// Failed to read the module file.
-    #[error("could not read the file due to: {0}")]
-    ReadFileError(#[from] std::io::Error),
+    #[error("could not read the file '{path}' due to: {error}")]
+    ReadFileError {
+        path:  PathBuf,
+        error: std::io::Error,
+    },
     /// The module version is not supported.
     #[error("wasm version {0} is not supported")]
     UnsupportedModuleVersion(WasmVersion),
