@@ -49,7 +49,7 @@ impl EntrypointInvocationHandler {
                                                          * immutable references. */
             modules:            chain.modules.clone(),
             contracts:          chain.contracts.clone(),
-            slot_time:          chain.slot_time,
+            block_time:         chain.block_time,
             euro_per_energy:    chain.euro_per_energy,
             micro_ccd_per_euro: chain.micro_ccd_per_euro,
         };
@@ -188,7 +188,7 @@ impl EntrypointInvocationHandler {
             entrypoint: entrypoint.to_owned(),
             common:     v0::ReceiveContext {
                 metadata: ChainMetadata {
-                    slot_time: self.slot_time,
+                    slot_time: self.block_time,
                 },
                 invoker,
                 self_address: contract_address,

@@ -28,9 +28,9 @@ pub struct ContractModule {
 /// creating accounts, deploying modules, initializing contract, updating
 /// contracts and invoking contracts.
 pub struct Chain {
-    /// The slot time viewable inside the smart contracts.
+    /// The block time viewable inside the smart contracts.
     /// Defaults to `0`.
-    pub slot_time:           SlotTime,
+    pub block_time:          SlotTime,
     /// MicroCCD per Euro ratio.
     pub micro_ccd_per_euro:  ExchangeRate,
     /// Euro per Energy ratio.

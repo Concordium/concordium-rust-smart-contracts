@@ -27,7 +27,7 @@ pub(crate) struct EntrypointInvocationHandler {
     pub(super) accounts:           BTreeMap<AccountAddress, Account>,
     pub(super) modules:            BTreeMap<ModuleReference, ContractModule>,
     pub(super) contracts:          BTreeMap<ContractAddress, Contract>,
-    pub(super) slot_time:          SlotTime,
+    pub(super) block_time:          SlotTime,
     pub(super) euro_per_energy:    ExchangeRate,
     pub(super) micro_ccd_per_euro: ExchangeRate,
 }

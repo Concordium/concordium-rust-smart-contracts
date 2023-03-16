@@ -22,12 +22,12 @@ impl Chain {
     /// Create a new [`Self`] where all the configurable parameters are
     /// provided.
     pub fn new_with_time_and_rates(
-        slot_time: SlotTime,
+        block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
         euro_per_energy: ExchangeRate,
     ) -> Self {
         Self {
-            slot_time,
+            block_time,
             micro_ccd_per_euro,
             euro_per_energy,
             accounts: BTreeMap::new(),
@@ -37,18 +37,18 @@ impl Chain {
         }
     }
 
-    /// Create a new [`Self`] with a specified `slot_time` where
+    /// Create a new [`Self`] with a specified `block_time` where
     ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
-    pub fn new_with_time(slot_time: SlotTime) -> Self {
+    pub fn new_with_time(block_time: SlotTime) -> Self {
         Self {
-            slot_time,
+            block_time,
             ..Self::new()
         }
     }
 
     /// Create a new [`Self`] where
-    ///  - `slot_time` defaults to `0`,
+    ///  - `block_time` defaults to `0`,
     ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new() -> Self {
@@ -361,7 +361,7 @@ impl Chain {
         // Construct the context.
         let init_ctx = v0::InitContext {
             metadata:        ChainMetadata {
-                slot_time: self.slot_time,
+                slot_time: self.block_time,
             },
             init_origin:     sender,
             sender_policies: account_info.policies.clone(),
