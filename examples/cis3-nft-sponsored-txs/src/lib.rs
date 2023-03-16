@@ -770,65 +770,18 @@ fn contract_transfer<S: HasStateApi>(
     Ok(())
 }
 
-/// Helper function to calculate the message hash used in the permit function.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - The message was intended for a different contract.
-/// - The message was intended for a different `entry_point`.
-/// - The message is expired.
-
+/// Helper function that can be invoked to serializ the `PermitMessage`.
 #[receive(
     contract = "cis3_nft",
-    name = "calculateMessageHash",
+    name = "serializationHelper",
     parameter = "PermitMessage",
-    return_value = "[u8;32]",
-    crypto_primitives,
     mutable
 )]
-fn contract_calculate_message_hash<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
+fn contract_serialization_helper<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
     _host: &mut impl HasHost<State<S>, StateApiType = S>,
-    crypto_primitives: &impl HasCryptoPrimitives,
-) -> ContractResult<[u8; 32]> {
-    // Parse the parameter.
-    let param: PermitMessage = ctx.parameter_cursor().get()?;
-
-    // Check that the message was intended for this contract.
-    ensure_eq!(
-        param.contract_address,
-        ctx.self_address(),
-        CustomContractError::WrongContract.into()
-    );
-
-    // Check message is not expired.
-    ensure!(param.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
-
-    let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&param)).0;
-
-    match param.payload {
-        // Transfer the tokens.
-        PermitPayload::Transfer(_) => {
-            // Check that the message was intended for this `entry_point`.
-            ensure_eq!(
-                param.entry_point,
-                OwnedEntrypointName::new_unchecked("contract_transfer".into()),
-                CustomContractError::WrongEntryPoint.into()
-            );
-        }
-        // Update the operator.
-        PermitPayload::UpdateOperator(_) => {
-            // Check that the message was intended for this `entry_point`.
-            ensure_eq!(
-                param.entry_point,
-                OwnedEntrypointName::new_unchecked("contract_update_operator".into()),
-                CustomContractError::WrongEntryPoint.into()
-            );
-        }
-    }
-
-    // Return the message hash.
-    Ok(message_hash)
+) -> ContractResult<()> {
+    Ok(())
 }
 
 /// Verify an ed25519 signature and allow the transfer of tokens or update of an
@@ -893,7 +846,7 @@ fn contract_permit<S: HasStateApi>(
         .public_key_registry
         .entry(param.signer)
         .occupied_or(CustomContractError::NoPublicKey)?;
-    // bump nonce
+    // Bump nonce.
     entry.1 += 1;
     // Get the public key and the current nonce.
     let public_key = entry.0;
@@ -916,8 +869,19 @@ fn contract_permit<S: HasStateApi>(
         CustomContractError::Expired.into()
     );
 
+    let zeros: Vec<u8> = Vec::from([0, 0, 0, 0, 0, 0, 0, 0]);
+
     // Calculate the message hash.
-    let message_hash = crypto_primitives.hash_sha2_256(&to_bytes(&param.message)).0;
+    let message_hash = crypto_primitives
+        .hash_sha2_256(
+            &[
+                to_bytes(&param.signer),
+                zeros,
+                hex::encode(to_bytes(&param.message)).as_bytes().to_vec(),
+            ]
+            .concat(),
+        )
+        .0;
 
     // Check signature.
     ensure!(
@@ -1281,8 +1245,8 @@ mod tests {
     const TOKEN_3: ContractTokenId = TokenIdU32(44);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        45, 221, 251, 227, 171, 65, 231, 45, 5, 88, 49, 154, 89, 113, 164, 62, 176, 167, 208, 11,
-        136, 146, 73, 188, 140, 154, 133, 92, 225, 244, 201, 9,
+        152, 217, 249, 210, 0, 59, 49, 241, 216, 183, 234, 114, 190, 177, 54, 200, 163, 77, 20,
+        235, 2, 178, 107, 11, 31, 37, 153, 68, 179, 56, 214, 14,
     ]);
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
@@ -1290,16 +1254,16 @@ mod tests {
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        175, 237, 67, 223, 126, 168, 153, 15, 0, 38, 204, 50, 160, 106, 44, 239, 99, 181, 140, 31,
-        129, 238, 67, 245, 242, 113, 36, 20, 44, 220, 132, 56, 90, 145, 195, 31, 190, 120, 191,
-        204, 45, 62, 210, 9, 158, 25, 131, 105, 237, 72, 88, 135, 100, 132, 43, 54, 183, 241, 56,
-        255, 66, 15, 102, 8,
+        41, 30, 172, 147, 94, 2, 134, 188, 182, 138, 207, 11, 169, 95, 87, 131, 77, 182, 122, 106,
+        202, 179, 50, 213, 176, 68, 235, 175, 10, 158, 195, 107, 251, 90, 104, 98, 26, 127, 194,
+        79, 241, 120, 176, 17, 241, 154, 15, 94, 36, 39, 26, 123, 72, 52, 192, 129, 246, 211, 36,
+        72, 57, 15, 212, 12,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        234, 87, 113, 57, 118, 71, 125, 18, 165, 76, 23, 0, 242, 68, 70, 197, 197, 162, 127, 159,
-        139, 241, 144, 38, 20, 113, 137, 229, 182, 104, 160, 173, 92, 242, 254, 24, 208, 166, 57,
-        23, 84, 53, 122, 57, 180, 112, 85, 178, 182, 132, 44, 77, 19, 255, 176, 22, 131, 89, 14, 6,
-        209, 145, 27, 0,
+        116, 227, 129, 72, 55, 43, 24, 163, 39, 208, 34, 87, 141, 46, 215, 176, 59, 176, 240, 136,
+        83, 202, 122, 127, 193, 94, 148, 82, 164, 233, 78, 231, 217, 207, 244, 47, 218, 118, 43,
+        234, 56, 231, 197, 114, 6, 144, 163, 118, 104, 62, 218, 111, 238, 48, 175, 100, 82, 86, 19,
+        237, 54, 144, 175, 2,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
