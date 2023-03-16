@@ -22,6 +22,8 @@
 - Implement `Default` for `Parameter`.
 - Add `StateBuilder::new_state_container` method which allows contract developers to use
   their own container types atop blockchain storage
+- Move the type `AccountBalance` to `concordium-contracts-common`.
+
 
 
 ## concordium-std 6.0.1 (2023-02-28)

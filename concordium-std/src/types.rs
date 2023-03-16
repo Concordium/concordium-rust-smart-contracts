@@ -1,9 +1,7 @@
-use concordium_contracts_common::{Amount, ExchangeRate};
-
 use crate::{
-    cell::UnsafeCell, cmp::max, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial,
-    Vec,
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
+use concordium_contracts_common::{AccountBalance, Amount, ExchangeRate};
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -584,43 +582,8 @@ pub struct ExternReturnValue {
     pub(crate) current_position: u32,
 }
 
-/// The current public balances of an account.
-#[derive(Debug, Copy, Clone)]
-pub struct AccountBalance {
-    /// The total balance of the account. Note that part of this balance might
-    /// be staked and/or locked in scheduled transfers.
-    pub total:  Amount,
-    /// The current staked amount of the account. This amount is used for
-    /// staking.
-    pub staked: Amount,
-    /// The current amount locked in releases that resulted from transfers with
-    /// schedule. A locked amount can still be used for staking.
-    pub locked: Amount,
-}
-
-impl AccountBalance {
-    /// Construct a new account balance, ensuring that both the staked amount
-    /// and the locked amount is smaller than or equal to the total balance.
-    pub fn new(total: Amount, staked: Amount, locked: Amount) -> Option<Self> {
-        if total < staked || total < locked {
-            None
-        } else {
-            Some(Self {
-                total,
-                staked,
-                locked,
-            })
-        }
-    }
-
-    /// The current available balance of the account. This is the amount
-    /// an account currently have available for transfering and is not
-    /// staked or locked in releases by scheduled transfers.
-    pub fn available(&self) -> Amount { self.total - max(self.locked, self.staked) }
-}
-
 /// The current exchange rates.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExchangeRates {
     /// Euro per NRG exchange rate.
     pub euro_per_energy:    ExchangeRate,
@@ -651,7 +614,7 @@ impl ExchangeRates {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Errors that may occur when invoking a contract entrypoint.
 pub enum CallContractError<ReturnValueType> {
     /// Amount that was to be transferred is not available to the sender.
@@ -677,7 +640,7 @@ pub enum CallContractError<ReturnValueType> {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Errors that may occur when transferring CCD to an account.
 pub enum TransferError {
     /// Amount that was to be transferred is not available to the sender.
@@ -687,7 +650,7 @@ pub enum TransferError {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Errors that may occur when upgrading the smart contract module.
 pub enum UpgradeError {
     /// Provided module does not exist.
@@ -700,12 +663,12 @@ pub enum UpgradeError {
 
 /// Error for querying the balance of an account.
 /// No account found for the provided account address.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct QueryAccountBalanceError;
 
 /// Error for querying the balance of a smart contract instance.
 /// No instance found for the provided contract address.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct QueryContractBalanceError;
 
 /// A wrapper around [`Result`] that fixes the error variant to
@@ -777,7 +740,7 @@ pub enum LogError {
 
 /// Error triggered when a non-zero amount of CCD is sent to a contract
 /// init or receive function that is not marked as `payable`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NotPayableError;
 
 /// An error message, signalling rejection of a smart contract invocation.
