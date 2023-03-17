@@ -23,12 +23,23 @@ pub(crate) struct InvokeEntrypointResult {
 
 /// A type that supports invoking a contract entrypoint.
 pub(crate) struct EntrypointInvocationHandler {
+    /// The changeset which keeps track of changes to accounts, modules, and
+    /// contracts that occur during an invocation.
     pub(super) changeset:          ChangeSet,
+    /// The accounts of the chain. These are currently clones and only used as a
+    /// reference. Any changes are saved to the changeset.
     pub(super) accounts:           BTreeMap<AccountAddress, Account>,
+    /// The modules of the chain. These are currently clones and only used as a
+    /// reference. Any changes are saved to the changeset.
     pub(super) modules:            BTreeMap<ModuleReference, ContractModule>,
+    /// The contracts of the chain. These are currently clones and only used as
+    /// a reference. Any changes are saved to the changeset.
     pub(super) contracts:          BTreeMap<ContractAddress, Contract>,
+    /// The current block time.
     pub(super) block_time:         SlotTime,
+    /// The euro per energy exchange rate.
     pub(super) euro_per_energy:    ExchangeRate,
+    /// The mCCD per euro exchange rate.
     pub(super) micro_ccd_per_euro: ExchangeRate,
 }
 
@@ -104,7 +115,7 @@ pub(super) struct InvocationData<'a> {
 /// A positive or negative delta in for an [`Amount`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AmountDelta {
-    /// A posittive delta.
+    /// A positive delta.
     Positive(Amount),
     /// A negative delta.
     Negative(Amount),

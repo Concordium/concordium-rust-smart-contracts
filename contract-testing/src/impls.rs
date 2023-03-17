@@ -74,7 +74,9 @@ impl Chain {
         // Ensure sender account exists.
         if !self.account_exists(sender) {
             return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::SenderDoesNotExist(AccountMissing(sender)),
+                kind:            ModuleDeployErrorKind::SenderDoesNotExist(AccountDoesNotExist {
+                    address: sender,
+                }),
                 energy_used:     0.into(),
                 transaction_fee: Amount::zero(),
             });
@@ -241,7 +243,7 @@ impl Chain {
         let mut remaining_energy = energy_reserved;
         if !self.account_exists(sender) {
             return Err(self.from_init_error_kind(
-                ContractInitErrorKind::SenderDoesNotExist(AccountMissing(sender)),
+                ContractInitErrorKind::SenderDoesNotExist(AccountDoesNotExist { address: sender }),
                 energy_reserved,
                 remaining_energy,
             ));
@@ -333,6 +335,8 @@ impl Chain {
             sender_policies: account_info.policies.clone(),
         };
         // Initialize contract
+        // We create an empty loader as no caching is used in this testing library
+        // presently, so the loader is not used.
         let mut loader = v1::trie::Loader::new(&[][..]);
 
         let energy_given_to_interpreter = to_interpreter_energy(*remaining_energy);
@@ -431,7 +435,7 @@ impl Chain {
                 remaining_energy.tick_energy(energy_used_in_interpreter)?;
                 Err(ContractInitErrorKind::ExecutionError {
                     failure_kind: InitFailure::Trap {
-                        error: TrapError(error),
+                        error: ExecutionError(error),
                     },
                 })
             }
@@ -441,7 +445,11 @@ impl Chain {
                     failure_kind: InitFailure::OutOfEnergy,
                 })
             }
-            Err(e) => panic!("Internal error: init failed with interpreter error: {}", e),
+            Err(err) => Err(ContractInitErrorKind::ExecutionError {
+                failure_kind: InitFailure::Trap {
+                    error: ExecutionError(err),
+                },
+            }),
         }
     }
 
@@ -570,9 +578,9 @@ impl Chain {
             return Err(ContractInvocationError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
-                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(AccountMissing(
-                    invoker,
-                )),
+                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist { address: invoker },
+                ),
             });
         }
         // Ensure the sender exists.
@@ -689,9 +697,9 @@ impl Chain {
             return Err(ContractInvocationError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
-                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(AccountMissing(
-                    invoker,
-                )),
+                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist { address: invoker },
+                ),
             });
         }
         // Ensure the sender exists.
@@ -754,12 +762,8 @@ impl Chain {
         self.accounts.insert(account, account_info)
     }
 
-    /// Create a contract address.
-    ///
-    /// It will have an index one above the previously highest contract index.
-    ///
-    /// Next call to `contract_init` will skip this address.
-    pub fn create_contract_address(&mut self) -> ContractAddress {
+    /// Create a contract address by giving it the next available index.
+    fn create_contract_address(&mut self) -> ContractAddress {
         let index = self.next_contract_index;
         let subindex = 0;
         self.next_contract_index += 1;
@@ -782,7 +786,7 @@ impl Chain {
     }
 
     /// Helper method for looking up part of the state of a smart contract,
-    /// which is a trie.
+    /// which is a key-value store.
     pub fn contract_state_lookup(&self, address: ContractAddress, key: &[u8]) -> Option<Vec<u8>> {
         let mut loader = v1::trie::Loader::new(&[][..]);
         self.contracts.get(&address)?.state.lookup(&mut loader, key)
@@ -793,24 +797,28 @@ impl Chain {
     fn contract_module(
         &self,
         module_ref: ModuleReference,
-    ) -> Result<ContractModule, ModuleMissing> {
-        let module = self
-            .modules
-            .get(&module_ref)
-            .ok_or(ModuleMissing(module_ref))?;
+    ) -> Result<ContractModule, ModuleDoesNotExist> {
+        let module = self.modules.get(&module_ref).ok_or(ModuleDoesNotExist {
+            module_reference: module_ref,
+        })?;
         Ok(module.clone())
     }
 
     /// Returns an immutable reference to an [`Account`].
-    pub fn account(&self, address: AccountAddress) -> Result<&Account, AccountMissing> {
-        self.accounts.get(&address).ok_or(AccountMissing(address))
+    pub fn account(&self, address: AccountAddress) -> Result<&Account, AccountDoesNotExist> {
+        self.accounts
+            .get(&address)
+            .ok_or(AccountDoesNotExist { address })
     }
 
     /// Returns a mutable reference to [`Account`].
-    fn account_mut(&mut self, address: AccountAddress) -> Result<&mut Account, AccountMissing> {
+    fn account_mut(
+        &mut self,
+        address: AccountAddress,
+    ) -> Result<&mut Account, AccountDoesNotExist> {
         self.accounts
             .get_mut(&address)
-            .ok_or(AccountMissing(address))
+            .ok_or(AccountDoesNotExist { address })
     }
 
     /// Check whether an [`Account`] exists.
@@ -823,10 +831,10 @@ impl Chain {
         self.contracts.contains_key(&address)
     }
 
-    /// Check whether the [`Address`] exists.
+    /// Check whether an object with the [`Address`] exists.
     ///
-    /// I.e. if it is an account, whether the account exists,
-    /// and if it is a contract, whether the contract exists.
+    /// That is, if it is an account address, whether the account exists,
+    /// and if it is a contract address, whether the contract exists.
     fn address_exists(&self, address: Address) -> bool {
         match address {
             Address::Account(acc) => self.account_exists(acc),
@@ -951,22 +959,20 @@ impl Account {
 }
 
 impl ContractInvocationSuccess {
-    /// Get a list of all transfers that were made from contracts to accounts.
-    pub fn transfers(&self) -> Vec<Transfer> {
-        self.chain_events
-            .iter()
-            .filter_map(|e| {
-                if let ChainEvent::Transferred { from, amount, to } = e {
-                    Some(Transfer {
-                        from:   *from,
-                        amount: *amount,
-                        to:     *to,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect()
+    /// Get an iterator of all transfers that were made from contracts to
+    /// accounts.
+    pub fn transfers(&self) -> impl Iterator<Item = Transfer> + '_ {
+        self.chain_events.iter().filter_map(|e| {
+            if let ChainEvent::Transferred { from, amount, to } = e {
+                Some(Transfer {
+                    from:   *from,
+                    amount: *amount,
+                    to:     *to,
+                })
+            } else {
+                None
+            }
+        })
     }
 
     /// Get the chain events grouped by which contract they originated from.
@@ -1014,7 +1020,7 @@ pub(crate) fn from_interpreter_energy(interpreter_energy: InterpreterEnergy) -> 
     Energy::from(interpreter_energy.energy / 1000)
 }
 
-/// Calculate the energy energy for looking up a [`ContractModule`].
+/// Calculate the energy for looking up a [`ContractModule`].
 pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
     // The ratio is from Concordium/Cost.hs::lookupModule
     Energy::from(module.size / 50)
@@ -1022,7 +1028,6 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 
 /// Calculate the microCCD(mCCD) cost of energy(NRG) using the two exchange
 /// rates provided.
-// TODO: Find a way to make this parse the doc tests
 // To find the mCCD/NRG exchange rate:
 //
 //  euro     mCCD   euro * mCCD   mCCD

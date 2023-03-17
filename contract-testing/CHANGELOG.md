@@ -1,5 +1,5 @@
 # Changelog
 
-## Unreleased changes
+## 1.0.0
 
-- First version of the library.
+- The initial release of the library.

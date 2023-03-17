@@ -4,13 +4,13 @@ use concordium_base::base::Energy;
 
 // Energy constants from Cost.hs in concordium-base.
 
-/// Cost of querying the account balance from a within smart contract instance.
+/// Cost of querying the account balance from within a smart contract instance.
 pub(crate) const CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST: Energy = Energy { energy: 200 };
 
-/// Cost of querying the contract balance from a within smart contract instance.
+/// Cost of querying the contract balance from within a smart contract instance.
 pub(crate) const CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST: Energy = Energy { energy: 200 };
 
-/// Cost of querying the current exchange rates from a within smart contract
+/// Cost of querying the current exchange rates from within a smart contract
 /// instance.
 pub(crate) const CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST: Energy = Energy { energy: 100 };
 

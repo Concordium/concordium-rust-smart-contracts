@@ -24,9 +24,10 @@ pub struct ContractModule {
     pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
-/// Represents the block chain and supports a number of operations, including
+/// Represents the blockchain and supports a number of operations, including
 /// creating accounts, deploying modules, initializing contract, updating
 /// contracts and invoking contracts.
+#[derive(Debug)]
 pub struct Chain {
     /// The block time viewable inside the smart contracts.
     /// Defaults to `0`.
@@ -46,7 +47,7 @@ pub struct Chain {
 }
 
 /// A smart contract instance.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Contract {
     /// The module which contains this contract.
     pub module_reference: ModuleReference,
@@ -65,7 +66,7 @@ pub struct Contract {
 pub struct TestPolicies(pub Vec<u8>);
 
 /// An account.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Account {
     /// The account balance.
     pub balance:         AccountBalance,
@@ -124,7 +125,7 @@ pub enum ChainEvent {
     },
 }
 
-/// A transfer from an contract to an account.
+/// A transfer from a contract to an account.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Transfer {
     /// The sender contract.
@@ -171,9 +172,9 @@ pub enum ModuleDeployErrorKind {
     InsufficientFunds,
     /// The sender account deploying the module does not exist.
     #[error("sender account {} does not exist", 0.0)]
-    SenderDoesNotExist(#[from] AccountMissing),
+    SenderDoesNotExist(#[from] AccountDoesNotExist),
     /// The module has already been deployed.
-    #[error("module with reference {:?} already exists", 0)]
+    #[error("module with reference {0} already exists")]
     DuplicateModule(ModuleReference),
     /// The module version is not supported.
     #[error("wasm version {0} is not supported")]
@@ -231,26 +232,26 @@ pub struct ContractInitError {
 /// Types of errors that can occur in [`Chain::contract_init`].
 #[derive(Debug, Error)]
 pub enum ContractInitErrorKind {
-    /// Initialization failed for a reason that also exists on the chain.
-    #[error("failed due to a valid chain error: {:?}", 0)]
+    /// Initialization during execution.
+    #[error("Failed with an execution error: {failure_kind:?}")]
     ExecutionError {
         /// The reason for why the contract initialization failed.
         failure_kind: InitFailure,
     },
     /// Ran out of energy.
-    #[error("ran out of energy")]
+    #[error("Ran out of energy")]
     OutOfEnergy,
     /// Module has not been deployed in the test environment.
-    #[error("module {:?} does not exist", 0.0)]
-    ModuleDoesNotExist(#[from] ModuleMissing),
+    #[error("{0}")]
+    ModuleDoesNotExist(#[from] ModuleDoesNotExist),
     /// The sender account has not been created in test environment.
-    #[error("sender account {} does not exist", 0.0)]
-    SenderDoesNotExist(#[from] AccountMissing),
+    #[error("Sender missing: {0}")]
+    SenderDoesNotExist(#[from] AccountDoesNotExist),
     /// The invoker account does not have enough funds to pay for the energy.
-    #[error("invoker does not have enough funds to pay for the energy")]
+    #[error("Invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
     /// The parameter is too large.
-    #[error("the provided parameter exceeds the max size allowed")]
+    #[error("The provided parameter exceeds the maximum size allowed")]
     ParameterTooLarge,
 }
 
@@ -265,18 +266,17 @@ pub enum InitFailure {
         return_value: ReturnValue,
     },
     /// The contract trapped.
-    Trap { error: TrapError },
+    Trap { error: ExecutionError },
     /// The contract ran out of energy.
     OutOfEnergy,
 }
 
-/// The error produced when a contract traps.
+/// An error that occured while executing a contract init or receive function.
 #[derive(Debug, Error)]
-#[error("The contract trapped due to: {0}")]
-pub struct TrapError(pub(crate) anyhow::Error);
+#[error("The contract execution halted due to: {0}")]
+pub struct ExecutionError(pub(crate) anyhow::Error);
 
 /// Represents a successful contract update (or invocation).
-// TODO: Consider adding function to aggregate all logs from the host_events.
 #[derive(Debug)]
 pub struct ContractInvocationSuccess {
     /// Host events that occured. This includes interrupts, resumes, and
@@ -313,33 +313,33 @@ pub struct ContractInvocationError {
 /// [`Chain::contract_invoke`].
 #[derive(Debug, Error)]
 pub enum ContractInvocationErrorKind {
-    /// Update failed for a reason that also exists on the chain.
-    #[error("failed during execution")]
+    /// Invocation failed during execution.
+    #[error("Failed during execution: {failure_kind:?}")]
     ExecutionError { failure_kind: v1::InvokeFailure },
     /// Ran out of energy.
-    #[error("ran out of energy")]
+    #[error("Ran out of energy")]
     OutOfEnergy,
     /// Module has not been deployed in test environment.
-    #[error("module {:?} does not exist", 0.0)]
-    ModuleDoesNotExist(#[from] ModuleMissing),
+    #[error("{0}")]
+    ModuleDoesNotExist(#[from] ModuleDoesNotExist),
     /// Contract instance has not been initialized in the test environment.
-    #[error("instance {} does not exist", 0.0)]
-    InstanceDoesNotExist(#[from] ContractInstanceMissing),
+    #[error("{0}")]
+    ContractDoesNotExist(#[from] ContractDoesNotExist),
     /// Entrypoint does not exist and neither does the fallback entrypoint.
-    #[error("entrypoint does not exist")]
+    #[error("{0}")]
     EntrypointDoesNotExist(#[from] EntrypointDoesNotExist),
     /// The invoker account has not been created in the test environment.
-    #[error("invoker account {} does not exist", 0.0)]
-    InvokerDoesNotExist(#[from] AccountMissing),
+    #[error("Invoker missing: {0}")]
+    InvokerDoesNotExist(#[from] AccountDoesNotExist),
     /// The sender does not exist in the test environment.
-    #[error("sender {0} does not exist")]
+    #[error("Sender missing: the object with address '{0}' does not exist")]
     SenderDoesNotExist(Address),
     /// The invoker account does not have enough funds to pay for the energy and
     /// amount sent.
-    #[error("invoker does not have enough funds to pay for the energy")]
+    #[error("Invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
     /// The parameter is too large.
-    #[error("the provided parameter exceeds the max size allowed")]
+    #[error("The provided parameter exceeds the maximum size allowed")]
     ParameterTooLarge,
 }
 
@@ -361,20 +361,32 @@ pub(crate) enum TransferError {
 
 /// The entrypoint does not exist.
 #[derive(PartialEq, Eq, Debug, Error)]
-#[error("The entrypoint '{0}' does not exist.")]
-pub struct EntrypointDoesNotExist(pub OwnedEntrypointName);
+#[error("Entrypoint '{entrypoint}' does not exist.")]
+pub struct EntrypointDoesNotExist {
+    /// The missing entrypoint.
+    pub entrypoint: OwnedEntrypointName,
+}
 
 /// The contract module does not exist.
 #[derive(Debug, Error)]
-#[error("Module {:?} does not exist.", 0)]
-pub struct ModuleMissing(pub ModuleReference);
+#[error("Module '{module_reference}' does not exist.")]
+pub struct ModuleDoesNotExist {
+    /// The reference of the missing module.
+    pub module_reference: ModuleReference,
+}
 
 /// The contract instance does not exist.
 #[derive(Debug, Error)]
-#[error("Contract instance {0} does not exist.")]
-pub struct ContractInstanceMissing(pub ContractAddress);
+#[error("Contract instance '{address}' does not exist.")]
+pub struct ContractDoesNotExist {
+    /// The address of the missing contract.
+    pub address: ContractAddress,
+}
 
 /// The account does not exist.
 #[derive(Debug, Error)]
-#[error("Account {0} does not exist.")]
-pub struct AccountMissing(pub AccountAddress);
+#[error("Account '{address}' does not exist.")]
+pub struct AccountDoesNotExist {
+    /// The address of the missing account.
+    pub address: AccountAddress,
+}
