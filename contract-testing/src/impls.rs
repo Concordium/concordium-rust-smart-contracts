@@ -422,7 +422,7 @@ impl Chain {
                 })
             }
             Ok(v1::InitResult::Trap {
-                error: _, // TODO: Should we forward this to the user?
+                error,
                 remaining_energy: remaining_interpreter_energy,
             }) => {
                 let energy_used_in_interpreter = from_interpreter_energy(
@@ -430,7 +430,9 @@ impl Chain {
                 );
                 remaining_energy.tick_energy(energy_used_in_interpreter)?;
                 Err(ContractInitErrorKind::ExecutionError {
-                    failure_kind: InitFailure::Trap,
+                    failure_kind: InitFailure::Trap {
+                        error: TrapError(error),
+                    },
                 })
             }
             Ok(v1::InitResult::OutOfEnergy) => {

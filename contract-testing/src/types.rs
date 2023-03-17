@@ -265,10 +265,15 @@ pub enum InitFailure {
         return_value: ReturnValue,
     },
     /// The contract trapped.
-    Trap,
+    Trap { error: TrapError },
     /// The contract ran out of energy.
     OutOfEnergy,
 }
+
+/// The error produced when a contract traps.
+#[derive(Debug, Error)]
+#[error("The contract trapped due to: {0}")]
+pub struct TrapError(pub(crate) anyhow::Error);
 
 /// Represents a successful contract update (or invocation).
 // TODO: Consider adding function to aggregate all logs from the host_events.
