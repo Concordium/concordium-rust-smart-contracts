@@ -770,16 +770,12 @@ fn contract_transfer<S: HasStateApi>(
     Ok(())
 }
 
-/// Helper function that can be invoked to serializ the `PermitMessage`.
-#[receive(
-    contract = "cis3_nft",
-    name = "serializationHelper",
-    parameter = "PermitMessage",
-    mutable
-)]
+/// Helper function that can be invoked at the front-end to serialize the
+/// `PermitMessage` before signing it in the wallet.
+#[receive(contract = "cis3_nft", name = "serializationHelper", parameter = "PermitMessage")]
 fn contract_serialization_helper<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
-    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     Ok(())
 }
