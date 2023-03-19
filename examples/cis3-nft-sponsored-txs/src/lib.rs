@@ -294,6 +294,18 @@ pub struct PermitParam {
     message:   PermitMessage,
 }
 
+#[derive(Serialize)]
+pub struct PermitParamPartial {
+    /// Signature/s. The CIS3 standard supports multi-sig accounts but because
+    /// the `public_key_registry` in this contract maps one public key to one
+    /// account, only one signature has to be provided for this contract. This
+    /// signature has to be at the key 0 in both maps below.
+    #[concordium(size_length = 1)]
+    signature: BTreeMap<u8, BTreeMap<u8, SignatureEd25519>>,
+    /// Account that created the above signature.
+    signer:    AccountAddress,
+}
+
 /// The custom errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 enum CustomContractError {
@@ -820,7 +832,8 @@ fn contract_permit<S: HasStateApi>(
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
     // Parse the parameter.
-    let param: PermitParam = ctx.parameter_cursor().get()?;
+    let mut cursor = ctx.parameter_cursor();
+    let param: PermitParamPartial = cursor.get()?;
 
     ensure!(
         param.signature.len() == 1
@@ -849,35 +862,31 @@ fn contract_permit<S: HasStateApi>(
     let nonce = entry.1;
     drop(entry);
 
+    let mut message_bytes = Vec::with_capacity((cursor.size() - cursor.cursor_position()) as usize);
+    unsafe { message_bytes.set_len(message_bytes.capacity()) };
+    cursor.read_exact(&mut message_bytes)?;
+    let message: PermitMessage = Cursor::new(&message_bytes).get()?;
+
     // Check the nonce to prevent replay attacks.
-    ensure_eq!(param.message.nonce, nonce, CustomContractError::NonceMismatch.into());
+    ensure_eq!(message.nonce, nonce, CustomContractError::NonceMismatch.into());
 
     // Check that the signature was intended for this contract.
     ensure_eq!(
-        param.message.contract_address,
+        message.contract_address,
         ctx.self_address(),
         CustomContractError::WrongContract.into()
     );
 
     // Check signature is not expired.
-    ensure!(
-        param.message.timestamp > ctx.metadata().slot_time(),
-        CustomContractError::Expired.into()
-    );
+    ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
-    let zeros: Vec<u8> = Vec::from([0, 0, 0, 0, 0, 0, 0, 0]);
-
+    let mut msg = Vec::with_capacity(8 + 32 + 2 * message_bytes.len());
+    unsafe { msg.set_len(msg.capacity()) };
+    msg[0..32].copy_from_slice(param.signer.as_ref());
+    msg[32..40].copy_from_slice(&[0u8; 8]);
+    hex::encode_to_slice(message_bytes, &mut msg[40..]).unwrap_abort();
     // Calculate the message hash.
-    let message_hash = crypto_primitives
-        .hash_sha2_256(
-            &[
-                to_bytes(&param.signer),
-                zeros,
-                hex::encode(to_bytes(&param.message)).as_bytes().to_vec(),
-            ]
-            .concat(),
-        )
-        .0;
+    let message_hash = crypto_primitives.hash_sha2_256(&msg).0;
 
     // Check signature.
     ensure!(
@@ -885,13 +894,13 @@ fn contract_permit<S: HasStateApi>(
         CustomContractError::WrongSignature.into()
     );
 
-    match param.message.payload {
+    match message.payload {
         // Transfer the tokens.
         PermitPayload::Transfer(transfer_parameter) => {
             // Check that the signature was intended for this `entry_point`.
             ensure_eq!(
-                param.message.entry_point,
-                OwnedEntrypointName::new_unchecked("contract_transfer".into()),
+                message.entry_point.as_entrypoint_name(),
+                EntrypointName::new_unchecked("contract_transfer"),
                 CustomContractError::WrongEntryPoint.into()
             );
 
@@ -910,8 +919,8 @@ fn contract_permit<S: HasStateApi>(
         PermitPayload::UpdateOperator(update_parameter) => {
             // Check that the signature was intended for this `entry_point`.
             ensure_eq!(
-                param.message.entry_point,
-                OwnedEntrypointName::new_unchecked("contract_update_operator".into()),
+                message.entry_point.as_entrypoint_name(),
+                EntrypointName::new_unchecked("contract_update_operator"),
                 CustomContractError::WrongEntryPoint.into()
             );
 
