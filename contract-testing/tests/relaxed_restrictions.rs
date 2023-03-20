@@ -16,10 +16,31 @@ use concordium_smart_contract_testing::*;
 const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
 
-/// Test the new parameter size limit.
+/// Test the new parameter size limit on both init and update.
 #[test]
 fn test_new_parameter_limit() {
-    let (mut chain, contract_address) = deploy_and_init();
+    let mut chain = Chain::new();
+    let initial_balance = Amount::from_ccd(10000);
+    chain.create_account(ACC_0, Account::new(initial_balance));
+
+    let parameter = mk_parameter(65535, 65535);
+
+    let res_deploy = chain
+        .module_deploy_v1(
+            ACC_0,
+            Chain::module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER))
+                .expect("module should exist"),
+        )
+        .expect("Deploying valid module should work");
+
+    let res_init = chain
+        .contract_init(ACC_0, Energy::from(80000), InitContractPayload {
+            mod_ref:   res_deploy.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_relax".into()),
+            param:     parameter.clone(), // Check parameter size limit on init.
+            amount:    Amount::zero(),
+        })
+        .expect("Initializing valid contract should work");
 
     chain
         .contract_update(
@@ -27,9 +48,9 @@ fn test_new_parameter_limit() {
             Address::Account(ACC_0),
             Energy::from(700000),
             UpdateContractPayload {
-                address:      contract_address,
+                address:      res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("relax.param".into()),
-                message:      mk_parameter(65535, 65535),
+                message:      parameter, // Check parameter size limit on updates.
                 amount:       Amount::zero(),
             },
         )
@@ -121,7 +142,6 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
 fn mk_parameter(internal_param_size: u16, desired_size: u32) -> OwnedParameter {
     let entrypoint = OwnedEntrypointName::new_unchecked("param-aux".into());
     let filler_size = desired_size
-        - 2 // length of the parameter itself
         - 2 // internal_param_size
         - 2 // entrypoint name len
         - 9 // entrypoint name

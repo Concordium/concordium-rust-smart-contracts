@@ -294,8 +294,8 @@ impl Chain {
             return Err(ContractInitErrorKind::InsufficientFunds);
         }
 
-        // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if payload.param.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
+        // Ensure that the parameter has a valid size.
+        if payload.param.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(ContractInitErrorKind::ParameterTooLarge);
         }
 
@@ -468,8 +468,8 @@ impl Chain {
         remaining_energy: &mut Energy,
         should_persist: bool,
     ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
-        // Ensure that the parameter has a valid size (+2 for the length of parameter).
-        if payload.message.as_ref().len() + 2 > contracts_common::constants::MAX_PARAMETER_LEN {
+        // Ensure that the parameter has a valid size.
+        if payload.message.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(self.from_invocation_error_kind(
                 ContractInvocationErrorKind::ParameterTooLarge,
                 energy_reserved,
