@@ -609,7 +609,7 @@ mod query_exchange_rates {
             .expect("Initializing valid contract should work");
 
         // Non-existent contract address.
-        let input_param = (chain.euro_per_energy, chain.micro_ccd_per_euro);
+        let input_param = (chain.euro_per_energy(), chain.micro_ccd_per_euro());
 
         let res_update = chain
             .contract_update(

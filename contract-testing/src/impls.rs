@@ -2,6 +2,7 @@ use crate::{constants, invocation::EntrypointInvocationHandler, types::*};
 use concordium_base::{
     base::{self, Energy, OutOfEnergy},
     common::{self, to_bytes},
+    constants::MAX_ALLOWED_INVOKE_ENERGY,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRate, ModuleReference, SlotTime, Timestamp,
@@ -20,12 +21,18 @@ impl Default for Chain {
 impl Chain {
     /// Create a new [`Self`] where all the configurable parameters are
     /// provided.
+    ///
+    /// Returns an error if the exchange rates provided makes one energy cost
+    /// more than `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
         euro_per_energy: ExchangeRate,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ExchangeRateError> {
+        // Ensure the exchange rates are within a valid range.
+        check_exchange_rates(euro_per_energy, micro_ccd_per_euro)?;
+
+        Ok(Self {
             block_time,
             micro_ccd_per_euro,
             euro_per_energy,
@@ -33,7 +40,7 @@ impl Chain {
             modules: BTreeMap::new(),
             contracts: BTreeMap::new(),
             next_contract_index: 0,
-        }
+        })
     }
 
     /// Create a new [`Self`] with a specified `block_time` where
@@ -48,14 +55,17 @@ impl Chain {
 
     /// Create a new [`Self`] where
     ///  - `block_time` defaults to `0`,
-    ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
+    ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
+    ///
+    /// With these exchange rates, one energy costs one microCCD.
     pub fn new() -> Self {
         Self::new_with_time_and_rates(
             Timestamp::from_timestamp_millis(0),
-            ExchangeRate::new_unchecked(147235241, 1),
+            ExchangeRate::new_unchecked(50000, 1),
             ExchangeRate::new_unchecked(1, 50000),
         )
+        .expect("Rates known to be within range.")
     }
 
     /// Deploy a smart contract module.
@@ -883,6 +893,28 @@ impl Chain {
     pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
         energy_to_amount(energy, self.euro_per_energy, self.micro_ccd_per_euro)
     }
+
+    /// Try to set the exchange rates on the chain.
+    ///
+    /// Will fail if they result in the cost of one energy being larger than
+    /// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    pub fn set_exchange_rate(
+        &mut self,
+        micro_ccd_per_euro: ExchangeRate,
+        euro_per_energy: ExchangeRate,
+    ) -> Result<(), ExchangeRateError> {
+        // Ensure the exchange rates are within a valid range.
+        check_exchange_rates(euro_per_energy, micro_ccd_per_euro)?;
+        self.micro_ccd_per_euro = micro_ccd_per_euro;
+        self.euro_per_energy = euro_per_energy;
+        Ok(())
+    }
+
+    /// Return the current microCCD per euro exchange rate.
+    pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.micro_ccd_per_euro }
+
+    /// Return the current euro per energy exchange rate.
+    pub fn euro_per_energy(&self) -> ExchangeRate { self.euro_per_energy }
 }
 
 impl TestPolicies {
@@ -1028,17 +1060,21 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 
 /// Calculate the microCCD(mCCD) cost of energy(NRG) using the two exchange
 /// rates provided.
-// To find the mCCD/NRG exchange rate:
-//
-//  euro     mCCD   euro * mCCD   mCCD
-//  ----  *  ---- = ----------- = ----
-//  NRG      euro   NRG * euro    NRG
-//
-// To convert the `energy` parameter to mCCD:
-//
-//        mCCD   NRG * mCCD
-//  NRG * ---- = ---------- = mCCD
-//        NRG       NRG
+///
+/// To find the mCCD/NRG exchange rate:
+/// ```ignore
+///  euro     mCCD   euro * mCCD   mCCD
+///  ----  *  ---- = ----------- = ----
+///  NRG      euro   NRG * euro    NRG
+/// ```
+///
+/// To convert the `energy` parameter to mCCD:
+/// ```ignore
+/// 
+///        mCCD   NRG * mCCD
+///  NRG * ---- = ---------- = mCCD
+///        NRG       NRG
+/// ```
 pub(crate) fn energy_to_amount(
     energy: Energy,
     euro_per_energy: ExchangeRate,
@@ -1050,39 +1086,66 @@ pub(crate) fn energy_to_amount(
         BigUint::from(euro_per_energy.denominator()) * micro_ccd_per_euro.denominator();
     let cost: BigUint =
         (micro_ccd_per_energy_numerator * energy.energy) / micro_ccd_per_energy_denominator;
-    let cost: u64 = u64::try_from(cost).expect("Should never overflow due to use of BigUint");
+    let cost: u64 = u64::try_from(cost).expect(
+        "Should never overflow since reasonable exchange rates are ensured when constructing the \
+         [`Chain`].",
+    );
     Amount::from_micro_ccd(cost)
+}
+
+/// Helper function that checks the validity of the exchange rates.
+///
+/// More specifically, it checks that the cost of one energy is <= `u64::MAX /
+/// MAX_ALLOWED_INVOKE_ENERGY`, which ensures that overflows won't occur.
+fn check_exchange_rates(
+    euro_per_energy: ExchangeRate,
+    micro_ccd_per_euro: ExchangeRate,
+) -> Result<(), ExchangeRateError> {
+    let micro_ccd_per_energy_numerator: BigUint =
+        BigUint::from(euro_per_energy.numerator()) * micro_ccd_per_euro.numerator();
+    let micro_ccd_per_energy_denominator: BigUint =
+        BigUint::from(euro_per_energy.denominator()) * micro_ccd_per_euro.denominator();
+    let max_allowed_micro_ccd_to_energy = u64::MAX / MAX_ALLOWED_INVOKE_ENERGY.energy;
+    let micro_ccd_per_energy =
+        u64::try_from(micro_ccd_per_energy_numerator / micro_ccd_per_energy_denominator)
+            .map_err(|_| ExchangeRateError)?;
+    if micro_ccd_per_energy > max_allowed_micro_ccd_to_energy {
+        return Err(ExchangeRateError);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const ACC_0: AccountAddress = AccountAddress([0; 32]);
-    const ACC_1: AccountAddress = AccountAddress([1; 32]);
-
+    /// A few checks that test whether the function behavior matches its doc
+    /// comments.
     #[test]
-    fn calculate_cost_will_not_overflow() {
-        let micro_ccd_per_euro = ExchangeRate::new_unchecked(u64::MAX, u64::MAX - 1);
-        let euro_per_energy = ExchangeRate::new_unchecked(u64::MAX - 2, u64::MAX - 3);
-        let energy = Energy::from(u64::MAX - 4);
-        energy_to_amount(energy, euro_per_energy, micro_ccd_per_euro);
-    }
+    fn check_exchange_rates_works() {
+        let max_allowed_micro_ccd_per_energy = u64::MAX / MAX_ALLOWED_INVOKE_ENERGY.energy;
+        check_exchange_rates(
+            ExchangeRate::new_unchecked(max_allowed_micro_ccd_per_energy + 1, 1),
+            ExchangeRate::new_unchecked(1, 1),
+        )
+        .expect_err("should fail");
 
-    #[test]
-    fn creating_accounts_work() {
-        let mut chain = Chain::new();
-        chain.create_account(ACC_0, Account::new(Amount::from_ccd(1)));
-        chain.create_account(ACC_1, Account::new(Amount::from_ccd(2)));
+        check_exchange_rates(
+            ExchangeRate::new_unchecked(max_allowed_micro_ccd_per_energy / 2 + 1, 1),
+            ExchangeRate::new_unchecked(2, 1),
+        )
+        .expect_err("should fail");
 
-        assert_eq!(chain.accounts.len(), 2);
-        assert_eq!(
-            chain.account_balance_available(ACC_0),
-            Some(Amount::from_ccd(1))
-        );
-        assert_eq!(
-            chain.account_balance_available(ACC_1),
-            Some(Amount::from_ccd(2))
-        );
+        check_exchange_rates(
+            ExchangeRate::new_unchecked(max_allowed_micro_ccd_per_energy, 1),
+            ExchangeRate::new_unchecked(1, 1),
+        )
+        .expect("should succeed");
+
+        check_exchange_rates(
+            ExchangeRate::new_unchecked(50000, 1),
+            ExchangeRate::new_unchecked(1, 50000),
+        )
+        .expect("should succeed");
     }
 }

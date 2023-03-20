@@ -31,19 +31,23 @@ pub struct ContractModule {
 pub struct Chain {
     /// The block time viewable inside the smart contracts.
     /// Defaults to `0`.
-    pub block_time:          SlotTime,
+    pub block_time:                SlotTime,
     /// MicroCCD per Euro ratio.
-    pub micro_ccd_per_euro:  ExchangeRate,
+    // This is not public because we ensure a reasonable value during the construction of the
+    // [`Chain`].
+    pub(crate) micro_ccd_per_euro: ExchangeRate,
     /// Euro per Energy ratio.
-    pub euro_per_energy:     ExchangeRate,
+    // This is not public because we ensure a reasonable value during the construction of the
+    // [`Chain`].
+    pub(crate) euro_per_energy:    ExchangeRate,
     /// Accounts and info about them.
-    pub accounts:            BTreeMap<AccountAddress, Account>,
+    pub accounts:                  BTreeMap<AccountAddress, Account>,
     /// Smart contract modules.
-    pub modules:             BTreeMap<ModuleReference, ContractModule>,
+    pub modules:                   BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
-    pub contracts:           BTreeMap<ContractAddress, Contract>,
+    pub contracts:                 BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
-    pub next_contract_index: u64,
+    pub next_contract_index:       u64,
 }
 
 /// A smart contract instance.
@@ -390,3 +394,9 @@ pub struct AccountDoesNotExist {
     /// The address of the missing account.
     pub address: AccountAddress,
 }
+
+/// The provided exchange rates are not valid.
+/// Meaning that they do not correspond to one energy costing less than
+/// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+#[derive(Debug)]
+pub struct ExchangeRateError;
