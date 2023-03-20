@@ -1,7 +1,9 @@
 use crate::{
     cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
-use concordium_contracts_common::{AccountBalance, Amount, ExchangeRate};
+use concordium_contracts_common::{AccountBalance, Amount};
+// Re-export for backward compatibility.
+pub use concordium_contracts_common::ExchangeRates;
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -580,37 +582,6 @@ impl ExternCallResponse {
 /// serialize values into.
 pub struct ExternReturnValue {
     pub(crate) current_position: u32,
-}
-
-/// The current exchange rates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExchangeRates {
-    /// Euro per NRG exchange rate.
-    pub euro_per_energy:    ExchangeRate,
-    /// Micro CCD per Euro exchange rate.
-    pub micro_ccd_per_euro: ExchangeRate,
-}
-
-impl ExchangeRates {
-    /// Convert Euro cent to CCD using the current exchange rate.
-    /// This will round down to the nearest micro CCD.
-    pub fn convert_euro_cent_to_amount(&self, euro_cent: u64) -> Amount {
-        let numerator: u128 = self.micro_ccd_per_euro.numerator().into();
-        let denominator: u128 = self.micro_ccd_per_euro.denominator().into();
-        let euro_cent: u128 = euro_cent.into();
-        let result = numerator * euro_cent / (denominator * 100);
-        Amount::from_micro_ccd(result as u64)
-    }
-
-    /// Convert CCD to Euro cent using the current exchange rate.
-    /// This will round down to the nearest Euro cent.
-    pub fn convert_amount_to_euro_cent(&self, amount: Amount) -> u64 {
-        let numerator: u128 = self.micro_ccd_per_euro.numerator().into();
-        let denominator: u128 = self.micro_ccd_per_euro.denominator().into();
-        let micro_ccd: u128 = amount.micro_ccd().into();
-        let result = micro_ccd * 100 * denominator / numerator;
-        result as u64
-    }
 }
 
 #[repr(i32)]
