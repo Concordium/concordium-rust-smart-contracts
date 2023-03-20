@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased changes
+
+## concordium-std 6.1.0 (2023-03-16)
+
 - Add `Display` implementation for `OwnedParameter` and `Parameter`, which uses
   hex encoding.
 - Replace `From<Vec<u8>>` instance for `OwnedParameter`/`Parameter` with a `TryFrom`,
@@ -23,8 +26,6 @@
 - Add `StateBuilder::new_state_container` method which allows contract developers to use
   their own container types atop blockchain storage
 - Move the type `AccountBalance` to `concordium-contracts-common`.
-
-
 
 ## concordium-std 6.0.1 (2023-02-28)
 
