@@ -61,7 +61,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::*;
-use concordium_std::{collections::BTreeMap, *};
+use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
 /// The baseurl for the token metadata, gets appended with the token ID as hex
 /// encoding before emitted in the TokenMetadata event.
@@ -74,6 +74,10 @@ pub const CIS3_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER, CIS3_STANDARD_IDENTIFIER];
+
+/// List of supported entrypoints by the `permit` function (CIS3 standard).
+const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
+    [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
 
 /// Tag for the CIS3 Registration event.
 pub const REGISTRATION_EVENT_TAG: u8 = 0u8;
@@ -229,6 +233,14 @@ struct State<S> {
     /// tokens controlled by the account. The nonce is used to prevent replay
     /// attacks of signed transactions.
     public_key_registry: StateMap<AccountAddress, (PublicKeyEd25519, u64), S>,
+}
+
+/// The parameter type for the contract function `supportsPermit`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct SupportsPermitQueryParams {
+    /// The list of supportPermit queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<OwnedEntrypointName>,
 }
 
 /// Part of the parameter type for the contract function `registerPublicKey`.
@@ -900,7 +912,7 @@ fn contract_permit<S: HasStateApi>(
             // Check that the signature was intended for this `entry_point`.
             ensure_eq!(
                 message.entry_point.as_entrypoint_name(),
-                EntrypointName::new_unchecked("contract_transfer"),
+                EntrypointName::new_unchecked("transfer"),
                 CustomContractError::WrongEntryPoint.into()
             );
 
@@ -920,7 +932,7 @@ fn contract_permit<S: HasStateApi>(
             // Check that the signature was intended for this `entry_point`.
             ensure_eq!(
                 message.entry_point.as_entrypoint_name(),
-                EntrypointName::new_unchecked("contract_update_operator"),
+                EntrypointName::new_unchecked("updateOperator"),
                 CustomContractError::WrongEntryPoint.into()
             );
 
@@ -1205,6 +1217,37 @@ fn contract_supports<S: HasStateApi>(
     Ok(result)
 }
 
+/// Get the supported entrypoints supported by the `permit` function given a
+/// list of entrypoints.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis3_nft",
+    name = "supportsPermit",
+    parameter = "SupportsPermitQueryParams",
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
+)]
+fn contract_supports_permit<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsPermitQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for entrypoint in params.queries {
+        match SUPPORTS_PERMIT_ENTRYPOINTS.contains(&entrypoint.as_entrypoint_name()) {
+            true => response.push(SupportResult::Support),
+            false => response.push(SupportResult::NoSupport),
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
 /// Set the addresses for an implementation given a standard identifier and a
 /// list of contract addresses.
 ///
@@ -1268,8 +1311,7 @@ mod tests {
         116, 227, 129, 72, 55, 43, 24, 163, 39, 208, 34, 87, 141, 46, 215, 176, 59, 176, 240, 136,
         83, 202, 122, 127, 193, 94, 148, 82, 164, 233, 78, 231, 217, 207, 244, 47, 218, 118, 43,
         234, 56, 231, 197, 114, 6, 144, 163, 118, 104, 62, 218, 111, 238, 48, 175, 100, 82, 86, 19,
-        237, 54, 144, 175, 2,
-    ]);
+        237, 54, 144, 175, 2,]);
 
     /// Test helper function which creates a contract state with two tokens with
     /// id `TOKEN_0` owned by `ADDRESS_0` and id `TOKEN_1` owned by `ADDRESS_1`.
@@ -1905,9 +1947,6 @@ mod tests {
             index:    0,
             subindex: 0,
         });
-        ctx.set_named_entrypoint(OwnedEntrypointName::new_unchecked(
-            "contract_permit_transfer".into(),
-        ));
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         // and parameter.
@@ -1975,7 +2014,7 @@ mod tests {
                     index:    0,
                     subindex: 0,
                 },
-                entry_point:      OwnedEntrypointName::new_unchecked("contract_transfer".into()),
+                entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
                 nonce:            1,
                 payload:          PermitPayload::Transfer(payload),
             },
@@ -2048,9 +2087,6 @@ mod tests {
             index:    0,
             subindex: 0,
         });
-        ctx.set_named_entrypoint(OwnedEntrypointName::new_unchecked(
-            "contract_update_operator".into(),
-        ));
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         // and parameter.
@@ -2100,9 +2136,7 @@ mod tests {
                     index:    0,
                     subindex: 0,
                 },
-                entry_point:      OwnedEntrypointName::new_unchecked(
-                    "contract_update_operator".into(),
-                ),
+                entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
                 nonce:            1,
                 payload:          PermitPayload::UpdateOperator(payload),
             },
