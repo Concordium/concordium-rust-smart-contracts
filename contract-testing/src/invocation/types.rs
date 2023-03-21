@@ -1,31 +1,33 @@
 use crate::types::{Account, ChainEvent, Contract, ContractModule};
-use concordium_base::contracts_common::{
-    AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
-    OwnedEntrypointName, SlotTime,
+use concordium_base::{
+    base::Energy,
+    contracts_common::{
+        AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
+        OwnedEntrypointName, SlotTime,
+    },
 };
 use concordium_smart_contract_engine::{
     v0,
     v1::{trie::MutableState, InvokeResponse},
-    InterpreterEnergy,
 };
 use std::collections::BTreeMap;
 
 /// The result of invoking an entrypoint.
 pub(crate) struct InvokeEntrypointResult {
     /// The result from the invoke.
-    pub(crate) invoke_response:  InvokeResponse,
+    pub(crate) invoke_response: InvokeResponse,
     /// Logs created during the invocation.
     /// Has entries if and only if `invoke_response` is `Success`.
-    pub(crate) logs:             v0::Logs,
-    /// The remaining energy after the invocation.
-    pub(crate) remaining_energy: InterpreterEnergy,
+    pub(crate) logs:            v0::Logs,
 }
 
 /// A type that supports invoking a contract entrypoint.
-pub(crate) struct EntrypointInvocationHandler {
+pub(crate) struct EntrypointInvocationHandler<'a> {
     /// The changeset which keeps track of changes to accounts, modules, and
     /// contracts that occur during an invocation.
     pub(super) changeset:          ChangeSet,
+    /// The energy remaining for execution.
+    pub(super) remaining_energy:   &'a mut Energy,
     /// The accounts of the chain. These are currently clones and only used as a
     /// reference. Any changes are saved to the changeset.
     pub(super) accounts:           BTreeMap<AccountAddress, Account>,
@@ -92,7 +94,7 @@ pub(super) struct ContractChanges {
 ///
 /// One `InvocationData` is created for each time
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
-pub(super) struct InvocationData<'a> {
+pub(super) struct InvocationData<'a, 'b> {
     /// The invoker.
     pub(super) invoker:            AccountAddress,
     /// The contract being called.
@@ -105,7 +107,7 @@ pub(super) struct InvocationData<'a> {
     pub(super) entrypoint:         OwnedEntrypointName,
     /// A reference to the [`EntrypointInvocationHandler`], which is used to for
     /// handling interrupts and for querying chain data.
-    pub(super) invocation_handler: &'a mut EntrypointInvocationHandler,
+    pub(super) invocation_handler: &'a mut EntrypointInvocationHandler<'b>,
     /// The current state.
     pub(super) state:              MutableState,
     /// Chain events that have occurred during the execution.

@@ -512,26 +512,15 @@ impl Chain {
             ));
         }
         let contract_address = payload.address;
-        let energy_given_to_interpreter = *remaining_energy;
         let (result, changeset, chain_events) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
                 self,
                 invoker,
                 sender,
-                energy_given_to_interpreter,
+                remaining_energy,
                 payload,
-            );
-
-        // Update the remaining energy. Subtract in interpreter energy, then convert to
-        // energy. Otherwise this might be slightly different than the node due to
-        // rounding.
-        let energy_used = from_interpreter_energy(
-            to_interpreter_energy(energy_given_to_interpreter)
-                .saturating_sub(result.remaining_energy),
-        );
-        remaining_energy.tick_energy(energy_used).map_err(|error| {
-            self.from_invocation_error_kind(error.into(), energy_reserved, *remaining_energy)
-        })?;
+            )
+            .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
@@ -547,19 +536,13 @@ impl Chain {
                 changeset.collect_energy_for_state(*remaining_energy, contract_address)
             };
 
-            let (energy_for_state_increase, state_changed) = res.map_err(|error| {
-                self.from_invocation_error_kind(error.into(), energy_reserved, *remaining_energy)
-            })?;
+            let (energy_for_state_increase, state_changed) =
+                res.map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
+
             // Charge for the potential state size increase.
             remaining_energy
                 .tick_energy(energy_for_state_increase)
-                .map_err(|error| {
-                    self.from_invocation_error_kind(
-                        error.into(),
-                        energy_reserved,
-                        *remaining_energy,
-                    )
-                })?;
+                .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
 
             state_changed
         } else {
@@ -877,7 +860,7 @@ impl Chain {
         }
     }
 
-    /// Convert a [`ContractInovcationErrorKind`] to a
+    /// Convert a [`ContractInvocationErrorKind`] to a
     /// [`ContractInvocationError`] by calculating the `energy_used` and
     /// `transaction_fee`.
     fn from_invocation_error_kind(
@@ -893,6 +876,17 @@ impl Chain {
             transaction_fee,
             kind,
         }
+    }
+
+    /// Construct a [`ContractInvocationError`] of the `OutOfEnergy` kind with
+    /// the energy and transaction fee fields based on the `energy_reserved`
+    /// parameter.
+    fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvocationError {
+        self.from_invocation_error_kind(
+            ContractInvocationErrorKind::OutOfEnergy,
+            energy_reserved,
+            Energy::from(0),
+        )
     }
 
     /// Convert a [`ContractInitErrorKind`] to a
