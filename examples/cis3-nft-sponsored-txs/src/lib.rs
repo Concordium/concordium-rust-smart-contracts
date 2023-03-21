@@ -1217,7 +1217,7 @@ fn contract_supports<S: HasStateApi>(
     Ok(result)
 }
 
-/// Get the supported entrypoints supported by the `permit` function given a
+/// Get the entrypoints supported by the `permit` function given a
 /// list of entrypoints.
 ///
 /// It rejects if:
@@ -1239,9 +1239,10 @@ fn contract_supports_permit<S: HasStateApi>(
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for entrypoint in params.queries {
-        match SUPPORTS_PERMIT_ENTRYPOINTS.contains(&entrypoint.as_entrypoint_name()) {
-            true => response.push(SupportResult::Support),
-            false => response.push(SupportResult::NoSupport),
+        if SUPPORTS_PERMIT_ENTRYPOINTS.contains(&entrypoint.as_entrypoint_name()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(SupportResult::NoSupport);
         }
     }
     let result = SupportsQueryResponse::from(response);
