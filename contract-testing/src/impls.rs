@@ -1,8 +1,9 @@
 use crate::{constants, invocation::EntrypointInvocationHandler, types::*};
+use anyhow::anyhow;
 use concordium_base::{
     base::{self, Energy, OutOfEnergy},
     common::{self, to_bytes},
-    constants::MAX_ALLOWED_INVOKE_ENERGY,
+    constants::{MAX_ALLOWED_INVOKE_ENERGY, MAX_WASM_MODULE_SIZE},
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRate, ModuleReference, SlotTime, Timestamp,
@@ -149,7 +150,7 @@ impl Chain {
                 Ok(artifact) => artifact,
                 Err(err) => {
                     return Err(ModuleDeployError {
-                        kind:            InvalidModuleError(err).into(),
+                        kind:            ModuleInvalidError(err).into(),
                         energy_used:     check_header_energy,
                         transaction_fee: check_header_cost,
                     })
@@ -200,14 +201,33 @@ impl Chain {
         module_path: impl AsRef<Path>,
     ) -> Result<WasmModule, ModuleLoadError> {
         let module_path = module_path.as_ref();
-        let file_contents =
-            std::fs::read(module_path).map_err(|e| ModuleLoadError::ReadFileError {
-                path:  module_path.to_path_buf(),
-                error: e,
+        // To avoid reading a giant file, we open the file for reading, check its size
+        // and then load the contents.
+        let (mut reader, metadata) = std::fs::File::open(module_path)
+            .and_then(|reader| reader.metadata().map(|metadata| (reader, metadata)))
+            .map_err(|e| ModuleLoadError {
+                path: module_path.to_path_buf(),
+                kind: e.into(),
             })?;
+        if metadata.len() > MAX_WASM_MODULE_SIZE.into() {
+            return Err(ModuleLoadError {
+                path: module_path.to_path_buf(),
+                kind: ModuleLoadErrorKind::ReadModule(
+                    anyhow!("Maximum size of a Wasm module is {}", MAX_WASM_MODULE_SIZE).into(),
+                ),
+            });
+        }
+        // We cannot deserialize directly to [`ModuleSource`] as it expects the first
+        // four bytes to be the length, which is isn't for this raw file.
+        let mut buffer = Vec::new();
+        std::io::Read::read_to_end(&mut reader, &mut buffer).map_err(|e| ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: ModuleLoadErrorKind::OpenFile(e.into()), /* This is unlikely to happen, since
+                                                            * we already opened it. */
+        })?;
         Ok(WasmModule {
             version: WasmVersion::V1,
-            source:  ModuleSource::from(file_contents),
+            source:  ModuleSource::from(buffer),
         })
     }
 
@@ -216,16 +236,21 @@ impl Chain {
     /// bytes.
     pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, ModuleLoadError> {
         let module_path = module_path.as_ref();
-        let file_contents =
-            std::fs::read(module_path).map_err(|e| ModuleLoadError::ReadFileError {
-                path:  module_path.to_path_buf(),
-                error: e,
-            })?;
-        let mut cursor = std::io::Cursor::new(file_contents);
-        let module: WasmModule =
-            common::from_bytes(&mut cursor).map_err(|e| InvalidModuleError(e))?;
+        // To avoid reading a giant file, we just open the file for reading and then
+        // parse it as a wasm module, which checks the length up front.
+        let mut reader = std::fs::File::open(module_path).map_err(|e| ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: e.into(),
+        })?;
+        let module: WasmModule = common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: ModuleLoadErrorKind::ReadModule(e.into()),
+        })?;
         if module.version != WasmVersion::V1 {
-            return Err(ModuleLoadError::UnsupportedModuleVersion(module.version));
+            return Err(ModuleLoadError {
+                path: module_path.to_path_buf(),
+                kind: ModuleLoadErrorKind::UnsupportedModuleVersion(module.version),
+            });
         }
         Ok(module)
     }

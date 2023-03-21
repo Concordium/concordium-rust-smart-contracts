@@ -168,45 +168,57 @@ pub struct ModuleDeployError {
 #[derive(Debug, Error)]
 pub enum ModuleDeployErrorKind {
     /// The module provided is not valid.
-    #[error("module is invalid due to: {0}")]
-    InvalidModule(#[from] InvalidModuleError),
+    #[error("Module is invalid due to: {0}")]
+    InvalidModule(#[from] ModuleInvalidError),
     /// The sender account does not have sufficient funds to pay for the
     /// deployment.
-    #[error("sender does not have sufficient funds to pay for the energy")]
+    #[error("Sender does not have sufficient funds to pay for the energy")]
     InsufficientFunds,
     /// The sender account deploying the module does not exist.
-    #[error("sender account {} does not exist", 0.0)]
+    #[error("Sender account {} does not exist", 0.0)]
     SenderDoesNotExist(#[from] AccountDoesNotExist),
     /// The module has already been deployed.
-    #[error("module with reference {0} already exists")]
+    #[error("Module with reference {0} already exists")]
     DuplicateModule(ModuleReference),
     /// The module version is not supported.
-    #[error("wasm version {0} is not supported")]
+    #[error("Wasm version {0} is not supported")]
     UnsupportedModuleVersion(WasmVersion),
 }
 
 /// An error that can occur while loading a smart contract module.
 #[derive(Debug, Error)]
-pub enum ModuleLoadError {
-    /// Failed to read the module file.
-    #[error("could not read the file '{path}' due to: {error}")]
-    ReadFileError {
-        path:  PathBuf,
-        error: std::io::Error,
-    },
-    /// The module version is not supported.
-    #[error("wasm version {0} is not supported")]
-    UnsupportedModuleVersion(WasmVersion),
-    /// The module provided is not valid.
-    #[error("module is invalid due to: {0}")]
-    InvalidModule(#[from] InvalidModuleError),
+#[error("Could not load the module file '{path}' due to: {kind}")]
+pub struct ModuleLoadError {
+    /// The module file.
+    pub path: PathBuf,
+    /// The reason why loading the module failed.
+    pub kind: ModuleLoadErrorKind,
 }
 
-/// The error produced when trying to load or deploy an invalid smart contract
-/// module.
+/// The specific reason why loading a module failed.
 #[derive(Debug, Error)]
-#[error("The module is invalid due to: {0}")]
-pub struct InvalidModuleError(pub(crate) anyhow::Error);
+pub enum ModuleLoadErrorKind {
+    /// Failed to open the module file for reading.
+    #[error("Could not open the file for reading to: {0}")]
+    OpenFile(#[from] std::io::Error),
+    /// Failed to read the module from the file.
+    #[error("Could not read the module due to: {0}")]
+    ReadModule(#[from] ModuleReadError),
+    /// The module version is not supported.
+    #[error("The module has wasm version {0}, which is not supported")]
+    UnsupportedModuleVersion(WasmVersion),
+}
+
+/// The error produced when trying to read a smart contract
+/// module from a file.
+#[derive(Debug, Error)]
+#[error("The module could not be read due to: {0}")]
+pub struct ModuleReadError(#[from] pub(crate) anyhow::Error);
+
+/// The error produced when trying to parse a smart contract module.
+#[derive(Debug, Error)]
+#[error("The module is invalid to: {0}")]
+pub struct ModuleInvalidError(#[from] pub(crate) anyhow::Error);
 
 /// Represents a successful initialization of a contract.
 #[derive(Debug)]
