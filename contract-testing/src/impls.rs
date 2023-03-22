@@ -1,8 +1,7 @@
 use crate::{constants, invocation::EntrypointInvocationHandler, types::*};
 use anyhow::anyhow;
 use concordium_base::{
-    base::{self, Energy, OutOfEnergy},
-    common::{self, to_bytes},
+    base::{Energy, OutOfEnergy},
     constants::{MAX_ALLOWED_INVOKE_ENERGY, MAX_WASM_MODULE_SIZE},
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
@@ -240,10 +239,11 @@ impl Chain {
             path: module_path.to_path_buf(),
             kind: e.into(),
         })?;
-        let module: WasmModule = common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
-            path: module_path.to_path_buf(),
-            kind: ModuleLoadErrorKind::ReadModule(e.into()),
-        })?;
+        let module: WasmModule =
+            concordium_base::common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
+                path: module_path.to_path_buf(),
+                kind: ModuleLoadErrorKind::ReadModule(e.into()),
+            })?;
         if module.version != WasmVersion::V1 {
             return Err(ModuleLoadError {
                 path: module_path.to_path_buf(),
@@ -342,16 +342,9 @@ impl Chain {
 
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
-            let pre_account_trx = transactions::construct::init_contract(
-                signer.num_keys,
-                sender,
-                base::Nonce::from(0), // Value not matter, only used for serialized size.
-                common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
-                                       * used for serialized size. */
-                payload.clone(),
-                energy_reserved,
-            );
-            let transaction_size = to_bytes(&pre_account_trx).len() as u64;
+            // 1 byte for the tag.
+            let transaction_size =
+                transactions::construct::TRANSACTION_HEADER_SIZE + 1 + payload.size() as u64;
             transactions::cost::base_cost(transaction_size, signer.num_keys)
         };
 
@@ -621,16 +614,9 @@ impl Chain {
 
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
-            let pre_account_trx = transactions::construct::update_contract(
-                signer.num_keys,
-                invoker,
-                base::Nonce::from(0), // Value does not matter, only used for serialized size.
-                common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
-                                       * used for serialized size. */
-                payload.clone(),
-                energy_reserved,
-            );
-            let transaction_size = to_bytes(&pre_account_trx).len() as u64;
+            // 1 byte for the tag.
+            let transaction_size =
+                transactions::construct::TRANSACTION_HEADER_SIZE + 1 + payload.size() as u64;
             transactions::cost::base_cost(transaction_size, signer.num_keys)
         };
 
