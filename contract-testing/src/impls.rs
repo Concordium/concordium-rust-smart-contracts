@@ -470,7 +470,7 @@ impl Chain {
                 remaining_energy.tick_energy(energy_used_in_interpreter)?;
                 Err(ContractInitErrorKind::ExecutionError {
                     failure_kind: InitFailure::Trap {
-                        error: ExecutionError(error),
+                        error: error.into(),
                     },
                 })
             }
@@ -480,9 +480,9 @@ impl Chain {
                     failure_kind: InitFailure::OutOfEnergy,
                 })
             }
-            Err(err) => Err(ContractInitErrorKind::ExecutionError {
+            Err(error) => Err(ContractInitErrorKind::ExecutionError {
                 failure_kind: InitFailure::Trap {
-                    error: ExecutionError(err),
+                    error: error.into(),
                 },
             }),
         }

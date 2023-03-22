@@ -290,7 +290,7 @@ pub enum InitFailure {
 /// An error that occured while executing a contract init or receive function.
 #[derive(Debug, Error)]
 #[error("The contract execution halted due to: {0}")]
-pub struct ExecutionError(pub(crate) anyhow::Error);
+pub struct ExecutionError(#[from] pub(crate) anyhow::Error);
 
 /// Represents a successful contract update (or invocation).
 #[derive(Debug)]

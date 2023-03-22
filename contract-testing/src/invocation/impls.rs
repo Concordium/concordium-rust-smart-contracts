@@ -693,7 +693,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         let res = match f(available_interpreter_energy) {
             Ok(res) => res,
             Err(err) => {
-                // An error occured in the interpreter and it doesn't return the remanining
+                // An error occured in the interpreter and it doesn't return the remaining
                 // energy. We convert this to a trap and set the energy to the
                 // last known amount.
                 return Ok(v1::ReceiveResult::Trap {
