@@ -13,6 +13,7 @@ fn deploying_valid_module_works() {
 
     let res = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1(
                 "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
@@ -36,6 +37,7 @@ fn initializing_valid_contract_works() {
 
     let res_deploy = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1(
                 "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
@@ -45,12 +47,17 @@ fn initializing_valid_contract_works() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_weather".into()),
-            param:     OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount:    Amount::zero(),
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_weather".into()),
+                param:     OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."),
+            },
+        )
         .expect("Initializing valid contract should work");
     assert_eq!(
         chain.account_balance_available(ACC_0),
@@ -67,6 +74,7 @@ fn initializing_with_invalid_parameter_fails() {
 
     let res_deploy = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1(
                 "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
@@ -75,18 +83,21 @@ fn initializing_with_invalid_parameter_fails() {
         )
         .expect("Deploying valid module should work");
 
-    let res_init = chain
-        .contract_init(
-            ACC_0,
-            Energy::from(10000),
-            InitContractPayload{
-                amount: Amount::zero(),
-                mod_ref: res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_weather".into()),
-                param: OwnedParameter::try_from(vec![99u8]).expect("Parameter has valid size."), // Invalid param
-            }
-        )
-        .expect_err("Initializing with invalid params should fail");
+    let res_init =
+        chain
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    amount:    Amount::zero(),
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_weather".into()),
+                    param:     OwnedParameter::try_from(vec![99u8])
+                        .expect("Parameter has valid size."), // Invalid param
+                },
+            )
+            .expect_err("Initializing with invalid params should fail");
 
     let transaction_fee = res_init.transaction_fee;
     match res_init.kind {
@@ -109,6 +120,7 @@ fn updating_valid_contract_works() {
 
     let res_deploy = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1(
                 "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
@@ -117,21 +129,25 @@ fn updating_valid_contract_works() {
         )
         .expect("Deploying valid module should work");
 
-    let res_init = chain
-        .contract_init(
-            ACC_0,
-            Energy::from(10000),
-            InitContractPayload{
-                amount: Amount::zero(),
-                mod_ref: res_deploy.module_reference,
-                init_name:    OwnedContractName::new_unchecked("init_weather".into()),
-                param:   OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
-            }
-        )
-        .expect("Initializing valid contract should work");
+    let res_init =
+        chain
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    amount:    Amount::zero(),
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_weather".into()),
+                    param:     OwnedParameter::try_from(vec![0u8])
+                        .expect("Parameter has valid size."), // Starts as 0
+                },
+            )
+            .expect("Initializing valid contract should work");
 
     let res_update = chain
         .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -187,6 +203,7 @@ fn updating_and_invoking_with_missing_sender_fails() {
 
     let res_deploy = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1(
                 "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
@@ -195,21 +212,25 @@ fn updating_and_invoking_with_missing_sender_fails() {
         )
         .expect("Deploying valid module should work");
 
-    let res_init = chain
-        .contract_init(
-            ACC_0,
-            Energy::from(10000),
-            InitContractPayload{
-                amount: Amount::zero(),
-                mod_ref: res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_weather".into()),
-            param: OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."), // Starts as 0
-            }
-        )
-        .expect("Initializing valid contract should work");
+    let res_init =
+        chain
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    amount:    Amount::zero(),
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_weather".into()),
+                    param:     OwnedParameter::try_from(vec![0u8])
+                        .expect("Parameter has valid size."), // Starts as 0
+                },
+            )
+            .expect("Initializing valid contract should work");
 
     let res_update_acc = chain
         .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             missing_account,
             Energy::from(10000),
@@ -238,6 +259,7 @@ fn updating_and_invoking_with_missing_sender_fails() {
 
     let res_update_contr = chain
         .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             missing_contract,
             Energy::from(10000),
@@ -286,6 +308,7 @@ fn init_with_less_energy_than_module_lookup() {
 
     let res_deploy = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1("../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1")
                 .expect("module should exist"),
@@ -294,13 +317,18 @@ fn init_with_less_energy_than_module_lookup() {
 
     let reserved_energy = Energy::from(10);
 
-    let res_init = chain.contract_init(ACC_0, reserved_energy, InitContractPayload {
-        amount:  Amount::zero(),
-        mod_ref: res_deploy.module_reference,
+    let res_init = chain.contract_init(
+        Signer::with_one_key(),
+        ACC_0,
+        reserved_energy,
+        InitContractPayload {
+            amount:  Amount::zero(),
+            mod_ref: res_deploy.module_reference,
 
-        init_name: OwnedContractName::new_unchecked("init_fib".into()),
-        param:     OwnedParameter::empty(),
-    });
+            init_name: OwnedContractName::new_unchecked("init_fib".into()),
+            param:     OwnedParameter::empty(),
+        },
+    );
     match res_init {
         Err(ContractInitError {
             kind: ContractInitErrorKind::OutOfEnergy,
@@ -318,6 +346,7 @@ fn update_with_fib_reentry_works() {
 
     let res_deploy = chain
         .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1("../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1")
                 .expect("module should exist"),
@@ -325,16 +354,22 @@ fn update_with_fib_reentry_works() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_fib".into()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount:    Amount::zero(),
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_fib".into()),
+                param:     OwnedParameter::empty(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let res_update = chain
         .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),

@@ -75,10 +75,12 @@ impl Chain {
     /// [`Chain::load_module_v1`] or [`Chain::load_module_v1_raw`].
     ///
     /// Parameters:
+    ///  - `signer`: the signer with a number of keys, which affects the cost.
     ///  - `sender`: the sender account.
     ///  - `module`: the v1 wasm module.
     pub fn module_deploy_v1(
         &mut self,
+        signer: Signer,
         sender: AccountAddress,
         wasm_module: WasmModule,
     ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
@@ -99,11 +101,7 @@ impl Chain {
                 + 8
                 + wasm_module.source.size()
                 + transactions::construct::TRANSACTION_HEADER_SIZE;
-            let number_of_sigs = self
-                .account(sender)
-                .expect("existence already checked")
-                .signature_count;
-            cost::base_cost(payload_size, number_of_sigs)
+            cost::base_cost(payload_size, signer.num_keys)
         };
         let check_header_cost = self.calculate_energy_cost(check_header_energy);
 
@@ -258,6 +256,7 @@ impl Chain {
     /// Initialize a contract.
     ///
     /// **Parameters:**
+    ///  - `signer`: the signer with a number of keys, which affects the cost.
     ///  - `sender`: The account paying for the transaction. Will also become
     ///    the owner of the instance created.
     ///  - `energy_reserved`: Amount of energy reserved for executing the init
@@ -271,6 +270,7 @@ impl Chain {
     ///    - `param`: Parameter provided to the init method.
     pub fn contract_init(
         &mut self,
+        signer: Signer,
         sender: AccountAddress,
         energy_reserved: Energy,
         payload: InitContractPayload,
@@ -284,8 +284,13 @@ impl Chain {
             ));
         }
 
-        let res =
-            self.contract_init_worker(sender, energy_reserved, payload, &mut remaining_energy);
+        let res = self.contract_init_worker(
+            signer,
+            sender,
+            energy_reserved,
+            payload,
+            &mut remaining_energy,
+        );
 
         let (res, transaction_fee) = match res {
             Ok(s) => {
@@ -315,6 +320,7 @@ impl Chain {
     /// ensure to charge the account for the energy used.
     fn contract_init_worker(
         &mut self,
+        signer: Signer,
         sender: AccountAddress,
         energy_reserved: Energy,
         payload: InitContractPayload,
@@ -337,7 +343,7 @@ impl Chain {
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
             let pre_account_trx = transactions::construct::init_contract(
-                account_info.signature_count,
+                signer.num_keys,
                 sender,
                 base::Nonce::from(0), // Value not matter, only used for serialized size.
                 common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
@@ -346,7 +352,7 @@ impl Chain {
                 energy_reserved,
             );
             let transaction_size = to_bytes(&pre_account_trx).len() as u64;
-            transactions::cost::base_cost(transaction_size, account_info.signature_count)
+            transactions::cost::base_cost(transaction_size, signer.num_keys)
         };
 
         // Charge the header cost.
@@ -586,6 +592,7 @@ impl Chain {
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
     pub fn contract_update(
         &mut self,
+        signer: Signer,
         invoker: AccountAddress,
         sender: Address,
         energy_reserved: Energy,
@@ -612,16 +619,10 @@ impl Chain {
             });
         }
 
-        // Get the signature count. TODO: Add as parameter instead?
-        let invoker_signature_count = self
-            .account_mut(invoker)
-            .expect("existence already checked")
-            .signature_count;
-
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
             let pre_account_trx = transactions::construct::update_contract(
-                invoker_signature_count,
+                signer.num_keys,
                 invoker,
                 base::Nonce::from(0), // Value does not matter, only used for serialized size.
                 common::types::TransactionTime::from_seconds(0), /* Value does not matter, only
@@ -630,7 +631,7 @@ impl Chain {
                 energy_reserved,
             );
             let transaction_size = to_bytes(&pre_account_trx).len() as u64;
-            transactions::cost::base_cost(transaction_size, invoker_signature_count)
+            transactions::cost::base_cost(transaction_size, signer.num_keys)
         };
 
         // Charge the header cost.
@@ -939,11 +940,7 @@ impl Chain {
 impl Account {
     /// Create new [`Self`] with the provided account policy.
     pub fn new_with_policy(balance: AccountBalance, policy: OwnedPolicy) -> Self {
-        Self {
-            balance,
-            policy,
-            signature_count: 1,
-        }
+        Self { balance, policy }
     }
 
     /// Create new [`Self`] with the provided balance and a default account
@@ -986,6 +983,19 @@ impl Account {
             valid_to:          Timestamp::from_timestamp_millis(u64::MAX),
             items:             Vec::new(),
         }
+    }
+}
+
+impl Signer {
+    /// Create a signer which always signs with one key.
+    pub fn with_one_key() -> Self { Self { num_keys: 1 } }
+
+    /// Create a signer with a non-zero number of keys.
+    pub fn with_keys(num_keys: u32) -> Result<Self, ZeroKeysError> {
+        if num_keys == 0 {
+            return Err(ZeroKeysError);
+        }
+        Ok(Self { num_keys })
     }
 }
 

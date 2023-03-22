@@ -12,7 +12,7 @@ fn test_fallback() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(
+        .module_deploy_v1(Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/fallback.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -20,7 +20,7 @@ fn test_fallback() {
         .expect("Deploying valid module should work");
 
     let res_init_two = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_two".into()),
             param:     OwnedParameter::empty(),
@@ -29,7 +29,7 @@ fn test_fallback() {
         .expect("Initializing valid contract should work");
 
     let res_init_one = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_one".into()),
             param:     OwnedParameter::from_serial(&res_init_two.contract_address)

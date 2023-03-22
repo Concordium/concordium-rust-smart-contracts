@@ -19,12 +19,16 @@
 //!
 //! // Deploy a smart contract module (built with [Cargo Concordium](https://developer.concordium.software/en/mainnet/smart-contracts/guides/setup-tools.html#cargo-concordium)).
 //! let deployment = chain
-//!     .module_deploy_v1(ACC, Chain::module_load_v1("path/to/contract.wasm.v1").unwrap())
+//!     .module_deploy_v1(
+//!         Signer::with_one_key(),
+//!         ACC,
+//!         Chain::module_load_v1("path/to/contract.wasm.v1").unwrap())
 //!     .unwrap();
 //!
 //! // Initialize a smart contract from the deployed module.
 //! let initialization = chain
 //!     .contract_init(
+//!         Signer::with_one_key(), // Used for specifying the number of signatures.
 //!         ACC, // Invoker account.
 //!         Energy::from(10000), // Maximum energy allowed for initializing.
 //!         InitContractPayload {
@@ -39,6 +43,7 @@
 //! // Update the initialized contract.
 //! let update = chain
 //!     .contract_update(
+//!         Signer::with_one_key(), // Used for specifying the number of signatures.
 //!         ACC, // Invoker account.
 //!         Address::Account(ACC), // Sender (can also be a contract).
 //!         Energy::from(10000),  // Maximum energy allowed for the update.

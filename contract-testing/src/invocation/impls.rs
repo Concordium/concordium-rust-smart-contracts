@@ -273,7 +273,8 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 logs:            v0::Logs::new(),
             },
             v1::ReceiveResult::Trap {
-                error: _, // TODO: Should we return this to the user?
+                error: _, /* TODO: Forward to the user inside the `InvokeFailure::RuntimeError`
+                           * once the field has been added. */
                 remaining_energy: _,
             } => InvokeEntrypointResult {
                 invoke_response: v1::InvokeResponse::Failure {

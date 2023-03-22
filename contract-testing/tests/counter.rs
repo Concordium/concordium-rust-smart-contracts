@@ -14,7 +14,7 @@ fn test_counter() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(
+        .module_deploy_v1(Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/call-counter.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -22,7 +22,7 @@ fn test_counter() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_counter".into()),
             param:     OwnedParameter::empty(),
@@ -31,7 +31,7 @@ fn test_counter() {
         .expect("Initializing valid contract should work");
 
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -46,7 +46,7 @@ fn test_counter() {
     assert_counter_state(&mut chain, res_init.contract_address, 1);
 
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -67,7 +67,7 @@ fn test_counter() {
         Amount::zero(),
     );
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),

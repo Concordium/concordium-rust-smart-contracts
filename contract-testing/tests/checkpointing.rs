@@ -27,7 +27,7 @@ fn test_case_1() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(
+        .module_deploy_v1(Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -35,7 +35,7 @@ fn test_case_1() {
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_a".into()),
             param:     OwnedParameter::empty(),
@@ -44,7 +44,7 @@ fn test_case_1() {
         .expect("Initializing valid contract should work");
 
     let res_init_b = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_b".into()),
             param:     OwnedParameter::empty(),
@@ -68,7 +68,7 @@ fn test_case_1() {
     );
 
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -105,7 +105,7 @@ fn test_case_2() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(
+        .module_deploy_v1(Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -113,7 +113,7 @@ fn test_case_2() {
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_a".into()),
             param:     OwnedParameter::empty(),
@@ -122,7 +122,7 @@ fn test_case_2() {
         .expect("Initializing valid contract should work");
 
     let res_init_b = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_b".into()),
             param:     OwnedParameter::empty(),
@@ -146,7 +146,7 @@ fn test_case_2() {
     );
 
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -183,7 +183,7 @@ fn test_case_3() {
     chain.create_account(ACC_1, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(
+        .module_deploy_v1(Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -191,7 +191,7 @@ fn test_case_3() {
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_a".into()),
             param:     OwnedParameter::empty(),
@@ -200,7 +200,7 @@ fn test_case_3() {
         .expect("Initializing valid contract should work");
 
     chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_b".into()),
             param:     OwnedParameter::empty(),
@@ -209,7 +209,7 @@ fn test_case_3() {
         .expect("Initializing valid contract should work");
 
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -244,7 +244,7 @@ fn test_case_4() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(
+        .module_deploy_v1(Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -252,7 +252,7 @@ fn test_case_4() {
         .expect("Deploying valid module should work");
 
     let res_init_a = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_a".into()),
             param:     OwnedParameter::empty(),
@@ -261,7 +261,7 @@ fn test_case_4() {
         .expect("Initializing valid contract should work");
 
     let res_init_b = chain
-        .contract_init(ACC_0, Energy::from(10000), InitContractPayload {
+        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
             mod_ref:   res_deploy.module_reference,
             init_name: OwnedContractName::new_unchecked("init_b".into()),
             param:     OwnedParameter::empty(),
@@ -285,7 +285,7 @@ fn test_case_4() {
     );
 
     chain
-        .contract_update(
+        .contract_update(Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),

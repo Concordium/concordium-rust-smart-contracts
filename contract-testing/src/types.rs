@@ -69,12 +69,17 @@ pub struct Contract {
 #[derive(Clone, Debug)]
 pub struct Account {
     /// The account balance.
-    pub balance:         AccountBalance,
+    pub balance: AccountBalance,
     /// Account policy.
-    pub policy:          OwnedPolicy,
-    /// The number of signatures. The number of signatures affect the cost of
-    /// every transaction for the account.
-    pub signature_count: u32,
+    pub policy:  OwnedPolicy,
+}
+
+/// A signer with a number of keys, the amount of which affects the cost of
+/// transactions.
+#[derive(Copy, Clone, Debug)]
+pub struct Signer {
+    /// The number of keys used for signing.
+    pub(crate) num_keys: u32,
 }
 
 /// An event that occurred during a contract update or invocation.
@@ -408,3 +413,7 @@ pub struct AccountDoesNotExist {
 /// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
 #[derive(Debug)]
 pub struct ExchangeRateError;
+
+/// A [`Signer`] cannot be created with `0` keys.
+#[derive(Debug)]
+pub struct ZeroKeysError;
