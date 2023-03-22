@@ -11,7 +11,7 @@ use concordium_base::{
     base::{Energy, OutOfEnergy},
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ModuleReference, OwnedReceiveName,
+        ExchangeRates, ModuleReference, OwnedReceiveName,
     },
     smart_contracts::{OwnedContractName, OwnedParameter},
     transactions::UpdateContractPayload,
@@ -1388,10 +1388,10 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         self.process(resume_res)
                     }
                     v1::Interrupt::QueryExchangeRates => {
-                        let exchange_rates = (
-                            self.invocation_handler.euro_per_energy,
-                            self.invocation_handler.micro_ccd_per_euro,
-                        );
+                        let exchange_rates = ExchangeRates {
+                            euro_per_energy:    self.invocation_handler.euro_per_energy,
+                            micro_ccd_per_euro: self.invocation_handler.micro_ccd_per_euro,
+                        };
 
                         let response = v1::InvokeResponse::Success {
                             new_balance: self
