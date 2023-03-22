@@ -5,7 +5,7 @@ use concordium_base::{
     base::Energy,
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
-        ModuleReference, OwnedContractName, OwnedEntrypointName, SlotTime,
+        ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
     smart_contracts::WasmVersion,
 };
@@ -65,17 +65,13 @@ pub struct Contract {
     pub self_balance:     Amount,
 }
 
-/// Account policies for testing.
-#[derive(Clone, Debug)]
-pub struct TestPolicies(pub Vec<u8>);
-
 /// An account.
 #[derive(Clone, Debug)]
 pub struct Account {
     /// The account balance.
     pub balance:         AccountBalance,
-    /// Account policies.
-    pub policies:        Vec<u8>, // TODO: Decide how policies should be represented.
+    /// Account policy.
+    pub policy:          OwnedPolicy,
     /// The number of signatures. The number of signatures affect the cost of
     /// every transaction for the account.
     pub signature_count: u32,

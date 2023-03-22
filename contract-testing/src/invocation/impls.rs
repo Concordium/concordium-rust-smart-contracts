@@ -188,12 +188,13 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 self_balance: instance_self_balance,
                 sender,
                 owner: instance.owner,
-                sender_policies: self
-                    .accounts
-                    .get(&invoker)
-                    .expect("Precondition violation: invoker must exist.")
-                    .policies
-                    .clone(),
+                sender_policies: to_bytes(
+                    &self
+                        .accounts
+                        .get(&invoker)
+                        .expect("Precondition violation: invoker must exist.")
+                        .policy,
+                ),
             },
         };
 

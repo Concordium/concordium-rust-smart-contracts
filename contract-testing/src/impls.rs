@@ -6,7 +6,7 @@ use concordium_base::{
     constants::{MAX_ALLOWED_INVOKE_ENERGY, MAX_WASM_MODULE_SIZE},
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ExchangeRate, ModuleReference, SlotTime, Timestamp,
+        ExchangeRate, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
     },
     smart_contracts::{ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost, InitContractPayload, UpdateContractPayload},
@@ -367,7 +367,7 @@ impl Chain {
                 slot_time: self.block_time,
             },
             init_origin:     sender,
-            sender_policies: account_info.policies.clone(),
+            sender_policies: contracts_common::to_bytes(&account_info.policy),
         };
         // Initialize contract
         // We create an empty loader as no caching is used in this testing library
@@ -936,67 +936,34 @@ impl Chain {
     pub fn euro_per_energy(&self) -> ExchangeRate { self.euro_per_energy }
 }
 
-impl TestPolicies {
-    // TODO: Make correctly structured policies ~= Vec<Tuple<Credential,
-    // PolicyBytes>>.
-    pub fn empty() -> Self { Self(Vec::new()) }
-
-    // TODO: Add helper functions for creating arbitrary valid policies.
-}
-
-impl AsRef<[u8]> for TestPolicies {
-    fn as_ref(&self) -> &[u8] { &self.0 }
-}
-
 impl Account {
-    /// Create a new [`Self`] with the provided parameters.
-    ///
-    /// The `signature_count` must be >= 1 for transaction costs to be
-    /// realistic.
-    pub fn new_with_policy_and_signature_count(
-        balance: AccountBalance,
-        policies: TestPolicies,
-        signature_count: u32,
-    ) -> Self {
+    /// Create new [`Self`] with the provided account policy.
+    pub fn new_with_policy(balance: AccountBalance, policy: OwnedPolicy) -> Self {
         Self {
             balance,
-            policies: policies.0,
-            signature_count,
-        }
-    }
-
-    /// Create new [`Self`] with empty account policies but the provided
-    /// `signature_count`.
-    ///
-    /// The `signature_count` must be >= 1 for transaction
-    /// costs to be realistic.
-    pub fn new_with_signature_count(balance: AccountBalance, signature_count: u32) -> Self {
-        Self {
-            signature_count,
-            ..Self::new_with_balance(balance)
-        }
-    }
-
-    /// Create new [`Self`] with the provided account policies and a signature
-    /// count of `1`.
-    pub fn new_with_policy(balance: AccountBalance, policies: TestPolicies) -> Self {
-        Self {
-            balance,
-            policies: policies.0,
+            policy,
             signature_count: 1,
         }
     }
 
-    /// Create new [`Self`] with empty account policies and a signature
-    /// count of `1`.
+    /// Create new [`Self`] with the provided balance and a default account
+    /// policy.
+    ///
+    /// See [`new`][Self::new] for what the default policy is.
     pub fn new_with_balance(balance: AccountBalance) -> Self {
-        Self::new_with_policy(balance, TestPolicies::empty())
+        Self::new_with_policy(balance, Self::empty_policy())
     }
 
-    /// Create new [`Self`] with
-    ///  - empty account policies,
-    ///  - a signature count of `1`,
-    ///  - an [`AccountBalance`] from the `total_balance` provided.
+    /// Create new [`Self`] with the provided total balance.
+    ///
+    /// The `policy` will have:
+    ///   - `identity_provider`: 0,
+    ///   - `created_at`: unix epoch,
+    ///   - `valid_to`: unix epoch + `u64::MAX` milliseconds,
+    ///   - `items`: none,
+    ///
+    /// The [`AccountBalance`] will be created with the provided
+    /// `total_balance`.
     pub fn new(total_balance: Amount) -> Self {
         Self::new_with_policy(
             AccountBalance {
@@ -1004,8 +971,21 @@ impl Account {
                 staked: Amount::zero(),
                 locked: Amount::zero(),
             },
-            TestPolicies::empty(),
+            Self::empty_policy(),
         )
+    }
+
+    /// Helper for creating an empty policy.
+    ///
+    /// It has identity provider `0`, no items, and is valid from unix epoch
+    /// until unix epoch + u64::MAX milliseconds.
+    fn empty_policy() -> OwnedPolicy {
+        OwnedPolicy {
+            identity_provider: 0,
+            created_at:        Timestamp::from_timestamp_millis(0),
+            valid_to:          Timestamp::from_timestamp_millis(u64::MAX),
+            items:             Vec::new(),
+        }
     }
 }
 
