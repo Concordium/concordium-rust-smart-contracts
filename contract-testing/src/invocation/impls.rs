@@ -3,6 +3,7 @@ use crate::{
     constants,
     impls::{from_interpreter_energy, lookup_module_cost, to_interpreter_energy},
     types::{Account, BalanceError, Chain, ChainEvent, Contract, ContractModule, TransferError},
+    AccountAddressEq,
 };
 use concordium_base::{
     base::{Energy, OutOfEnergy},
@@ -195,7 +196,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 sender_policies: to_bytes(
                     &self
                         .accounts
-                        .get(&invoker)
+                        .get(&invoker.into())
                         .expect("Precondition violation: invoker must exist.")
                         .policy,
                 ),
@@ -312,7 +313,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         to: AccountAddress,
     ) -> Result<Amount, TransferError> {
         // Ensure the `to` account exists.
-        if !self.accounts.contains_key(&to) {
+        if !self.accounts.contains_key(&to.into()) {
             return Err(TransferError::ToMissing);
         }
 
@@ -440,12 +441,12 @@ impl<'a> EntrypointInvocationHandler<'a> {
         address: AccountAddress,
         delta: AmountDelta,
     ) -> Result<Amount, BalanceError> {
-        match self.changeset.current_mut().accounts.entry(address) {
+        match self.changeset.current_mut().accounts.entry(address.into()) {
             btree_map::Entry::Vacant(vac) => {
                 // get original balance
                 let original_balance = self
                     .accounts
-                    .get(&address)
+                    .get(&address.into())
                     .expect("Precondition violation: account assumed to exist")
                     .balance
                     .available();
@@ -553,12 +554,12 @@ impl<'a> EntrypointInvocationHandler<'a> {
     /// Looks up the account balance for an account by first checking
     /// the changeset, then the persisted values.
     fn account_balance(&self, address: AccountAddress) -> Option<AccountBalance> {
-        let account_balance = self.accounts.get(&address).map(|a| a.balance)?;
+        let account_balance = self.accounts.get(&address.into()).map(|a| a.balance)?;
         match self
             .changeset
             .current()
             .accounts
-            .get(&address)
+            .get(&address.into())
             .map(|a| a.current_balance())
         {
             // Account exists in changeset.
@@ -834,7 +835,7 @@ impl ChangeSet {
         mut self,
         mut remaining_energy: Energy,
         invoked_contract: ContractAddress,
-        persisted_accounts: &mut BTreeMap<AccountAddress, Account>,
+        persisted_accounts: &mut BTreeMap<AccountAddressEq, Account>,
         persisted_contracts: &mut BTreeMap<ContractAddress, Contract>,
     ) -> Result<(Energy, bool), OutOfEnergy> {
         let current = self.current_mut();

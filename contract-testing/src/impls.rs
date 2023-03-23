@@ -777,12 +777,31 @@ impl Chain {
     /// Create an account.
     ///
     /// Will override an existing account and return it.
-    pub fn create_account(
-        &mut self,
-        account: AccountAddress,
-        account_info: Account,
-    ) -> Option<Account> {
-        self.accounts.insert(account, account_info)
+    ///
+    /// Note that if the first 29-bytes of an account are identical, then
+    /// they are *considered aliases* on each other in all methods.
+    /// See the example below:
+    ///
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let mut chain = Chain::new();
+    /// let acc = AccountAddress([
+    ///     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ///     0, 0,
+    /// ]);
+    /// let acc_alias = AccountAddress([
+    ///     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    ///     2, 3, // Only last three bytes differ.
+    /// ]);
+    ///
+    /// chain.create_account(acc, Account::new(Amount::from_ccd(123)));
+    /// assert_eq!(
+    ///     chain.account_balance_available(acc_alias), // Using the alias for lookup.
+    ///     Some(Amount::from_ccd(123))
+    /// );
+    /// ```
+    pub fn create_account(&mut self, address: AccountAddress, account: Account) -> Option<Account> {
+        self.accounts.insert(address.into(), account)
     }
 
     /// Create a contract address by giving it the next available index.
@@ -795,12 +814,14 @@ impl Chain {
 
     /// Returns the balance of an account if it exists.
     pub fn account_balance(&self, address: AccountAddress) -> Option<AccountBalance> {
-        self.accounts.get(&address).map(|ai| ai.balance)
+        self.accounts.get(&address.into()).map(|ai| ai.balance)
     }
 
     /// Returns the available balance of an account if it exists.
     pub fn account_balance_available(&self, address: AccountAddress) -> Option<Amount> {
-        self.accounts.get(&address).map(|ai| ai.balance.available())
+        self.accounts
+            .get(&address.into())
+            .map(|ai| ai.balance.available())
     }
 
     /// Returns the balance of an contract if it exists.
@@ -830,7 +851,7 @@ impl Chain {
     /// Returns an immutable reference to an [`Account`].
     pub fn account(&self, address: AccountAddress) -> Result<&Account, AccountDoesNotExist> {
         self.accounts
-            .get(&address)
+            .get(&address.into())
             .ok_or(AccountDoesNotExist { address })
     }
 
@@ -840,13 +861,13 @@ impl Chain {
         address: AccountAddress,
     ) -> Result<&mut Account, AccountDoesNotExist> {
         self.accounts
-            .get_mut(&address)
+            .get_mut(&address.into())
             .ok_or(AccountDoesNotExist { address })
     }
 
     /// Check whether an [`Account`] exists.
     pub fn account_exists(&self, address: AccountAddress) -> bool {
-        self.accounts.contains_key(&address)
+        self.accounts.contains_key(&address.into())
     }
 
     /// Check whether a [`Contract`] exists.
@@ -997,6 +1018,46 @@ impl Account {
             items:             Vec::new(),
         }
     }
+}
+
+impl From<AccountAddressEq> for AccountAddress {
+    fn from(aae: AccountAddressEq) -> Self { aae.0 }
+}
+
+impl From<AccountAddress> for AccountAddressEq {
+    fn from(address: AccountAddress) -> Self { Self(address) }
+}
+
+impl PartialEq for AccountAddressEq {
+    fn eq(&self, other: &Self) -> bool {
+        let bytes_1: &[u8; 32] = self.0.as_ref();
+        let bytes_2: &[u8; 32] = other.0.as_ref();
+        bytes_1[0..29] == bytes_2[0..29]
+    }
+}
+
+impl PartialOrd for AccountAddressEq {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let bytes_1: &[u8; 32] = self.0.as_ref();
+        let bytes_2: &[u8; 32] = other.0.as_ref();
+        if bytes_1[0..29] < bytes_2[0..29] {
+            Some(std::cmp::Ordering::Less)
+        } else if bytes_1[0..29] > bytes_2[0..29] {
+            Some(std::cmp::Ordering::Greater)
+        } else {
+            Some(std::cmp::Ordering::Equal)
+        }
+    }
+}
+
+impl Ord for AccountAddressEq {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).expect("Is always some.")
+    }
+}
+
+impl AsRef<AccountAddressEq> for AccountAddress {
+    fn as_ref(&self) -> &AccountAddressEq { unsafe { std::mem::transmute(self) } }
 }
 
 impl Signer {
@@ -1174,5 +1235,47 @@ mod tests {
             ExchangeRate::new_unchecked(1, 50000),
         )
         .expect("should succeed");
+    }
+
+    /// Test that account aliases are seen as one account.
+    #[test]
+    fn test_account_aliases() {
+        let mut chain = Chain::new();
+        let acc = AccountAddress([
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0,
+        ]);
+        let acc_alias = AccountAddress([
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 2, 3, // Last three bytes can differ for aliases.
+        ]);
+        let acc_other = AccountAddress([
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+            2, 3, 4, // This differs on last four bytes, so it is a different account.
+        ]);
+        let acc_eq = AccountAddressEq(acc);
+        let acc_alias_eq = AccountAddressEq(acc_alias);
+        let acc_other_eq = AccountAddressEq(acc_other);
+
+        let expected_amount = Amount::from_ccd(10);
+        let expected_amount_other = Amount::from_ccd(123);
+
+        chain.create_account(acc, Account::new(expected_amount));
+        chain.create_account(acc_other, Account::new(expected_amount_other));
+
+        assert_eq!(acc_eq, acc_alias_eq);
+        assert_ne!(acc_eq, acc_other_eq);
+
+        assert_eq!(acc_eq.cmp(&acc_alias_eq), std::cmp::Ordering::Equal);
+        assert_eq!(acc_eq.cmp(&acc_other_eq), std::cmp::Ordering::Less);
+
+        assert_eq!(
+            chain.account_balance_available(acc_alias),
+            Some(expected_amount)
+        );
+        assert_eq!(
+            chain.account_balance_available(acc_other),
+            Some(expected_amount_other)
+        );
     }
 }

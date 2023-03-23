@@ -41,7 +41,9 @@ pub struct Chain {
     // [`Chain`].
     pub(crate) euro_per_energy:    ExchangeRate,
     /// Accounts and info about them.
-    pub accounts:                  BTreeMap<AccountAddress, Account>,
+    /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
+    /// as one account.
+    pub accounts:                  BTreeMap<AccountAddressEq, Account>,
     /// Smart contract modules.
     pub modules:                   BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
@@ -73,6 +75,15 @@ pub struct Account {
     /// Account policy.
     pub policy:  OwnedPolicy,
 }
+
+/// A helper struct that is used to ensure that aliases of an account are seen
+/// as being the same account.
+///
+/// Account aliases share the first 29 bytes of the address, so the
+/// [`PartialEq`]/[`PartialOrd`] for this type adheres to that.
+#[repr(transparent)]
+#[derive(Eq, Debug, Clone, Copy)]
+pub struct AccountAddressEq(pub(crate) AccountAddress);
 
 /// A signer with a number of keys, the amount of which affects the cost of
 /// transactions.

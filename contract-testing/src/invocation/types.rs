@@ -1,4 +1,7 @@
-use crate::types::{Account, ChainEvent, Contract, ContractModule};
+use crate::{
+    types::{Account, ChainEvent, Contract, ContractModule},
+    AccountAddressEq,
+};
 use concordium_base::{
     base::Energy,
     contracts_common::{
@@ -30,7 +33,7 @@ pub(crate) struct EntrypointInvocationHandler<'a> {
     pub(super) remaining_energy:   &'a mut Energy,
     /// The accounts of the chain. These are currently clones and only used as a
     /// reference. Any changes are saved to the changeset.
-    pub(super) accounts:           BTreeMap<AccountAddress, Account>,
+    pub(super) accounts:           BTreeMap<AccountAddressEq, Account>,
     /// The modules of the chain. These are currently clones and only used as a
     /// reference. Any changes are saved to the changeset.
     pub(super) modules:            BTreeMap<ModuleReference, ContractModule>,
@@ -59,7 +62,7 @@ pub(super) struct Changes {
     /// The contracts which have changes.
     pub(super) contracts: BTreeMap<ContractAddress, ContractChanges>,
     /// The accounts which have changes.
-    pub(super) accounts:  BTreeMap<AccountAddress, AccountChanges>,
+    pub(super) accounts:  BTreeMap<AccountAddressEq, AccountChanges>,
 }
 
 /// Data held for an account during the execution of a contract entrypoint.
