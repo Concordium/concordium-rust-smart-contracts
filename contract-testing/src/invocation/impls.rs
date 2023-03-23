@@ -113,8 +113,6 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 Some(self_balance) => self_balance,
                 None => {
                     // Return early.
-                    // TODO: For the top-most update, we should catch this in `contract_update` and
-                    // return `ContractUpdateError::EntrypointDoesNotExist`.
                     return Ok(InvokeEntrypointResult {
                         invoke_response: v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::NonExistentContract,

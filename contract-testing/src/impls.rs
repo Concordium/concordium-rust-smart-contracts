@@ -502,6 +502,18 @@ impl Chain {
         remaining_energy: &mut Energy,
         should_persist: bool,
     ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+        // Check if the contract to invoke exists.
+        if !self.contract_exists(payload.address) {
+            return Err(self.from_invocation_error_kind(
+                ContractDoesNotExist {
+                    address: payload.address,
+                }
+                .into(),
+                energy_reserved,
+                *remaining_energy,
+            ));
+        }
+
         // Ensure that the parameter has a valid size.
         if payload.message.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(self.from_invocation_error_kind(
