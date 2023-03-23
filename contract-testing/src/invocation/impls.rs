@@ -2,10 +2,7 @@ use super::types::*;
 use crate::{
     constants,
     impls::{from_interpreter_energy, lookup_module_cost, to_interpreter_energy},
-    types::{
-        Account, Chain, ChainEvent, Contract, ContractModule, InsufficientBalanceError,
-        TransferError,
-    },
+    types::{Account, BalanceError, Chain, ChainEvent, Contract, ContractModule, TransferError},
 };
 use concordium_base::{
     base::{Energy, OutOfEnergy},
@@ -40,7 +37,8 @@ impl<'a> EntrypointInvocationHandler<'a> {
         sender: Address,
         remaining_energy: &'a mut Energy,
         payload: UpdateContractPayload,
-    ) -> Result<(InvokeEntrypointResponse, ChangeSet, Vec<ChainEvent>), OutOfEnergy> {
+    ) -> Result<(InvokeEntrypointResponse, ChangeSet, Vec<ChainEvent>), TestConfigurationError>
+    {
         let mut contract_invocation = Self {
             changeset: ChangeSet::new(),
             remaining_energy,
@@ -74,7 +72,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         sender: Address,
         payload: UpdateContractPayload,
         chain_events: &mut Vec<ChainEvent>,
-    ) -> Result<InvokeEntrypointResponse, OutOfEnergy> {
+    ) -> Result<InvokeEntrypointResponse, TestConfigurationError> {
         // Charge the base cost for updating a contract.
         self.remaining_energy
             .tick_energy(constants::UPDATE_CONTRACT_INSTANCE_BASE_COST)?;
@@ -98,7 +96,15 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 Ok(new_balance_from) => new_balance_from,
                 Err(transfer_error) => {
                     let kind = match transfer_error {
-                        TransferError::InsufficientBalance => v1::InvokeFailure::InsufficientAmount,
+                        TransferError::BalanceError {
+                            error: BalanceError::Overflow,
+                        } => {
+                            // Balance overflows are unrecoverable and short circuit.
+                            return Err(TestConfigurationError::BalanceOverflow);
+                        }
+                        TransferError::BalanceError {
+                            error: BalanceError::Insufficient,
+                        } => v1::InvokeFailure::InsufficientAmount,
                         TransferError::ToMissing => v1::InvokeFailure::NonExistentContract,
                     };
                     // Return early.
@@ -282,7 +288,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
             },
             v1::ReceiveResult::OutOfEnergy => {
                 // Convert to an error so that we will short-circuit the processing.
-                return Err(OutOfEnergy);
+                return Err(TestConfigurationError::OutOfEnergy);
             }
         };
 
@@ -337,8 +343,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
 
         // Make the transfer.
         let new_balance = self.change_contract_balance(from, AmountDelta::Negative(amount))?;
-        self.change_contract_balance(to, AmountDelta::Positive(amount))
-            .expect("Cannot fail when adding");
+        self.change_contract_balance(to, AmountDelta::Positive(amount))?;
 
         Ok(new_balance)
     }
@@ -362,15 +367,21 @@ impl<'a> EntrypointInvocationHandler<'a> {
 
         // Make the transfer.
         let new_balance = self.change_account_balance(from, AmountDelta::Negative(amount))?;
-        self.change_contract_balance(to, AmountDelta::Positive(amount))
-            .expect("Cannot fail when adding");
+        self.change_contract_balance(to, AmountDelta::Positive(amount))?;
         Ok(new_balance)
     }
 
-    // TODO: Should we handle overflows explicitly?
     /// Changes the contract balance in the topmost checkpoint on the changeset.
     ///
     /// If contract isn't already present in the changeset, it is added.
+    ///
+    /// Returns an error if the change in balance would go below `0`, which is a
+    /// valid error, or if the amounts would overflow, which is an unrecoverable
+    /// configuration error in the tests.
+    /// Otherwise, it returns the new balance of the contract.
+    ///
+    /// The precondition is not part of the error type, as this is an internal
+    /// helper function that is only called when the precondition is met.
     ///
     /// Returns the new balance.
     ///
@@ -380,7 +391,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         &mut self,
         address: ContractAddress,
         delta: AmountDelta,
-    ) -> Result<Amount, InsufficientBalanceError> {
+    ) -> Result<Amount, BalanceError> {
         match self.changeset.current_mut().contracts.entry(address) {
             btree_map::Entry::Vacant(vac) => {
                 // get original balance
@@ -410,7 +421,6 @@ impl<'a> EntrypointInvocationHandler<'a> {
         }
     }
 
-    // TODO: Should we handle overflows explicitly?
     /// Changes the account balance in the topmost checkpoint on the changeset.
     ///
     /// If account isn't already present in the changeset, it is added.
@@ -418,6 +428,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
     /// Returns an error if a negative delta is provided which exceeds the
     /// available balance of the account. Otherwise, it returns the new
     /// available balance of the account.
+    /// Otherwise, it returns the new balance of the account.
     ///
     /// The precondition is not part of the error type, as this is an internal
     /// helper function that is only called when the precondition is met.
@@ -428,7 +439,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         &mut self,
         address: AccountAddress,
         delta: AmountDelta,
-    ) -> Result<Amount, InsufficientBalanceError> {
+    ) -> Result<Amount, BalanceError> {
         match self.changeset.current_mut().accounts.entry(address) {
             btree_map::Entry::Vacant(vac) => {
                 // get original balance
@@ -985,17 +996,13 @@ impl AmountDelta {
         }
     }
 
-    /// Returns a new balance with the `AmountDelta` applied, or, an
-    /// error if `balance + self < 0`.
-    ///
-    /// Panics if an overflow occurs.
-    fn apply_to_balance(&self, balance: Amount) -> Result<Amount, UnderflowError> {
+    /// Returns a new balance with the `AmountDelta` applied, or a
+    /// [`BalanceError`] error if the change would result in a negative
+    /// balance or an overflow.
+    fn apply_to_balance(&self, balance: Amount) -> Result<Amount, BalanceError> {
         match self {
-            AmountDelta::Positive(d) => Ok(balance
-                .checked_add(*d)
-                .expect("Overflow occured when adding Amounts.")), // TODO: Should we return an
-            // error for this?
-            AmountDelta::Negative(d) => balance.checked_sub(*d).ok_or(UnderflowError),
+            AmountDelta::Positive(d) => balance.checked_add(*d).ok_or(BalanceError::Overflow),
+            AmountDelta::Negative(d) => balance.checked_sub(*d).ok_or(BalanceError::Insufficient),
         }
     }
 }
@@ -1047,7 +1054,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
     fn process(
         &mut self,
         receive_result: v1::ReceiveResult<artifact::CompiledFunction>,
-    ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, OutOfEnergy> {
+    ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, TestConfigurationError> {
         match receive_result {
             v1::ReceiveResult::Success {
                 logs,
@@ -1116,8 +1123,16 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                     TransferError::ToMissing => {
                                         v1::InvokeFailure::NonExistentAccount
                                     }
-                                    TransferError::InsufficientBalance => {
-                                        v1::InvokeFailure::InsufficientAmount
+
+                                    TransferError::BalanceError {
+                                        error: BalanceError::Insufficient,
+                                    } => v1::InvokeFailure::InsufficientAmount,
+
+                                    TransferError::BalanceError {
+                                        error: BalanceError::Overflow,
+                                    } => {
+                                        // Balance overflows are unrecoverable and short circuit.
+                                        return Err(TestConfigurationError::BalanceOverflow);
                                     }
                                 };
                                 v1::InvokeResponse::Failure { kind }
@@ -1447,7 +1462,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                 })
             }
             // Convert this to an error here, so that we will short circuit processing.
-            v1::ReceiveResult::OutOfEnergy => Err(OutOfEnergy),
+            v1::ReceiveResult::OutOfEnergy => Err(TestConfigurationError::OutOfEnergy),
         }
     }
 }
@@ -1459,12 +1474,8 @@ impl InvokeEntrypointResponse {
     }
 }
 
-impl From<UnderflowError> for InsufficientBalanceError {
-    fn from(_: UnderflowError) -> Self { InsufficientBalanceError }
-}
-
-impl From<InsufficientBalanceError> for TransferError {
-    fn from(_: InsufficientBalanceError) -> Self { Self::InsufficientBalance }
+impl From<OutOfEnergy> for TestConfigurationError {
+    fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
 }
 
 #[cfg(test)]

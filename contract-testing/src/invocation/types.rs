@@ -123,6 +123,13 @@ pub(super) enum AmountDelta {
     Negative(Amount),
 }
 
-/// An underflow occurred.
+/// Errors that occur due to the configuration of the test.
 #[derive(Debug)]
-pub(super) struct UnderflowError;
+pub(crate) enum TestConfigurationError {
+    /// The method ran out of energy.
+    OutOfEnergy,
+    /// The balance of an account or contract oveflowed while adding a new
+    /// [`Amount`]. On the chain there is roughly 10 billion CCD, which
+    /// means that overflows of amounts cannot occur.
+    BalanceOverflow,
+}

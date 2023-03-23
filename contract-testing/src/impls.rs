@@ -1,4 +1,8 @@
-use crate::{constants, invocation::EntrypointInvocationHandler, types::*};
+use crate::{
+    constants,
+    invocation::{EntrypointInvocationHandler, TestConfigurationError},
+    types::*,
+};
 use anyhow::anyhow;
 use concordium_base::{
     base::{Energy, OutOfEnergy},
@@ -531,7 +535,9 @@ impl Chain {
                 remaining_energy,
                 payload,
             )
-            .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
+            .map_err(|err| {
+                self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy)
+            })?;
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
@@ -862,12 +868,21 @@ impl Chain {
     /// Convert a [`ContractInvocationErrorKind`] to a
     /// [`ContractInvocationError`] by calculating the `energy_used` and
     /// `transaction_fee`.
+    ///
+    /// If the `kind` is an out of energy, then `0` is used instead of the
+    /// `remaining_energy` parameter, as it will likely not be `0` due to short
+    /// circuiting during execution.
     fn from_invocation_error_kind(
         &self,
         kind: ContractInvokeErrorKind,
         energy_reserved: Energy,
         remaining_energy: Energy,
     ) -> ContractInvokeError {
+        let remaining_energy = if matches!(kind, ContractInvokeErrorKind::OutOfEnergy) {
+            0.into()
+        } else {
+            remaining_energy
+        };
         let energy_used = energy_reserved - remaining_energy;
         let transaction_fee = self.calculate_energy_cost(energy_used);
         ContractInvokeError {
@@ -1041,12 +1056,17 @@ impl ChainEvent {
     }
 }
 
-impl From<OutOfEnergy> for ContractInvokeErrorKind {
+impl From<OutOfEnergy> for ContractInitErrorKind {
     fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
 }
 
-impl From<OutOfEnergy> for ContractInitErrorKind {
-    fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
+impl From<TestConfigurationError> for ContractInvokeErrorKind {
+    fn from(err: TestConfigurationError) -> Self {
+        match err {
+            TestConfigurationError::OutOfEnergy => Self::OutOfEnergy,
+            TestConfigurationError::BalanceOverflow => Self::BalanceOverflow,
+        }
+    }
 }
 
 /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.

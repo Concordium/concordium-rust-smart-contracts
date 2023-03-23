@@ -336,6 +336,10 @@ pub enum ContractInvokeErrorKind {
     /// Ran out of energy.
     #[error("Ran out of energy")]
     OutOfEnergy,
+    /// The balance of an account or contract overflowed.
+    /// If you are seeing this error, lower the [`Amount`]s used in your tests.
+    #[error("The balance of an account or contract overflowed")]
+    BalanceOverflow,
     /// Module has not been deployed in test environment.
     #[error("{0}")]
     ModuleDoesNotExist(#[from] ModuleDoesNotExist),
@@ -360,20 +364,35 @@ pub enum ContractInvokeErrorKind {
     ParameterTooLarge,
 }
 
-/// A transfer of [`Amount`]s failed because the sender had insufficient
-/// balance.
-#[derive(Debug)]
-pub(crate) struct InsufficientBalanceError;
+/// A balance error which can occur when transferring [`Amount`]s.
+#[derive(Debug, PartialEq, Eq, Error)]
+pub(crate) enum BalanceError {
+    /// The sender had insufficient balance.
+    #[error("The sender had insufficient balance.")]
+    Insufficient,
+    /// The balance change resulted in an overflow.
+    ///
+    /// This is a configuration error in the tests, where unrealistic balances
+    /// have been set, and should thus be *unrecoverable*.
+    ///
+    /// On the chain there is roughly 10 billion CCD, so an overflow wil never
+    /// occur when adding CCDs.
+    #[error("An overflow on CCD amounts occurred.")]
+    Overflow,
+}
 
 /// Errors related to transfers.
-#[derive(PartialEq, Eq, Debug, Error)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub(crate) enum TransferError {
     /// The receiver does not exist.
     #[error("The receiver does not exist.")]
     ToMissing,
-    /// The sender does not have sufficient balance.
-    #[error("The sender does not have sufficient balance.")]
-    InsufficientBalance,
+    /// A balance error occurred.
+    #[error("A balance error occurred: {error:?}")]
+    BalanceError {
+        #[from]
+        error: BalanceError,
+    },
 }
 
 /// The entrypoint does not exist.
