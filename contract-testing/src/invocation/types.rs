@@ -12,8 +12,8 @@ use concordium_smart_contract_engine::{
 };
 use std::collections::BTreeMap;
 
-/// The result of invoking an entrypoint.
-pub(crate) struct InvokeEntrypointResult {
+/// The response from invoking an entrypoint.
+pub(crate) struct InvokeEntrypointResponse {
     /// The result from the invoke.
     pub(crate) invoke_response: InvokeResponse,
     /// Logs created during the invocation.

@@ -143,7 +143,7 @@ pub struct Transfer {
 
 /// Represents a successful deployment of a [`ContractModule`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct SuccessfulModuleDeployment {
+pub struct ModuleDeploySuccess {
     /// The reference of the module deployed.
     pub module_reference: ModuleReference,
     /// The energy used for deployment.
@@ -250,10 +250,10 @@ pub struct ContractInitError {
 #[derive(Debug, Error)]
 pub enum ContractInitErrorKind {
     /// Initialization during execution.
-    #[error("Failed with an execution error: {failure_kind:?}")]
+    #[error("Failed with an execution error: {error:?}")]
     ExecutionError {
         /// The reason for why the contract initialization failed.
-        failure_kind: InitFailure,
+        error: InitExecutionError,
     },
     /// Ran out of energy.
     #[error("Ran out of energy")]
@@ -274,7 +274,7 @@ pub enum ContractInitErrorKind {
 
 /// The reason for why a contract initialization failed during execution.
 #[derive(Debug)]
-pub enum InitFailure {
+pub enum InitExecutionError {
     /// The contract rejected.
     Reject {
         /// The error code for why it rejected.
@@ -295,7 +295,7 @@ pub struct ExecutionError(#[from] pub(crate) anyhow::Error);
 
 /// Represents a successful contract update (or invocation).
 #[derive(Debug)]
-pub struct ContractInvocationSuccess {
+pub struct ContractInvokeSuccess {
     /// Host events that occured. This includes interrupts, resumes, and
     /// upgrades.
     pub chain_events:    Vec<ChainEvent>,
@@ -305,7 +305,7 @@ pub struct ContractInvocationSuccess {
     pub transaction_fee: Amount,
     /// The returned value.
     pub return_value:    ReturnValue,
-    /// Whether the state was changed.
+    /// Whether the state of the invoked contract was changed.
     pub state_changed:   bool,
     /// The new balance of the smart contract.
     pub new_balance:     Amount,
@@ -316,20 +316,20 @@ pub struct ContractInvocationSuccess {
 /// An error that occured during a [`Chain::contract_update`] or
 /// [`Chain::contract_invoke`].
 #[derive(Debug)]
-pub struct ContractInvocationError {
+pub struct ContractInvokeError {
     /// The energy used.
     pub energy_used:     Energy,
     /// The transaction fee. For [`Chain::contract_update`], this is the amount
     /// charged to the `invoker` account.
     pub transaction_fee: Amount,
     /// The specific reason for why the invocation failed.
-    pub kind:            ContractInvocationErrorKind,
+    pub kind:            ContractInvokeErrorKind,
 }
 
 /// The error kinds that can occur during [`Chain::contract_update`] or
 /// [`Chain::contract_invoke`].
 #[derive(Debug, Error)]
-pub enum ContractInvocationErrorKind {
+pub enum ContractInvokeErrorKind {
     /// Invocation failed during execution.
     #[error("Failed during execution: {failure_kind:?}")]
     ExecutionError { failure_kind: v1::InvokeFailure },

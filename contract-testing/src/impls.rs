@@ -82,7 +82,7 @@ impl Chain {
         signer: Signer,
         sender: AccountAddress,
         wasm_module: WasmModule,
-    ) -> Result<SuccessfulModuleDeployment, ModuleDeployError> {
+    ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
         // Ensure sender account exists.
         if !self.account_exists(sender) {
             return Err(ModuleDeployError {
@@ -184,7 +184,7 @@ impl Chain {
             size:     wasm_module.source.size(),
             artifact: Arc::new(artifact),
         });
-        Ok(SuccessfulModuleDeployment {
+        Ok(ModuleDeploySuccess {
             module_reference,
             energy_used: check_header_energy + deploy_module_energy,
             transaction_fee: check_header_cost + deploy_module_cost,
@@ -258,7 +258,7 @@ impl Chain {
     /// **Parameters:**
     ///  - `signer`: the signer with a number of keys, which affects the cost.
     ///  - `sender`: The account paying for the transaction. Will also become
-    ///    the owner of the instance created.
+    ///    the owner of the contract created.
     ///  - `energy_reserved`: Amount of energy reserved for executing the init
     ///   method.
     ///  - `payload`:
@@ -416,7 +416,7 @@ impl Chain {
                 remaining_energy
                     .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST)?;
 
-                let contract_instance = Contract {
+                let contract = Contract {
                     module_reference: payload.mod_ref,
                     contract_name:    payload.init_name,
                     state:            persisted_state,
@@ -424,8 +424,8 @@ impl Chain {
                     self_balance:     payload.amount,
                 };
 
-                // Save the contract instance
-                self.contracts.insert(contract_address, contract_instance);
+                // Save the contract.
+                self.contracts.insert(contract_address, contract);
 
                 // Subtract the amount from the invoker.
                 self.account_mut(sender)
@@ -453,7 +453,7 @@ impl Chain {
                 );
                 remaining_energy.tick_energy(energy_used_in_interpreter)?;
                 Err(ContractInitErrorKind::ExecutionError {
-                    failure_kind: InitFailure::Reject {
+                    error: InitExecutionError::Reject {
                         reason,
                         return_value,
                     },
@@ -468,7 +468,7 @@ impl Chain {
                 );
                 remaining_energy.tick_energy(energy_used_in_interpreter)?;
                 Err(ContractInitErrorKind::ExecutionError {
-                    failure_kind: InitFailure::Trap {
+                    error: InitExecutionError::Trap {
                         error: error.into(),
                     },
                 })
@@ -476,11 +476,11 @@ impl Chain {
             Ok(v1::InitResult::OutOfEnergy) => {
                 *remaining_energy = Energy::from(0);
                 Err(ContractInitErrorKind::ExecutionError {
-                    failure_kind: InitFailure::OutOfEnergy,
+                    error: InitExecutionError::OutOfEnergy,
                 })
             }
             Err(error) => Err(ContractInitErrorKind::ExecutionError {
-                failure_kind: InitFailure::Trap {
+                error: InitExecutionError::Trap {
                     error: error.into(),
                 },
             }),
@@ -501,7 +501,7 @@ impl Chain {
         payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
         should_persist: bool,
-    ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+    ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
             return Err(self.from_invocation_error_kind(
@@ -517,7 +517,7 @@ impl Chain {
         // Ensure that the parameter has a valid size.
         if payload.message.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(self.from_invocation_error_kind(
-                ContractInvocationErrorKind::ParameterTooLarge,
+                ContractInvokeErrorKind::ParameterTooLarge,
                 energy_reserved,
                 *remaining_energy,
             ));
@@ -565,7 +565,7 @@ impl Chain {
             v1::InvokeResponse::Success { new_balance, data } => {
                 let energy_used = energy_reserved - *remaining_energy;
                 let transaction_fee = self.calculate_energy_cost(energy_used);
-                Ok(ContractInvocationSuccess {
+                Ok(ContractInvokeSuccess {
                     chain_events,
                     energy_used,
                     transaction_fee,
@@ -576,7 +576,7 @@ impl Chain {
                 })
             }
             v1::InvokeResponse::Failure { kind } => Err(self.from_invocation_error_kind(
-                ContractInvocationErrorKind::ExecutionError { failure_kind: kind },
+                ContractInvokeErrorKind::ExecutionError { failure_kind: kind },
                 energy_reserved,
                 *remaining_energy,
             )),
@@ -602,13 +602,13 @@ impl Chain {
         sender: Address,
         energy_reserved: Energy,
         payload: UpdateContractPayload,
-    ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+    ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         // Ensure the invoker exists.
         if !self.account_exists(invoker) {
-            return Err(ContractInvocationError {
+            return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
-                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(
+                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
                     AccountDoesNotExist { address: invoker },
                 ),
             });
@@ -617,10 +617,10 @@ impl Chain {
         if !self.address_exists(sender) {
             // TODO: Should we charge the header cost if the invoker exists but the sender
             // doesn't?
-            return Err(ContractInvocationError {
+            return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
-                kind:            ContractInvocationErrorKind::SenderDoesNotExist(sender),
+                kind:            ContractInvokeErrorKind::SenderDoesNotExist(sender),
             });
         }
 
@@ -636,10 +636,10 @@ impl Chain {
         let mut remaining_energy =
             energy_reserved
                 .checked_sub(check_header_cost)
-                .ok_or(ContractInvocationError {
+                .ok_or(ContractInvokeError {
                     energy_used:     Energy::from(0),
                     transaction_fee: Amount::zero(),
-                    kind:            ContractInvocationErrorKind::OutOfEnergy,
+                    kind:            ContractInvokeErrorKind::OutOfEnergy,
                 })?;
 
         let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
@@ -650,10 +650,10 @@ impl Chain {
         // Ensure the account has sufficient funds to pay for the energy and amount.
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
             let energy_used = energy_reserved - remaining_energy;
-            return Err(ContractInvocationError {
+            return Err(ContractInvokeError {
                 energy_used,
                 transaction_fee: self.calculate_energy_cost(energy_used),
-                kind: ContractInvocationErrorKind::InsufficientFunds,
+                kind: ContractInvokeErrorKind::InsufficientFunds,
             });
         }
 
@@ -708,23 +708,23 @@ impl Chain {
         sender: Address,
         energy_reserved: Energy,
         payload: UpdateContractPayload,
-    ) -> Result<ContractInvocationSuccess, ContractInvocationError> {
+    ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         // Ensure the invoker exists.
         if !self.account_exists(invoker) {
-            return Err(ContractInvocationError {
+            return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
-                kind:            ContractInvocationErrorKind::InvokerDoesNotExist(
+                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
                     AccountDoesNotExist { address: invoker },
                 ),
             });
         }
         // Ensure the sender exists.
         if !self.address_exists(sender) {
-            return Err(ContractInvocationError {
+            return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
-                kind:            ContractInvocationErrorKind::SenderDoesNotExist(sender),
+                kind:            ContractInvokeErrorKind::SenderDoesNotExist(sender),
             });
         }
 
@@ -736,10 +736,10 @@ impl Chain {
 
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
             let energy_used = Energy::from(0);
-            return Err(ContractInvocationError {
+            return Err(ContractInvokeError {
                 energy_used,
                 transaction_fee: self.calculate_energy_cost(energy_used),
-                kind: ContractInvocationErrorKind::InsufficientFunds,
+                kind: ContractInvokeErrorKind::InsufficientFunds,
             });
         }
 
@@ -864,13 +864,13 @@ impl Chain {
     /// `transaction_fee`.
     fn from_invocation_error_kind(
         &self,
-        kind: ContractInvocationErrorKind,
+        kind: ContractInvokeErrorKind,
         energy_reserved: Energy,
         remaining_energy: Energy,
-    ) -> ContractInvocationError {
+    ) -> ContractInvokeError {
         let energy_used = energy_reserved - remaining_energy;
         let transaction_fee = self.calculate_energy_cost(energy_used);
-        ContractInvocationError {
+        ContractInvokeError {
             energy_used,
             transaction_fee,
             kind,
@@ -880,9 +880,9 @@ impl Chain {
     /// Construct a [`ContractInvocationError`] of the `OutOfEnergy` kind with
     /// the energy and transaction fee fields based on the `energy_reserved`
     /// parameter.
-    fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvocationError {
+    fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvokeError {
         self.from_invocation_error_kind(
-            ContractInvocationErrorKind::OutOfEnergy,
+            ContractInvokeErrorKind::OutOfEnergy,
             energy_reserved,
             Energy::from(0),
         )
@@ -997,7 +997,7 @@ impl Signer {
     }
 }
 
-impl ContractInvocationSuccess {
+impl ContractInvokeSuccess {
     /// Get an iterator of all transfers that were made from contracts to
     /// accounts.
     pub fn transfers(&self) -> impl Iterator<Item = Transfer> + '_ {
@@ -1041,7 +1041,7 @@ impl ChainEvent {
     }
 }
 
-impl From<OutOfEnergy> for ContractInvocationErrorKind {
+impl From<OutOfEnergy> for ContractInvokeErrorKind {
     fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
 }
 

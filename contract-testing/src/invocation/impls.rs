@@ -40,7 +40,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         sender: Address,
         remaining_energy: &'a mut Energy,
         payload: UpdateContractPayload,
-    ) -> Result<(InvokeEntrypointResult, ChangeSet, Vec<ChainEvent>), OutOfEnergy> {
+    ) -> Result<(InvokeEntrypointResponse, ChangeSet, Vec<ChainEvent>), OutOfEnergy> {
         let mut contract_invocation = Self {
             changeset: ChangeSet::new(),
             remaining_energy,
@@ -74,7 +74,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         sender: Address,
         payload: UpdateContractPayload,
         chain_events: &mut Vec<ChainEvent>,
-    ) -> Result<InvokeEntrypointResult, OutOfEnergy> {
+    ) -> Result<InvokeEntrypointResponse, OutOfEnergy> {
         // Charge the base cost for updating a contract.
         self.remaining_energy
             .tick_energy(constants::UPDATE_CONTRACT_INSTANCE_BASE_COST)?;
@@ -102,7 +102,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                         TransferError::ToMissing => v1::InvokeFailure::NonExistentContract,
                     };
                     // Return early.
-                    return Ok(InvokeEntrypointResult {
+                    return Ok(InvokeEntrypointResponse {
                         invoke_response: v1::InvokeResponse::Failure { kind },
                         logs:            v0::Logs::new(),
                     });
@@ -113,7 +113,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 Some(self_balance) => self_balance,
                 None => {
                     // Return early.
-                    return Ok(InvokeEntrypointResult {
+                    return Ok(InvokeEntrypointResponse {
                         invoke_response: v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::NonExistentContract,
                         },
@@ -158,7 +158,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 )
             } else {
                 // Return early.
-                return Ok(InvokeEntrypointResult {
+                return Ok(InvokeEntrypointResponse {
                     invoke_response: v1::InvokeResponse::Failure {
                         kind: v1::InvokeFailure::NonExistentEntrypoint,
                     },
@@ -247,7 +247,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                                    * the changeset later to get a more precise result. */
                 return_value,
                 remaining_energy: _,
-            } => InvokeEntrypointResult {
+            } => InvokeEntrypointResponse {
                 invoke_response: v1::InvokeResponse::Success {
                     new_balance: self.contract_balance_unchecked(payload.address),
                     data:        Some(return_value),
@@ -261,7 +261,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 reason,
                 return_value,
                 remaining_energy: _,
-            } => InvokeEntrypointResult {
+            } => InvokeEntrypointResponse {
                 invoke_response: v1::InvokeResponse::Failure {
                     kind: v1::InvokeFailure::ContractReject {
                         code: reason,
@@ -274,7 +274,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
                 error: _, /* TODO: Forward to the user inside the `InvokeFailure::RuntimeError`
                            * once the field has been added. */
                 remaining_energy: _,
-            } => InvokeEntrypointResult {
+            } => InvokeEntrypointResponse {
                 invoke_response: v1::InvokeResponse::Failure {
                     kind: v1::InvokeFailure::RuntimeError,
                 },
@@ -415,7 +415,12 @@ impl<'a> EntrypointInvocationHandler<'a> {
     ///
     /// If account isn't already present in the changeset, it is added.
     ///
-    /// Returns the new balance.
+    /// Returns an error if a negative delta is provided which exceeds the
+    /// available balance of the account. Otherwise, it returns the new
+    /// available balance of the account.
+    ///
+    /// The precondition is not part of the error type, as this is an internal
+    /// helper function that is only called when the precondition is met.
     ///
     /// **Preconditions:**
     ///  - Account must exist.
@@ -1186,7 +1191,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                             .map(|c| c.contract_name.as_contract_name())
                         {
                             // The contract to call does not exist.
-                            None => InvokeEntrypointResult {
+                            None => InvokeEntrypointResponse {
                                 invoke_response: v1::InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::NonExistentContract,
                                 },
@@ -1447,7 +1452,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
     }
 }
 
-impl InvokeEntrypointResult {
+impl InvokeEntrypointResponse {
     /// Whether the invoke was successful.
     pub(crate) fn is_success(&self) -> bool {
         matches!(self.invoke_response, v1::InvokeResponse::Success { .. })

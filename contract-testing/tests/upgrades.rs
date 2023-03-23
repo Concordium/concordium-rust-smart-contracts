@@ -15,7 +15,8 @@ fn test() {
 
     // Deploy the two modules `upgrading_0`, `upgrading_1`
     let res_deploy_0 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -23,7 +24,8 @@ fn test() {
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -32,19 +34,25 @@ fn test() {
 
     // Initialize `upgrading_0`.
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            init_name: OwnedContractName::new_unchecked("init_a".into()),
-            mod_ref:   res_deploy_0.module_reference,
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                init_name: OwnedContractName::new_unchecked("init_a".into()),
+                mod_ref:   res_deploy_0.module_reference,
 
-            param:  OwnedParameter::empty(),
-            amount: Amount::zero(),
-        })
+                param:  OwnedParameter::empty(),
+                amount: Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     // Upgrade the contract to the `upgrading_1` module by calling the `bump`
     // entrypoint.
     let res_update_upgrade = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),
@@ -60,7 +68,8 @@ fn test() {
 
     // Call the `newfun` entrypoint which only exists in `upgrading_1`.
     let res_update_new = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),
@@ -95,14 +104,16 @@ fn test_self_invoke() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
     let res_deploy_1 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -110,16 +121,22 @@ fn test_self_invoke() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            mod_ref:   res_deploy_0.module_reference,
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                mod_ref:   res_deploy_0.module_reference,
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let res_update = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),
@@ -161,7 +178,8 @@ fn test_missing_module() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!(
                 "{}/upgrading-missing-module.wasm",
@@ -172,16 +190,22 @@ fn test_missing_module() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let res_update = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),
@@ -212,7 +236,8 @@ fn test_missing_contract() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!(
                 "{}/upgrading-missing-contract0.wasm",
@@ -223,7 +248,8 @@ fn test_missing_contract() {
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!(
                 "{}/upgrading-missing-contract1.wasm",
@@ -234,17 +260,23 @@ fn test_missing_contract() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            mod_ref:   res_deploy_0.module_reference,
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                mod_ref:   res_deploy_0.module_reference,
 
-            amount: Amount::zero(),
-        })
+                amount: Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let res_update = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),
@@ -275,7 +307,8 @@ fn test_twice_in_one_transaction() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -283,7 +316,8 @@ fn test_twice_in_one_transaction() {
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -291,7 +325,8 @@ fn test_twice_in_one_transaction() {
         .expect("Deploying valid module should work");
 
     let res_deploy_2 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -299,19 +334,25 @@ fn test_twice_in_one_transaction() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            mod_ref:   res_deploy_0.module_reference,
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                mod_ref:   res_deploy_0.module_reference,
 
-            amount: Amount::zero(),
-        })
+                amount: Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let input_param = (res_deploy_1.module_reference, res_deploy_2.module_reference);
 
     let res_update = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(100000),
@@ -364,7 +405,8 @@ fn test_chained_contract() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -372,19 +414,25 @@ fn test_chained_contract() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let number_of_upgrades: u32 = 82; // TODO: Stack will overflow if larger than 82.
     let input_param = (number_of_upgrades, res_deploy.module_reference);
 
     let res_update = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -417,7 +465,8 @@ fn test_reject() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -425,7 +474,8 @@ fn test_reject() {
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -433,16 +483,22 @@ fn test_reject() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            mod_ref:   res_deploy_0.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                mod_ref:   res_deploy_0.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let res_update_upgrade = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -457,7 +513,8 @@ fn test_reject() {
         .expect_err("should fail");
 
     let res_update_new_feature = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -472,7 +529,7 @@ fn test_reject() {
 
     // Check the return value manually returned by the contract.
     match res_update_upgrade.kind {
-        ContractInvocationErrorKind::ExecutionError { failure_kind, .. } => match failure_kind {
+        ContractInvokeErrorKind::ExecutionError { failure_kind, .. } => match failure_kind {
             InvokeFailure::ContractReject { code, .. } if code == -1 => (),
             _ => panic!("Expected ContractReject with code == -1"),
         },
@@ -483,7 +540,7 @@ fn test_reject() {
     // failed.
     assert!(matches!(
         res_update_new_feature.kind,
-        ContractInvocationErrorKind::ExecutionError {
+        ContractInvokeErrorKind::ExecutionError {
             failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));
@@ -499,7 +556,8 @@ fn test_changing_entrypoint() {
     chain.create_account(ACC_0, Account::new(initial_balance));
 
     let res_deploy_0 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!(
                 "{}/upgrading-changing-entrypoints0.wasm",
@@ -510,7 +568,8 @@ fn test_changing_entrypoint() {
         .expect("Deploying valid module should work");
 
     let res_deploy_1 = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!(
                 "{}/upgrading-changing-entrypoints1.wasm",
@@ -521,17 +580,23 @@ fn test_changing_entrypoint() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            init_name: OwnedContractName::new_unchecked("init_contract".into()),
-            param:     OwnedParameter::empty(),
-            mod_ref:   res_deploy_0.module_reference,
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                param:     OwnedParameter::empty(),
+                mod_ref:   res_deploy_0.module_reference,
 
-            amount: Amount::zero(),
-        })
+                amount: Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     let res_update_old_feature_0 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -545,7 +610,8 @@ fn test_changing_entrypoint() {
         .expect("Updating old_feature on old module should work.");
 
     let res_update_new_feature_0 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -559,7 +625,8 @@ fn test_changing_entrypoint() {
         .expect_err("Updating new_feature on old module should _not_ work");
 
     let res_update_upgrade = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -574,7 +641,8 @@ fn test_changing_entrypoint() {
         .expect("Upgrading contract should work.");
 
     let res_update_old_feature_1 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -588,7 +656,8 @@ fn test_changing_entrypoint() {
         .expect_err("Updating old_feature on _new_ module should _not_ work.");
 
     let res_update_new_feature_1 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(1000000),
@@ -606,7 +675,7 @@ fn test_changing_entrypoint() {
     ]));
     assert!(matches!(
         res_update_new_feature_0.kind,
-        ContractInvocationErrorKind::ExecutionError {
+        ContractInvokeErrorKind::ExecutionError {
             failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));
@@ -618,7 +687,7 @@ fn test_changing_entrypoint() {
     ]));
     assert!(matches!(
         res_update_old_feature_1.kind,
-        ContractInvocationErrorKind::ExecutionError {
+        ContractInvokeErrorKind::ExecutionError {
             failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));

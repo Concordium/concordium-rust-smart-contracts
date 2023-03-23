@@ -24,7 +24,8 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-account-balance.wasm",
@@ -35,12 +36,17 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
         // The contract will query the balance of ACC_1 and assert that the three
@@ -48,7 +54,8 @@ mod query_account_balance {
         let input_param = (ACC_1, initial_balance, Amount::zero(), Amount::zero());
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -87,7 +94,8 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-account-balance.wasm",
@@ -98,12 +106,17 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
         let update_amount = Amount::from_ccd(123);
@@ -116,7 +129,8 @@ mod query_account_balance {
         let input_param = (ACC_1, expected_balance, Amount::zero(), Amount::zero());
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_1,
                 Address::Account(ACC_1),
                 energy_limit,
@@ -155,7 +169,8 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-account-balance-transfer.wasm",
@@ -168,12 +183,17 @@ mod query_account_balance {
         let amount_to_send = Amount::from_ccd(123);
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    amount_to_send, // Make sure the contract has CCD to transfer.
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    amount_to_send, // Make sure the contract has CCD to transfer.
+                },
+            )
             .expect("Initializing valid contract should work");
 
         let amount_to_send = Amount::from_ccd(123);
@@ -187,7 +207,8 @@ mod query_account_balance {
         );
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(10000),
@@ -231,7 +252,8 @@ mod query_account_balance {
         chain.create_account(ACC_1, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-account-balance.wasm",
@@ -242,22 +264,26 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
-        // TODO: Implement serial for four-tuples in contracts-common. Nesting tuples to
-        // get around it here.
         // The contract will query the balance of ACC_1 and assert that the three
         // balances match this input.
         let input_param = (ACC_1, initial_balance, Amount::zero(), Amount::zero());
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -294,7 +320,8 @@ mod query_account_balance {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-account-balance-missing-account.wasm",
@@ -305,19 +332,25 @@ mod query_account_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
         // The account to query, which doesn't exist in this test case.
         let input_param = ACC_1;
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -360,7 +393,8 @@ mod query_contract_balance {
         let init_amount = Amount::from_ccd(123);
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-contract-balance.wasm",
@@ -371,28 +405,39 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
         let res_init_other = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    init_amount, // Set up another contract with `init_amount` balance
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    init_amount, // Set up another contract with `init_amount` balance
+                },
+            )
             .expect("Initializing valid contract should work");
 
         // check that the other contract has `self_balance == init_amount`.
         let input_param = (res_init_other.contract_address, init_amount);
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -423,7 +468,8 @@ mod query_contract_balance {
         let update_amount = Amount::from_ccd(456);
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-contract-balance.wasm",
@@ -434,19 +480,25 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    init_amount,
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    init_amount,
+                },
+            )
             .expect("Initializing valid contract should work");
 
         // check that the other contract has `self_balance == init_amount`.
         let input_param = (res_init.contract_address, init_amount + update_amount);
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -477,7 +529,8 @@ mod query_contract_balance {
         let transfer_amount = Amount::from_ccd(78);
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-contract-balance-transfer.wasm",
@@ -488,12 +541,17 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    init_amount,
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    init_amount,
+                },
+            )
             .expect("Initializing valid contract should work");
 
         let input_param = (
@@ -504,7 +562,8 @@ mod query_contract_balance {
         );
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -534,7 +593,8 @@ mod query_contract_balance {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-contract-balance-missing-contract.wasm",
@@ -545,19 +605,25 @@ mod query_contract_balance {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
         // Non-existent contract address.
         let input_param = ContractAddress::new(123, 456);
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),
@@ -589,7 +655,8 @@ mod query_exchange_rates {
         chain.create_account(ACC_0, Account::new(initial_balance));
 
         let res_deploy = chain
-            .module_deploy_v1(Signer::with_one_key(),
+            .module_deploy_v1(
+                Signer::with_one_key(),
                 ACC_0,
                 Chain::module_load_v1_raw(format!(
                     "{}/queries-exchange-rates.wasm",
@@ -600,19 +667,25 @@ mod query_exchange_rates {
             .expect("Deploying valid module should work");
 
         let res_init = chain
-            .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
-            })
+            .contract_init(
+                Signer::with_one_key(),
+                ACC_0,
+                Energy::from(10000),
+                InitContractPayload {
+                    mod_ref:   res_deploy.module_reference,
+                    init_name: OwnedContractName::new_unchecked("init_contract".into()),
+                    param:     OwnedParameter::empty(),
+                    amount:    Amount::zero(),
+                },
+            )
             .expect("Initializing valid contract should work");
 
         // Non-existent contract address.
         let input_param = (chain.euro_per_energy(), chain.micro_ccd_per_euro());
 
         let res_update = chain
-            .contract_update(Signer::with_one_key(),
+            .contract_update(
+                Signer::with_one_key(),
                 ACC_0,
                 Address::Account(ACC_0),
                 Energy::from(100000),

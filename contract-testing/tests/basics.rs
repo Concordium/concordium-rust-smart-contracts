@@ -103,7 +103,7 @@ fn initializing_with_invalid_parameter_fails() {
     match res_init.kind {
         // Failed in the right way and account is still charged.
         ContractInitErrorKind::ExecutionError {
-            failure_kind: InitFailure::Reject { .. },
+            error: InitExecutionError::Reject { .. },
         } => assert_eq!(
             chain.account_balance_available(ACC_0),
             Some(initial_balance - res_deploy.transaction_fee - transaction_fee)
@@ -288,16 +288,16 @@ fn updating_and_invoking_with_missing_sender_fails() {
 
     assert!(matches!(
             res_update_acc.kind,
-            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
+            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
     assert!(matches!(
             res_invoke_acc.kind,
-            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
+            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
     assert!(matches!(
             res_update_contr.kind,
-            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
+            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
     assert!(matches!(
             res_invoke_contr.kind,
-            ContractInvocationErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
+            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
 }
 
 #[test]
