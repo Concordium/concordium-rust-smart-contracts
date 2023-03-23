@@ -78,8 +78,8 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -154,8 +154,8 @@ mod query_account_balance {
             // for the NRG use. Not the reserved amount.
             Some(initial_balance - res_update.transaction_fee - update_amount)
         );
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -236,11 +236,11 @@ mod query_account_balance {
             chain.account_balance_available(ACC_1),
             Some(initial_balance + amount_to_send)
         );
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Interrupted { .. },
-            ChainEvent::Transferred { .. },
-            ChainEvent::Resumed { .. },
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Interrupted { .. },
+            ContractTraceElement::Transferred { .. },
+            ContractTraceElement::Resumed { .. },
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -306,8 +306,8 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -373,8 +373,8 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 }
@@ -451,8 +451,8 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -512,8 +512,8 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -577,11 +577,11 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Interrupted { .. },
-            ChainEvent::Transferred { .. },
-            ChainEvent::Resumed { .. },
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Interrupted { .. },
+            ContractTraceElement::Transferred { .. },
+            ContractTraceElement::Resumed { .. },
+            ContractTraceElement::Updated { .. }
         ]));
     }
 
@@ -637,8 +637,8 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 }
@@ -699,8 +699,8 @@ mod query_exchange_rates {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.chain_events[..], [
-            ChainEvent::Updated { .. }
+        assert!(matches!(res_update.trace_elements[..], [
+            ContractTraceElement::Updated { .. }
         ]));
     }
 }

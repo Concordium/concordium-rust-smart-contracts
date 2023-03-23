@@ -1,13 +1,14 @@
 use crate::{
-    types::{Account, ChainEvent, Contract, ContractModule},
+    types::{Account, Contract, ContractModule},
     AccountAddressEq,
 };
 use concordium_base::{
     base::Energy,
     contracts_common::{
-        AccountAddress, Amount, ContractAddress, ExchangeRate, ModuleReference, OwnedContractName,
-        OwnedEntrypointName, SlotTime,
+        AccountAddress, Address, Amount, ContractAddress, ExchangeRate, ModuleReference,
+        OwnedContractName, OwnedEntrypointName, SlotTime,
     },
+    smart_contracts::{ContractTraceElement, OwnedParameter},
 };
 use concordium_smart_contract_engine::{
     v0,
@@ -100,21 +101,25 @@ pub(super) struct ContractChanges {
 pub(super) struct InvocationData<'a, 'b> {
     /// The invoker.
     pub(super) invoker:            AccountAddress,
+    /// The sender.
+    pub(super) sender:             Address,
     /// The contract being called.
     pub(super) address:            ContractAddress,
     /// The name of the contract.
     pub(super) contract_name:      OwnedContractName,
-    /// The amount sent from the sender to the contract.
-    pub(super) amount:             Amount,
     /// The entrypoint to execute.
     pub(super) entrypoint:         OwnedEntrypointName,
+    /// The amount sent from the sender to the contract.
+    pub(super) amount:             Amount,
+    /// The parameter given to the entrypoint.
+    pub(super) parameter:          OwnedParameter,
     /// A reference to the [`EntrypointInvocationHandler`], which is used to for
     /// handling interrupts and for querying chain data.
     pub(super) invocation_handler: &'a mut EntrypointInvocationHandler<'b>,
     /// The current state.
     pub(super) state:              MutableState,
-    /// Chain events that have occurred during the execution.
-    pub(super) chain_events:       Vec<ChainEvent>,
+    /// Trace elements that have occurred during the execution.
+    pub(super) trace_elements:     Vec<ContractTraceElement>,
 }
 
 /// A positive or negative delta in for an [`Amount`].

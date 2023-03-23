@@ -1,19 +1,15 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use thiserror::Error;
-
 use concordium_base::{
     base::Energy,
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
-    smart_contracts::WasmVersion,
+    smart_contracts::{ContractEvent, ContractTraceElement, WasmVersion},
 };
-use concordium_smart_contract_engine::{
-    v0,
-    v1::{self, trie, ReturnValue},
-};
+use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
 use concordium_wasm::artifact;
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use thiserror::Error;
 
 /// A smart contract module.
 #[derive(Debug, Clone)]
@@ -91,54 +87,6 @@ pub struct AccountAddressEq(pub(crate) AccountAddress);
 pub struct Signer {
     /// The number of keys used for signing.
     pub(crate) num_keys: u32,
-}
-
-/// An event that occurred during a contract update or invocation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChainEvent {
-    /// A contract was interrupted.
-    Interrupted {
-        /// The contract interrupted.
-        address: ContractAddress,
-        /// Logs produced prior to being interrupted.
-        logs:    v0::Logs,
-    },
-    /// A contract was resumed after being interrupted.
-    Resumed {
-        /// The contract resumed.
-        address: ContractAddress,
-        /// Whether the action that caused the interrupt succeeded.
-        success: bool,
-    },
-    /// A contract was upgraded.
-    Upgraded {
-        /// The contract upgraded.
-        address: ContractAddress,
-        /// The old module reference.
-        from:    ModuleReference,
-        /// The new module reference.
-        to:      ModuleReference,
-    },
-    /// A contract was updated.
-    Updated {
-        /// The contract updated.
-        address:    ContractAddress,
-        /// The name of the contract.
-        contract:   OwnedContractName,
-        /// The entrypoint called.
-        entrypoint: OwnedEntrypointName,
-        /// The amount added to the contract.
-        amount:     Amount,
-    },
-    /// A contract transferred an [`Amount`] to an account.
-    Transferred {
-        /// The sender contract.
-        from:   ContractAddress,
-        /// The [`Amount`] transferred.
-        amount: Amount,
-        /// The receiver account.
-        to:     AccountAddress,
-    },
 }
 
 /// A transfer from a contract to an account.
@@ -237,8 +185,8 @@ pub struct ModuleInvalidError(#[from] pub(crate) anyhow::Error);
 pub struct ContractInitSuccess {
     /// The address of the new instance.
     pub contract_address: ContractAddress,
-    /// Logs produced during initialization.
-    pub logs:             v0::Logs,
+    /// Contract events (logs) produced during initialization.
+    pub events:           Vec<ContractEvent>,
     /// Energy used.
     pub energy_used:      Energy,
     /// Cost of transaction.
@@ -309,7 +257,7 @@ pub struct ExecutionError(#[from] pub(crate) anyhow::Error);
 pub struct ContractInvokeSuccess {
     /// Host events that occured. This includes interrupts, resumes, and
     /// upgrades.
-    pub chain_events:    Vec<ChainEvent>,
+    pub trace_elements:  Vec<ContractTraceElement>,
     /// Energy used.
     pub energy_used:     Energy,
     /// Cost of transaction.
@@ -320,8 +268,8 @@ pub struct ContractInvokeSuccess {
     pub state_changed:   bool,
     /// The new balance of the smart contract.
     pub new_balance:     Amount,
-    /// The logs produced since the last interrupt.
-    pub logs:            v0::Logs,
+    /// The contract events (logs) produced since the last interrupt.
+    pub events:          Vec<ContractEvent>,
 }
 
 /// An error that occured during a [`Chain::contract_update`] or

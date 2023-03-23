@@ -83,14 +83,14 @@ fn test() {
         )
         .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
-    assert!(matches!(res_update_upgrade.chain_events[..], [
-                ChainEvent::Interrupted { .. },
-                ChainEvent::Upgraded { from, to, .. },
-                ChainEvent::Resumed { .. },
-                ChainEvent::Updated { .. },
+    assert!(matches!(res_update_upgrade.trace_elements[..], [
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Upgraded { from, to, .. },
+                ContractTraceElement::Resumed { .. },
+                ContractTraceElement::Updated { .. },
             ] if from == res_deploy_0.module_reference && to == res_deploy_1.module_reference));
-    assert!(matches!(res_update_new.chain_events[..], [
-        ChainEvent::Updated { .. }
+    assert!(matches!(res_update_new.trace_elements[..], [
+        ContractTraceElement::Updated { .. }
     ]));
 }
 
@@ -150,21 +150,21 @@ fn test_self_invoke() {
         )
         .expect("Updating valid contract should work");
 
-    assert!(matches!(res_update.chain_events[..], [
+    assert!(matches!(res_update.trace_elements[..], [
         // Invoking `contract.name`
-        ChainEvent::Interrupted { .. },
-        ChainEvent::Updated { .. },
-        ChainEvent::Resumed { .. },
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Updated { .. },
+        ContractTraceElement::Resumed { .. },
         // Making the upgrade
-        ChainEvent::Interrupted { .. },
-        ChainEvent::Upgraded { .. },
-        ChainEvent::Resumed { .. },
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Upgraded { .. },
+        ContractTraceElement::Resumed { .. },
         // Invoking contract.name again
-        ChainEvent::Interrupted { .. },
-        ChainEvent::Updated { .. },
-        ChainEvent::Resumed { .. },
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Updated { .. },
+        ContractTraceElement::Resumed { .. },
         // The successful update
-        ChainEvent::Updated { .. },
+        ContractTraceElement::Updated { .. },
     ]));
 }
 
@@ -218,11 +218,11 @@ fn test_missing_module() {
         )
         .expect("Updating valid contract should work");
 
-    assert!(matches!(res_update.chain_events[..], [
-                ChainEvent::Interrupted { .. },
+    assert!(matches!(res_update.trace_elements[..], [
+                ContractTraceElement::Interrupted { .. },
                 // No upgrade event, as it is supposed to fail.
-                ChainEvent::Resumed { success, .. },
-                ChainEvent::Updated { .. },
+                ContractTraceElement::Resumed { success, .. },
+                ContractTraceElement::Updated { .. },
             ] if success == false));
 }
 
@@ -290,11 +290,11 @@ fn test_missing_contract() {
         )
         .expect("Updating valid contract should work");
 
-    assert!(matches!(res_update.chain_events[..], [
-                ChainEvent::Interrupted { .. },
+    assert!(matches!(res_update.trace_elements[..], [
+                ContractTraceElement::Interrupted { .. },
                 // No upgrade event, as it is supposed to fail.
-                ChainEvent::Resumed { success, .. },
-                ChainEvent::Updated { .. },
+                ContractTraceElement::Resumed { success, .. },
+                ContractTraceElement::Updated { .. },
             ] if success == false));
 }
 
@@ -366,29 +366,29 @@ fn test_twice_in_one_transaction() {
         )
         .expect("Updating valid contract should work");
 
-    assert!(matches!(res_update.chain_events[..], [
+    assert!(matches!(res_update.trace_elements[..], [
                 // Invoke the contract itself to check the name entrypoint return value.
-                ChainEvent::Interrupted { .. },
-                ChainEvent::Updated { .. },
-                ChainEvent::Resumed { .. },
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Updated { .. },
+                ContractTraceElement::Resumed { .. },
                 // Upgrade from module 0 to 1
-                ChainEvent::Interrupted { .. },
-                ChainEvent::Upgraded { from: first_from, to: first_to, .. },
-                ChainEvent::Resumed { .. },
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Upgraded { from: first_from, to: first_to, .. },
+                ContractTraceElement::Resumed { .. },
                 // Invoke the contract itself to check the name again.
-                ChainEvent::Interrupted { .. },
-                ChainEvent::Updated { .. },
-                ChainEvent::Resumed { .. },
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Updated { .. },
+                ContractTraceElement::Resumed { .. },
                 // Upgrade again
-                ChainEvent::Interrupted { .. },
-                ChainEvent::Upgraded { from: second_from, to: second_to, .. },
-                ChainEvent::Resumed { .. },
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Upgraded { from: second_from, to: second_to, .. },
+                ContractTraceElement::Resumed { .. },
                 // Invoke itself again to check name a final time.
-                ChainEvent::Interrupted { .. },
-                ChainEvent::Updated { .. },
-                ChainEvent::Resumed { .. },
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Updated { .. },
+                ContractTraceElement::Resumed { .. },
                 // Final update event
-                ChainEvent::Updated { .. },
+                ContractTraceElement::Updated { .. },
             ] if first_from == res_deploy_0.module_reference
                 && first_to == res_deploy_1.module_reference
                 && second_from == res_deploy_1.module_reference
@@ -427,7 +427,7 @@ fn test_chained_contract() {
         )
         .expect("Initializing valid contract should work");
 
-    let number_of_upgrades: u32 = 82; // TODO: Stack will overflow if larger than 82.
+    let number_of_upgrades: u32 = 76; // TODO: Stack will overflow if set larger.
     let input_param = (number_of_upgrades, res_deploy.module_reference);
 
     let res_update = chain
@@ -450,7 +450,7 @@ fn test_chained_contract() {
     // Ends with 4 extra events: 3 events for an upgrade and 1 event for succesful
     // update.
     assert_eq!(
-        res_update.chain_events.len() as u32,
+        res_update.trace_elements.len() as u32,
         6 * number_of_upgrades + 4
     )
 }
@@ -670,8 +670,8 @@ fn test_changing_entrypoint() {
         )
         .expect("Updating new_feature on _new_ module should work");
 
-    assert!(matches!(res_update_old_feature_0.chain_events[..], [
-        ChainEvent::Updated { .. }
+    assert!(matches!(res_update_old_feature_0.trace_elements[..], [
+        ContractTraceElement::Updated { .. }
     ]));
     assert!(matches!(
         res_update_new_feature_0.kind,
@@ -679,11 +679,11 @@ fn test_changing_entrypoint() {
             failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));
-    assert!(matches!(res_update_upgrade.chain_events[..], [
-        ChainEvent::Interrupted { .. },
-        ChainEvent::Upgraded { .. },
-        ChainEvent::Resumed { .. },
-        ChainEvent::Updated { .. },
+    assert!(matches!(res_update_upgrade.trace_elements[..], [
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Upgraded { .. },
+        ContractTraceElement::Resumed { .. },
+        ContractTraceElement::Updated { .. },
     ]));
     assert!(matches!(
         res_update_old_feature_1.kind,
@@ -691,7 +691,7 @@ fn test_changing_entrypoint() {
             failure_kind: InvokeFailure::NonExistentEntrypoint,
         }
     ));
-    assert!(matches!(res_update_new_feature_1.chain_events[..], [
-        ChainEvent::Updated { .. }
+    assert!(matches!(res_update_new_feature_1.trace_elements[..], [
+        ContractTraceElement::Updated { .. }
     ]));
 }

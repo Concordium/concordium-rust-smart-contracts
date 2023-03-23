@@ -11,7 +11,10 @@ use concordium_base::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRate, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
     },
-    smart_contracts::{ModuleSource, WasmModule, WasmVersion},
+    smart_contracts::{
+        ContractEvent, ContractTraceElement, InstanceUpdatedEvent, ModuleSource, WasmModule,
+        WasmVersion,
+    },
     transactions::{self, cost, InitContractPayload, UpdateContractPayload},
 };
 use concordium_smart_contract_engine::{v0, v1, InterpreterEnergy};
@@ -442,7 +445,7 @@ impl Chain {
 
                 Ok(ContractInitSuccess {
                     contract_address,
-                    logs,
+                    events: contract_events_from_logs(logs),
                     energy_used,
                     transaction_fee,
                 })
@@ -527,7 +530,7 @@ impl Chain {
             ));
         }
         let contract_address = payload.address;
-        let (result, changeset, chain_events) =
+        let (result, changeset, trace_elements) =
             EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
                 self,
                 invoker,
@@ -572,13 +575,13 @@ impl Chain {
                 let energy_used = energy_reserved - *remaining_energy;
                 let transaction_fee = self.calculate_energy_cost(energy_used);
                 Ok(ContractInvokeSuccess {
-                    chain_events,
+                    trace_elements,
                     energy_used,
                     transaction_fee,
                     return_value: data.unwrap_or_default(),
                     state_changed,
                     new_balance,
-                    logs: result.logs,
+                    events: contract_events_from_logs(result.logs),
                 })
             }
             v1::InvokeResponse::Failure { kind } => Err(self.from_invocation_error_kind(
@@ -1077,8 +1080,8 @@ impl ContractInvokeSuccess {
     /// Get an iterator of all transfers that were made from contracts to
     /// accounts.
     pub fn transfers(&self) -> impl Iterator<Item = Transfer> + '_ {
-        self.chain_events.iter().filter_map(|e| {
-            if let ChainEvent::Transferred { from, amount, to } = e {
+        self.trace_elements.iter().filter_map(|e| {
+            if let ContractTraceElement::Transferred { from, amount, to } = e {
                 Some(Transfer {
                     from:   *from,
                     amount: *amount,
@@ -1090,29 +1093,31 @@ impl ContractInvokeSuccess {
         })
     }
 
-    /// Get the chain events grouped by which contract they originated from.
-    pub fn chain_events_per_contract(&self) -> BTreeMap<ContractAddress, Vec<ChainEvent>> {
-        let mut map: BTreeMap<ContractAddress, Vec<ChainEvent>> = BTreeMap::new();
-        for event in self.chain_events.iter() {
-            map.entry(event.contract_address())
+    /// Get the trace elements grouped by which contract they originated from.
+    pub fn trace_elements_per_contract(
+        &self,
+    ) -> BTreeMap<ContractAddress, Vec<ContractTraceElement>> {
+        let mut map: BTreeMap<ContractAddress, Vec<ContractTraceElement>> = BTreeMap::new();
+        for event in self.trace_elements.iter() {
+            map.entry(Self::extract_contract_address(&event))
                 .and_modify(|v| v.push(event.clone()))
                 .or_insert(vec![event.clone()]);
         }
         map
     }
-}
 
-impl ChainEvent {
     /// Get the contract address that this event relates to.
     /// This means the `address` field for all variant except `Transferred`,
     /// where it returns the `from`.
-    pub fn contract_address(&self) -> ContractAddress {
-        match self {
-            ChainEvent::Interrupted { address, .. } => *address,
-            ChainEvent::Resumed { address, .. } => *address,
-            ChainEvent::Upgraded { address, .. } => *address,
-            ChainEvent::Updated { address, .. } => *address,
-            ChainEvent::Transferred { from, .. } => *from,
+    fn extract_contract_address(element: &ContractTraceElement) -> ContractAddress {
+        match element {
+            ContractTraceElement::Interrupted { address, .. } => *address,
+            ContractTraceElement::Resumed { address, .. } => *address,
+            ContractTraceElement::Upgraded { address, .. } => *address,
+            ContractTraceElement::Updated {
+                data: InstanceUpdatedEvent { address, .. },
+            } => *address,
+            ContractTraceElement::Transferred { from, .. } => *from,
         }
     }
 }
@@ -1201,6 +1206,11 @@ fn check_exchange_rates(
         return Err(ExchangeRateError);
     }
     Ok(())
+}
+
+/// A helper function for converting `[v0::Logs]` into [`Vec<ContractEvent>`].
+pub(crate) fn contract_events_from_logs(logs: v0::Logs) -> Vec<ContractEvent> {
+    logs.logs.into_iter().map(ContractEvent::from).collect()
 }
 
 #[cfg(test)]

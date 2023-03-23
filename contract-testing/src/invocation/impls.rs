@@ -1,8 +1,11 @@
 use super::types::*;
 use crate::{
     constants,
-    impls::{from_interpreter_energy, lookup_module_cost, to_interpreter_energy},
-    types::{Account, BalanceError, Chain, ChainEvent, Contract, ContractModule, TransferError},
+    impls::{
+        contract_events_from_logs, from_interpreter_energy, lookup_module_cost,
+        to_interpreter_energy,
+    },
+    types::{Account, BalanceError, Chain, Contract, ContractModule, TransferError},
     AccountAddressEq,
 };
 use concordium_base::{
@@ -11,7 +14,9 @@ use concordium_base::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedReceiveName,
     },
-    smart_contracts::{OwnedContractName, OwnedParameter},
+    smart_contracts::{
+        ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
+    },
     transactions::UpdateContractPayload,
 };
 use concordium_smart_contract_engine::{
@@ -38,8 +43,14 @@ impl<'a> EntrypointInvocationHandler<'a> {
         sender: Address,
         remaining_energy: &'a mut Energy,
         payload: UpdateContractPayload,
-    ) -> Result<(InvokeEntrypointResponse, ChangeSet, Vec<ChainEvent>), TestConfigurationError>
-    {
+    ) -> Result<
+        (
+            InvokeEntrypointResponse,
+            ChangeSet,
+            Vec<ContractTraceElement>,
+        ),
+        TestConfigurationError,
+    > {
         let mut contract_invocation = Self {
             changeset: ChangeSet::new(),
             remaining_energy,
@@ -53,10 +64,10 @@ impl<'a> EntrypointInvocationHandler<'a> {
             micro_ccd_per_euro: chain.micro_ccd_per_euro,
         };
 
-        let mut chain_events = Vec::new();
+        let mut trace_elements = Vec::new();
         let result =
-            contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut chain_events)?;
-        Ok((result, contract_invocation.changeset, chain_events))
+            contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut trace_elements)?;
+        Ok((result, contract_invocation.changeset, trace_elements))
     }
 
     /// Used for handling contract entrypoint invocations internally.
@@ -72,7 +83,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
         invoker: AccountAddress,
         sender: Address,
         payload: UpdateContractPayload,
-        chain_events: &mut Vec<ChainEvent>,
+        trace_elements: &mut Vec<ContractTraceElement>,
     ) -> Result<InvokeEntrypointResponse, TestConfigurationError> {
         // Charge the base cost for updating a contract.
         self.remaining_energy
@@ -234,18 +245,20 @@ impl<'a> EntrypointInvocationHandler<'a> {
         // i.e. beyond interrupts.
         let mut data = InvocationData {
             invoker,
+            sender,
             address: payload.address,
             contract_name,
-            amount: payload.amount,
             entrypoint: entrypoint_name,
+            parameter: payload.message,
+            amount: payload.amount,
             invocation_handler: self,
             state: mutable_state,
-            chain_events: Vec::new(),
+            trace_elements: Vec::new(),
         };
 
         // Process the receive invocation to the completion.
         let result = data.process(initial_result)?;
-        let mut new_chain_events = data.chain_events;
+        let mut new_trace_elements = data.trace_elements;
 
         let result = match result {
             v1::ReceiveResult::Success {
@@ -293,9 +306,9 @@ impl<'a> EntrypointInvocationHandler<'a> {
             }
         };
 
-        // Append the new chain events if the invocation succeeded.
+        // Append the new trace elements if the invocation succeeded.
         if result.is_success() {
-            chain_events.append(&mut new_chain_events);
+            trace_elements.append(&mut new_trace_elements);
         }
 
         Ok(result)
@@ -1066,14 +1079,22 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                 // Update the remaining_energy field.
                 self.invocation_handler.update_energy(remaining_energy);
 
-                let update_event = ChainEvent::Updated {
-                    address:    self.address,
-                    contract:   self.contract_name.clone(),
-                    entrypoint: self.entrypoint.clone(),
-                    amount:     self.amount,
+                let update_event = ContractTraceElement::Updated {
+                    data: InstanceUpdatedEvent {
+                        contract_version: WasmVersion::V1,
+                        address:          self.address,
+                        instigator:       self.sender,
+                        amount:           self.amount,
+                        message:          self.parameter.clone(),
+                        receive_name:     OwnedReceiveName::construct_unchecked(
+                            self.contract_name.as_contract_name(),
+                            self.entrypoint.as_entrypoint_name(),
+                        ),
+                        events:           contract_events_from_logs(logs.clone()),
+                    },
                 };
                 // Add update event
-                self.chain_events.push(update_event);
+                self.trace_elements.push(update_event);
 
                 // Save changes to changeset.
                 if state_changed {
@@ -1102,14 +1123,14 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                 self.invocation_handler.update_energy(remaining_energy);
                 // Create the interrupt event, which will be included for transfers, calls, and
                 // upgrades, but not for the remaining interrupts.
-                let interrupt_event = ChainEvent::Interrupted {
+                let interrupt_event = ContractTraceElement::Interrupted {
                     address: self.address,
-                    logs,
+                    events:  contract_events_from_logs(logs.clone()),
                 };
                 match interrupt {
                     v1::Interrupt::Transfer { to, amount } => {
                         // Add the interrupt event
-                        self.chain_events.push(interrupt_event);
+                        self.trace_elements.push(interrupt_event);
 
                         let response = match self
                             .invocation_handler
@@ -1143,14 +1164,14 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         let success = matches!(response, v1::InvokeResponse::Success { .. });
                         if success {
                             // Add transfer event
-                            self.chain_events.push(ChainEvent::Transferred {
+                            self.trace_elements.push(ContractTraceElement::Transferred {
                                 from: self.address,
                                 amount,
                                 to,
                             });
                         }
                         // Add resume event
-                        self.chain_events.push(ChainEvent::Resumed {
+                        self.trace_elements.push(ContractTraceElement::Resumed {
                             address: self.address,
                             success,
                         });
@@ -1182,7 +1203,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         amount,
                     } => {
                         // Add the interrupt event
-                        self.chain_events.push(interrupt_event);
+                        self.trace_elements.push(interrupt_event);
 
                         if state_changed {
                             self.invocation_handler.save_state_changes(
@@ -1228,7 +1249,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                         receive_name,
                                         message,
                                     },
-                                    &mut self.chain_events,
+                                    &mut self.trace_elements,
                                 )?
                             }
                         };
@@ -1253,12 +1274,12 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         };
 
                         // Add resume event
-                        let resume_event = ChainEvent::Resumed {
+                        let resume_event = ContractTraceElement::Resumed {
                             address: self.address,
                             success,
                         };
 
-                        self.chain_events.push(resume_event);
+                        self.trace_elements.push(resume_event);
 
                         let resume_res = self.invocation_handler.run_interpreter(|energy| {
                             v1::resume_receive(
@@ -1275,7 +1296,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                     }
                     v1::Interrupt::Upgrade { module_ref } => {
                         // Add the interrupt event.
-                        self.chain_events.push(interrupt_event);
+                        self.trace_elements.push(interrupt_event);
 
                         // Charge a base cost.
                         self.invocation_handler
@@ -1305,13 +1326,13 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                         constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
                                     )?;
 
-                                    let upgrade_event = ChainEvent::Upgraded {
+                                    let upgrade_event = ContractTraceElement::Upgraded {
                                         address: self.address,
                                         from:    old_module_ref,
                                         to:      module_ref,
                                     };
 
-                                    self.chain_events.push(upgrade_event);
+                                    self.trace_elements.push(upgrade_event);
 
                                     v1::InvokeResponse::Success {
                                         new_balance: self
@@ -1328,7 +1349,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         };
 
                         let success = matches!(response, v1::InvokeResponse::Success { .. });
-                        self.chain_events.push(ChainEvent::Resumed {
+                        self.trace_elements.push(ContractTraceElement::Resumed {
                             address: self.address,
                             success,
                         });

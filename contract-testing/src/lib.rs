@@ -56,8 +56,8 @@
 //!     )
 //!     .unwrap();
 //!
-//! // Check the chain events produced (updates, interrupts, resumes, transfers, etc.).
-//! assert!(matches!(update.chain_events[..], [ChainEvent::Updated{..}]));
+//! // Check the trace elements produced (updates, interrupts, resumes, transfers, etc.).
+//! assert!(matches!(update.trace_elements[..], [ContractTraceElement::Updated{..}]));
 //!
 //! // Check the return value.
 //! assert_eq!(update.return_value, to_bytes(&84u8));
@@ -86,6 +86,7 @@ pub use concordium_base::{
         EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
         OwnedParameter, OwnedReceiveName, Parameter, ReceiveName, SlotTime,
     },
+    smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::{InitContractPayload, UpdateContractPayload},
 };
 pub use concordium_smart_contract_engine::v1::InvokeFailure;
