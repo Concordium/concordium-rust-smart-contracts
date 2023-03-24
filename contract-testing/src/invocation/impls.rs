@@ -315,6 +315,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
     }
 
     /// Make a transfer from a contract to an account in the changeset.
+    ///
     /// Returns the new balance of `from`.
     ///
     /// **Preconditions:**
@@ -340,7 +341,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
 
     /// Make a transfer between contracts in the changeset.
     ///
-    /// Returns the new balance of `from`.
+    /// Returns the new balance of `to`.
     ///
     /// **Preconditions:**
     ///  - Assumes that `from` contract exists.
@@ -356,15 +357,14 @@ impl<'a> EntrypointInvocationHandler<'a> {
         }
 
         // Make the transfer.
-        let new_balance = self.change_contract_balance(from, AmountDelta::Negative(amount))?;
-        self.change_contract_balance(to, AmountDelta::Positive(amount))?;
-
+        self.change_contract_balance(from, AmountDelta::Negative(amount))?;
+        let new_balance = self.change_contract_balance(to, AmountDelta::Positive(amount))?;
         Ok(new_balance)
     }
 
     /// Make a transfer from an account to a contract in the changeset.
     ///
-    /// Returns the new balance of `from`.
+    /// Returns the new balance of `to`.
     ///
     /// **Preconditions:**
     ///  - Assumes that `from` account exists.
@@ -380,8 +380,8 @@ impl<'a> EntrypointInvocationHandler<'a> {
         }
 
         // Make the transfer.
-        let new_balance = self.change_account_balance(from, AmountDelta::Negative(amount))?;
-        self.change_contract_balance(to, AmountDelta::Positive(amount))?;
+        self.change_account_balance(from, AmountDelta::Negative(amount))?;
+        let new_balance = self.change_contract_balance(to, AmountDelta::Positive(amount))?;
         Ok(new_balance)
     }
 
@@ -1221,26 +1221,26 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         // back.
                         self.invocation_handler.checkpoint();
 
-                        let res = match self
+                        let (success, invoke_response) = match self
                             .invocation_handler
                             .contracts
                             .get(&address)
                             .map(|c| c.contract_name.as_contract_name())
                         {
                             // The contract to call does not exist.
-                            None => InvokeEntrypointResponse {
-                                invoke_response: v1::InvokeResponse::Failure {
+                            None => {
+                                let invoke_response = v1::InvokeResponse::Failure {
                                     kind: v1::InvokeFailure::NonExistentContract,
-                                },
-                                logs:            v0::Logs::new(),
-                            },
+                                };
+                                (false, invoke_response)
+                            }
                             Some(contract_name) => {
                                 let receive_name = OwnedReceiveName::construct_unchecked(
                                     contract_name,
                                     name.as_entrypoint_name(),
                                 );
                                 let message = OwnedParameter::new_unchecked(parameter);
-                                self.invocation_handler.invoke_entrypoint(
+                                let res = self.invocation_handler.invoke_entrypoint(
                                     self.invoker,
                                     Address::Contract(self.address),
                                     UpdateContractPayload {
@@ -1250,11 +1250,24 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                                         message,
                                     },
                                     &mut self.trace_elements,
-                                )?
+                                )?;
+                                match res.invoke_response {
+                                    v1::InvokeResponse::Success { data, .. } => {
+                                        let invoke_response = v1::InvokeResponse::Success {
+                                            // The balance returned by `invoke_entrypoint` is the
+                                            // balance of the contract called. But we are interested
+                                            // in the new balance of the caller.
+                                            new_balance: self
+                                                .invocation_handler
+                                                .contract_balance_unchecked(self.address),
+                                            data,
+                                        };
+                                        (true, invoke_response)
+                                    }
+                                    failure => (false, failure),
+                                }
                             }
                         };
-
-                        let success = res.is_success();
 
                         // Remove the last state changes if the invocation failed.
                         let state_changed = if !success {
@@ -1284,7 +1297,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                         let resume_res = self.invocation_handler.run_interpreter(|energy| {
                             v1::resume_receive(
                                 config,
-                                res.invoke_response,
+                                invoke_response,
                                 energy,
                                 &mut self.state,
                                 state_changed,
