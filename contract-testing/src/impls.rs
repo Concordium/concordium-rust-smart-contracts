@@ -853,8 +853,8 @@ impl Chain {
     ///     Some(Amount::from_ccd(123))
     /// );
     /// ```
-    pub fn create_account(&mut self, address: AccountAddress, account: Account) -> Option<Account> {
-        self.accounts.insert(address.into(), account)
+    pub fn create_account(&mut self, account: Account) -> Option<Account> {
+        self.accounts.insert(account.address.into(), account)
     }
 
     /// Create a contract address by giving it the next available index.
@@ -1020,16 +1020,24 @@ impl Chain {
 
 impl Account {
     /// Create new [`Self`] with the provided account policy.
-    pub fn new_with_policy(balance: AccountBalance, policy: OwnedPolicy) -> Self {
-        Self { balance, policy }
+    pub fn new_with_policy(
+        address: AccountAddress,
+        balance: AccountBalance,
+        policy: OwnedPolicy,
+    ) -> Self {
+        Self {
+            balance,
+            policy,
+            address,
+        }
     }
 
     /// Create new [`Self`] with the provided balance and a default account
     /// policy.
     ///
     /// See [`new`][Self::new] for what the default policy is.
-    pub fn new_with_balance(balance: AccountBalance) -> Self {
-        Self::new_with_policy(balance, Self::empty_policy())
+    pub fn new_with_balance(address: AccountAddress, balance: AccountBalance) -> Self {
+        Self::new_with_policy(address, balance, Self::empty_policy())
     }
 
     /// Create new [`Self`] with the provided total balance.
@@ -1042,8 +1050,9 @@ impl Account {
     ///
     /// The [`AccountBalance`] will be created with the provided
     /// `total_balance`.
-    pub fn new(total_balance: Amount) -> Self {
+    pub fn new(address: AccountAddress, total_balance: Amount) -> Self {
         Self::new_with_policy(
+            address,
             AccountBalance {
                 total:  total_balance,
                 staked: Amount::zero(),
@@ -1308,8 +1317,8 @@ mod tests {
         let expected_amount = Amount::from_ccd(10);
         let expected_amount_other = Amount::from_ccd(123);
 
-        chain.create_account(acc, Account::new(expected_amount));
-        chain.create_account(acc_other, Account::new(expected_amount_other));
+        chain.create_account(Account::new(acc, expected_amount));
+        chain.create_account(Account::new(acc_other, expected_amount_other));
 
         assert_eq!(acc_eq, acc_alias_eq);
         assert_ne!(acc_eq, acc_other_eq);

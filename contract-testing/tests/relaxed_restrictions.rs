@@ -21,7 +21,7 @@ const ACC_0: AccountAddress = AccountAddress([0; 32]);
 fn test_new_parameter_limit() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let parameter = mk_parameter(65535, 65535);
 
@@ -104,7 +104,7 @@ fn test_new_log_limit() {
 fn deploy_and_init() -> (Chain, ContractAddress) {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(Signer::with_one_key(),

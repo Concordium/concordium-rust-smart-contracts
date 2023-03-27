@@ -99,7 +99,7 @@ fn deploy_and_init(
 ) -> (Chain, ContractAddress, ModuleReference) {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(

@@ -20,8 +20,8 @@ mod query_account_balance {
     fn test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
-        chain.create_account(ACC_1, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
+        chain.create_account(Account::new(ACC_1, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(
@@ -90,8 +90,8 @@ mod query_account_balance {
     fn invoker_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
-        chain.create_account(ACC_1, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
+        chain.create_account(Account::new(ACC_1, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(
@@ -165,8 +165,8 @@ mod query_account_balance {
     fn transfer_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
-        chain.create_account(ACC_1, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
+        chain.create_account(Account::new(ACC_1, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(
@@ -248,8 +248,8 @@ mod query_account_balance {
     fn balance_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
-        chain.create_account(ACC_1, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
+        chain.create_account(Account::new(ACC_1, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(
@@ -317,7 +317,7 @@ mod query_account_balance {
     fn missing_account_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(
@@ -388,7 +388,7 @@ mod query_contract_balance {
     fn test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
 
         let init_amount = Amount::from_ccd(123);
 
@@ -462,7 +462,7 @@ mod query_contract_balance {
     fn query_self_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
 
         let init_amount = Amount::from_ccd(123);
         let update_amount = Amount::from_ccd(456);
@@ -522,7 +522,7 @@ mod query_contract_balance {
     fn query_self_after_transfer_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
 
         let init_amount = Amount::from_ccd(123);
         let update_amount = Amount::from_ccd(456);
@@ -590,7 +590,7 @@ mod query_contract_balance {
     fn missing_contract_test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(
@@ -652,7 +652,7 @@ mod query_exchange_rates {
     fn test() {
         let mut chain = Chain::new();
         let initial_balance = Amount::from_ccd(1000000);
-        chain.create_account(ACC_0, Account::new(initial_balance));
+        chain.create_account(Account::new(ACC_0, initial_balance));
 
         let res_deploy = chain
             .module_deploy_v1(

@@ -11,7 +11,7 @@ const ACC_0: AccountAddress = AccountAddress([0; 32]);
 fn test() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     // Deploy the two modules `upgrading_0`, `upgrading_1`
     let res_deploy_0 = chain
@@ -101,7 +101,7 @@ fn test() {
 fn test_self_invoke() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy_0 = chain
         .module_deploy_v1(
@@ -175,7 +175,7 @@ fn test_self_invoke() {
 fn test_missing_module() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
@@ -233,7 +233,7 @@ fn test_missing_module() {
 fn test_missing_contract() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy_0 = chain
         .module_deploy_v1(
@@ -304,7 +304,7 @@ fn test_missing_contract() {
 fn test_twice_in_one_transaction() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy_0 = chain
         .module_deploy_v1(
@@ -402,7 +402,7 @@ fn test_twice_in_one_transaction() {
 fn test_chained_contract() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
@@ -462,7 +462,7 @@ fn test_chained_contract() {
 fn test_reject() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy_0 = chain
         .module_deploy_v1(
@@ -553,7 +553,7 @@ fn test_reject() {
 fn test_changing_entrypoint() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy_0 = chain
         .module_deploy_v1(

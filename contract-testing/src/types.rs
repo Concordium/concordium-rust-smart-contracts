@@ -71,6 +71,7 @@ pub struct Contract {
 /// An account.
 #[derive(Clone, Debug)]
 pub struct Account {
+    pub address: AccountAddress,
     /// The account balance.
     pub balance: AccountBalance,
     /// Account policy.

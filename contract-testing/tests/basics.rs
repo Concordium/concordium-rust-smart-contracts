@@ -9,7 +9,7 @@ const ACC_1: AccountAddress = AccountAddress([1; 32]);
 fn deploying_valid_module_works() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res = chain
         .module_deploy_v1(
@@ -33,7 +33,7 @@ fn deploying_valid_module_works() {
 fn initializing_valid_contract_works() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
@@ -70,7 +70,7 @@ fn initializing_valid_contract_works() {
 fn initializing_with_invalid_parameter_fails() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
@@ -116,7 +116,7 @@ fn initializing_with_invalid_parameter_fails() {
 fn updating_valid_contract_works() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
@@ -196,7 +196,7 @@ fn updating_valid_contract_works() {
 fn updating_and_invoking_with_missing_sender_fails() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let missing_account = Address::Account(ACC_1);
     let missing_contract = Address::Contract(ContractAddress::new(100, 0));
@@ -304,7 +304,7 @@ fn updating_and_invoking_with_missing_sender_fails() {
 fn init_with_less_energy_than_module_lookup() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
@@ -342,7 +342,7 @@ fn init_with_less_energy_than_module_lookup() {
 fn update_with_fib_reentry_works() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(

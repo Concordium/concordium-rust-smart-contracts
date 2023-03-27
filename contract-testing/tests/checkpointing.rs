@@ -24,7 +24,7 @@ const ACC_1: AccountAddress = AccountAddress([1; 32]);
 fn test_case_1() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(Signer::with_one_key(),
@@ -102,7 +102,7 @@ fn test_case_1() {
 fn test_case_2() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(Signer::with_one_key(),
@@ -179,8 +179,8 @@ fn test_case_2() {
 fn test_case_3() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
-    chain.create_account(ACC_1, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(ACC_1, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(Signer::with_one_key(),
@@ -241,7 +241,7 @@ fn test_case_3() {
 fn test_case_4() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(ACC_0, Account::new(initial_balance));
+    chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(Signer::with_one_key(),
