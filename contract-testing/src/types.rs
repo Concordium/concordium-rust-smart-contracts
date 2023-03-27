@@ -20,11 +20,8 @@ pub struct ContractModule {
     pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
-/// Represents the blockchain and supports a number of operations, including
-/// creating accounts, deploying modules, initializing contract, updating
-/// contracts and invoking contracts.
 #[derive(Debug)]
-pub struct Chain {
+pub(crate) struct ChainParameters {
     /// The block time viewable inside the smart contracts.
     /// Defaults to `0`.
     pub block_time:                SlotTime,
@@ -36,6 +33,14 @@ pub struct Chain {
     // This is not public because we ensure a reasonable value during the construction of the
     // [`Chain`].
     pub(crate) euro_per_energy:    ExchangeRate,
+}
+
+/// Represents the blockchain and supports a number of operations, including
+/// creating accounts, deploying modules, initializing contract, updating
+/// contracts and invoking contracts.
+#[derive(Debug)]
+pub struct Chain {
+    pub(crate) parameters: ChainParameters,
     /// Accounts and info about them.
     /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
     /// as one account.

@@ -27,7 +27,7 @@ use concordium_smart_contract_engine::{
 use concordium_wasm::artifact;
 use std::collections::{btree_map, BTreeMap};
 
-impl<'a> EntrypointInvocationHandler<'a> {
+impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     /// Invoke an entrypoint and get the result, [`Changeset`], and chain
     /// events.
     ///
@@ -38,7 +38,7 @@ impl<'a> EntrypointInvocationHandler<'a> {
     ///  - if the contract (`contract_address`) exists, then its `module` must
     ///    also exist.
     pub(crate) fn invoke_entrypoint_and_get_changes(
-        chain: &Chain,
+        chain: &'b Chain,
         invoker: AccountAddress,
         sender: Address,
         remaining_energy: &'a mut Energy,
@@ -54,14 +54,12 @@ impl<'a> EntrypointInvocationHandler<'a> {
         let mut contract_invocation = Self {
             changeset: ChangeSet::new(),
             remaining_energy,
-            accounts: chain.accounts.clone(), /* TODO: These three maps should ideally
-                                               * be
-                                               * immutable references. */
-            modules: chain.modules.clone(),
-            contracts: chain.contracts.clone(),
-            block_time: chain.block_time,
-            euro_per_energy: chain.euro_per_energy,
-            micro_ccd_per_euro: chain.micro_ccd_per_euro,
+            accounts: &chain.accounts,
+            modules: &chain.modules,
+            contracts: &chain.contracts,
+            block_time: chain.parameters.block_time,
+            euro_per_energy: chain.parameters.euro_per_energy,
+            micro_ccd_per_euro: chain.parameters.micro_ccd_per_euro,
         };
 
         let mut trace_elements = Vec::new();
@@ -1059,7 +1057,7 @@ impl AccountChanges {
     }
 }
 
-impl<'a, 'b> InvocationData<'a, 'b> {
+impl<'a, 'b, 'c> InvocationData<'a, 'b, 'c> {
     /// Process a receive function until completion.
     ///
     /// **Preconditions**:
@@ -1125,7 +1123,7 @@ impl<'a, 'b> InvocationData<'a, 'b> {
                 // upgrades, but not for the remaining interrupts.
                 let interrupt_event = ContractTraceElement::Interrupted {
                     address: self.address,
-                    events:  contract_events_from_logs(logs.clone()),
+                    events:  contract_events_from_logs(logs),
                 };
                 match interrupt {
                     v1::Interrupt::Transfer { to, amount } => {

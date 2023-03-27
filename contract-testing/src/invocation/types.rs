@@ -26,21 +26,21 @@ pub(crate) struct InvokeEntrypointResponse {
 }
 
 /// A type that supports invoking a contract entrypoint.
-pub(crate) struct EntrypointInvocationHandler<'a> {
+pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// The changeset which keeps track of changes to accounts, modules, and
     /// contracts that occur during an invocation.
     pub(super) changeset:          ChangeSet,
     /// The energy remaining for execution.
     pub(super) remaining_energy:   &'a mut Energy,
-    /// The accounts of the chain. These are currently clones and only used as a
-    /// reference. Any changes are saved to the changeset.
-    pub(super) accounts:           BTreeMap<AccountAddressEq, Account>,
-    /// The modules of the chain. These are currently clones and only used as a
-    /// reference. Any changes are saved to the changeset.
-    pub(super) modules:            BTreeMap<ModuleReference, ContractModule>,
-    /// The contracts of the chain. These are currently clones and only used as
-    /// a reference. Any changes are saved to the changeset.
-    pub(super) contracts:          BTreeMap<ContractAddress, Contract>,
+    /// The accounts of the chain. These are only used to look up the state
+    /// before a transaction. All changes are stored in the changeset.
+    pub(super) accounts:           &'b BTreeMap<AccountAddressEq, Account>,
+    /// The modules of the chain. These are only used to look up the state
+    /// before a transaction. All changes are stored in the changeset.
+    pub(super) modules:            &'b BTreeMap<ModuleReference, ContractModule>,
+    /// The contracts of the chain. These are only used to look up the state
+    /// before a transaction. All changes are stored in the changeset.
+    pub(super) contracts:          &'b BTreeMap<ContractAddress, Contract>,
     /// The current block time.
     pub(super) block_time:         SlotTime,
     /// The euro per energy exchange rate.
@@ -98,7 +98,7 @@ pub(super) struct ContractChanges {
 ///
 /// One `InvocationData` is created for each time
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
-pub(super) struct InvocationData<'a, 'b> {
+pub(super) struct InvocationData<'a, 'b, 'c> {
     /// The invoker.
     pub(super) invoker:            AccountAddress,
     /// The sender.
@@ -115,7 +115,7 @@ pub(super) struct InvocationData<'a, 'b> {
     pub(super) parameter:          OwnedParameter,
     /// A reference to the [`EntrypointInvocationHandler`], which is used to for
     /// handling interrupts and for querying chain data.
-    pub(super) invocation_handler: &'a mut EntrypointInvocationHandler<'b>,
+    pub(super) invocation_handler: &'c mut EntrypointInvocationHandler<'a, 'b>,
     /// The current state.
     pub(super) state:              MutableState,
     /// Trace elements that have occurred during the execution.

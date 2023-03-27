@@ -25,12 +25,37 @@ impl Default for Chain {
     fn default() -> Self { Self::new() }
 }
 
-impl Chain {
+impl ChainParameters {
     /// Create a new [`Self`] where all the configurable parameters are
     /// provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
     /// more than `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    pub fn new() -> Self {
+        Self::new_with_time_and_rates(
+            Timestamp::from_timestamp_millis(0),
+            ExchangeRate::new_unchecked(50000, 1),
+            ExchangeRate::new_unchecked(1, 50000),
+        )
+        .expect("Parameters are in range.")
+    }
+
+    /// Create a new [`Self`] with a specified `block_time` where
+    ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
+    ///  - `euro_per_energy` defaults to `1 / 50000`.
+    pub fn new_with_time(block_time: SlotTime) -> Self {
+        Self {
+            block_time,
+            ..Self::new()
+        }
+    }
+
+    /// Create a new [`Self`] where
+    ///  - `block_time` defaults to `0`,
+    ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
+    ///  - `euro_per_energy` defaults to `1 / 50000`.
+    ///
+    /// With these exchange rates, one energy costs one microCCD.
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
@@ -43,9 +68,36 @@ impl Chain {
             block_time,
             micro_ccd_per_euro,
             euro_per_energy,
-            accounts: BTreeMap::new(),
-            modules: BTreeMap::new(),
-            contracts: BTreeMap::new(),
+        })
+    }
+
+    /// Helper function for converting [`Energy`] to [`Amount`] using the two
+    /// [`ExchangeRate`]s `euro_per_energy` and `micro_ccd_per_euro`.
+    pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
+        energy_to_amount(energy, self.euro_per_energy, self.micro_ccd_per_euro)
+    }
+}
+
+impl Chain {
+    /// Create a new [`Self`] where all the configurable parameters are
+    /// provided.
+    ///
+    /// Returns an error if the exchange rates provided makes one energy cost
+    /// more than `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    pub fn new_with_time_and_rates(
+        block_time: SlotTime,
+        micro_ccd_per_euro: ExchangeRate,
+        euro_per_energy: ExchangeRate,
+    ) -> Result<Self, ExchangeRateError> {
+        Ok(Self {
+            parameters:          ChainParameters::new_with_time_and_rates(
+                block_time,
+                micro_ccd_per_euro,
+                euro_per_energy,
+            )?,
+            accounts:            BTreeMap::new(),
+            modules:             BTreeMap::new(),
+            contracts:           BTreeMap::new(),
             next_contract_index: 0,
         })
     }
@@ -55,7 +107,7 @@ impl Chain {
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new_with_time(block_time: SlotTime) -> Self {
         Self {
-            block_time,
+            parameters: ChainParameters::new_with_time(block_time),
             ..Self::new()
         }
     }
@@ -75,6 +127,12 @@ impl Chain {
         .expect("Rates known to be within range.")
     }
 
+    /// Helper function for converting [`Energy`] to [`Amount`] using the two
+    /// [`ExchangeRate`]s `euro_per_energy` and `micro_ccd_per_euro`.
+    pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
+        self.parameters.calculate_energy_cost(energy)
+    }
+
     /// Deploy a smart contract module.
     ///
     /// The `WasmModule` can be loaded from disk with either
@@ -90,8 +148,10 @@ impl Chain {
         sender: AccountAddress,
         wasm_module: WasmModule,
     ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
-        // Ensure sender account exists.
-        if !self.account_exists(sender) {
+        let Ok(sender_account) = self.accounts
+            .get_mut(&sender.into())
+            .ok_or(AccountDoesNotExist { address: sender }) else {
+            // Ensure sender account exists.
             return Err(ModuleDeployError {
                 kind:            ModuleDeployErrorKind::SenderDoesNotExist(AccountDoesNotExist {
                     address: sender,
@@ -99,8 +159,9 @@ impl Chain {
                 energy_used:     0.into(),
                 transaction_fee: Amount::zero(),
             });
-        }
+        };
 
+        let parameters = &self.parameters;
         let check_header_energy = {
             // +1 for the tag, +8 for size and version
             let payload_size = 1
@@ -109,15 +170,9 @@ impl Chain {
                 + transactions::construct::TRANSACTION_HEADER_SIZE;
             cost::base_cost(payload_size, signer.num_keys)
         };
-        let check_header_cost = self.calculate_energy_cost(check_header_energy);
+        let check_header_cost = parameters.calculate_energy_cost(check_header_energy);
 
-        if self
-            .account(sender)
-            .expect("existence already checked")
-            .balance
-            .available()
-            < check_header_cost
-        {
+        if sender_account.balance.available() < check_header_cost {
             return Err(ModuleDeployError {
                 kind:            ModuleDeployErrorKind::InsufficientFunds,
                 energy_used:     0.into(),
@@ -136,7 +191,7 @@ impl Chain {
             });
         }
 
-        let account = self.account_mut(sender).expect("existence already checked");
+        let account = sender_account;
 
         // TODO: Ensure that this matches the node for both invalid and valid modules.
         // to_ccd(header_cost) + to_ccd(deploy_cost) != to_ccd(header_cost +
@@ -163,10 +218,9 @@ impl Chain {
 
         // Calculate the deploy module cost.
         let deploy_module_energy = cost::deploy_module(wasm_module.source.size());
-        let deploy_module_cost = self.calculate_energy_cost(deploy_module_energy);
+        let deploy_module_cost = parameters.calculate_energy_cost(deploy_module_energy);
 
         // Subtract the cost from the account if it has sufficient funds.
-        let account = self.account_mut(sender).expect("existence already checked");
         if account.balance.available() < deploy_module_cost {
             return Err(ModuleDeployError {
                 kind:            ModuleDeployErrorKind::InsufficientFunds,
@@ -337,7 +391,7 @@ impl Chain {
         // reserved_energy and amount.
         let account_info = self.account(sender)?;
         if account_info.balance.available()
-            < self.calculate_energy_cost(energy_reserved) + payload.amount
+            < self.parameters.calculate_energy_cost(energy_reserved) + payload.amount
         {
             return Err(ContractInitErrorKind::InsufficientFunds);
         }
@@ -370,7 +424,7 @@ impl Chain {
         // Construct the context.
         let init_ctx = v0::InitContext {
             metadata:        ChainMetadata {
-                slot_time: self.block_time,
+                slot_time: self.parameters.block_time,
             },
             init_origin:     sender,
             sender_policies: contracts_common::to_bytes(&account_info.policy),
@@ -441,7 +495,7 @@ impl Chain {
                     .total -= payload.amount;
 
                 let energy_used = energy_reserved - *remaining_energy;
-                let transaction_fee = self.calculate_energy_cost(energy_used);
+                let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
 
                 Ok(ContractInitSuccess {
                     contract_address,
@@ -573,7 +627,7 @@ impl Chain {
         match result.invoke_response {
             v1::InvokeResponse::Success { new_balance, data } => {
                 let energy_used = energy_reserved - *remaining_energy;
-                let transaction_fee = self.calculate_energy_cost(energy_used);
+                let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
                 Ok(ContractInvokeSuccess {
                     trace_elements,
                     energy_used,
@@ -651,7 +705,7 @@ impl Chain {
                     kind:            ContractInvokeErrorKind::OutOfEnergy,
                 })?;
 
-        let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        let invoker_amount_reserved_for_nrg = self.parameters.calculate_energy_cost(energy_reserved);
         let account_info = self
             .account_mut(invoker)
             .expect("existence already checked");
@@ -661,7 +715,7 @@ impl Chain {
             let energy_used = energy_reserved - remaining_energy;
             return Err(ContractInvokeError {
                 energy_used,
-                transaction_fee: self.calculate_energy_cost(energy_used),
+                transaction_fee: self.parameters.calculate_energy_cost(energy_used),
                 kind: ContractInvokeErrorKind::InsufficientFunds,
             });
         }
@@ -737,7 +791,7 @@ impl Chain {
             });
         }
 
-        let invoker_amount_reserved_for_nrg = self.calculate_energy_cost(energy_reserved);
+        let invoker_amount_reserved_for_nrg = self.parameters.calculate_energy_cost(energy_reserved);
         // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self
             .account_mut(invoker)
@@ -747,7 +801,7 @@ impl Chain {
             let energy_used = Energy::from(0);
             return Err(ContractInvokeError {
                 energy_used,
-                transaction_fee: self.calculate_energy_cost(energy_used),
+                transaction_fee: self.parameters.calculate_energy_cost(energy_used),
                 kind: ContractInvokeErrorKind::InsufficientFunds,
             });
         }
@@ -908,7 +962,7 @@ impl Chain {
             remaining_energy
         };
         let energy_used = energy_reserved - remaining_energy;
-        let transaction_fee = self.calculate_energy_cost(energy_used);
+        let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
         ContractInvokeError {
             energy_used,
             transaction_fee,
@@ -937,18 +991,12 @@ impl Chain {
         remaining_energy: Energy,
     ) -> ContractInitError {
         let energy_used = energy_reserved - remaining_energy;
-        let transaction_fee = self.calculate_energy_cost(energy_used);
+        let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
         ContractInitError {
             energy_used,
             transaction_fee,
             kind,
         }
-    }
-
-    /// Helper function for converting [`Energy`] to [`Amount`] using the two
-    /// [`ExchangeRate`]s `euro_per_energy` and `micro_ccd_per_euro`.
-    pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
-        energy_to_amount(energy, self.euro_per_energy, self.micro_ccd_per_euro)
     }
 
     /// Try to set the exchange rates on the chain.
@@ -962,16 +1010,16 @@ impl Chain {
     ) -> Result<(), ExchangeRateError> {
         // Ensure the exchange rates are within a valid range.
         check_exchange_rates(euro_per_energy, micro_ccd_per_euro)?;
-        self.micro_ccd_per_euro = micro_ccd_per_euro;
-        self.euro_per_energy = euro_per_energy;
+        self.parameters.micro_ccd_per_euro = micro_ccd_per_euro;
+        self.parameters.euro_per_energy = euro_per_energy;
         Ok(())
     }
 
     /// Return the current microCCD per euro exchange rate.
-    pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.micro_ccd_per_euro }
+    pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.parameters.micro_ccd_per_euro }
 
     /// Return the current euro per energy exchange rate.
-    pub fn euro_per_energy(&self) -> ExchangeRate { self.euro_per_energy }
+    pub fn euro_per_energy(&self) -> ExchangeRate { self.parameters.euro_per_energy }
 }
 
 impl Account {
@@ -1023,6 +1071,7 @@ impl Account {
     }
 }
 
+// TODO: This should go to concordium-base.
 impl From<AccountAddressEq> for AccountAddress {
     fn from(aae: AccountAddressEq) -> Self { aae.0 }
 }
@@ -1040,22 +1089,15 @@ impl PartialEq for AccountAddressEq {
 }
 
 impl PartialOrd for AccountAddressEq {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let bytes_1: &[u8; 32] = self.0.as_ref();
-        let bytes_2: &[u8; 32] = other.0.as_ref();
-        if bytes_1[0..29] < bytes_2[0..29] {
-            Some(std::cmp::Ordering::Less)
-        } else if bytes_1[0..29] > bytes_2[0..29] {
-            Some(std::cmp::Ordering::Greater)
-        } else {
-            Some(std::cmp::Ordering::Equal)
-        }
-    }
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl Ord for AccountAddressEq {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).expect("Is always some.")
+        let bytes_1: &[u8; 32] = self.0.as_ref();
+        let bytes_2: &[u8; 32] = other.0.as_ref();
+        bytes_1[0..29].cmp(&bytes_2[0..29])
     }
 }
 
