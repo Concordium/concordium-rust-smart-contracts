@@ -1,12 +1,9 @@
-use crate::{
-    types::{Account, Contract, ContractModule},
-    AccountAddressEq,
-};
+use crate::{AccountAddressEq, Chain};
 use concordium_base::{
     base::Energy,
     contracts_common::{
-        AccountAddress, Address, Amount, ContractAddress, ExchangeRate, ModuleReference,
-        OwnedContractName, OwnedEntrypointName, SlotTime,
+        AccountAddress, Address, Amount, ContractAddress, ModuleReference, OwnedContractName,
+        OwnedEntrypointName,
     },
     smart_contracts::{ContractTraceElement, OwnedParameter},
 };
@@ -29,24 +26,10 @@ pub(crate) struct InvokeEntrypointResponse {
 pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// The changeset which keeps track of changes to accounts, modules, and
     /// contracts that occur during an invocation.
-    pub(super) changeset:          ChangeSet,
+    pub(super) changeset:        ChangeSet,
     /// The energy remaining for execution.
-    pub(super) remaining_energy:   &'a mut Energy,
-    /// The accounts of the chain. These are only used to look up the state
-    /// before a transaction. All changes are stored in the changeset.
-    pub(super) accounts:           &'b BTreeMap<AccountAddressEq, Account>,
-    /// The modules of the chain. These are only used to look up the state
-    /// before a transaction. All changes are stored in the changeset.
-    pub(super) modules:            &'b BTreeMap<ModuleReference, ContractModule>,
-    /// The contracts of the chain. These are only used to look up the state
-    /// before a transaction. All changes are stored in the changeset.
-    pub(super) contracts:          &'b BTreeMap<ContractAddress, Contract>,
-    /// The current block time.
-    pub(super) block_time:         SlotTime,
-    /// The euro per energy exchange rate.
-    pub(super) euro_per_energy:    ExchangeRate,
-    /// The mCCD per euro exchange rate.
-    pub(super) micro_ccd_per_euro: ExchangeRate,
+    pub(super) remaining_energy: &'a mut Energy,
+    pub(super) chain:            &'b Chain,
 }
 
 /// The set of [`Changes`] represented as a stack.
