@@ -1,6 +1,6 @@
 use crate::{
     constants,
-    invocation::{EntrypointInvocationHandler, TestConfigurationError},
+    invocation::{invoke_entrypoint_and_get_changes, TestConfigurationError},
     types::*,
 };
 use anyhow::anyhow;
@@ -585,16 +585,10 @@ impl Chain {
         }
         let contract_address = payload.address;
         let (result, changeset, trace_elements) =
-            EntrypointInvocationHandler::invoke_entrypoint_and_get_changes(
-                self,
-                invoker,
-                sender,
-                remaining_energy,
-                payload,
-            )
-            .map_err(|err| {
-                self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy)
-            })?;
+            invoke_entrypoint_and_get_changes(self, invoker, sender, remaining_energy, payload)
+                .map_err(|err| {
+                    self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy)
+                })?;
 
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
@@ -705,7 +699,8 @@ impl Chain {
                     kind:            ContractInvokeErrorKind::OutOfEnergy,
                 })?;
 
-        let invoker_amount_reserved_for_nrg = self.parameters.calculate_energy_cost(energy_reserved);
+        let invoker_amount_reserved_for_nrg =
+            self.parameters.calculate_energy_cost(energy_reserved);
         let account_info = self
             .account_mut(invoker)
             .expect("existence already checked");
@@ -791,7 +786,8 @@ impl Chain {
             });
         }
 
-        let invoker_amount_reserved_for_nrg = self.parameters.calculate_energy_cost(energy_reserved);
+        let invoker_amount_reserved_for_nrg =
+            self.parameters.calculate_energy_cost(energy_reserved);
         // Ensure account exists and can pay for the reserved energy and amount
         let account_info = self
             .account_mut(invoker)

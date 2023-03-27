@@ -14,4 +14,5 @@
 
 mod impls;
 mod types;
-pub(crate) use types::{EntrypointInvocationHandler, TestConfigurationError};
+pub(crate) use impls::invoke_entrypoint_and_get_changes;
+pub(crate) use types::TestConfigurationError;

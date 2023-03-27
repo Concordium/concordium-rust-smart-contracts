@@ -27,43 +27,42 @@ use concordium_smart_contract_engine::{
 use concordium_wasm::artifact;
 use std::collections::{btree_map, BTreeMap};
 
+/// Invoke an entrypoint and get the result, [`Changeset`], and chain
+/// events.
+///
+/// **Preconditions:**
+///  - `invoker` exists
+///  - `invoker` has sufficient balance to pay for `remaining_energy`
+///  - `sender` exists
+///  - if the contract (`contract_address`) exists, then its `module` must also
+///    exist.
+pub(crate) fn invoke_entrypoint_and_get_changes<'a, 'b>(
+    chain: &'b Chain,
+    invoker: AccountAddress,
+    sender: Address,
+    remaining_energy: &'a mut Energy,
+    payload: UpdateContractPayload,
+) -> Result<
+    (
+        InvokeEntrypointResponse,
+        ChangeSet,
+        Vec<ContractTraceElement>,
+    ),
+    TestConfigurationError,
+> {
+    let mut contract_invocation = EntrypointInvocationHandler {
+        changeset: ChangeSet::new(),
+        remaining_energy,
+        chain,
+    };
+
+    let mut trace_elements = Vec::new();
+    let result =
+        contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut trace_elements)?;
+    Ok((result, contract_invocation.changeset, trace_elements))
+}
+
 impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
-    /// Invoke an entrypoint and get the result, [`Changeset`], and chain
-    /// events.
-    ///
-    /// **Preconditions:**
-    ///  - `invoker` exists
-    ///  - `invoker` has sufficient balance to pay for `remaining_energy`
-    ///  - `sender` exists
-    ///  - if the contract (`contract_address`) exists, then its `module` must
-    ///    also exist.
-    // TODO: This should not be inside an impl block.
-    pub(crate) fn invoke_entrypoint_and_get_changes(
-        chain: &'b Chain,
-        invoker: AccountAddress,
-        sender: Address,
-        remaining_energy: &'a mut Energy,
-        payload: UpdateContractPayload,
-    ) -> Result<
-        (
-            InvokeEntrypointResponse,
-            ChangeSet,
-            Vec<ContractTraceElement>,
-        ),
-        TestConfigurationError,
-    > {
-        let mut contract_invocation = Self {
-            changeset: ChangeSet::new(),
-            remaining_energy,
-            chain,
-        };
-
-        let mut trace_elements = Vec::new();
-        let result =
-            contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut trace_elements)?;
-        Ok((result, contract_invocation.changeset, trace_elements))
-    }
-
     /// Used for handling contract entrypoint invocations internally.
     ///
     /// **Preconditions:**
@@ -454,7 +453,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
             btree_map::Entry::Vacant(vac) => {
                 // get original balance
                 let original_balance = self
-                    .chain.accounts
+                    .chain
+                    .accounts
                     .get(&address.into())
                     .expect("Precondition violation: account assumed to exist")
                     .balance
@@ -516,18 +516,21 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         {
             // Contract has been upgrade, new module exists.
             Some(new_module) => self
-                .chain.modules
+                .chain
+                .modules
                 .get(&new_module)
                 .expect("Precondition violation: module must exist.")
                 .clone(),
             // Contract hasn't been upgraded. Use persisted module.
             None => {
                 let module_ref = self
-                    .chain.contracts
+                    .chain
+                    .contracts
                     .get(&address)
                     .expect("Precondition violation: contract must exist.")
                     .module_reference;
-                self.chain.modules
+                self.chain
+                    .modules
                     .get(&module_ref)
                     .expect("Precondition violation: module must exist.")
                     .clone()
@@ -552,7 +555,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
             Some(modified_state) => modified_state,
             // Contract state hasn't been modified. Thaw from persistence.
             None => self
-                .chain.contracts
+                .chain
+                .contracts
                 .get(&address)
                 .expect("Precondition violation: contract must exist")
                 .state
@@ -563,7 +567,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     /// Looks up the account balance for an account by first checking
     /// the changeset, then the persisted values.
     fn account_balance(&self, address: AccountAddress) -> Option<AccountBalance> {
-        let account_balance = self.chain.accounts.get(&address.into()).map(|a| a.balance)?;
+        let account_balance = self
+            .chain
+            .accounts
+            .get(&address.into())
+            .map(|a| a.balance)?;
         match self
             .changeset
             .current()
@@ -614,7 +622,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         match self.changeset.current_mut().contracts.entry(address) {
             btree_map::Entry::Vacant(vac) => {
                 let original_balance = self
-                    .chain.contracts
+                    .chain
+                    .contracts
                     .get(&address)
                     .expect("Precondition violation: contract must exist.")
                     .self_balance;
@@ -651,7 +660,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         match self.changeset.current_mut().contracts.entry(address) {
             btree_map::Entry::Vacant(vac) => {
                 let contract = self
-                    .chain.contracts
+                    .chain
+                    .contracts
                     .get(&address)
                     .expect("Precondition violation: contract must exist.");
                 let old_module_ref = contract.module_reference;
@@ -667,7 +677,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 let old_module_ref = match changes.module {
                     Some(old_module) => old_module,
                     None => {
-                        self.chain.contracts
+                        self.chain
+                            .contracts
                             .get(&address)
                             .expect("Precondition violation: contract must exist.")
                             .module_reference
@@ -1219,7 +1230,8 @@ impl<'a, 'b, 'c> InvocationData<'a, 'b, 'c> {
 
                         let (success, invoke_response) = match self
                             .invocation_handler
-                            .chain.contracts
+                            .chain
+                            .contracts
                             .get(&address)
                             .map(|c| c.contract_name.as_contract_name())
                         {
@@ -1312,7 +1324,8 @@ impl<'a, 'b, 'c> InvocationData<'a, 'b, 'c> {
                             .remaining_energy
                             .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
 
-                        let response = match self.invocation_handler.chain.modules.get(&module_ref) {
+                        let response = match self.invocation_handler.chain.modules.get(&module_ref)
+                        {
                             None => v1::InvokeResponse::Failure {
                                 kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
                             },
@@ -1440,8 +1453,16 @@ impl<'a, 'b, 'c> InvocationData<'a, 'b, 'c> {
                     }
                     v1::Interrupt::QueryExchangeRates => {
                         let exchange_rates = ExchangeRates {
-                            euro_per_energy:    self.invocation_handler.chain.parameters.euro_per_energy,
-                            micro_ccd_per_euro: self.invocation_handler.chain.parameters.micro_ccd_per_euro,
+                            euro_per_energy:    self
+                                .invocation_handler
+                                .chain
+                                .parameters
+                                .euro_per_energy,
+                            micro_ccd_per_euro: self
+                                .invocation_handler
+                                .chain
+                                .parameters
+                                .micro_ccd_per_euro,
                         };
 
                         let response = v1::InvokeResponse::Success {
