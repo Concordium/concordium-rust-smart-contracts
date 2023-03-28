@@ -1,6 +1,6 @@
 use crate::{
     constants,
-    invocation::{invoke_entrypoint_and_get_changes, TestConfigurationError},
+    invocation::{invoke_entrypoint_and_get_changes, ChangeSet, TestConfigurationError},
     types::*,
 };
 use anyhow::anyhow;
@@ -26,11 +26,12 @@ impl Default for Chain {
 }
 
 impl ChainParameters {
-    /// Create a new [`Self`] where all the configurable parameters are
-    /// provided.
+    /// Create a new [`Self`] where
+    ///  - `block_time` defaults to `0`,
+    ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
+    ///  - `euro_per_energy` defaults to `1 / 50000`.
     ///
-    /// Returns an error if the exchange rates provided makes one energy cost
-    /// more than `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    /// With these exchange rates, one energy costs one microCCD.
     pub fn new() -> Self {
         Self::new_with_time_and_rates(
             Timestamp::from_timestamp_millis(0),
@@ -50,12 +51,11 @@ impl ChainParameters {
         }
     }
 
-    /// Create a new [`Self`] where
-    ///  - `block_time` defaults to `0`,
-    ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
-    ///  - `euro_per_energy` defaults to `1 / 50000`.
+    /// Create a new [`Self`] where all the configurable parameters are
+    /// provided.
     ///
-    /// With these exchange rates, one energy costs one microCCD.
+    /// Returns an error if the exchange rates provided makes one energy cost
+    /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
@@ -83,7 +83,7 @@ impl Chain {
     /// provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
-    /// more than `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
@@ -136,7 +136,7 @@ impl Chain {
     /// Deploy a smart contract module.
     ///
     /// The `WasmModule` can be loaded from disk with either
-    /// [`Chain::load_module_v1`] or [`Chain::load_module_v1_raw`].
+    /// [`Chain::module_load_v1`] or [`Chain::module_load_v1_raw`].
     ///
     /// Parameters:
     ///  - `signer`: the signer with a number of keys, which affects the cost.
@@ -555,13 +555,17 @@ impl Chain {
     ///  - `sender` exists.
     ///  - `invoker`s balance is >= `amount`.
     fn contract_invocation_worker(
-        &mut self,
+        &self,
         invoker: AccountAddress,
         sender: Address,
         energy_reserved: Energy,
         payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
-        should_persist: bool,
+        process_changeset: impl FnOnce(
+            ChangeSet,
+            Energy,
+            ContractAddress,
+        ) -> Result<(Energy, bool), OutOfEnergy>,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
@@ -593,17 +597,7 @@ impl Chain {
         // Get the energy to be charged for extra state bytes. Or return an error if out
         // of energy.
         let state_changed = if result.is_success() {
-            let res = if should_persist {
-                changeset.persist(
-                    *remaining_energy,
-                    contract_address,
-                    &mut self.accounts,
-                    &mut self.contracts,
-                )
-            } else {
-                changeset.collect_energy_for_state(*remaining_energy, contract_address)
-            };
-
+            let res = process_changeset(changeset, *remaining_energy, contract_address);
             let (energy_for_state_increase, state_changed) =
                 res.map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
 
@@ -647,6 +641,7 @@ impl Chain {
     /// **Parameters:**
     ///  - `invoker`: the account paying for the transaction.
     ///  - `sender`: the sender of the transaction, can also be a contract.
+    ///    TODO: This does not make sense. Senders cannot be contracts.
     ///  - `contract_address`: the contract to update.
     ///  - `entrypoint`: the entrypoint to call.
     ///  - `parameter`: the contract parameter.
@@ -656,7 +651,7 @@ impl Chain {
         &mut self,
         signer: Signer,
         invoker: AccountAddress,
-        sender: Address,
+        sender: Address, // TODO: Why does this exist? contra
         energy_reserved: Energy,
         payload: UpdateContractPayload,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
@@ -674,6 +669,7 @@ impl Chain {
         if !self.address_exists(sender) {
             // TODO: Should we charge the header cost if the invoker exists but the sender
             // doesn't?
+            // No, this situation should not happen.
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
@@ -729,7 +725,14 @@ impl Chain {
             energy_reserved,
             payload,
             &mut remaining_energy,
-            true,
+            |changeset: ChangeSet, remaining_energy, contract_address| {
+                changeset.persist(
+                    remaining_energy,
+                    contract_address,
+                    &mut self.accounts,
+                    &mut self.contracts,
+                )
+            },
         );
 
         let transaction_fee = match &res {
@@ -761,22 +764,12 @@ impl Chain {
     ///  - `amount`: the amount sent to the contract.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
     pub fn contract_invoke(
-        &mut self,
+        &self,
         invoker: AccountAddress,
         sender: Address,
         energy_reserved: Energy,
         payload: UpdateContractPayload,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
-        // Ensure the invoker exists.
-        if !self.account_exists(invoker) {
-            return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist { address: invoker },
-                ),
-            });
-        }
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             return Err(ContractInvokeError {
@@ -786,12 +779,18 @@ impl Chain {
             });
         }
 
+        let Some(account_info) = self.accounts.get_mut(&invoker.into()) else {
+            return Err(ContractInvokeError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist { address: invoker },
+                ),
+            });
+        };
+
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
-        // Ensure account exists and can pay for the reserved energy and amount
-        let account_info = self
-            .account_mut(invoker)
-            .expect("existence already checked");
 
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
             let energy_used = Energy::from(0);
@@ -814,7 +813,9 @@ impl Chain {
             energy_reserved,
             payload,
             &mut remaining_energy,
-            false,
+            |changeset: ChangeSet, remaining_energy, contract_address| {
+                changeset.collect_energy_for_state(remaining_energy, contract_address)
+            },
         );
 
         // Return the amount charged for the reserved energy, as this is not a
@@ -829,7 +830,8 @@ impl Chain {
 
     /// Create an account.
     ///
-    /// Will override an existing account and return it.
+    /// If an account with a matching address already exists this method will
+    /// replace it and return it.
     ///
     /// Note that if the first 29-bytes of an account are identical, then
     /// they are *considered aliases* on each other in all methods.
@@ -847,7 +849,7 @@ impl Chain {
     ///     2, 3, // Only last three bytes differ.
     /// ]);
     ///
-    /// chain.create_account(acc, Account::new(Amount::from_ccd(123)));
+    /// chain.create_account(Account::new(acc, Amount::from_ccd(123)));
     /// assert_eq!(
     ///     chain.account_balance_available(acc_alias), // Using the alias for lookup.
     ///     Some(Amount::from_ccd(123))
@@ -890,7 +892,7 @@ impl Chain {
     }
 
     /// Return a clone of the [`ContractModule`] (which has an `Arc` around the
-    /// artifact).
+    /// artifact so cloning is cheap).
     fn contract_module(
         &self,
         module_ref: ModuleReference,
@@ -1236,7 +1238,7 @@ pub(crate) fn energy_to_amount(
 /// Helper function that checks the validity of the exchange rates.
 ///
 /// More specifically, it checks that the cost of one energy is <= `u64::MAX /
-/// MAX_ALLOWED_INVOKE_ENERGY`, which ensures that overflows won't occur.
+/// [`MAX_ALLOWED_INVOKE_ENERGY`]`, which ensures that overflows won't occur.
 fn check_exchange_rates(
     euro_per_energy: ExchangeRate,
     micro_ccd_per_euro: ExchangeRate,

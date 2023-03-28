@@ -932,9 +932,9 @@ impl ChangeSet {
     /// Returns an [`OutOfEnergy`] error if the energy needed for storing the
     /// extra state is larger than `remaining_energy`.
     ///
-    /// Otherwise, it returns
-    /// the [`Energy`] needed for storing the extra state. It also returns
-    /// whether the state of the provided `invoked_contract` has changed.
+    /// Otherwise, it returns the [`Energy`] needed for storing the extra state.
+    /// It also returns whether the state of the provided `invoked_contract`
+    /// has changed.
     pub(crate) fn collect_energy_for_state(
         mut self,
         mut remaining_energy: Energy,

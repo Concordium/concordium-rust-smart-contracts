@@ -40,17 +40,17 @@ pub(crate) struct ChainParameters {
 /// contracts and invoking contracts.
 #[derive(Debug)]
 pub struct Chain {
-    pub(crate) parameters: ChainParameters,
+    pub(crate) parameters:          ChainParameters,
     /// Accounts and info about them.
     /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
     /// as one account.
-    pub accounts:                  BTreeMap<AccountAddressEq, Account>,
+    pub(crate) accounts:            BTreeMap<AccountAddressEq, Account>,
     /// Smart contract modules.
-    pub modules:                   BTreeMap<ModuleReference, ContractModule>,
+    pub(crate) modules:             BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
-    pub contracts:                 BTreeMap<ContractAddress, Contract>,
+    pub(crate) contracts:           BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
-    pub next_contract_index:       u64,
+    pub(crate) next_contract_index: u64,
 }
 
 /// A smart contract instance.
@@ -83,6 +83,7 @@ pub struct Account {
 ///
 /// Account aliases share the first 29 bytes of the address, so the
 /// [`PartialEq`]/[`PartialOrd`] for this type adheres to that.
+// TODO: This should be moved to concordium-base.
 #[repr(transparent)]
 #[derive(Eq, Debug, Clone, Copy)]
 pub struct AccountAddressEq(pub(crate) AccountAddress);
@@ -394,10 +395,12 @@ pub struct AccountDoesNotExist {
 
 /// The provided exchange rates are not valid.
 /// Meaning that they do not correspond to one energy costing less than
-/// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
-#[derive(Debug)]
+/// `u64::MAX / ` [`concordium_base::constants::MAX_ALLOWED_INVOKE_ENERGY`]`.
+#[derive(Debug, Error)]
+#[error("An exchange rate was too high.")]
 pub struct ExchangeRateError;
 
 /// A [`Signer`] cannot be created with `0` keys.
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Any signer must have at least one key.")]
 pub struct ZeroKeysError;
