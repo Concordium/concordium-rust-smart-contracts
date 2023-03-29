@@ -7,14 +7,13 @@ license = "MPL-2.0"
 
 [features]
 default = ["std", "wee_alloc", "crypto-primitives"]
-std = ["concordium-std/std", "concordium-cis2/std", "hex/std"]
+std = ["concordium-std/std", "concordium-cis2/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
 concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
-hex = { version = "0.4", default-features = false }
 
 [lib]
 crate-type=["cdylib", "rlib"]
