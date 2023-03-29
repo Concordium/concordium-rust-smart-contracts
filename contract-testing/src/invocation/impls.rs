@@ -5,7 +5,7 @@ use crate::{
         contract_events_from_logs, from_interpreter_energy, lookup_module_cost,
         to_interpreter_energy,
     },
-    types::{Account, BalanceError, Chain, Contract, ContractModule, TransferError},
+    types::{Account, BalanceError, Contract, ContractModule, TransferError},
     AccountAddressEq,
 };
 use concordium_base::{
