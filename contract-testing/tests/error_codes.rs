@@ -14,7 +14,8 @@ fn test_error_codes() {
     chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/caller.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -22,12 +23,17 @@ fn test_error_codes() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_caller".into()),
-            param:     OwnedParameter::empty(),
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_caller".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     // Invoke an entrypoint that calls the "fail" entrypoint.
@@ -46,7 +52,8 @@ fn test_error_codes() {
         Amount::zero(),
     );
     let res_update_0 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -79,7 +86,8 @@ fn test_error_codes() {
         Amount::from_micro_ccd(10_000),
     );
     let res_update_1 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -110,7 +118,8 @@ fn test_error_codes() {
         Amount::zero(),
     );
     let res_update_2 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -143,7 +152,8 @@ fn test_error_codes() {
         Amount::zero(),
     );
     let res_update_3 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -176,7 +186,8 @@ fn test_error_codes() {
         Amount::zero(),
     );
     let res_update_4 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -212,7 +223,8 @@ fn test_error_codes() {
         Amount::zero(),
     );
     let res_update_6 = chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),

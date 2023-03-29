@@ -26,7 +26,8 @@ fn test_new_parameter_limit() {
     let parameter = mk_parameter(65535, 65535);
 
     let res_deploy = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -34,16 +35,22 @@ fn test_new_parameter_limit() {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(80000), InitContractPayload {
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_relax".into()),
-            param:     parameter.clone(), // Check parameter size limit on init.
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(80000),
+            InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_relax".into()),
+                param:     parameter.clone(), // Check parameter size limit on init.
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
 
     chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(700000),
@@ -63,7 +70,8 @@ fn test_new_return_value_limit() {
     let (mut chain, contract_address) = deploy_and_init();
 
     chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -84,7 +92,8 @@ fn test_new_log_limit() {
     let (mut chain, contract_address) = deploy_and_init();
 
     chain
-        .contract_update(Signer::with_one_key(),
+        .contract_update(
+            Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
@@ -107,7 +116,8 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
     chain.create_account(Account::new(ACC_0, initial_balance));
 
     let res_deploy = chain
-        .module_deploy_v1(Signer::with_one_key(),
+        .module_deploy_v1(
+            Signer::with_one_key(),
             ACC_0,
             Chain::module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
@@ -115,12 +125,17 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
         .expect("Deploying valid module should work");
 
     let res_init = chain
-        .contract_init(Signer::with_one_key(), ACC_0, Energy::from(10000), InitContractPayload {
-            mod_ref:   res_deploy.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_relax".into()),
-            param:     OwnedParameter::empty(),
-            amount:    Amount::zero(),
-        })
+        .contract_init(
+            Signer::with_one_key(),
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                mod_ref:   res_deploy.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_relax".into()),
+                param:     OwnedParameter::empty(),
+                amount:    Amount::zero(),
+            },
+        )
         .expect("Initializing valid contract should work");
     (chain, res_init.contract_address)
 }

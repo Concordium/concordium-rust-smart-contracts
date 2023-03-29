@@ -63,7 +63,7 @@ fn initializing_valid_contract_works() {
         chain.account_balance_available(ACC_0),
         Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
     );
-    assert!(chain.get_contract(ContractAddress::new(0,0)).is_some());
+    assert!(chain.get_contract(ContractAddress::new(0, 0)).is_some());
 }
 
 #[test]
