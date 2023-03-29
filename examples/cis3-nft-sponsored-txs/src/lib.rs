@@ -892,13 +892,13 @@ fn contract_permit<S: HasStateApi>(
     // Check signature is not expired.
     ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
-    let mut msg = Vec::with_capacity(8 + 32 + 2 * message_bytes.len());
-    unsafe { msg.set_len(msg.capacity()) };
-    msg[0..32].copy_from_slice(param.signer.as_ref());
-    msg[32..40].copy_from_slice(&[0u8; 8]);
-    hex::encode_to_slice(message_bytes, &mut msg[40..]).unwrap_abort();
+    let mut msg_prepend = Vec::with_capacity(32 + 8);
+    unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+    msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
+    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
     // Calculate the message hash.
-    let message_hash = crypto_primitives.hash_sha2_256(&msg).0;
+    let message_hash =
+        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
 
     // Check signature.
     ensure!(
@@ -1294,8 +1294,8 @@ mod tests {
     const TOKEN_3: ContractTokenId = TokenIdU32(44);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        130, 84, 91, 94, 100, 82, 200, 133, 249, 141, 169, 203, 218, 215, 174, 94, 144, 0, 130,
-        175, 6, 157, 165, 29, 173, 182, 121, 92, 245, 218, 254, 182,
+        221, 110, 86, 241, 200, 163, 168, 26, 167, 7, 100, 135, 18, 190, 91, 226, 49, 114, 187,
+        200, 52, 66, 101, 84, 182, 85, 94, 229, 7, 229, 45, 171,
     ]);
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
@@ -1303,16 +1303,16 @@ mod tests {
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        158, 214, 198, 189, 241, 154, 174, 222, 76, 126, 20, 20, 233, 173, 177, 19, 169, 171, 29,
-        83, 30, 160, 77, 54, 154, 7, 85, 129, 233, 202, 109, 26, 107, 90, 40, 220, 8, 61, 138, 175,
-        87, 63, 135, 149, 253, 6, 218, 253, 149, 25, 105, 86, 165, 18, 217, 209, 72, 43, 220, 47,
-        83, 243, 153, 2,
+        29, 37, 151, 241, 185, 48, 61, 110, 63, 249, 85, 109, 36, 218, 243, 21, 211, 195, 129, 128,
+        217, 46, 21, 115, 49, 11, 63, 196, 250, 42, 198, 67, 170, 158, 28, 69, 201, 193, 196, 62,
+        222, 17, 157, 183, 47, 217, 87, 61, 211, 230, 94, 206, 76, 158, 12, 193, 246, 234, 168,
+        170, 33, 203, 116, 0,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        208, 10, 23, 187, 248, 134, 179, 121, 223, 32, 127, 94, 120, 190, 25, 11, 141, 168, 111,
-        16, 109, 126, 71, 171, 181, 131, 58, 243, 179, 42, 197, 208, 31, 234, 202, 205, 95, 118,
-        102, 233, 127, 135, 119, 204, 78, 225, 218, 52, 68, 251, 194, 84, 249, 43, 46, 27, 15, 83,
-        188, 31, 144, 241, 8, 12,
+        160, 42, 180, 112, 188, 195, 17, 151, 152, 77, 25, 20, 32, 231, 55, 225, 5, 247, 94, 31,
+        39, 90, 140, 185, 171, 133, 96, 59, 99, 57, 129, 138, 108, 71, 69, 143, 215, 166, 29, 197,
+        178, 204, 205, 224, 225, 61, 249, 119, 54, 76, 218, 5, 118, 254, 41, 204, 210, 230, 96,
+        155, 15, 147, 202, 15,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
