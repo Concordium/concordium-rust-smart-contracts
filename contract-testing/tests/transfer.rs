@@ -54,7 +54,7 @@ fn test_transfer() {
     // Contract should have forwarded the amount and thus have balance == 0.
     assert_eq!(
         Amount::zero(),
-        chain.contracts.get(&contract_address).unwrap().self_balance
+        chain.get_contract(contract_address).unwrap().self_balance
     );
 
     // Deposit 1000 micro CCD.
@@ -94,7 +94,7 @@ fn test_transfer() {
     // Contract should have 1000 - 17 microCCD in balance.
     assert_eq!(
         Amount::from_micro_ccd(1000 - 17),
-        chain.contracts.get(&contract_address).unwrap().self_balance
+        chain.get_contract(contract_address).unwrap().self_balance
     );
     assert_eq!(res_update.trace_elements[..], [
         ContractTraceElement::Interrupted {

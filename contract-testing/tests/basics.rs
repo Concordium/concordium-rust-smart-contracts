@@ -22,7 +22,7 @@ fn deploying_valid_module_works() {
         )
         .expect("Deploying valid module should work.");
 
-    assert_eq!(chain.modules.len(), 1);
+    assert!(chain.get_module(res.module_reference).is_some());
     assert_eq!(
         chain.account_balance_available(ACC_0),
         Some(initial_balance - res.transaction_fee)
@@ -63,7 +63,7 @@ fn initializing_valid_contract_works() {
         chain.account_balance_available(ACC_0),
         Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
     );
-    assert_eq!(chain.contracts.len(), 1);
+    assert!(chain.get_contract(ContractAddress::new(0,0)).is_some());
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn updating_valid_contract_works() {
                 - res_update.transaction_fee
         )
     );
-    assert_eq!(chain.contracts.len(), 1);
+    assert!(chain.get_contract(res_init.contract_address).is_some());
     assert!(res_update.state_changed);
     // Assert that the updated state is persisted.
     assert_eq!(res_invoke_get.return_value, [1u8]);
@@ -406,7 +406,7 @@ fn update_with_fib_reentry_works() {
                 - res_update.transaction_fee
         )
     );
-    assert_eq!(chain.contracts.len(), 1);
+    assert!(chain.get_contract(res_init.contract_address).is_some());
     assert!(res_update.state_changed);
     let expected_res = u64::to_le_bytes(13);
     assert_eq!(res_update.return_value, expected_res);

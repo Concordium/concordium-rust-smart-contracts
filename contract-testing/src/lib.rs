@@ -15,7 +15,7 @@
 //! const ACC: AccountAddress = AccountAddress([0;32]);
 //!
 //! // Create an account with 10000 CCD in balance.
-//! chain.create_account(ACC, Account::new(Amount::from_ccd(1000)));
+//! chain.create_account(Account::new(ACC, Amount::from_ccd(1000)));
 //!
 //! // Deploy a smart contract module (built with [Cargo Concordium](https://developer.concordium.software/en/mainnet/smart-contracts/guides/setup-tools.html#cargo-concordium)).
 //! let deployment = chain

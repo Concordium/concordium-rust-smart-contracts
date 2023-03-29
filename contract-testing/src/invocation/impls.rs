@@ -27,7 +27,7 @@ use concordium_smart_contract_engine::{
 use concordium_wasm::artifact;
 use std::collections::{btree_map, BTreeMap};
 
-/// Invoke an entrypoint and get the result, [`Changeset`], and chain
+/// Invoke an entrypoint and get the result, [`ChangeSet`], and chain
 /// events.
 ///
 /// **Preconditions:**
@@ -39,6 +39,7 @@ use std::collections::{btree_map, BTreeMap};
 pub(crate) fn invoke_entrypoint_and_get_changes<'a, 'b>(
     chain: &'b Chain,
     invoker: AccountAddress,
+    reserved_amount: Amount,
     sender: Address,
     remaining_energy: &'a mut Energy,
     payload: UpdateContractPayload,
@@ -54,6 +55,8 @@ pub(crate) fn invoke_entrypoint_and_get_changes<'a, 'b>(
         changeset: ChangeSet::new(),
         remaining_energy,
         chain,
+        reserved_amount,
+        invoker,
     };
 
     let mut trace_elements = Vec::new();
@@ -452,13 +455,18 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         match self.changeset.current_mut().accounts.entry(address.into()) {
             btree_map::Entry::Vacant(vac) => {
                 // get original balance
-                let original_balance = self
+                let mut original_balance = self
                     .chain
                     .accounts
                     .get(&address.into())
                     .expect("Precondition violation: account assumed to exist")
                     .balance
                     .available();
+                if self.invoker == address {
+                    // It has been checked that the invoker account has sufficient balance for
+                    // paying.
+                    original_balance -= self.reserved_amount;
+                }
                 // Try to apply the balance or return an error if insufficient funds.
                 let new_account_balance = delta.apply_to_balance(original_balance)?;
                 // Insert the changes into the changeset.
@@ -567,7 +575,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     /// Looks up the account balance for an account by first checking
     /// the changeset, then the persisted values.
     fn account_balance(&self, address: AccountAddress) -> Option<AccountBalance> {
-        let account_balance = self
+        let mut account_balance = self
             .chain
             .accounts
             .get(&address.into())
@@ -588,15 +596,20 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 locked: account_balance.locked,
             }),
             // Account doesn't exist in changeset.
-            None => Some(account_balance),
+            None => {
+                if self.invoker == address {
+                    account_balance.total -= self.reserved_amount;
+                }
+                Some(account_balance)
+            }
         }
     }
 
     /// Saves a mutable state for a contract in the changeset.
     ///
     /// If `with_fresh_generation`, then it will use the
-    /// [`MutableState::make_fresh_generation`] function, otherwise it will
-    /// make a clone.
+    /// [`MutableState::make_fresh_generation`][make_fresh_generation]
+    /// function, otherwise it will make a clone.
     ///
     /// If the contract already has an entry in the changeset, the old state
     /// will be replaced. Otherwise, the entry is created and the state is
@@ -607,6 +620,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     ///
     /// **Preconditions:**
     ///  - Contract must exist.
+    ///
+    /// [make_fresh_generation]: trie::MutableState::make_fresh_generation
     fn save_state_changes(
         &mut self,
         address: ContractAddress,
@@ -853,11 +868,11 @@ impl ChangeSet {
     ///    to balance).
     pub(crate) fn persist(
         mut self,
-        mut remaining_energy: Energy,
+        remaining_energy: &mut Energy,
         invoked_contract: ContractAddress,
         persisted_accounts: &mut BTreeMap<AccountAddressEq, Account>,
         persisted_contracts: &mut BTreeMap<ContractAddress, Contract>,
-    ) -> Result<(Energy, bool), OutOfEnergy> {
+    ) -> Result<bool, OutOfEnergy> {
         let current = self.current_mut();
         let mut invoked_contract_has_state_changes = false;
         // Persist contract changes and collect the total increase in states sizes.
@@ -915,15 +930,12 @@ impl ChangeSet {
             if !changes.balance_delta.is_zero() {
                 account.balance.total = changes
                     .balance_delta
-                    .apply_to_balance(changes.original_balance)
+                    .apply_to_balance(account.balance.total)
                     .expect("Precondition violation: amount delta causes underflow");
             }
         }
 
-        Ok((
-            energy_for_state_increase,
-            invoked_contract_has_state_changes,
-        ))
+        Ok(invoked_contract_has_state_changes)
     }
 
     /// Traverses the last checkpoint in the changeset and collects the energy
@@ -937,9 +949,9 @@ impl ChangeSet {
     /// has changed.
     pub(crate) fn collect_energy_for_state(
         mut self,
-        mut remaining_energy: Energy,
+        remaining_energy: &mut Energy,
         invoked_contract: ContractAddress,
-    ) -> Result<(Energy, bool), OutOfEnergy> {
+    ) -> Result<bool, OutOfEnergy> {
         let mut invoked_contract_has_state_changes = false;
         let mut loader = v1::trie::Loader::new(&[][..]); // An empty loader is fine currently, as we do not use caching in this lib.
         let mut collector = v1::trie::SizeCollector::default();
@@ -958,10 +970,7 @@ impl ChangeSet {
         // Return an error if we run out of energy.
         remaining_energy.tick_energy(energy_for_state_increase)?;
 
-        Ok((
-            energy_for_state_increase,
-            invoked_contract_has_state_changes,
-        ))
+        Ok(invoked_contract_has_state_changes)
     }
 }
 

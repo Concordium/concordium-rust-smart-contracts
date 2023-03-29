@@ -1,6 +1,9 @@
 use crate::{
     constants,
-    invocation::{invoke_entrypoint_and_get_changes, ChangeSet, TestConfigurationError},
+    invocation::{
+        invoke_entrypoint_and_get_changes, ChangeSet, InvokeEntrypointResponse,
+        TestConfigurationError,
+    },
     types::*,
 };
 use anyhow::anyhow;
@@ -26,7 +29,7 @@ impl Default for Chain {
 }
 
 impl ChainParameters {
-    /// Create a new [`Self`] where
+    /// Create a new [`ChainParameters`](Self) where
     ///  - `block_time` defaults to `0`,
     ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
@@ -41,7 +44,8 @@ impl ChainParameters {
         .expect("Parameters are in range.")
     }
 
-    /// Create a new [`Self`] with a specified `block_time` where
+    /// Create a new [`ChainParameters`](Self) with a specified `block_time`
+    /// where
     ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new_with_time(block_time: SlotTime) -> Self {
@@ -51,8 +55,8 @@ impl ChainParameters {
         }
     }
 
-    /// Create a new [`Self`] where all the configurable parameters are
-    /// provided.
+    /// Create a new [`ChainParameters`](Self) where all the configurable
+    /// parameters are provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
     /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
@@ -79,7 +83,7 @@ impl ChainParameters {
 }
 
 impl Chain {
-    /// Create a new [`Self`] where all the configurable parameters are
+    /// Create a new [`Chain`](Self) where all the configurable parameters are
     /// provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
@@ -102,7 +106,7 @@ impl Chain {
         })
     }
 
-    /// Create a new [`Self`] with a specified `block_time` where
+    /// Create a new [`Chain`](Self) with a specified `block_time` where
     ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new_with_time(block_time: SlotTime) -> Self {
@@ -112,7 +116,7 @@ impl Chain {
         }
     }
 
-    /// Create a new [`Self`] where
+    /// Create a new [`Chain`](Self) where
     ///  - `block_time` defaults to `0`,
     ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
@@ -131,6 +135,22 @@ impl Chain {
     /// [`ExchangeRate`]s `euro_per_energy` and `micro_ccd_per_euro`.
     pub fn calculate_energy_cost(&self, energy: Energy) -> Amount {
         self.parameters.calculate_energy_cost(energy)
+    }
+
+    /// Get the state of the contract if it exists in the [`Chain`](Self).
+    pub fn get_contract(&self, address: ContractAddress) -> Option<&Contract> {
+        self.contracts.get(&address)
+    }
+
+    /// Get the the module if it exists in the [`Chain`](Self).
+    pub fn get_module(&self, module: ModuleReference) -> Option<&ContractModule> {
+        self.modules.get(&module)
+    }
+
+    /// Get the state of the account if it exists in the [`Chain`](Self).
+    /// Account addresses that are aliases will return the same account.
+    pub fn get_account(&self, address: AccountAddress) -> Option<&Account> {
+        self.accounts.get(&address.into())
     }
 
     /// Deploy a smart contract module.
@@ -559,14 +579,17 @@ impl Chain {
         invoker: AccountAddress,
         sender: Address,
         energy_reserved: Energy,
+        amount_reserved_for_energy: Amount,
         payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
-        process_changeset: impl FnOnce(
+    ) -> Result<
+        (
+            InvokeEntrypointResponse,
             ChangeSet,
-            Energy,
-            ContractAddress,
-        ) -> Result<(Energy, bool), OutOfEnergy>,
-    ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
+            Vec<ContractTraceElement>,
+        ),
+        ContractInvokeError,
+    > {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
             return Err(self.from_invocation_error_kind(
@@ -587,34 +610,31 @@ impl Chain {
                 *remaining_energy,
             ));
         }
-        let contract_address = payload.address;
-        let (result, changeset, trace_elements) =
-            invoke_entrypoint_and_get_changes(self, invoker, sender, remaining_energy, payload)
-                .map_err(|err| {
-                    self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy)
-                })?;
+        let (result, changeset, trace_elements) = invoke_entrypoint_and_get_changes(
+            self,
+            invoker,
+            amount_reserved_for_energy,
+            sender,
+            remaining_energy,
+            payload,
+        )
+        .map_err(|err| {
+            self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy)
+        })?;
+        Ok((result, changeset, trace_elements))
+    }
 
-        // Get the energy to be charged for extra state bytes. Or return an error if out
-        // of energy.
-        let state_changed = if result.is_success() {
-            let res = process_changeset(changeset, *remaining_energy, contract_address);
-            let (energy_for_state_increase, state_changed) =
-                res.map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
-
-            // Charge for the potential state size increase.
-            remaining_energy
-                .tick_energy(energy_for_state_increase)
-                .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?;
-
-            state_changed
-        } else {
-            // An error occured, so state hasn't changed.
-            false
-        };
-
+    fn contract_invocation_process_response(
+        &self,
+        result: InvokeEntrypointResponse,
+        trace_elements: Vec<ContractTraceElement>,
+        energy_reserved: Energy,
+        remaining_energy: Energy,
+        state_changed: bool,
+    ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         match result.invoke_response {
             v1::InvokeResponse::Success { new_balance, data } => {
-                let energy_used = energy_reserved - *remaining_energy;
+                let energy_used = energy_reserved - remaining_energy;
                 let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
                 Ok(ContractInvokeSuccess {
                     trace_elements,
@@ -629,7 +649,7 @@ impl Chain {
             v1::InvokeResponse::Failure { kind } => Err(self.from_invocation_error_kind(
                 ContractInvokeErrorKind::ExecutionError { failure_kind: kind },
                 energy_reserved,
-                *remaining_energy,
+                remaining_energy,
             )),
         }
     }
@@ -697,9 +717,7 @@ impl Chain {
 
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
-        let account_info = self
-            .account_mut(invoker)
-            .expect("existence already checked");
+        let account_info = self.account(invoker).expect("existence already checked");
 
         // Ensure the account has sufficient funds to pay for the energy and amount.
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
@@ -714,46 +732,60 @@ impl Chain {
         // Charge account for the reserved energy up front. This is to ensure that
         // contract queries for the invoker balance are correct.
         // The `amount` is handled in contract_invocation_worker.
-        //
-        // *It is vital that we do not return early before returning the amount for
-        // remaining energy.*
-        account_info.balance.total -= invoker_amount_reserved_for_nrg;
-
+        let contract_address = payload.address;
         let res = self.contract_invocation_worker(
             invoker,
             sender,
             energy_reserved,
+            invoker_amount_reserved_for_nrg,
             payload,
             &mut remaining_energy,
-            |changeset: ChangeSet, remaining_energy, contract_address| {
-                changeset.persist(
-                    remaining_energy,
-                    contract_address,
-                    &mut self.accounts,
-                    &mut self.contracts,
-                )
-            },
         );
+        let res = match res {
+            Ok((result, changeset, trace_elements)) => {
+                // Charge energy for contract storage. Or return an error if out
+                // of energy.
+                let state_changed = if result.is_success() {
+                    let res = changeset.persist(
+                        &mut remaining_energy,
+                        contract_address,
+                        &mut self.accounts,
+                        &mut self.contracts,
+                    );
+                    res.map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?
+                } else {
+                    // An error occured, so state hasn't changed.
+                    false
+                };
+                self.contract_invocation_process_response(
+                    result,
+                    trace_elements,
+                    energy_reserved,
+                    remaining_energy,
+                    state_changed,
+                )
+            }
+            Err(e) => Err(e),
+        };
 
         let transaction_fee = match &res {
             Ok(s) => s.transaction_fee,
             Err(e) => e.transaction_fee,
         };
-        // The `invoker` was charged for all the `reserved_energy` up front.
-        // Here, we return the amount for any remaining energy.
-        let return_amount = invoker_amount_reserved_for_nrg - transaction_fee;
+        // Change for execution and deposit.
         self.account_mut(invoker)
             .expect("existence already checked")
             .balance
-            .total += return_amount;
-
+            .total -= transaction_fee;
+        // TODO: Need to charge for deposit somewhere as well.
         res
     }
 
     /// Invoke a contract by calling an entrypoint.
     ///
-    /// Similar to [`Self::contract_update`] except that all changes are
-    /// discarded afterwards. Typically used for "view" functions.
+    /// Similar to [`Chain::contract_update`](Self::contract_update) except that
+    /// all changes are discarded afterwards. Typically used for "view"
+    /// functions.
     ///
     /// **Parameters:**
     ///  - `invoker`: the account paying for the transaction.
@@ -779,7 +811,7 @@ impl Chain {
             });
         }
 
-        let Some(account_info) = self.accounts.get_mut(&invoker.into()) else {
+        let Some(account_info) = self.accounts.get(&invoker.into()) else {
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
@@ -801,31 +833,42 @@ impl Chain {
             });
         }
 
-        // Charge account for the reserved energy up front. This is to ensure that
-        // contract queries for the invoker balance are correct.
-        account_info.balance.total -= invoker_amount_reserved_for_nrg;
-
         let mut remaining_energy = energy_reserved;
 
-        let result = self.contract_invocation_worker(
+        let contract_address = payload.address;
+
+        let res = self.contract_invocation_worker(
             invoker,
             sender,
             energy_reserved,
+            invoker_amount_reserved_for_nrg,
             payload,
             &mut remaining_energy,
-            |changeset: ChangeSet, remaining_energy, contract_address| {
-                changeset.collect_energy_for_state(remaining_energy, contract_address)
-            },
         );
+        let res = match res {
+            Ok((result, changeset, trace_elements)) => {
+                // Charge energy for contract storage. Or return an error if out
+                // of energy.
+                let state_changed = if result.is_success() {
+                    changeset
+                        .collect_energy_for_state(&mut remaining_energy, contract_address)
+                        .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?
+                } else {
+                    // An error occured, so state hasn't changed.
+                    false
+                };
+                self.contract_invocation_process_response(
+                    result,
+                    trace_elements,
+                    energy_reserved,
+                    remaining_energy,
+                    state_changed,
+                )
+            }
+            Err(e) => Err(e),
+        };
 
-        // Return the amount charged for the reserved energy, as this is not a
-        // transaction.
-        self.account_mut(invoker)
-            .expect("Known to exist")
-            .balance
-            .total += invoker_amount_reserved_for_nrg;
-
-        result
+        res
     }
 
     /// Create an account.
@@ -941,8 +984,8 @@ impl Chain {
         }
     }
 
-    /// Convert a [`ContractInvocationErrorKind`] to a
-    /// [`ContractInvocationError`] by calculating the `energy_used` and
+    /// Convert a [`ContractInvokeErrorKind`] to a
+    /// [`ContractInvokeError`] by calculating the `energy_used` and
     /// `transaction_fee`.
     ///
     /// If the `kind` is an out of energy, then `0` is used instead of the
@@ -968,7 +1011,7 @@ impl Chain {
         }
     }
 
-    /// Construct a [`ContractInvocationError`] of the `OutOfEnergy` kind with
+    /// Construct a [`ContractInvokeErrorKind`] of the `OutOfEnergy` kind with
     /// the energy and transaction fee fields based on the `energy_reserved`
     /// parameter.
     fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvokeError {
@@ -1021,7 +1064,7 @@ impl Chain {
 }
 
 impl Account {
-    /// Create new [`Self`] with the provided account policy.
+    /// Create new [`Account`](Self) with the provided account policy.
     pub fn new_with_policy(
         address: AccountAddress,
         balance: AccountBalance,
@@ -1034,15 +1077,15 @@ impl Account {
         }
     }
 
-    /// Create new [`Self`] with the provided balance and a default account
-    /// policy.
+    /// Create a new [`Account`](Self) with the provided balance and a default
+    /// account policy.
     ///
     /// See [`new`][Self::new] for what the default policy is.
     pub fn new_with_balance(address: AccountAddress, balance: AccountBalance) -> Self {
         Self::new_with_policy(address, balance, Self::empty_policy())
     }
 
-    /// Create new [`Self`] with the provided total balance.
+    /// Create new [`Account`](Self) with the provided total balance.
     ///
     /// The `policy` will have:
     ///   - `identity_provider`: 0,
@@ -1204,20 +1247,20 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 /// rates provided.
 ///
 /// To find the mCCD/NRG exchange rate:
-/// ```ignore
+/// ```markdown
 ///  euro     mCCD   euro * mCCD   mCCD
 ///  ----  *  ---- = ----------- = ----
 ///  NRG      euro   NRG * euro    NRG
 /// ```
 ///
 /// To convert the `energy` parameter to mCCD:
-/// ```ignore
+/// ```markdown
 /// 
 ///        mCCD   NRG * mCCD
 ///  NRG * ---- = ---------- = mCCD
 ///        NRG       NRG
 /// ```
-pub(crate) fn energy_to_amount(
+pub fn energy_to_amount(
     energy: Energy,
     euro_per_energy: ExchangeRate,
     micro_ccd_per_euro: ExchangeRate,
