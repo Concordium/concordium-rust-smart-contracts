@@ -1,8 +1,7 @@
 use crate::{
     constants,
     invocation::{
-        invoke_entrypoint_and_get_changes, ChangeSet, InvokeEntrypointResponse,
-        TestConfigurationError,
+        ChangeSet, EntrypointInvocationHandler, InvokeEntrypointResponse, TestConfigurationError,
     },
     types::*,
 };
@@ -464,7 +463,7 @@ impl Chain {
                 parameter: payload.param.as_ref(),
                 energy:    energy_given_to_interpreter,
             },
-            false,
+            false, // We only support protocol P5 and up, so no limiting.
             loader,
         );
         // Handle the result
@@ -610,18 +609,21 @@ impl Chain {
                 *remaining_energy,
             ));
         }
-        let (result, changeset, trace_elements) = invoke_entrypoint_and_get_changes(
-            self,
-            invoker,
-            amount_reserved_for_energy,
-            sender,
+        let mut contract_invocation = EntrypointInvocationHandler {
+            changeset: ChangeSet::new(),
             remaining_energy,
-            payload,
-        )
-        .map_err(|err| {
-            self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy)
-        })?;
-        Ok((result, changeset, trace_elements))
+            chain: self,
+            reserved_amount: amount_reserved_for_energy,
+            invoker,
+        };
+
+        let mut trace_elements = Vec::new();
+        match contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut trace_elements) {
+            Ok(result) => Ok((result, contract_invocation.changeset, trace_elements)),
+            Err(err) => {
+                Err(self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy))
+            }
+        }
     }
 
     fn contract_invocation_process_response(

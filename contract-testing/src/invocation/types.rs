@@ -26,17 +26,17 @@ pub(crate) struct InvokeEntrypointResponse {
 pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// Amount reserved for execution. This is used to return the correct
     /// balance of the invoker account.
-    pub(super) reserved_amount:  Amount,
+    pub(crate) reserved_amount:  Amount,
     /// Address of the invoker of the transaction. This is used to return the
     /// correct balance of the invoker account.
-    pub(super) invoker:          AccountAddress,
+    pub(crate) invoker:          AccountAddress,
     /// The changeset which keeps track of
     /// changes to accounts, modules, and contracts that occur during an
     /// invocation.
-    pub(super) changeset:        ChangeSet,
+    pub(crate) changeset:        ChangeSet,
     /// The energy remaining for execution.
-    pub(super) remaining_energy: &'a mut Energy,
-    pub(super) chain:            &'b Chain,
+    pub(crate) remaining_energy: &'a mut Energy,
+    pub(crate) chain:            &'b Chain,
 }
 
 /// The set of [`Changes`] represented as a stack.

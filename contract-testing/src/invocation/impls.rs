@@ -27,44 +27,6 @@ use concordium_smart_contract_engine::{
 use concordium_wasm::artifact;
 use std::collections::{btree_map, BTreeMap};
 
-/// Invoke an entrypoint and get the result, [`ChangeSet`], and chain
-/// events.
-///
-/// **Preconditions:**
-///  - `invoker` exists
-///  - `invoker` has sufficient balance to pay for `remaining_energy`
-///  - `sender` exists
-///  - if the contract (`contract_address`) exists, then its `module` must also
-///    exist.
-pub(crate) fn invoke_entrypoint_and_get_changes<'a, 'b>(
-    chain: &'b Chain,
-    invoker: AccountAddress,
-    reserved_amount: Amount,
-    sender: Address,
-    remaining_energy: &'a mut Energy,
-    payload: UpdateContractPayload,
-) -> Result<
-    (
-        InvokeEntrypointResponse,
-        ChangeSet,
-        Vec<ContractTraceElement>,
-    ),
-    TestConfigurationError,
-> {
-    let mut contract_invocation = EntrypointInvocationHandler {
-        changeset: ChangeSet::new(),
-        remaining_energy,
-        chain,
-        reserved_amount,
-        invoker,
-    };
-
-    let mut trace_elements = Vec::new();
-    let result =
-        contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut trace_elements)?;
-    Ok((result, contract_invocation.changeset, trace_elements))
-}
-
 impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     /// Used for handling contract entrypoint invocations internally.
     ///
@@ -74,7 +36,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     ///  - `sender` exists
     ///  - if the contract (`contract_address`) exists, then its `module` must
     ///    also exist.
-    fn invoke_entrypoint(
+    pub(crate) fn invoke_entrypoint(
         &mut self,
         invoker: AccountAddress,
         sender: Address,
@@ -815,7 +777,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 impl ChangeSet {
     /// Creates a new changeset with one empty [`Changes`] element on the
     /// stack..
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             stack: vec![Changes {
                 contracts: BTreeMap::new(),
