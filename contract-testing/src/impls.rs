@@ -675,16 +675,6 @@ impl Chain {
         energy_reserved: Energy,
         payload: UpdateContractPayload,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
-        // Ensure the invoker exists.
-        if !self.account_exists(invoker) {
-            return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist { address: invoker },
-                ),
-            });
-        }
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             // TODO: Should we charge the header cost if the invoker exists but the sender
@@ -717,7 +707,17 @@ impl Chain {
 
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
-        let account_info = self.account(invoker).expect("existence already checked");
+
+        // Ensure the invoker exists.
+        let Ok(account_info) = self.account(invoker) else {
+            return Err(ContractInvokeError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist { address: invoker },
+                ),
+            });
+        };
 
         // Ensure the account has sufficient funds to pay for the energy and amount.
         if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
@@ -772,12 +772,11 @@ impl Chain {
             Ok(s) => s.transaction_fee,
             Err(e) => e.transaction_fee,
         };
-        // Change for execution and deposit.
+        // Change for execution.
         self.account_mut(invoker)
             .expect("existence already checked")
             .balance
             .total -= transaction_fee;
-        // TODO: Need to charge for deposit somewhere as well.
         res
     }
 
