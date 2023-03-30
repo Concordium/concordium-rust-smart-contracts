@@ -167,6 +167,17 @@ impl Chain {
         sender: AccountAddress,
         wasm_module: WasmModule,
     ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
+        // For maintainers:
+        //
+        // This function does not correspond exactly to what happens in the node.
+        // There a user is also expected to give a max energy bound and the failures are
+        // slightly different. There it is possible to fail with "out of energy"
+        // error whereas here we only fail with "insufficient funds" if the user does
+        // not have enough CCD to pay.
+        //
+        // If users use our tools to deploy modules the costs are calculated for them so
+        // that deployment should never fail with out of energy. Not requiring energy
+        // provides a more ergonomic experience.
         let Ok(sender_account) = self.accounts
             .get_mut(&sender.into())
             .ok_or(AccountDoesNotExist { address: sender }) else {
@@ -210,12 +221,19 @@ impl Chain {
             });
         }
 
-        let account = sender_account;
+        // Calculate the deploy module cost.
+        let deploy_module_energy = cost::deploy_module(wasm_module.source.size());
+        let deploy_module_cost = parameters.calculate_energy_cost(deploy_module_energy);
 
-        // TODO: Ensure that this matches the node for both invalid and valid modules.
-        // to_ccd(header_cost) + to_ccd(deploy_cost) != to_ccd(header_cost +
-        // deploy_cost).
-        account.balance.total -= check_header_cost;
+        // Subtract the cost from the account if it has sufficient funds.
+        if sender_account.balance.available() < deploy_module_cost {
+            return Err(ModuleDeployError {
+                kind:            ModuleDeployErrorKind::InsufficientFunds,
+                energy_used:     check_header_energy,
+                transaction_fee: check_header_cost,
+            });
+        };
+        sender_account.balance.total -= check_header_cost + deploy_module_cost;
 
         // Construct the artifact.
         let artifact =
@@ -234,20 +252,6 @@ impl Chain {
                     })
                 }
             };
-
-        // Calculate the deploy module cost.
-        let deploy_module_energy = cost::deploy_module(wasm_module.source.size());
-        let deploy_module_cost = parameters.calculate_energy_cost(deploy_module_energy);
-
-        // Subtract the cost from the account if it has sufficient funds.
-        if account.balance.available() < deploy_module_cost {
-            return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::InsufficientFunds,
-                energy_used:     check_header_energy,
-                transaction_fee: check_header_cost,
-            });
-        };
-        account.balance.total -= deploy_module_cost;
 
         // Save the module.
         let module_reference: ModuleReference = wasm_module.get_module_ref();
