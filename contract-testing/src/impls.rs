@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use concordium_base::{
-    base::{Energy, OutOfEnergy},
+    base::{Energy, InsufficientEnergy},
     constants::{MAX_ALLOWED_INVOKE_ENERGY, MAX_WASM_MODULE_SIZE},
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
@@ -1125,40 +1125,6 @@ impl Account {
     }
 }
 
-// TODO: This should go to concordium-base.
-impl From<AccountAddressEq> for AccountAddress {
-    fn from(aae: AccountAddressEq) -> Self { aae.0 }
-}
-
-impl From<AccountAddress> for AccountAddressEq {
-    fn from(address: AccountAddress) -> Self { Self(address) }
-}
-
-impl PartialEq for AccountAddressEq {
-    fn eq(&self, other: &Self) -> bool {
-        let bytes_1: &[u8; 32] = self.0.as_ref();
-        let bytes_2: &[u8; 32] = other.0.as_ref();
-        bytes_1[0..29] == bytes_2[0..29]
-    }
-}
-
-impl PartialOrd for AccountAddressEq {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
-}
-
-impl Ord for AccountAddressEq {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let bytes_1: &[u8; 32] = self.0.as_ref();
-        let bytes_2: &[u8; 32] = other.0.as_ref();
-        bytes_1[0..29].cmp(&bytes_2[0..29])
-    }
-}
-
-impl AsRef<AccountAddressEq> for AccountAddress {
-    fn as_ref(&self) -> &AccountAddressEq { unsafe { std::mem::transmute(self) } }
-}
-
 impl Signer {
     /// Create a signer which always signs with one key.
     pub fn with_one_key() -> Self { Self { num_keys: 1 } }
@@ -1218,8 +1184,9 @@ impl ContractInvokeSuccess {
     }
 }
 
-impl From<OutOfEnergy> for ContractInitErrorKind {
-    fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
+impl From<InsufficientEnergy> for ContractInitErrorKind {
+    #[inline(always)]
+    fn from(_: InsufficientEnergy) -> Self { Self::OutOfEnergy }
 }
 
 impl From<TestConfigurationError> for ContractInvokeErrorKind {
@@ -1311,6 +1278,8 @@ pub(crate) fn contract_events_from_logs(logs: v0::Logs) -> Vec<ContractEvent> {
 
 #[cfg(test)]
 mod tests {
+    use concordium_base::base::AccountAddressEq;
+
     use super::*;
 
     /// A few checks that test whether the function behavior matches its doc
@@ -1359,9 +1328,9 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
             2, 3, 4, // This differs on last four bytes, so it is a different account.
         ]);
-        let acc_eq = AccountAddressEq(acc);
-        let acc_alias_eq = AccountAddressEq(acc_alias);
-        let acc_other_eq = AccountAddressEq(acc_other);
+        let acc_eq: AccountAddressEq = acc.into();
+        let acc_alias_eq: AccountAddressEq = acc_alias.into();
+        let acc_other_eq: AccountAddressEq = acc_other.into();
 
         let expected_amount = Amount::from_ccd(10);
         let expected_amount_other = Amount::from_ccd(123);

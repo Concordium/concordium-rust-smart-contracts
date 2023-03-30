@@ -1,6 +1,6 @@
-use crate::{AccountAddressEq, Chain};
+use crate::Chain;
 use concordium_base::{
-    base::Energy,
+    base::{AccountAddressEq, Energy},
     contracts_common::{
         AccountAddress, Address, Amount, ContractAddress, ModuleReference, OwnedContractName,
         OwnedEntrypointName,
@@ -52,7 +52,9 @@ pub(crate) struct ChangeSet {
 pub(super) struct Changes {
     /// The contracts which have changes.
     pub(super) contracts: BTreeMap<ContractAddress, ContractChanges>,
-    /// The accounts which have changes.
+    /// The accounts which have changes. These are indexed by account address
+    /// equivalence classes so that account aliases are resolved to the same
+    /// account.
     pub(super) accounts:  BTreeMap<AccountAddressEq, AccountChanges>,
 }
 

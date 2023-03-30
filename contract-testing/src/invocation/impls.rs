@@ -6,10 +6,9 @@ use crate::{
         to_interpreter_energy,
     },
     types::{Account, BalanceError, Contract, ContractModule, TransferError},
-    AccountAddressEq,
 };
 use concordium_base::{
-    base::{Energy, OutOfEnergy},
+    base::{AccountAddressEq, Energy, InsufficientEnergy},
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedReceiveName,
@@ -699,7 +698,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     fn run_interpreter<F>(
         &mut self,
         f: F,
-    ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, OutOfEnergy>
+    ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, InsufficientEnergy>
     where
         F: FnOnce(InterpreterEnergy) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
     {
@@ -716,7 +715,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 });
             }
         };
-        let mut subtract_then_convert = |remaining_energy| -> Result<u64, OutOfEnergy> {
+        let mut subtract_then_convert = |remaining_energy| -> Result<u64, InsufficientEnergy> {
             let remaining_energy = InterpreterEnergy::from(remaining_energy);
             // Using `saturating_sub` here should be ok since we should never be able to use
             // more energy than what is available.
@@ -769,7 +768,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 remaining_energy: subtract_then_convert(remaining_energy)?,
             }),
             // Convert this to an error so that we will short-circuit the processing.
-            v1::ReceiveResult::OutOfEnergy => Err(OutOfEnergy),
+            v1::ReceiveResult::OutOfEnergy => Err(InsufficientEnergy),
         }
     }
 }
@@ -834,7 +833,7 @@ impl ChangeSet {
         invoked_contract: ContractAddress,
         persisted_accounts: &mut BTreeMap<AccountAddressEq, Account>,
         persisted_contracts: &mut BTreeMap<ContractAddress, Contract>,
-    ) -> Result<bool, OutOfEnergy> {
+    ) -> Result<bool, InsufficientEnergy> {
         let current = self.current_mut();
         let mut invoked_contract_has_state_changes = false;
         // Persist contract changes and collect the total increase in states sizes.
@@ -913,7 +912,7 @@ impl ChangeSet {
         mut self,
         remaining_energy: &mut Energy,
         invoked_contract: ContractAddress,
-    ) -> Result<bool, OutOfEnergy> {
+    ) -> Result<bool, InsufficientEnergy> {
         let mut invoked_contract_has_state_changes = false;
         let mut loader = v1::trie::Loader::new(&[][..]); // An empty loader is fine currently, as we do not use caching in this lib.
         let mut collector = v1::trie::SizeCollector::default();
@@ -1497,8 +1496,8 @@ impl InvokeEntrypointResponse {
     }
 }
 
-impl From<OutOfEnergy> for TestConfigurationError {
-    fn from(_: OutOfEnergy) -> Self { Self::OutOfEnergy }
+impl From<InsufficientEnergy> for TestConfigurationError {
+    fn from(_: InsufficientEnergy) -> Self { Self::OutOfEnergy }
 }
 
 #[cfg(test)]

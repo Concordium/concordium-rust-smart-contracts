@@ -1,5 +1,5 @@
 use concordium_base::{
-    base::Energy,
+    base::{AccountAddressEq, Energy},
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
@@ -77,16 +77,6 @@ pub struct Account {
     /// Account policy.
     pub policy:  OwnedPolicy,
 }
-
-/// A helper struct that is used to ensure that aliases of an account are seen
-/// as being the same account.
-///
-/// Account aliases share the first 29 bytes of the address, so the
-/// [`PartialEq`]/[`PartialOrd`] for this type adheres to that.
-// TODO: This should be moved to concordium-base.
-#[repr(transparent)]
-#[derive(Eq, Debug, Clone, Copy)]
-pub struct AccountAddressEq(pub(crate) AccountAddress);
 
 /// A signer with a number of keys, the amount of which affects the cost of
 /// transactions.
