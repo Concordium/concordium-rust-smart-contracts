@@ -492,13 +492,12 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 .expect("Precondition violation: module must exist.")
                 .clone(),
             // Contract hasn't been upgraded. Use persisted module.
-            None => {
-                self.chain
-                    .modules
-                    .get(&contract.module_reference)
-                    .expect("Precondition violation: module must exist.")
-                    .clone()
-            }
+            None => self
+                .chain
+                .modules
+                .get(&contract.module_reference)
+                .expect("Precondition violation: module must exist.")
+                .clone(),
         }
     }
 
@@ -1037,447 +1036,446 @@ impl<'a, 'b, 'c> InvocationData<'a, 'b, 'c> {
     ///  - Account exists in `invocation_handler.accounts`.
     fn process(
         &mut self,
-        receive_result: v1::ReceiveResult<artifact::CompiledFunction>,
+        mut receive_result: v1::ReceiveResult<artifact::CompiledFunction>,
     ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, TestConfigurationError> {
-        match receive_result {
-            v1::ReceiveResult::Success {
-                logs,
-                state_changed,
-                return_value,
-                remaining_energy,
-            } => {
-                // Update the remaining_energy field.
-                self.invocation_handler.update_energy(remaining_energy);
-
-                let update_event = ContractTraceElement::Updated {
-                    data: InstanceUpdatedEvent {
-                        contract_version: WasmVersion::V1,
-                        address:          self.address,
-                        instigator:       self.sender,
-                        amount:           self.amount,
-                        message:          self.parameter.clone(),
-                        receive_name:     OwnedReceiveName::construct_unchecked(
-                            self.contract_name.as_contract_name(),
-                            self.entrypoint.as_entrypoint_name(),
-                        ),
-                        events:           contract_events_from_logs(logs.clone()),
-                    },
-                };
-                // Add update event
-                self.trace_elements.push(update_event);
-
-                // Save changes to changeset.
-                if state_changed {
-                    self.invocation_handler.save_state_changes(
-                        self.address,
-                        &mut self.state,
-                        false,
-                    );
-                }
-
-                Ok(v1::ReceiveResult::Success {
+        loop {
+            match receive_result {
+                v1::ReceiveResult::Success {
                     logs,
                     state_changed,
                     return_value,
                     remaining_energy,
-                })
-            }
-            v1::ReceiveResult::Interrupt {
-                remaining_energy,
-                state_changed,
-                logs,
-                config,
-                interrupt,
-            } => {
-                // Update the remaining_energy field.
-                self.invocation_handler.update_energy(remaining_energy);
-                // Create the interrupt event, which will be included for transfers, calls, and
-                // upgrades, but not for the remaining interrupts.
-                let interrupt_event = ContractTraceElement::Interrupted {
-                    address: self.address,
-                    events:  contract_events_from_logs(logs),
-                };
-                match interrupt {
-                    v1::Interrupt::Transfer { to, amount } => {
-                        // Add the interrupt event
-                        self.trace_elements.push(interrupt_event);
+                } => {
+                    // Update the remaining_energy field.
+                    self.invocation_handler.update_energy(remaining_energy);
 
-                        let response = match self
-                            .invocation_handler
-                            .transfer_from_contract_to_account(amount, self.address, to)
-                        {
-                            Ok(new_balance) => v1::InvokeResponse::Success {
-                                new_balance,
-                                data: None,
-                            },
-                            Err(err) => {
-                                let kind = match err {
-                                    TransferError::ToMissing => {
-                                        v1::InvokeFailure::NonExistentAccount
-                                    }
+                    let update_event = ContractTraceElement::Updated {
+                        data: InstanceUpdatedEvent {
+                            contract_version: WasmVersion::V1,
+                            address:          self.address,
+                            instigator:       self.sender,
+                            amount:           self.amount,
+                            message:          self.parameter.clone(),
+                            receive_name:     OwnedReceiveName::construct_unchecked(
+                                self.contract_name.as_contract_name(),
+                                self.entrypoint.as_entrypoint_name(),
+                            ),
+                            events:           contract_events_from_logs(logs.clone()),
+                        },
+                    };
+                    // Add update event
+                    self.trace_elements.push(update_event);
 
-                                    TransferError::BalanceError {
-                                        error: BalanceError::Insufficient,
-                                    } => v1::InvokeFailure::InsufficientAmount,
-
-                                    TransferError::BalanceError {
-                                        error: BalanceError::Overflow,
-                                    } => {
-                                        // Balance overflows are unrecoverable and short circuit.
-                                        return Err(TestConfigurationError::BalanceOverflow);
-                                    }
-                                };
-                                v1::InvokeResponse::Failure { kind }
-                            }
-                        };
-
-                        let success = matches!(response, v1::InvokeResponse::Success { .. });
-                        if success {
-                            // Add transfer event
-                            self.trace_elements.push(ContractTraceElement::Transferred {
-                                from: self.address,
-                                amount,
-                                to,
-                            });
-                        }
-                        // Add resume event
-                        self.trace_elements.push(ContractTraceElement::Resumed {
-                            address: self.address,
-                            success,
-                        });
-
-                        self.invocation_handler
-                            .remaining_energy
-                            .tick_energy(concordium_base::transactions::cost::SIMPLE_TRANSFER)?;
-
-                        let resume_res = self.invocation_handler.run_interpreter(|energy| {
-                            v1::resume_receive(
-                                config,
-                                response,
-                                energy,
-                                &mut self.state,
-                                false, // never changes on transfers
-                                // An empty loader is fine currently, as we do not use caching
-                                // in this lib.
-                                v1::trie::Loader::new(&[][..]),
-                            )
-                        })?;
-
-                        // Resume
-                        self.process(resume_res)
+                    // Save changes to changeset.
+                    if state_changed {
+                        self.invocation_handler.save_state_changes(
+                            self.address,
+                            &mut self.state,
+                            false,
+                        );
                     }
-                    v1::Interrupt::Call {
-                        address,
-                        parameter,
-                        name,
-                        amount,
-                    } => {
-                        // Add the interrupt event
-                        self.trace_elements.push(interrupt_event);
 
-                        if state_changed {
-                            self.invocation_handler.save_state_changes(
-                                self.address,
-                                &mut self.state,
-                                true,
-                            );
-                        }
+                    return Ok(v1::ReceiveResult::Success {
+                        logs,
+                        state_changed,
+                        return_value,
+                        remaining_energy,
+                    });
+                }
+                v1::ReceiveResult::Interrupt {
+                    remaining_energy,
+                    state_changed,
+                    logs,
+                    config,
+                    interrupt,
+                } => {
+                    // Update the remaining_energy field.
+                    self.invocation_handler.update_energy(remaining_energy);
+                    // Create the interrupt event, which will be included for transfers, calls, and
+                    // upgrades, but not for the remaining interrupts.
+                    let interrupt_event = ContractTraceElement::Interrupted {
+                        address: self.address,
+                        events:  contract_events_from_logs(logs),
+                    };
+                    match interrupt {
+                        v1::Interrupt::Transfer { to, amount } => {
+                            // Add the interrupt event
+                            self.trace_elements.push(interrupt_event);
 
-                        // Save the modification index before the invoke.
-                        let mod_idx_before_invoke =
-                            self.invocation_handler.modification_index(self.address);
+                            let response = match self
+                                .invocation_handler
+                                .transfer_from_contract_to_account(amount, self.address, to)
+                            {
+                                Ok(new_balance) => v1::InvokeResponse::Success {
+                                    new_balance,
+                                    data: None,
+                                },
+                                Err(err) => {
+                                    let kind = match err {
+                                        TransferError::ToMissing => {
+                                            v1::InvokeFailure::NonExistentAccount
+                                        }
 
-                        // Make a checkpoint before calling another contract so that we may roll
-                        // back.
-                        self.invocation_handler.checkpoint();
+                                        TransferError::BalanceError {
+                                            error: BalanceError::Insufficient,
+                                        } => v1::InvokeFailure::InsufficientAmount,
 
-                        let (success, invoke_response) = match self
-                            .invocation_handler
-                            .chain
-                            .contracts
-                            .get(&address)
-                            .map(|c| c.contract_name.as_contract_name())
-                        {
-                            // The contract to call does not exist.
-                            None => {
-                                let invoke_response = v1::InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::NonExistentContract,
-                                };
-                                (false, invoke_response)
-                            }
-                            Some(contract_name) => {
-                                let receive_name = OwnedReceiveName::construct_unchecked(
-                                    contract_name,
-                                    name.as_entrypoint_name(),
-                                );
-                                let message = OwnedParameter::new_unchecked(parameter);
-                                let res = self.invocation_handler.invoke_entrypoint(
-                                    self.invoker,
-                                    Address::Contract(self.address),
-                                    UpdateContractPayload {
-                                        amount,
-                                        address,
-                                        receive_name,
-                                        message,
-                                    },
-                                    &mut self.trace_elements,
-                                )?;
-                                match res.invoke_response {
-                                    v1::InvokeResponse::Success { data, .. } => {
-                                        let invoke_response = v1::InvokeResponse::Success {
-                                            // The balance returned by `invoke_entrypoint` is the
-                                            // balance of the contract called. But we are interested
-                                            // in the new balance of the caller.
-                                            new_balance: self
-                                                .invocation_handler
-                                                .contract_balance_unchecked(self.address),
-                                            data,
-                                        };
-                                        (true, invoke_response)
-                                    }
-                                    failure => (false, failure),
-                                }
-                            }
-                        };
-
-                        // Remove the last state changes if the invocation failed.
-                        let state_changed = if !success {
-                            self.invocation_handler.rollback();
-                            false // We rolled back, so no changes were made
-                                  // to this contract.
-                        } else {
-                            let mod_idx_after_invoke =
-                                self.invocation_handler.modification_index(self.address);
-                            let state_changed = mod_idx_after_invoke != mod_idx_before_invoke;
-                            if state_changed {
-                                // Update the state field with the newest value from the
-                                // changeset.
-                                self.state = self.invocation_handler.contract_state(self.address);
-                            }
-                            state_changed
-                        };
-
-                        // Add resume event
-                        let resume_event = ContractTraceElement::Resumed {
-                            address: self.address,
-                            success,
-                        };
-
-                        self.trace_elements.push(resume_event);
-
-                        let resume_res = self.invocation_handler.run_interpreter(|energy| {
-                            v1::resume_receive(
-                                config,
-                                invoke_response,
-                                energy,
-                                &mut self.state,
-                                state_changed,
-                                v1::trie::Loader::new(&[][..]),
-                            )
-                        })?;
-
-                        self.process(resume_res)
-                    }
-                    v1::Interrupt::Upgrade { module_ref } => {
-                        // Add the interrupt event.
-                        self.trace_elements.push(interrupt_event);
-
-                        // Charge a base cost.
-                        self.invocation_handler
-                            .remaining_energy
-                            .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
-
-                        let response = match self.invocation_handler.chain.modules.get(&module_ref)
-                        {
-                            None => v1::InvokeResponse::Failure {
-                                kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
-                            },
-                            Some(module) => {
-                                // Charge for the module lookup.
-                                self.invocation_handler
-                                    .remaining_energy
-                                    .tick_energy(lookup_module_cost(module))?;
-
-                                if module.artifact.export.contains_key(
-                                    self.contract_name.as_contract_name().get_chain_name(),
-                                ) {
-                                    // Update module reference in the changeset.
-                                    let old_module_ref = self
-                                        .invocation_handler
-                                        .save_module_upgrade(self.address, module_ref);
-
-                                    // Charge for the initialization cost.
-                                    self.invocation_handler.remaining_energy.tick_energy(
-                                        constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
-                                    )?;
-
-                                    let upgrade_event = ContractTraceElement::Upgraded {
-                                        address: self.address,
-                                        from:    old_module_ref,
-                                        to:      module_ref,
+                                        TransferError::BalanceError {
+                                            error: BalanceError::Overflow,
+                                        } => {
+                                            // Balance overflows are unrecoverable and short
+                                            // circuit.
+                                            return Err(TestConfigurationError::BalanceOverflow);
+                                        }
                                     };
+                                    v1::InvokeResponse::Failure { kind }
+                                }
+                            };
 
-                                    self.trace_elements.push(upgrade_event);
+                            let success = matches!(response, v1::InvokeResponse::Success { .. });
+                            if success {
+                                // Add transfer event
+                                self.trace_elements.push(ContractTraceElement::Transferred {
+                                    from: self.address,
+                                    amount,
+                                    to,
+                                });
+                            }
+                            // Add resume event
+                            self.trace_elements.push(ContractTraceElement::Resumed {
+                                address: self.address,
+                                success,
+                            });
 
-                                    v1::InvokeResponse::Success {
-                                        new_balance: self
-                                            .invocation_handler
-                                            .contract_balance_unchecked(self.address),
-                                        data:        None,
-                                    }
-                                } else {
-                                    v1::InvokeResponse::Failure {
-                                        kind: v1::InvokeFailure::UpgradeInvalidContractName,
+                            self.invocation_handler.remaining_energy.tick_energy(
+                                concordium_base::transactions::cost::SIMPLE_TRANSFER,
+                            )?;
+
+                            let resume_res = self.invocation_handler.run_interpreter(|energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // never changes on transfers
+                                    // An empty loader is fine currently, as we do not use caching
+                                    // in this lib.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            })?;
+
+                            // Resume
+                            receive_result = resume_res;
+                        }
+                        v1::Interrupt::Call {
+                            address,
+                            parameter,
+                            name,
+                            amount,
+                        } => {
+                            // Add the interrupt event
+                            self.trace_elements.push(interrupt_event);
+
+                            if state_changed {
+                                self.invocation_handler.save_state_changes(
+                                    self.address,
+                                    &mut self.state,
+                                    true,
+                                );
+                            }
+
+                            // Save the modification index before the invoke.
+                            let mod_idx_before_invoke =
+                                self.invocation_handler.modification_index(self.address);
+
+                            // Make a checkpoint before calling another contract so that we may roll
+                            // back.
+                            self.invocation_handler.checkpoint();
+
+                            let (success, invoke_response) = match self
+                                .invocation_handler
+                                .chain
+                                .contracts
+                                .get(&address)
+                                .map(|c| c.contract_name.as_contract_name())
+                            {
+                                // The contract to call does not exist.
+                                None => {
+                                    let invoke_response = v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::NonExistentContract,
+                                    };
+                                    (false, invoke_response)
+                                }
+                                Some(contract_name) => {
+                                    let receive_name = OwnedReceiveName::construct_unchecked(
+                                        contract_name,
+                                        name.as_entrypoint_name(),
+                                    );
+                                    let message = OwnedParameter::new_unchecked(parameter);
+                                    let res = self.invocation_handler.invoke_entrypoint(
+                                        self.invoker,
+                                        Address::Contract(self.address),
+                                        UpdateContractPayload {
+                                            amount,
+                                            address,
+                                            receive_name,
+                                            message,
+                                        },
+                                        &mut self.trace_elements,
+                                    )?;
+                                    match res.invoke_response {
+                                        v1::InvokeResponse::Success { data, .. } => {
+                                            let invoke_response = v1::InvokeResponse::Success {
+                                                // The balance returned by `invoke_entrypoint` is
+                                                // the
+                                                // balance of the contract called. But we are
+                                                // interested
+                                                // in the new balance of the caller.
+                                                new_balance: self
+                                                    .invocation_handler
+                                                    .contract_balance_unchecked(self.address),
+                                                data,
+                                            };
+                                            (true, invoke_response)
+                                        }
+                                        failure => (false, failure),
                                     }
                                 }
-                            }
-                        };
+                            };
 
-                        let success = matches!(response, v1::InvokeResponse::Success { .. });
-                        self.trace_elements.push(ContractTraceElement::Resumed {
-                            address: self.address,
-                            success,
-                        });
+                            // Remove the last state changes if the invocation failed.
+                            let state_changed = if !success {
+                                self.invocation_handler.rollback();
+                                false // We rolled back, so no changes were made
+                                      // to this contract.
+                            } else {
+                                let mod_idx_after_invoke =
+                                    self.invocation_handler.modification_index(self.address);
+                                let state_changed = mod_idx_after_invoke != mod_idx_before_invoke;
+                                if state_changed {
+                                    // Update the state field with the newest value from the
+                                    // changeset.
+                                    self.state =
+                                        self.invocation_handler.contract_state(self.address);
+                                }
+                                state_changed
+                            };
 
-                        let resume_res = self.invocation_handler.run_interpreter(|energy| {
-                            v1::resume_receive(
-                                config,
-                                response,
-                                energy,
-                                &mut self.state,
-                                state_changed,
-                                v1::trie::Loader::new(&[][..]),
-                            )
-                        })?;
+                            // Add resume event
+                            let resume_event = ContractTraceElement::Resumed {
+                                address: self.address,
+                                success,
+                            };
 
-                        self.process(resume_res)
-                    }
-                    v1::Interrupt::QueryAccountBalance { address } => {
-                        let response = match self.invocation_handler.account_balance(address) {
-                            Some(balance) => v1::InvokeResponse::Success {
+                            self.trace_elements.push(resume_event);
+
+                            let resume_res = self.invocation_handler.run_interpreter(|energy| {
+                                v1::resume_receive(
+                                    config,
+                                    invoke_response,
+                                    energy,
+                                    &mut self.state,
+                                    state_changed,
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            })?;
+
+                            receive_result = resume_res;
+                        }
+                        v1::Interrupt::Upgrade { module_ref } => {
+                            // Add the interrupt event.
+                            self.trace_elements.push(interrupt_event);
+
+                            // Charge a base cost.
+                            self.invocation_handler
+                                .remaining_energy
+                                .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
+
+                            let response =
+                                match self.invocation_handler.chain.modules.get(&module_ref) {
+                                    None => v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
+                                    },
+                                    Some(module) => {
+                                        // Charge for the module lookup.
+                                        self.invocation_handler
+                                            .remaining_energy
+                                            .tick_energy(lookup_module_cost(module))?;
+
+                                        if module.artifact.export.contains_key(
+                                            self.contract_name.as_contract_name().get_chain_name(),
+                                        ) {
+                                            // Update module reference in the changeset.
+                                            let old_module_ref = self
+                                                .invocation_handler
+                                                .save_module_upgrade(self.address, module_ref);
+
+                                            // Charge for the initialization cost.
+                                            self.invocation_handler.remaining_energy.tick_energy(
+                                                constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
+                                            )?;
+
+                                            let upgrade_event = ContractTraceElement::Upgraded {
+                                                address: self.address,
+                                                from:    old_module_ref,
+                                                to:      module_ref,
+                                            };
+
+                                            self.trace_elements.push(upgrade_event);
+
+                                            v1::InvokeResponse::Success {
+                                                new_balance: self
+                                                    .invocation_handler
+                                                    .contract_balance_unchecked(self.address),
+                                                data:        None,
+                                            }
+                                        } else {
+                                            v1::InvokeResponse::Failure {
+                                                kind: v1::InvokeFailure::UpgradeInvalidContractName,
+                                            }
+                                        }
+                                    }
+                                };
+
+                            let success = matches!(response, v1::InvokeResponse::Success { .. });
+                            self.trace_elements.push(ContractTraceElement::Resumed {
+                                address: self.address,
+                                success,
+                            });
+
+                            let resume_res = self.invocation_handler.run_interpreter(|energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    state_changed,
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            })?;
+                            receive_result = resume_res;
+                        }
+                        v1::Interrupt::QueryAccountBalance { address } => {
+                            let response = match self.invocation_handler.account_balance(address) {
+                                Some(balance) => v1::InvokeResponse::Success {
+                                    new_balance: self
+                                        .invocation_handler
+                                        .contract_balance_unchecked(self.address),
+                                    data:        Some(to_bytes(&balance)),
+                                },
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                },
+                            };
+
+                            self.invocation_handler.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
+                            )?;
+
+                            receive_result = self.invocation_handler.run_interpreter(|energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // State never changes on queries.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            })?;
+                        }
+                        v1::Interrupt::QueryContractBalance { address } => {
+                            let response = match self.invocation_handler.contract_balance(address) {
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentContract,
+                                },
+                                Some(bal) => v1::InvokeResponse::Success {
+                                    // Balance of contract querying. Won't change. Notice the
+                                    // `self.address`.
+                                    new_balance: self
+                                        .invocation_handler
+                                        .contract_balance_unchecked(self.address),
+                                    data:        Some(to_bytes(&bal)),
+                                },
+                            };
+
+                            self.invocation_handler.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
+                            )?;
+
+                            receive_result = self.invocation_handler.run_interpreter(|energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // State never changes on queries.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            })?;
+                        }
+                        v1::Interrupt::QueryExchangeRates => {
+                            let exchange_rates = ExchangeRates {
+                                euro_per_energy:    self
+                                    .invocation_handler
+                                    .chain
+                                    .parameters
+                                    .euro_per_energy,
+                                micro_ccd_per_euro: self
+                                    .invocation_handler
+                                    .chain
+                                    .parameters
+                                    .micro_ccd_per_euro,
+                            };
+
+                            let response = v1::InvokeResponse::Success {
                                 new_balance: self
                                     .invocation_handler
                                     .contract_balance_unchecked(self.address),
-                                data:        Some(to_bytes(&balance)),
-                            },
-                            None => v1::InvokeResponse::Failure {
-                                kind: v1::InvokeFailure::NonExistentAccount,
-                            },
-                        };
+                                data:        Some(to_bytes(&exchange_rates)),
+                            };
 
-                        self.invocation_handler
-                            .remaining_energy
-                            .tick_energy(constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST)?;
+                            self.invocation_handler.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
+                            )?;
 
-                        let resume_res = self.invocation_handler.run_interpreter(|energy| {
-                            v1::resume_receive(
-                                config,
-                                response,
-                                energy,
-                                &mut self.state,
-                                false, // State never changes on queries.
-                                v1::trie::Loader::new(&[][..]),
-                            )
-                        })?;
-
-                        self.process(resume_res)
-                    }
-                    v1::Interrupt::QueryContractBalance { address } => {
-                        let response = match self.invocation_handler.contract_balance(address) {
-                            None => v1::InvokeResponse::Failure {
-                                kind: v1::InvokeFailure::NonExistentContract,
-                            },
-                            Some(bal) => v1::InvokeResponse::Success {
-                                // Balance of contract querying. Won't change. Notice the
-                                // `self.address`.
-                                new_balance: self
-                                    .invocation_handler
-                                    .contract_balance_unchecked(self.address),
-                                data:        Some(to_bytes(&bal)),
-                            },
-                        };
-
-                        self.invocation_handler.remaining_energy.tick_energy(
-                            constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
-                        )?;
-
-                        let resume_res = self.invocation_handler.run_interpreter(|energy| {
-                            v1::resume_receive(
-                                config,
-                                response,
-                                energy,
-                                &mut self.state,
-                                false, // State never changes on queries.
-                                v1::trie::Loader::new(&[][..]),
-                            )
-                        })?;
-
-                        self.process(resume_res)
-                    }
-                    v1::Interrupt::QueryExchangeRates => {
-                        let exchange_rates = ExchangeRates {
-                            euro_per_energy:    self
-                                .invocation_handler
-                                .chain
-                                .parameters
-                                .euro_per_energy,
-                            micro_ccd_per_euro: self
-                                .invocation_handler
-                                .chain
-                                .parameters
-                                .micro_ccd_per_euro,
-                        };
-
-                        let response = v1::InvokeResponse::Success {
-                            new_balance: self
-                                .invocation_handler
-                                .contract_balance_unchecked(self.address),
-                            data:        Some(to_bytes(&exchange_rates)),
-                        };
-
-                        self.invocation_handler
-                            .remaining_energy
-                            .tick_energy(constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST)?;
-
-                        let resume_res = self.invocation_handler.run_interpreter(|energy| {
-                            v1::resume_receive(
-                                config,
-                                response,
-                                energy,
-                                &mut self.state,
-                                false, // State never changes on queries.
-                                v1::trie::Loader::new(&[][..]),
-                            )
-                        })?;
-
-                        self.process(resume_res)
+                            receive_result = self.invocation_handler.run_interpreter(|energy| {
+                                v1::resume_receive(
+                                    config,
+                                    response,
+                                    energy,
+                                    &mut self.state,
+                                    false, // State never changes on queries.
+                                    v1::trie::Loader::new(&[][..]),
+                                )
+                            })?;
+                        }
                     }
                 }
-            }
-            v1::ReceiveResult::Reject {
-                reason,
-                return_value,
-                remaining_energy,
-            } => {
-                self.invocation_handler.update_energy(remaining_energy);
-                Ok(v1::ReceiveResult::Reject {
+                v1::ReceiveResult::Reject {
                     reason,
                     return_value,
                     remaining_energy,
-                })
-            }
-            v1::ReceiveResult::Trap {
-                error,
-                remaining_energy,
-            } => {
-                self.invocation_handler.update_energy(remaining_energy);
-                Ok(v1::ReceiveResult::Trap {
+                } => {
+                    self.invocation_handler.update_energy(remaining_energy);
+                    return Ok(v1::ReceiveResult::Reject {
+                        reason,
+                        return_value,
+                        remaining_energy,
+                    });
+                }
+                v1::ReceiveResult::Trap {
                     error,
                     remaining_energy,
-                })
+                } => {
+                    self.invocation_handler.update_energy(remaining_energy);
+                    return Ok(v1::ReceiveResult::Trap {
+                        error,
+                        remaining_energy,
+                    });
+                }
+                // Convert this to an error here, so that we will short circuit processing.
+                v1::ReceiveResult::OutOfEnergy => return Err(TestConfigurationError::OutOfEnergy),
             }
-            // Convert this to an error here, so that we will short circuit processing.
-            v1::ReceiveResult::OutOfEnergy => Err(TestConfigurationError::OutOfEnergy),
         }
     }
 }
