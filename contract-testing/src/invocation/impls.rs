@@ -41,7 +41,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         invoker: AccountAddress,
         sender: Address,
         payload: UpdateContractPayload,
-        trace_elements: &mut Vec<ContractTraceElement>,
+        trace_elements: &mut Vec<ContractTraceElement>, /* TODO: Are trace elements
+                                                         * appropriately rolled back? */
     ) -> Result<InvokeEntrypointResponse, TestConfigurationError> {
         // Charge the base cost for updating a contract.
         self.remaining_energy
@@ -217,52 +218,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         // Process the receive invocation to the completion.
         let result = data.process(self, initial_result)?;
         let mut new_trace_elements = data.trace_elements;
-
-        let result = match result {
-            v1::ReceiveResult::Success {
-                logs,
-                state_changed: _, /* This only reflects changes since last interrupt, we use
-                                   * the changeset later to get a more precise result. */
-                return_value,
-                remaining_energy: _,
-            } => InvokeEntrypointResponse {
-                invoke_response: v1::InvokeResponse::Success {
-                    new_balance: self.contract_balance_unchecked(payload.address),
-                    data:        Some(return_value),
-                },
-                logs,
-            },
-            v1::ReceiveResult::Interrupt { .. } => {
-                panic!("Internal error: `data.process` returned an interrupt.")
-            }
-            v1::ReceiveResult::Reject {
-                reason,
-                return_value,
-                remaining_energy: _,
-            } => InvokeEntrypointResponse {
-                invoke_response: v1::InvokeResponse::Failure {
-                    kind: v1::InvokeFailure::ContractReject {
-                        code: reason,
-                        data: return_value,
-                    },
-                },
-                logs:            v0::Logs::new(),
-            },
-            v1::ReceiveResult::Trap {
-                error: _, /* TODO: Forward to the user inside the `InvokeFailure::RuntimeError`
-                           * once the field has been added. */
-                remaining_energy: _,
-            } => InvokeEntrypointResponse {
-                invoke_response: v1::InvokeResponse::Failure {
-                    kind: v1::InvokeFailure::RuntimeError,
-                },
-                logs:            v0::Logs::new(),
-            },
-            v1::ReceiveResult::OutOfEnergy => {
-                // Convert to an error so that we will short-circuit the processing.
-                return Err(TestConfigurationError::OutOfEnergy);
-            }
-        };
 
         // Append the new trace elements if the invocation succeeded.
         if result.is_success() {
@@ -1037,7 +992,7 @@ impl InvocationData {
         &mut self,
         invocation_handler: &mut EntrypointInvocationHandler,
         mut receive_result: v1::ReceiveResult<artifact::CompiledFunction>,
-    ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, TestConfigurationError> {
+    ) -> Result<InvokeEntrypointResponse, TestConfigurationError> {
         loop {
             match receive_result {
                 v1::ReceiveResult::Success {
@@ -1071,11 +1026,13 @@ impl InvocationData {
                         invocation_handler.save_state_changes(self.address, &mut self.state, false);
                     }
 
-                    return Ok(v1::ReceiveResult::Success {
+                    return Ok(InvokeEntrypointResponse {
+                        invoke_response: v1::InvokeResponse::Success {
+                            new_balance: invocation_handler
+                                .contract_balance_unchecked(self.address),
+                            data:        Some(return_value),
+                        },
                         logs,
-                        state_changed,
-                        return_value,
-                        remaining_energy,
                     });
                 }
                 v1::ReceiveResult::Interrupt {
@@ -1236,6 +1193,7 @@ impl InvocationData {
 
                             // Remove the last state changes if the invocation failed.
                             let state_changed = if !success {
+                                // TODO: we should likely need to roll back traces as well.
                                 invocation_handler.rollback();
                                 false // We rolled back, so no changes were made
                                       // to this contract.
@@ -1259,7 +1217,7 @@ impl InvocationData {
 
                             self.trace_elements.push(resume_event);
 
-                            let resume_res = invocation_handler.run_interpreter(|energy| {
+                            receive_result = invocation_handler.run_interpreter(|energy| {
                                 v1::resume_receive(
                                     config,
                                     invoke_response,
@@ -1269,8 +1227,6 @@ impl InvocationData {
                                     v1::trie::Loader::new(&[][..]),
                                 )
                             })?;
-
-                            receive_result = resume_res;
                         }
                         v1::Interrupt::Upgrade { module_ref } => {
                             // Add the interrupt event.
@@ -1439,20 +1395,26 @@ impl InvocationData {
                     remaining_energy,
                 } => {
                     invocation_handler.update_energy(remaining_energy);
-                    return Ok(v1::ReceiveResult::Reject {
-                        reason,
-                        return_value,
-                        remaining_energy,
+                    return Ok(InvokeEntrypointResponse {
+                        invoke_response: v1::InvokeResponse::Failure {
+                            kind: v1::InvokeFailure::ContractReject {
+                                code: reason,
+                                data: return_value,
+                            },
+                        },
+                        logs:            v0::Logs::new(),
                     });
                 }
                 v1::ReceiveResult::Trap {
-                    error,
+                    error: _, // FIXME: This would ideally be propagated to the caller.
                     remaining_energy,
                 } => {
                     invocation_handler.update_energy(remaining_energy);
-                    return Ok(v1::ReceiveResult::Trap {
-                        error,
-                        remaining_energy,
+                    return Ok(InvokeEntrypointResponse {
+                        invoke_response: v1::InvokeResponse::Failure {
+                            kind: v1::InvokeFailure::RuntimeError,
+                        },
+                        logs:            v0::Logs::new(),
                     });
                 }
                 // Convert this to an error here, so that we will short circuit processing.
