@@ -592,7 +592,7 @@ impl Chain {
     /// *Preconditions:*
     ///  - `invoker` exists.
     ///  - `sender` exists.
-    ///  - `invoker`s balance is >= `amount`.
+    ///  - `invoker` has sufficient balance to pay for `energy_reserved`.
     fn contract_invocation_worker(
         &self,
         invoker: AccountAddress,
@@ -629,6 +629,23 @@ impl Chain {
                 *remaining_energy,
             ));
         }
+
+        // Check that the invoker has sufficient funds to pay for amount (in addition to
+        // the energy reserved, which is already checked).
+        if self
+            .account(invoker)
+            .expect("Precondition violation: must already exist")
+            .balance
+            .available()
+            < amount_reserved_for_energy + payload.amount
+        {
+            return Err(self.from_invocation_error_kind(
+                ContractInvokeErrorKind::AmountTooLarge,
+                energy_reserved,
+                *remaining_energy,
+            ));
+        }
+
         let mut contract_invocation = EntrypointInvocationHandler {
             changeset: ChangeSet::new(),
             remaining_energy,
@@ -712,6 +729,17 @@ impl Chain {
             });
         }
 
+        // Ensure the invoker exists.
+        let Ok(account_info) = self.account(invoker) else {
+            return Err(ContractInvokeError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist { address: invoker },
+                ),
+            });
+        };
+
         // Compute the base cost for checking the transaction header.
         let check_header_cost = {
             // 1 byte for the tag.
@@ -733,19 +761,8 @@ impl Chain {
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
 
-        // Ensure the invoker exists.
-        let Ok(account_info) = self.account(invoker) else {
-            return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist { address: invoker },
-                ),
-            });
-        };
-
-        // Ensure the account has sufficient funds to pay for the energy and amount.
-        if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
+        // Ensure the account has sufficient funds to pay for the energy.
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg {
             let energy_used = energy_reserved - remaining_energy;
             return Err(ContractInvokeError {
                 energy_used,
@@ -845,7 +862,7 @@ impl Chain {
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
 
-        if account_info.balance.available() < invoker_amount_reserved_for_nrg + payload.amount {
+        if account_info.balance.available() < invoker_amount_reserved_for_nrg {
             let energy_used = Energy::from(0);
             return Err(ContractInvokeError {
                 energy_used,
