@@ -45,7 +45,7 @@ impl ChainParameters {
 
     /// Create a new [`ChainParameters`](Self) with a specified `block_time`
     /// where
-    ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
+    ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new_with_time(block_time: SlotTime) -> Self {
         Self {
@@ -106,7 +106,7 @@ impl Chain {
     }
 
     /// Create a new [`Chain`](Self) with a specified `block_time` where
-    ///  - `micro_ccd_per_euro` defaults to `147235241 / 1`
+    ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     pub fn new_with_time(block_time: SlotTime) -> Self {
         Self {
@@ -687,8 +687,8 @@ impl Chain {
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             // This situation never happens on the chain since to send a message the sender
-            // is verifier upfront. So what we do here is custom behaviour, and we reject
-            // without consuming any eneryg.
+            // is verified upfront. So what we do here is custom behaviour, and we reject
+            // without consuming any energy.
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
@@ -738,9 +738,6 @@ impl Chain {
             });
         }
 
-        // Charge account for the reserved energy up front. This is to ensure that
-        // contract queries for the invoker balance are correct.
-        // The `amount` is handled in contract_invocation_worker.
         let contract_address = payload.address;
         let res = self.contract_invocation_worker(
             invoker,
@@ -781,7 +778,7 @@ impl Chain {
             Ok(s) => s.transaction_fee,
             Err(e) => e.transaction_fee,
         };
-        // Change for execution.
+        // Charge for execution.
         self.account_mut(invoker)
             .expect("existence already checked")
             .balance

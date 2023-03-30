@@ -61,8 +61,14 @@ pub(super) struct Changes {
 /// Data held for an account during the execution of a contract entrypoint.
 #[derive(Clone, Debug)]
 pub(super) struct AccountChanges {
+    /// The original balance.
+    ///
+    /// For the `invoker`, this will be the `original_balance - reserved_amount`
+    /// (from `EntrypointInvocationHandler`).
+    ///
     /// Should never be modified.
     pub(super) original_balance: Amount,
+    /// The change in the account balance.
     pub(super) balance_delta:    AmountDelta,
 }
 
