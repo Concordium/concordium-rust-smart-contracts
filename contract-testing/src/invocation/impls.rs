@@ -9,6 +9,7 @@ use crate::{
 };
 use concordium_base::{
     base::{AccountAddressEq, Energy, InsufficientEnergy},
+    constants::MAX_PARAMETER_LEN,
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedReceiveName,
@@ -104,7 +105,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
             .contracts
             .get(&payload.address)
             .expect("Contract known to exist at this point");
-        let module = self.contract_module(payload.address);
+        let module = self.contract_module(instance);
 
         // Construct the receive name (or fallback receive name) and ensure its presence
         // in the contract. Also returns the contract name and entrypoint name as they
@@ -192,7 +193,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 },
                 instance_state,
                 v1::ReceiveParams {
-                    max_parameter_size:           65535,
+                    max_parameter_size:           MAX_PARAMETER_LEN,
                     limit_logs_and_return_values: false,
                     support_queries:              true,
                 },
@@ -475,12 +476,12 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     ///  - Contract instance must exist (and therefore also the artifact).
     ///  - If the changeset contains a module reference, then it must refer a
     ///    deployed module.
-    fn contract_module(&self, address: ContractAddress) -> ContractModule {
+    fn contract_module(&self, contract: &Contract) -> ContractModule {
         match self
             .changeset
             .current()
             .contracts
-            .get(&address)
+            .get(&contract.address)
             .and_then(|c| c.module)
         {
             // Contract has been upgrade, new module exists.
@@ -492,15 +493,9 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 .clone(),
             // Contract hasn't been upgraded. Use persisted module.
             None => {
-                let module_ref = self
-                    .chain
-                    .contracts
-                    .get(&address)
-                    .expect("Precondition violation: contract must exist.")
-                    .module_reference;
                 self.chain
                     .modules
-                    .get(&module_ref)
+                    .get(&contract.module_reference)
                     .expect("Precondition violation: module must exist.")
                     .clone()
             }

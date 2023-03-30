@@ -522,6 +522,7 @@ impl Chain {
                     state:            persisted_state,
                     owner:            sender,
                     self_balance:     payload.amount,
+                    address:          contract_address,
                 };
 
                 // Save the contract.
