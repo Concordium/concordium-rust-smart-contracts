@@ -56,7 +56,7 @@ pub struct Chain {
 /// A smart contract instance.
 #[derive(Clone, Debug)]
 pub struct Contract {
-    pub address: ContractAddress,
+    pub address:          ContractAddress,
     /// The module which contains this contract.
     pub module_reference: ModuleReference,
     /// The name of the contract.

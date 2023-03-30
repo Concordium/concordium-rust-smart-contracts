@@ -96,28 +96,25 @@ pub(super) struct ContractChanges {
 ///
 /// One `InvocationData` is created for each time
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
-pub(super) struct InvocationData<'a, 'b, 'c> {
+pub(super) struct InvocationData {
     /// The invoker.
-    pub(super) invoker:            AccountAddress,
+    pub(super) invoker:        AccountAddress,
     /// The sender.
-    pub(super) sender:             Address,
+    pub(super) sender:         Address,
     /// The contract being called.
-    pub(super) address:            ContractAddress,
+    pub(super) address:        ContractAddress,
     /// The name of the contract.
-    pub(super) contract_name:      OwnedContractName,
+    pub(super) contract_name:  OwnedContractName,
     /// The entrypoint to execute.
-    pub(super) entrypoint:         OwnedEntrypointName,
+    pub(super) entrypoint:     OwnedEntrypointName,
     /// The amount sent from the sender to the contract.
-    pub(super) amount:             Amount,
+    pub(super) amount:         Amount,
     /// The parameter given to the entrypoint.
-    pub(super) parameter:          OwnedParameter,
-    /// A reference to the [`EntrypointInvocationHandler`], which is used to for
-    /// handling interrupts and for querying chain data.
-    pub(super) invocation_handler: &'c mut EntrypointInvocationHandler<'a, 'b>,
+    pub(super) parameter:      OwnedParameter,
     /// The current state.
-    pub(super) state:              MutableState,
+    pub(super) state:          MutableState,
     /// Trace elements that have occurred during the execution.
-    pub(super) trace_elements:     Vec<ContractTraceElement>,
+    pub(super) trace_elements: Vec<ContractTraceElement>,
 }
 
 /// A positive or negative delta in for an [`Amount`].
