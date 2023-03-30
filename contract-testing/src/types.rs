@@ -217,12 +217,23 @@ pub enum ContractInitErrorKind {
     /// Module has not been deployed in the test environment.
     #[error("{0}")]
     ModuleDoesNotExist(#[from] ModuleDoesNotExist),
+    /// The specified contract does not exist in the module.
+    #[error("{0}")]
+    ContractNotPresentInModule {
+        /// The name of the contract (init method) which is not present.
+        name: OwnedContractName,
+    },
     /// The sender account has not been created in test environment.
     #[error("Sender missing: {0}")]
     SenderDoesNotExist(#[from] AccountDoesNotExist),
-    /// The invoker account does not have enough funds to pay for the energy.
+    /// The invoker account does not have enough funds to pay for the energy
+    /// reserved.
     #[error("Invoker does not have enough funds to pay for the energy")]
     InsufficientFunds,
+    /// The invoker account does not have enough funds to pay for the amount.
+    /// However it does it have enough funds for the energy reserved.
+    #[error("Invoker does not have enough funds to pay for the amount")]
+    AmountTooLarge,
     /// The parameter is too large.
     #[error("The provided parameter exceeds the maximum size allowed")]
     ParameterTooLarge,

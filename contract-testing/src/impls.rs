@@ -253,7 +253,6 @@ impl Chain {
                 }
             };
 
-        // Save the module.
         let module_reference: ModuleReference = wasm_module.get_module_ref();
 
         // Ensure module hasn't been deployed before.
@@ -299,7 +298,7 @@ impl Chain {
             });
         }
         // We cannot deserialize directly to [`ModuleSource`] as it expects the first
-        // four bytes to be the length, which is isn't for this raw file.
+        // four bytes to be the length, which it isn't for this raw file.
         let mut buffer = Vec::new();
         std::io::Read::read_to_end(&mut reader, &mut buffer).map_err(|e| ModuleLoadError {
             path: module_path.to_path_buf(),
@@ -413,15 +412,12 @@ impl Chain {
         // Get the account and check that it has sufficient balance to pay for the
         // reserved_energy and amount.
         let account_info = self.account(sender)?;
-        if account_info.balance.available()
-            < self.parameters.calculate_energy_cost(energy_reserved) + payload.amount
-        {
-            return Err(ContractInitErrorKind::InsufficientFunds);
-        }
 
-        // Ensure that the parameter has a valid size.
-        if payload.param.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
-            return Err(ContractInitErrorKind::ParameterTooLarge);
+        let energy_reserved_cost = self.parameters.calculate_energy_cost(energy_reserved);
+
+        // Check that the account can pay for the reserved energy.
+        if account_info.balance.available() < energy_reserved_cost {
+            return Err(ContractInitErrorKind::InsufficientFunds);
         }
 
         // Compute the base cost for checking the transaction header.
@@ -435,14 +431,34 @@ impl Chain {
         // Charge the header cost.
         remaining_energy.tick_energy(check_header_cost)?;
 
+        // Ensure that the parameter has a valid size.
+        if payload.param.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
+            return Err(ContractInitErrorKind::ParameterTooLarge);
+        }
+
         // Charge the base cost for initializing a contract.
         remaining_energy.tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
+
+        // Check that the account also has enough funds to pay for the amount (in
+        // addition to the reserved energy).
+        if account_info.balance.available() < energy_reserved_cost + payload.amount {
+            return Err(ContractInitErrorKind::AmountTooLarge);
+        }
 
         // Lookup module.
         let module = self.contract_module(payload.mod_ref)?;
         let lookup_cost = lookup_module_cost(&module);
+
         // Charge the cost for looking up the module.
         remaining_energy.tick_energy(lookup_cost)?;
+
+        // Ensure the module contains the provided init name.
+        let init_name = payload.init_name.as_contract_name().get_chain_name();
+        if !module.artifact.export.get(init_name).is_some() {
+            return Err(ContractInitErrorKind::ContractNotPresentInModule {
+                name: payload.init_name,
+            });
+        }
 
         // Construct the context.
         let init_ctx = v0::InitContext {
@@ -462,10 +478,10 @@ impl Chain {
             module.artifact,
             init_ctx,
             v1::InitInvocation {
-                amount:    payload.amount,
-                init_name: payload.init_name.as_contract_name().get_chain_name(),
+                amount: payload.amount,
+                init_name,
                 parameter: payload.param.as_ref(),
-                energy:    energy_given_to_interpreter,
+                energy: energy_given_to_interpreter,
             },
             false, // We only support protocol P5 and up, so no limiting.
             loader,
