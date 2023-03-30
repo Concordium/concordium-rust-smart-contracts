@@ -662,8 +662,11 @@ impl Chain {
     ///
     /// **Parameters:**
     ///  - `invoker`: the account paying for the transaction.
-    ///  - `sender`: the sender of the transaction, can also be a contract.
-    ///    TODO: This does not make sense. Senders cannot be contracts.
+    ///  - `sender`: the sender of the message, can be an account or contract.
+    ///    For top-level invocations, such as those caused by sending a contract
+    ///    update transaction on the chain, the `sender` is always the
+    ///    `invoker`. Here we provide extra freedom for testing invocations
+    ///    where the sender differs.
     ///  - `contract_address`: the contract to update.
     ///  - `entrypoint`: the entrypoint to call.
     ///  - `parameter`: the contract parameter.
@@ -673,15 +676,15 @@ impl Chain {
         &mut self,
         signer: Signer,
         invoker: AccountAddress,
-        sender: Address, // TODO: Why does this exist? contra
+        sender: Address,
         energy_reserved: Energy,
         payload: UpdateContractPayload,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         // Ensure the sender exists.
         if !self.address_exists(sender) {
-            // TODO: Should we charge the header cost if the invoker exists but the sender
-            // doesn't?
-            // No, this situation should not happen.
+            // This situation never happens on the chain since to send a message the sender
+            // is verifier upfront. So what we do here is custom behaviour, and we reject
+            // without consuming any eneryg.
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
