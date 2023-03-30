@@ -191,26 +191,9 @@ impl Chain {
             });
         };
 
-        let parameters = &self.parameters;
-        let check_header_energy = {
-            // +1 for the tag, +8 for size and version
-            let payload_size = 1
-                + 8
-                + wasm_module.source.size()
-                + transactions::construct::TRANSACTION_HEADER_SIZE;
-            cost::base_cost(payload_size, signer.num_keys)
-        };
-        let check_header_cost = parameters.calculate_energy_cost(check_header_energy);
-
-        if sender_account.balance.available() < check_header_cost {
-            return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::InsufficientFunds,
-                energy_used:     0.into(),
-                transaction_fee: Amount::zero(),
-            });
-        }
-
         // Only v1 modules are supported in this testing library.
+        // This error case does not exist in the node, so we don't need to match a
+        // specific cost. We charge 0 for it.
         if wasm_module.version != WasmVersion::V1 {
             return Err(ModuleDeployError {
                 kind:            ModuleDeployErrorKind::UnsupportedModuleVersion(
@@ -221,19 +204,36 @@ impl Chain {
             });
         }
 
+        let parameters = &self.parameters;
+        let check_header_energy = {
+            // +1 for the tag, +8 for size and version
+            let payload_size = 1
+                + 8
+                + wasm_module.source.size()
+                + transactions::construct::TRANSACTION_HEADER_SIZE;
+            cost::base_cost(payload_size, signer.num_keys)
+        };
+
         // Calculate the deploy module cost.
         let deploy_module_energy = cost::deploy_module(wasm_module.source.size());
-        let deploy_module_cost = parameters.calculate_energy_cost(deploy_module_energy);
+        let energy_used = check_header_energy + deploy_module_energy;
+        let transaction_fee = parameters.calculate_energy_cost(energy_used);
 
-        // Subtract the cost from the account if it has sufficient funds.
-        if sender_account.balance.available() < deploy_module_cost {
+        // Check if the account has sufficient balance to cover the transaction fee.
+        // This fee corresponds to the energy_reserved that our tools calculate when
+        // sending the transaction to the node. The account is not charged in the node
+        // unless it has sufficient balance to pay for the full deployment (and thus all
+        // the energy).
+        if sender_account.balance.available() < transaction_fee {
             return Err(ModuleDeployError {
                 kind:            ModuleDeployErrorKind::InsufficientFunds,
-                energy_used:     check_header_energy,
-                transaction_fee: check_header_cost,
+                energy_used:     0.into(),
+                transaction_fee: Amount::zero(),
             });
         };
-        sender_account.balance.total -= check_header_cost + deploy_module_cost;
+
+        // Charge the account.
+        sender_account.balance.total -= transaction_fee;
 
         // Construct the artifact.
         let artifact =
@@ -246,9 +246,9 @@ impl Chain {
                 Ok(artifact) => artifact,
                 Err(err) => {
                     return Err(ModuleDeployError {
-                        kind:            ModuleInvalidError(err).into(),
-                        energy_used:     check_header_energy,
-                        transaction_fee: check_header_cost,
+                        kind: ModuleInvalidError(err).into(),
+                        energy_used,
+                        transaction_fee,
                     })
                 }
             };
@@ -259,9 +259,9 @@ impl Chain {
         // Ensure module hasn't been deployed before.
         if self.modules.contains_key(&module_reference) {
             return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::DuplicateModule(module_reference),
-                energy_used:     check_header_energy + deploy_module_energy,
-                transaction_fee: check_header_cost + deploy_module_cost,
+                kind: ModuleDeployErrorKind::DuplicateModule(module_reference),
+                energy_used,
+                transaction_fee,
             });
         }
         self.modules.insert(module_reference, ContractModule {
@@ -270,8 +270,8 @@ impl Chain {
         });
         Ok(ModuleDeploySuccess {
             module_reference,
-            energy_used: check_header_energy + deploy_module_energy,
-            transaction_fee: check_header_cost + deploy_module_cost,
+            energy_used,
+            transaction_fee,
         })
     }
 
