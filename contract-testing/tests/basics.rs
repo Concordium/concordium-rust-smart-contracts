@@ -1,373 +1,47 @@
-//! This module contains tests for the basic functionality of the testing
-//! library.
+//! This module contains tests that test various basic things, such as state
+//! reentry and energy usage and amounts charged.
 use concordium_smart_contract_testing::*;
 
 const ACC_0: AccountAddress = AccountAddress([0; 32]);
-const ACC_1: AccountAddress = AccountAddress([1; 32]);
+const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 
 #[test]
-fn deploying_valid_module_works() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(10000);
+fn fib_reentry_and_cost_test() {
+    let mut chain = Chain::new_with_time_and_rates(
+        SlotTime::from_timestamp_millis(0),
+        // Set a specific value, taken from testnet, to compare the exact amounts charged.
+        ExchangeRate::new_unchecked(3127635127520773120, 24857286553),
+        ExchangeRate::new_unchecked(1, 50000),
+    )
+    .expect("Values known to be in range.");
+
+    let initial_balance = Amount::from_ccd(100_000);
     chain.create_account(Account::new(ACC_0, initial_balance));
 
-    let res = chain
+    let deployment = chain
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1(
-                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
-            )
-            .expect("module should exist"),
-        )
-        .expect("Deploying valid module should work.");
-
-    assert!(chain.get_module(res.module_reference).is_some());
-    assert_eq!(
-        chain.account_balance_available(ACC_0),
-        Some(initial_balance - res.transaction_fee)
-    );
-}
-
-#[test]
-fn initializing_valid_contract_works() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-
-    let res_deploy = chain
-        .module_deploy_v1(
-            Signer::with_one_key(),
-            ACC_0,
-            Chain::module_load_v1(
-                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
-            )
-            .expect("module should exist"),
+            Chain::module_load_v1_raw(format!("{}/fib.wasm", WASM_TEST_FOLDER))
+                .expect("Module should exist."),
         )
         .expect("Deploying valid module should work");
 
-    let res_init = chain
+    let init = chain
         .contract_init(
             Signer::with_one_key(),
             ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 amount:    Amount::zero(),
-                mod_ref:   res_deploy.module_reference,
-                init_name: OwnedContractName::new_unchecked("init_weather".into()),
-                param:     OwnedParameter::try_from(vec![0u8]).expect("Parameter has valid size."),
-            },
-        )
-        .expect("Initializing valid contract should work");
-    assert_eq!(
-        chain.account_balance_available(ACC_0),
-        Some(initial_balance - res_deploy.transaction_fee - res_init.transaction_fee)
-    );
-    assert!(chain.get_contract(ContractAddress::new(0, 0)).is_some());
-}
-
-#[test]
-fn initializing_with_invalid_parameter_fails() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-
-    let res_deploy = chain
-        .module_deploy_v1(
-            Signer::with_one_key(),
-            ACC_0,
-            Chain::module_load_v1(
-                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
-            )
-            .expect("module should exist"),
-        )
-        .expect("Deploying valid module should work");
-
-    let res_init =
-        chain
-            .contract_init(
-                Signer::with_one_key(),
-                ACC_0,
-                Energy::from(10000),
-                InitContractPayload {
-                    amount:    Amount::zero(),
-                    mod_ref:   res_deploy.module_reference,
-                    init_name: OwnedContractName::new_unchecked("init_weather".into()),
-                    param:     OwnedParameter::try_from(vec![99u8])
-                        .expect("Parameter has valid size."), // Invalid param
-                },
-            )
-            .expect_err("Initializing with invalid params should fail");
-
-    let transaction_fee = res_init.transaction_fee;
-    match res_init.kind {
-        // Failed in the right way and account is still charged.
-        ContractInitErrorKind::ExecutionError {
-            error: InitExecutionError::Reject { .. },
-        } => assert_eq!(
-            chain.account_balance_available(ACC_0),
-            Some(initial_balance - res_deploy.transaction_fee - transaction_fee)
-        ),
-        _ => panic!("Expected valid chain error."),
-    };
-}
-
-#[test]
-fn updating_valid_contract_works() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-
-    let res_deploy = chain
-        .module_deploy_v1(
-            Signer::with_one_key(),
-            ACC_0,
-            Chain::module_load_v1(
-                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
-            )
-            .expect("module should exist"),
-        )
-        .expect("Deploying valid module should work");
-
-    let res_init =
-        chain
-            .contract_init(
-                Signer::with_one_key(),
-                ACC_0,
-                Energy::from(10000),
-                InitContractPayload {
-                    amount:    Amount::zero(),
-                    mod_ref:   res_deploy.module_reference,
-                    init_name: OwnedContractName::new_unchecked("init_weather".into()),
-                    param:     OwnedParameter::try_from(vec![0u8])
-                        .expect("Parameter has valid size."), // Starts as 0
-                },
-            )
-            .expect("Initializing valid contract should work");
-
-    let res_update = chain
-        .contract_update(
-            Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      res_init.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("weather.set".into()),
-                message:      OwnedParameter::try_from(vec![1u8])
-                    .expect("Parameter has valid size."), // Updated to 1
-            },
-        )
-        .expect("Updating valid contract should work");
-
-    let res_invoke_get = chain
-        .contract_invoke(
-            ACC_0,
-            Address::Contract(res_init.contract_address), // Invoke with a contract as sender.
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      res_init.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
-                message:      OwnedParameter::empty(),
-            },
-        )
-        .expect("Invoking get should work");
-
-    // This also asserts that the account wasn't charged for the invoke.
-    assert_eq!(
-        chain.account_balance_available(ACC_0),
-        Some(
-            initial_balance
-                - res_deploy.transaction_fee
-                - res_init.transaction_fee
-                - res_update.transaction_fee
-        )
-    );
-    assert!(chain.get_contract(res_init.contract_address).is_some());
-    assert!(res_update.state_changed);
-    // Assert that the updated state is persisted.
-    assert_eq!(res_invoke_get.return_value, [1u8]);
-}
-
-/// Test that updates and invocations where the sender is missing fail.
-#[test]
-fn updating_and_invoking_with_missing_sender_fails() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-
-    let missing_account = Address::Account(ACC_1);
-    let missing_contract = Address::Contract(ContractAddress::new(100, 0));
-
-    let res_deploy = chain
-        .module_deploy_v1(
-            Signer::with_one_key(),
-            ACC_0,
-            Chain::module_load_v1(
-                "../../concordium-rust-smart-contracts/examples/icecream/a.wasm.v1",
-            )
-            .expect("module should exist"),
-        )
-        .expect("Deploying valid module should work");
-
-    let res_init =
-        chain
-            .contract_init(
-                Signer::with_one_key(),
-                ACC_0,
-                Energy::from(10000),
-                InitContractPayload {
-                    amount:    Amount::zero(),
-                    mod_ref:   res_deploy.module_reference,
-                    init_name: OwnedContractName::new_unchecked("init_weather".into()),
-                    param:     OwnedParameter::try_from(vec![0u8])
-                        .expect("Parameter has valid size."), // Starts as 0
-                },
-            )
-            .expect("Initializing valid contract should work");
-
-    let res_update_acc = chain
-        .contract_update(
-            Signer::with_one_key(),
-            ACC_0,
-            missing_account,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      res_init.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
-                message:      OwnedParameter::empty(),
-            },
-        )
-        .expect_err("should fail");
-
-    let res_invoke_acc = chain
-        .contract_invoke(
-            ACC_0,
-            missing_account,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      res_init.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
-                message:      OwnedParameter::empty(),
-            },
-        )
-        .expect_err("should fail");
-
-    let res_update_contr = chain
-        .contract_update(
-            Signer::with_one_key(),
-            ACC_0,
-            missing_contract,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      res_init.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
-                message:      OwnedParameter::empty(),
-            },
-        )
-        .expect_err("should fail");
-
-    let res_invoke_contr = chain
-        .contract_invoke(
-            ACC_0,
-            missing_contract,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      res_init.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("weather.get".into()),
-                message:      OwnedParameter::empty(),
-            },
-        )
-        .expect_err("should fail");
-
-    assert!(matches!(
-            res_update_acc.kind,
-            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
-    assert!(matches!(
-            res_invoke_acc.kind,
-            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_account));
-    assert!(matches!(
-            res_update_contr.kind,
-            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
-    assert!(matches!(
-            res_invoke_contr.kind,
-            ContractInvokeErrorKind::SenderDoesNotExist(addr) if addr == missing_contract));
-}
-
-#[test]
-fn init_with_less_energy_than_module_lookup() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-
-    let res_deploy = chain
-        .module_deploy_v1(
-            Signer::with_one_key(),
-            ACC_0,
-            Chain::module_load_v1("../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1")
-                .expect("module should exist"),
-        )
-        .expect("Deploying valid module should work");
-
-    let reserved_energy = Energy::from(10);
-
-    let res_init = chain.contract_init(
-        Signer::with_one_key(),
-        ACC_0,
-        reserved_energy,
-        InitContractPayload {
-            amount:  Amount::zero(),
-            mod_ref: res_deploy.module_reference,
-
-            init_name: OwnedContractName::new_unchecked("init_fib".into()),
-            param:     OwnedParameter::empty(),
-        },
-    );
-    match res_init {
-        Err(ContractInitError {
-            kind: ContractInitErrorKind::OutOfEnergy,
-            ..
-        }) => (),
-        _ => panic!("Expected to fail with out of energy."),
-    }
-}
-
-#[test]
-fn update_with_fib_reentry_works() {
-    let mut chain = Chain::new();
-    let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-
-    let res_deploy = chain
-        .module_deploy_v1(
-            Signer::with_one_key(),
-            ACC_0,
-            Chain::module_load_v1("../../concordium-rust-smart-contracts/examples/fib/a.wasm.v1")
-                .expect("module should exist"),
-        )
-        .expect("Deploying valid module should work");
-
-    let res_init = chain
-        .contract_init(
-            Signer::with_one_key(),
-            ACC_0,
-            Energy::from(10000),
-            InitContractPayload {
-                amount:    Amount::zero(),
-                mod_ref:   res_deploy.module_reference,
+                mod_ref:   deployment.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_fib".into()),
                 param:     OwnedParameter::empty(),
             },
         )
         .expect("Initializing valid contract should work");
 
-    let res_update = chain
+    let update = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_0,
@@ -375,41 +49,58 @@ fn update_with_fib_reentry_works() {
             Energy::from(100000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
-                address:      res_init.contract_address,
+                address:      init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("fib.receive".into()),
                 message:      OwnedParameter::from_serial(&6u64).expect("Parameter has valid size"),
             },
         )
         .expect("Updating valid contract should work");
 
-    let res_view = chain
+    let view = chain
         .contract_invoke(
             ACC_0,
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
-                address:      res_init.contract_address,
+                address:      init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("fib.view".into()),
                 message:      OwnedParameter::empty(),
             },
         )
         .expect("Invoking get should work");
 
+    // Check the state and return values.
+    assert!(chain.get_contract(init.contract_address).is_some());
+    assert!(update.state_changed);
+    let expected_res = u64::to_le_bytes(13);
+    assert_eq!(update.return_value, expected_res);
+    // Assert that the updated state is persisted.
+    assert_eq!(view.return_value, expected_res);
+
+    // Check that the account was correctly charged for all transactions.
     // This also asserts that the account wasn't charged for the invoke.
     assert_eq!(
         chain.account_balance_available(ACC_0),
         Some(
             initial_balance
-                - res_deploy.transaction_fee
-                - res_init.transaction_fee
-                - res_update.transaction_fee
+                - deployment.transaction_fee
+                - init.transaction_fee
+                - update.transaction_fee
         )
     );
-    assert!(chain.get_contract(res_init.contract_address).is_some());
-    assert!(res_update.state_changed);
-    let expected_res = u64::to_le_bytes(13);
-    assert_eq!(res_update.return_value, expected_res);
-    // Assert that the updated state is persisted.
-    assert_eq!(res_view.return_value, expected_res);
+
+    // Check that the energy usage matches the node.
+    assert_eq!(deployment.energy_used, 1067.into());
+    assert_eq!(init.energy_used, 771.into());
+    assert_eq!(update.energy_used, 8198.into());
+    assert_eq!(view.energy_used, 316.into());
+
+    // Check that the amounts charged matches the node.
+    assert_eq!(
+        deployment.transaction_fee,
+        Amount::from_micro_ccd(2_685_078)
+    );
+    assert_eq!(init.transaction_fee, Amount::from_micro_ccd(1_940_202));
+    assert_eq!(update.transaction_fee, Amount::from_micro_ccd(20_630_050));
 }
