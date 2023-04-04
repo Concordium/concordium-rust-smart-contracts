@@ -158,7 +158,7 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn get_keys(&self) -> Vec<(u32, PublicKeyEd25519)> {
+    fn get_issuer_keys(&self) -> Vec<(u32, PublicKeyEd25519)> {
         self.issuer_keys.iter().map(|x| (*x.0, *x.1)).collect()
     }
 
@@ -229,6 +229,7 @@ fn contract_register_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let parameter: RegisterCredentialParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_credential(parameter.credential_id, &parameter.credential_data)
 }
@@ -244,6 +245,7 @@ fn contract_revoke_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let credential_id = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time();
     host.state_mut().revoke_credential(now, credential_id)
@@ -266,6 +268,7 @@ fn contract_register_issuer_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let parameter: RegisterKeyParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_issuer_key(parameter.key_index, parameter.key)
 }
@@ -281,6 +284,7 @@ fn contract_remove_issuer_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let index = ctx.parameter_cursor().get()?;
     host.state_mut().remove_issuer_key(index)
 }
@@ -296,6 +300,7 @@ fn contract_register_revocation_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let parameter: RegisterKeyParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_revocation_key(parameter.key_index, parameter.key)
 }
@@ -311,21 +316,22 @@ fn contract_remove_revocation_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let index = ctx.parameter_cursor().get()?;
     host.state_mut().remove_revocation_key(index)
 }
 
 #[receive(
     contract = "credential_registry",
-    name = "getKeys",
+    name = "getIssuerKeys",
     error = "ContractError",
     return_value = "Vec<PublicKeyEd25519>"
 )]
-fn contract_get_keys<S: HasStateApi>(
+fn contract_get_issuer_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<Vec<(u32, PublicKeyEd25519)>, ContractError> {
-    let keys = host.state().get_keys();
+    let keys = host.state().get_issuer_keys();
     Ok(keys)
 }
 
@@ -353,6 +359,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
+    // TODO: add authentication
     let data = ctx.parameter_cursor().get()?;
     host.state_mut().update_issuer_metadata(&data);
     Ok(())
