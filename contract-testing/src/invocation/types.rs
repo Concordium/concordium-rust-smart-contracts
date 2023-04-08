@@ -97,8 +97,6 @@ pub(super) struct ContractChanges {
 /// One `InvocationData` is created for each time
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
 pub(super) struct InvocationData {
-    /// The invoker.
-    pub(super) invoker:        AccountAddress,
     /// The sender.
     pub(super) sender:         Address,
     /// The contract being called.
