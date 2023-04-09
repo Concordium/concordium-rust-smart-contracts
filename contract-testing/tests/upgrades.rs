@@ -427,7 +427,9 @@ fn test_chained_contract() {
         )
         .expect("Initializing valid contract should work");
 
-    let number_of_upgrades: u32 = 74; // TODO: Stack will overflow if set larger.
+    // High number here tests we don't have stack overflows due to recursion or
+    // other accidental stack usage.
+    let number_of_upgrades: u32 = 1_000_000;
     let input_param = (number_of_upgrades, res_deploy.module_reference);
 
     let res_update = chain

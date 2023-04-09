@@ -655,9 +655,10 @@ impl Chain {
             invoker,
         };
 
-        let mut trace_elements = Vec::new();
-        match contract_invocation.invoke_entrypoint(invoker, sender, payload, &mut trace_elements) {
-            Ok(result) => Ok((result, contract_invocation.changeset, trace_elements)),
+        match contract_invocation.invoke_entrypoint(invoker, sender, payload) {
+            Ok((result, trace_elements)) => {
+                Ok((result, contract_invocation.changeset, trace_elements))
+            }
             Err(err) => {
                 Err(self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy))
             }

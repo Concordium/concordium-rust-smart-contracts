@@ -5,15 +5,18 @@ use concordium_base::{
         AccountAddress, Address, Amount, ContractAddress, ModuleReference, OwnedContractName,
         OwnedEntrypointName,
     },
-    smart_contracts::{ContractTraceElement, OwnedParameter},
+    smart_contracts::OwnedParameter,
+    transactions::UpdateContractPayload,
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{trie::MutableState, InvokeResponse},
+    v1::{trie::MutableState, InvokeResponse, ReceiveContext, ReceiveInterruptedState},
 };
+use concordium_wasm::artifact::CompiledFunction;
 use std::collections::BTreeMap;
 
 /// The response from invoking an entrypoint.
+#[derive(Debug)]
 pub(crate) struct InvokeEntrypointResponse {
     /// The result from the invoke.
     pub(crate) invoke_response: InvokeResponse,
@@ -96,23 +99,26 @@ pub(super) struct ContractChanges {
 ///
 /// One `InvocationData` is created for each time
 /// [`EntrypointInvocationHandler::invoke_entrypoint`] is called.
+#[derive(Debug)]
 pub(super) struct InvocationData {
     /// The sender.
-    pub(super) sender:         Address,
+    pub(super) sender:                    Address,
     /// The contract being called.
-    pub(super) address:        ContractAddress,
+    pub(super) address:                   ContractAddress,
     /// The name of the contract.
-    pub(super) contract_name:  OwnedContractName,
+    pub(super) contract_name:             OwnedContractName,
     /// The entrypoint to execute.
-    pub(super) entrypoint:     OwnedEntrypointName,
+    pub(super) entrypoint:                OwnedEntrypointName,
     /// The amount sent from the sender to the contract.
-    pub(super) amount:         Amount,
+    pub(super) amount:                    Amount,
     /// The parameter given to the entrypoint.
-    pub(super) parameter:      OwnedParameter,
+    pub(super) parameter:                 OwnedParameter,
     /// The current state.
-    pub(super) state:          MutableState,
-    /// Trace elements that have occurred during the execution.
-    pub(super) trace_elements: Vec<ContractTraceElement>,
+    pub(super) state:                     MutableState,
+    /// A checkpoint in the list of trace elements.
+    /// We reset to this size in case of failure of execution.
+    pub(super) trace_elements_checkpoint: usize,
+    pub(super) mod_idx_before_invoke:     u32,
 }
 
 /// A positive or negative delta in for an [`Amount`].
@@ -133,4 +139,19 @@ pub(crate) enum TestConfigurationError {
     /// [`Amount`]. On the chain there is roughly 10 billion CCD, which
     /// means that overflows of amounts cannot occur.
     BalanceOverflow,
+}
+
+pub(super) enum Next {
+    Resume {
+        data:     InvocationData,
+        config:   Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
+        /// This is none if we are going to resume after a call to a contract.
+        /// And Some if we have an immediate handler.
+        response: Option<InvokeResponse>,
+    },
+    Initial {
+        sender:                    Address,
+        payload:                   UpdateContractPayload,
+        trace_elements_checkpoint: usize,
+    },
 }
