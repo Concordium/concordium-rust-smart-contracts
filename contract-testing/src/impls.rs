@@ -1260,12 +1260,11 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 ///  NRG      euro   NRG * euro    NRG
 /// ```
 ///
-/// To convert the `energy` parameter to mCCD:
-/// ```markdown
-/// 
-///        mCCD   NRG * mCCD
-///  NRG * ---- = ---------- = mCCD
-///        NRG       NRG
+/// To convert the `energy` parameter to mCCD (the vertical lines represent
+/// ceiling): ```markdown
+/// ⌈       mCCD  ⌉    ⌈ NRG * mCCD ⌉
+/// | NRG * ----  | = | ---------- | = mCCD
+/// |       NRG   |   |    NRG     |
 /// ```
 pub fn energy_to_amount(
     energy: Energy,
@@ -1276,12 +1275,18 @@ pub fn energy_to_amount(
         BigUint::from(euro_per_energy.numerator()) * micro_ccd_per_euro.numerator();
     let micro_ccd_per_energy_denominator: BigUint =
         BigUint::from(euro_per_energy.denominator()) * micro_ccd_per_euro.denominator();
+    let remainder: BigUint = (micro_ccd_per_energy_numerator.clone() * energy.energy)
+        % micro_ccd_per_energy_denominator.clone();
     let cost: BigUint =
         (micro_ccd_per_energy_numerator * energy.energy) / micro_ccd_per_energy_denominator;
-    let cost: u64 = u64::try_from(cost).expect(
+    let mut cost: u64 = u64::try_from(cost).expect(
         "Should never overflow since reasonable exchange rates are ensured when constructing the \
          [`Chain`].",
     );
+    // Apply ceiling.
+    if remainder != 0u8.into() {
+        cost += 1
+    }
     Amount::from_micro_ccd(cost)
 }
 
