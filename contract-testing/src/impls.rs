@@ -303,8 +303,8 @@ impl Chain {
         let mut buffer = Vec::new();
         std::io::Read::read_to_end(&mut reader, &mut buffer).map_err(|e| ModuleLoadError {
             path: module_path.to_path_buf(),
-            kind: ModuleLoadErrorKind::OpenFile(e.into()), /* This is unlikely to happen, since
-                                                            * we already opened it. */
+            kind: ModuleLoadErrorKind::OpenFile(e), /* This is unlikely to happen, since
+                                                     * we already opened it. */
         })?;
         Ok(WasmModule {
             version: WasmVersion::V1,
@@ -361,7 +361,7 @@ impl Chain {
     ) -> Result<ContractInitSuccess, ContractInitError> {
         let mut remaining_energy = energy_reserved;
         if !self.account_exists(sender) {
-            return Err(self.from_init_error_kind(
+            return Err(self.convert_to_init_error(
                 ContractInitErrorKind::SenderDoesNotExist(AccountDoesNotExist { address: sender }),
                 energy_reserved,
                 remaining_energy,
@@ -382,7 +382,7 @@ impl Chain {
                 (Ok(s), transaction_fee)
             }
             Err(e) => {
-                let err = self.from_init_error_kind(e, energy_reserved, remaining_energy);
+                let err = self.convert_to_init_error(e, energy_reserved, remaining_energy);
                 let transaction_fee = err.transaction_fee;
                 (Err(err), transaction_fee)
             }
@@ -455,7 +455,7 @@ impl Chain {
 
         // Ensure the module contains the provided init name.
         let init_name = payload.init_name.as_contract_name().get_chain_name();
-        if !module.artifact.export.get(init_name).is_some() {
+        if module.artifact.export.get(init_name).is_none() {
             return Err(ContractInitErrorKind::ContractNotPresentInModule {
                 name: payload.init_name,
             });
@@ -613,7 +613,7 @@ impl Chain {
     > {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
-            return Err(self.from_invocation_error_kind(
+            return Err(self.convert_to_invoke_error(
                 ContractDoesNotExist {
                     address: payload.address,
                 }
@@ -625,7 +625,7 @@ impl Chain {
 
         // Ensure that the parameter has a valid size.
         if payload.message.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
-            return Err(self.from_invocation_error_kind(
+            return Err(self.convert_to_invoke_error(
                 ContractInvokeErrorKind::ParameterTooLarge,
                 energy_reserved,
                 *remaining_energy,
@@ -641,7 +641,7 @@ impl Chain {
             .available()
             < amount_reserved_for_energy + payload.amount
         {
-            return Err(self.from_invocation_error_kind(
+            return Err(self.convert_to_invoke_error(
                 ContractInvokeErrorKind::AmountTooLarge,
                 energy_reserved,
                 *remaining_energy,
@@ -661,7 +661,7 @@ impl Chain {
                 Ok((result, contract_invocation.changeset, trace_elements))
             }
             Err(err) => {
-                Err(self.from_invocation_error_kind(err.into(), energy_reserved, *remaining_energy))
+                Err(self.convert_to_invoke_error(err.into(), energy_reserved, *remaining_energy))
             }
         }
     }
@@ -688,7 +688,7 @@ impl Chain {
                     events: contract_events_from_logs(result.logs),
                 })
             }
-            v1::InvokeResponse::Failure { kind } => Err(self.from_invocation_error_kind(
+            v1::InvokeResponse::Failure { kind } => Err(self.convert_to_invoke_error(
                 ContractInvokeErrorKind::ExecutionError { failure_kind: kind },
                 energy_reserved,
                 remaining_energy,
@@ -886,7 +886,7 @@ impl Chain {
             payload,
             &mut remaining_energy,
         );
-        let res = match res {
+        match res {
             Ok((result, changeset, trace_elements)) => {
                 // Charge energy for contract storage. Or return an error if out
                 // of energy.
@@ -907,9 +907,7 @@ impl Chain {
                 )
             }
             Err(e) => Err(e),
-        };
-
-        res
+        }
     }
 
     /// Create an account.
@@ -1032,7 +1030,7 @@ impl Chain {
     /// If the `kind` is an out of energy, then `0` is used instead of the
     /// `remaining_energy` parameter, as it will likely not be `0` due to short
     /// circuiting during execution.
-    fn from_invocation_error_kind(
+    fn convert_to_invoke_error(
         &self,
         kind: ContractInvokeErrorKind,
         energy_reserved: Energy,
@@ -1056,7 +1054,7 @@ impl Chain {
     /// the energy and transaction fee fields based on the `energy_reserved`
     /// parameter.
     fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvokeError {
-        self.from_invocation_error_kind(
+        self.convert_to_invoke_error(
             ContractInvokeErrorKind::OutOfEnergy,
             energy_reserved,
             Energy::from(0),
@@ -1066,7 +1064,7 @@ impl Chain {
     /// Convert a [`ContractInitErrorKind`] to a
     /// [`ContractInitError`] by calculating the `energy_used` and
     /// `transaction_fee`.
-    fn from_init_error_kind(
+    fn convert_to_init_error(
         &self,
         kind: ContractInitErrorKind,
         energy_reserved: Energy,
@@ -1198,9 +1196,9 @@ impl ContractInvokeSuccess {
     ) -> BTreeMap<ContractAddress, Vec<ContractTraceElement>> {
         let mut map: BTreeMap<ContractAddress, Vec<ContractTraceElement>> = BTreeMap::new();
         for event in self.trace_elements.iter() {
-            map.entry(Self::extract_contract_address(&event))
+            map.entry(Self::extract_contract_address(event))
                 .and_modify(|v| v.push(event.clone()))
-                .or_insert(vec![event.clone()]);
+                .or_insert_with(|| vec![event.clone()]);
         }
         map
     }

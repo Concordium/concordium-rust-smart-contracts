@@ -161,7 +161,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 sender_policies: to_bytes(
                     &self
                         .chain
-                        .account(invoker.into())
+                        .account(invoker)
                         .expect("Precondition violation: invoker must exist.")
                         .policy,
                 ),
