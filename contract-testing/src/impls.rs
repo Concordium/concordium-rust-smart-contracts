@@ -685,7 +685,6 @@ impl Chain {
                     return_value: data.unwrap_or_default(),
                     state_changed,
                     new_balance,
-                    events: contract_events_from_logs(result.logs),
                 })
             }
             v1::InvokeResponse::Failure { kind } => Err(self.convert_to_invoke_error(

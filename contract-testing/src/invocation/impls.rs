@@ -101,7 +101,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // Return early.
                     return Ok(Err(InvokeEntrypointResponse {
                         invoke_response: v1::InvokeResponse::Failure { kind },
-                        logs:            v0::Logs::new(),
                     }));
                 }
             }
@@ -114,7 +113,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         invoke_response: v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::NonExistentContract,
                         },
-                        logs:            v0::Logs::new(),
                     }));
                 }
             }
@@ -160,7 +158,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     invoke_response: v1::InvokeResponse::Failure {
                         kind: v1::InvokeFailure::NonExistentEntrypoint,
                     },
-                    logs:            v0::Logs::new(),
                 }));
             }
         };
@@ -395,7 +392,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 invocation_data.contract_name.as_contract_name(),
                                 invocation_data.entrypoint.as_entrypoint_name(),
                             ),
-                            events:           contract_events_from_logs(logs.clone()),
+                            events:           contract_events_from_logs(logs),
                         },
                     };
                     // Add update event
@@ -414,7 +411,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             new_balance: self.contract_balance_unchecked(invocation_data.address),
                             data:        Some(return_value),
                         },
-                        logs,
                     });
                 }
                 v1::ReceiveResult::Interrupt {
@@ -726,7 +722,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 data: return_value,
                             },
                         },
-                        logs:            v0::Logs::new(),
                     });
                 }
                 v1::ReceiveResult::Trap {
@@ -741,7 +736,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         invoke_response: v1::InvokeResponse::Failure {
                             kind: v1::InvokeFailure::RuntimeError,
                         },
-                        logs:            v0::Logs::new(),
                     });
                 }
                 // Convert this to an error here, so that we will short circuit processing.
