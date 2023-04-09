@@ -6,13 +6,11 @@ use concordium_base::{
         OwnedEntrypointName,
     },
     smart_contracts::OwnedParameter,
-    transactions::UpdateContractPayload,
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{trie::MutableState, InvokeResponse, ReceiveContext, ReceiveInterruptedState},
+    v1::{trie::MutableState, InvokeResponse},
 };
-use concordium_wasm::artifact::CompiledFunction;
 use std::collections::BTreeMap;
 
 /// The response from invoking an entrypoint.
@@ -139,19 +137,4 @@ pub(crate) enum TestConfigurationError {
     /// [`Amount`]. On the chain there is roughly 10 billion CCD, which
     /// means that overflows of amounts cannot occur.
     BalanceOverflow,
-}
-
-pub(super) enum Next {
-    Resume {
-        data:     InvocationData,
-        config:   Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
-        /// This is none if we are going to resume after a call to a contract.
-        /// And Some if we have an immediate handler.
-        response: Option<InvokeResponse>,
-    },
-    Initial {
-        sender:                    Address,
-        payload:                   UpdateContractPayload,
-        trace_elements_checkpoint: usize,
-    },
 }

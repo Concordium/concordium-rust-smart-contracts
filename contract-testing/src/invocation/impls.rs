@@ -21,11 +21,37 @@ use concordium_base::{
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{self, trie},
+    v1::{self, trie, InvokeResponse, ReceiveContext, ReceiveInterruptedState},
     ExecResult, InterpreterEnergy,
 };
 use concordium_wasm::artifact::{self, CompiledFunction};
 use std::collections::{btree_map, BTreeMap};
+
+/// This auxiliary type is used in `invoke_entrypoint` below to keep track of
+/// the "to do list" in the form of a stack. It stores the necessary information
+/// to continue execution until all actions have been processed.
+enum Next {
+    /// The next action is to resume execution after handling the interrupt.
+    Resume {
+        data:     InvocationData,
+        config:   Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
+        /// This is [`None`] if we are going to resume after a call to a
+        /// contract. And [`Some`] if we have an immediate handler that
+        /// immediately produces a response.
+        response: Option<InvokeResponse>,
+    },
+    /// The next action is to start executing an entrypoint.
+    Initial {
+        sender:                    Address,
+        payload:                   UpdateContractPayload,
+        /// If execution of the entrypoint fails then it does not produce any
+        /// trace. We store the trace in one "global" (per transaction)
+        /// vector. This field is used to determine how far back we need
+        /// to roll back (i.e., clean up) the elements in that trace in
+        /// case of contract invocation failure.
+        trace_elements_checkpoint: usize,
+    },
+}
 
 impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     fn invoke_entrypoint_initial(
