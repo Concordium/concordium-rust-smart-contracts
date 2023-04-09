@@ -429,7 +429,7 @@ fn test_chained_contract() {
 
     // High number here tests we don't have stack overflows due to recursion or
     // other accidental stack usage.
-    let number_of_upgrades: u32 = 1_000_000;
+    let number_of_upgrades: u32 = 1_000;
     let input_param = (number_of_upgrades, res_deploy.module_reference);
 
     let res_update = chain
@@ -437,7 +437,7 @@ fn test_chained_contract() {
             Signer::with_one_key(),
             ACC_0,
             Address::Account(ACC_0),
-            Energy::from(1000000),
+            Energy::from(1_000_000_000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),

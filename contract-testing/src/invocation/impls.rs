@@ -486,19 +486,20 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             {
                                 // The contract to call does not exist.
                                 None => {
-                                    invoke_response = Some(InvokeEntrypointResponse {
-                                        invoke_response: v1::InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::NonExistentContract,
-                                        },
-                                        logs:            v0::Logs::new(),
-                                    });
+                                    let response = v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::NonExistentContract,
+                                    };
                                     // Add resume event
                                     let resume_event = ContractTraceElement::Resumed {
                                         address: invocation_data.address,
                                         success: false,
                                     };
-
                                     trace_elements.push(resume_event);
+                                    stack.push(Next::Resume {
+                                        data: invocation_data,
+                                        config,
+                                        response: Some(response),
+                                    });
                                 }
                                 Some(contract_name) => {
                                     if state_changed {
