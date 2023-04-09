@@ -21,6 +21,7 @@ use concordium_base::{
 };
 use concordium_smart_contract_engine::{v0, v1, InterpreterEnergy};
 use num_bigint::BigUint;
+use num_integer::Integer;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 impl Default for Chain {
@@ -1275,18 +1276,12 @@ pub fn energy_to_amount(
         BigUint::from(euro_per_energy.numerator()) * micro_ccd_per_euro.numerator();
     let micro_ccd_per_energy_denominator: BigUint =
         BigUint::from(euro_per_energy.denominator()) * micro_ccd_per_euro.denominator();
-    let remainder: BigUint = (micro_ccd_per_energy_numerator.clone() * energy.energy)
-        % micro_ccd_per_energy_denominator.clone();
-    let cost: BigUint =
-        (micro_ccd_per_energy_numerator * energy.energy) / micro_ccd_per_energy_denominator;
-    let mut cost: u64 = u64::try_from(cost).expect(
+    let cost: BigUint = (micro_ccd_per_energy_numerator * energy.energy)
+        .div_ceil(&micro_ccd_per_energy_denominator);
+    let cost: u64 = u64::try_from(cost).expect(
         "Should never overflow since reasonable exchange rates are ensured when constructing the \
          [`Chain`].",
     );
-    // Apply ceiling.
-    if remainder != 0u8.into() {
-        cost += 1
-    }
     Amount::from_micro_ccd(cost)
 }
 
