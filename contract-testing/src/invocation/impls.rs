@@ -21,7 +21,7 @@ use concordium_base::{
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{self, trie},
+    v1::{self, trie, InvokeResponse},
     ExecResult, InterpreterEnergy,
 };
 use concordium_wasm::artifact::{self, CompiledFunction};
@@ -43,7 +43,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         payload: UpdateContractPayload,
         trace_elements_checkpoint: usize,
     ) -> Result<
-        Result<(v1::ReceiveResult<CompiledFunction>, InvocationData), InvokeEntrypointResponse>,
+        Result<(v1::ReceiveResult<CompiledFunction>, InvocationData), InvokeResponse>,
         TestConfigurationError,
     > {
         // Charge the base cost for updating a contract.
@@ -81,10 +81,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         TransferError::ToMissing => v1::InvokeFailure::NonExistentContract,
                     };
                     // Return early.
-                    return Ok(Err(InvokeEntrypointResponse {
-                        invoke_response: v1::InvokeResponse::Failure { kind },
-                        logs:            v0::Logs::new(),
-                    }));
+                    return Ok(Err(v1::InvokeResponse::Failure { kind }));
                 }
             }
         } else {
@@ -92,11 +89,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 Some(self_balance) => self_balance,
                 None => {
                     // Return early.
-                    return Ok(Err(InvokeEntrypointResponse {
-                        invoke_response: v1::InvokeResponse::Failure {
-                            kind: v1::InvokeFailure::NonExistentContract,
-                        },
-                        logs:            v0::Logs::new(),
+                    return Ok(Err(v1::InvokeResponse::Failure {
+                        kind: v1::InvokeFailure::NonExistentContract,
                     }));
                 }
             }
@@ -138,11 +132,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 )
             } else {
                 // Return early.
-                return Ok(Err(InvokeEntrypointResponse {
-                    invoke_response: v1::InvokeResponse::Failure {
-                        kind: v1::InvokeFailure::NonExistentEntrypoint,
-                    },
-                    logs:            v0::Logs::new(),
+                return Ok(Err(v1::InvokeResponse::Failure {
+                    kind: v1::InvokeFailure::NonExistentEntrypoint,
                 }));
             }
         };
@@ -232,7 +223,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         invoker: AccountAddress,
         sender: Address,
         payload: UpdateContractPayload,
-    ) -> Result<(InvokeEntrypointResponse, Vec<ContractTraceElement>), TestConfigurationError> {
+    ) -> Result<(InvokeResponse, Vec<ContractTraceElement>), TestConfigurationError> {
         let mut stack = Vec::new();
         let mut trace_elements = Vec::new();
         stack.push(Next::Initial {
@@ -242,7 +233,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         });
         // Initialized to a dummy value. This will always be set or the function will
         // terminate with an Err.
-        let mut invoke_response: Option<InvokeEntrypointResponse> = None;
+        let mut invoke_response: Option<InvokeResponse> = None;
         while let Some(invocation_data) = stack.pop() {
             let (receive_result, mut invocation_data) = match invocation_data {
                 Next::Resume {
@@ -272,7 +263,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             let (success, call_response) = match invoke_response
                                 .take()
                                 .expect("Response should be available")
-                                .invoke_response
                             {
                                 v1::InvokeResponse::Success {
                                     data: return_value, ..
@@ -372,7 +362,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 invocation_data.contract_name.as_contract_name(),
                                 invocation_data.entrypoint.as_entrypoint_name(),
                             ),
-                            events:           contract_events_from_logs(logs.clone()),
+                            events:           contract_events_from_logs(logs),
                         },
                     };
                     // Add update event
@@ -386,12 +376,9 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         );
                     }
 
-                    invoke_response = Some(InvokeEntrypointResponse {
-                        invoke_response: v1::InvokeResponse::Success {
-                            new_balance: self.contract_balance_unchecked(invocation_data.address),
-                            data:        Some(return_value),
-                        },
-                        logs,
+                    invoke_response = Some(v1::InvokeResponse::Success {
+                        new_balance: self.contract_balance_unchecked(invocation_data.address),
+                        data:        Some(return_value),
                     });
                 }
                 v1::ReceiveResult::Interrupt {
@@ -696,14 +683,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // Delete the trace of the failed part of the execution.
                     // This is the current behaviour of the on-chain execution.
                     trace_elements.truncate(invocation_data.trace_elements_checkpoint);
-                    invoke_response = Some(InvokeEntrypointResponse {
-                        invoke_response: v1::InvokeResponse::Failure {
-                            kind: v1::InvokeFailure::ContractReject {
-                                code: reason,
-                                data: return_value,
-                            },
+                    invoke_response = Some(v1::InvokeResponse::Failure {
+                        kind: v1::InvokeFailure::ContractReject {
+                            code: reason,
+                            data: return_value,
                         },
-                        logs:            v0::Logs::new(),
                     });
                 }
                 v1::ReceiveResult::Trap {
@@ -714,11 +698,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // Delete the trace of the failed part of the execution.
                     // This is the current behaviour of the on-chain execution.
                     trace_elements.truncate(invocation_data.trace_elements_checkpoint);
-                    invoke_response = Some(InvokeEntrypointResponse {
-                        invoke_response: v1::InvokeResponse::Failure {
-                            kind: v1::InvokeFailure::RuntimeError,
-                        },
-                        logs:            v0::Logs::new(),
+                    invoke_response = Some(v1::InvokeResponse::Failure {
+                        kind: v1::InvokeFailure::RuntimeError,
                     });
                 }
                 // Convert this to an error here, so that we will short circuit processing.
@@ -1483,13 +1464,6 @@ impl AccountChanges {
         self.balance_delta
             .apply_to_balance(self.original_balance)
             .expect("Precondition violation: invalid `balance_delta`.")
-    }
-}
-
-impl InvokeEntrypointResponse {
-    /// Whether the invoke was successful.
-    pub(crate) fn is_success(&self) -> bool {
-        matches!(self.invoke_response, v1::InvokeResponse::Success { .. })
     }
 }
 

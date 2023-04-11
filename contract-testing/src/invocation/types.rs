@@ -8,22 +8,11 @@ use concordium_base::{
     smart_contracts::OwnedParameter,
     transactions::UpdateContractPayload,
 };
-use concordium_smart_contract_engine::{
-    v0,
-    v1::{trie::MutableState, InvokeResponse, ReceiveContext, ReceiveInterruptedState},
+use concordium_smart_contract_engine::v1::{
+    trie::MutableState, InvokeResponse, ReceiveContext, ReceiveInterruptedState,
 };
 use concordium_wasm::artifact::CompiledFunction;
 use std::collections::BTreeMap;
-
-/// The response from invoking an entrypoint.
-#[derive(Debug)]
-pub(crate) struct InvokeEntrypointResponse {
-    /// The result from the invoke.
-    pub(crate) invoke_response: InvokeResponse,
-    /// Logs created during the invocation.
-    /// Has entries if and only if `invoke_response` is `Success`.
-    pub(crate) logs:            v0::Logs,
-}
 
 /// A type that supports invoking a contract entrypoint.
 pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
@@ -93,7 +82,7 @@ pub(super) struct AccountChanges {
     /// The original balance.
     ///
     /// For the `invoker`, this will be the `original_balance - reserved_amount`
-    /// (from `EntrypointInvocationHandler`).
+    /// (from [`EntrypointInvocationHandler`]).
     ///
     /// Should never be modified.
     pub(super) original_balance: Amount,

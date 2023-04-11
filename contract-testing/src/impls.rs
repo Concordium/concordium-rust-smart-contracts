@@ -1,8 +1,6 @@
 use crate::{
     constants,
-    invocation::{
-        ChangeSet, EntrypointInvocationHandler, InvokeEntrypointResponse, TestConfigurationError,
-    },
+    invocation::{ChangeSet, EntrypointInvocationHandler, TestConfigurationError},
     types::*,
 };
 use anyhow::anyhow;
@@ -19,7 +17,11 @@ use concordium_base::{
     },
     transactions::{self, cost, InitContractPayload, UpdateContractPayload},
 };
-use concordium_smart_contract_engine::{v0, v1, InterpreterEnergy};
+use concordium_smart_contract_engine::{
+    v0,
+    v1::{self, InvokeResponse},
+    InterpreterEnergy,
+};
 use num_bigint::BigUint;
 use num_integer::Integer;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
@@ -603,14 +605,7 @@ impl Chain {
         amount_reserved_for_energy: Amount,
         payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
-    ) -> Result<
-        (
-            InvokeEntrypointResponse,
-            ChangeSet,
-            Vec<ContractTraceElement>,
-        ),
-        ContractInvokeError,
-    > {
+    ) -> Result<(InvokeResponse, ChangeSet, Vec<ContractTraceElement>), ContractInvokeError> {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
             return Err(self.convert_to_invoke_error(
@@ -668,13 +663,13 @@ impl Chain {
 
     fn contract_invocation_process_response(
         &self,
-        result: InvokeEntrypointResponse,
+        result: InvokeResponse,
         trace_elements: Vec<ContractTraceElement>,
         energy_reserved: Energy,
         remaining_energy: Energy,
         state_changed: bool,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
-        match result.invoke_response {
+        match result {
             v1::InvokeResponse::Success { new_balance, data } => {
                 let energy_used = energy_reserved - remaining_energy;
                 let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
@@ -685,7 +680,6 @@ impl Chain {
                     return_value: data.unwrap_or_default(),
                     state_changed,
                     new_balance,
-                    events: contract_events_from_logs(result.logs),
                 })
             }
             v1::InvokeResponse::Failure { kind } => Err(self.convert_to_invoke_error(
@@ -787,7 +781,7 @@ impl Chain {
             Ok((result, changeset, trace_elements)) => {
                 // Charge energy for contract storage. Or return an error if out
                 // of energy.
-                let state_changed = if result.is_success() {
+                let state_changed = if matches!(result, v1::InvokeResponse::Success { .. }) {
                     let res = changeset.persist(
                         &mut remaining_energy,
                         contract_address,
@@ -890,7 +884,7 @@ impl Chain {
             Ok((result, changeset, trace_elements)) => {
                 // Charge energy for contract storage. Or return an error if out
                 // of energy.
-                let state_changed = if result.is_success() {
+                let state_changed = if matches!(result, v1::InvokeResponse::Success { .. }) {
                     changeset
                         .collect_energy_for_state(&mut remaining_energy, contract_address)
                         .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?

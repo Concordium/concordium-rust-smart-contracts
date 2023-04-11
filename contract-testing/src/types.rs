@@ -278,8 +278,37 @@ pub struct ContractInvokeSuccess {
     pub state_changed:   bool,
     /// The new balance of the smart contract.
     pub new_balance:     Amount,
-    /// The contract events (logs) produced since the last interrupt.
-    pub events:          Vec<ContractEvent>,
+}
+
+impl ContractInvokeSuccess {
+    /// Extract all the events logged by all the contracts in the invocation.
+    /// The events are returned in the order that they are emitted, and are
+    /// paired with the address of the contract that emitted it.
+    pub fn events(&self) -> impl Iterator<Item = (ContractAddress, &[ContractEvent])> {
+        self.trace_elements.iter().flat_map(|cte| {
+            if let ContractTraceElement::Updated { data } = cte {
+                Some((data.address, data.events.as_slice()))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Extract the transfers **to accounts** that occurred during
+    /// invocation. The return value is an iterator over triples `(from, amount,
+    /// to)` where `from` is the sender contract, and `to` is the receiver
+    /// account. The transfers are returned in the order that they occurred.
+    pub fn account_transfers(
+        &self,
+    ) -> impl Iterator<Item = (ContractAddress, Amount, AccountAddress)> + '_ {
+        self.trace_elements.iter().flat_map(|cte| {
+            if let ContractTraceElement::Transferred { from, amount, to } = cte {
+                Some((*from, *amount, *to))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 /// An error that occured during a [`Chain::contract_update`] or

@@ -14,6 +14,4 @@
 
 mod impls;
 mod types;
-pub(crate) use types::{
-    ChangeSet, EntrypointInvocationHandler, InvokeEntrypointResponse, TestConfigurationError,
-};
+pub(crate) use types::{ChangeSet, EntrypointInvocationHandler, TestConfigurationError};
