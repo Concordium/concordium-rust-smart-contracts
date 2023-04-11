@@ -7,8 +7,8 @@
 //! contract address together with the token ID.
 //!
 //! In this example the contract is initialized with no tokens, and tokens can
-//! be minted through a `mint` contract function. No functionality to burn token
-//! is defined in this example.
+//! be minted through a `mint` contract function. No functionality to burn a
+//! token is defined in this example.
 //!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
@@ -63,7 +63,7 @@ use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
 /// The url for the token metadata. Every `token_id` in this contract has the
-/// same metadat url for simplicity.
+/// same metadata url for simplicity.
 const TOKEN_METADATA_URL: &str = "https://gist.githubusercontent.com/abizjak/ab5b6fc0afb78acf23ee24d979eb7639/raw/7c03f174d628df1d2fd0dc8cffb319c89e770708/metadata.json";
 
 /// The standard identifier for the CIS-3: Concordium Token Standard 3.
@@ -642,7 +642,7 @@ fn contract_register_public_keys<S: HasStateApi>(
 }
 
 /// Mint one token with a given address as the owner of this token.
-/// No restrictions on who can call the mint function.
+/// There are no restrictions on who can call the mint function.
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
 /// The url for the token metadata is the same for all token IDs.
 ///
