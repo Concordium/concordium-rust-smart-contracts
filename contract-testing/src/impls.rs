@@ -1211,6 +1211,20 @@ impl ContractInvokeSuccess {
             ContractTraceElement::Transferred { from, .. } => *from,
         }
     }
+
+    /// Get the contract updates that happened in the transaction.
+    /// The order is the order of returns. Concretely, if A calls B (and no
+    /// other calls are made) then first there will be "B updated" event,
+    /// followed by "A updated", assuming the invocation of both succeeded.
+    pub fn updates(&self) -> impl Iterator<Item = &InstanceUpdatedEvent> {
+        self.trace_elements.iter().filter_map(|e| {
+            if let ContractTraceElement::Updated { data } = e {
+                Some(data)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl From<InsufficientEnergy> for ContractInitErrorKind {

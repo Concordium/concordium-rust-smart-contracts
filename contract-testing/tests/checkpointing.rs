@@ -168,7 +168,7 @@ fn test_case_2() {
         Amount::zero(),
     );
 
-    chain
+    let trace = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_0,
@@ -188,6 +188,20 @@ fn test_case_2() {
             },
         )
         .expect("Updating contract should succeed");
+    // Make sure that we have exactly 3 updates with the right entrypoints (meaning
+    // that all calls succeeded).
+    let mut updates = trace.updates();
+    // first the inner "a_no_modify" executed to completion.
+    let update_a_no_modify = updates.next().expect("Expected an event.");
+    assert_eq!(update_a_no_modify.address, res_init_a.contract_address);
+    assert_eq!(update_a_no_modify.receive_name, "a.a_no_modify");
+    let update_b = updates.next().expect("Expected an event.");
+    assert_eq!(update_b.address, res_init_b.contract_address);
+    assert_eq!(update_b.receive_name, "b.b_forward");
+    let update_a_modify_proxy = updates.next().expect("Expected an event.");
+    assert_eq!(update_a_modify_proxy.address, res_init_a.contract_address);
+    assert_eq!(update_a_modify_proxy.receive_name, "a.a_modify_proxy");
+    assert!(updates.next().is_none(), "No more updates expected.");
 }
 
 /// This test has the following call pattern:
