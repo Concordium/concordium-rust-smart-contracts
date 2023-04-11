@@ -7,15 +7,8 @@ use concordium_base::{
     },
     smart_contracts::OwnedParameter,
 };
-use concordium_smart_contract_engine::v1::{trie::MutableState, InvokeResponse};
+use concordium_smart_contract_engine::v1::trie::MutableState;
 use std::collections::BTreeMap;
-
-/// The response from invoking an entrypoint.
-#[derive(Debug)]
-pub(crate) struct InvokeEntrypointResponse {
-    /// The result from the invoke.
-    pub(crate) invoke_response: InvokeResponse,
-}
 
 /// A type that supports invoking a contract entrypoint.
 pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
