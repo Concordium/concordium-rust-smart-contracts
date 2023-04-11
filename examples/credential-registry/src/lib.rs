@@ -68,6 +68,7 @@ enum ContractError {
     CredentialAlreadyExists,
     IncorrectStatusBeforeRevocation,
     KeyAlreadyExists,
+    NotAuthorized,
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -229,7 +230,7 @@ fn contract_register_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
     let parameter: RegisterCredentialParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_credential(parameter.credential_id, &parameter.credential_data)
 }
@@ -245,7 +246,8 @@ fn contract_revoke_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
+    // TODO add signature-based authentication
     let credential_id = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time();
     host.state_mut().revoke_credential(now, credential_id)
@@ -268,7 +270,7 @@ fn contract_register_issuer_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
     let parameter: RegisterKeyParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_issuer_key(parameter.key_index, parameter.key)
 }
@@ -284,7 +286,7 @@ fn contract_remove_issuer_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
     let index = ctx.parameter_cursor().get()?;
     host.state_mut().remove_issuer_key(index)
 }
@@ -300,7 +302,7 @@ fn contract_register_revocation_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
     let parameter: RegisterKeyParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_revocation_key(parameter.key_index, parameter.key)
 }
@@ -316,7 +318,7 @@ fn contract_remove_revocation_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
     let index = ctx.parameter_cursor().get()?;
     host.state_mut().remove_revocation_key(index)
 }
@@ -359,7 +361,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    // TODO: add authentication
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::NotAuthorized);
     let data = ctx.parameter_cursor().get()?;
     host.state_mut().update_issuer_metadata(&data);
     Ok(())
