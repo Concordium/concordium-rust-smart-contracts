@@ -21,39 +21,21 @@ use concordium_base::{
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{self, trie, InvokeResponse, ReceiveContext, ReceiveInterruptedState},
+    v1::{self, trie},
     ExecResult, InterpreterEnergy,
 };
 use concordium_wasm::artifact::{self, CompiledFunction};
 use std::collections::{btree_map, BTreeMap};
 
-/// This auxiliary type is used in `invoke_entrypoint` below to keep track of
-/// the "to do list" in the form of a stack. It stores the necessary information
-/// to continue execution until all actions have been processed.
-enum Next {
-    /// The next action is to resume execution after handling the interrupt.
-    Resume {
-        data:     InvocationData,
-        config:   Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
-        /// This is [`None`] if we are going to resume after a call to a
-        /// contract. And [`Some`] if we have an immediate handler that
-        /// immediately produces a response.
-        response: Option<InvokeResponse>,
-    },
-    /// The next action is to start executing an entrypoint.
-    Initial {
-        sender:                    Address,
-        payload:                   UpdateContractPayload,
-        /// If execution of the entrypoint fails then it does not produce any
-        /// trace. We store the trace in one "global" (per transaction)
-        /// vector. This field is used to determine how far back we need
-        /// to roll back (i.e., clean up) the elements in that trace in
-        /// case of contract invocation failure.
-        trace_elements_checkpoint: usize,
-    },
-}
-
 impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
+    /// Used for handling the *initial* part of invoking an entrypoint.
+    ///
+    /// **Preconditions:**
+    ///  - `invoker` exists
+    ///  - `invoker` has sufficient balance to pay for `remaining_energy`
+    ///  - `sender` exists
+    ///  - if the contract (`contract_address`) exists, then its `module` must
+    ///    also exist.
     fn invoke_entrypoint_initial(
         &mut self,
         invoker: AccountAddress,
@@ -276,11 +258,10 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     response,
                                     energy,
                                     &mut data.state,
-                                    false, /* never changes on interrupts that have immediate
-                                            * handlers */
+                                    false, /* the state never changes on interrupts that have
+                                            * immediate handlers */
                                     // An empty loader is fine currently, as we do not use
-                                    // caching
-                                    // in this lib.
+                                    // caching in this lib.
                                     v1::trie::Loader::new(&[][..]),
                                 )
                             })?;
@@ -298,10 +279,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 } => {
                                     let invoke_response = v1::InvokeResponse::Success {
                                         // The balance returned by `invoke_entrypoint`
-                                        // is
-                                        // the balance of the contract called. But we
-                                        // are
-                                        // interested in the new balance of the caller.
+                                        // is the balance of the contract called. But we
+                                        // are interested in the new balance of the caller.
                                         new_balance: self.contract_balance_unchecked(data.address),
                                         data:        return_value,
                                     };
@@ -314,8 +293,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             let state_changed = if !success {
                                 self.rollback();
                                 false // We rolled back, so no changes were
-                                      // made
-                                      // to this contract.
+                                      // made to this contract.
                             } else {
                                 let mod_idx_after_invoke = self.modification_index(data.address);
                                 let state_changed =
@@ -343,8 +321,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     &mut data.state,
                                     state_changed,
                                     // An empty loader is fine currently, as we do not use
-                                    // caching
-                                    // in this lib.
+                                    // caching in this lib.
                                     v1::trie::Loader::new(&[][..]),
                                 )
                             })?;

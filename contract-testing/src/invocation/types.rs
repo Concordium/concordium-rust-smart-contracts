@@ -6,11 +6,13 @@ use concordium_base::{
         OwnedEntrypointName,
     },
     smart_contracts::OwnedParameter,
+    transactions::UpdateContractPayload,
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{trie::MutableState, InvokeResponse},
+    v1::{trie::MutableState, InvokeResponse, ReceiveContext, ReceiveInterruptedState},
 };
+use concordium_wasm::artifact::CompiledFunction;
 use std::collections::BTreeMap;
 
 /// The response from invoking an entrypoint.
@@ -38,6 +40,32 @@ pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// The energy remaining for execution.
     pub(crate) remaining_energy: &'a mut Energy,
     pub(crate) chain:            &'b Chain,
+}
+
+/// This auxiliary type is used in `invoke_entrypoint` from impls.rs to keep
+/// track of the "to do list" in the form of a stack. It stores the necessary
+/// information to continue execution until all actions have been processed.
+pub(super) enum Next {
+    /// The next action is to resume execution after handling the interrupt.
+    Resume {
+        data:     InvocationData,
+        config:   Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
+        /// This is [`None`] if we are going to resume after a call to a
+        /// contract. And [`Some`] if we have an immediate handler that
+        /// immediately produces a response.
+        response: Option<InvokeResponse>,
+    },
+    /// The next action is to start executing an entrypoint.
+    Initial {
+        sender:                    Address,
+        payload:                   UpdateContractPayload,
+        /// If execution of the entrypoint fails then it does not produce any
+        /// trace. We store the trace in one "global" (per transaction)
+        /// vector. This field is used to determine how far back we need
+        /// to roll back (i.e., clean up) the elements in that trace in
+        /// case of contract invocation failure.
+        trace_elements_checkpoint: usize,
+    },
 }
 
 /// The set of [`Changes`] represented as a stack.
