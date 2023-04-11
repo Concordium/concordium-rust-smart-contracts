@@ -21,6 +21,7 @@ pub enum CredentialStatus {
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialData {
     holder_id:            PublicKeyEd25519,
+    revocation_nonce:     u64,
     revocable:            bool,
     commitment:           [u8; 48],
     schema:               String,
@@ -54,7 +55,7 @@ impl CredentialData {
 pub struct State<S> {
     issuer_metadata: IssuerMetadata,
     issuer_keys:     StateMap<u32, PublicKeyEd25519, S>,
-    revocation_keys: StateMap<u32, PublicKeyEd25519, S>,
+    revocation_keys: StateMap<u32, (PublicKeyEd25519, u64), S>,
     credentials:     StateMap<Uuidv4, CredentialData, S>,
 }
 
@@ -69,6 +70,11 @@ enum ContractError {
     IncorrectStatusBeforeRevocation,
     KeyAlreadyExists,
     NotAuthorized,
+    NonceMismatch,
+    WrongContract,
+    ExpiredSignature,
+    WrongSignature,
+    SerializationError,
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -146,7 +152,7 @@ impl<S: HasStateApi> State<S> {
         key_index: u32,
         pk: PublicKeyEd25519,
     ) -> ContractResult<()> {
-        let res = self.revocation_keys.insert(key_index, pk);
+        let res = self.revocation_keys.insert(key_index, (pk, 0));
         if res.is_some() {
             Err(ContractError::KeyAlreadyExists)
         } else {
@@ -239,19 +245,110 @@ fn contract_register_credeintial<S: HasStateApi>(
     host.state_mut().register_credential(parameter.credential_id, &parameter.credential_data)
 }
 
+#[derive(Serialize, SchemaType)]
+struct SigningData {
+    /// The contract_address that the signature is intended for.
+    contract_address: ContractAddress,
+    /// A nonce to prevent replay attacks.
+    nonce:            u64,
+    /// A timestamp to make signatures expire.
+    timestamp:        Timestamp,
+}
+
+/// The parameter type for the contract function `revokeCredential`.
+/// Takes a credential id, and optionally a signature with some meta
+/// information. If `signed` is present, the message is formed from the bytes of
+/// `id` and fields of `SigningData`
+#[derive(Serialize, SchemaType)]
+pub struct RevokeCredentialParam {
+    credential_id: Uuidv4,
+    signed:        Option<(SigningData, SignatureEd25519)>,
+}
+
+// fn validate_signature(nonce: u64, message_bytes: &[u8]) -> Result<(),
+// ContractError> { Ok(()) }
+
 #[receive(
     contract = "credential_registry",
     name = "revokeCredential",
-    parameter = "Uuid",
+    parameter = "RevokeCredentialParam",
     error = "ContractError",
+    crypto_primitives,
     mutable
 )]
 fn contract_revoke_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    crypto_primitives: &impl HasCryptoPrimitives,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
-    // TODO add signature-based authentication
+    let parameter: RevokeCredentialParam = ctx.parameter_cursor().get()?;
+    match parameter.signed {
+        None => {
+            // Authorize the owner (issuer)
+            ensure!(sender_is_owner(ctx), ContractError::NotAuthorized)
+        }
+        Some((signing_data, signature)) => {
+            // Authorize the holder
+            let mut entry: OccupiedEntry<u128, CredentialData, S> = host
+                .state_mut()
+                .credentials
+                .entry(parameter.credential_id)
+                .occupied_or(ContractError::CredentialNotFound)?;
+
+            // Only user-revocable entries can be revoked by the holder.
+            ensure!(entry.revocable, ContractError::NotAuthorized);
+
+            // Update the nonce.
+            entry.revocation_nonce += 1;
+
+            // Get the public key and the current nonce.
+            let public_key = entry.holder_id;
+            let nonce = entry.revocation_nonce;
+            drop(entry);
+
+            // Check the nonce to prevent replay attacks.
+            ensure_eq!(signing_data.nonce, nonce, ContractError::NonceMismatch);
+
+            // Check that the signature was intended for this contract.
+            ensure_eq!(
+                signing_data.contract_address,
+                ctx.self_address(),
+                ContractError::WrongContract
+            );
+
+            // Check signature is not expired.
+            ensure!(
+                signing_data.timestamp > ctx.metadata().slot_time(),
+                ContractError::ExpiredSignature
+            );
+
+            // Prepare the message, as it is signed by the wallet.
+            // Note that the message is prepended by the account address sending the
+            // transaction and 8 zero bytes.
+            let mut msg_prepend = Vec::with_capacity(32 + 8);
+            unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+            msg_prepend[0..32].copy_from_slice(ctx.invoker().as_ref());
+            msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
+
+            let mut message_bytes = Vec::new();
+            parameter
+                .credential_id
+                .serial::<Vec<_>>(&mut message_bytes)
+                .map_err(|_| ContractError::SerializationError)?;
+            signing_data
+                .serial(&mut message_bytes)
+                .map_err(|_| ContractError::SerializationError)?;
+            // Calculate the message hash.
+            let message_hash =
+                crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+
+            // Check signature.
+            ensure!(
+                crypto_primitives.verify_ed25519_signature(public_key, signature, &message_hash),
+                ContractError::WrongSignature
+            );
+        }
+    }
     let credential_id = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time();
     host.state_mut().revoke_credential(now, credential_id)
@@ -387,14 +484,48 @@ mod tests {
     use quickcheck::*;
     use test_infrastructure::*;
 
+    const ATTR_NAMES: [&str; 8] = [
+        "dob",
+        "first_name",
+        "points",
+        "education",
+        "Use%various^chars",
+        "$somehting",
+        "path.to.a.field",
+        "123",
+    ];
+
+    // Generate a random string with the probability 1/8, otherwise pick a name from
+    // a predefined list
+    fn arbitrary_attr_name(g: &mut Gen) -> String {
+        let i: u32 = Arbitrary::arbitrary(g);
+        match i % 8 {
+            j @ 0..=7 => ATTR_NAMES[j as usize].to_string(),
+            _ => Arbitrary::arbitrary(g),
+        }
+    }
+
+    // Generate up to 16 attributes in a serialization schema
+    fn arbitrary_schema(g: &mut Gen) -> Vec<String> {
+        let mut v = Vec::new();
+        let n: u32 = Arbitrary::arbitrary(g);
+        for _ in 0..n % 16 {
+            v.push(arbitrary_attr_name(g));
+        }
+        v
+    }
+
+    // It is convenient to use arbitrary data even for simple properites, because it
+    // allows us to avoid defining input data manually.
     impl Arbitrary for CredentialData {
         fn arbitrary(g: &mut Gen) -> CredentialData {
             CredentialData {
                 holder_id:            PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
+                revocation_nonce:     Arbitrary::arbitrary(g),
                 revocable:            Arbitrary::arbitrary(g),
                 commitment:           [0u8; 48].map(|_| Arbitrary::arbitrary(g)),
                 schema:               Arbitrary::arbitrary(g),
-                serialization_schema: Arbitrary::arbitrary(g),
+                serialization_schema: arbitrary_schema(g), //Arbitrary::arbitrary(g),
                 valid_from:           Arbitrary::arbitrary(g),
                 valid_until:          Arbitrary::arbitrary(g),
                 is_revoked:           Arbitrary::arbitrary(g),
@@ -430,7 +561,7 @@ mod tests {
 
     // Property: registering a credential and then querying it results in the same
     // credential object.
-    #[concordium_quickcheck(num_tests = 20)]
+    #[concordium_quickcheck]
     fn prop_register_get_credential(credential_id: Uuidv4, data: CredentialData) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, issuer_metadata());
@@ -445,7 +576,7 @@ mod tests {
 
     // Property: if a credential is revoked successfully, the status changes to
     // `Revoked`
-    #[concordium_quickcheck(num_tests = 20)]
+    #[concordium_quickcheck]
     fn prop_revocation(credential_id: Uuidv4, data: CredentialData) -> TestResult {
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, issuer_metadata());
