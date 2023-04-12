@@ -114,11 +114,8 @@ impl<S: HasStateApi> State<S> {
         credential_data: &CredentialData,
     ) -> ContractResult<()> {
         let res = self.credentials.insert(credential_id, credential_data.clone());
-        if res.is_some() {
-            Err(ContractError::CredentialAlreadyExists)
-        } else {
-            Ok(())
-        }
+        ensure!(res.is_none(), ContractError::CredentialAlreadyExists);
+        Ok(())
     }
 
     fn revoke_credential(&mut self, now: Timestamp, credential_id: Uuidv4) -> ContractResult<()> {
@@ -135,11 +132,8 @@ impl<S: HasStateApi> State<S> {
 
     fn register_issuer_key(&mut self, key_index: u32, pk: PublicKeyEd25519) -> ContractResult<()> {
         let res = self.issuer_keys.insert(key_index, pk);
-        if res.is_some() {
-            Err(ContractError::KeyAlreadyExists)
-        } else {
-            Ok(())
-        }
+        ensure!(res.is_none(), ContractError::KeyAlreadyExists);
+        Ok(())
     }
 
     fn remove_issuer_key(&mut self, key_index: u32) -> ContractResult<()> {
@@ -153,11 +147,8 @@ impl<S: HasStateApi> State<S> {
         pk: PublicKeyEd25519,
     ) -> ContractResult<()> {
         let res = self.revocation_keys.insert(key_index, (pk, 0));
-        if res.is_some() {
-            Err(ContractError::KeyAlreadyExists)
-        } else {
-            Ok(())
-        }
+        ensure!(res.is_none(), ContractError::KeyAlreadyExists);
+        Ok(())
     }
 
     fn remove_revocation_key(&mut self, key_index: u32) -> ContractResult<()> {
