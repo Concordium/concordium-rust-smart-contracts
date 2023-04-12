@@ -223,7 +223,7 @@ fn test_missing_module() {
                 // No upgrade event, as it is supposed to fail.
                 ContractTraceElement::Resumed { success, .. },
                 ContractTraceElement::Updated { .. },
-            ] if success == false));
+            ] if !success ));
 }
 
 /// Test upgrading to a module where there isn't a matching contract
@@ -295,7 +295,7 @@ fn test_missing_contract() {
                 // No upgrade event, as it is supposed to fail.
                 ContractTraceElement::Resumed { success, .. },
                 ContractTraceElement::Updated { .. },
-            ] if success == false));
+            ] if !success ));
 }
 
 /// Test upgrading twice in the same transaction. The effect of the
