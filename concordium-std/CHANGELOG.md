@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+## concordium-std 6.1.1 (2023-03-16)
+
+- Bump contracts-common to 5.3.1.
+
 ## concordium-std 6.1.0 (2023-03-16)
 
 - Add `Display` implementation for `OwnedParameter` and `Parameter`, which uses
