@@ -78,8 +78,10 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] =
 const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
     [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
 
-/// Tag for the CIS3 Registration event.
+/// Tag for the Registration event.
 pub const REGISTRATION_EVENT_TAG: u8 = 0u8;
+/// Tag for the CIS3 Nonce event.
+pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial)]
@@ -88,6 +90,9 @@ enum Event {
     /// corresponding private key will have to sign the message that
     /// can be executed via the `permit` function.
     Registration(RegistrationEvent),
+    /// The event tracks the nonce used by the signer of the `PermitMessage`
+    /// whenever the `permit` function is invoked.
+    Nonce(NonceEvent),
 }
 
 /// The RegistrationEvent is logged when a new public key is registered.
@@ -97,6 +102,16 @@ pub struct RegistrationEvent {
     account:    AccountAddress,
     /// The public key that should be linked to the above account.
     public_key: PublicKeyEd25519,
+}
+
+/// The NonceEvent is logged when the `permit` function is invoked. The event
+/// tracks the nonce used by the signer of the `PermitMessage`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct NonceEvent {
+    /// Account that signed the `PermitMessage`.
+    account: AccountAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    nonce:   u64,
 }
 
 // Implementing a custom schemaType to the `Event` combining all CIS2/CIS3
@@ -111,6 +126,16 @@ impl schema::SchemaType for Event {
                 schema::Fields::Named(vec![
                     (String::from("account"), AccountAddress::get_type()),
                     (String::from("public_key"), PublicKeyEd25519::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            NONCE_EVENT_TAG,
+            (
+                "Nonce".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("account"), AccountAddress::get_type()),
+                    (String::from("nonce"), u64::get_type()),
                 ]),
             ),
         );
@@ -856,11 +881,11 @@ fn contract_permit<S: HasStateApi>(
         .public_key_registry
         .entry(param.signer)
         .occupied_or(CustomContractError::NoPublicKey)?;
-    // Bump nonce.
-    entry.1 += 1;
     // Get the public key and the current nonce.
     let public_key = entry.0;
     let nonce = entry.1;
+    // Bump nonce.
+    entry.1 += 1;
     drop(entry);
 
     let mut message_bytes = Vec::with_capacity((cursor.size() - cursor.cursor_position()) as usize);
@@ -941,6 +966,12 @@ fn contract_permit<S: HasStateApi>(
             }
         }
     }
+
+    // Log the nonce event.
+    logger.log(&Event::Nonce(NonceEvent {
+        account: param.signer,
+        nonce,
+    }))?;
 
     Ok(())
 }
@@ -1281,8 +1312,8 @@ mod tests {
     const TOKEN_2: ContractTokenId = TokenIdU32(2);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        103, 138, 104, 50, 244, 159, 59, 16, 71, 249, 142, 17, 182, 215, 161, 100, 65, 22, 155,
-        240, 200, 255, 231, 228, 121, 14, 34, 98, 98, 103, 242, 94,
+        92, 19, 56, 185, 124, 12, 188, 25, 155, 17, 144, 227, 211, 27, 209, 166, 215, 190, 241,
+        224, 108, 90, 17, 186, 44, 216, 247, 173, 190, 1, 8, 54,
     ]);
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
@@ -1290,16 +1321,16 @@ mod tests {
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        203, 73, 42, 128, 90, 58, 44, 228, 226, 73, 83, 152, 194, 21, 49, 144, 245, 45, 239, 165,
-        9, 159, 58, 84, 190, 199, 224, 224, 156, 221, 178, 134, 208, 49, 28, 154, 86, 253, 152, 87,
-        171, 218, 197, 106, 119, 171, 50, 36, 135, 47, 111, 32, 116, 190, 125, 104, 100, 195, 101,
-        136, 250, 248, 254, 13,
+        222, 1, 184, 181, 87, 191, 171, 210, 118, 75, 202, 170, 59, 40, 204, 203, 140, 89, 181, 57,
+        99, 98, 104, 142, 189, 147, 26, 139, 6, 241, 173, 208, 233, 96, 23, 78, 88, 119, 96, 61, 4,
+        159, 82, 191, 13, 154, 203, 19, 251, 144, 255, 81, 182, 7, 237, 165, 163, 112, 29, 198, 16,
+        251, 8, 14,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        155, 195, 173, 151, 126, 107, 35, 242, 98, 134, 20, 120, 143, 37, 177, 59, 198, 142, 60,
-        128, 24, 3, 2, 100, 52, 75, 95, 54, 62, 74, 4, 30, 97, 53, 192, 123, 16, 12, 48, 88, 57,
-        100, 84, 137, 190, 231, 36, 114, 179, 212, 183, 253, 114, 176, 219, 180, 254, 113, 71, 3,
-        141, 235, 83, 2,
+        244, 164, 251, 136, 197, 194, 154, 181, 85, 131, 75, 142, 204, 52, 114, 116, 43, 112, 138,
+        245, 169, 148, 233, 226, 15, 141, 140, 160, 1, 178, 115, 35, 59, 71, 135, 112, 157, 136,
+        42, 1, 31, 62, 239, 47, 149, 24, 189, 151, 30, 48, 143, 189, 240, 144, 95, 209, 94, 189,
+        203, 153, 105, 207, 244, 7,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
@@ -1959,7 +1990,7 @@ mod tests {
                     subindex: 0,
                 },
                 entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
-                nonce:            1,
+                nonce:            0,
                 payload:          PermitPayload::Transfer(payload),
             },
         };
@@ -2007,7 +2038,7 @@ mod tests {
         );
 
         // Check the logs.
-        claim_eq!(logger.logs.len(), 2, "Two events should be logged");
+        claim_eq!(logger.logs.len(), 3, "Three events should be logged");
         claim_eq!(
             logger.logs[1],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
@@ -2016,7 +2047,15 @@ mod tests {
                 token_id: TOKEN_2,
                 amount:   ContractTokenAmount::from(1),
             })),
-            "Incorrect event emitted"
+            "Incorrect transfer event logged"
+        );
+        claim_eq!(
+            logger.logs[2],
+            to_bytes(&Event::Nonce(NonceEvent {
+                account: ACCOUNT_1,
+                nonce:   0,
+            })),
+            "Incorrect nonce event logged"
         )
     }
 
@@ -2081,7 +2120,7 @@ mod tests {
                     subindex: 0,
                 },
                 entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
-                nonce:            1,
+                nonce:            0,
                 payload:          PermitPayload::UpdateOperator(payload),
             },
         };
@@ -2101,7 +2140,7 @@ mod tests {
         claim!(is_operator, "Account should be an operator");
 
         // Check the logs.
-        claim_eq!(logger.logs.len(), 2, "Two events should be logged");
+        claim_eq!(logger.logs.len(), 3, "Three events should be logged");
         claim_eq!(
             logger.logs[1],
             to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
@@ -2111,7 +2150,15 @@ mod tests {
                     update:   OperatorUpdate::Add,
                 }
             )),
-            "Incorrect event emitted"
+            "Incorrect update operator event logged"
+        );
+        claim_eq!(
+            logger.logs[2],
+            to_bytes(&Event::Nonce(NonceEvent {
+                account: ACCOUNT_1,
+                nonce:   0,
+            })),
+            "Incorrect nonce event logged"
         )
     }
 }
