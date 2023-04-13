@@ -2,6 +2,8 @@
  
 ## Unreleased changes
 
+- Fix `derive(SchemaType)` macro so that it allows the `concordium` attribute.
+
 ## concordium-std-derive 5.1.0 (2022-12-14)
 
 - Add a `#[concordium_quickcheck]` macro that re-exports a customized QuickCheck function
