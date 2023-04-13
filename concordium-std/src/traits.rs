@@ -232,6 +232,12 @@ pub trait HasStateApi: Clone {
     fn read_root<A: DeserialWithState<Self>>(&self) -> ParseResult<A> {
         A::deserial_with_state(self, &mut self.lookup_entry(&[]).ok_or(ParseError {})?)
     }
+
+    /// Serialize and write the state at the root of the state trie. Dual to
+    /// [`read_root`](Self::read_root).
+    fn write_root<A: Serial>(&mut self, new_root: &A) {
+        new_root.serial(&mut self.create_entry(&[]).unwrap_abort()).unwrap_abort()
+    }
 }
 
 /// A type that can serve as the host, meaning that it supports interactions

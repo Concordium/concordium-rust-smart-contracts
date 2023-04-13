@@ -1556,7 +1556,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
 /// Derive the `SchemaType` trait for a type.
 /// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
 /// not produce any code.
-#[proc_macro_derive(SchemaType, attributes(size_length))]
+#[proc_macro_derive(SchemaType, attributes(concordium))]
 pub fn schema_type_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(schema_type_derive_worker(input))
 }
