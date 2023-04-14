@@ -251,10 +251,13 @@ struct State<S> {
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// A registry to link an account to an public key and its nonce. The
+    /// A registry to link an account to a public key and its next nonce. The
     /// corresponding private key registered here has full access to the
     /// tokens controlled by the account. The nonce is used to prevent replay
-    /// attacks of signed transactions.
+    /// attacks of the signed message. The nonce is increased sequentially every
+    /// time a signed message (corresponding to the account) is successfully
+    /// executed in the `permit` function. This mapping keeps track of the
+    /// next nonce that needs to be used by the account to generate a signature.
     public_key_registry: StateMap<AccountAddress, (PublicKeyEd25519, u64), S>,
 }
 
@@ -859,6 +862,9 @@ fn contract_permit<S: HasStateApi>(
 ) -> ContractResult<()> {
     // Parse the parameter.
     let mut cursor = ctx.parameter_cursor();
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial`. I.e. we only read the `signature`, the
+    // `signer` but WITHOUT the `message` here.
     let param: PermitParamPartial = cursor.get()?;
 
     ensure!(
@@ -888,6 +894,10 @@ fn contract_permit<S: HasStateApi>(
     entry.1 += 1;
     drop(entry);
 
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial` so far. We read in the `message` now.
+    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
+    // bytes.
     let mut message_bytes = Vec::with_capacity((cursor.size() - cursor.cursor_position()) as usize);
     unsafe { message_bytes.set_len(message_bytes.capacity()) };
     cursor.read_exact(&mut message_bytes)?;
@@ -906,9 +916,13 @@ fn contract_permit<S: HasStateApi>(
     // Check signature is not expired.
     ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
+    // The message signed in the Concordium browser wallet is prepended with the
+    // `account` address and 8 zero bytes.
     let mut msg_prepend = Vec::with_capacity(32 + 8);
     unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+    // Prepend the `account` address of the signer.
     msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
+    // Prepend 8 zero bytes.
     msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
     // Calculate the message hash.
     let message_hash =
