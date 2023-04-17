@@ -298,4 +298,7 @@ pub use types::*;
 #[cfg_attr(feature = "wee_alloc", global_allocator)]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[cfg(feature = "concordium-quickcheck")]
+pub use quickcheck;
+
 pub mod test_infrastructure;
