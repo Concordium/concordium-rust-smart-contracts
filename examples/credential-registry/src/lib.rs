@@ -8,6 +8,28 @@ pub struct IssuerMetadata {
     url:  Option<String>,
 }
 
+#[derive(Serialize, SchemaType)]
+struct RegisterCredentialEvent {
+    credential_id: Uuidv4,
+    holder_id:     PublicKeyEd25519,
+    schema_ref:    String,
+}
+
+#[derive(Serialize, SchemaType)]
+enum Revoker {
+    Issuer,
+    Holder,
+    Other(PublicKeyEd25519),
+}
+
+#[derive(Serialize, SchemaType)]
+struct RevokeCredentialEvent {
+    credential_id: Uuidv4,
+    holder_id:     PublicKeyEd25519,
+    revoker:       Revoker,
+    reason:        Option<String>,
+}
+
 type Uuidv4 = u128;
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
@@ -76,6 +98,17 @@ enum ContractError {
     ExpiredSignature,
     WrongSignature,
     SerializationError,
+    LogFull,
+    LogMalformed,
+}
+
+impl From<LogError> for ContractError {
+    fn from(le: LogError) -> Self {
+        match le {
+            LogError::Full => Self::LogFull,
+            LogError::Malformed => Self::LogMalformed,
+        }
+    }
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -230,15 +263,23 @@ pub struct RegisterCredentialParameter {
     name = "registerCredential",
     parameter = "RegisterCredentialParameter",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_register_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
     let parameter: RegisterCredentialParameter = ctx.parameter_cursor().get()?;
-    host.state_mut().register_credential(parameter.credential_id, &parameter.credential_data)
+    host.state_mut().register_credential(parameter.credential_id, &parameter.credential_data)?;
+    logger.log(&RegisterCredentialEvent {
+        credential_id: parameter.credential_id,
+        holder_id:     parameter.credential_data.holder_id,
+        schema_ref:    parameter.credential_data.schema,
+    })?;
+    Ok(())
 }
 
 #[derive(Serialize, SchemaType)]
@@ -263,6 +304,7 @@ pub struct RevokeCredentialParam {
     credential_id:        Uuidv4,
     signed:               Option<(SigningData, SignatureEd25519)>,
     revocation_key_index: Option<u8>,
+    reason:               Option<String>,
 }
 
 /// Performs authorization based on the signature and a public key
@@ -319,41 +361,50 @@ fn authorize_with_signature(
     parameter = "RevokeCredentialParam",
     error = "ContractError",
     crypto_primitives,
+    enable_logger,
     mutable
 )]
 fn contract_revoke_credeintial<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> Result<(), ContractError> {
     let parameter: RevokeCredentialParam = ctx.parameter_cursor().get()?;
+
+    let state = host.state_mut();
+    let mut registry_entry: OccupiedEntry<u128, CredentialData, S> = state
+        .credentials
+        .entry(parameter.credential_id)
+        .occupied_or(ContractError::CredentialNotFound)?;
+
+    // By default, the issuer is the revoker
+    let mut revoker = Revoker::Issuer;
+
+    // Authorization depends on whether the calls is signed
     match parameter.signed {
         None => {
-            // Authorize the owner (issuer)
+            // Not signed - authorize the owner (issuer).
             ensure!(sender_is_owner(ctx), ContractError::NotAuthorized)
         }
         Some((signing_data, signature)) => {
-            let state = host.state_mut();
-
-            let mut entry: OccupiedEntry<u128, CredentialData, S> = state
-                .credentials
-                .entry(parameter.credential_id)
-                .occupied_or(ContractError::CredentialNotFound)?;
-
+            // Signed - check the revocation key.
             match parameter.revocation_key_index {
                 None => {
-                    // Authorize the holder
+                    // No revocation key index - authorize the holder.
+
+                    // Set the revoker to be the holder.
+                    revoker = Revoker::Holder;
 
                     // Only user-revocable entries can be revoked by the holder.
-                    ensure!(entry.revocable, ContractError::NotAuthorized);
+                    ensure!(registry_entry.revocable, ContractError::NotAuthorized);
 
                     // Update the nonce.
-                    entry.revocation_nonce += 1;
+                    registry_entry.revocation_nonce += 1;
 
                     // Get the public key and the current nonce.
-                    let public_key = entry.holder_id;
-                    let nonce = entry.revocation_nonce;
-                    drop(entry);
+                    let public_key = registry_entry.holder_id;
+                    let nonce = registry_entry.revocation_nonce;
 
                     authorize_with_signature(
                         crypto_primitives,
@@ -367,17 +418,22 @@ fn contract_revoke_credeintial<S: HasStateApi>(
                 }
 
                 Some(key_index) => {
-                    // Authorize the revocation authority
+                    // Revocation key index is present - authorize the revocation authority.
 
                     let mut entry = state
                         .revocation_keys
                         .entry(key_index)
                         .occupied_or(ContractError::CredentialNotFound)?;
+
                     // Update the nonce.
                     entry.1 += 1;
 
                     let nonce = entry.1;
                     let public_key = entry.0;
+
+                    // Set the revoker to be the revocation authority.
+                    revoker = Revoker::Other(public_key);
+
                     authorize_with_signature(
                         crypto_primitives,
                         ctx,
@@ -393,7 +449,16 @@ fn contract_revoke_credeintial<S: HasStateApi>(
     }
     let credential_id = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time();
-    host.state_mut().revoke_credential(now, credential_id)
+    let holder_id = registry_entry.holder_id;
+    drop(registry_entry);
+    state.revoke_credential(now, credential_id)?;
+    logger.log(&RevokeCredentialEvent {
+        credential_id,
+        holder_id,
+        reason: parameter.reason,
+        revoker,
+    })?;
+    Ok(())
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -477,7 +542,6 @@ fn contract_view_revocation_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(PublicKeyEd25519, u64), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
     let index = ctx.parameter_cursor().get()?;
     host.state().view_revocation_key(index)
 }
