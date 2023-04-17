@@ -306,15 +306,6 @@ struct SetImplementorsParams {
 }
 
 /// Part of the parameter type for the contract function `permit`.
-/// Specifies the transaction payload that should be forwarded to either the
-/// `transfer` or the `updateOperator` function.
-#[derive(Debug, Serialize, SchemaType, Clone)]
-enum PermitPayload {
-    Transfer(TransferParameter),
-    UpdateOperator(UpdateOperatorParams),
-}
-
-/// Part of the parameter type for the contract function `permit`.
 /// Specifies the message that is signed.
 #[derive(SchemaType, Serialize)]
 struct PermitMessage {
@@ -326,9 +317,10 @@ struct PermitMessage {
     nonce:            u64,
     /// A timestamp to make signatures expire.
     timestamp:        Timestamp,
-    /// The payload that should be forwarded to either the `transfer` or the
-    /// `updateOperator` function.
-    payload:          PermitPayload,
+    /// The serialized payload that should be forwarded to either the `transfer`
+    /// or the `updateOperator` function.
+    #[size_length = 2]
+    payload:          Vec<u8>,
 }
 
 /// The parameter type for the contract function `permit`.
@@ -949,51 +941,39 @@ fn contract_permit<S: HasStateApi>(
         CustomContractError::WrongSignature.into()
     );
 
-    match message.payload {
+    if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
         // Transfer the tokens.
-        PermitPayload::Transfer(transfer_parameter) => {
-            // Check that the signature was intended for this `entry_point`.
-            ensure_eq!(
-                message.entry_point.as_entrypoint_name(),
-                EntrypointName::new_unchecked("transfer"),
-                CustomContractError::WrongEntryPoint.into()
+
+        let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
+
+        for transfer_struct in transfers {
+            ensure!(
+                transfer_struct.from.matches_account(&param.signer),
+                ContractError::Unauthorized
             );
 
-            let TransferParams(transfers): TransferParameter = transfer_parameter;
-
-            for transfer_struct in transfers {
-                ensure!(
-                    transfer_struct.from.matches_account(&param.signer),
-                    ContractError::Unauthorized
-                );
-
-                transfer(transfer_struct, host, logger)?
-            }
+            transfer(transfer_struct, host, logger)?
         }
+    } else if message.entry_point.as_entrypoint_name()
+        == EntrypointName::new_unchecked("updateOperator")
+    {
         // Update the operator.
-        PermitPayload::UpdateOperator(update_parameter) => {
-            // Check that the signature was intended for this `entry_point`.
-            ensure_eq!(
-                message.entry_point.as_entrypoint_name(),
-                EntrypointName::new_unchecked("updateOperator"),
-                CustomContractError::WrongEntryPoint.into()
-            );
+        let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
 
-            let UpdateOperatorParams(updates): UpdateOperatorParams = update_parameter;
+        let (state, builder) = host.state_and_builder();
 
-            let (state, builder) = host.state_and_builder();
-
-            for update in updates {
-                update_operator(
-                    update.update,
-                    concordium_std::Address::Account(param.signer),
-                    update.operator,
-                    state,
-                    builder,
-                    logger,
-                )?;
-            }
+        for update in updates {
+            update_operator(
+                update.update,
+                concordium_std::Address::Account(param.signer),
+                update.operator,
+                state,
+                builder,
+                logger,
+            )?;
         }
+    } else {
+        bail!(CustomContractError::WrongEntryPoint.into())
     }
 
     // Log the nonce event.
@@ -1341,8 +1321,8 @@ mod tests {
     const TOKEN_2: ContractTokenId = TokenIdU32(2);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        92, 19, 56, 185, 124, 12, 188, 25, 155, 17, 144, 227, 211, 27, 209, 166, 215, 190, 241,
-        224, 108, 90, 17, 186, 44, 216, 247, 173, 190, 1, 8, 54,
+        158, 41, 252, 95, 47, 223, 133, 55, 206, 88, 207, 28, 47, 15, 59, 178, 151, 69, 140, 197,
+        241, 136, 175, 142, 231, 121, 95, 113, 28, 159, 81, 181,
     ]);
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
@@ -1350,16 +1330,16 @@ mod tests {
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        222, 1, 184, 181, 87, 191, 171, 210, 118, 75, 202, 170, 59, 40, 204, 203, 140, 89, 181, 57,
-        99, 98, 104, 142, 189, 147, 26, 139, 6, 241, 173, 208, 233, 96, 23, 78, 88, 119, 96, 61, 4,
-        159, 82, 191, 13, 154, 203, 19, 251, 144, 255, 81, 182, 7, 237, 165, 163, 112, 29, 198, 16,
-        251, 8, 14,
+        117, 198, 139, 232, 245, 136, 102, 255, 95, 112, 238, 79, 205, 248, 53, 250, 145, 160, 200,
+        170, 52, 204, 247, 11, 1, 107, 250, 89, 37, 66, 56, 159, 71, 63, 254, 167, 11, 33, 196,
+        212, 103, 41, 103, 159, 98, 25, 93, 222, 228, 43, 88, 43, 246, 236, 198, 181, 19, 122, 163,
+        66, 88, 0, 74, 4,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        244, 164, 251, 136, 197, 194, 154, 181, 85, 131, 75, 142, 204, 52, 114, 116, 43, 112, 138,
-        245, 169, 148, 233, 226, 15, 141, 140, 160, 1, 178, 115, 35, 59, 71, 135, 112, 157, 136,
-        42, 1, 31, 62, 239, 47, 149, 24, 189, 151, 30, 48, 143, 189, 240, 144, 95, 209, 94, 189,
-        203, 153, 105, 207, 244, 7,
+        236, 221, 253, 221, 133, 138, 240, 41, 41, 111, 23, 23, 195, 58, 129, 149, 226, 176, 153,
+        156, 59, 111, 87, 188, 94, 132, 79, 116, 126, 11, 40, 109, 10, 218, 10, 203, 74, 224, 142,
+        53, 93, 94, 214, 212, 32, 149, 114, 116, 89, 102, 74, 174, 206, 250, 225, 24, 135, 68, 106,
+        175, 106, 189, 235, 9,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
@@ -2020,7 +2000,7 @@ mod tests {
                 },
                 entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
                 nonce:            0,
-                payload:          PermitPayload::Transfer(payload),
+                payload:          to_bytes(&payload),
             },
         };
 
@@ -2150,7 +2130,7 @@ mod tests {
                 },
                 entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
                 nonce:            0,
-                payload:          PermitPayload::UpdateOperator(payload),
+                payload:          to_bytes(&payload),
             },
         };
 
