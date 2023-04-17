@@ -69,6 +69,7 @@ enum ContractError {
     CredentialAlreadyExists,
     IncorrectStatusBeforeRevocation,
     KeyAlreadyExists,
+    KeyNotFound,
     NotAuthorized,
     NonceMismatch,
     WrongContract,
@@ -149,6 +150,10 @@ impl<S: HasStateApi> State<S> {
         let res = self.revocation_keys.insert(key_index, (pk, 0));
         ensure!(res.is_none(), ContractError::KeyAlreadyExists);
         Ok(())
+    }
+
+    fn view_revocation_key(&self, key_index: u8) -> ContractResult<(PublicKeyEd25519, u64)> {
+        self.revocation_keys.get(&key_index).map(|x| *x).ok_or(ContractError::KeyNotFound)
     }
 
     fn remove_revocation_key(&mut self, key_index: u8) -> ContractResult<()> {
@@ -448,7 +453,7 @@ fn contract_register_revocation_key<S: HasStateApi>(
 #[receive(
     contract = "credential_registry",
     name = "removeRevocationKey",
-    parameter = "u32",
+    parameter = "u8",
     error = "ContractError",
     mutable
 )]
@@ -459,6 +464,22 @@ fn contract_remove_revocation_key<S: HasStateApi>(
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
     let index = ctx.parameter_cursor().get()?;
     host.state_mut().remove_revocation_key(index)
+}
+
+#[receive(
+    contract = "credential_registry",
+    name = "viewRevocationKey",
+    parameter = "u8",
+    error = "ContractError",
+    mutable
+)]
+fn contract_view_revocation_key<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> Result<(PublicKeyEd25519, u64), ContractError> {
+    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    let index = ctx.parameter_cursor().get()?;
+    host.state().view_revocation_key(index)
 }
 
 #[receive(
