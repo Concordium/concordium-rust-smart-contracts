@@ -462,31 +462,42 @@ fn contract_revoke_credeintial<S: HasStateApi>(
 }
 
 #[derive(Serial, Deserial, SchemaType)]
-pub struct RegisterKeyParameter {
+pub struct RegisterPublicKeyParameter {
     key_index: u8,
     key:       PublicKeyEd25519,
 }
 
+#[derive(Serialize, SchemaType)]
+pub struct RegisterPublicKeyParameters(
+    #[concordium(size_length = 2)] pub Vec<RegisterPublicKeyParameter>,
+);
+
 #[receive(
     contract = "credential_registry",
-    name = "registerIssuerKey",
-    parameter = "RegisterKeyParameter",
+    name = "registerIssuerKeys",
+    parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
     mutable
 )]
-fn contract_register_issuer_key<S: HasStateApi>(
+fn contract_register_issuer_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
-    let parameter: RegisterKeyParameter = ctx.parameter_cursor().get()?;
-    host.state_mut().register_issuer_key(parameter.key_index, parameter.key)
+    let RegisterPublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
+    for parameter in parameters {
+        host.state_mut().register_issuer_key(parameter.key_index, parameter.key)?;
+    }
+    Ok(())
 }
+
+#[derive(Serialize, SchemaType)]
+pub struct RemovePublicKeyParameters(#[concordium(size_length = 2)] pub Vec<u8>);
 
 #[receive(
     contract = "credential_registry",
-    name = "removeIssuerKey",
-    parameter = "u32",
+    name = "removeIssuerKeys",
+    parameter = "RemovePublicKeyParameters",
     error = "ContractError",
     mutable
 )]
@@ -495,40 +506,49 @@ fn contract_remove_issuer_key<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
-    let index = ctx.parameter_cursor().get()?;
-    host.state_mut().remove_issuer_key(index)
+    let RemovePublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
+    for index in parameters {
+        host.state_mut().remove_issuer_key(index)?;
+    }
+    Ok(())
 }
 
 #[receive(
     contract = "credential_registry",
-    name = "registerRevocationKey",
-    parameter = "RegisterKeyParameter",
+    name = "registerRevocationKeys",
+    parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
     mutable
 )]
-fn contract_register_revocation_key<S: HasStateApi>(
+fn contract_register_revocation_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
-    let parameter: RegisterKeyParameter = ctx.parameter_cursor().get()?;
-    host.state_mut().register_revocation_key(parameter.key_index, parameter.key)
+    let RegisterPublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
+    for parameter in parameters {
+        host.state_mut().register_revocation_key(parameter.key_index, parameter.key)?;
+    }
+    Ok(())
 }
 
 #[receive(
     contract = "credential_registry",
-    name = "removeRevocationKey",
-    parameter = "u8",
+    name = "removeRevocationKeys",
+    parameter = "RemovePublicKeyParameters",
     error = "ContractError",
     mutable
 )]
-fn contract_remove_revocation_key<S: HasStateApi>(
+fn contract_remove_revocation_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
-    let index = ctx.parameter_cursor().get()?;
-    host.state_mut().remove_revocation_key(index)
+    let RemovePublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
+    for index in parameters {
+        host.state_mut().remove_revocation_key(index)?;
+    }
+    Ok(())
 }
 
 #[receive(
