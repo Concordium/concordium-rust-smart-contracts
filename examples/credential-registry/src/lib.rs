@@ -124,14 +124,14 @@ impl<S: HasStateApi> State<S> {
         }
     }
 
-    fn get_credential_data(&self, credential_id: Uuidv4) -> ContractResult<CredentialData> {
+    fn view_credential_data(&self, credential_id: Uuidv4) -> ContractResult<CredentialData> {
         self.credentials
             .get(&credential_id)
             .map(|x| x.clone())
             .ok_or(ContractError::CredentialNotFound)
     }
 
-    fn get_credential_status(
+    fn view_credential_status(
         &self,
         now: Timestamp,
         credential_id: Uuidv4,
@@ -194,11 +194,11 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn get_issuer_keys(&self) -> Vec<(u8, PublicKeyEd25519)> {
+    fn view_issuer_keys(&self) -> Vec<(u8, PublicKeyEd25519)> {
         self.issuer_keys.iter().map(|x| (*x.0, *x.1)).collect()
     }
 
-    fn get_issuer_metadata(&self) -> IssuerMetadata { self.issuer_metadata.clone() }
+    fn view_issuer_metadata(&self) -> IssuerMetadata { self.issuer_metadata.clone() }
 
     fn update_issuer_metadata(&mut self, issuer_metadata: &IssuerMetadata) {
         self.issuer_metadata = issuer_metadata.clone()
@@ -221,34 +221,34 @@ fn sender_is_owner(ctx: &impl HasReceiveContext) -> bool {
 
 #[receive(
     contract = "credential_registry",
-    name = "getCredentialData",
+    name = "viewCredentialData",
     parameter = "Uuid",
     error = "ContractError",
     return_value = "CredentialData"
 )]
-fn contract_get_credential_data<S: HasStateApi>(
+fn contract_view_credential_data<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<CredentialData, ContractError> {
     let credential_id = ctx.parameter_cursor().get()?;
-    let data = host.state().get_credential_data(credential_id)?;
+    let data = host.state().view_credential_data(credential_id)?;
     Ok(data)
 }
 
 #[receive(
     contract = "credential_registry",
-    name = "getCredentialStatus",
+    name = "viewCredentialStatus",
     parameter = "Uuid",
     error = "ContractError",
     return_value = "CredentialStatus"
 )]
-fn contract_get_credential_status<S: HasStateApi>(
+fn contract_view_credential_status<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<CredentialStatus, ContractError> {
     let credential_id = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time();
-    let status = host.state().get_credential_status(now, credential_id)?;
+    let status = host.state().view_credential_status(now, credential_id)?;
     Ok(status)
 }
 
@@ -548,29 +548,29 @@ fn contract_view_revocation_key<S: HasStateApi>(
 
 #[receive(
     contract = "credential_registry",
-    name = "getIssuerKeys",
+    name = "viewIssuerKeys",
     error = "ContractError",
     return_value = "Vec<PublicKeyEd25519>"
 )]
-fn contract_get_issuer_keys<S: HasStateApi>(
+fn contract_view_issuer_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<Vec<(u8, PublicKeyEd25519)>, ContractError> {
-    let keys = host.state().get_issuer_keys();
+    let keys = host.state().view_issuer_keys();
     Ok(keys)
 }
 
 #[receive(
     contract = "credential_registry",
-    name = "getIssuerMetadata",
+    name = "viewIssuerMetadata",
     error = "ContractError",
     return_value = "IssuerMetadata"
 )]
-fn contract_get_issuer_metadata<S: HasStateApi>(
+fn contract_view_issuer_metadata<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<IssuerMetadata, ContractError> {
-    Ok(host.state().get_issuer_metadata())
+    Ok(host.state().view_issuer_metadata())
 }
 
 #[receive(
@@ -684,11 +684,11 @@ mod tests {
     // Property: registering a credential and then querying it results in the same
     // credential object.
     #[concordium_quickcheck]
-    fn prop_register_get_credential(credential_id: Uuidv4, data: CredentialData) -> bool {
+    fn prop_register_view_credential(credential_id: Uuidv4, data: CredentialData) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, issuer_metadata());
         let register_result = state.register_credential(credential_id, &data);
-        let query_result = state.get_credential_data(credential_id);
+        let query_result = state.view_credential_data(credential_id);
         if let Ok(fetched_data) = query_result {
             register_result.is_ok() && (fetched_data == data)
         } else {
@@ -711,7 +711,7 @@ mod tests {
             // discard the test if the precondition is not satisfied
             return TestResult::discard();
         }
-        let status_result = state.get_credential_status(now, credential_id);
+        let status_result = state.view_credential_status(now, credential_id);
         TestResult::from_bool(status_result == Ok(CredentialStatus::Revoked))
     }
 }
