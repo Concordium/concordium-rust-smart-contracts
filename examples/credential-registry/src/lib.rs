@@ -54,8 +54,8 @@ impl CredentialData {
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
     issuer_metadata: IssuerMetadata,
-    issuer_keys:     StateMap<u32, PublicKeyEd25519, S>,
-    revocation_keys: StateMap<u32, (PublicKeyEd25519, u64), S>,
+    issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
+    revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
     credentials:     StateMap<Uuidv4, CredentialData, S>,
 }
 
@@ -130,20 +130,20 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn register_issuer_key(&mut self, key_index: u32, pk: PublicKeyEd25519) -> ContractResult<()> {
+    fn register_issuer_key(&mut self, key_index: u8, pk: PublicKeyEd25519) -> ContractResult<()> {
         let res = self.issuer_keys.insert(key_index, pk);
         ensure!(res.is_none(), ContractError::KeyAlreadyExists);
         Ok(())
     }
 
-    fn remove_issuer_key(&mut self, key_index: u32) -> ContractResult<()> {
+    fn remove_issuer_key(&mut self, key_index: u8) -> ContractResult<()> {
         self.issuer_keys.remove(&key_index);
         Ok(())
     }
 
     fn register_revocation_key(
         &mut self,
-        key_index: u32,
+        key_index: u8,
         pk: PublicKeyEd25519,
     ) -> ContractResult<()> {
         let res = self.revocation_keys.insert(key_index, (pk, 0));
@@ -151,12 +151,12 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn remove_revocation_key(&mut self, key_index: u32) -> ContractResult<()> {
+    fn remove_revocation_key(&mut self, key_index: u8) -> ContractResult<()> {
         self.issuer_keys.remove(&key_index);
         Ok(())
     }
 
-    fn get_issuer_keys(&self) -> Vec<(u32, PublicKeyEd25519)> {
+    fn get_issuer_keys(&self) -> Vec<(u8, PublicKeyEd25519)> {
         self.issuer_keys.iter().map(|x| (*x.0, *x.1)).collect()
     }
 
@@ -247,17 +247,66 @@ struct SigningData {
 }
 
 /// The parameter type for the contract function `revokeCredential`.
-/// Takes a credential id, and optionally a signature with some meta
-/// information. If `signed` is present, the message is formed from the bytes of
-/// `id` and fields of `SigningData`
+/// Contains credential id, and optionally a signature with some meta
+/// information.
+/// If `signed` is present, the message is formed from the bytes of
+/// `credential_id` and fields of `SigningData`.
+/// If `revocation_key_index` is present, it is used for authorization,
+/// otherwize the holder's key is used.
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialParam {
-    credential_id: Uuidv4,
-    signed:        Option<(SigningData, SignatureEd25519)>,
+    credential_id:        Uuidv4,
+    signed:               Option<(SigningData, SignatureEd25519)>,
+    revocation_key_index: Option<u8>,
 }
 
-// fn validate_signature(nonce: u64, message_bytes: &[u8]) -> Result<(),
-// ContractError> { Ok(()) }
+/// Performs authorization based on the signature and a public key
+///
+/// The message is build from serialized `credential_id` and `signing_data`
+fn authorize_with_signature(
+    crypto_primitives: &impl HasCryptoPrimitives,
+    ctx: &impl HasReceiveContext,
+    nonce: u64,
+    public_key: PublicKeyEd25519,
+    credential_id: Uuidv4,
+    signing_data: SigningData,
+    signature: SignatureEd25519,
+) -> Result<(), ContractError> {
+    // Check the nonce to prevent replay attacks.
+    ensure_eq!(signing_data.nonce, nonce, ContractError::NonceMismatch);
+
+    // Check that the signature was intended for this contract.
+    ensure_eq!(signing_data.contract_address, ctx.self_address(), ContractError::WrongContract);
+
+    // Check signature is not expired.
+    ensure!(signing_data.timestamp > ctx.metadata().slot_time(), ContractError::ExpiredSignature);
+
+    // Prepare the message, as it is signed by the wallet.
+    // Note that the message is prepended by the account address sending the
+    // transaction and 8 zero bytes.
+    // TODO: change this if we decide how to the wallet sings the message with a key
+    // generated for a credential (not an account key)
+    let mut msg_prepend = Vec::with_capacity(32 + 8);
+    unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+    msg_prepend[0..32].copy_from_slice(ctx.invoker().as_ref());
+    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
+
+    let mut message_bytes = Vec::new();
+    credential_id
+        .serial::<Vec<_>>(&mut message_bytes)
+        .map_err(|_| ContractError::SerializationError)?;
+    signing_data.serial(&mut message_bytes).map_err(|_| ContractError::SerializationError)?;
+    // Calculate the message hash.
+    let message_hash =
+        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+
+    // Check signature.
+    ensure!(
+        crypto_primitives.verify_ed25519_signature(public_key, signature, &message_hash),
+        ContractError::WrongSignature
+    );
+    Ok(())
+}
 
 #[receive(
     contract = "credential_registry",
@@ -279,65 +328,62 @@ fn contract_revoke_credeintial<S: HasStateApi>(
             ensure!(sender_is_owner(ctx), ContractError::NotAuthorized)
         }
         Some((signing_data, signature)) => {
-            // Authorize the holder
-            let mut entry: OccupiedEntry<u128, CredentialData, S> = host
-                .state_mut()
+            let state = host.state_mut();
+
+            let mut entry: OccupiedEntry<u128, CredentialData, S> = state
                 .credentials
                 .entry(parameter.credential_id)
                 .occupied_or(ContractError::CredentialNotFound)?;
 
-            // Only user-revocable entries can be revoked by the holder.
-            ensure!(entry.revocable, ContractError::NotAuthorized);
+            match parameter.revocation_key_index {
+                None => {
+                    // Authorize the holder
 
-            // Update the nonce.
-            entry.revocation_nonce += 1;
+                    // Only user-revocable entries can be revoked by the holder.
+                    ensure!(entry.revocable, ContractError::NotAuthorized);
 
-            // Get the public key and the current nonce.
-            let public_key = entry.holder_id;
-            let nonce = entry.revocation_nonce;
-            drop(entry);
+                    // Update the nonce.
+                    entry.revocation_nonce += 1;
 
-            // Check the nonce to prevent replay attacks.
-            ensure_eq!(signing_data.nonce, nonce, ContractError::NonceMismatch);
+                    // Get the public key and the current nonce.
+                    let public_key = entry.holder_id;
+                    let nonce = entry.revocation_nonce;
+                    drop(entry);
 
-            // Check that the signature was intended for this contract.
-            ensure_eq!(
-                signing_data.contract_address,
-                ctx.self_address(),
-                ContractError::WrongContract
-            );
+                    authorize_with_signature(
+                        crypto_primitives,
+                        ctx,
+                        nonce,
+                        public_key,
+                        parameter.credential_id,
+                        signing_data,
+                        signature,
+                    )?;
+                }
 
-            // Check signature is not expired.
-            ensure!(
-                signing_data.timestamp > ctx.metadata().slot_time(),
-                ContractError::ExpiredSignature
-            );
+                Some(key_index) => {
+                    // Authorize the revocation authority
 
-            // Prepare the message, as it is signed by the wallet.
-            // Note that the message is prepended by the account address sending the
-            // transaction and 8 zero bytes.
-            let mut msg_prepend = Vec::with_capacity(32 + 8);
-            unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
-            msg_prepend[0..32].copy_from_slice(ctx.invoker().as_ref());
-            msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
+                    let mut entry = state
+                        .revocation_keys
+                        .entry(key_index)
+                        .occupied_or(ContractError::CredentialNotFound)?;
+                    // Update the nonce.
+                    entry.1 += 1;
 
-            let mut message_bytes = Vec::new();
-            parameter
-                .credential_id
-                .serial::<Vec<_>>(&mut message_bytes)
-                .map_err(|_| ContractError::SerializationError)?;
-            signing_data
-                .serial(&mut message_bytes)
-                .map_err(|_| ContractError::SerializationError)?;
-            // Calculate the message hash.
-            let message_hash =
-                crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
-
-            // Check signature.
-            ensure!(
-                crypto_primitives.verify_ed25519_signature(public_key, signature, &message_hash),
-                ContractError::WrongSignature
-            );
+                    let nonce = entry.1;
+                    let public_key = entry.0;
+                    authorize_with_signature(
+                        crypto_primitives,
+                        ctx,
+                        nonce,
+                        public_key,
+                        parameter.credential_id,
+                        signing_data,
+                        signature,
+                    )?;
+                }
+            }
         }
     }
     let credential_id = ctx.parameter_cursor().get()?;
@@ -347,7 +393,7 @@ fn contract_revoke_credeintial<S: HasStateApi>(
 
 #[derive(Serial, Deserial, SchemaType)]
 pub struct RegisterKeyParameter {
-    key_index: u32,
+    key_index: u8,
     key:       PublicKeyEd25519,
 }
 
@@ -424,7 +470,7 @@ fn contract_remove_revocation_key<S: HasStateApi>(
 fn contract_get_issuer_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<Vec<(u32, PublicKeyEd25519)>, ContractError> {
+) -> Result<Vec<(u8, PublicKeyEd25519)>, ContractError> {
     let keys = host.state().get_issuer_keys();
     Ok(keys)
 }
