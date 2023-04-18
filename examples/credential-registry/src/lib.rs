@@ -1,12 +1,7 @@
 //! # Credential registry
+use concordium_cis2::MetadataUrl;
 use concordium_std::*;
 use core::fmt::Debug;
-
-#[derive(Serialize, SchemaType, Clone)]
-pub struct IssuerMetadata {
-    name: String,
-    url:  Option<String>,
-}
 
 #[derive(Serialize, SchemaType)]
 struct RegisterCredentialEvent {
@@ -75,7 +70,7 @@ impl CredentialData {
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
-    issuer_metadata: IssuerMetadata,
+    issuer_metadata: MetadataUrl,
     issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
     revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
     credentials:     StateMap<Uuidv4, CredentialData, S>,
@@ -115,7 +110,7 @@ type ContractResult<A> = Result<A, ContractError>;
 
 // Functions for creating, updating and querying the contract state.
 impl<S: HasStateApi> State<S> {
-    fn new(state_builder: &mut StateBuilder<S>, issuer_metadata: IssuerMetadata) -> Self {
+    fn new(state_builder: &mut StateBuilder<S>, issuer_metadata: MetadataUrl) -> Self {
         State {
             issuer_metadata,
             issuer_keys: state_builder.new_map(),
@@ -198,9 +193,9 @@ impl<S: HasStateApi> State<S> {
         self.issuer_keys.iter().map(|x| (*x.0, *x.1)).collect()
     }
 
-    fn view_issuer_metadata(&self) -> IssuerMetadata { self.issuer_metadata.clone() }
+    fn view_issuer_metadata(&self) -> MetadataUrl { self.issuer_metadata.clone() }
 
-    fn update_issuer_metadata(&mut self, issuer_metadata: &IssuerMetadata) {
+    fn update_issuer_metadata(&mut self, issuer_metadata: &MetadataUrl) {
         self.issuer_metadata = issuer_metadata.clone()
     }
 }
@@ -211,7 +206,7 @@ fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
-    let issuer_metadata: IssuerMetadata = ctx.parameter_cursor().get()?;
+    let issuer_metadata: MetadataUrl = ctx.parameter_cursor().get()?;
     Ok(State::new(state_builder, issuer_metadata))
 }
 
@@ -584,19 +579,19 @@ fn contract_view_issuer_keys<S: HasStateApi>(
     contract = "credential_registry",
     name = "viewIssuerMetadata",
     error = "ContractError",
-    return_value = "IssuerMetadata"
+    return_value = "MetadataUrl"
 )]
 fn contract_view_issuer_metadata<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<IssuerMetadata, ContractError> {
+) -> Result<MetadataUrl, ContractError> {
     Ok(host.state().view_issuer_metadata())
 }
 
 #[receive(
     contract = "credential_registry",
     name = "updateIssuerMetadata",
-    parameter = "IssuerMetadata",
+    parameter = "MetadataUrl",
     error = "ContractError",
     mutable
 )]
@@ -675,13 +670,12 @@ mod tests {
         }
     }
 
-    const ISSUER_NAME: &str = "Example University";
-    const ISSUER_URL: &str = "https://example-university.com";
+    const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
 
-    fn issuer_metadata() -> IssuerMetadata {
-        IssuerMetadata {
-            name: ISSUER_NAME.to_string(),
-            url:  Some(ISSUER_URL.to_string()),
+    fn issuer_metadata() -> MetadataUrl {
+        MetadataUrl {
+            url:  ISSUER_URL.to_string(),
+            hash: None,
         }
     }
 
