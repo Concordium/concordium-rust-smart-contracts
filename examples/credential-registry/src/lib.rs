@@ -745,6 +745,8 @@ mod tests {
 
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
 
+    /// A helper that returns a credential that is not revoked, cannot expire
+    /// and is immediately activated.
     fn credential_entry() -> CredentialEntry {
         CredentialEntry {
             credential_data:  CredentialData {
@@ -784,6 +786,7 @@ mod tests {
         state_result.expect_report("Contract initialization results in an error");
     }
 
+    /// Not expired and not revoked credential is `Active`
     #[concordium_test]
     fn test_get_status_active() {
         let entry = credential_entry();
@@ -799,65 +802,44 @@ mod tests {
         );
     }
 
+    /// If `valid_until` is in the past, the credential is `Expired`, provided
+    /// that it wasn't revoked.
     #[concordium_test]
     fn test_get_status_expired() {
         let mut entry = credential_entry();
+        claim!(!entry.is_revoked);
         let now = Timestamp::from_timestamp_millis(10);
+        // Set `valid_until` to time preceeding `now`.
         entry.credential_data.valid_until = Some(Timestamp::from_timestamp_millis(0));
         let expected = CredentialStatus::Expired;
         let status = entry.get_status(now);
-        claim_eq!(
-            entry.get_status(now),
-            CredentialStatus::Expired,
-            "Expected status {:?}, got {:?}",
-            expected,
-            status
-        );
+        claim_eq!(status, expected, "Expected status {:?}, got {:?}", expected, status);
     }
 
+    /// If `valid_from` if in the future, the status is `NotActivated`, provided
+    /// that it wasn't revoked.
     #[concordium_test]
     fn test_get_status_not_activated() {
         let mut entry = credential_entry();
+        claim!(!entry.is_revoked);
         let now = Timestamp::from_timestamp_millis(10);
+        // Set `valid_from` to time ahead of `now`.
         entry.credential_data.valid_from = Some(Timestamp::from_timestamp_millis(20));
         let expected = CredentialStatus::NotActivated;
         let status = entry.get_status(now);
-        claim_eq!(
-            entry.get_status(now),
-            expected,
-            "Expected status {:?}, got {:?}",
-            expected,
-            status
-        );
+        claim_eq!(status, expected, "Expected status {:?}, got {:?}", expected, status);
     }
 
-    #[concordium_test]
-    fn test_get_status_revoked_expired_still_revoked() {
-        let mut entry = credential_entry();
-        let now = Timestamp::from_timestamp_millis(10);
-        entry.is_revoked = true;
-        entry.credential_data.valid_until = Some(Timestamp::from_timestamp_millis(0));
-        let expected = CredentialStatus::Revoked;
-        let status = entry.get_status(now);
-        claim_eq!(
-            entry.get_status(now),
-            expected,
-            "Expected status {:?}, got {:?}",
-            expected,
-            status
-        );
-    }
-
-    // Property: once the `is_revoked` flag is set to `true`, the status is always
-    // `Revoked` regardless of values of valid_from and valid_until
+    /// Property: once the `is_revoked` flag is set to `true`, the status is
+    /// always `Revoked` regardless of the valid_from and valid_until values
     #[concordium_quickcheck]
     fn prop_revoked_stays_revoked(mut entry: CredentialEntry, now: Timestamp) -> bool {
         entry.is_revoked = true;
         entry.get_status(now) == CredentialStatus::Revoked
     }
 
-    // Property: registering a credential and then querying it results in the same
-    // credential data, which is not revoked and has nonce = `0`
+    /// Property: registering a credential and then querying it results in the
+    /// same credential data, which is not revoked and has nonce = `0`
     #[concordium_quickcheck]
     fn prop_register_view_credential(credential_id: Uuidv4, data: CredentialData) -> bool {
         let mut state_builder = TestStateBuilder::new();
@@ -874,9 +856,9 @@ mod tests {
         }
     }
 
-    // Property: updating an existing credential and then querying it results in the
-    // same credential data. The update keeps intact the revocation flag and
-    // nonce.
+    /// Property: updating an existing credential and then querying it results
+    /// in the same credential data. The update keeps intact the revocation
+    /// flag and nonce.
     #[concordium_quickcheck]
     fn prop_update_view_credential(
         credential_id: Uuidv4,
@@ -898,8 +880,8 @@ mod tests {
         }
     }
 
-    // Property: if a credential is revoked successfully, the status changes to
-    // `Revoked`
+    /// Property: if a credential is revoked successfully, the status changes to
+    /// `Revoked`
     #[concordium_quickcheck]
     fn prop_revocation(credential_id: Uuidv4, data: CredentialData) -> TestResult {
         let mut state_builder = TestStateBuilder::new();
@@ -917,7 +899,8 @@ mod tests {
         TestResult::from_bool(status_result == Ok(CredentialStatus::Revoked))
     }
 
-    // Property: registering an issuer key and querying it results in the same value
+    /// Property: registering an issuer key and querying it results in the same
+    /// value
     #[concordium_quickcheck]
     fn prop_register_view_issuer_keys(key_index: u8, pk_bytes: Array32u8) -> bool {
         let mut state_builder = TestStateBuilder::new();
@@ -929,8 +912,8 @@ mod tests {
         register_result.is_ok() && query_result.contains(&(key_index, pk))
     }
 
-    // Property: registering a revocation key and querying it results in the same
-    // value
+    /// Property: registering a revocation key and querying it results in the
+    /// same value
     #[concordium_quickcheck]
     fn prop_register_view_revocation_key(key_index: u8, pk_bytes: Array32u8) -> bool {
         let mut state_builder = TestStateBuilder::new();
