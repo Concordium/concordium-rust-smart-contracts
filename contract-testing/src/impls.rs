@@ -1153,10 +1153,10 @@ impl Account {
 
 impl Signer {
     /// Create a signer which always signs with one key.
-    pub fn with_one_key() -> Self { Self { num_keys: 1 } }
+    pub const fn with_one_key() -> Self { Self { num_keys: 1 } }
 
     /// Create a signer with a non-zero number of keys.
-    pub fn with_keys(num_keys: u32) -> Result<Self, ZeroKeysError> {
+    pub const fn with_keys(num_keys: u32) -> Result<Self, ZeroKeysError> {
         if num_keys == 0 {
             return Err(ZeroKeysError);
         }
