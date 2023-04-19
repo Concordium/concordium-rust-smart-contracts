@@ -2,7 +2,7 @@
 name = "piggy-bank-part2"
 version = "0.1.1"
 authors = ["Concordium <developers@concordium.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 description = "Piggy bank smart contract part 2."
 homepage = "https://github.com/concordium/concordium-rust-smart-contracts"
@@ -19,8 +19,10 @@ wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies.concordium-std]
 version = "6"
-path = "../../../concordium-std"
 default-features = false
+
+[dev-dependencies]
+concordium-smart-contract-testing = { path = "../../../../concordium-smart-contract-tools/concordium-smart-contract-testing", version = "1.0" }
 
 [profile.release]
 opt-level = 3

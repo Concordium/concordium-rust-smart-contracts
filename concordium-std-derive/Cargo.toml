@@ -2,7 +2,7 @@
 name = "concordium-std-derive"
 version = "5.1.0"
 authors = ["Concordium <developers@concordium.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 description = "Procedural macros to ease writing smart contracts on the Concordium blockchain."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
