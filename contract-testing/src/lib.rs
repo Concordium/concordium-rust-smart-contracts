@@ -3,6 +3,19 @@
 //! This library supports writing integration tests in Rust for Concordium smart
 //! contracts.
 //!
+//! To use the library, you must add it to your `Cargo.toml` file under the
+//! `[dev-dependencies]` section. The library requries the rust edition `2021`
+//! or greater.
+//!
+//! ```toml
+//! [package]
+//! # ...
+//! edition = "2021"
+//!
+//! [dev-dependencies]
+//! concordium-smart-contract-testing = "1.0"
+//! ```
+//!
 //! ## Basic usage
 //!
 //! ```no_run
