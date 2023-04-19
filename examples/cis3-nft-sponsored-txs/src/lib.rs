@@ -311,12 +311,12 @@ struct SetImplementorsParams {
 struct PermitMessage {
     /// The contract_address that the signature is intended for.
     contract_address: ContractAddress,
-    /// The entry_point that the signature is intended for.
-    entry_point:      OwnedEntrypointName,
     /// A nonce to prevent replay attacks.
     nonce:            u64,
     /// A timestamp to make signatures expire.
     timestamp:        Timestamp,
+    /// The entry_point that the signature is intended for.
+    entry_point:      OwnedEntrypointName,
     /// The serialized payload that should be forwarded to either the `transfer`
     /// or the `updateOperator` function.
     #[size_length = 2]
@@ -1321,25 +1321,26 @@ mod tests {
     const TOKEN_2: ContractTokenId = TokenIdU32(2);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        158, 41, 252, 95, 47, 223, 133, 55, 206, 88, 207, 28, 47, 15, 59, 178, 151, 69, 140, 197,
-        241, 136, 175, 142, 231, 121, 95, 113, 28, 159, 81, 181,
+        196, 192, 27, 118, 180, 235, 162, 76, 181, 221, 105, 143, 190, 189, 85, 134, 52, 138, 64,
+        83, 146, 41, 250, 203, 19, 160, 187, 176, 134, 129, 40, 223,
     ]);
+
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
         234, 138, 118, 62, 147, 74, 134, 113, 205, 126, 68, 100, 153,
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        117, 198, 139, 232, 245, 136, 102, 255, 95, 112, 238, 79, 205, 248, 53, 250, 145, 160, 200,
-        170, 52, 204, 247, 11, 1, 107, 250, 89, 37, 66, 56, 159, 71, 63, 254, 167, 11, 33, 196,
-        212, 103, 41, 103, 159, 98, 25, 93, 222, 228, 43, 88, 43, 246, 236, 198, 181, 19, 122, 163,
-        66, 88, 0, 74, 4,
+        79, 231, 200, 150, 120, 153, 22, 115, 11, 79, 97, 141, 103, 19, 132, 154, 37, 39, 219, 190,
+        193, 184, 27, 127, 53, 125, 7, 124, 80, 214, 25, 62, 255, 183, 66, 184, 214, 189, 103, 248,
+        194, 61, 88, 91, 91, 8, 26, 228, 240, 168, 207, 102, 62, 219, 199, 114, 163, 111, 76, 207,
+        44, 237, 247, 14,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        236, 221, 253, 221, 133, 138, 240, 41, 41, 111, 23, 23, 195, 58, 129, 149, 226, 176, 153,
-        156, 59, 111, 87, 188, 94, 132, 79, 116, 126, 11, 40, 109, 10, 218, 10, 203, 74, 224, 142,
-        53, 93, 94, 214, 212, 32, 149, 114, 116, 89, 102, 74, 174, 206, 250, 225, 24, 135, 68, 106,
-        175, 106, 189, 235, 9,
+        199, 118, 105, 210, 22, 171, 213, 228, 149, 203, 70, 231, 248, 87, 225, 32, 37, 162, 157,
+        196, 35, 162, 118, 67, 240, 216, 252, 220, 26, 188, 162, 139, 227, 216, 174, 67, 1, 212,
+        152, 186, 181, 41, 109, 125, 180, 110, 208, 239, 88, 52, 140, 39, 151, 237, 242, 15, 107,
+        95, 243, 239, 192, 51, 175, 5,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
