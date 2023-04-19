@@ -22,7 +22,7 @@
 //!     .module_deploy_v1(
 //!         Signer::with_one_key(),
 //!         ACC,
-//!         Chain::module_load_v1("path/to/contract.wasm.v1").unwrap())
+//!         module_load_v1("path/to/contract.wasm.v1").unwrap())
 //!     .unwrap();
 //!
 //! // Initialize a smart contract from the deployed module.
@@ -76,6 +76,7 @@ mod constants;
 mod impls;
 mod invocation;
 mod types;
+pub use impls::{module_load_v1, module_load_v1_raw};
 pub use types::*;
 
 // Re-export types.

@@ -22,7 +22,7 @@ fn fib_reentry_and_cost_test() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/fib.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/fib.wasm", WASM_TEST_FOLDER))
                 .expect("Module should exist."),
         )
         .expect("Deploying valid module should work");

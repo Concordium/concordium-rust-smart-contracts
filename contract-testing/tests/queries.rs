@@ -27,7 +27,7 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-account-balance.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -97,7 +97,7 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-account-balance.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -172,7 +172,7 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-account-balance-transfer.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -255,7 +255,7 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-account-balance.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -323,7 +323,7 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-account-balance-missing-account.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -396,7 +396,7 @@ mod query_contract_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-contract-balance.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -471,7 +471,7 @@ mod query_contract_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-contract-balance.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -532,7 +532,7 @@ mod query_contract_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-contract-balance-transfer.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -596,7 +596,7 @@ mod query_contract_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-contract-balance-missing-contract.wasm",
                     WASM_TEST_FOLDER
                 ))
@@ -658,7 +658,7 @@ mod query_exchange_rates {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                Chain::module_load_v1_raw(format!(
+                module_load_v1_raw(format!(
                     "{}/queries-exchange-rates.wasm",
                     WASM_TEST_FOLDER
                 ))

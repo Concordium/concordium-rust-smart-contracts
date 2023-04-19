@@ -155,7 +155,7 @@ impl Chain {
     /// Deploy a smart contract module.
     ///
     /// The `WasmModule` can be loaded from disk with either
-    /// [`Chain::module_load_v1`] or [`Chain::module_load_v1_raw`].
+    /// [`module_load_v1`] or [`module_load_v1_raw`].
     ///
     /// Parameters:
     ///  - `signer`: the signer with a number of keys, which affects the cost.
@@ -272,68 +272,6 @@ impl Chain {
             energy_used,
             transaction_fee,
         })
-    }
-
-    /// Load a raw wasm module, i.e. one **without** the prefix of 4 version
-    /// bytes and 4 module length bytes.
-    /// The module still has to be a valid V1 smart contract module.
-    pub fn module_load_v1_raw(
-        module_path: impl AsRef<Path>,
-    ) -> Result<WasmModule, ModuleLoadError> {
-        let module_path = module_path.as_ref();
-        // To avoid reading a giant file, we open the file for reading, check its size
-        // and then load the contents.
-        let (mut reader, metadata) = std::fs::File::open(module_path)
-            .and_then(|reader| reader.metadata().map(|metadata| (reader, metadata)))
-            .map_err(|e| ModuleLoadError {
-                path: module_path.to_path_buf(),
-                kind: e.into(),
-            })?;
-        if metadata.len() > MAX_WASM_MODULE_SIZE.into() {
-            return Err(ModuleLoadError {
-                path: module_path.to_path_buf(),
-                kind: ModuleLoadErrorKind::ReadModule(
-                    anyhow!("Maximum size of a Wasm module is {}", MAX_WASM_MODULE_SIZE).into(),
-                ),
-            });
-        }
-        // We cannot deserialize directly to [`ModuleSource`] as it expects the first
-        // four bytes to be the length, which it isn't for this raw file.
-        let mut buffer = Vec::new();
-        std::io::Read::read_to_end(&mut reader, &mut buffer).map_err(|e| ModuleLoadError {
-            path: module_path.to_path_buf(),
-            kind: ModuleLoadErrorKind::OpenFile(e), /* This is unlikely to happen, since
-                                                     * we already opened it. */
-        })?;
-        Ok(WasmModule {
-            version: WasmVersion::V1,
-            source:  ModuleSource::from(buffer),
-        })
-    }
-
-    /// Load a v1 wasm module as it is output from `cargo concordium build`,
-    /// i.e. **including** the prefix of 4 version bytes and 4 module length
-    /// bytes.
-    pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, ModuleLoadError> {
-        let module_path = module_path.as_ref();
-        // To avoid reading a giant file, we just open the file for reading and then
-        // parse it as a wasm module, which checks the length up front.
-        let mut reader = std::fs::File::open(module_path).map_err(|e| ModuleLoadError {
-            path: module_path.to_path_buf(),
-            kind: e.into(),
-        })?;
-        let module: WasmModule =
-            concordium_base::common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
-                path: module_path.to_path_buf(),
-                kind: ModuleLoadErrorKind::ReadModule(e.into()),
-            })?;
-        if module.version != WasmVersion::V1 {
-            return Err(ModuleLoadError {
-                path: module_path.to_path_buf(),
-                kind: ModuleLoadErrorKind::UnsupportedModuleVersion(module.version),
-            });
-        }
-        Ok(module)
     }
 
     /// Initialize a contract.
@@ -1149,6 +1087,66 @@ impl Account {
             items:             Vec::new(),
         }
     }
+}
+
+/// Load a raw wasm module, i.e. one **without** the prefix of 4 version
+/// bytes and 4 module length bytes.
+/// The module still has to be a valid V1 smart contract module.
+pub fn module_load_v1_raw(module_path: impl AsRef<Path>) -> Result<WasmModule, ModuleLoadError> {
+    let module_path = module_path.as_ref();
+    // To avoid reading a giant file, we open the file for reading, check its size
+    // and then load the contents.
+    let (mut reader, metadata) = std::fs::File::open(module_path)
+        .and_then(|reader| reader.metadata().map(|metadata| (reader, metadata)))
+        .map_err(|e| ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: e.into(),
+        })?;
+    if metadata.len() > MAX_WASM_MODULE_SIZE.into() {
+        return Err(ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: ModuleLoadErrorKind::ReadModule(
+                anyhow!("Maximum size of a Wasm module is {}", MAX_WASM_MODULE_SIZE).into(),
+            ),
+        });
+    }
+    // We cannot deserialize directly to [`ModuleSource`] as it expects the first
+    // four bytes to be the length, which it isn't for this raw file.
+    let mut buffer = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut buffer).map_err(|e| ModuleLoadError {
+        path: module_path.to_path_buf(),
+        kind: ModuleLoadErrorKind::OpenFile(e), /* This is unlikely to happen, since
+                                                 * we already opened it. */
+    })?;
+    Ok(WasmModule {
+        version: WasmVersion::V1,
+        source:  ModuleSource::from(buffer),
+    })
+}
+
+/// Load a v1 wasm module as it is output from `cargo concordium build`,
+/// i.e. **including** the prefix of 4 version bytes and 4 module length
+/// bytes.
+pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, ModuleLoadError> {
+    let module_path = module_path.as_ref();
+    // To avoid reading a giant file, we just open the file for reading and then
+    // parse it as a wasm module, which checks the length up front.
+    let mut reader = std::fs::File::open(module_path).map_err(|e| ModuleLoadError {
+        path: module_path.to_path_buf(),
+        kind: e.into(),
+    })?;
+    let module: WasmModule =
+        concordium_base::common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: ModuleLoadErrorKind::ReadModule(e.into()),
+        })?;
+    if module.version != WasmVersion::V1 {
+        return Err(ModuleLoadError {
+            path: module_path.to_path_buf(),
+            kind: ModuleLoadErrorKind::UnsupportedModuleVersion(module.version),
+        });
+    }
+    Ok(module)
 }
 
 impl Signer {

@@ -18,7 +18,7 @@ fn test() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading_0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -27,7 +27,7 @@ fn test() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading_1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -107,7 +107,7 @@ fn test_self_invoke() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-self-invoke0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -115,7 +115,7 @@ fn test_self_invoke() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-self-invoke1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -181,7 +181,7 @@ fn test_missing_module() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!(
+            module_load_v1_raw(format!(
                 "{}/upgrading-missing-module.wasm",
                 WASM_TEST_FOLDER
             ))
@@ -239,7 +239,7 @@ fn test_missing_contract() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!(
+            module_load_v1_raw(format!(
                 "{}/upgrading-missing-contract0.wasm",
                 WASM_TEST_FOLDER
             ))
@@ -251,7 +251,7 @@ fn test_missing_contract() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!(
+            module_load_v1_raw(format!(
                 "{}/upgrading-missing-contract1.wasm",
                 WASM_TEST_FOLDER
             ))
@@ -310,7 +310,7 @@ fn test_twice_in_one_transaction() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-twice0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -319,7 +319,7 @@ fn test_twice_in_one_transaction() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-twice1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -328,7 +328,7 @@ fn test_twice_in_one_transaction() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-twice2.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -408,7 +408,7 @@ fn test_chained_contract() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-chained0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -470,7 +470,7 @@ fn test_reject() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-reject0.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -479,7 +479,7 @@ fn test_reject() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/upgrading-reject1.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -561,7 +561,7 @@ fn test_changing_entrypoint() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!(
+            module_load_v1_raw(format!(
                 "{}/upgrading-changing-entrypoints0.wasm",
                 WASM_TEST_FOLDER
             ))
@@ -573,7 +573,7 @@ fn test_changing_entrypoint() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!(
+            module_load_v1_raw(format!(
                 "{}/upgrading-changing-entrypoints1.wasm",
                 WASM_TEST_FOLDER
             ))

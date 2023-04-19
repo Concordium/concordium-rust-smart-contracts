@@ -105,7 +105,7 @@ fn deploy_and_init(
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/{}", WASM_TEST_FOLDER, file_name))
+            module_load_v1_raw(format!("{}/{}", WASM_TEST_FOLDER, file_name))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");

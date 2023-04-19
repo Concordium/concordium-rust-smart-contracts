@@ -30,7 +30,7 @@ fn test_case_1() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -120,7 +120,7 @@ fn test_case_2() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -224,7 +224,7 @@ fn test_case_3() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -297,7 +297,7 @@ fn test_case_4() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");

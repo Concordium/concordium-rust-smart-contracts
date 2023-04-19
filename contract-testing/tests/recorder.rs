@@ -15,7 +15,7 @@ fn test_recorder() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_0,
-            Chain::module_load_v1_raw(format!("{}/record-parameters.wasm", WASM_TEST_FOLDER))
+            module_load_v1_raw(format!("{}/record-parameters.wasm", WASM_TEST_FOLDER))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
