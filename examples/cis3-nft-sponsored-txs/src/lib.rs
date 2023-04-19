@@ -78,16 +78,21 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] =
 const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
     [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
 
-/// Tag for the CIS3 Registration event.
+/// Tag for the Registration event.
 pub const REGISTRATION_EVENT_TAG: u8 = 0u8;
+/// Tag for the CIS3 Nonce event.
+pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 
 /// Tagged events to be serialized for the event log.
-#[derive(Debug, Serial)]
+#[derive(Debug)]
 enum Event {
     /// Registration of a public key for a given account. The
     /// corresponding private key will have to sign the message that
     /// can be executed via the `permit` function.
     Registration(RegistrationEvent),
+    /// The event tracks the nonce used by the signer of the `PermitMessage`
+    /// whenever the `permit` function is invoked.
+    Nonce(NonceEvent),
 }
 
 /// The RegistrationEvent is logged when a new public key is registered.
@@ -97,6 +102,16 @@ pub struct RegistrationEvent {
     account:    AccountAddress,
     /// The public key that should be linked to the above account.
     public_key: PublicKeyEd25519,
+}
+
+/// The NonceEvent is logged when the `permit` function is invoked. The event
+/// tracks the nonce used by the signer of the `PermitMessage`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct NonceEvent {
+    /// Account that signed the `PermitMessage`.
+    account: AccountAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    nonce:   u64,
 }
 
 // Implementing a custom schemaType to the `Event` combining all CIS2/CIS3
@@ -111,6 +126,16 @@ impl schema::SchemaType for Event {
                 schema::Fields::Named(vec![
                     (String::from("account"), AccountAddress::get_type()),
                     (String::from("public_key"), PublicKeyEd25519::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            NONCE_EVENT_TAG,
+            (
+                "Nonce".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("account"), AccountAddress::get_type()),
+                    (String::from("nonce"), u64::get_type()),
                 ]),
             ),
         );
@@ -173,6 +198,21 @@ impl schema::SchemaType for Event {
     }
 }
 
+impl Serial for Event {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            Event::Registration(event) => {
+                out.write_u8(REGISTRATION_EVENT_TAG)?;
+                event.serial(out)
+            }
+            Event::Nonce(event) => {
+                out.write_u8(NONCE_EVENT_TAG)?;
+                event.serial(out)
+            }
+        }
+    }
+}
+
 // Type aliases
 
 /// Contract token ID type.
@@ -226,10 +266,13 @@ struct State<S> {
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// A registry to link an account to an public key and its nonce. The
+    /// A registry to link an account to a public key and its next nonce. The
     /// corresponding private key registered here has full access to the
     /// tokens controlled by the account. The nonce is used to prevent replay
-    /// attacks of signed transactions.
+    /// attacks of the signed message. The nonce is increased sequentially every
+    /// time a signed message (corresponding to the account) is successfully
+    /// executed in the `permit` function. This mapping keeps track of the
+    /// next nonce that needs to be used by the account to generate a signature.
     public_key_registry: StateMap<AccountAddress, (PublicKeyEd25519, u64), S>,
 }
 
@@ -263,29 +306,21 @@ struct SetImplementorsParams {
 }
 
 /// Part of the parameter type for the contract function `permit`.
-/// Specifies the transaction payload that should be forwarded to either the
-/// `transfer` or the `updateOperator` function.
-#[derive(Debug, Serialize, SchemaType, Clone)]
-enum PermitPayload {
-    Transfer(TransferParameter),
-    UpdateOperator(UpdateOperatorParams),
-}
-
-/// Part of the parameter type for the contract function `permit`.
 /// Specifies the message that is signed.
 #[derive(SchemaType, Serialize)]
 struct PermitMessage {
     /// The contract_address that the signature is intended for.
     contract_address: ContractAddress,
-    /// The entry_point that the signature is intended for.
-    entry_point:      OwnedEntrypointName,
     /// A nonce to prevent replay attacks.
     nonce:            u64,
     /// A timestamp to make signatures expire.
     timestamp:        Timestamp,
-    /// The payload that should be forwarded to either the `transfer` or the
-    /// `updateOperator` function.
-    payload:          PermitPayload,
+    /// The entry_point that the signature is intended for.
+    entry_point:      OwnedEntrypointName,
+    /// The serialized payload that should be forwarded to either the `transfer`
+    /// or the `updateOperator` function.
+    #[size_length = 2]
+    payload:          Vec<u8>,
 }
 
 /// The parameter type for the contract function `permit`.
@@ -834,6 +869,9 @@ fn contract_permit<S: HasStateApi>(
 ) -> ContractResult<()> {
     // Parse the parameter.
     let mut cursor = ctx.parameter_cursor();
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial`. I.e. we only read the `signature`, the
+    // `signer` but WITHOUT the `message` here.
     let param: PermitParamPartial = cursor.get()?;
 
     ensure!(
@@ -856,13 +894,17 @@ fn contract_permit<S: HasStateApi>(
         .public_key_registry
         .entry(param.signer)
         .occupied_or(CustomContractError::NoPublicKey)?;
-    // Bump nonce.
-    entry.1 += 1;
     // Get the public key and the current nonce.
     let public_key = entry.0;
     let nonce = entry.1;
+    // Bump nonce.
+    entry.1 += 1;
     drop(entry);
 
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial` so far. We read in the `message` now.
+    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
+    // bytes.
     let mut message_bytes = Vec::with_capacity((cursor.size() - cursor.cursor_position()) as usize);
     unsafe { message_bytes.set_len(message_bytes.capacity()) };
     cursor.read_exact(&mut message_bytes)?;
@@ -881,9 +923,13 @@ fn contract_permit<S: HasStateApi>(
     // Check signature is not expired.
     ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
+    // The message signed in the Concordium browser wallet is prepended with the
+    // `account` address and 8 zero bytes.
     let mut msg_prepend = Vec::with_capacity(32 + 8);
     unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+    // Prepend the `account` address of the signer.
     msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
+    // Prepend 8 zero bytes.
     msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
     // Calculate the message hash.
     let message_hash =
@@ -895,52 +941,46 @@ fn contract_permit<S: HasStateApi>(
         CustomContractError::WrongSignature.into()
     );
 
-    match message.payload {
+    if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
         // Transfer the tokens.
-        PermitPayload::Transfer(transfer_parameter) => {
-            // Check that the signature was intended for this `entry_point`.
-            ensure_eq!(
-                message.entry_point.as_entrypoint_name(),
-                EntrypointName::new_unchecked("transfer"),
-                CustomContractError::WrongEntryPoint.into()
+
+        let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
+
+        for transfer_struct in transfers {
+            ensure!(
+                transfer_struct.from.matches_account(&param.signer),
+                ContractError::Unauthorized
             );
 
-            let TransferParams(transfers): TransferParameter = transfer_parameter;
-
-            for transfer_struct in transfers {
-                ensure!(
-                    transfer_struct.from.matches_account(&param.signer),
-                    ContractError::Unauthorized
-                );
-
-                transfer(transfer_struct, host, logger)?
-            }
+            transfer(transfer_struct, host, logger)?
         }
+    } else if message.entry_point.as_entrypoint_name()
+        == EntrypointName::new_unchecked("updateOperator")
+    {
         // Update the operator.
-        PermitPayload::UpdateOperator(update_parameter) => {
-            // Check that the signature was intended for this `entry_point`.
-            ensure_eq!(
-                message.entry_point.as_entrypoint_name(),
-                EntrypointName::new_unchecked("updateOperator"),
-                CustomContractError::WrongEntryPoint.into()
-            );
+        let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
 
-            let UpdateOperatorParams(updates): UpdateOperatorParams = update_parameter;
+        let (state, builder) = host.state_and_builder();
 
-            let (state, builder) = host.state_and_builder();
-
-            for update in updates {
-                update_operator(
-                    update.update,
-                    concordium_std::Address::Account(param.signer),
-                    update.operator,
-                    state,
-                    builder,
-                    logger,
-                )?;
-            }
+        for update in updates {
+            update_operator(
+                update.update,
+                concordium_std::Address::Account(param.signer),
+                update.operator,
+                state,
+                builder,
+                logger,
+            )?;
         }
+    } else {
+        bail!(CustomContractError::WrongEntryPoint.into())
     }
+
+    // Log the nonce event.
+    logger.log(&Event::Nonce(NonceEvent {
+        account: param.signer,
+        nonce,
+    }))?;
 
     Ok(())
 }
@@ -1281,25 +1321,26 @@ mod tests {
     const TOKEN_2: ContractTokenId = TokenIdU32(2);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        103, 138, 104, 50, 244, 159, 59, 16, 71, 249, 142, 17, 182, 215, 161, 100, 65, 22, 155,
-        240, 200, 255, 231, 228, 121, 14, 34, 98, 98, 103, 242, 94,
+        196, 192, 27, 118, 180, 235, 162, 76, 181, 221, 105, 143, 190, 189, 85, 134, 52, 138, 64,
+        83, 146, 41, 250, 203, 19, 160, 187, 176, 134, 129, 40, 223,
     ]);
+
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         55, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234, 165,
         234, 138, 118, 62, 147, 74, 134, 113, 205, 126, 68, 100, 153,
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        203, 73, 42, 128, 90, 58, 44, 228, 226, 73, 83, 152, 194, 21, 49, 144, 245, 45, 239, 165,
-        9, 159, 58, 84, 190, 199, 224, 224, 156, 221, 178, 134, 208, 49, 28, 154, 86, 253, 152, 87,
-        171, 218, 197, 106, 119, 171, 50, 36, 135, 47, 111, 32, 116, 190, 125, 104, 100, 195, 101,
-        136, 250, 248, 254, 13,
+        79, 231, 200, 150, 120, 153, 22, 115, 11, 79, 97, 141, 103, 19, 132, 154, 37, 39, 219, 190,
+        193, 184, 27, 127, 53, 125, 7, 124, 80, 214, 25, 62, 255, 183, 66, 184, 214, 189, 103, 248,
+        194, 61, 88, 91, 91, 8, 26, 228, 240, 168, 207, 102, 62, 219, 199, 114, 163, 111, 76, 207,
+        44, 237, 247, 14,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        155, 195, 173, 151, 126, 107, 35, 242, 98, 134, 20, 120, 143, 37, 177, 59, 198, 142, 60,
-        128, 24, 3, 2, 100, 52, 75, 95, 54, 62, 74, 4, 30, 97, 53, 192, 123, 16, 12, 48, 88, 57,
-        100, 84, 137, 190, 231, 36, 114, 179, 212, 183, 253, 114, 176, 219, 180, 254, 113, 71, 3,
-        141, 235, 83, 2,
+        199, 118, 105, 210, 22, 171, 213, 228, 149, 203, 70, 231, 248, 87, 225, 32, 37, 162, 157,
+        196, 35, 162, 118, 67, 240, 216, 252, 220, 26, 188, 162, 139, 227, 216, 174, 67, 1, 212,
+        152, 186, 181, 41, 109, 125, 180, 110, 208, 239, 88, 52, 140, 39, 151, 237, 242, 15, 107,
+        95, 243, 239, 192, 51, 175, 5,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
@@ -1959,8 +2000,8 @@ mod tests {
                     subindex: 0,
                 },
                 entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
-                nonce:            1,
-                payload:          PermitPayload::Transfer(payload),
+                nonce:            0,
+                payload:          to_bytes(&payload),
             },
         };
 
@@ -2007,7 +2048,7 @@ mod tests {
         );
 
         // Check the logs.
-        claim_eq!(logger.logs.len(), 2, "Two events should be logged");
+        claim_eq!(logger.logs.len(), 3, "Three events should be logged");
         claim_eq!(
             logger.logs[1],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
@@ -2016,7 +2057,15 @@ mod tests {
                 token_id: TOKEN_2,
                 amount:   ContractTokenAmount::from(1),
             })),
-            "Incorrect event emitted"
+            "Incorrect transfer event logged"
+        );
+        claim_eq!(
+            logger.logs[2],
+            to_bytes(&Event::Nonce(NonceEvent {
+                account: ACCOUNT_1,
+                nonce:   0,
+            })),
+            "Incorrect nonce event logged"
         )
     }
 
@@ -2081,8 +2130,8 @@ mod tests {
                     subindex: 0,
                 },
                 entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
-                nonce:            1,
-                payload:          PermitPayload::UpdateOperator(payload),
+                nonce:            0,
+                payload:          to_bytes(&payload),
             },
         };
 
@@ -2101,7 +2150,7 @@ mod tests {
         claim!(is_operator, "Account should be an operator");
 
         // Check the logs.
-        claim_eq!(logger.logs.len(), 2, "Two events should be logged");
+        claim_eq!(logger.logs.len(), 3, "Three events should be logged");
         claim_eq!(
             logger.logs[1],
             to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
@@ -2111,7 +2160,15 @@ mod tests {
                     update:   OperatorUpdate::Add,
                 }
             )),
-            "Incorrect event emitted"
+            "Incorrect update operator event logged"
+        );
+        claim_eq!(
+            logger.logs[2],
+            to_bytes(&Event::Nonce(NonceEvent {
+                account: ACCOUNT_1,
+                nonce:   0,
+            })),
+            "Incorrect nonce event logged"
         )
     }
 }
