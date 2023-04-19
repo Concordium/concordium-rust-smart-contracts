@@ -83,7 +83,7 @@ pub enum CredentialStatus {
 pub struct CredentialData {
     holder_id:            PublicKeyEd25519,
     is_holder_revocable:  bool,
-    commitment:           [u8; 48],
+    commitment:           Vec<u8>,
     schema:               String,
     serialization_schema: Vec<String>,
     valid_from:           Option<Timestamp>,
@@ -387,7 +387,7 @@ fn contract_register_credeintial<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_credeintial<S: HasStateApi>(
+fn contract_update_credential<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -463,6 +463,7 @@ fn authorize_with_signature(
         .serial::<Vec<_>>(&mut message_bytes)
         .map_err(|_| ContractError::SerializationError)?;
     signing_data.serial(&mut message_bytes).map_err(|_| ContractError::SerializationError)?;
+
     // Calculate the message hash.
     let message_hash =
         crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
@@ -860,7 +861,7 @@ mod tests {
             CredentialData {
                 holder_id:            PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
                 is_holder_revocable:  Arbitrary::arbitrary(g),
-                commitment:           [0u8; 48].map(|_| Arbitrary::arbitrary(g)),
+                commitment:           Arbitrary::arbitrary(g),
                 schema:               Arbitrary::arbitrary(g),
                 serialization_schema: arbitrary_serialization_schema(g),
                 valid_from:           Arbitrary::arbitrary(g),
@@ -890,15 +891,28 @@ mod tests {
     }
 
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
+    const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
+    const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
+    const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
+    const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
+        173, 21, 96, 108, 100, 77, 217, 90, 201, 81, 175, 214, 5, 35, 177, 170, 240, 206, 97, 142,
+        229, 137, 217, 215, 110, 203, 231, 175, 119, 21, 48, 162,
+    ]);
+    const SIGNATURE: SignatureEd25519 = SignatureEd25519([
+        105, 208, 126, 24, 233, 10, 86, 192, 92, 237, 158, 194, 166, 11, 70, 7, 167, 163, 80, 225,
+        211, 21, 91, 219, 24, 175, 25, 16, 111, 18, 140, 255, 1, 5, 248, 175, 85, 20, 232, 140, 86,
+        196, 81, 192, 75, 123, 125, 197, 89, 227, 230, 118, 121, 18, 230, 240, 242, 82, 99, 232,
+        75, 118, 41, 12,
+    ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
     /// and is immediately activated.
     fn credential_entry() -> CredentialEntry {
         CredentialEntry {
             credential_data:  CredentialData {
-                holder_id:            PublicKeyEd25519([0u8; 32]),
+                holder_id:            PUBLIC_KEY,
                 is_holder_revocable:  true,
-                commitment:           [0u8; 48],
+                commitment:           [0u8; 48].to_vec(),
                 schema:               "".into(),
                 serialization_schema: Vec::new(),
                 valid_from:           None,
@@ -1073,5 +1087,217 @@ mod tests {
         } else {
             false
         }
+    }
+
+    /// Test the credential registration entrypoint.
+    /// Check that the credential was created and appropriate events were
+    /// generated.
+    #[concordium_test]
+    fn test_contract_register_credential() {
+        let credential_id = 123123123;
+        let now = Timestamp::from_timestamp_millis(0);
+        let contract = ContractAddress {
+            index:    0,
+            subindex: 0,
+        };
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_self_address(contract);
+        ctx.set_metadata_slot_time(now);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::new(&mut state_builder, issuer_metadata());
+        let mut host = TestHost::new(state, state_builder);
+
+        // Create input parameters.
+
+        let param = CredentialDataParameter {
+            credential_id,
+            credential_data: credential_entry().credential_data,
+        };
+        let parameter_bytes = to_bytes(&param);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Create a credential
+        let res = contract_register_credeintial(&ctx, &mut host, &mut logger);
+
+        // Check that it was registered successfully
+        claim!(res.is_ok(), "Credential registration failed");
+        let fetched = host
+            .state()
+            .view_credential_data(credential_id)
+            .expect_report("Credential is expected to exist");
+        claim_eq!(fetched.credential_data, credential_entry().credential_data);
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "One event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&RegisterCredentialEvent {
+                credential_id,
+                holder_id: PUBLIC_KEY,
+                schema_ref: "".to_string()
+            }),
+            "Incorrect register credential event logged"
+        );
+    }
+
+    /// Test the credential update entrypoint.
+    #[concordium_test]
+    fn test_contract_update_credential() {
+        let credential_id = 123123123;
+        let now = Timestamp::from_timestamp_millis(0);
+        let contract = ContractAddress {
+            index:    0,
+            subindex: 0,
+        };
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_self_address(contract);
+        ctx.set_metadata_slot_time(now);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::new(&mut state_builder, issuer_metadata());
+        let mut host = TestHost::new(state, state_builder);
+
+        // Create a credential to update
+        let res = host
+            .state_mut()
+            .register_credential(credential_id, &credential_entry().credential_data);
+
+        // Check that it was registered successfully
+        claim!(res.is_ok(), "Credential registration failed");
+
+        claim!(
+            credential_entry().credential_data.is_holder_revocable,
+            "Initial credential expected to be holder-revocable"
+        );
+
+        // Create input parameters.
+
+        let mut new_credential_data = credential_entry().credential_data;
+        new_credential_data.is_holder_revocable = false;
+
+        let param = CredentialDataParameter {
+            credential_id,
+            credential_data: new_credential_data.clone(),
+        };
+        let parameter_bytes = to_bytes(&param);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Create a credential
+        let res = contract_update_credential(&ctx, &mut host, &mut logger);
+
+        // Check that it was update successfully
+        claim!(res.is_ok(), "Credential update failed");
+        let fetched = host
+            .state()
+            .view_credential_data(credential_id)
+            .expect_report("Credential is expected to exist");
+        claim_eq!(fetched.credential_data, new_credential_data, "Data was not updated properly");
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "One event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&RegisterCredentialEvent {
+                credential_id,
+                holder_id: PUBLIC_KEY,
+                schema_ref: "".to_string()
+            }),
+            "Incorrect revoke credential event logged"
+        );
+    }
+
+    /// Test the revoke credential entrypoint, when the holder revokes the
+    /// credential.
+    #[concordium_test]
+    fn test_revoke_by_holder() {
+        let credential_id = 123123123;
+        let now = Timestamp::from_timestamp_millis(0);
+        let contract = ContractAddress {
+            index:    0,
+            subindex: 0,
+        };
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_invoker(ACCOUNT_1);
+        ctx.set_self_address(contract);
+        ctx.set_metadata_slot_time(now);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::new(&mut state_builder, issuer_metadata());
+        let mut host = TestHost::new(state, state_builder);
+
+        claim!(
+            credential_entry().credential_data.is_holder_revocable,
+            "Initial credential expected to be holder-revocable"
+        );
+
+        // Create a credential the holder is going to revoke
+        let res = host
+            .state_mut()
+            .register_credential(credential_id, &credential_entry().credential_data);
+
+        // Check that it was registered successfully
+        claim!(res.is_ok(), "Credential registration failed");
+
+        // Create singing data
+        let signig_data = SigningData {
+            contract_address: contract,
+            nonce:            1,
+            timestamp:        Timestamp::from_timestamp_millis(10000000000),
+        };
+
+        // Create input parematers for revocation.
+
+        let revocation_reason = "Just because";
+
+        let revoke_param = RevokeCredentialParam {
+            credential_id,
+            signed: Some((signig_data, SIGNATURE)),
+            revocation_key_index: None,
+            reason: Some(revocation_reason.to_string()),
+        };
+
+        let parameter_bytes = to_bytes(&revoke_param);
+        ctx.set_parameter(&parameter_bytes);
+
+        let crypto_primitives = TestCryptoPrimitives::new();
+        // Inovke `permit` function.
+        let result: ContractResult<()> =
+            contract_revoke_credeintial(&ctx, &mut host, &mut logger, &crypto_primitives);
+
+        // Check the result.
+        claim!(result.is_ok(), "Results in rejection: {:?}", result);
+
+        // Check the state.
+        let status = host
+            .state()
+            .view_credential_status(now, credential_id)
+            .expect_report("Credential is expected to exist");
+        claim_eq!(status, CredentialStatus::Revoked);
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "One event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&RevokeCredentialEvent {
+                credential_id,
+                holder_id: PUBLIC_KEY,
+                revoker: Revoker::Holder,
+                reason: Some(revocation_reason.to_string())
+            }),
+            "Incorrect revoke credential event logged"
+        );
     }
 }

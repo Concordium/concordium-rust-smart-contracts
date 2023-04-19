@@ -9,10 +9,10 @@ authors = [ "Danil Annenkov <danil.v.annenkov@gmail.com>" ]
 description = "An example credential registry smart contract"
 
 [features]
-default = ["std"]
+default = ["std", "crypto-primitives", "wee_alloc"]
 std = ["concordium-std/std", "concordium-cis2/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
-
+crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
