@@ -27,6 +27,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/credential-registry/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
@@ -439,6 +440,7 @@ jobs:
           - examples/nametoken/Cargo.toml
           - examples/signature-verifier/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
+          - examples/credential-registry/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -477,6 +479,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/credential-registry/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
@@ -601,6 +604,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/credential-registry/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
