@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Bump Rust edition to `2021`.
+
 ## concordium-std 6.1.1 (2023-03-16)
 
 - Bump contracts-common to 5.3.1.
