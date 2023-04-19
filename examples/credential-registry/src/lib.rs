@@ -1209,7 +1209,7 @@ mod tests {
                 holder_id: PUBLIC_KEY,
                 schema_ref: "".to_string()
             }),
-            "Incorrect revoke credential event logged"
+            "Incorrect update credential event logged"
         );
     }
 
