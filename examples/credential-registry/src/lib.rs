@@ -807,15 +807,6 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     Ok(())
 }
 
-/// View function that returns the content of the state.
-#[receive(contract = "credential_registry", name = "view", return_value = "State")]
-fn view<'b, S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &'b impl HasHost<State<S>, StateApiType = S>,
-) -> ReceiveResult<&'b State<S>> {
-    Ok(host.state())
-}
-
 #[concordium_cfg_test]
 mod tests {
 
