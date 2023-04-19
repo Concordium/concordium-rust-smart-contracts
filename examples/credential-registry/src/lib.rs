@@ -293,7 +293,7 @@ fn sender_is_owner(ctx: &impl HasReceiveContext) -> bool {
 #[receive(
     contract = "credential_registry",
     name = "viewCredentialEntry",
-    parameter = "Uuid",
+    parameter = "Uuidv4",
     error = "ContractError",
     return_value = "CredentialEntry"
 )]
@@ -314,7 +314,7 @@ fn contract_view_credential_entry<S: HasStateApi>(
 #[receive(
     contract = "credential_registry",
     name = "viewCredentialStatus",
-    parameter = "Uuid",
+    parameter = "Uuidv4",
     error = "ContractError",
     return_value = "CredentialStatus"
 )]
@@ -1090,8 +1090,6 @@ mod tests {
     }
 
     /// Test the credential registration entrypoint.
-    /// Check that the credential was created and appropriate events were
-    /// generated.
     #[concordium_test]
     fn test_contract_register_credential() {
         let credential_id = 123123123;
