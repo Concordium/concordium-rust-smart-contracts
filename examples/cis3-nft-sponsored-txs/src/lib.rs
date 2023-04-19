@@ -319,7 +319,7 @@ struct PermitMessage {
     entry_point:      OwnedEntrypointName,
     /// The serialized payload that should be forwarded to either the `transfer`
     /// or the `updateOperator` function.
-    #[size_length = 2]
+    #[concordium(size_length = 2)]
     payload:          Vec<u8>,
 }
 
