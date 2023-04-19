@@ -235,8 +235,8 @@ pub trait HasStateApi: Clone {
 
     /// Serialize and write the state at the root of the state trie. Dual to
     /// [`read_root`](Self::read_root).
-    fn write_root<A: Serial>(&mut self, new_root: &A) {
-        new_root.serial(&mut self.create_entry(&[]).unwrap_abort()).unwrap_abort()
+    fn write_root<A: Serial>(&mut self, new_state: &A) {
+        new_state.serial(&mut self.create_entry(&[]).unwrap_abort()).unwrap_abort()
     }
 }
 
