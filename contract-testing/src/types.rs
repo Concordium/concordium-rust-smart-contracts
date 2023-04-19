@@ -4,7 +4,7 @@ use concordium_base::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
-    smart_contracts::{ContractEvent, ContractTraceElement, WasmVersion},
+    smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
 };
 use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
 use concordium_wasm::artifact;
@@ -304,6 +304,47 @@ impl ContractInvokeSuccess {
         self.trace_elements.iter().flat_map(|cte| {
             if let ContractTraceElement::Transferred { from, amount, to } = cte {
                 Some((*from, *amount, *to))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get the trace elements grouped by which contract they originated
+    /// from.
+    pub fn trace_elements(&self) -> BTreeMap<ContractAddress, Vec<ContractTraceElement>> {
+        let mut map: BTreeMap<ContractAddress, Vec<ContractTraceElement>> = BTreeMap::new();
+        for event in self.trace_elements.iter() {
+            map.entry(Self::extract_contract_address(event))
+                .and_modify(|v| v.push(event.clone()))
+                .or_insert_with(|| vec![event.clone()]);
+        }
+        map
+    }
+
+    /// Get the contract address that this event relates to.
+    /// This means the `address` field for all variant except `Transferred`,
+    /// where it returns the `from`.
+    fn extract_contract_address(element: &ContractTraceElement) -> ContractAddress {
+        match element {
+            ContractTraceElement::Interrupted { address, .. } => *address,
+            ContractTraceElement::Resumed { address, .. } => *address,
+            ContractTraceElement::Upgraded { address, .. } => *address,
+            ContractTraceElement::Updated {
+                data: InstanceUpdatedEvent { address, .. },
+            } => *address,
+            ContractTraceElement::Transferred { from, .. } => *from,
+        }
+    }
+
+    /// Get the contract updates that happened in the transaction.
+    /// The order is the order of returns. Concretely, if A calls B (and no
+    /// other calls are made) then first there will be "B updated" event,
+    /// followed by "A updated", assuming the invocation of both succeeded.
+    pub fn updates(&self) -> impl Iterator<Item = &InstanceUpdatedEvent> {
+        self.trace_elements.iter().filter_map(|e| {
+            if let ContractTraceElement::Updated { data } = e {
+                Some(data)
             } else {
                 None
             }
