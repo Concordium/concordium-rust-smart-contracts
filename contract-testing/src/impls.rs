@@ -1227,6 +1227,22 @@ impl ContractInvokeSuccess {
     }
 }
 
+impl ContractInvokeError {
+    /// Try to extract the value returned.
+    ///
+    /// This only returns `Some` if the contract rejected on its own.
+    /// As opposed to when it runs out of energy, traps, or similar, in which
+    /// case there won't be a return value.
+    pub fn return_value(&self) -> Option<&[u8]> {
+        match &self.kind {
+            ContractInvokeErrorKind::ExecutionError {
+                failure_kind: v1::InvokeFailure::ContractReject { data, .. },
+            } => Some(data),
+            _ => None,
+        }
+    }
+}
+
 impl From<InsufficientEnergy> for ContractInitErrorKind {
     #[inline(always)]
     fn from(_: InsufficientEnergy) -> Self { Self::OutOfEnergy }
