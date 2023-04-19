@@ -1,0 +1,19 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "reentrancy"
+version = "0.1.0"
+edition = "2018"
+license = "MPL-2.0"
+authors = [ "Danil Annenkov <danil.v.annenkov@gmail.com>" ]
+description = "Reentrancy example"
+
+[dependencies]
+concordium-std = "5.1"
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1

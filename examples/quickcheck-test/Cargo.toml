@@ -1,0 +1,26 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "quickcheck_test"
+version = "0.1.0"
+edition = "2018"
+license = "MPL-2.0"
+authors = [ "Danil Annenkov <danil.v.annenkov@gmail.com>" ]
+description = "Minimal QuickCheck test example"
+
+[features]
+default = ["std"]
+
+std = ["concordium-std/std"]
+
+[dependencies]
+concordium-std = { version = "5", path = "../../concordium-std", default-features = false }
+
+[dev-dependencies]
+concordium-std = { version = "5", path = "../../concordium-std", features = ["concordium-quickcheck"] }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3

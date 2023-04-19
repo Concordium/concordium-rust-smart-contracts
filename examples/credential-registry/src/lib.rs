@@ -1,4 +1,38 @@
-//! # Credential registry
+//! This smart contract implements an example on-chain registry for the public
+//! part of verifiable credentials (VCs).
+//!
+//! # Description
+//!
+//! The contract keeps track of credential public data, allows for managing the
+//! VC life cycle and querying VCs data and status. The intended users are
+//! issuers of VCs, holders of VCs, revocation authorities and verifiers.
+//!
+//! ## Issuer's  functionality
+//!
+//! - registration of a new credential;
+//! - updating an existing credential;
+//! - revoking a credential;
+//! - register a public key;
+//! - register a revocation authority key.
+//!
+//! Revocation authorities are some entities chosen by the issuer that has
+//! revocation capabilities. Their public keys are registered by the issuer and
+//! a revocation authority signs a revocation message with the corresponding
+//! secret key.
+//!
+//! ## Holder's functionality
+//!
+//! - revoking a credential by signing a revocation message.
+//!
+//! Revocation authority's functionality
+//!
+//! - revoking a credential by signing a revocation message.
+//!
+//! ## Verifier's functionality
+//!
+//! - view credential status to verify VC validity.
+//! - view credential data to verify proofs (verifiable presentations) requested
+//!   from holders.
 use concordium_cis2::MetadataUrl;
 use concordium_std::*;
 use core::fmt::Debug;
@@ -32,6 +66,8 @@ struct RevokeCredentialEvent {
     reason:        Option<String>,
 }
 
+/// The type of credential identifiers.
+/// The uuidv4 identifier is generated extenrcally by the issuer.
 type Uuidv4 = u128;
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
@@ -42,6 +78,7 @@ pub enum CredentialStatus {
     NotActivated,
 }
 
+/// Public verifiable credential data
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialData {
     holder_id:            PublicKeyEd25519,
@@ -53,14 +90,20 @@ pub struct CredentialData {
     valid_until:          Option<Timestamp>,
 }
 
+/// Public verifiable credential data, revocation flag and nonce
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialEntry {
     credential_data:  CredentialData,
+    /// The nonce is used to avoid replay attacks when checking the holder's
+    /// signature on a revocation message.
     revocation_nonce: u64,
     is_revoked:       bool,
 }
 
 impl CredentialEntry {
+    /// Compute the credential status based on validity dates and the revocation
+    /// flag. If a VC is revoked the status will be `Revoked` regardless the
+    /// validity dates.
     fn get_status(&self, now: Timestamp) -> CredentialStatus {
         if self.is_revoked {
             return CredentialStatus::Revoked;
@@ -75,7 +118,7 @@ impl CredentialEntry {
     }
 }
 
-/// The registry state
+/// The registry state.
 // NOTE: keys are stored in a map, so one can refer to the keys by "names" in this case represented
 // by numbers. The keys could be removed and added, but external references (e.g. in DIDs) should
 // still be valid (unless a key was deliberatly removed)
@@ -88,10 +131,9 @@ pub struct State<S> {
     credentials:     StateMap<Uuidv4, CredentialEntry, S>,
 }
 
-/// Errors.
+/// Contract Errors.
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum ContractError {
-    /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParamsError,
     CredentialNotFound,
@@ -120,7 +162,7 @@ impl From<LogError> for ContractError {
 
 type ContractResult<A> = Result<A, ContractError>;
 
-// Functions for creating, updating and querying the contract state.
+/// Functions for creating, updating and querying the contract state.
 impl<S: HasStateApi> State<S> {
     fn new(state_builder: &mut StateBuilder<S>, issuer_metadata: MetadataUrl) -> Self {
         State {
@@ -169,9 +211,9 @@ impl<S: HasStateApi> State<S> {
         credential_id: Uuidv4,
         credential_data: &CredentialData,
     ) -> ContractResult<()> {
-        self.credentials
-            .get_mut(&credential_id)
-            .map(|mut x| x.credential_data = credential_data.clone());
+        let mut registry_entry =
+            self.credentials.entry(credential_id).occupied_or(ContractError::CredentialNotFound)?;
+        registry_entry.credential_data = credential_data.clone();
         Ok(())
     }
 
@@ -228,7 +270,8 @@ impl<S: HasStateApi> State<S> {
     }
 }
 
-/// Init function that creates a new smart contract.
+/// Init function that creates a fresh registry state given the issuer's
+/// metadata
 #[init(contract = "credential_registry")]
 fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
@@ -242,6 +285,11 @@ fn sender_is_owner(ctx: &impl HasReceiveContext) -> bool {
     ctx.sender().matches_account(&ctx.owner())
 }
 
+/// A view entrypoint for looking up an entry in the registry by id.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The credential with the given id does not exist.
 #[receive(
     contract = "credential_registry",
     name = "viewCredentialEntry",
@@ -258,6 +306,11 @@ fn contract_view_credential_entry<S: HasStateApi>(
     Ok(data)
 }
 
+/// A view entrypoint querying the credential's status.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The credential with the given id does not exist.
 #[receive(
     contract = "credential_registry",
     name = "viewCredentialStatus",
@@ -275,12 +328,23 @@ fn contract_view_credential_status<S: HasStateApi>(
     Ok(status)
 }
 
+/// Data for registering and updating a credential registy entry.
 #[derive(Serial, Deserial, SchemaType)]
 pub struct CredentialDataParameter {
     credential_id:   Uuidv4,
     credential_data: CredentialData,
 }
 
+/// Register a new credential with the given id and data.
+/// Logs RegisterCredentialEvent.
+///
+/// Can be called by the owner only.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The caller is not the contract's owner
+/// - An entry with the given credential id already exists
+/// - Fails to log RegisterCredentialEvent event
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
@@ -305,6 +369,16 @@ fn contract_register_credeintial<S: HasStateApi>(
     Ok(())
 }
 
+/// Update an existing credential with the given id and data.
+/// Logs UpdateCredentialEvent.
+///
+/// Can be called by the owner only.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The caller is not the contract's owner
+/// - An entry with the given credential id does not exist
+/// - Fails to log UpdateCredentialEvent event
 #[receive(
     contract = "credential_registry",
     name = "updateCredential",
@@ -354,8 +428,7 @@ pub struct RevokeCredentialParam {
     reason:               Option<String>,
 }
 
-/// Performs authorization based on the signature and a public key
-///
+/// Performs authorization based on the signature and the public key
 /// The message is build from serialized `credential_id` and `signing_data`
 fn authorize_with_signature(
     crypto_primitives: &impl HasCryptoPrimitives,
@@ -402,6 +475,36 @@ fn authorize_with_signature(
     Ok(())
 }
 
+/// Revoke a credential.
+///
+/// Authentication depends on who is revoking.
+///
+/// - If the message is not signed, it is assumed that the issuer is calling the
+///   entrypoint.
+///  In this case, check whether the caller is if the caller is the contract's
+/// owner.
+/// - If the message is signed and no key index is given, it is assumed that the
+///   holder is calling the entrypoint.
+///  In this case, verify the signature with the holder's public key, which is
+/// stored in the credential entry (`holder_id`).
+/// - If the message is signed and a key index is given, it is assumed that a
+///   revocation authority is calling the entrypoint.
+///  In this case, verify the signature with the revocation authority's public
+/// key, which is stored in `revocation_keys`.
+///
+///  Logs RevokeCredentialEvent with the revoker defined as it is described
+/// above.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Depening on the authentication
+///     - issuer: The caller is not the contract's owner
+///     - holder: signature validation has failed
+///     - revocation authority: no entry for the key index or signature
+///       validation has failed
+/// - An entry with the given credential id does not exist
+/// - The credential status is not one of `Active` or `NotActivated`
+/// - Fails to log UpdateCredentialEvent event
 #[receive(
     contract = "credential_registry",
     name = "revokeCredential",
@@ -522,6 +625,14 @@ pub struct RegisterPublicKeyParameters(
     #[concordium(size_length = 2)] pub Vec<RegisterPublicKeyParameter>,
 );
 
+/// Register the issuer's public keys.
+/// These keys are for off-chain use only. The registry is just used as a
+/// storage and some credentials issued off-chain can be signed with the
+/// issuer's keys.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Some of the key indices already exist.
 #[receive(
     contract = "credential_registry",
     name = "registerIssuerKeys",
@@ -541,6 +652,11 @@ fn contract_register_issuer_keys<S: HasStateApi>(
     Ok(())
 }
 
+/// Remove the issuer's public keys.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Some of the key indices does not exist.
 #[derive(Serialize, SchemaType)]
 pub struct RemovePublicKeyParameters(#[concordium(size_length = 2)] pub Vec<u8>);
 
@@ -551,7 +667,7 @@ pub struct RemovePublicKeyParameters(#[concordium(size_length = 2)] pub Vec<u8>)
     error = "ContractError",
     mutable
 )]
-fn contract_remove_issuer_key<S: HasStateApi>(
+fn contract_remove_issuer_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
@@ -563,6 +679,14 @@ fn contract_remove_issuer_key<S: HasStateApi>(
     Ok(())
 }
 
+/// Register revocation authorities public keys.
+/// These keys are used to authorize the revocation (applies to the whole
+/// registry). Only the owner can call the entrypoint.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Some of the key indices already exist.
+/// - The caller is not the contract's owner.
 #[receive(
     contract = "credential_registry",
     name = "registerRevocationKeys",
@@ -582,6 +706,13 @@ fn contract_register_revocation_keys<S: HasStateApi>(
     Ok(())
 }
 
+/// Remove revocation authorities public keys.
+/// Only the owner can call the entrypoint.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Some of the key indices do not exist.
+/// - The caller is not the contract's owner.
 #[receive(
     contract = "credential_registry",
     name = "removeRevocationKeys",
@@ -601,6 +732,12 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     Ok(())
 }
 
+/// A view entrypoint for looking up a revocation key.
+/// Returns a public key and the nonce.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The revocation key index does not exist.
 #[receive(
     contract = "credential_registry",
     name = "viewRevocationKey",
@@ -616,6 +753,7 @@ fn contract_view_revocation_key<S: HasStateApi>(
     host.state().view_revocation_key(index)
 }
 
+/// A view entrypoint that returns a vector of issuer's keys.
 #[receive(
     contract = "credential_registry",
     name = "viewIssuerKeys",
@@ -630,6 +768,10 @@ fn contract_view_issuer_keys<S: HasStateApi>(
     Ok(keys)
 }
 
+/// A vew entrypoint to get the metadata URL and checksum.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
 #[receive(
     contract = "credential_registry",
     name = "viewIssuerMetadata",
@@ -643,6 +785,10 @@ fn contract_view_issuer_metadata<S: HasStateApi>(
     Ok(host.state().view_issuer_metadata())
 }
 
+/// Update issuer's metadata
+///
+/// It rejects if:
+///  - It fails to parse the parameter.
 #[receive(
     contract = "credential_registry",
     name = "updateIssuerMetadata",
