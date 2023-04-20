@@ -516,7 +516,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ${{ matrix.withquickcheck }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/quickcheck -- -D warnings
+          args: --manifest-path ${{ matrix.withquickcheck }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/concordium-quickcheck -- -D warnings
 
   test:
     name: Test the library
