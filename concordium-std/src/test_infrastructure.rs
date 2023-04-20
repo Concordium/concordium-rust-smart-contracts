@@ -908,7 +908,6 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
     ) -> bool {
         #[cfg(feature = "crypto-primitives")]
         {
-            use std::convert::TryFrom;
             let signature = ed25519_zebra::Signature::try_from(&signature.0[..]);
             let public_key = ed25519_zebra::VerificationKey::try_from(&public_key.0[..]);
             match (signature, public_key) {
