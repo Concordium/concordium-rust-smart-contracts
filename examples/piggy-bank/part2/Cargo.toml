@@ -21,8 +21,5 @@ wee_alloc = ["concordium-std/wee_alloc"]
 version = "6"
 default-features = false
 
-[dev-dependencies]
-concordium-smart-contract-testing = { path = "../../../../concordium-smart-contract-tools/concordium-smart-contract-testing", version = "1.0" }
-
 [profile.release]
 opt-level = 3
