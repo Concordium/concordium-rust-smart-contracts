@@ -488,7 +488,7 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
 
-        crates_requiring_quickcheck:
+        withquickcheck:
           - examples/two-step-transfer/Cargo.toml
 
     steps:
@@ -516,7 +516,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path ${{ matrix.crates_requiring_quickcheck }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/quickcheck -- -D warnings
+          args: --manifest-path ${{ matrix.withquickcheck }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/quickcheck -- -D warnings
 
   test:
     name: Test the library

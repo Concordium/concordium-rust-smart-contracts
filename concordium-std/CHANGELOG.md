@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add `write_root` helper function to write the root of the state trie. This is
+  useful in migrations when upgrading smart contracts.
 - Bump Rust edition to `2021`.
 
 ## concordium-std 6.1.1 (2023-03-16)

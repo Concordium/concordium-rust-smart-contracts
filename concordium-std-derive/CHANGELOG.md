@@ -2,6 +2,7 @@
  
 ## Unreleased changes
 
+- Fix `derive(SchemaType)` macro so that it allows the `concordium` attribute.
 - Bump Rust edition to `2021`.
 
 ## concordium-std-derive 5.1.0 (2022-12-14)
