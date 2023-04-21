@@ -66,8 +66,8 @@ struct RevokeCredentialEvent {
     reason:        Option<String>,
 }
 
-/// The type of credential identifiers.
-/// The uuidv4 identifier is generated extenrcally by the issuer.
+/// The type for a credential identifier.
+/// The uuidv4 identifier is generated externally by the issuer.
 type Uuidv4 = u128;
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
@@ -108,7 +108,7 @@ impl CredentialEntry {
         if self.is_revoked {
             return CredentialStatus::Revoked;
         }
-        if self.credential_data.valid_until.map_or(false, |x| (x < now) && !self.is_revoked) {
+        if self.credential_data.valid_until.map_or(false, |x| x < now) {
             return CredentialStatus::Expired;
         }
         if self.credential_data.valid_from.map_or(false, |x| now < x) {
