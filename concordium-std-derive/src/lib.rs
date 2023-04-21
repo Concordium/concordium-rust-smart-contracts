@@ -1528,7 +1528,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                 matches_tokens.extend(quote! {
                     #idx_lit => {
                         #field_tokens
-                        Ok(#data_name::#variant_ident#pattern)
+                        Ok(#data_name::#variant_ident #pattern)
                     },
                 })
             }
@@ -2259,7 +2259,7 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 let variant_ident = &variant.ident;
 
                 matches_tokens.extend(quote! {
-                    #data_name::#variant_ident#pattern => {
+                    #data_name::#variant_ident #pattern => {
                         #field_tokens
                     },
                 })
@@ -2408,7 +2408,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!({#field_names});
-                        (quote!(#data_name::#variant_ident#pattern), pattern)
+                        (quote!(#data_name::#variant_ident #pattern), pattern)
                     }
                     syn::Fields::Unnamed(_) => {
                         for i in 0..variant.fields.len() {
@@ -2417,17 +2417,17 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!((#field_names));
-                        (quote!(#data_name::#variant_ident#pattern), pattern)
+                        (quote!(#data_name::#variant_ident #pattern), pattern)
                     }
                     syn::Fields::Unit => (
-                        quote!(#data_name::#variant_ident#field_names),
+                        quote!(#data_name::#variant_ident #field_names),
                         proc_macro2::TokenStream::new(),
                     ),
                 };
                 let variant_ident = &variant.ident;
 
                 matches_tokens.extend(quote! {
-                    #data_name::#variant_ident#pattern => {
+                    #data_name::#variant_ident #pattern => {
                         #field_tokens
                         #return_tokens
                     },
