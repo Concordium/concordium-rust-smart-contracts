@@ -111,7 +111,8 @@ pub struct ModuleDeploySuccess {
 }
 
 /// An error that occured while deploying a [`ContractModule`].
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Module deployment failed due to: {kind}")]
 pub struct ModuleDeployError {
     /// The energy used for deployment.
     pub energy_used:     Energy,
@@ -193,7 +194,8 @@ pub struct ContractInitSuccess {
 }
 
 /// An error that occured in [`Chain::contract_init`].
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Contract initialization failed due to: {kind}")]
 pub struct ContractInitError {
     /// Energy used.
     pub energy_used:     Energy,
@@ -354,7 +356,8 @@ impl ContractInvokeSuccess {
 
 /// An error that occured during a [`Chain::contract_update`] or
 /// [`Chain::contract_invoke`].
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Contract invoke or update failed due to: {kind}")]
 pub struct ContractInvokeError {
     /// The energy used.
     pub energy_used:     Energy,
