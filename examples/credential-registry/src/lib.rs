@@ -37,38 +37,37 @@ use concordium_cis2::MetadataUrl;
 use concordium_std::*;
 use core::fmt::Debug;
 
-#[derive(Serialize, SchemaType)]
-struct RegisterCredentialEvent {
-    credential_id: Uuidv4,
-    holder_id:     PublicKeyEd25519,
-    schema_ref:    String,
-}
-
-#[derive(Serialize, SchemaType)]
-struct UpdateCredentialEvent {
-    credential_id: Uuidv4,
-    holder_id:     PublicKeyEd25519,
-    schema_ref:    String,
-}
-
-#[derive(Serialize, SchemaType)]
-enum Revoker {
-    Issuer,
-    Holder,
-    Other(PublicKeyEd25519),
-}
-
-#[derive(Serialize, SchemaType)]
-struct RevokeCredentialEvent {
-    credential_id: Uuidv4,
-    holder_id:     PublicKeyEd25519,
-    revoker:       Revoker,
-    reason:        Option<String>,
-}
-
 /// The type for a credential identifier.
 /// The uuidv4 identifier is generated externally by the issuer.
-type Uuidv4 = u128;
+/// The schema for the identifier does not support the usual textual
+/// representation of uuid, it is treated as a `u128` number.
+#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
+struct Uuidv4 {
+    id: u128,
+}
+
+impl From<u128> for Uuidv4 {
+    fn from(id: u128) -> Self {
+        Uuidv4 {
+            id,
+        }
+    }
+}
+
+/// A schema reference is a schema URL or DID address pointing to the JSON
+/// schema for a verifiable credential.
+#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
+struct SchemaRef {
+    schema_ref: String,
+}
+
+impl From<String> for SchemaRef {
+    fn from(schema_ref: String) -> Self {
+        SchemaRef {
+            schema_ref,
+        }
+    }
+}
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum CredentialStatus {
@@ -81,12 +80,26 @@ pub enum CredentialStatus {
 /// Public verifiable credential data
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialData {
+    /// The holder's identifier is a public key.
     holder_id:            PublicKeyEd25519,
+    /// If this flag is set to `true` the holder can send a signed message to
+    /// revoke their credential.
     is_holder_revocable:  bool,
+    /// A vector Pedersen comminment to the attributes of the verifiable
+    /// credential.
     commitment:           Vec<u8>,
-    schema:               String,
+    /// A reference to the credential's JSON schema. It also sevres as the
+    /// credential type.
+    schema_ref:           SchemaRef,
+    /// A sequence of atrubutes defining the attribute ordering in the vector
+    /// commitment.
     serialization_schema: Vec<String>,
+    /// The date from which the credential is considered valid. `None`
+    /// corresponsds to a credential that is valid immediately after being
+    /// issued.
     valid_from:           Option<Timestamp>,
+    /// After this date, the credential becomes expired. `None` corresponds to a
+    /// credential that cannot expire.
     valid_until:          Option<Timestamp>,
 }
 
@@ -270,6 +283,77 @@ impl<S: HasStateApi> State<S> {
     }
 }
 
+/// Data for events of registering and updating a credential.
+/// Used by the tagged event `CredentialEvent`.
+#[derive(Serialize, SchemaType)]
+struct CredentialEventData {
+    /// An identifier of a credential being registered/updated.
+    credential_id: Uuidv4,
+    /// A public key of the credential's holder.
+    holder_id:     PublicKeyEd25519,
+    /// A reference to the credential JSON schema.
+    schema_ref:    SchemaRef,
+}
+
+/// A type for specifying who is revoking a credential, when registering a
+/// revocation event.
+#[derive(Serialize, SchemaType)]
+enum Revoker {
+    Issuer,
+    Holder,
+    /// `Other` is used for the cases when the revoker is not the issuer or
+    /// holder. In this contract it is a revocation authority, which is
+    /// identified using ther public key.
+    Other(PublicKeyEd25519),
+}
+
+/// Revocation reason.
+/// The string is of a limited size of 256 bytes in order to fit into a single
+/// log entry along with other data logged on revocation.
+#[derive(Serialize, SchemaType)]
+struct RevokeReason {
+    #[concordium(size_length = 1)]
+    reason: String,
+}
+
+impl From<String> for RevokeReason {
+    fn from(reason: String) -> Self {
+        RevokeReason {
+            reason,
+        }
+    }
+}
+
+/// An untagged revocation event.
+/// For a tagged version use `CredentialEvent`.
+#[derive(Serialize, SchemaType)]
+struct RevokeCredentialEvent {
+    /// An identifier of a credential being revoked.
+    credential_id: Uuidv4,
+    /// A public key of the credential's holder.
+    holder_id:     PublicKeyEd25519,
+    /// Who revokes the credential.
+    revoker:       Revoker,
+    /// An optional text clarifying the revocation reasons.
+    /// The issuer can use this field to comment on the revocation, so the
+    /// holder can observe it in the wallet.
+    reason:        Option<RevokeReason>,
+}
+
+/// Tagged credential registry event.
+/// This version should be used for logging the events.
+#[derive(Serialize, SchemaType)]
+enum CredentialEvent {
+    /// Credential registration event. Logged when an entry in the registry is
+    /// created for the first time.
+    Register(CredentialEventData),
+    /// Credential update event. Logged when updating an existing credential
+    /// entry.
+    Update(CredentialEventData),
+    /// Credentila revocation event.
+    Revoke(RevokeCredentialEvent),
+}
+
 /// Init function that creates a fresh registry state given the issuer's
 /// metadata
 #[init(contract = "credential_registry")]
@@ -361,11 +445,11 @@ fn contract_register_credeintial<S: HasStateApi>(
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
     let parameter: CredentialDataParameter = ctx.parameter_cursor().get()?;
     host.state_mut().register_credential(parameter.credential_id, &parameter.credential_data)?;
-    logger.log(&RegisterCredentialEvent {
+    logger.log(&CredentialEvent::Register(CredentialEventData {
         credential_id: parameter.credential_id,
         holder_id:     parameter.credential_data.holder_id,
-        schema_ref:    parameter.credential_data.schema,
-    })?;
+        schema_ref:    parameter.credential_data.schema_ref,
+    }))?;
     Ok(())
 }
 
@@ -395,11 +479,11 @@ fn contract_update_credential<S: HasStateApi>(
     ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
     let parameter: CredentialDataParameter = ctx.parameter_cursor().get()?;
     host.state_mut().update_credential(parameter.credential_id, &parameter.credential_data)?;
-    logger.log(&UpdateCredentialEvent {
+    logger.log(&CredentialEvent::Update(CredentialEventData {
         credential_id: parameter.credential_id,
         holder_id:     parameter.credential_data.holder_id,
-        schema_ref:    parameter.credential_data.schema,
-    })?;
+        schema_ref:    parameter.credential_data.schema_ref,
+    }))?;
     Ok(())
 }
 
@@ -425,7 +509,7 @@ pub struct RevokeCredentialParam {
     credential_id:        Uuidv4,
     signed:               Option<(SigningData, SignatureEd25519)>,
     revocation_key_index: Option<u8>,
-    reason:               Option<String>,
+    reason:               Option<RevokeReason>,
 }
 
 /// Performs authorization based on the signature and the public key
@@ -825,6 +909,30 @@ mod tests {
         "123",
     ];
 
+    impl Arbitrary for Uuidv4 {
+        fn arbitrary(g: &mut Gen) -> Uuidv4 {
+            Uuidv4 {
+                id: Arbitrary::arbitrary(g),
+            }
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            Box::new(self.id.shrink().map(|id| id.into()))
+        }
+    }
+
+    impl Arbitrary for SchemaRef {
+        fn arbitrary(g: &mut Gen) -> SchemaRef {
+            SchemaRef {
+                schema_ref: Arbitrary::arbitrary(g),
+            }
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            Box::new(self.schema_ref.shrink().map(|x| x.into()))
+        }
+    }
+
     // Generate a random string with the probability 1/8, otherwise pick a name from
     // a predefined list
     fn arbitrary_attr_name(g: &mut Gen) -> String {
@@ -853,7 +961,7 @@ mod tests {
                 holder_id:            PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
                 is_holder_revocable:  Arbitrary::arbitrary(g),
                 commitment:           Arbitrary::arbitrary(g),
-                schema:               Arbitrary::arbitrary(g),
+                schema_ref:           Arbitrary::arbitrary(g),
                 serialization_schema: arbitrary_serialization_schema(g),
                 valid_from:           Arbitrary::arbitrary(g),
                 valid_until:          Arbitrary::arbitrary(g),
@@ -904,7 +1012,7 @@ mod tests {
                 holder_id:            PUBLIC_KEY,
                 is_holder_revocable:  true,
                 commitment:           [0u8; 48].to_vec(),
-                schema:               "".into(),
+                schema_ref:           "".to_string().into(),
                 serialization_schema: Vec::new(),
                 valid_from:           None,
                 valid_until:          None,
@@ -1083,7 +1191,7 @@ mod tests {
     /// Test the credential registration entrypoint.
     #[concordium_test]
     fn test_contract_register_credential() {
-        let credential_id = 123123123;
+        let credential_id = 123123123.into();
         let now = Timestamp::from_timestamp_millis(0);
         let contract = ContractAddress {
             index:    0,
@@ -1125,11 +1233,11 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&RegisterCredentialEvent {
+            to_bytes(&CredentialEvent::Register(CredentialEventData {
                 credential_id,
                 holder_id: PUBLIC_KEY,
-                schema_ref: "".to_string()
-            }),
+                schema_ref: "".to_string().into()
+            })),
             "Incorrect register credential event logged"
         );
     }
@@ -1137,7 +1245,7 @@ mod tests {
     /// Test the credential update entrypoint.
     #[concordium_test]
     fn test_contract_update_credential() {
-        let credential_id = 123123123;
+        let credential_id = 123123123.into();
         let now = Timestamp::from_timestamp_millis(0);
         let contract = ContractAddress {
             index:    0,
@@ -1195,11 +1303,11 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&RegisterCredentialEvent {
+            to_bytes(&CredentialEvent::Update(CredentialEventData {
                 credential_id,
                 holder_id: PUBLIC_KEY,
-                schema_ref: "".to_string()
-            }),
+                schema_ref: "".to_string().into()
+            })),
             "Incorrect update credential event logged"
         );
     }
@@ -1208,7 +1316,7 @@ mod tests {
     /// credential.
     #[concordium_test]
     fn test_revoke_by_holder() {
-        let credential_id = 123123123;
+        let credential_id = 123123123.into();
         let now = Timestamp::from_timestamp_millis(0);
         let contract = ContractAddress {
             index:    0,
@@ -1255,7 +1363,7 @@ mod tests {
             credential_id,
             signed: Some((signig_data, SIGNATURE)),
             revocation_key_index: None,
-            reason: Some(revocation_reason.to_string()),
+            reason: Some(revocation_reason.to_string().into()),
         };
 
         let parameter_bytes = to_bytes(&revoke_param);
@@ -1284,7 +1392,7 @@ mod tests {
                 credential_id,
                 holder_id: PUBLIC_KEY,
                 revoker: Revoker::Holder,
-                reason: Some(revocation_reason.to_string())
+                reason: Some(revocation_reason.to_string().into())
             }),
             "Incorrect revoke credential event logged"
         );
