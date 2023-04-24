@@ -398,16 +398,13 @@ impl Chain {
             });
         }
 
-
         // Sender policies have a very bespoke serialization in
         // order to allow skipping portions of them in smart contracts.
         let sender_policies = {
             // TODO: Add this to where policies are defined.
-            let policy = 
-                    &account_info
-                .policy;
+            let policy = &account_info.policy;
             // There is only a single policy. This is not the same as on the chain.
-            let mut out = vec![1,0]; // there is a single policy, encoded in little endian.
+            let mut out = vec![1, 0]; // there is a single policy, encoded in little endian.
             out.extend_from_slice(&policy.identity_provider.to_le_bytes());
             out.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
             out.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
@@ -422,10 +419,10 @@ impl Chain {
 
         // Construct the context.
         let init_ctx = v0::InitContext {
-            metadata:        ChainMetadata {
+            metadata: ChainMetadata {
                 slot_time: self.parameters.block_time,
             },
-            init_origin:     sender,
+            init_origin: sender,
             sender_policies,
         };
         // Initialize contract

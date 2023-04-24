@@ -310,7 +310,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     // Update the state field with the newest value from the
                                     // changeset.
                                     data.state = self.contract_state(data.address);
-                                    // TODO: This change fixes some costs, but maybe should not be necessary.
+                                    // TODO: This change fixes some costs, but maybe should not be
+                                    // necessary.
                                     data.state = self.contract_state(data.address);
                                 }
                                 state_changed

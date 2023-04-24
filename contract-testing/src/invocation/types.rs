@@ -18,17 +18,17 @@ use std::collections::BTreeMap;
 pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// Amount reserved for execution. This is used to return the correct
     /// balance of the invoker account.
-    pub(crate) reserved_amount:  Amount,
+    pub(crate) reserved_amount: Amount,
     /// Address of the invoker of the transaction. This is used to return the
     /// correct balance of the invoker account.
-    pub(crate) invoker:          AccountAddress,
+    pub(crate) invoker: AccountAddress,
     /// The changeset which keeps track of
     /// changes to accounts, modules, and contracts that occur during an
     /// invocation.
-    pub(crate) changeset:        ChangeSet,
+    pub(crate) changeset: ChangeSet,
     /// The energy remaining for execution.
     pub(crate) remaining_energy: &'a mut Energy,
-    pub(crate) chain:            &'b Chain,
+    pub(crate) chain: &'b Chain,
     // TODO: Need to revert on failures.
     pub(crate) next_contract_modification_index: u32,
 }
