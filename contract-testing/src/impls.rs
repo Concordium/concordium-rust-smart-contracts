@@ -398,13 +398,35 @@ impl Chain {
             });
         }
 
+
+        // Sender policies have a very bespoke serialization in
+        // order to allow skipping portions of them in smart contracts.
+        let sender_policies = {
+            // TODO: Add this to where policies are defined.
+            let policy = 
+                    &account_info
+                .policy;
+            // There is only a single policy. This is not the same as on the chain.
+            let mut out = vec![1,0]; // there is a single policy, encoded in little endian.
+            out.extend_from_slice(&policy.identity_provider.to_le_bytes());
+            out.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
+            out.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
+            out.extend_from_slice(&(policy.items.len() as u16).to_le_bytes());
+            for (tag, value) in &policy.items {
+                out.push(tag.0);
+                out.push(value.len() as u8);
+                out.extend_from_slice(value.as_ref());
+            }
+            out
+        };
+
         // Construct the context.
         let init_ctx = v0::InitContext {
             metadata:        ChainMetadata {
                 slot_time: self.parameters.block_time,
             },
             init_origin:     sender,
-            sender_policies: contracts_common::to_bytes(&account_info.policy),
+            sender_policies,
         };
         // Initialize contract
         // We create an empty loader as no caching is used in this testing library
@@ -584,6 +606,7 @@ impl Chain {
             chain: self,
             reserved_amount: amount_reserved_for_energy,
             invoker,
+            next_contract_modification_index: 1,
         };
 
         match contract_invocation.invoke_entrypoint(invoker, sender, payload) {
@@ -842,7 +865,7 @@ impl Chain {
     /// Create an account.
     ///
     /// If an account with a matching address already exists this method will
-    /// replace it and return it.
+    /// replace it and return the old account.
     ///
     /// Note that if the first 29-bytes of an account are identical, then
     /// they are *considered aliases* on each other in all methods.

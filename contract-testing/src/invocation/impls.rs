@@ -142,6 +142,29 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         self.remaining_energy
             .tick_energy(lookup_module_cost(&module))?;
 
+        // Sender policies have a very bespoke serialization in
+        // order to allow skipping portions of them in smart contracts.
+        let sender_policies = {
+            // TODO: Add this to where policies are defined.
+            let policy = &self
+                .chain
+                .account(invoker)
+                .expect("Precondition violation: invoker must exist.")
+                .policy;
+            // There is only a single policy. This is not the same as on the chain.
+            let mut out = vec![1, 0]; // there is a single policy, encoded in little endian.
+            out.extend_from_slice(&policy.identity_provider.to_le_bytes());
+            out.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
+            out.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
+            out.extend_from_slice(&(policy.items.len() as u16).to_le_bytes());
+            for (tag, value) in &policy.items {
+                out.push(tag.0);
+                out.push(value.len() as u8);
+                out.extend_from_slice(value.as_ref());
+            }
+            out
+        };
+
         // Construct the receive context
         let receive_ctx = v1::ReceiveContext {
             // This should be the entrypoint specified, even if we end up
@@ -157,21 +180,16 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 self_balance: instance_self_balance,
                 sender,
                 owner: instance.owner,
-                sender_policies: to_bytes(
-                    &self
-                        .chain
-                        .account(invoker)
-                        .expect("Precondition violation: invoker must exist.")
-                        .policy,
-                ),
+                sender_policies,
             },
         };
 
-        let mod_idx_before_invoke = self.modification_index(payload.address);
+        let mod_idx_before_invoke = self.next_contract_modification_index;
 
         // Construct the instance state
         let mut loader = v1::trie::Loader::new(&[][..]); // An empty loader is fine currently, as we do not use caching in this lib.
         let mut mutable_state = self.contract_state(payload.address);
+        let mut mutable_state = mutable_state.make_fresh_generation(&mut loader);
         let inner = mutable_state.get_inner(&mut loader);
         let instance_state = v1::InstanceState::new(loader, inner);
 
@@ -292,6 +310,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     // Update the state field with the newest value from the
                                     // changeset.
                                     data.state = self.contract_state(data.address);
+                                    // TODO: This change fixes some costs, but maybe should not be necessary.
+                                    data.state = self.contract_state(data.address);
                                 }
                                 state_changed
                             };
@@ -397,6 +417,14 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         address: invocation_data.address,
                         events:  contract_events_from_logs(logs),
                     };
+                    // Remember what state we are in before invoking.
+                    // This is used to report, upon resume, whether the contracts's
+                    // state has changed.
+                    invocation_data.mod_idx_before_invoke = if state_changed {
+                        self.save_state_changes(invocation_data.address, &mut invocation_data.state)
+                    } else {
+                        self.modification_index(invocation_data.address)
+                    };
                     match interrupt {
                         v1::Interrupt::Transfer { to, amount } => {
                             // Add the interrupt event
@@ -492,23 +520,9 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     });
                                 }
                                 Some(contract_name) => {
-                                    if state_changed {
-                                        self.save_state_changes(
-                                            invocation_data.address,
-                                            &mut invocation_data.state,
-                                            true,
-                                        );
-                                    }
-
                                     // Make a checkpoint before calling another contract so that we
                                     // may roll back.
                                     self.checkpoint();
-
-                                    // Remember what state we are in before invoking.
-                                    // This is used to report, upon resume, whether the contracts's
-                                    // state has changed.
-                                    invocation_data.mod_idx_before_invoke =
-                                        self.modification_index(invocation_data.address);
 
                                     let receive_name = OwnedReceiveName::construct_unchecked(
                                         contract_name,
@@ -1001,10 +1015,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 
     /// Saves a mutable state for a contract in the changeset.
     ///
-    /// If `with_fresh_generation`, then it will use the
-    /// [`MutableState::make_fresh_generation`][make_fresh_generation]
-    /// function, otherwise it will make a clone.
-    ///
     /// If the contract already has an entry in the changeset, the old state
     /// will be replaced. Otherwise, the entry is created and the state is
     /// added.
@@ -1014,20 +1024,13 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     ///
     /// **Preconditions:**
     ///  - Contract must exist.
-    ///
-    /// [make_fresh_generation]: trie::MutableState::make_fresh_generation
     fn save_state_changes(
         &mut self,
         address: ContractAddress,
         state: &mut trie::MutableState,
-        with_fresh_generation: bool,
-    ) {
-        let state = if with_fresh_generation {
-            let mut loader = v1::trie::Loader::new(&[][..]); // An empty loader is fine currently, as we do not use caching in this lib.
-            state.make_fresh_generation(&mut loader)
-        } else {
-            state.clone()
-        };
+    ) -> u32 {
+        let state = state.clone();
+        let modification_index = self.next_contract_modification_index;
         match self.changeset.current_mut().contracts.entry(address) {
             btree_map::Entry::Vacant(vac) => {
                 let original_balance = self
@@ -1038,16 +1041,18 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     .self_balance;
                 vac.insert(ContractChanges {
                     state: Some(state),
-                    modification_index: 1, // Increment from default, 0, to 1.
+                    modification_index,
                     ..ContractChanges::new(original_balance)
                 });
             }
             btree_map::Entry::Occupied(mut occ) => {
                 let changes = occ.get_mut();
                 changes.state = Some(state);
-                changes.modification_index += 1;
+                changes.modification_index = modification_index;
             }
         }
+        self.next_contract_modification_index += 1;
+        modification_index
     }
 
     /// Saves a new module reference for the contract in the changeset.
@@ -1164,12 +1169,15 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 state_changed,
                 return_value,
                 remaining_energy,
-            } => Ok(v1::ReceiveResult::Success {
-                logs,
-                state_changed,
-                return_value,
-                remaining_energy: subtract_then_convert(remaining_energy)?,
-            }),
+            } => {
+                let remaining_energy = subtract_then_convert(remaining_energy)?;
+                Ok(v1::ReceiveResult::Success {
+                    logs,
+                    state_changed,
+                    return_value,
+                    remaining_energy,
+                })
+            }
 
             v1::ReceiveResult::Interrupt {
                 remaining_energy,
@@ -1177,13 +1185,17 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 logs,
                 config,
                 interrupt,
-            } => Ok(v1::ReceiveResult::Interrupt {
-                remaining_energy: subtract_then_convert(remaining_energy)?,
-                state_changed,
-                logs,
-                config,
-                interrupt,
-            }),
+            } => {
+                let remaining_energy = subtract_then_convert(remaining_energy)?;
+
+                Ok(v1::ReceiveResult::Interrupt {
+                    remaining_energy,
+                    state_changed,
+                    logs,
+                    config,
+                    interrupt,
+                })
+            }
             v1::ReceiveResult::Reject {
                 reason,
                 return_value,
