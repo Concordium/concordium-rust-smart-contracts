@@ -153,15 +153,18 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 .policy;
             // There is only a single policy. This is not the same as on the chain.
             let mut out = vec![1, 0]; // there is a single policy, encoded in little endian.
-            out.extend_from_slice(&policy.identity_provider.to_le_bytes());
-            out.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
-            out.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
-            out.extend_from_slice(&(policy.items.len() as u16).to_le_bytes());
+            let mut inner = Vec::new();
+            inner.extend_from_slice(&policy.identity_provider.to_le_bytes());
+            inner.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
+            inner.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
+            inner.extend_from_slice(&(policy.items.len() as u16).to_le_bytes());
             for (tag, value) in &policy.items {
-                out.push(tag.0);
-                out.push(value.len() as u8);
-                out.extend_from_slice(value.as_ref());
+                inner.push(tag.0);
+                inner.push(value.len() as u8);
+                inner.extend_from_slice(value.as_ref());
             }
+            out.extend_from_slice(&(inner.len() as u16).to_le_bytes());
+            out.extend_from_slice(&inner);
             out
         };
 
