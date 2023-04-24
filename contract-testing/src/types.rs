@@ -113,7 +113,8 @@ pub struct ModuleDeploySuccess {
 /// An error that occured while deploying a [`ContractModule`].
 #[derive(Debug, Error)]
 #[error(
-    "Module deployment failed after consuming {energy_used} ({transaction_fee}) with error {kind}."
+    "Module deployment failed after consuming {energy_used}NRG ({transaction_fee} microCCD) with \
+     error {kind}."
 )]
 pub struct ModuleDeployError {
     /// The energy used for deployment.
@@ -198,8 +199,8 @@ pub struct ContractInitSuccess {
 /// An error that occured in [`Chain::contract_init`].
 #[derive(Debug, Error)]
 #[error(
-    "Contract initialization failed after consuming {energy_used} ({transaction_fee}) energy with \
-     error {kind}."
+    "Contract initialization failed after consuming {energy_used}NRG ({transaction_fee} microCCD) \
+     with error {kind}."
 )]
 pub struct ContractInitError {
     /// Energy used.
@@ -363,8 +364,8 @@ impl ContractInvokeSuccess {
 /// [`Chain::contract_invoke`].
 #[derive(Debug, Error)]
 #[error(
-    "Contract invocation failed after using {energy_used} ({transaction_fee}) energy with error \
-     {kind}."
+    "Contract invocation failed after using {energy_used}NRG ({transaction_fee} microCCD) with \
+     error {kind}."
 )]
 pub struct ContractInvokeError {
     /// The energy used.

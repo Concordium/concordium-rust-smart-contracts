@@ -392,7 +392,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         self.save_state_changes(
                             invocation_data.address,
                             &mut invocation_data.state,
-                            false,
                         );
                     }
 
