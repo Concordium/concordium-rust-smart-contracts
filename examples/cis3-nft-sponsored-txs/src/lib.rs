@@ -61,6 +61,7 @@
 
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
+use core::num::ParseIntError;
 
 /// The url for the token metadata. Every `token_id` in this contract has the
 /// same metadata url for simplicity.
@@ -357,6 +358,8 @@ enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
+    /// Failed parsing a value.
+    ParseError,
     /// Failed logging: Log is full.
     LogFull,
     /// Failed logging: Log is malformed.
@@ -403,6 +406,11 @@ impl From<LogError> for CustomContractError {
             LogError::Malformed => Self::LogMalformed,
         }
     }
+}
+
+/// Mapping ParseIntError to CustomContractError.
+impl From<ParseIntError> for CustomContractError {
+    fn from(_e: ParseIntError) -> Self { Self::ParseError }
 }
 
 /// Mapping errors related to contract invocations to CustomContractError.
@@ -829,6 +837,50 @@ fn contract_serialization_helper<S: HasStateApi>(
     Ok(())
 }
 
+/// Function to return the `message_hash`. Meant for
+/// testing/debugging.
+#[receive(
+    contract = "cis3_nft",
+    name = "viewMessageHash",
+    parameter = "PermitParam",
+    return_value = "[u8;32]",
+    crypto_primitives,
+    mutable
+)]
+fn contract_view_message_hash<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<[u8; 32]> {
+    // Parse the parameter.
+    let mut cursor = ctx.parameter_cursor();
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial`. I.e. we only read the `signature`, the
+    // `signer` but WITHOUT the `message` here.
+    let param: PermitParamPartial = cursor.get()?;
+
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial` so far. We read in the `message` now.
+    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
+    // bytes.
+    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
+
+    cursor.read_exact(&mut message_bytes)?;
+
+    // The message signed in the Concordium browser wallet is prepended with the
+    // `account` address and 8 zero bytes.
+    let mut msg_prepend = vec![0; 32 + 8];
+    // Prepend the `account` address of the signer.
+    msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
+    // Prepend 8 zero bytes.
+    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
+    // Calculate the message hash.
+    let message_hash =
+        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+
+    Ok(message_hash)
+}
+
 /// Verify an ed25519 signature and allow the transfer of tokens or update of an
 /// operator.
 ///
@@ -905,8 +957,8 @@ fn contract_permit<S: HasStateApi>(
     // with `PermitParamPartial` so far. We read in the `message` now.
     // `(cursor.size() - cursor.cursor_position()` is the length of the message in
     // bytes.
-    let mut message_bytes = Vec::with_capacity((cursor.size() - cursor.cursor_position()) as usize);
-    unsafe { message_bytes.set_len(message_bytes.capacity()) };
+    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
+
     cursor.read_exact(&mut message_bytes)?;
     let message: PermitMessage = Cursor::new(&message_bytes).get()?;
 
@@ -925,8 +977,7 @@ fn contract_permit<S: HasStateApi>(
 
     // The message signed in the Concordium browser wallet is prepended with the
     // `account` address and 8 zero bytes.
-    let mut msg_prepend = Vec::with_capacity(32 + 8);
-    unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+    let mut msg_prepend = vec![0; 32 + 8];
     // Prepend the `account` address of the signer.
     msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
     // Prepend 8 zero bytes.
@@ -1302,6 +1353,29 @@ fn contract_set_implementor<S: HasStateApi>(
     // Update the implementors in the state
     host.state_mut().set_implementors(params.id, params.implementors);
     Ok(())
+}
+
+// Helper function to decode a hex string into bytes.
+#[allow(dead_code)]
+fn decode_hex(s: &str) -> Result<Vec<u8>, CustomContractError> {
+    if s.len() % 2 != 0 {
+        Err(CustomContractError::ParseError)
+    } else {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| e.into()))
+            .collect()
+    }
+}
+
+// Helper function to encode bytes into a hex string.
+#[allow(dead_code)]
+fn encode_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s = format!("{}{:02x}", s, b);
+    }
+    s
 }
 
 // Tests
@@ -2021,6 +2095,32 @@ mod tests {
         claim_eq!(balance0, 0.into(), "Token balance of address0 should be 0");
         claim_eq!(balance1, 1.into(), "Token balance of address1 should be 1");
 
+        // Invoke `viewMessageHash` function.
+        let result: ContractResult<[u8; 32]> =
+            contract_view_message_hash(&ctx, &mut host, &crypto_primitives);
+
+        let message_hash = result.expect_report("Message hash should be viewable");
+
+        // Check signature.
+        claim!(
+            crypto_primitives.verify_ed25519_signature(
+                PUBLIC_KEY,
+                SIGNATURE_TRANSFER,
+                &message_hash
+            ),
+            "Signature should be correct"
+        );
+
+        let message_hash_string = encode_hex(&message_hash);
+        let message_hash_bytes = decode_hex(&message_hash_string);
+
+        // Check encoding and decoding in hex works.
+        claim_eq!(
+            message_hash.to_vec(),
+            message_hash_bytes.expect_report("Message hash should be decoded in hex"),
+            "Message hash should be unchanged after encoding and decoding in hex"
+        );
+
         // Inovke `permit` function.
         let result: ContractResult<()> =
             contract_permit(&ctx, &mut host, &mut logger, &crypto_primitives);
@@ -2137,6 +2237,32 @@ mod tests {
 
         let parameter_bytes = to_bytes(&permit_transfer_param);
         ctx.set_parameter(&parameter_bytes);
+
+        // Invoke `viewMessageHash` function.
+        let result: ContractResult<[u8; 32]> =
+            contract_view_message_hash(&ctx, &mut host, &crypto_primitives);
+
+        let message_hash = result.expect_report("Message hash should be viewable");
+
+        // Check signature.
+        claim!(
+            crypto_primitives.verify_ed25519_signature(
+                PUBLIC_KEY,
+                SIGNATURE_UPDATE_OPERATOR,
+                &message_hash
+            ),
+            "Signature should be correct"
+        );
+
+        let message_hash_string = encode_hex(&message_hash);
+        let message_hash_bytes = decode_hex(&message_hash_string);
+
+        // Check encoding and decoding in hex works.
+        claim_eq!(
+            message_hash.to_vec(),
+            message_hash_bytes.expect_report("Message hash should be decoded in hex"),
+            "Message hash should be unchanged after encoding and decoding in hex"
+        );
 
         // Inovke `permit` function.
         let result: ContractResult<()> =
