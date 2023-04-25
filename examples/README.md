@@ -8,8 +8,9 @@ the logic of the contract is reasonable, or safe.
 **Do not use these contracts as-is for anything other then experimenting.**
 
 The list of contracts is as follows
+
 - [two-step-transfer](./two-step-transfer) A contract that acts like an account (can send, store and accept CCD),
- but requires n > 1 ordained accounts to agree to the sending of CCD before it is accepted.
+  but requires n > 1 ordained accounts to agree to the sending of CCD before it is accepted.
 - [auction](./auction) A contract implementing an simple auction.
 - [piggy-bank](./piggy-bank) The smart contract created as part of the Piggy Bank tutorial.
 - [memo](./memo/) An extremely minimal contract that can be used to
@@ -28,6 +29,7 @@ The list of contracts is as follows
 - [proxy](./proxy) A proxy contract that can be put in front of another contract. It works with V0 as well as V1 smart contracts.
 - [recorder](./recorder) A contract that records account addresses, and has an entry point to invoke transfers to all those addresses.
 - [signature-verifier](./signature-verifier) An example of how to use `crypto_primitives`. The contract verifies an Ed25519 signature.
+- [marketplace-contract] (./marketplace-contract) An NFT Marketplace contract example and its helpers including a client to interact with a CIS-2 token contract.
 - [nametoken](./nametoken) An example of how to register and manage names as tokens in a smart contract.
 - [voting](./voting) An example of how to conduct an election using a smart contract.
 - [transfer-policy-check](./transfer-policy-check) A contract that showcases how to use policies.
