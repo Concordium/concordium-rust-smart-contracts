@@ -19,5 +19,6 @@ concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
 crate-type=["cdylib", "rlib"]
 
 [profile.release]
+panic = "abort"
 opt-level = "s"
 codegen-units = 1

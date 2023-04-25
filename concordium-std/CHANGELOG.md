@@ -5,6 +5,9 @@
 - Add `write_root` helper function to write the root of the state trie. This is
   useful in migrations when upgrading smart contracts.
 - Bump Rust edition to `2021`.
+- Remove the use of `alloc_error_handler` since the feature is no longer
+  available in recent nightly builds of the compiler. This can increase the
+  smart contract size slightly.
 
 ## concordium-std 6.1.1 (2023-03-16)
 

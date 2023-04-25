@@ -709,7 +709,7 @@ fn contract_mint<S: HasStateApi>(
 
     // Check that max token_id is not reached.
     ensure!(
-        token_id != concordium_cis2::TokenIdU32(std::u32::MAX),
+        token_id != concordium_cis2::TokenIdU32(u32::MAX),
         CustomContractError::MaxTokenID.into()
     );
 
