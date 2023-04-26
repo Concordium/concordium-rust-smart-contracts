@@ -1019,7 +1019,7 @@ pub struct ExternCryptoPrimitives;
 #[repr(transparent)]
 pub struct PublicKeyEd25519(pub [u8; 32]);
 
-impl std::fmt::Display for PublicKeyEd25519 {
+impl fmt::Display for PublicKeyEd25519 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0 {
             write!(f, "{:02x}", b)?;
@@ -1053,7 +1053,7 @@ impl FromStr for PublicKeyEd25519 {
 #[repr(transparent)]
 pub struct PublicKeyEcdsaSecp256k1(pub [u8; 33]);
 
-impl std::fmt::Display for PublicKeyEcdsaSecp256k1 {
+impl fmt::Display for PublicKeyEcdsaSecp256k1 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0 {
             write!(f, "{:02x}", b)?;
@@ -1087,7 +1087,7 @@ impl FromStr for PublicKeyEcdsaSecp256k1 {
 #[repr(transparent)]
 pub struct SignatureEd25519(pub [u8; 64]);
 
-impl std::fmt::Display for SignatureEd25519 {
+impl fmt::Display for SignatureEd25519 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0 {
             write!(f, "{:02x}", b)?;
@@ -1122,7 +1122,7 @@ impl FromStr for SignatureEd25519 {
 #[repr(transparent)]
 pub struct SignatureEcdsaSecp256k1(pub [u8; 64]);
 
-impl std::fmt::Display for SignatureEcdsaSecp256k1 {
+impl fmt::Display for SignatureEcdsaSecp256k1 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0 {
             write!(f, "{:02x}", b)?;
@@ -1156,7 +1156,7 @@ impl FromStr for SignatureEcdsaSecp256k1 {
 #[repr(transparent)]
 pub struct HashSha2256(pub [u8; 32]);
 
-impl std::fmt::Display for HashSha2256 {
+impl fmt::Display for HashSha2256 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.0 {
             write!(f, "{:02x}", b)?;

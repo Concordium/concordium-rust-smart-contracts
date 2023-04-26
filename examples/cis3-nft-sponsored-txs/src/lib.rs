@@ -61,7 +61,6 @@
 
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
-use core::num::ParseIntError;
 
 /// The url for the token metadata. Every `token_id` in this contract has the
 /// same metadata url for simplicity.
@@ -358,8 +357,6 @@ enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
-    /// Failed parsing a value.
-    ParseError,
     /// Failed logging: Log is full.
     LogFull,
     /// Failed logging: Log is malformed.
@@ -406,11 +403,6 @@ impl From<LogError> for CustomContractError {
             LogError::Malformed => Self::LogMalformed,
         }
     }
-}
-
-/// Mapping ParseIntError to CustomContractError.
-impl From<ParseIntError> for CustomContractError {
-    fn from(_e: ParseIntError) -> Self { Self::ParseError }
 }
 
 /// Mapping errors related to contract invocations to CustomContractError.
@@ -1334,29 +1326,6 @@ fn contract_set_implementor<S: HasStateApi>(
     Ok(())
 }
 
-// Helper function to decode a hex string into bytes.
-#[allow(dead_code)]
-fn decode_hex(s: &str) -> Result<Vec<u8>, CustomContractError> {
-    if s.len() % 2 != 0 {
-        Err(CustomContractError::ParseError)
-    } else {
-        (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| e.into()))
-            .collect()
-    }
-}
-
-// Helper function to encode bytes into a hex string.
-#[allow(dead_code)]
-fn encode_hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        s = format!("{}{:02x}", s, b);
-    }
-    s
-}
-
 // Tests
 
 #[concordium_cfg_test]
@@ -2090,16 +2059,6 @@ mod tests {
             "Signature should be correct"
         );
 
-        let message_hash_string = encode_hex(&message_hash);
-        let message_hash_bytes = decode_hex(&message_hash_string);
-
-        // Check encoding and decoding in hex works.
-        claim_eq!(
-            message_hash.to_vec(),
-            message_hash_bytes.expect_report("Message hash should be decoded in hex"),
-            "Message hash should be unchanged after encoding and decoding in hex"
-        );
-
         // Inovke `permit` function.
         let result: ContractResult<()> =
             contract_permit(&ctx, &mut host, &mut logger, &crypto_primitives);
@@ -2231,16 +2190,6 @@ mod tests {
                 &message_hash
             ),
             "Signature should be correct"
-        );
-
-        let message_hash_string = encode_hex(&message_hash);
-        let message_hash_bytes = decode_hex(&message_hash_string);
-
-        // Check encoding and decoding in hex works.
-        claim_eq!(
-            message_hash.to_vec(),
-            message_hash_bytes.expect_report("Message hash should be decoded in hex"),
-            "Message hash should be unchanged after encoding and decoding in hex"
         );
 
         // Inovke `permit` function.
