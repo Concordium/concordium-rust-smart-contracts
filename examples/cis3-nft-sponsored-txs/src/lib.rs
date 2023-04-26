@@ -837,8 +837,7 @@ fn contract_serialization_helper<S: HasStateApi>(
     Ok(())
 }
 
-/// Function to return the `message_hash`. Meant for
-/// testing/debugging.
+/// Helper function to calculate the `message_hash`.
 #[receive(
     contract = "cis3_nft",
     name = "viewMessageHash",
@@ -920,11 +919,9 @@ fn contract_permit<S: HasStateApi>(
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
     // Parse the parameter.
-    let mut cursor = ctx.parameter_cursor();
-    // The input parameter is `PermitParam` but we only read the initial part of it
-    // with `PermitParamPartial`. I.e. we only read the `signature`, the
-    // `signer` but WITHOUT the `message` here.
-    let param: PermitParamPartial = cursor.get()?;
+    let param: PermitParam = ctx.parameter_cursor().get()?;
+
+    let message = param.message;
 
     ensure!(
         param.signature.len() == 1
@@ -953,15 +950,6 @@ fn contract_permit<S: HasStateApi>(
     entry.1 += 1;
     drop(entry);
 
-    // The input parameter is `PermitParam` but we only read the initial part of it
-    // with `PermitParamPartial` so far. We read in the `message` now.
-    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
-    // bytes.
-    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
-
-    cursor.read_exact(&mut message_bytes)?;
-    let message: PermitMessage = Cursor::new(&message_bytes).get()?;
-
     // Check the nonce to prevent replay attacks.
     ensure_eq!(message.nonce, nonce, CustomContractError::NonceMismatch.into());
 
@@ -975,16 +963,7 @@ fn contract_permit<S: HasStateApi>(
     // Check signature is not expired.
     ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
-    // The message signed in the Concordium browser wallet is prepended with the
-    // `account` address and 8 zero bytes.
-    let mut msg_prepend = vec![0; 32 + 8];
-    // Prepend the `account` address of the signer.
-    msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
-    // Prepend 8 zero bytes.
-    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
-    // Calculate the message hash.
-    let message_hash =
-        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+    let message_hash = contract_view_message_hash(ctx, host, crypto_primitives)?;
 
     // Check signature.
     ensure!(
