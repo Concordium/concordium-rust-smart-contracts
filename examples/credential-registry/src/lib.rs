@@ -432,7 +432,7 @@ pub struct CredentialDataParameter {
 /// - It fails to parse the parameter.
 /// - The caller is not the contract's owner
 /// - An entry with the given credential id already exists
-/// - Fails to log RegisterCredentialEvent event
+/// - Fails to log RegisterCredentialEvent
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
@@ -460,7 +460,7 @@ fn contract_register_credeintial<S: HasStateApi>(
 /// Update an existing credential with the given id and data.
 /// Logs UpdateCredentialEvent.
 ///
-/// Can be called by the owner only.
+/// Can be called only by the owner.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
