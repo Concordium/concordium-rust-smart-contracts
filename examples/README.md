@@ -32,3 +32,4 @@ The list of contracts is as follows
 - [voting](./voting) An example of how to conduct an election using a smart contract.
 - [transfer-policy-check](./transfer-policy-check) A contract that showcases how to use policies.
 - [eSealing](./eSealing) A contract implementing an eSealing service.
+- [credential-registry](./credential-registry/) A contract for storing and managing public data of verifiable credentials.

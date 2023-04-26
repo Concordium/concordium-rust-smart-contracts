@@ -360,7 +360,7 @@ enum CredentialEvent {
 
 /// Init function that creates a fresh registry state given the issuer's
 /// metadata
-#[init(contract = "credential_registry")]
+#[init(contract = "credential_registry", parameter = "MetadataUrl", event ="CredentialEvent")]
 fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -466,7 +466,7 @@ fn contract_register_credeintial<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The caller is not the contract's owner
 /// - An entry with the given credential id does not exist
-/// - Fails to log UpdateCredentialEvent event
+/// - Fails to log UpdateCredentialEvent
 #[receive(
     contract = "credential_registry",
     name = "updateCredential",
@@ -593,7 +593,7 @@ fn authorize_with_signature(
 ///       validation has failed
 /// - An entry with the given credential id does not exist
 /// - The credential status is not one of `Active` or `NotActivated`
-/// - Fails to log UpdateCredentialEvent event
+/// - Fails to log RevokeCredentialEvent
 #[receive(
     contract = "credential_registry",
     name = "revokeCredential",
