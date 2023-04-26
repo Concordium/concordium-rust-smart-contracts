@@ -121,8 +121,12 @@ impl CredentialEntry {
         if self.is_revoked {
             return CredentialStatus::Revoked;
         }
-        if self.credential_data.valid_until.map_or(false, |x| x < now) {
-            return CredentialStatus::Expired;
+        if let Some(valid_until) = self.credential_data.valid_until {
+             if valid_until < now {
+                return CredentialStatus::Expired;
+             }
+        }
+             }
         }
         if self.credential_data.valid_from.map_or(false, |x| now < x) {
             return CredentialStatus::NotActivated;
