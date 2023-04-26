@@ -122,14 +122,14 @@ impl CredentialEntry {
             return CredentialStatus::Revoked;
         }
         if let Some(valid_until) = self.credential_data.valid_until {
-             if valid_until < now {
+            if valid_until < now {
                 return CredentialStatus::Expired;
-             }
+            }
         }
-             }
-        }
-        if self.credential_data.valid_from.map_or(false, |x| now < x) {
-            return CredentialStatus::NotActivated;
+        if let Some(valid_until) = self.credential_data.valid_from {
+            if now < valid_until {
+                return CredentialStatus::NotActivated;
+            }
         }
         CredentialStatus::Active
     }
@@ -832,6 +832,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     name = "viewRevocationKey",
     parameter = "u8",
     error = "ContractError",
+    return_value = "Vec<(PublicKeyEd25519, u64)>",
     mutable
 )]
 fn contract_view_revocation_key<S: HasStateApi>(
@@ -847,7 +848,7 @@ fn contract_view_revocation_key<S: HasStateApi>(
     contract = "credential_registry",
     name = "viewIssuerKeys",
     error = "ContractError",
-    return_value = "Vec<PublicKeyEd25519>"
+    return_value = "Vec<(u8, PublicKeyEd25519)>"
 )]
 fn contract_view_issuer_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
