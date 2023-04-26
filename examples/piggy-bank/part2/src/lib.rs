@@ -27,10 +27,6 @@ enum PiggyBankState {
     Smashed,
 }
 
-/// The return type of the view function
-#[derive(Debug, SchemaType, Serialize, PartialEq, Eq, Clone, Copy)]
-struct ViewState(PiggyBankState, Amount);
-
 /// Setup a new Intact piggy bank.
 #[init(contract = "PiggyBank")]
 fn piggy_init<S: HasStateApi>(
@@ -93,14 +89,14 @@ fn piggy_smash<S: HasStateApi>(
 }
 
 /// View the state and balance of the piggy bank.
-#[receive(contract = "PiggyBank", name = "view", return_value = "ViewState")]
+#[receive(contract = "PiggyBank", name = "view", return_value = "(PiggyBankState, Amount)")]
 fn piggy_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<PiggyBankState, StateApiType = S>,
-) -> ReceiveResult<ViewState> {
+) -> ReceiveResult<(PiggyBankState, Amount)> {
     let current_state = *host.state();
     let current_balance = host.self_balance();
-    Ok(ViewState(current_state, current_balance))
+    Ok((current_state, current_balance))
 }
 
 // Unit tests for the smart contract "PiggyBank"
@@ -273,6 +269,6 @@ mod tests {
         let result = piggy_view(&ctx, &host);
 
         // Check the result.
-        claim_eq!(result, Ok(ViewState(PiggyBankState::Intact, self_balance)));
+        claim_eq!(result, Ok((PiggyBankState::Intact, self_balance)));
     }
 }
