@@ -1036,13 +1036,10 @@ impl FromStr for PublicKeyEd25519 {
             return Err(ParseError {});
         }
 
-        let public_key: [u8; 32] = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect::<Vec<u8>>()
-            .as_slice()
-            .try_into()
-            .unwrap();
+        let mut public_key: [u8; 32] = [0u8; 32];
+        for (i, place) in public_key.iter_mut().enumerate() {
+            *place = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|_| ParseError {})?;
+        }
 
         Ok(PublicKeyEd25519(public_key))
     }
@@ -1070,13 +1067,10 @@ impl FromStr for PublicKeyEcdsaSecp256k1 {
             return Err(ParseError {});
         }
 
-        let public_key: [u8; 33] = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect::<Vec<u8>>()
-            .as_slice()
-            .try_into()
-            .unwrap();
+        let mut public_key: [u8; 33] = [0u8; 33];
+        for (i, place) in public_key.iter_mut().enumerate() {
+            *place = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|_| ParseError {})?;
+        }
 
         Ok(PublicKeyEcdsaSecp256k1(public_key))
     }
@@ -1104,13 +1098,10 @@ impl FromStr for SignatureEd25519 {
             return Err(ParseError {});
         }
 
-        let signature: [u8; 64] = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect::<Vec<u8>>()
-            .as_slice()
-            .try_into()
-            .unwrap();
+        let mut signature: [u8; 64] = [0u8; 64];
+        for (i, place) in signature.iter_mut().enumerate() {
+            *place = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|_| ParseError {})?;
+        }
 
         Ok(SignatureEd25519(signature))
     }
@@ -1139,13 +1130,10 @@ impl FromStr for SignatureEcdsaSecp256k1 {
             return Err(ParseError {});
         }
 
-        let signature: [u8; 64] = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect::<Vec<u8>>()
-            .as_slice()
-            .try_into()
-            .unwrap();
+        let mut signature: [u8; 64] = [0u8; 64];
+        for (i, place) in signature.iter_mut().enumerate() {
+            *place = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|_| ParseError {})?;
+        }
 
         Ok(SignatureEcdsaSecp256k1(signature))
     }
@@ -1173,13 +1161,10 @@ impl FromStr for HashSha2256 {
             return Err(ParseError {});
         }
 
-        let hash: [u8; 32] = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect::<Vec<u8>>()
-            .as_slice()
-            .try_into()
-            .unwrap();
+        let mut hash: [u8; 32] = [0u8; 32];
+        for (i, place) in hash.iter_mut().enumerate() {
+            *place = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|_| ParseError {})?;
+        }
 
         Ok(HashSha2256(hash))
     }

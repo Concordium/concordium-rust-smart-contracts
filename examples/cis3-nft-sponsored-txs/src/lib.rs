@@ -846,12 +846,12 @@ fn contract_view_message_hash<S: HasStateApi>(
     // Parse the parameter.
     let mut cursor = ctx.parameter_cursor();
     // The input parameter is `PermitParam` but we only read the initial part of it
-    // with `PermitParamPartial`. I.e. we only read the `signature`, the
-    // `signer` but WITHOUT the `message` here.
+    // with `PermitParamPartial`. I.e. we read the `signature` and the
+    // `signer`, but not the `message` here.
     let param: PermitParamPartial = cursor.get()?;
 
-    // The input parameter is `PermitParam` but we only read the initial part of it
-    // with `PermitParamPartial` so far. We read in the `message` now.
+    // The input parameter is `PermitParam` but we have only read the initial part
+    // of it with `PermitParamPartial` so far. We read in the `message` now.
     // `(cursor.size() - cursor.cursor_position()` is the length of the message in
     // bytes.
     let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
