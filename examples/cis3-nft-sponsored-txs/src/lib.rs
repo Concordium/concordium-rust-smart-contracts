@@ -859,7 +859,12 @@ fn contract_view_message_hash<S: HasStateApi>(
     cursor.read_exact(&mut message_bytes)?;
 
     // The message signed in the Concordium browser wallet is prepended with the
-    // `account` address and 8 zero bytes.
+    // `account` address and 8 zero bytes. Accounts in the Concordium browser wallet
+    // can either sign a regular transaction (in that case the prepend is
+    // `account` address and the nonce of the account which is by design >= 1)
+    // or sign a message (in that case the prepend is `account` address and 8 zero
+    // bytes). Hence, the 8 zero bytes ensure that the user does not accidentally
+    // sign a transaction. The account nonce is of type u64 (8 bytes).
     let mut msg_prepend = vec![0; 32 + 8];
     // Prepend the `account` address of the signer.
     msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
