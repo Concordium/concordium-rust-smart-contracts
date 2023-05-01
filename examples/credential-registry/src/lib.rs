@@ -33,7 +33,7 @@
 //! - view credential status to verify VC validity.
 //! - view credential data to verify proofs (verifiable presentations) requested
 //!   from holders.
-use concordium_cis2::MetadataUrl;
+use concordium_cis2::*;
 use concordium_std::*;
 use core::fmt::Debug;
 
@@ -56,13 +56,13 @@ impl From<u128> for Uuidv4 {
 
 /// A schema reference is a schema URL or DID address pointing to the JSON
 /// schema for a verifiable credential.
-#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
+#[derive(Serialize, SchemaType, PartialEq, Clone, Debug)]
 struct SchemaRef {
-    schema_ref: String,
+    schema_ref: MetadataUrl,
 }
 
-impl From<String> for SchemaRef {
-    fn from(schema_ref: String) -> Self {
+impl From<MetadataUrl> for SchemaRef {
+    fn from(schema_ref: MetadataUrl) -> Self {
         SchemaRef {
             schema_ref,
         }
@@ -78,39 +78,37 @@ pub enum CredentialStatus {
 }
 
 /// Public verifiable credential data
-#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
+#[derive(Serialize, SchemaType, PartialEq, Clone, Debug)]
 pub struct CredentialData {
     /// The holder's identifier is a public key.
-    holder_id:            PublicKeyEd25519,
+    holder_id:        PublicKeyEd25519,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
-    is_holder_revocable:  bool,
+    holder_revocable: bool,
     /// A vector Pedersen comminment to the attributes of the verifiable
     /// credential.
-    commitment:           Vec<u8>,
+    commitment:       Vec<u8>,
     /// A reference to the credential's JSON schema. It also sevres as the
     /// credential type.
-    schema_ref:           SchemaRef,
-    /// A sequence of atrubutes defining the attribute ordering in the vector
-    /// commitment.
-    serialization_schema: Vec<String>,
+    schema_ref:       SchemaRef,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
-    valid_from:           Option<Timestamp>,
+    valid_from:       Option<Timestamp>,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
-    valid_until:          Option<Timestamp>,
+    valid_until:      Option<Timestamp>,
 }
 
 /// Public verifiable credential data, revocation flag and nonce
-#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
+#[derive(Serialize, SchemaType, PartialEq, Clone, Debug)]
 pub struct CredentialEntry {
     credential_data:  CredentialData,
     /// The nonce is used to avoid replay attacks when checking the holder's
     /// signature on a revocation message.
     revocation_nonce: u64,
-    is_revoked:       bool,
+    // Revocation flag
+    revoked:          bool,
 }
 
 impl CredentialEntry {
@@ -118,7 +116,7 @@ impl CredentialEntry {
     /// flag. If a VC is revoked the status will be `Revoked` regardless the
     /// validity dates.
     fn get_status(&self, now: Timestamp) -> CredentialStatus {
-        if self.is_revoked {
+        if self.revoked {
             return CredentialStatus::Revoked;
         }
         if let Some(valid_until) = self.credential_data.valid_until {
@@ -216,7 +214,7 @@ impl<S: HasStateApi> State<S> {
         let credential_entry = CredentialEntry {
             credential_data:  credential_data.clone(),
             revocation_nonce: 0,
-            is_revoked:       false,
+            revoked:          false,
         };
         let res = self.credentials.insert(credential_id, credential_entry);
         ensure!(res.is_none(), ContractError::CredentialAlreadyExists);
@@ -242,7 +240,7 @@ impl<S: HasStateApi> State<S> {
             status == CredentialStatus::Active || status == CredentialStatus::NotActivated,
             ContractError::IncorrectStatusBeforeRevocation
         );
-        credential.is_revoked = true;
+        credential.revoked = true;
         Ok(())
     }
 
@@ -360,7 +358,7 @@ enum CredentialEvent {
 
 /// Init function that creates a fresh registry state given the issuer's
 /// metadata
-#[init(contract = "credential_registry", parameter = "MetadataUrl", event ="CredentialEvent")]
+#[init(contract = "credential_registry", parameter = "MetadataUrl", event = "CredentialEvent")]
 fn init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -371,6 +369,34 @@ fn init<S: HasStateApi>(
 
 fn sender_is_owner(ctx: &impl HasReceiveContext) -> bool {
     ctx.sender().matches_account(&ctx.owner())
+}
+
+/// Response to a credential data query.
+#[derive(Serialize, SchemaType)]
+pub struct CredentialEntryResponse {
+    /// The holder's identifier is a public key.
+    holder_id:        PublicKeyEd25519,
+    /// If this flag is set to `true` the holder can send a signed message to
+    /// revoke their credential.
+    holder_revocable: bool,
+    /// A vector Pedersen comminment to the attributes of the verifiable
+    /// credential.
+    commitment:       Vec<u8>,
+    /// A reference to the credential's JSON schema. It also sevres as the
+    /// credential type.
+    schema_ref:       SchemaRef,
+    /// The date from which the credential is considered valid. `None`
+    /// corresponsds to a credential that is valid immediately after being
+    /// issued.
+    valid_from:       Option<Timestamp>,
+    /// After this date, the credential becomes expired. `None` corresponds to a
+    /// credential that cannot expire.
+    valid_until:      Option<Timestamp>,
+    /// The nonce is used to avoid replay attacks when checking the holder's
+    /// signature on a revocation message.
+    revocation_nonce: u64,
+    // Revocation flag
+    revoked:          bool,
 }
 
 /// A view entrypoint for looking up an entry in the registry by id.
@@ -388,10 +414,19 @@ fn sender_is_owner(ctx: &impl HasReceiveContext) -> bool {
 fn contract_view_credential_entry<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<CredentialEntry, ContractError> {
+) -> Result<CredentialEntryResponse, ContractError> {
     let credential_id = ctx.parameter_cursor().get()?;
     let data = host.state().view_credential_data(credential_id)?;
-    Ok(data)
+    Ok(CredentialEntryResponse {
+        holder_id:        data.credential_data.holder_id,
+        holder_revocable: data.credential_data.holder_revocable,
+        commitment:       data.credential_data.commitment,
+        schema_ref:       data.credential_data.schema_ref,
+        valid_from:       data.credential_data.valid_from,
+        valid_until:      data.credential_data.valid_until,
+        revocation_nonce: data.revocation_nonce,
+        revoked:          data.revoked,
+    })
 }
 
 /// A view entrypoint querying the credential's status.
@@ -637,7 +672,7 @@ fn contract_revoke_credeintial<S: HasStateApi>(
 
                     // Only holder-revocable entries can be revoked by the holder.
                     ensure!(
-                        registry_entry.credential_data.is_holder_revocable,
+                        registry_entry.credential_data.holder_revocable,
                         ContractError::NotAuthorized
                     );
 
@@ -903,17 +938,6 @@ mod tests {
     use quickcheck::*;
     use test_infrastructure::*;
 
-    const ATTR_NAMES: [&str; 8] = [
-        "dob",
-        "first_name",
-        "points",
-        "education",
-        "Use%various^chars",
-        "$somehting",
-        "path.to.a.field",
-        "123",
-    ];
-
     impl Arbitrary for Uuidv4 {
         fn arbitrary(g: &mut Gen) -> Uuidv4 {
             Uuidv4 {
@@ -928,34 +952,16 @@ mod tests {
 
     impl Arbitrary for SchemaRef {
         fn arbitrary(g: &mut Gen) -> SchemaRef {
-            SchemaRef {
-                schema_ref: Arbitrary::arbitrary(g),
-            }
+            (MetadataUrl {
+                url:  Arbitrary::arbitrary(g),
+                hash: if Arbitrary::arbitrary(g) {
+                    Some([0u8; 32].map(|_| Arbitrary::arbitrary(g)))
+                } else {
+                    None
+                },
+            })
+            .into()
         }
-
-        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-            Box::new(self.schema_ref.shrink().map(|x| x.into()))
-        }
-    }
-
-    // Generate a random string with the probability 1/8, otherwise pick a name from
-    // a predefined list
-    fn arbitrary_attr_name(g: &mut Gen) -> String {
-        let i: u32 = Arbitrary::arbitrary(g);
-        match i % 8 {
-            j @ 0..=7 => ATTR_NAMES[j as usize].to_string(),
-            _ => Arbitrary::arbitrary(g),
-        }
-    }
-
-    // Generate up to 16 attributes in a serialization schema
-    fn arbitrary_serialization_schema(g: &mut Gen) -> Vec<String> {
-        let mut v = Vec::new();
-        let n: u32 = Arbitrary::arbitrary(g);
-        for _ in 0..n % 16 {
-            v.push(arbitrary_attr_name(g));
-        }
-        v
     }
 
     // It is convenient to use arbitrary data even for simple properites, because it
@@ -963,13 +969,12 @@ mod tests {
     impl Arbitrary for CredentialData {
         fn arbitrary(g: &mut Gen) -> CredentialData {
             CredentialData {
-                holder_id:            PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
-                is_holder_revocable:  Arbitrary::arbitrary(g),
-                commitment:           Arbitrary::arbitrary(g),
-                schema_ref:           Arbitrary::arbitrary(g),
-                serialization_schema: arbitrary_serialization_schema(g),
-                valid_from:           Arbitrary::arbitrary(g),
-                valid_until:          Arbitrary::arbitrary(g),
+                holder_id:        PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
+                holder_revocable: Arbitrary::arbitrary(g),
+                commitment:       Arbitrary::arbitrary(g),
+                schema_ref:       Arbitrary::arbitrary(g),
+                valid_from:       Arbitrary::arbitrary(g),
+                valid_until:      Arbitrary::arbitrary(g),
             }
         }
     }
@@ -979,7 +984,7 @@ mod tests {
             CredentialEntry {
                 credential_data:  Arbitrary::arbitrary(g),
                 revocation_nonce: Arbitrary::arbitrary(g),
-                is_revoked:       Arbitrary::arbitrary(g),
+                revoked:          Arbitrary::arbitrary(g),
             }
         }
     }
@@ -1014,16 +1019,19 @@ mod tests {
     fn credential_entry() -> CredentialEntry {
         CredentialEntry {
             credential_data:  CredentialData {
-                holder_id:            PUBLIC_KEY,
-                is_holder_revocable:  true,
-                commitment:           [0u8; 48].to_vec(),
-                schema_ref:           "".to_string().into(),
-                serialization_schema: Vec::new(),
-                valid_from:           None,
-                valid_until:          None,
+                holder_id:        PUBLIC_KEY,
+                holder_revocable: true,
+                commitment:       [0u8; 48].to_vec(),
+                schema_ref:       (MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                })
+                .into(),
+                valid_from:       None,
+                valid_until:      None,
             },
             revocation_nonce: 0,
-            is_revoked:       false,
+            revoked:          false,
         }
     }
 
@@ -1071,7 +1079,7 @@ mod tests {
     #[concordium_test]
     fn test_get_status_expired() {
         let mut entry = credential_entry();
-        claim!(!entry.is_revoked);
+        claim!(!entry.revoked);
         let now = Timestamp::from_timestamp_millis(10);
         // Set `valid_until` to time preceeding `now`.
         entry.credential_data.valid_until = Some(Timestamp::from_timestamp_millis(0));
@@ -1085,7 +1093,7 @@ mod tests {
     #[concordium_test]
     fn test_get_status_not_activated() {
         let mut entry = credential_entry();
-        claim!(!entry.is_revoked);
+        claim!(!entry.revoked);
         let now = Timestamp::from_timestamp_millis(10);
         // Set `valid_from` to time ahead of `now`.
         entry.credential_data.valid_from = Some(Timestamp::from_timestamp_millis(20));
@@ -1094,11 +1102,11 @@ mod tests {
         claim_eq!(status, expected, "Expected status {:?}, got {:?}", expected, status);
     }
 
-    /// Property: once the `is_revoked` flag is set to `true`, the status is
+    /// Property: once the `revoked` flag is set to `true`, the status is
     /// always `Revoked` regardless of the valid_from and valid_until values
     #[concordium_quickcheck]
     fn prop_revoked_stays_revoked(mut entry: CredentialEntry, now: Timestamp) -> bool {
-        entry.is_revoked = true;
+        entry.revoked = true;
         entry.get_status(now) == CredentialStatus::Revoked
     }
 
@@ -1113,7 +1121,7 @@ mod tests {
         if let Ok(fetched_data) = query_result {
             register_result.is_ok()
                 && (fetched_data.credential_data == data)
-                && !fetched_data.is_revoked
+                && !fetched_data.revoked
                 && fetched_data.revocation_nonce == 0
         } else {
             false
@@ -1137,7 +1145,7 @@ mod tests {
         if let Ok(fetched_data) = query_result {
             register_result.is_ok()
                 && (fetched_data.credential_data == data)
-                && (fetched_data.is_revoked == initial_entry.is_revoked)
+                && (fetched_data.revoked == initial_entry.revoked)
                 && (fetched_data.revocation_nonce == initial_entry.revocation_nonce)
         } else {
             false
@@ -1241,7 +1249,11 @@ mod tests {
             to_bytes(&CredentialEvent::Register(CredentialEventData {
                 credential_id,
                 holder_id: PUBLIC_KEY,
-                schema_ref: "".to_string().into()
+                schema_ref: (MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                })
+                .into()
             })),
             "Incorrect register credential event logged"
         );
@@ -1277,14 +1289,14 @@ mod tests {
         claim!(res.is_ok(), "Credential registration failed");
 
         claim!(
-            credential_entry().credential_data.is_holder_revocable,
+            credential_entry().credential_data.holder_revocable,
             "Initial credential expected to be holder-revocable"
         );
 
         // Create input parameters.
 
         let mut new_credential_data = credential_entry().credential_data;
-        new_credential_data.is_holder_revocable = false;
+        new_credential_data.holder_revocable = false;
 
         let param = CredentialDataParameter {
             credential_id,
@@ -1311,7 +1323,11 @@ mod tests {
             to_bytes(&CredentialEvent::Update(CredentialEventData {
                 credential_id,
                 holder_id: PUBLIC_KEY,
-                schema_ref: "".to_string().into()
+                schema_ref: (MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                })
+                .into()
             })),
             "Incorrect update credential event logged"
         );
@@ -1341,7 +1357,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         claim!(
-            credential_entry().credential_data.is_holder_revocable,
+            credential_entry().credential_data.holder_revocable,
             "Initial credential expected to be holder-revocable"
         );
 
