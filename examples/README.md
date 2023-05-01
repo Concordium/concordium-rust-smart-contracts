@@ -33,4 +33,5 @@ The list of contracts is as follows
 - [transfer-policy-check](./transfer-policy-check) A contract that showcases how to use policies.
 - [eSealing](./eSealing) A contract implementing an eSealing service.
 - [sponsoredTransactions](./cis3-nft-sponsored-txs) A contract implementing the sponsored transaction mechanism (CIS3 standard).
+- [smartContractUpgrade](./smart-contract-upgrade) An example of how to upgrade a smart contract. The state is migrated during the upgrade.
 
