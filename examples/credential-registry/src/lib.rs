@@ -576,8 +576,7 @@ fn authorize_with_signature(
     // transaction and 8 zero bytes.
     // TODO: change this if we decide how to the wallet sings the message with a key
     // generated for a credential (not an account key)
-    let mut msg_prepend = Vec::with_capacity(32 + 8);
-    unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
+    let mut msg_prepend = vec![0; 32 + 8];
     msg_prepend[0..32].copy_from_slice(ctx.invoker().as_ref());
     msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
 
