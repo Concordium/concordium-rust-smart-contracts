@@ -401,22 +401,11 @@ impl Chain {
         // Sender policies have a very bespoke serialization in
         // order to allow skipping portions of them in smart contracts.
         let sender_policies = {
-            // TODO: Add this to where policies are defined.
-            let policy = &account_info.policy;
-            // There is only a single policy. This is not the same as on the chain.
-            let mut out = vec![1, 0]; // there is a single policy, encoded in little endian.
-            let mut inner = Vec::new();
-            inner.extend_from_slice(&policy.identity_provider.to_le_bytes());
-            inner.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
-            inner.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
-            inner.extend_from_slice(&(policy.items.len() as u16).to_le_bytes());
-            for (tag, value) in &policy.items {
-                inner.push(tag.0);
-                inner.push(value.len() as u8);
-                inner.extend_from_slice(value.as_ref());
-            }
-            out.extend_from_slice(&(inner.len() as u16).to_le_bytes());
-            out.extend_from_slice(&inner);
+            let mut out = Vec::new();
+            account_info
+                .policy
+                .serial_for_smart_contract(&mut out)
+                .expect("Writing to a vector should succeed.");
             out
         };
 
@@ -606,6 +595,8 @@ impl Chain {
             chain: self,
             reserved_amount: amount_reserved_for_energy,
             invoker,
+            // Starts at 1 since 0 is the "initial state" of all contracts in the current
+            // transaction.
             next_contract_modification_index: 1,
         };
 

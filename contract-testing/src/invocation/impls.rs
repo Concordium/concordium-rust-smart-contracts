@@ -145,26 +145,15 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         // Sender policies have a very bespoke serialization in
         // order to allow skipping portions of them in smart contracts.
         let sender_policies = {
-            // TODO: Add this to where policies are defined.
+            let mut out = Vec::new();
             let policy = &self
                 .chain
                 .account(invoker)
                 .expect("Precondition violation: invoker must exist.")
                 .policy;
-            // There is only a single policy. This is not the same as on the chain.
-            let mut out = vec![1, 0]; // there is a single policy, encoded in little endian.
-            let mut inner = Vec::new();
-            inner.extend_from_slice(&policy.identity_provider.to_le_bytes());
-            inner.extend_from_slice(&policy.created_at.timestamp_millis().to_le_bytes());
-            inner.extend_from_slice(&policy.valid_to.timestamp_millis().to_le_bytes());
-            inner.extend_from_slice(&(policy.items.len() as u16).to_le_bytes());
-            for (tag, value) in &policy.items {
-                inner.push(tag.0);
-                inner.push(value.len() as u8);
-                inner.extend_from_slice(value.as_ref());
-            }
-            out.extend_from_slice(&(inner.len() as u16).to_le_bytes());
-            out.extend_from_slice(&inner);
+            policy
+                .serial_for_smart_contract(&mut out)
+                .expect("Writing to a vector should succeed.");
             out
         };
 
@@ -227,6 +216,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
             amount: payload.amount,
             state: mutable_state,
             trace_elements_checkpoint,
+            next_mod_idx_checkpoint: mod_idx_before_invoke,
             mod_idx_before_invoke,
         })))
     }
@@ -312,9 +302,6 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 if state_changed {
                                     // Update the state field with the newest value from the
                                     // changeset.
-                                    data.state = self.contract_state(data.address);
-                                    // TODO: This change fixes some costs, but maybe should not be
-                                    // necessary.
                                     data.state = self.contract_state(data.address);
                                 }
                                 state_changed
@@ -700,6 +687,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // Delete the trace of the failed part of the execution.
                     // This is the current behaviour of the on-chain execution.
                     trace_elements.truncate(invocation_data.trace_elements_checkpoint);
+                    // Reset the next modification index as well.
+                    self.next_contract_modification_index = invocation_data.next_mod_idx_checkpoint;
                     invoke_response = Some(v1::InvokeResponse::Failure {
                         kind: v1::InvokeFailure::ContractReject {
                             code: reason,
@@ -715,6 +704,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // Delete the trace of the failed part of the execution.
                     // This is the current behaviour of the on-chain execution.
                     trace_elements.truncate(invocation_data.trace_elements_checkpoint);
+                    // Reset the next modification index as well.
+                    self.next_contract_modification_index = invocation_data.next_mod_idx_checkpoint;
                     invoke_response = Some(v1::InvokeResponse::Failure {
                         kind: v1::InvokeFailure::RuntimeError,
                     });
@@ -1022,8 +1013,9 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     /// will be replaced. Otherwise, the entry is created and the state is
     /// added.
     ///
-    /// This also increments the modification index. It will be set to 1 if the
-    /// contract has no entry in the changeset.
+    /// This method also increments the `self.next_contract_modification_index`.
+    ///
+    /// Returns the `modification_index` set for the contract.
     ///
     /// **Preconditions:**
     ///  - Contract must exist.

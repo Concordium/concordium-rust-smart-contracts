@@ -135,6 +135,13 @@ pub(super) struct InvocationData {
     /// A checkpoint in the list of trace elements.
     /// We reset to this size in case of failure of execution.
     pub(super) trace_elements_checkpoint: usize,
+    /// A checkpoint on the next modification index.
+    /// We reset `next_modification_index` to this value in case of failure of
+    /// execution.
+    pub(super) next_mod_idx_checkpoint:   u32,
+    /// The modification index before making an invocation.
+    /// Differs from the `next_mod_idx_checkpoint` in that this value can be
+    /// altered during the execution of a single entrypoint.
     pub(super) mod_idx_before_invoke:     u32,
 }
 
