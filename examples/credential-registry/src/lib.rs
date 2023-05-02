@@ -87,6 +87,7 @@ pub struct CredentialData {
     holder_revocable: bool,
     /// A vector Pedersen comminment to the attributes of the verifiable
     /// credential.
+    #[concordium(size_length = 2)]
     commitment:       Vec<u8>,
     /// A reference to the credential's JSON schema. It also sevres as the
     /// credential type.
@@ -381,6 +382,7 @@ pub struct CredentialEntryResponse {
     holder_revocable: bool,
     /// A vector Pedersen comminment to the attributes of the verifiable
     /// credential.
+    #[concordium(size_length = 2)]
     commitment:       Vec<u8>,
     /// A reference to the credential's JSON schema. It also sevres as the
     /// credential type.
@@ -395,8 +397,6 @@ pub struct CredentialEntryResponse {
     /// The nonce is used to avoid replay attacks when checking the holder's
     /// signature on a revocation message.
     revocation_nonce: u64,
-    // Revocation flag
-    revoked:          bool,
 }
 
 /// A view entrypoint for looking up an entry in the registry by id.
@@ -425,7 +425,6 @@ fn contract_view_credential_entry<S: HasStateApi>(
         valid_from:       data.credential_data.valid_from,
         valid_until:      data.credential_data.valid_until,
         revocation_nonce: data.revocation_nonce,
-        revoked:          data.revoked,
     })
 }
 
@@ -476,7 +475,7 @@ pub struct CredentialDataParameter {
     enable_logger,
     mutable
 )]
-fn contract_register_credeintial<S: HasStateApi>(
+fn contract_register_credential<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
@@ -544,15 +543,30 @@ struct SigningData {
 /// If `revocation_key_index` is present, it is used for authorization,
 /// otherwize the holder's key is used.
 #[derive(Serialize, SchemaType)]
-pub struct RevokeCredentialParam {
+pub struct RevokeCredentialOtherParam {
     credential_id:        Uuidv4,
-    signed:               Option<(SigningData, SignatureEd25519)>,
-    revocation_key_index: Option<u8>,
+    signing_data:         SigningData,
+    signature:            SignatureEd25519,
+    revocation_key_index: u8,
     reason:               Option<RevokeReason>,
 }
 
-/// Performs authorization based on the signature and the public key
-/// The message is build from serialized `credential_id` and `signing_data`
+#[derive(Serialize, SchemaType)]
+pub struct RevokeCredentialHolderParam {
+    credential_id: Uuidv4,
+    signing_data:  SigningData,
+    signature:     SignatureEd25519,
+    reason:        Option<RevokeReason>,
+}
+
+#[derive(Serialize, SchemaType)]
+pub struct RevokeCredentialIssuerParam {
+    credential_id: Uuidv4,
+    reason:        Option<RevokeReason>,
+}
+
+/// Performs authorization based on the signature and the public key.
+/// The message is build from serialized `credential_id` and `signing_data`.
 fn authorize_with_signature(
     crypto_primitives: &impl HasCryptoPrimitives,
     ctx: &impl HasReceiveContext,
@@ -598,52 +612,40 @@ fn authorize_with_signature(
     Ok(())
 }
 
-/// Revoke a credential.
+/// Revoke a credential as a holder.
 ///
-/// Authentication depends on who is revoking.
+/// Holder is authenticated by verifying the signature on the input to the
+/// entrypoint with the holder's public key. The public key is stored in the
+/// credential entry (`holder_id`).
 ///
-/// - If the message is not signed, it is assumed that the issuer is calling the
-///   entrypoint.
-///  In this case, check whether the caller is if the caller is the contract's
-/// owner.
-/// - If the message is signed and no key index is given, it is assumed that the
-///   holder is calling the entrypoint.
-///  In this case, verify the signature with the holder's public key, which is
-/// stored in the credential entry (`holder_id`).
-/// - If the message is signed and a key index is given, it is assumed that a
-///   revocation authority is calling the entrypoint.
-///  In this case, verify the signature with the revocation authority's public
-/// key, which is stored in `revocation_keys`.
+/// Note that nonce is used as a general way to prevent replay attacks. In this
+/// particular case, the revocation is done once, however, the issuer could
+/// choose to implement an update method that restores the revoked credential.
 ///
-///  Logs RevokeCredentialEvent with the revoker defined as it is described
-/// above.
+/// Logs RevokeCredentialEvent with `Holder` as the revoker.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Depening on the authentication
-///     - issuer: The caller is not the contract's owner
-///     - holder: signature validation has failed
-///     - revocation authority: no entry for the key index or signature
-///       validation has failed
-/// - An entry with the given credential id does not exist
-/// - The credential status is not one of `Active` or `NotActivated`
-/// - Fails to log RevokeCredentialEvent
+/// - Signature validation has failed.
+/// - An entry with the given credential id does not exist.
+/// - The credential status is not one of `Active` or `NotActivated`.
+/// - Fails to log RevokeCredentialEvent.
 #[receive(
     contract = "credential_registry",
-    name = "revokeCredential",
-    parameter = "RevokeCredentialParam",
+    name = "revokeCredentialHolder",
+    parameter = "RevokeCredentialHolderParam",
     error = "ContractError",
     crypto_primitives,
     enable_logger,
     mutable
 )]
-fn contract_revoke_credeintial<S: HasStateApi>(
+fn contract_revoke_credential_holder<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> Result<(), ContractError> {
-    let parameter: RevokeCredentialParam = ctx.parameter_cursor().get()?;
+    let parameter: RevokeCredentialHolderParam = ctx.parameter_cursor().get()?;
 
     let state = host.state_mut();
     let mut registry_entry = state
@@ -651,82 +653,173 @@ fn contract_revoke_credeintial<S: HasStateApi>(
         .entry(parameter.credential_id)
         .occupied_or(ContractError::CredentialNotFound)?;
 
-    // By default, the issuer is the revoker
-    let mut revoker = Revoker::Issuer;
+    let revoker = Revoker::Holder;
 
-    // Authorization depends on whether the calls is signed
-    match parameter.signed {
-        None => {
-            // Not signed - authorize the owner (issuer).
-            ensure!(sender_is_owner(ctx), ContractError::NotAuthorized)
-        }
-        Some((signing_data, signature)) => {
-            // Signed - check the revocation key.
-            match parameter.revocation_key_index {
-                None => {
-                    // No revocation key index - authorize the holder.
+    let signing_data = parameter.signing_data;
+    let signature = parameter.signature;
 
-                    // Set the revoker to be the holder.
-                    revoker = Revoker::Holder;
+    // Only holder-revocable entries can be revoked by the holder.
+    ensure!(registry_entry.credential_data.holder_revocable, ContractError::NotAuthorized);
 
-                    // Only holder-revocable entries can be revoked by the holder.
-                    ensure!(
-                        registry_entry.credential_data.holder_revocable,
-                        ContractError::NotAuthorized
-                    );
+    // Update the nonce.
+    registry_entry.revocation_nonce += 1;
 
-                    // Update the nonce.
-                    registry_entry.revocation_nonce += 1;
+    // Get the public key and the current nonce.
+    let public_key = registry_entry.credential_data.holder_id;
+    let nonce = registry_entry.revocation_nonce;
 
-                    // Get the public key and the current nonce.
-                    let public_key = registry_entry.credential_data.holder_id;
-                    let nonce = registry_entry.revocation_nonce;
-
-                    authorize_with_signature(
-                        crypto_primitives,
-                        ctx,
-                        nonce,
-                        public_key,
-                        parameter.credential_id,
-                        signing_data,
-                        signature,
-                    )?;
-                }
-
-                Some(key_index) => {
-                    // Revocation key index is present - authorize the revocation authority.
-
-                    let mut entry = state
-                        .revocation_keys
-                        .entry(key_index)
-                        .occupied_or(ContractError::CredentialNotFound)?;
-
-                    // Update the nonce.
-                    entry.1 += 1;
-
-                    let nonce = entry.1;
-                    let public_key = entry.0;
-
-                    // Set the revoker to be the revocation authority.
-                    revoker = Revoker::Other(public_key);
-
-                    authorize_with_signature(
-                        crypto_primitives,
-                        ctx,
-                        nonce,
-                        public_key,
-                        parameter.credential_id,
-                        signing_data,
-                        signature,
-                    )?;
-                }
-            }
-        }
-    }
-    let credential_id = ctx.parameter_cursor().get()?;
+    authorize_with_signature(
+        crypto_primitives,
+        ctx,
+        nonce,
+        public_key,
+        parameter.credential_id,
+        signing_data,
+        signature,
+    )?;
+    let credential_id = parameter.credential_id;
     let now = ctx.metadata().slot_time();
     let holder_id = registry_entry.credential_data.holder_id;
     drop(registry_entry);
+
+    state.revoke_credential(now, credential_id)?;
+
+    logger.log(&RevokeCredentialEvent {
+        credential_id,
+        holder_id,
+        reason: parameter.reason,
+        revoker,
+    })?;
+    Ok(())
+}
+
+/// Revoke a credential as an issuer.
+/// Can be called by the contrat owner.
+///
+/// Logs RevokeCredentialEvent with `Issuer` as the revoker.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The caller is not the contract's owner.
+/// - An entry with the given credential id does not exist.
+/// - The credential status is not one of `Active` or `NotActivated`.
+/// - Fails to log RevokeCredentialEvent.
+#[receive(
+    contract = "credential_registry",
+    name = "revokeCredentialIssuer",
+    parameter = "RevokeCredentialIssuerParam",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_revoke_credential_issuer<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> Result<(), ContractError> {
+    let parameter: RevokeCredentialIssuerParam = ctx.parameter_cursor().get()?;
+
+    let state = host.state_mut();
+    let registry_entry = state
+        .credentials
+        .entry(parameter.credential_id)
+        .occupied_or(ContractError::CredentialNotFound)?;
+
+    let revoker = Revoker::Issuer;
+    let now = ctx.metadata().slot_time();
+    let holder_id = registry_entry.credential_data.holder_id;
+    drop(registry_entry);
+
+    let credential_id = parameter.credential_id;
+
+    state.revoke_credential(now, credential_id)?;
+
+    logger.log(&RevokeCredentialEvent {
+        credential_id,
+        holder_id,
+        reason: parameter.reason,
+        revoker,
+    })?;
+    Ok(())
+}
+
+/// Revoke a credential as a revocation authority.
+///
+/// A revocation athority is any entity that hold a secret key corresponding to
+/// a public key registered by the issuer.
+///
+/// A revocation authority is authenticatedby verifying the signature on the input to the entrypoint
+/// with the autority's public key.
+/// The public key is stored in `revocation_keys`. The index of the key in the
+/// list of revocation keys is provided as input.
+///
+/// Note that nonce is used as a general way to prevent replay attacks. In this
+/// particular case, the revocation is done once, however, the issuer could
+/// choose to implement an update method that restores the revoked credential.
+///
+///  Logs RevokeCredentialEvent with `Other` as the revoker.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - No entry for the key index.
+/// - Signature validation has failed.
+/// - An entry with the given credential id does not exist
+/// - The credential status is not one of `Active` or `NotActivated`
+/// - Fails to log RevokeCredentialEvent
+#[receive(
+    contract = "credential_registry",
+    name = "revokeCredentialOther",
+    parameter = "RevokeCredentialOtherParam",
+    error = "ContractError",
+    crypto_primitives,
+    enable_logger,
+    mutable
+)]
+fn contract_revoke_credential_other<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> Result<(), ContractError> {
+    let parameter: RevokeCredentialOtherParam = ctx.parameter_cursor().get()?;
+
+    let state = host.state_mut();
+    let registry_entry = state
+        .credentials
+        .entry(parameter.credential_id)
+        .occupied_or(ContractError::CredentialNotFound)?;
+    let holder_id = registry_entry.credential_data.holder_id;
+    drop(registry_entry);
+
+    let key_index = parameter.revocation_key_index;
+    let mut entry =
+        state.revocation_keys.entry(key_index).occupied_or(ContractError::CredentialNotFound)?;
+    // Update the nonce.
+    entry.1 += 1;
+
+    let nonce = entry.1;
+    let public_key = entry.0;
+
+    // Set the revoker to be the revocation authority.
+    let revoker = Revoker::Other(public_key);
+
+    let signing_data = parameter.signing_data;
+    let signature = parameter.signature;
+
+    authorize_with_signature(
+        crypto_primitives,
+        ctx,
+        nonce,
+        public_key,
+        parameter.credential_id,
+        signing_data,
+        signature,
+    )?;
+    let now = ctx.metadata().slot_time();
+    drop(entry);
+
+    let credential_id = parameter.credential_id;
+
     state.revoke_credential(now, credential_id)?;
     logger.log(&RevokeCredentialEvent {
         credential_id,
@@ -1231,7 +1324,7 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         // Create a credential
-        let res = contract_register_credeintial(&ctx, &mut host, &mut logger);
+        let res = contract_register_credential(&ctx, &mut host, &mut logger);
 
         // Check that it was registered successfully
         claim!(res.is_ok(), "Credential registration failed");
@@ -1369,7 +1462,7 @@ mod tests {
         claim!(res.is_ok(), "Credential registration failed");
 
         // Create singing data
-        let signig_data = SigningData {
+        let signing_data = SigningData {
             contract_address: contract,
             nonce:            1,
             timestamp:        Timestamp::from_timestamp_millis(10000000000),
@@ -1379,10 +1472,10 @@ mod tests {
 
         let revocation_reason = "Just because";
 
-        let revoke_param = RevokeCredentialParam {
+        let revoke_param = RevokeCredentialHolderParam {
             credential_id,
-            signed: Some((signig_data, SIGNATURE)),
-            revocation_key_index: None,
+            signing_data,
+            signature: SIGNATURE,
             reason: Some(revocation_reason.to_string().into()),
         };
 
@@ -1392,7 +1485,7 @@ mod tests {
         let crypto_primitives = TestCryptoPrimitives::new();
         // Inovke `permit` function.
         let result: ContractResult<()> =
-            contract_revoke_credeintial(&ctx, &mut host, &mut logger, &crypto_primitives);
+            contract_revoke_credential_holder(&ctx, &mut host, &mut logger, &crypto_primitives);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection: {:?}", result);
