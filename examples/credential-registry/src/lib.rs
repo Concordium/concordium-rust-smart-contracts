@@ -510,6 +510,26 @@ struct SigningData {
     timestamp:        Timestamp,
 }
 
+/// The parameter type for revoking a credential by the holder.
+#[derive(Serialize, SchemaType)]
+pub struct RevokeCredentialHolderParam {
+    /// Id of the credential to revoke.
+    credential_id: Uuidv4,
+    /// Info about the signature.
+    signing_data:  SigningData,
+    signature:     SignatureEd25519,
+    /// (Optional) reason for revoking the credential.
+    reason:        Option<RevokeReason>,
+}
+
+#[derive(Serialize, SchemaType)]
+pub struct RevokeCredentialIssuerParam {
+    /// Id of the credential to revoke.
+    credential_id: Uuidv4,
+    /// (Optional) reason for revoking the credential.
+    reason:        Option<RevokeReason>,
+}
+
 /// The parameter type for the contract function `revokeCredential`.
 /// Contains credential id, and optionally a signature with some meta
 /// information.
@@ -524,20 +544,6 @@ pub struct RevokeCredentialOtherParam {
     signature:            SignatureEd25519,
     revocation_key_index: u8,
     reason:               Option<RevokeReason>,
-}
-
-#[derive(Serialize, SchemaType)]
-pub struct RevokeCredentialHolderParam {
-    credential_id: Uuidv4,
-    signing_data:  SigningData,
-    signature:     SignatureEd25519,
-    reason:        Option<RevokeReason>,
-}
-
-#[derive(Serialize, SchemaType)]
-pub struct RevokeCredentialIssuerParam {
-    credential_id: Uuidv4,
-    reason:        Option<RevokeReason>,
 }
 
 /// Performs authorization based on the signature and the public key.
