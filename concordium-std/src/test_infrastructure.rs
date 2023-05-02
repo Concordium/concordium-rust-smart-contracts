@@ -1288,7 +1288,7 @@ pub struct TestHost<State> {
     /// Functions that mock responses to calls.
     // This is Rc+RefCell because it needs to be cloneable. There might be another way to make the
     // MockFn cloneable, but this seemed like the easiest option.
-    mocking_fns:             Rc<RefCell<MockFnMap<State>>>,
+    mocking_fns: Rc<RefCell<MockFnMap<State>>>,
     /// Transfers the contract has made during its execution.
     transfers:               RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
