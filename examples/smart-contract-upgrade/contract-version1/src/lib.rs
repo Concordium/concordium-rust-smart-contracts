@@ -1,16 +1,27 @@
-//! An example contract that can be upgraded. The contract has a function to
-//! upgrade the smart contract instance to a new module and call optionally a
-//! migration function after the upgrade. To use this example, deploy
-//! `Contract_Version1` and then upgrade the smart contract instance to
-//! `Contract_Version2` by invoking the `upgrade` function with the below JSON
+//! An example contract (`contract-version1`) that can be upgraded. The contract
+//! has a function to upgrade the smart contract instance to a new module and
+//! call optionally a migration function after the upgrade. To use this example,
+//! deploy `contract-version1` and then upgrade the smart contract instance to
+//! `contract-version2` by invoking the `upgrade` function with the below JSON
 //! inputParameter:
 //!
-//! {"migrate": {"Some": [["migration",""]]},"module":
-//! <ModuleReferenceContract_Version2>}
+//! ```json
+//! {
+//!   "migrate": {
+//!     "Some": [
+//!       [
+//!         "migration",
+//!         ""
+//!       ]
+//!     ]
+//!   },
+//!   "module": "<ModuleReferenceContractVersion2>"
+//! }
+//! ```
 //!
-//! `Contract_Version2` includes a `migration` function
-//! that converts the shape of the smart contract state from `Contract_Version1`
-//! to `Contract_Version2`.
+//! `contract-version2` includes a `migration` function
+//! that converts the shape of the smart contract state from `contract-version1`
+//! to `contract-version2`.
 use concordium_std::*;
 
 /// The smart contract state.
@@ -145,33 +156,3 @@ fn contract_upgrade<S: HasStateApi>(
     }
     Ok(())
 }
-
-/// Transfer the admin address to a new admin address.
-///
-/// It rejects if:
-/// - Sender is not the current admin of the contract instance.
-/// - It fails to parse the parameter.
-#[receive(
-    contract = "smart_contract_upgrade",
-    name = "updateAdmin",
-    parameter = "AccountAddress",
-    error = "CostumContractError",
-    mutable
-)]
-fn contract_update_admin<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
-) -> ContractResult<()> {
-    // Check that only the current admin is authorized to update the admin address.
-    ensure!(ctx.sender().matches_account(&host.state().admin), CostumContractError::Unauthorized);
-
-    // Parse the parameter.
-    let new_admin = ctx.parameter_cursor().get()?;
-
-    // Update the admin variable.
-    host.state_mut().admin = new_admin;
-
-    Ok(())
-}
-
-// TODO: Add tests once the new integration testing library is released.
