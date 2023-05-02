@@ -92,7 +92,7 @@ fn contract_init<S: HasStateApi>(
 
 /// View function that returns the content of the state.
 #[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
-fn view<'b, S: HasStateApi>(
+fn contract_view<'b, S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &'b impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<&'b State> {
@@ -208,3 +208,5 @@ fn contract_update_admin<S: HasStateApi>(
 
     Ok(())
 }
+
+// TODO: Add tests once the new integration testing library is released.

@@ -38,6 +38,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/Contract_Version1/Cargo.toml
+          - examples/smart-contract-upgrade/Contract_Version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -488,6 +490,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/Contract_Version1/Cargo.toml
+          - examples/smart-contract-upgrade/Contract_Version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -612,6 +616,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/Contract_Version1/Cargo.toml
+          - examples/smart-contract-upgrade/Contract_Version2/Cargo.toml
 
     steps:
       - name: Checkout sources

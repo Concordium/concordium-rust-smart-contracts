@@ -92,7 +92,7 @@ fn contract_init<S: HasStateApi>(
 
 /// View function that returns the content of the state.
 #[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
-fn view<'b, S: HasStateApi>(
+fn contract_view<'b, S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &'b impl HasHost<State, StateApiType = S>,
 ) -> ReceiveResult<&'b State> {
@@ -174,59 +174,4 @@ fn contract_update_admin<S: HasStateApi>(
     Ok(())
 }
 
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use test_infrastructure::*;
-
-    const ADMIN_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
-    const ADMIN_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
-
-    #[concordium_test]
-    fn test_upgradability() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-        ctx.set_owner(ADMIN_ACCOUNT);
-
-        let self_address = ContractAddress::new(0, 0);
-        ctx.set_self_address(self_address);
-
-        let new_module_ref = ModuleReference::from([0u8; 32]);
-        let migration_entrypoint = OwnedEntrypointName::new_unchecked("migration".into());
-
-        let mut ctx = TestInitContext::empty();
-
-        ctx.set_init_origin(ADMIN_ACCOUNT);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        let state = contract_init(&ctx, &mut state_builder).unwrap();
-
-        // and parameter.
-        let parameter = UpgradeParams {
-            module:  new_module_ref,
-            migrate: Some((
-                migration_entrypoint.clone(),
-                OwnedParameter::new_unchecked(Vec::new()),
-            )),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        // let mut host = TestHost::new(TestStateApi::new(), state_builder);
-
-        // let host = TestHost::new(state, state_builder);
-
-        // host.setup_mock_upgrade(new_module_ref, Ok(()));
-        // host.setup_mock_entrypoint(self_address, migration_entrypoint,
-        // MockFn::returning_ok(()));
-
-        // let result = contract_upgrade(&ctx, &mut host);
-
-        // claim_eq!(result, Ok(()));
-    }
-}
+// TODO: Add tests once the new integration testing library is released.
