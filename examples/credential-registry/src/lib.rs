@@ -156,6 +156,7 @@ impl<S: HasStateApi> CredentialEntry<S> {
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
+    issuer:          AccountAddress,
     issuer_metadata: MetadataUrl,
     issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
     revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
@@ -195,8 +196,13 @@ type ContractResult<A> = Result<A, ContractError>;
 
 /// Functions for creating, updating and querying the contract state.
 impl<S: HasStateApi> State<S> {
-    fn new(state_builder: &mut StateBuilder<S>, issuer_metadata: MetadataUrl) -> Self {
+    fn new(
+        state_builder: &mut StateBuilder<S>,
+        issuer: AccountAddress,
+        issuer_metadata: MetadataUrl,
+    ) -> Self {
         State {
+            issuer,
             issuer_metadata,
             issuer_keys: state_builder.new_map(),
             revocation_keys: state_builder.new_map(),
@@ -399,11 +405,11 @@ fn init<S: HasStateApi>(
     logger.log(&CredentialEvent::Metadata(IssuerMetadataEvent {
         metadata_url: issuer_metadata.clone(),
     }))?;
-    Ok(State::new(state_builder, issuer_metadata))
+    Ok(State::new(state_builder, ctx.init_origin(), issuer_metadata))
 }
 
-fn sender_is_owner(ctx: &impl HasReceiveContext) -> bool {
-    ctx.sender().matches_account(&ctx.owner())
+fn sender_is_issuer<S: HasStateApi>(ctx: &impl HasReceiveContext, state: &State<S>) -> bool {
+    ctx.sender().matches_account(&state.issuer)
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
@@ -492,7 +498,7 @@ pub struct RegisterCredentialParameter {
 /// Register a new credential with the given id and data.
 /// Logs RegisterCredentialEvent.
 ///
-/// Can be called only by the owner.
+/// Can be called only by the issuer.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -512,7 +518,7 @@ fn contract_register_credential<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let parameter: RegisterCredentialParameter = ctx.parameter_cursor().get()?;
     let (state, state_bulder) = host.state_and_builder();
     state.register_credential(parameter.credential_id, &parameter.credential_info, state_bulder)?;
@@ -865,7 +871,7 @@ fn contract_register_issuer_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RegisterPublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
     for parameter in parameters {
         host.state_mut().register_issuer_key(parameter.key_index, parameter.key)?;
@@ -892,7 +898,7 @@ fn contract_remove_issuer_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RemovePublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
     for index in parameters {
         host.state_mut().remove_issuer_key(index)?;
@@ -902,7 +908,7 @@ fn contract_remove_issuer_keys<S: HasStateApi>(
 
 /// Register revocation authorities public keys.
 /// These keys are used to authorize the revocation (applies to the whole
-/// registry). Only the owner can call the entrypoint.
+/// registry). Only the issuer can call the entrypoint.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -919,7 +925,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RegisterPublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
     for parameter in parameters {
         host.state_mut().register_revocation_key(parameter.key_index, parameter.key)?;
@@ -928,7 +934,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 }
 
 /// Remove revocation authorities public keys.
-/// Only the owner can call the entrypoint.
+/// Only the issuer can call the entrypoint.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -945,7 +951,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RemovePublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
     for index in parameters {
         host.state_mut().remove_revocation_key(index)?;
@@ -1025,13 +1031,22 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
-    ensure!(sender_is_owner(ctx), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data = ctx.parameter_cursor().get()?;
     host.state_mut().update_issuer_metadata(&data);
     logger.log(&CredentialEvent::Metadata(IssuerMetadataEvent {
         metadata_url: data,
     }))?;
     Ok(())
+}
+
+/// A view entrypoint for querying the issuer account address
+#[receive(contract = "credential_registry", name = "viewIssuer", error = "ContractError")]
+fn contract_view_issuer<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> Result<AccountAddress, ContractError> {
+    Ok(host.state().issuer)
 }
 
 #[concordium_cfg_test]
@@ -1092,6 +1107,7 @@ mod tests {
         }
     }
 
+    const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
@@ -1143,6 +1159,8 @@ mod tests {
         let mut ctx = TestInitContext::empty();
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
+
+        ctx.set_init_origin(ISSUER_ACCOUNT);
 
         let parameter_bytes = to_bytes(&university_issuer);
         ctx.set_parameter(&parameter_bytes);
@@ -1235,7 +1253,7 @@ mod tests {
         now: Timestamp,
     ) -> bool {
         let mut state_builder = TestStateBuilder::new();
-        let mut state = State::new(&mut state_builder, issuer_metadata());
+        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let register_result = state.register_credential(credential_id, &data, &mut state_builder);
         let query_result = state.view_credential_info(credential_id);
         let status = state.view_credential_status(now, credential_id);
@@ -1254,7 +1272,7 @@ mod tests {
     #[concordium_quickcheck]
     fn prop_revocation(credential_id: Uuidv4, data: CredentialInfo) -> TestResult {
         let mut state_builder = TestStateBuilder::new();
-        let mut state = State::new(&mut state_builder, issuer_metadata());
+        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let register_result = state.register_credential(credential_id, &data, &mut state_builder);
 
         // make sure that the credential has not expired yet
@@ -1275,7 +1293,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let Array32u8(bytes) = pk_bytes;
         let pk = PublicKeyEd25519(bytes);
-        let mut state = State::new(&mut state_builder, issuer_metadata());
+        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let register_result = state.register_issuer_key(key_index, PublicKeyEd25519(bytes));
         let query_result = state.view_issuer_keys();
         register_result.is_ok() && query_result.contains(&(key_index, pk))
@@ -1288,7 +1306,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let Array32u8(bytes) = pk_bytes;
         let pk = PublicKeyEd25519(bytes);
-        let mut state = State::new(&mut state_builder, issuer_metadata());
+        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let register_result = state.register_revocation_key(key_index, PublicKeyEd25519(bytes));
         let query_result = state.view_revocation_key(key_index);
         if let Ok(fetched_data) = query_result {
@@ -1316,7 +1334,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = State::new(&mut state_builder, issuer_metadata());
+        let state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let mut host = TestHost::new(state, state_builder);
 
         let entry = credential_entry(host.state_builder());
@@ -1385,7 +1403,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state = State::new(&mut state_builder, issuer_metadata());
+        let state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let mut host = TestHost::new(state, state_builder);
 
         let (state, state_builder) = host.state_and_builder();
