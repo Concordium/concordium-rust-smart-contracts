@@ -9,7 +9,7 @@ authors = ["Concordium <developers@concordium.com>"]
 description = "An example of how to upgrade a smart contract. The state is migrated during the upgrade."
 
 [features]
-default = ["std"]
+default = ["std", "wee_alloc"]
 std = ["concordium-std/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
