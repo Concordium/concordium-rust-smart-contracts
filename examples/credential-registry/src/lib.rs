@@ -150,9 +150,8 @@ impl<S: HasStateApi> CredentialEntry<S> {
 }
 
 /// The registry state.
-// NOTE: keys are stored in a map, so one can refer to the keys by "names" in this case represented
-// by numbers. The keys could be removed and added, but external references (e.g. in DIDs) should
-// still be valid (unless a key was deliberatly removed)
+// NOTE: keys are stored in a map to keep the indices of other keys fixed when adding/removing a
+// key, as opposed to storing them in a vector.
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
