@@ -151,7 +151,8 @@ impl<S: HasStateApi> CredentialEntry<S> {
 
 /// The registry state.
 // NOTE: keys are stored in a map to keep the indices of other keys fixed when adding/removing a
-// key, as opposed to storing them in a vector.
+// key, as opposed to storing them in a vector. The indices are defined externally to the contract
+// by the issuer.
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
