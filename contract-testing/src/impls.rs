@@ -1026,7 +1026,7 @@ impl Chain {
     ///
     /// Will fail if they result in the cost of one energy being larger than
     /// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
-    pub fn set_exchange_rate(
+    pub fn set_exchange_rates(
         &mut self,
         micro_ccd_per_euro: ExchangeRate,
         euro_per_energy: ExchangeRate,
