@@ -492,7 +492,7 @@ pub struct RegisterCredentialParameter {
 /// Register a new credential with the given id and data.
 /// Logs RegisterCredentialEvent.
 ///
-/// Can be called by the owner only.
+/// Can be called only by the owner.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
@@ -524,6 +524,7 @@ fn contract_register_credential<S: HasStateApi>(
     Ok(())
 }
 
+/// Metadata of the signature
 #[derive(Serialize, SchemaType)]
 struct SigningData {
     /// The contract_address that the signature is intended for.
@@ -534,7 +535,7 @@ struct SigningData {
     timestamp:        Timestamp,
 }
 
-/// The parameter type for revoking a credential by the holder.
+/// A parameter type for revoking a credential by the holder.
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialHolderParam {
     /// Id of the credential to revoke.
@@ -546,6 +547,7 @@ pub struct RevokeCredentialHolderParam {
     reason:        Option<RevokeReason>,
 }
 
+/// A parameter type for revoking a credential by the issuer.
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialIssuerParam {
     /// Id of the credential to revoke.
@@ -554,19 +556,17 @@ pub struct RevokeCredentialIssuerParam {
     reason:        Option<RevokeReason>,
 }
 
-/// The parameter type for the contract function `revokeCredential`.
-/// Contains credential id, and optionally a signature with some meta
-/// information.
-/// If `signed` is present, the message is formed from the bytes of
-/// `credential_id` and fields of `SigningData`.
-/// If `revocation_key_index` is present, it is used for authorization,
-/// otherwize the holder's key is used.
+/// A parameter type for revoking a credential by a revocation authority.
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialOtherParam {
+    /// Id of the credential to revoke.
     credential_id:        Uuidv4,
+    /// Info about the signature.
     signing_data:         SigningData,
     signature:            SignatureEd25519,
+    /// Key index in the revocation keys map
     revocation_key_index: u8,
+    /// (Optional) reason for revoking the credential.
     reason:               Option<RevokeReason>,
 }
 
