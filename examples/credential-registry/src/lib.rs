@@ -334,7 +334,7 @@ enum Revoker {
 /// Revocation reason.
 /// The string is of a limited size of 256 bytes in order to fit into a single
 /// log entry along with other data logged on revocation.
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Clone)]
 struct RevokeReason {
     #[concordium(size_length = 1)]
     reason: String,
@@ -531,7 +531,7 @@ fn contract_register_credential<S: HasStateApi>(
 }
 
 /// Metadata of the signature
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Clone, Copy)]
 struct SigningData {
     /// The contract_address that the signature is intended for.
     contract_address: ContractAddress,
@@ -540,6 +540,8 @@ struct SigningData {
     /// A timestamp to make signatures expire.
     timestamp:        Timestamp,
 }
+
+const SIGNARUTE_DOMAIN: &str = "WEB3ID:REVOKE";
 
 /// A parameter type for revoking a credential by the holder.
 #[derive(Serialize, SchemaType)]
@@ -551,6 +553,18 @@ pub struct RevokeCredentialHolderParam {
     signature:     SignatureEd25519,
     /// (Optional) reason for revoking the credential.
     reason:        Option<RevokeReason>,
+}
+
+/// Prepare the message bytes for the holeder
+impl RevokeCredentialHolderParam {
+    fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
+        self.credential_id
+            .serial::<Vec<_>>(bytes)
+            .map_err(|_| ContractError::SerializationError)?;
+        self.signing_data.serial(bytes).map_err(|_| ContractError::SerializationError)?;
+        self.reason.serial(bytes).map_err(|_| ContractError::SerializationError)?;
+        Ok(())
+    }
 }
 
 /// A parameter type for revoking a credential by the issuer.
@@ -576,6 +590,19 @@ pub struct RevokeCredentialOtherParam {
     reason:               Option<RevokeReason>,
 }
 
+impl RevokeCredentialOtherParam {
+    /// Prepare the message bytes for a revocation authority
+    fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
+        self.credential_id
+            .serial::<Vec<_>>(bytes)
+            .map_err(|_| ContractError::SerializationError)?;
+        self.signing_data.serial(bytes).map_err(|_| ContractError::SerializationError)?;
+        self.revocation_key_index.serial(bytes).map_err(|_| ContractError::SerializationError)?;
+        self.reason.serial(bytes).map_err(|_| ContractError::SerializationError)?;
+        Ok(())
+    }
+}
+
 /// Performs authorization based on the signature and the public key.
 /// The message is build from serialized `credential_id` and `signing_data`.
 fn authorize_with_signature(
@@ -583,8 +610,8 @@ fn authorize_with_signature(
     ctx: &impl HasReceiveContext,
     nonce: u64,
     public_key: PublicKeyEd25519,
-    credential_id: Uuidv4,
     signing_data: SigningData,
+    message: &[u8],
     signature: SignatureEd25519,
 ) -> Result<(), ContractError> {
     // Check the nonce to prevent replay attacks.
@@ -596,26 +623,10 @@ fn authorize_with_signature(
     // Check signature is not expired.
     ensure!(signing_data.timestamp > ctx.metadata().slot_time(), ContractError::ExpiredSignature);
 
-    // Prepare the message, as it is signed by the wallet.
-    // Note that the message is prepended by the account address sending the
-    // transaction and 8 zero bytes.
-    // TODO: change this if we decide how to the wallet sings the message with a key
-    // generated for a credential (not an account key)
-    let mut msg_prepend = vec![0; 32 + 8];
-    msg_prepend[0..32].copy_from_slice(ctx.invoker().as_ref());
-    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
-
-    let mut message_bytes = Vec::new();
-    credential_id
-        .serial::<Vec<_>>(&mut message_bytes)
-        .map_err(|_| ContractError::SerializationError)?;
-    signing_data.serial(&mut message_bytes).map_err(|_| ContractError::SerializationError)?;
-
     // Calculate the message hash.
-    let message_hash =
-        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+    let message_hash = crypto_primitives.hash_sha2_256(message).0;
 
-    // Check signature.
+    // Check the signature.
     ensure!(
         crypto_primitives.verify_ed25519_signature(public_key, signature, &message_hash),
         ContractError::WrongSignature
@@ -679,13 +690,18 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
     let public_key = registry_entry.holder_id;
     let nonce = registry_entry.revocation_nonce;
 
+    // Perepare message bytes as it is signer by the wallet
+    // Note that the message is prepended by a domain separation string
+    let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
+    parameter.message_bytes(&mut message)?;
+
     authorize_with_signature(
         crypto_primitives,
         ctx,
         nonce,
         public_key,
-        parameter.credential_id,
         signing_data,
+        &message,
         signature,
     )?;
     let credential_id = parameter.credential_id;
@@ -817,13 +833,18 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     let signing_data = parameter.signing_data;
     let signature = parameter.signature;
 
+    // Perepare message bytes as it is signer by the wallet
+    // Note that the message is prepended by a domain separation string
+    let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
+    parameter.message_bytes(&mut message)?;
+
     authorize_with_signature(
         crypto_primitives,
         ctx,
         nonce,
         public_key,
-        parameter.credential_id,
         signing_data,
+        &message,
         signature,
     )?;
     let now = ctx.metadata().slot_time();
@@ -1111,16 +1132,15 @@ mod tests {
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        173, 21, 96, 108, 100, 77, 217, 90, 201, 81, 175, 214, 5, 35, 177, 170, 240, 206, 97, 142,
-        229, 137, 217, 215, 110, 203, 231, 175, 119, 21, 48, 162,
+        158, 227, 186, 15, 248, 246, 229, 189, 113, 194, 89, 206, 199, 166, 128, 15, 193, 2, 85,
+        21, 217, 50, 11, 44, 140, 144, 10, 192, 191, 58, 124, 77,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        105, 208, 126, 24, 233, 10, 86, 192, 92, 237, 158, 194, 166, 11, 70, 7, 167, 163, 80, 225,
-        211, 21, 91, 219, 24, 175, 25, 16, 111, 18, 140, 255, 1, 5, 248, 175, 85, 20, 232, 140, 86,
-        196, 81, 192, 75, 123, 125, 197, 89, 227, 230, 118, 121, 18, 230, 240, 242, 82, 99, 232,
-        75, 118, 41, 12,
+        20, 81, 176, 61, 69, 213, 173, 93, 241, 158, 23, 201, 244, 38, 69, 168, 3, 17, 96, 73, 34,
+        43, 28, 240, 252, 255, 89, 189, 116, 29, 37, 214, 155, 229, 160, 14, 50, 49, 116, 106, 112,
+        11, 146, 130, 130, 121, 193, 203, 87, 101, 76, 172, 208, 49, 158, 26, 184, 165, 117, 191,
+        149, 86, 227, 8,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1396,8 +1416,8 @@ mod tests {
         // Setup the context
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(ADDRESS_0);
-        ctx.set_owner(ACCOUNT_0);
-        ctx.set_invoker(ACCOUNT_1);
+        ctx.set_owner(ISSUER_ACCOUNT);
+        ctx.set_invoker(ISSUER_ACCOUNT);
         ctx.set_self_address(contract);
         ctx.set_metadata_slot_time(now);
 
