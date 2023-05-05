@@ -59,6 +59,10 @@ pub(super) enum Next {
 }
 
 /// The set of [`Changes`] represented as a stack.
+// For maintainers. It would be better if `Changes` had a form of copy-on-write.
+// At the moment we make a full clone of the changes when we need to checkpoint.
+// This is OKish, since people generally don't have that complex protocols, but can be made more
+// robust, resistant to malicious input.
 #[derive(Debug, Clone)]
 pub(crate) struct ChangeSet {
     /// The stack of changes.
