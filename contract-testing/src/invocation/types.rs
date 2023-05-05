@@ -29,7 +29,6 @@ pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// The energy remaining for execution.
     pub(crate) remaining_energy: &'a mut Energy,
     pub(crate) chain: &'b Chain,
-    // TODO: Need to revert on failures.
     pub(crate) next_contract_modification_index: u32,
 }
 
