@@ -38,6 +38,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -487,9 +489,9 @@ jobs:
           - examples/recorder/Cargo.toml
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
-
-        withquickcheck:
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -511,12 +513,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/wasm-test -- -D warnings
-
-      - name: Run cargo clippy with schema and tests requiring quickcheck
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ${{ matrix.withquickcheck }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/concordium-quickcheck -- -D warnings
 
   test:
     name: Test the library
@@ -620,6 +616,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
 
     steps:
       - name: Checkout sources
