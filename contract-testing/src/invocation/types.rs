@@ -18,17 +18,18 @@ use std::collections::BTreeMap;
 pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     /// Amount reserved for execution. This is used to return the correct
     /// balance of the invoker account.
-    pub(crate) reserved_amount:  Amount,
+    pub(crate) reserved_amount: Amount,
     /// Address of the invoker of the transaction. This is used to return the
     /// correct balance of the invoker account.
-    pub(crate) invoker:          AccountAddress,
+    pub(crate) invoker: AccountAddress,
     /// The changeset which keeps track of
     /// changes to accounts, modules, and contracts that occur during an
     /// invocation.
-    pub(crate) changeset:        ChangeSet,
+    pub(crate) changeset: ChangeSet,
     /// The energy remaining for execution.
     pub(crate) remaining_energy: &'a mut Energy,
-    pub(crate) chain:            &'b Chain,
+    pub(crate) chain: &'b Chain,
+    pub(crate) next_contract_modification_index: u32,
 }
 
 /// This auxiliary type is used in `invoke_entrypoint` from impls.rs to keep
@@ -133,6 +134,13 @@ pub(super) struct InvocationData {
     /// A checkpoint in the list of trace elements.
     /// We reset to this size in case of failure of execution.
     pub(super) trace_elements_checkpoint: usize,
+    /// A checkpoint on the next modification index.
+    /// We reset `next_modification_index` to this value in case of failure of
+    /// execution.
+    pub(super) next_mod_idx_checkpoint:   u32,
+    /// The modification index before making an invocation.
+    /// Differs from the `next_mod_idx_checkpoint` in that this value can be
+    /// altered during the execution of a single entrypoint.
     pub(super) mod_idx_before_invoke:     u32,
 }
 

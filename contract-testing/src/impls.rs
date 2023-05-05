@@ -398,13 +398,24 @@ impl Chain {
             });
         }
 
+        // Sender policies have a very bespoke serialization in
+        // order to allow skipping portions of them in smart contracts.
+        let sender_policies = {
+            let mut out = Vec::new();
+            account_info
+                .policy
+                .serial_for_smart_contract(&mut out)
+                .expect("Writing to a vector should succeed.");
+            out
+        };
+
         // Construct the context.
         let init_ctx = v0::InitContext {
-            metadata:        ChainMetadata {
+            metadata: ChainMetadata {
                 slot_time: self.parameters.block_time,
             },
-            init_origin:     sender,
-            sender_policies: contracts_common::to_bytes(&account_info.policy),
+            init_origin: sender,
+            sender_policies,
         };
         // Initialize contract
         // We create an empty loader as no caching is used in this testing library
@@ -584,6 +595,9 @@ impl Chain {
             chain: self,
             reserved_amount: amount_reserved_for_energy,
             invoker,
+            // Starts at 1 since 0 is the "initial state" of all contracts in the current
+            // transaction.
+            next_contract_modification_index: 1,
         };
 
         match contract_invocation.invoke_entrypoint(invoker, sender, payload) {
@@ -842,7 +856,7 @@ impl Chain {
     /// Create an account.
     ///
     /// If an account with a matching address already exists this method will
-    /// replace it and return it.
+    /// replace it and return the old account.
     ///
     /// Note that if the first 29-bytes of an account are identical, then
     /// they are *considered aliases* on each other in all methods.
@@ -1012,7 +1026,7 @@ impl Chain {
     ///
     /// Will fail if they result in the cost of one energy being larger than
     /// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
-    pub fn set_exchange_rate(
+    pub fn set_exchange_rates(
         &mut self,
         micro_ccd_per_euro: ExchangeRate,
         euro_per_energy: ExchangeRate,

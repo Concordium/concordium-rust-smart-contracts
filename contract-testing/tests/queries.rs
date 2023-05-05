@@ -27,11 +27,8 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                module_load_v1_raw(format!(
-                    "{}/queries-account-balance.wasm",
-                    WASM_TEST_FOLDER
-                ))
-                .expect("module should exist"),
+                module_load_v1_raw(format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER))
+                    .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -97,11 +94,8 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                module_load_v1_raw(format!(
-                    "{}/queries-account-balance.wasm",
-                    WASM_TEST_FOLDER
-                ))
-                .expect("module should exist"),
+                module_load_v1_raw(format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER))
+                    .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -255,11 +249,8 @@ mod query_account_balance {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                module_load_v1_raw(format!(
-                    "{}/queries-account-balance.wasm",
-                    WASM_TEST_FOLDER
-                ))
-                .expect("module should exist"),
+                module_load_v1_raw(format!("{}/queries-account-balance.wasm", WASM_TEST_FOLDER))
+                    .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
@@ -658,11 +649,8 @@ mod query_exchange_rates {
             .module_deploy_v1(
                 Signer::with_one_key(),
                 ACC_0,
-                module_load_v1_raw(format!(
-                    "{}/queries-exchange-rates.wasm",
-                    WASM_TEST_FOLDER
-                ))
-                .expect("module should exist"),
+                module_load_v1_raw(format!("{}/queries-exchange-rates.wasm", WASM_TEST_FOLDER))
+                    .expect("module should exist"),
             )
             .expect("Deploying valid module should work");
 
