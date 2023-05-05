@@ -2657,6 +2657,7 @@ impl<A> UnwrapAbort for Option<A> {
     type Unwrap = A;
 
     #[inline(always)]
+    #[allow(clippy::redundant_closure)]
     fn unwrap_abort(self) -> Self::Unwrap { self.unwrap_or_else(|| crate::trap()) }
 }
 

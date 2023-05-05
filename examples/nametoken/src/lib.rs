@@ -101,7 +101,7 @@ struct NameInfo<S: HasStateApi> {
     // `StateBox` allows for lazy loading data; this is helpful
     // in the situations when one wants to do a partial update not touching
     // this field, which can be large.
-    data:         StateBox<Vec<u8>, S>,
+    data: StateBox<Vec<u8>, S>,
 }
 
 impl<S: HasStateApi> NameInfo<S> {
