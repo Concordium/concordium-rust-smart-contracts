@@ -211,7 +211,7 @@ pub fn contract_receive_deposit<S: HasStateApi>(
 }
 
 /// Compute liabilities from given settlements for a sender address
-fn get_liabilities(settlements: &Vec<Settlement>, sender_address:AccountAddress) -> Amount{
+fn get_liabilities(settlements: &[Settlement], sender_address:AccountAddress) -> Amount{
     let mut liabilities = Amount::zero();
     for settlement in settlements.iter() {
         for sender in settlement.transfer.send_transfers.iter() {
