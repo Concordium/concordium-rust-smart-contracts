@@ -40,6 +40,8 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
     (chain, initialization)
 }
 
+/// Test that initializing the contract works and that its balance can be
+/// queried afterwards.
 #[test]
 fn test_init() {
     let (chain, initialization) = setup_chain_and_contract();
@@ -50,6 +52,8 @@ fn test_init() {
     );
 }
 
+/// Test that inserting CCD into the piggy bank while it is intact works and
+/// that the contract balance matches the amount inserted.
 #[test]
 fn test_insert_intact() {
     let (mut chain, initialization) = setup_chain_and_contract();
@@ -73,6 +77,10 @@ fn test_insert_intact() {
     assert_eq!(chain.contract_balance(initialization.contract_address), Some(insert_amount));
 }
 
+/// Test that the owner can smash an intact piggy bank and receive all of its
+/// funds.
+/// It also checks that the contract state is `PiggyBankState::Smashed`
+/// afterwards.
 #[test]
 fn test_smash_intact() {
     let (mut chain, initialization) = setup_chain_and_contract();
@@ -93,7 +101,7 @@ fn test_smash_intact() {
         .expect("Owner is allowed to smash intact piggy bank");
 
     // Invoke the view function to check the state and balance.
-    let invoke = chain
+    let invoke_result = chain
         .contract_invoke(
             ACC_ADDR_OWNER,
             Address::Account(ACC_ADDR_OWNER),
@@ -109,7 +117,7 @@ fn test_smash_intact() {
 
     // Ensure the values returned by the view function are correct.
     let (state, balance): (PiggyBankState, Amount) =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke_result.return_value).expect("View should always return a valid result");
     assert_eq!(state, PiggyBankState::Smashed);
     assert_eq!(balance, Amount::zero());
     assert_eq!(update.account_transfers().collect::<Vec<_>>(), [(
@@ -119,6 +127,8 @@ fn test_smash_intact() {
     )]);
 }
 
+/// Test that accounts other than the owner cannot smash an intact piggy bank.
+/// The test checks that the contract returns a `SmashError::NotOwner` error.
 #[test]
 fn test_smash_intact_not_owner() {
     let (mut chain, initialization) = setup_chain_and_contract();
@@ -151,6 +161,8 @@ fn test_smash_intact_not_owner() {
     )
 }
 
+/// Test that smashing an already smashed piggy bank is not allowed and thus
+/// results in a `SmashError::AlreadySmashed` error.
 #[test]
 fn test_smash_smashed() {
     let (mut chain, initialization) = setup_chain_and_contract();
