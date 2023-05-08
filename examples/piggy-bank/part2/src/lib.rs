@@ -19,8 +19,8 @@
 use concordium_std::*;
 
 /// The state of the piggy bank
-#[derive(Debug, Serialize, PartialEq, Eq, Clone, Copy)]
-pub enum PiggyBankState {
+#[derive(Debug, SchemaType, Serialize, PartialEq, Eq, Clone, Copy)]
+enum PiggyBankState {
     /// Alive and well, allows for CCD to be inserted.
     Intact,
     /// The piggy bank has been emptied, preventing further CCD to be inserted.
@@ -89,7 +89,7 @@ fn piggy_smash<S: HasStateApi>(
 }
 
 /// View the state and balance of the piggy bank.
-#[receive(contract = "PiggyBank", name = "view")]
+#[receive(contract = "PiggyBank", name = "view", return_value = "(PiggyBankState, Amount)")]
 fn piggy_view<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<PiggyBankState, StateApiType = S>,

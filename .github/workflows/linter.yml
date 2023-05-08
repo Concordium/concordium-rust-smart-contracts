@@ -10,6 +10,11 @@ on:
 
 name: Clippy & fmt
 
+env:
+  RUST_FMT: nightly-2023-04-01
+  RUST_VERSION: "1.60"
+
+
 jobs:
   rustfmt:
     name: Format
@@ -38,6 +43,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -49,7 +56,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-06-09
+          toolchain: ${{ env.RUST_FMT }}
           override: true
           components: rustfmt
 
@@ -57,7 +64,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --manifest-path=${{ matrix.crates }} --all -- --check
+          args: --manifest-path=${{ matrix.crates }} -- --check
 
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
   # can be executed without errors on the generated smart contracts.
@@ -135,7 +142,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -189,8 +196,8 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"6.1\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"3.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"6.2\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"3.1\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
 
@@ -221,7 +228,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -261,7 +268,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -298,7 +305,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -338,7 +345,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -450,7 +457,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
 
@@ -487,9 +494,9 @@ jobs:
           - examples/recorder/Cargo.toml
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
-
-        withquickcheck:
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -501,7 +508,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
           components: clippy
@@ -511,12 +518,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/wasm-test -- -D warnings
-
-      - name: Run cargo clippy with schema and tests requiring quickcheck
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ${{ matrix.withquickcheck }} --target=${{ matrix.target }} --features concordium-std/build-schema --features concordium-std/concordium-quickcheck -- -D warnings
 
   test:
     name: Test the library
@@ -544,7 +545,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
 
@@ -580,7 +581,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
 
@@ -620,6 +621,8 @@ jobs:
           - examples/signature-verifier/Cargo.toml
           - examples/transfer-policy-check/Cargo.toml
           - examples/two-step-transfer/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
+          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -631,7 +634,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
           override: true
 
