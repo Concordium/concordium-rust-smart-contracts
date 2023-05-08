@@ -2657,6 +2657,9 @@ impl<A> UnwrapAbort for Option<A> {
     type Unwrap = A;
 
     #[inline(always)]
+    #[allow(clippy::redundant_closure)]
+    // The redundant_closure here is needed since there is an implicit coercion from
+    // ! to A. This does not happen if we just use unwrap_or_else(crate::trap).
     fn unwrap_abort(self) -> Self::Unwrap { self.unwrap_or_else(|| crate::trap()) }
 }
 

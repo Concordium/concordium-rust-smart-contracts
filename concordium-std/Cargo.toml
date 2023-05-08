@@ -1,8 +1,9 @@
 [package]
 name = "concordium-std"
-version = "6.1.1"
+version = "6.2.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
+rust-version = "1.60"
 license = "MPL-2.0"
 description = "A standard library for writing smart contracts for the Concordium blockchain in Rust."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
@@ -22,11 +23,11 @@ getrandom = { version = "0.2", features = ["custom"], optional = true }
 
 [dependencies.concordium-std-derive]
 path = "../concordium-std-derive"
-version = "5.1"
+version = "5.2"
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-contracts-common/concordium-contracts-common"
-version = "5.3.1"
+version = "6.0"
 default-features = false
 
 [features]
