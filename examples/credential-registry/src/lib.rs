@@ -83,10 +83,10 @@ pub struct CredentialData {
     /// A vector Pedersen commitment to the attributes of the verifiable
     /// credential.
     #[concordium(size_length = 2)]
-    commitment: Vec<u8>,
-    /// A reference to the credential's JSON schema. It also sevres as the
-    /// credential type.
-    schema_ref: SchemaRef,
+    commitment:      Vec<u8>,
+    /// A type of the credential that is used to identify which schema the
+    /// credential is based on.
+    credential_type: SchemaID,
 }
 
 /// Public verifiable credential data, revocation flag and nonce
@@ -94,26 +94,29 @@ pub struct CredentialData {
 #[concordium(state_parameter = "S")]
 pub struct CredentialEntry<S: HasStateApi> {
     /// The holder's identifier is a public key.
-    holder_id:        PublicKeyEd25519,
+    holder_id:         PublicKeyEd25519,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
-    holder_revocable: bool,
+    holder_revocable:  bool,
+    /// If this flag is set to `true` the holder can send a signed message to
+    /// restore their credential. Restoring means reverting revocation.
+    holder_restorable: bool,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
-    valid_from:       Option<Timestamp>,
+    valid_from:        Option<Timestamp>,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
-    valid_until:      Option<Timestamp>,
+    valid_until:       Option<Timestamp>,
     /// The nonce is used to avoid replay attacks when checking the holder's
     /// signature on a revocation message.
-    revocation_nonce: u64,
+    revocation_nonce:  u64,
     /// Revocation flag
-    revoked:          bool,
+    revoked:           bool,
     /// Commitment and schema reference
     /// This data is only needed when credential info is requested. In other
     /// operations, `StateBox` defers loading credential data.
-    credential_data:  StateBox<CredentialData, S>,
+    credential_data:   StateBox<CredentialData, S>,
 }
 
 impl<S: HasStateApi> CredentialEntry<S> {
@@ -139,15 +142,19 @@ impl<S: HasStateApi> CredentialEntry<S> {
 
     fn info(&self) -> CredentialInfo {
         CredentialInfo {
-            holder_id:        self.holder_id,
-            holder_revocable: self.holder_revocable,
-            commitment:       self.credential_data.commitment.clone(),
-            schema_ref:       self.credential_data.schema_ref.clone(),
-            valid_from:       self.valid_from,
-            valid_until:      self.valid_until,
+            holder_id:         self.holder_id,
+            holder_revocable:  self.holder_revocable,
+            holder_restorable: self.holder_restorable,
+            commitment:        self.credential_data.commitment.clone(),
+            credential_type:   self.credential_data.credential_type,
+            valid_from:        self.valid_from,
+            valid_until:       self.valid_until,
         }
     }
 }
+
+/// Schema identifier: a unique id that identifies a schema for the issuer.
+type SchemaID = u16;
 
 /// The registry state.
 // NOTE: keys are stored in a map to keep the indices of other keys fixed when adding/removing a
@@ -161,6 +168,7 @@ pub struct State<S: HasStateApi> {
     issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
     revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
     credentials:     StateMap<Uuidv4, CredentialEntry<S>, S>,
+    schema_registry: StateMap<SchemaID, SchemaRef, S>,
 }
 
 /// Contract Errors.
@@ -171,8 +179,11 @@ enum ContractError {
     CredentialNotFound,
     CredentialAlreadyExists,
     IncorrectStatusBeforeRevocation,
+    IncorrectStatusBeforeRestoring,
     KeyAlreadyExists,
     KeyNotFound,
+    SchemaNotFound,
+    SchemaAlreadyExists,
     NotAuthorized,
     NonceMismatch,
     WrongContract,
@@ -204,6 +215,7 @@ impl<S: HasStateApi> State<S> {
         State {
             issuer,
             issuer_metadata,
+            schema_registry: state_builder.new_map(),
             issuer_keys: state_builder.new_map(),
             revocation_keys: state_builder.new_map(),
             credentials: state_builder.new_map(),
@@ -216,9 +228,14 @@ impl<S: HasStateApi> State<S> {
     ) -> ContractResult<CredentialQueryResponse> {
         let entry =
             self.credentials.get(&credential_id).ok_or(ContractError::CredentialNotFound)?;
+        let schema_ref = self
+            .schema_registry
+            .get(&entry.credential_data.credential_type)
+            .ok_or(ContractError::SchemaNotFound)?;
         Ok(CredentialQueryResponse {
             credential_info:  entry.info(),
             revocation_nonce: entry.revocation_nonce,
+            schema_ref:       schema_ref.clone(),
         })
     }
 
@@ -238,22 +255,27 @@ impl<S: HasStateApi> State<S> {
         credential_id: Uuidv4,
         credential_info: &CredentialInfo,
         state_builder: &mut StateBuilder<S>,
-    ) -> ContractResult<()> {
+    ) -> ContractResult<SchemaRef> {
+        let schema = self
+            .schema_registry
+            .get(&credential_info.credential_type)
+            .ok_or(ContractError::SchemaNotFound)?;
         let credential_entry = CredentialEntry {
-            holder_id:        credential_info.holder_id,
-            holder_revocable: credential_info.holder_revocable,
-            valid_from:       credential_info.valid_from,
-            valid_until:      credential_info.valid_until,
-            credential_data:  state_builder.new_box(CredentialData {
-                commitment: credential_info.commitment.clone(),
-                schema_ref: credential_info.schema_ref.clone(),
+            holder_id:         credential_info.holder_id,
+            holder_revocable:  credential_info.holder_revocable,
+            holder_restorable: credential_info.holder_restorable,
+            valid_from:        credential_info.valid_from,
+            valid_until:       credential_info.valid_until,
+            credential_data:   state_builder.new_box(CredentialData {
+                commitment:      credential_info.commitment.clone(),
+                credential_type: credential_info.credential_type,
             }),
-            revocation_nonce: 0,
-            revoked:          false,
+            revocation_nonce:  0,
+            revoked:           false,
         };
         let res = self.credentials.insert(credential_id, credential_entry);
         ensure!(res.is_none(), ContractError::CredentialAlreadyExists);
-        Ok(())
+        Ok(schema.clone())
     }
 
     fn revoke_credential(&mut self, now: Timestamp, credential_id: Uuidv4) -> ContractResult<()> {
@@ -265,6 +287,18 @@ impl<S: HasStateApi> State<S> {
             ContractError::IncorrectStatusBeforeRevocation
         );
         credential.revoked = true;
+        Ok(())
+    }
+
+    fn restore_credential(&mut self, now: Timestamp, credential_id: Uuidv4) -> ContractResult<()> {
+        let mut credential =
+            self.credentials.get_mut(&credential_id).ok_or(ContractError::CredentialNotFound)?;
+        let status = credential.get_status(now);
+        // It is expected that the credemtial was previously revoked.
+        // It can expire by the time of restoring; in this case, it is still marked as
+        // `revoked: false`, but the status will be `Expired`.
+        ensure!(status == CredentialStatus::Revoked, ContractError::IncorrectStatusBeforeRestoring);
+        credential.revoked = false;
         Ok(())
     }
 
@@ -305,6 +339,12 @@ impl<S: HasStateApi> State<S> {
     fn update_issuer_metadata(&mut self, issuer_metadata: &MetadataUrl) {
         self.issuer_metadata = issuer_metadata.clone()
     }
+
+    fn add_schema(&mut self, id: SchemaID, schema_ref: SchemaRef) -> ContractResult<()> {
+        let res = self.schema_registry.insert(id, schema_ref);
+        ensure!(res.is_none(), ContractError::SchemaAlreadyExists);
+        Ok(())
+    }
 }
 
 /// Data for events of registering and updating a credential.
@@ -312,11 +352,13 @@ impl<S: HasStateApi> State<S> {
 #[derive(Serialize, SchemaType)]
 struct CredentialEventData {
     /// An identifier of a credential being registered/updated.
-    credential_id: Uuidv4,
+    credential_id:   Uuidv4,
     /// A public key of the credential's holder.
-    holder_id:     PublicKeyEd25519,
+    holder_id:       PublicKeyEd25519,
     /// A reference to the credential JSON schema.
-    schema_ref:    SchemaRef,
+    schema_ref:      SchemaRef,
+    /// Type of the credential.
+    credential_type: SchemaID,
 }
 
 /// A type for specifying who is revoking a credential, when registering a
@@ -415,24 +457,27 @@ fn sender_is_issuer<S: HasStateApi>(ctx: &impl HasReceiveContext, state: &State<
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialInfo {
     /// The holder's identifier is a public key.
-    holder_id:        PublicKeyEd25519,
+    holder_id:         PublicKeyEd25519,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
-    holder_revocable: bool,
+    holder_revocable:  bool,
+    /// If this flag is set to `true` the holder can send a signed message to
+    /// restore their credential. Restoring means reverting revocation.
+    holder_restorable: bool,
     /// A vector Pedersen commitment to the attributes of the verifiable
     /// credential.
     #[concordium(size_length = 2)]
-    commitment:       Vec<u8>,
-    /// A reference to the credential's JSON schema. It also sevres as the
-    /// credential type.
-    schema_ref:       SchemaRef,
+    commitment:        Vec<u8>,
+    /// A type of the credential that is used to identify which schema the
+    /// credential is based on.
+    credential_type:   SchemaID,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
-    valid_from:       Option<Timestamp>,
+    valid_from:        Option<Timestamp>,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
-    valid_until:      Option<Timestamp>,
+    valid_until:       Option<Timestamp>,
 }
 
 /// Response to a credential data query.
@@ -442,6 +487,9 @@ pub struct CredentialQueryResponse {
     /// The nonce is used to avoid replay attacks when checking the holder's
     /// signature on a revocation message.
     revocation_nonce: u64,
+    /// A schema URL or DID address pointing to the JSON schema for a verifiable
+    /// credential.
+    schema_ref:       SchemaRef,
 }
 
 /// A view entrypoint for looking up an entry in the registry by id.
@@ -451,12 +499,12 @@ pub struct CredentialQueryResponse {
 /// - The credential with the given id does not exist.
 #[receive(
     contract = "credential_registry",
-    name = "viewCredentialEntry",
+    name = "credentialEntry",
     parameter = "Uuidv4",
     error = "ContractError",
     return_value = "CredentialQueryResponse"
 )]
-fn contract_view_credential_entry<S: HasStateApi>(
+fn contract_credential_entry<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<CredentialQueryResponse, ContractError> {
@@ -471,12 +519,12 @@ fn contract_view_credential_entry<S: HasStateApi>(
 /// - The credential with the given id does not exist.
 #[receive(
     contract = "credential_registry",
-    name = "viewCredentialStatus",
+    name = "credentialStatus",
     parameter = "Uuidv4",
     error = "ContractError",
     return_value = "CredentialStatus"
 )]
-fn contract_view_credential_status<S: HasStateApi>(
+fn contract_credential_status<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<CredentialStatus, ContractError> {
@@ -521,11 +569,16 @@ fn contract_register_credential<S: HasStateApi>(
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let parameter: RegisterCredentialParameter = ctx.parameter_cursor().get()?;
     let (state, state_bulder) = host.state_and_builder();
-    state.register_credential(parameter.credential_id, &parameter.credential_info, state_bulder)?;
+    let schema = state.register_credential(
+        parameter.credential_id,
+        &parameter.credential_info,
+        state_bulder,
+    )?;
     logger.log(&CredentialEvent::Register(CredentialEventData {
-        credential_id: parameter.credential_id,
-        holder_id:     parameter.credential_info.holder_id,
-        schema_ref:    parameter.credential_info.schema_ref,
+        credential_id:   parameter.credential_id,
+        holder_id:       parameter.credential_info.holder_id,
+        schema_ref:      schema,
+        credential_type: parameter.credential_info.credential_type,
     }))?;
     Ok(())
 }
@@ -988,13 +1041,13 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
 /// - The revocation key index does not exist.
 #[receive(
     contract = "credential_registry",
-    name = "viewRevocationKey",
+    name = "revocationKey",
     parameter = "u8",
     error = "ContractError",
     return_value = "Vec<(PublicKeyEd25519, u64)>",
     mutable
 )]
-fn contract_view_revocation_key<S: HasStateApi>(
+fn contract_revocation_key<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(PublicKeyEd25519, u64), ContractError> {
@@ -1005,11 +1058,11 @@ fn contract_view_revocation_key<S: HasStateApi>(
 /// A view entrypoint that returns a vector of issuer's keys.
 #[receive(
     contract = "credential_registry",
-    name = "viewIssuerKeys",
+    name = "issuerKeys",
     error = "ContractError",
     return_value = "Vec<(u8, PublicKeyEd25519)>"
 )]
-fn contract_view_issuer_keys<S: HasStateApi>(
+fn contract_issuer_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<Vec<(u8, PublicKeyEd25519)>, ContractError> {
@@ -1023,11 +1076,11 @@ fn contract_view_issuer_keys<S: HasStateApi>(
 /// - It fails to parse the parameter.
 #[receive(
     contract = "credential_registry",
-    name = "viewIssuerMetadata",
+    name = "issuerMetadata",
     error = "ContractError",
     return_value = "MetadataUrl"
 )]
-fn contract_view_issuer_metadata<S: HasStateApi>(
+fn contract_issuer_metadata<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<MetadataUrl, ContractError> {
@@ -1062,12 +1115,77 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
 }
 
 /// A view entrypoint for querying the issuer account address
-#[receive(contract = "credential_registry", name = "viewIssuer", error = "ContractError")]
-fn contract_view_issuer<S: HasStateApi>(
+#[receive(contract = "credential_registry", name = "issuer", error = "ContractError")]
+fn contract_issuer<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<AccountAddress, ContractError> {
     Ok(host.state().issuer)
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct CredentialSchemasParam {
+    schemas: Vec<(SchemaID, SchemaRef)>,
+}
+
+/// Add credential schemas
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Some of the schemas are already added.
+#[receive(
+    contract = "credential_registry",
+    name = "addCredentialSchemas",
+    parameter = "CredentialSchemasParam",
+    error = "ContractError",
+    mutable
+)]
+fn contract_add_credential_schemas<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> Result<(), ContractError> {
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
+    let data: CredentialSchemasParam = ctx.parameter_cursor().get()?;
+    for (id, schema_ref) in data.schemas {
+        host.state_mut().add_schema(id, schema_ref)?;
+    }
+    Ok(())
+}
+
+/// A parameter type for revoking a credential by the issuer.
+#[derive(Serialize, SchemaType)]
+pub struct RestoreCredentialIssuerParam {
+    /// Id of the credential to restore.
+    credential_id: Uuidv4,
+    /// (Optional) reason for restoring the credential.
+    reason:        Option<RevokeReason>,
+}
+
+/// Restore credential by the issuer.
+/// Restoring means reverting revocation.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Credential does not exist.
+/// - Credential status is different from `Revoked`.
+#[receive(
+    contract = "credential_registry",
+    name = "restoreCredential",
+    parameter = "RestoreCredentialIssuerParam",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_restore_credential<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    _logger: &mut impl HasLogger,
+) -> Result<(), ContractError> {
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
+    let data: RestoreCredentialIssuerParam = ctx.parameter_cursor().get()?;
+    let now = ctx.metadata().slot_time();
+    host.state_mut().restore_credential(now, data.credential_id)?;
+    Ok(())
 }
 
 #[concordium_cfg_test]
@@ -1108,12 +1226,13 @@ mod tests {
     impl Arbitrary for CredentialInfo {
         fn arbitrary(g: &mut Gen) -> Self {
             CredentialInfo {
-                holder_id:        PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
-                holder_revocable: Arbitrary::arbitrary(g),
-                commitment:       Arbitrary::arbitrary(g),
-                schema_ref:       Arbitrary::arbitrary(g),
-                valid_from:       Arbitrary::arbitrary(g),
-                valid_until:      Arbitrary::arbitrary(g),
+                holder_id:         PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
+                holder_revocable:  Arbitrary::arbitrary(g),
+                holder_restorable: Arbitrary::arbitrary(g),
+                commitment:        Arbitrary::arbitrary(g),
+                credential_type:   Arbitrary::arbitrary(g),
+                valid_from:        Arbitrary::arbitrary(g),
+                valid_until:       Arbitrary::arbitrary(g),
             }
         }
     }
@@ -1144,23 +1263,21 @@ mod tests {
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
-    /// and is immediately activated.
+    /// and is immediately activated. It is also possible to revoke and restore
+    /// it by the holder.
     fn credential_entry<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> CredentialEntry<S> {
         CredentialEntry {
-            credential_data:  state_builder.new_box(CredentialData {
-                commitment: [0u8; 48].to_vec(),
-                schema_ref: (MetadataUrl {
-                    url:  "".into(),
-                    hash: None,
-                })
-                .into(),
+            credential_data:   state_builder.new_box(CredentialData {
+                commitment:      [0u8; 48].to_vec(),
+                credential_type: 0,
             }),
-            valid_from:       None,
-            valid_until:      None,
-            holder_id:        PUBLIC_KEY,
-            holder_revocable: true,
-            revocation_nonce: 0,
-            revoked:          false,
+            valid_from:        None,
+            valid_until:       None,
+            holder_id:         PUBLIC_KEY,
+            holder_revocable:  true,
+            holder_restorable: true,
+            revocation_nonce:  0,
+            revoked:           false,
         }
     }
 
@@ -1169,6 +1286,15 @@ mod tests {
             url:  ISSUER_URL.to_string(),
             hash: None,
         }
+    }
+
+    fn get_credential_schema() -> (SchemaID, SchemaRef) {
+        (0, SchemaRef {
+            schema_ref: MetadataUrl {
+                url:  "https://example.com/schema.json".to_string(),
+                hash: None,
+            },
+        })
     }
 
     #[concordium_test]
@@ -1250,16 +1376,17 @@ mod tests {
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
-            holder_id:        data.holder_id,
-            credential_data:  state_builder.new_box(CredentialData {
-                commitment: data.commitment,
-                schema_ref: data.schema_ref,
+            holder_id:         data.holder_id,
+            credential_data:   state_builder.new_box(CredentialData {
+                commitment:      data.commitment,
+                credential_type: data.credential_type,
             }),
-            revocation_nonce: nonce,
-            holder_revocable: data.holder_revocable,
-            valid_from:       data.valid_from,
-            valid_until:      data.valid_until,
-            revoked:          true,
+            revocation_nonce:  nonce,
+            holder_revocable:  data.holder_revocable,
+            holder_restorable: data.holder_restorable,
+            valid_from:        data.valid_from,
+            valid_until:       data.valid_until,
+            revoked:           true,
         };
         entry.get_status(now) == CredentialStatus::Revoked
     }
@@ -1267,18 +1394,24 @@ mod tests {
     /// Property: registering a credential and then querying it results in the
     /// same credential data, which is not revoked and has nonce = `0`
     #[concordium_quickcheck]
-    fn prop_register_view_credential(
+    fn prop_register_credential(
         credential_id: Uuidv4,
-        data: CredentialInfo,
+        credential_type: SchemaID,
+        schema_ref: SchemaRef,
+        mut data: CredentialInfo,
         now: Timestamp,
     ) -> bool {
+        // Set credential type consistent with the schema registry
+        data.credential_type = credential_type;
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
+        let schema_result = state.add_schema(credential_type, schema_ref);
         let register_result = state.register_credential(credential_id, &data, &mut state_builder);
         let query_result = state.view_credential_info(credential_id);
         let status = state.view_credential_status(now, credential_id);
         if let Ok(fetched_data) = query_result {
-            register_result.is_ok()
+            schema_result.is_ok()
+                && register_result.is_ok()
                 && status.map_or(false, |x| x != CredentialStatus::Revoked)
                 && (fetched_data.credential_info == data)
                 && fetched_data.revocation_nonce == 0
@@ -1288,28 +1421,36 @@ mod tests {
     }
 
     /// Property: if a credential is revoked successfully, the status changes to
-    /// `Revoked`
+    /// `Revoked`. The test is designed in such a way that the revocation is
+    /// expeced to succeed.
     #[concordium_quickcheck]
-    fn prop_revocation(credential_id: Uuidv4, data: CredentialInfo) -> TestResult {
+    fn prop_revocation(
+        credential_id: Uuidv4,
+        credential_type: SchemaID,
+        schema_ref: SchemaRef,
+        mut data: CredentialInfo,
+    ) -> bool {
+        // Set credential type consistent with the schema registry
+        data.credential_type = credential_type;
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
+        let schema_result = state.add_schema(credential_type, schema_ref);
         let register_result = state.register_credential(credential_id, &data, &mut state_builder);
 
         // make sure that the credential has not expired yet
         let now = Timestamp::from_timestamp_millis(0);
         let revocation_result = state.revoke_credential(now, credential_id);
-        if register_result.is_err() || revocation_result.is_err() {
-            // discard the test if the precondition is not satisfied
-            return TestResult::discard();
-        }
         let status_result = state.view_credential_status(now, credential_id);
-        TestResult::from_bool(status_result == Ok(CredentialStatus::Revoked))
+        schema_result.is_ok()
+            && register_result.is_ok()
+            && revocation_result.is_ok()
+            && status_result == Ok(CredentialStatus::Revoked)
     }
 
     /// Property: registering an issuer key and querying it results in the same
     /// value
     #[concordium_quickcheck]
-    fn prop_register_view_issuer_keys(key_index: u8, pk_bytes: Array32u8) -> bool {
+    fn prop_register_issuer_keys(key_index: u8, pk_bytes: Array32u8) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let Array32u8(bytes) = pk_bytes;
         let pk = PublicKeyEd25519(bytes);
@@ -1322,7 +1463,7 @@ mod tests {
     /// Property: registering a revocation key and querying it results in the
     /// same value
     #[concordium_quickcheck]
-    fn prop_register_view_revocation_key(key_index: u8, pk_bytes: Array32u8) -> bool {
+    fn prop_register_revocation_key(key_index: u8, pk_bytes: Array32u8) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let Array32u8(bytes) = pk_bytes;
         let pk = PublicKeyEd25519(bytes);
@@ -1368,6 +1509,12 @@ mod tests {
         let parameter_bytes = to_bytes(&param);
         ctx.set_parameter(&parameter_bytes);
 
+        // Create a credential schema
+        let (credential_type, schema_ref) = get_credential_schema();
+        host.state_mut()
+            .add_schema(credential_type, schema_ref.clone())
+            .expect_report("Schema registration failed");
+
         // Create a credential
         let res = contract_register_credential(&ctx, &mut host, &mut logger);
 
@@ -1393,11 +1540,8 @@ mod tests {
             to_bytes(&CredentialEvent::Register(CredentialEventData {
                 credential_id,
                 holder_id: PUBLIC_KEY,
-                schema_ref: (MetadataUrl {
-                    url:  "".into(),
-                    hash: None,
-                })
-                .into()
+                schema_ref,
+                credential_type
             })),
             "Incorrect register credential event logged"
         );
@@ -1434,6 +1578,12 @@ mod tests {
             credential_info.holder_revocable,
             "Initial credential expected to be holder-revocable"
         );
+
+        // Create a credential schema
+        let (credential_type, schema_ref) = get_credential_schema();
+        state
+            .add_schema(credential_type, schema_ref.clone())
+            .expect_report("Schema registration failed");
 
         // Create a credential the holder is going to revoke
         let res = state.register_credential(credential_id, &credential_info, state_builder);
