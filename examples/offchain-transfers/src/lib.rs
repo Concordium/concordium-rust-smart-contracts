@@ -65,7 +65,7 @@ pub struct Settlement {
 }
 
 /// The configuration of the smart contract
-#[derive(Serialize, SchemaType)]
+#[derive(Clone, Serialize, SchemaType)]
 pub struct ContractConfig {
     /// The validator's address
     /// In an application, this should be replaced by a committee of validators (with approval threshold)
@@ -83,7 +83,7 @@ pub struct ContractConfig {
 }
 
 /// The smart contract state
-#[derive(Serial, DeserialWithState)]
+#[derive(StateClone, Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
     /// The configuration of the contract
@@ -102,7 +102,7 @@ pub struct State<S> {
 }
 
 /// The different errors the initialization can produce.
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
 pub enum InitError {
     /// Failed parsing the parameter
     #[from(ParseError)]
@@ -112,7 +112,7 @@ pub enum InitError {
 type InitResult<A> = Result<A, InitError>;
 
 /// The different errors the smart contract calls can produce.
-#[derive(Debug, PartialEq, Eq, Reject)]
+#[derive(Serialize, Debug, PartialEq, Eq, Reject)]
 pub enum ReceiveError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
