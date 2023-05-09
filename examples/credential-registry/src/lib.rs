@@ -9,11 +9,14 @@
 //!
 //! ## Issuer's  functionality
 //!
-//! - registration of a new credential;
-//! - updating an existing credential;
-//! - revoking a credential;
+//! - register a new credential;
+//! - update an existing credential;
+//! - revoke a credential;
+//! - restore (cancelling revocation of) a revoked credential;
 //! - register a public key;
-//! - register a revocation authority key.
+//! - register a revocation authority key
+//! - update metadata;
+//! - add/update credential types.
 //!
 //! Revocation authorities are some entities chosen by the issuer that has
 //! revocation capabilities. Their public keys are registered by the issuer and
@@ -22,11 +25,11 @@
 //!
 //! ## Holder's functionality
 //!
-//! - revoking a credential by signing a revocation message.
+//! - revoke a credential by signing a revocation message.
 //!
 //! Revocation authority's functionality
 //!
-//! - revoking a credential by signing a revocation message.
+//! - revoke a credential by signing a revocation message.
 //!
 //! ## Verifier's functionality
 //!
@@ -45,6 +48,10 @@ use core::fmt::Debug;
 struct Uuidv4 {
     id: u128,
 }
+
+/// Credential type is a string that corresponds to a the value of the "name"
+/// attribute of the credential schema.
+type CredentialType = String;
 
 impl From<u128> for Uuidv4 {
     fn from(id: u128) -> Self {
@@ -86,7 +93,7 @@ pub struct CredentialData {
     commitment:      Vec<u8>,
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
-    credential_type: SchemaID,
+    credential_type: CredentialType,
 }
 
 /// Public verifiable credential data, revocation flag and nonce
@@ -146,15 +153,12 @@ impl<S: HasStateApi> CredentialEntry<S> {
             holder_revocable:  self.holder_revocable,
             holder_restorable: self.holder_restorable,
             commitment:        self.credential_data.commitment.clone(),
-            credential_type:   self.credential_data.credential_type,
+            credential_type:   self.credential_data.credential_type.clone(),
             valid_from:        self.valid_from,
             valid_until:       self.valid_until,
         }
     }
 }
-
-/// Schema identifier: a unique id that identifies a schema for the issuer.
-type SchemaID = u16;
 
 /// The registry state.
 // NOTE: keys are stored in a map to keep the indices of other keys fixed when adding/removing a
@@ -168,7 +172,7 @@ pub struct State<S: HasStateApi> {
     issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
     revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
     credentials:     StateMap<Uuidv4, CredentialEntry<S>, S>,
-    schema_registry: StateMap<SchemaID, SchemaRef, S>,
+    schema_registry: StateMap<CredentialType, SchemaRef, S>,
 }
 
 /// Contract Errors.
@@ -268,7 +272,7 @@ impl<S: HasStateApi> State<S> {
             valid_until:       credential_info.valid_until,
             credential_data:   state_builder.new_box(CredentialData {
                 commitment:      credential_info.commitment.clone(),
-                credential_type: credential_info.credential_type,
+                credential_type: credential_info.credential_type.clone(),
             }),
             revocation_nonce:  0,
             revoked:           false,
@@ -340,9 +344,15 @@ impl<S: HasStateApi> State<S> {
         self.issuer_metadata = issuer_metadata.clone()
     }
 
-    fn add_schema(&mut self, id: SchemaID, schema_ref: SchemaRef) -> ContractResult<()> {
+    fn add_schema(&mut self, id: CredentialType, schema_ref: SchemaRef) -> ContractResult<()> {
         let res = self.schema_registry.insert(id, schema_ref);
         ensure!(res.is_none(), ContractError::SchemaAlreadyExists);
+        Ok(())
+    }
+
+    fn update_schema(&mut self, id: CredentialType, schema_ref: SchemaRef) -> ContractResult<()> {
+        let res = self.schema_registry.insert(id, schema_ref);
+        ensure!(res.is_some(), ContractError::SchemaNotFound);
         Ok(())
     }
 }
@@ -358,7 +368,7 @@ struct CredentialEventData {
     /// A reference to the credential JSON schema.
     schema_ref:      SchemaRef,
     /// Type of the credential.
-    credential_type: SchemaID,
+    credential_type: CredentialType,
 }
 
 /// A type for specifying who is revoking a credential, when registering a
@@ -470,7 +480,7 @@ pub struct CredentialInfo {
     commitment:        Vec<u8>,
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
-    credential_type:   SchemaID,
+    credential_type:   CredentialType,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
@@ -1124,19 +1134,22 @@ fn contract_issuer<S: HasStateApi>(
 }
 
 #[derive(Serial, Deserial, SchemaType)]
-struct CredentialSchemasParam {
-    schemas: Vec<(SchemaID, SchemaRef)>,
+struct CredentialSchemaParam {
+    schemas: Vec<(CredentialType, SchemaRef)>,
 }
 
-/// Add credential schemas
+/// Add credential schemas.
+///
+/// Can be called only by the issuer.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
+/// - The caller is not the issuer.
 /// - Some of the schemas are already added.
 #[receive(
     contract = "credential_registry",
     name = "addCredentialSchemas",
-    parameter = "CredentialSchemasParam",
+    parameter = "CredentialSchemaParam",
     error = "ContractError",
     mutable
 )]
@@ -1145,9 +1158,39 @@ fn contract_add_credential_schemas<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let data: CredentialSchemasParam = ctx.parameter_cursor().get()?;
+    let data: CredentialSchemaParam = ctx.parameter_cursor().get()?;
     for (id, schema_ref) in data.schemas {
         host.state_mut().add_schema(id, schema_ref)?;
+    }
+    Ok(())
+}
+
+/// Update existing credential schemas.
+/// Note that updating the schemas should not break credentials based on these
+/// schemas. An intended use case is to update a reference if the URL to the
+/// JSON document has changed, but the JSON document itself remains the same.
+///
+/// Can be called only by the issuer.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The caller is not the issuer.
+/// - Some of the schemas are not present.
+#[receive(
+    contract = "credential_registry",
+    name = "updateCredentialSchemas",
+    parameter = "CredentialSchemaParam",
+    error = "ContractError",
+    mutable
+)]
+fn contract_update_credential_schemas<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> Result<(), ContractError> {
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
+    let data: CredentialSchemaParam = ctx.parameter_cursor().get()?;
+    for (id, schema_ref) in data.schemas {
+        host.state_mut().update_schema(id, schema_ref)?;
     }
     Ok(())
 }
@@ -1269,7 +1312,7 @@ mod tests {
         CredentialEntry {
             credential_data:   state_builder.new_box(CredentialData {
                 commitment:      [0u8; 48].to_vec(),
-                credential_type: 0,
+                credential_type: "ExampleSchema".to_string(),
             }),
             valid_from:        None,
             valid_until:       None,
@@ -1288,8 +1331,8 @@ mod tests {
         }
     }
 
-    fn get_credential_schema() -> (SchemaID, SchemaRef) {
-        (0, SchemaRef {
+    fn get_credential_schema() -> (CredentialType, SchemaRef) {
+        ("ExampleSchema".to_string(), SchemaRef {
             schema_ref: MetadataUrl {
                 url:  "https://example.com/schema.json".to_string(),
                 hash: None,
@@ -1396,13 +1439,13 @@ mod tests {
     #[concordium_quickcheck]
     fn prop_register_credential(
         credential_id: Uuidv4,
-        credential_type: SchemaID,
+        credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
         now: Timestamp,
     ) -> bool {
         // Set credential type consistent with the schema registry
-        data.credential_type = credential_type;
+        data.credential_type = credential_type.clone();
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
@@ -1426,12 +1469,12 @@ mod tests {
     #[concordium_quickcheck]
     fn prop_revocation(
         credential_id: Uuidv4,
-        credential_type: SchemaID,
+        credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
     ) -> bool {
         // Set credential type consistent with the schema registry
-        data.credential_type = credential_type;
+        data.credential_type = credential_type.clone();
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
@@ -1512,7 +1555,7 @@ mod tests {
         // Create a credential schema
         let (credential_type, schema_ref) = get_credential_schema();
         host.state_mut()
-            .add_schema(credential_type, schema_ref.clone())
+            .add_schema(credential_type.clone(), schema_ref.clone())
             .expect_report("Schema registration failed");
 
         // Create a credential
