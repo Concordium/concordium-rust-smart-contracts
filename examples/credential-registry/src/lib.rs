@@ -41,11 +41,9 @@ use concordium_std::*;
 use core::fmt::Debug;
 
 /// The type for a credential identifier.
-/// The uuidv4 identifier is generated externally by the issuer.
-/// The schema for the identifier does not support the usual textual
-/// representation of uuid, it is treated as a `u128` number.
+/// The identifier is generated externally by the issuer.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
-struct Uuidv4 {
+struct CredentialID {
     id: u128,
 }
 
@@ -53,9 +51,9 @@ struct Uuidv4 {
 /// attribute of the credential schema.
 type CredentialType = String;
 
-impl From<u128> for Uuidv4 {
+impl From<u128> for CredentialID {
     fn from(id: u128) -> Self {
-        Uuidv4 {
+        CredentialID {
             id,
         }
     }
@@ -171,7 +169,7 @@ pub struct State<S: HasStateApi> {
     issuer_metadata: MetadataUrl,
     issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
     revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
-    credentials:     StateMap<Uuidv4, CredentialEntry<S>, S>,
+    credentials:     StateMap<CredentialID, CredentialEntry<S>, S>,
     schema_registry: StateMap<CredentialType, SchemaRef, S>,
 }
 
@@ -228,7 +226,7 @@ impl<S: HasStateApi> State<S> {
 
     fn view_credential_info(
         &self,
-        credential_id: Uuidv4,
+        credential_id: CredentialID,
     ) -> ContractResult<CredentialQueryResponse> {
         let entry =
             self.credentials.get(&credential_id).ok_or(ContractError::CredentialNotFound)?;
@@ -246,7 +244,7 @@ impl<S: HasStateApi> State<S> {
     fn view_credential_status(
         &self,
         now: Timestamp,
-        credential_id: Uuidv4,
+        credential_id: CredentialID,
     ) -> ContractResult<CredentialStatus> {
         self.credentials
             .get(&credential_id)
@@ -256,7 +254,7 @@ impl<S: HasStateApi> State<S> {
 
     fn register_credential(
         &mut self,
-        credential_id: Uuidv4,
+        credential_id: CredentialID,
         credential_info: &CredentialInfo,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<SchemaRef> {
@@ -282,7 +280,11 @@ impl<S: HasStateApi> State<S> {
         Ok(schema.clone())
     }
 
-    fn revoke_credential(&mut self, now: Timestamp, credential_id: Uuidv4) -> ContractResult<()> {
+    fn revoke_credential(
+        &mut self,
+        now: Timestamp,
+        credential_id: CredentialID,
+    ) -> ContractResult<()> {
         let mut credential =
             self.credentials.get_mut(&credential_id).ok_or(ContractError::CredentialNotFound)?;
         let status = credential.get_status(now);
@@ -294,7 +296,11 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn restore_credential(&mut self, now: Timestamp, credential_id: Uuidv4) -> ContractResult<()> {
+    fn restore_credential(
+        &mut self,
+        now: Timestamp,
+        credential_id: CredentialID,
+    ) -> ContractResult<()> {
         let mut credential =
             self.credentials.get_mut(&credential_id).ok_or(ContractError::CredentialNotFound)?;
         let status = credential.get_status(now);
@@ -362,7 +368,7 @@ impl<S: HasStateApi> State<S> {
 #[derive(Serialize, SchemaType)]
 struct CredentialEventData {
     /// An identifier of a credential being registered/updated.
-    credential_id:   Uuidv4,
+    credential_id:   CredentialID,
     /// A public key of the credential's holder.
     holder_id:       PublicKeyEd25519,
     /// A reference to the credential JSON schema.
@@ -405,7 +411,7 @@ impl From<String> for RevokeReason {
 #[derive(Serialize, SchemaType)]
 struct RevokeCredentialEvent {
     /// An identifier of a credential being revoked.
-    credential_id: Uuidv4,
+    credential_id: CredentialID,
     /// A public key of the credential's holder.
     holder_id:     PublicKeyEd25519,
     /// Who revokes the credential.
@@ -510,7 +516,7 @@ pub struct CredentialQueryResponse {
 #[receive(
     contract = "credential_registry",
     name = "credentialEntry",
-    parameter = "Uuidv4",
+    parameter = "CredentialID",
     error = "ContractError",
     return_value = "CredentialQueryResponse"
 )]
@@ -530,7 +536,7 @@ fn contract_credential_entry<S: HasStateApi>(
 #[receive(
     contract = "credential_registry",
     name = "credentialStatus",
-    parameter = "Uuidv4",
+    parameter = "CredentialID",
     error = "ContractError",
     return_value = "CredentialStatus"
 )]
@@ -548,7 +554,7 @@ fn contract_credential_status<S: HasStateApi>(
 #[derive(Serial, Deserial, SchemaType)]
 pub struct RegisterCredentialParameter {
     /// Credential ID
-    credential_id:   Uuidv4,
+    credential_id:   CredentialID,
     /// Input data for the credential entry.
     credential_info: CredentialInfo,
 }
@@ -610,7 +616,7 @@ const SIGNARUTE_DOMAIN: &str = "WEB3ID:REVOKE";
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialHolderParam {
     /// Id of the credential to revoke.
-    credential_id: Uuidv4,
+    credential_id: CredentialID,
     /// Info about the signature.
     signing_data:  SigningData,
     signature:     SignatureEd25519,
@@ -634,7 +640,7 @@ impl RevokeCredentialHolderParam {
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialIssuerParam {
     /// Id of the credential to revoke.
-    credential_id: Uuidv4,
+    credential_id: CredentialID,
     /// (Optional) reason for revoking the credential.
     reason:        Option<RevokeReason>,
 }
@@ -643,7 +649,7 @@ pub struct RevokeCredentialIssuerParam {
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialOtherParam {
     /// Id of the credential to revoke.
-    credential_id:        Uuidv4,
+    credential_id:        CredentialID,
     /// Info about the signature.
     signing_data:         SigningData,
     signature:            SignatureEd25519,
@@ -1199,7 +1205,7 @@ fn contract_update_credential_schemas<S: HasStateApi>(
 #[derive(Serialize, SchemaType)]
 pub struct RestoreCredentialIssuerParam {
     /// Id of the credential to restore.
-    credential_id: Uuidv4,
+    credential_id: CredentialID,
     /// (Optional) reason for restoring the credential.
     reason:        Option<RevokeReason>,
 }
@@ -1238,9 +1244,9 @@ mod tests {
     use quickcheck::*;
     use test_infrastructure::*;
 
-    impl Arbitrary for Uuidv4 {
-        fn arbitrary(g: &mut Gen) -> Uuidv4 {
-            Uuidv4 {
+    impl Arbitrary for CredentialID {
+        fn arbitrary(g: &mut Gen) -> CredentialID {
+            CredentialID {
                 id: Arbitrary::arbitrary(g),
             }
         }
@@ -1438,7 +1444,7 @@ mod tests {
     /// same credential data, which is not revoked and has nonce = `0`
     #[concordium_quickcheck]
     fn prop_register_credential(
-        credential_id: Uuidv4,
+        credential_id: CredentialID,
         credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
@@ -1468,7 +1474,7 @@ mod tests {
     /// expeced to succeed.
     #[concordium_quickcheck]
     fn prop_revocation(
-        credential_id: Uuidv4,
+        credential_id: CredentialID,
         credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
