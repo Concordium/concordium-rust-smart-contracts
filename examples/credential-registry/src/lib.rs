@@ -84,7 +84,7 @@ pub enum CredentialStatus {
     NotActivated,
 }
 
-/// Public verifiable credential data
+/// A vector Pedersen commitment and credential type.
 #[derive(Serialize, SchemaType, PartialEq, Clone, Debug)]
 pub struct CredentialData {
     /// A vector Pedersen commitment to the attributes of the verifiable
@@ -96,7 +96,7 @@ pub struct CredentialData {
     credential_type: CredentialType,
 }
 
-/// Public verifiable credential data, revocation flag and nonce
+/// Public data of a verifiable credential.
 #[derive(Serial, DeserialWithState, Debug)]
 #[concordium(state_parameter = "S")]
 pub struct CredentialEntry<S: HasStateApi> {
