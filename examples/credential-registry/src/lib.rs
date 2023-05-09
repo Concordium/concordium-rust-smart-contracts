@@ -99,29 +99,26 @@ pub struct CredentialData {
 #[concordium(state_parameter = "S")]
 pub struct CredentialEntry<S: HasStateApi> {
     /// The holder's identifier is a public key.
-    holder_id:         PublicKeyEd25519,
+    holder_id:        PublicKeyEd25519,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
-    holder_revocable:  bool,
-    /// If this flag is set to `true` the holder can send a signed message to
-    /// restore their credential. Restoring means reverting revocation.
-    holder_restorable: bool,
+    holder_revocable: bool,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
-    valid_from:        Option<Timestamp>,
+    valid_from:       Option<Timestamp>,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
-    valid_until:       Option<Timestamp>,
+    valid_until:      Option<Timestamp>,
     /// The nonce is used to avoid replay attacks when checking the holder's
     /// signature on a revocation message.
-    revocation_nonce:  u64,
+    revocation_nonce: u64,
     /// Revocation flag
-    revoked:           bool,
+    revoked:          bool,
     /// Commitment and schema reference
     /// This data is only needed when credential info is requested. In other
     /// operations, `StateBox` defers loading credential data.
-    credential_data:   StateBox<CredentialData, S>,
+    credential_data:  StateBox<CredentialData, S>,
 }
 
 impl<S: HasStateApi> CredentialEntry<S> {
@@ -147,13 +144,12 @@ impl<S: HasStateApi> CredentialEntry<S> {
 
     fn info(&self) -> CredentialInfo {
         CredentialInfo {
-            holder_id:         self.holder_id,
-            holder_revocable:  self.holder_revocable,
-            holder_restorable: self.holder_restorable,
-            commitment:        self.credential_data.commitment.clone(),
-            credential_type:   self.credential_data.credential_type.clone(),
-            valid_from:        self.valid_from,
-            valid_until:       self.valid_until,
+            holder_id:        self.holder_id,
+            holder_revocable: self.holder_revocable,
+            commitment:       self.credential_data.commitment.clone(),
+            credential_type:  self.credential_data.credential_type.clone(),
+            valid_from:       self.valid_from,
+            valid_until:      self.valid_until,
         }
     }
 }
@@ -263,17 +259,16 @@ impl<S: HasStateApi> State<S> {
             .get(&credential_info.credential_type)
             .ok_or(ContractError::SchemaNotFound)?;
         let credential_entry = CredentialEntry {
-            holder_id:         credential_info.holder_id,
-            holder_revocable:  credential_info.holder_revocable,
-            holder_restorable: credential_info.holder_restorable,
-            valid_from:        credential_info.valid_from,
-            valid_until:       credential_info.valid_until,
-            credential_data:   state_builder.new_box(CredentialData {
+            holder_id:        credential_info.holder_id,
+            holder_revocable: credential_info.holder_revocable,
+            valid_from:       credential_info.valid_from,
+            valid_until:      credential_info.valid_until,
+            credential_data:  state_builder.new_box(CredentialData {
                 commitment:      credential_info.commitment.clone(),
                 credential_type: credential_info.credential_type.clone(),
             }),
-            revocation_nonce:  0,
-            revoked:           false,
+            revocation_nonce: 0,
+            revoked:          false,
         };
         let res = self.credentials.insert(credential_id, credential_entry);
         ensure!(res.is_none(), ContractError::CredentialAlreadyExists);
@@ -473,27 +468,24 @@ fn sender_is_issuer<S: HasStateApi>(ctx: &impl HasReceiveContext, state: &State<
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialInfo {
     /// The holder's identifier is a public key.
-    holder_id:         PublicKeyEd25519,
+    holder_id:        PublicKeyEd25519,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
-    holder_revocable:  bool,
-    /// If this flag is set to `true` the holder can send a signed message to
-    /// restore their credential. Restoring means reverting revocation.
-    holder_restorable: bool,
+    holder_revocable: bool,
     /// A vector Pedersen commitment to the attributes of the verifiable
     /// credential.
     #[concordium(size_length = 2)]
-    commitment:        Vec<u8>,
+    commitment:       Vec<u8>,
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
-    credential_type:   CredentialType,
+    credential_type:  CredentialType,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
-    valid_from:        Option<Timestamp>,
+    valid_from:       Option<Timestamp>,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
-    valid_until:       Option<Timestamp>,
+    valid_until:      Option<Timestamp>,
 }
 
 /// Response to a credential data query.
@@ -1275,13 +1267,12 @@ mod tests {
     impl Arbitrary for CredentialInfo {
         fn arbitrary(g: &mut Gen) -> Self {
             CredentialInfo {
-                holder_id:         PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
-                holder_revocable:  Arbitrary::arbitrary(g),
-                holder_restorable: Arbitrary::arbitrary(g),
-                commitment:        Arbitrary::arbitrary(g),
-                credential_type:   Arbitrary::arbitrary(g),
-                valid_from:        Arbitrary::arbitrary(g),
-                valid_until:       Arbitrary::arbitrary(g),
+                holder_id:        PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
+                holder_revocable: Arbitrary::arbitrary(g),
+                commitment:       Arbitrary::arbitrary(g),
+                credential_type:  Arbitrary::arbitrary(g),
+                valid_from:       Arbitrary::arbitrary(g),
+                valid_until:      Arbitrary::arbitrary(g),
             }
         }
     }
@@ -1312,21 +1303,20 @@ mod tests {
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
-    /// and is immediately activated. It is also possible to revoke and restore
-    /// it by the holder.
+    /// and is immediately activated. It is also possible to revoke it by the
+    /// holder.
     fn credential_entry<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> CredentialEntry<S> {
         CredentialEntry {
-            credential_data:   state_builder.new_box(CredentialData {
+            credential_data:  state_builder.new_box(CredentialData {
                 commitment:      [0u8; 48].to_vec(),
                 credential_type: "ExampleSchema".to_string(),
             }),
-            valid_from:        None,
-            valid_until:       None,
-            holder_id:         PUBLIC_KEY,
-            holder_revocable:  true,
-            holder_restorable: true,
-            revocation_nonce:  0,
-            revoked:           false,
+            valid_from:       None,
+            valid_until:      None,
+            holder_id:        PUBLIC_KEY,
+            holder_revocable: true,
+            revocation_nonce: 0,
+            revoked:          false,
         }
     }
 
@@ -1425,17 +1415,16 @@ mod tests {
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
-            holder_id:         data.holder_id,
-            credential_data:   state_builder.new_box(CredentialData {
+            holder_id:        data.holder_id,
+            credential_data:  state_builder.new_box(CredentialData {
                 commitment:      data.commitment,
                 credential_type: data.credential_type,
             }),
-            revocation_nonce:  nonce,
-            holder_revocable:  data.holder_revocable,
-            holder_restorable: data.holder_restorable,
-            valid_from:        data.valid_from,
-            valid_until:       data.valid_until,
-            revoked:           true,
+            revocation_nonce: nonce,
+            holder_revocable: data.holder_revocable,
+            valid_from:       data.valid_from,
+            valid_until:      data.valid_until,
+            revoked:          true,
         };
         entry.get_status(now) == CredentialStatus::Revoked
     }
