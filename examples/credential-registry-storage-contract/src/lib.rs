@@ -5,14 +5,19 @@
 //! the credential can be recovered by off-chain tools. The `keys` for the store
 //! are the Ed25519 public keys and the `values` are the `metadata +
 //! credential_secrets`. The metadata associated with the credential contains
-//! information needed for decoding the encrypted credential secret.
-//! Only the associated private key to the public key can authorize to
-//! create an entry in this smart contract for its key by signing its
-//! metadata/credential_secret that it wants to store. This ensures that entries
-//! are generated/authorized by the public/private key pair that they are
-//! associated with. The entries in this contract are immutable and cannot be
-//! updated anymore once stored in this contract. Each public/private key pair
-//! can authorize/generate up to one entry in this contract.
+//! information needed for decoding the encrypted credential secret. Only if an
+//! off-chain tool has access to the private key (associated with the public
+//! key), it can decode the credential secrets in this smart contract
+//! (credential secrets cannot be decoded by third parties to preserve privacy).
+//! To enter credentials into this contract, only the associated private key to
+//! the public key can authorize the creation of an entry in this smart contract
+//! for its key. To authorize the entry the associated private key to the public
+//! key signs its metadata/credential_secret that it wants to store. This
+//! ensures that entries are generated/authorized by the public/private key pair
+//! that they are associated with. The entries in this contract are immutable
+//! and cannot be updated anymore once stored in this contract. Each
+//! public/private key pair can authorize/generate up to one entry in this
+//! contract.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_std::*;
@@ -25,7 +30,7 @@ struct Metadata([u8; 2]);
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct CredentialState<S: HasStateApi> {
-    /// Metadata associated to the credential.
+    /// Metadata associated with the credential.
     metadata:          Metadata,
     /// The `credential_secret` stored in this contract.
     credential_secret: StateBox<Vec<u8>, S>,
@@ -41,7 +46,7 @@ struct State<S: HasStateApi> {
 
 // Function for creating the contract state.
 impl<S: HasStateApi> State<S> {
-    /// Creates a new state with no tokens.
+    /// Creates a new state.
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         State {
             credential_registry: state_builder.new_map(),
@@ -240,9 +245,6 @@ fn store<S: HasStateApi>(
     // Calculate the message hash.
     let message_hash =
         crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
-
-    // Parse the parameter.
-    let param: PartialStoreParam = ctx.parameter_cursor().get()?;
 
     let message: SignedMessage = Cursor::new(&message_bytes).get()?;
 
