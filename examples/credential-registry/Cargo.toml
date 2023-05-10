@@ -3,7 +3,7 @@
 [package]
 name = "credential_registry"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 authors = [ "Concordium <developers@concordium.com>" ]
 description = "An example credential registry smart contract"

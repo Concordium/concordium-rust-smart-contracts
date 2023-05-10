@@ -38,7 +38,6 @@
 //!   from holders.
 use concordium_cis2::*;
 use concordium_std::*;
-use core::fmt::Debug;
 
 /// The type for a credential identifier.
 /// The identifier is generated externally by the issuer.
@@ -476,9 +475,6 @@ pub struct CredentialInfo {
     /// credential.
     #[concordium(size_length = 2)]
     commitment:       Vec<u8>,
-    /// A type of the credential that is used to identify which schema the
-    /// credential is based on.
-    credential_type:  CredentialType,
     /// The date from which the credential is considered valid. `None`
     /// corresponsds to a credential that is valid immediately after being
     /// issued.
@@ -486,18 +482,21 @@ pub struct CredentialInfo {
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
     valid_until:      Option<Timestamp>,
+    /// A type of the credential that is used to identify which schema the
+    /// credential is based on.
+    credential_type:  CredentialType,
 }
 
 /// Response to a credential data query.
 #[derive(Serialize, SchemaType, Clone, Debug)]
 pub struct CredentialQueryResponse {
     credential_info:  CredentialInfo,
-    /// The nonce is used to avoid replay attacks when checking the holder's
-    /// signature on a revocation message.
-    revocation_nonce: u64,
     /// A schema URL or DID address pointing to the JSON schema for a verifiable
     /// credential.
     schema_ref:       SchemaRef,
+    /// The nonce is used to avoid replay attacks when checking the holder's
+    /// signature on a revocation message.
+    revocation_nonce: u64,
 }
 
 /// A view entrypoint for looking up an entry in the registry by id.
@@ -558,7 +557,7 @@ pub struct RegisterCredentialParameter {
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The caller is not the contract's owner
+/// - The caller is not the issuer
 /// - An entry with the given credential id already exists
 /// - Fails to log RegisterCredentialEvent
 #[receive(
@@ -788,7 +787,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The caller is not the contract's owner.
+/// - The caller is not the issuer.
 /// - An entry with the given credential id does not exist.
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log RevokeCredentialEvent.
@@ -805,6 +804,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
     logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let parameter: RevokeCredentialIssuerParam = ctx.parameter_cursor().get()?;
 
     let state = host.state_mut();
@@ -833,16 +833,16 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 
 /// Revoke a credential as a revocation authority.
 ///
-/// A revocation authority is any entity that holds a secret key corresponding to
-/// a public key registered by the issuer.
+/// A revocation authority is any entity that holds a secret key corresponding
+/// to a public key registered by the issuer.
 ///
-/// A revocation authority is authenticatedby verifying the signature on the
+/// A revocation authority is authenticated by verifying the signature on the
 /// input to the entrypoint with the autority's public key.
 /// The public key is stored in `revocation_keys`. The index of the key in the
 /// list of revocation keys is provided as input.
 ///
-/// Note that a nonce is used as a general way to prevent replay attacks. In this
-/// particular case, the revocation is done once, however, the issuer could
+/// Note that a nonce is used as a general way to prevent replay attacks. In
+/// this particular case, the revocation is done once, however, the issuer could
 /// choose to implement an update method that restores the revoked credential.
 ///
 ///  Logs RevokeCredentialEvent with `Other` as the revoker.
@@ -995,7 +995,7 @@ fn contract_remove_issuer_keys<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Some of the key indices already exist.
-/// - The caller is not the contract's owner.
+/// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
     name = "registerRevocationKeys",
@@ -1021,7 +1021,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Some of the key indices do not exist.
-/// - The caller is not the contract's owner.
+/// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
     name = "removeRevocationKeys",
@@ -1052,7 +1052,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     name = "revocationKey",
     parameter = "u8",
     error = "ContractError",
-    return_value = "Vec<(PublicKeyEd25519, u64)>",
+    return_value = "(PublicKeyEd25519, u64)",
     mutable
 )]
 fn contract_revocation_key<S: HasStateApi>(
@@ -1079,9 +1079,6 @@ fn contract_issuer_keys<S: HasStateApi>(
 }
 
 /// A view entrypoint to get the metadata URL and checksum.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
 #[receive(
     contract = "credential_registry",
     name = "issuerMetadata",
@@ -1099,6 +1096,7 @@ fn contract_issuer_metadata<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
+/// - The caller is not the issuer.
 /// - It fails to log `IssuerMetadataEvent`
 #[receive(
     contract = "credential_registry",
@@ -1123,7 +1121,12 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
 }
 
 /// A view entrypoint for querying the issuer account address
-#[receive(contract = "credential_registry", name = "issuer", error = "ContractError")]
+#[receive(
+    contract = "credential_registry",
+    name = "issuer",
+    error = "ContractError",
+    return_value = "AccountAddress"
+)]
 fn contract_issuer<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
@@ -1207,6 +1210,7 @@ pub struct RestoreCredentialIssuerParam {
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
+/// - The caller is not the issuer.
 /// - Credential does not exist.
 /// - Credential status is different from `Revoked`.
 #[receive(
