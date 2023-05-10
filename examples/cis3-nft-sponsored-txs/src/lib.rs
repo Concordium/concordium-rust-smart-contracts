@@ -319,7 +319,7 @@ struct PermitMessage {
     entry_point:      OwnedEntrypointName,
     /// The serialized payload that should be forwarded to either the `transfer`
     /// or the `updateOperator` function.
-    #[size_length = 2]
+    #[concordium(size_length = 2)]
     payload:          Vec<u8>,
 }
 
@@ -709,7 +709,7 @@ fn contract_mint<S: HasStateApi>(
 
     // Check that max token_id is not reached.
     ensure!(
-        token_id != concordium_cis2::TokenIdU32(std::u32::MAX),
+        token_id != concordium_cis2::TokenIdU32(u32::MAX),
         CustomContractError::MaxTokenID.into()
     );
 
@@ -829,6 +829,54 @@ fn contract_serialization_helper<S: HasStateApi>(
     Ok(())
 }
 
+/// Helper function to calculate the `message_hash`.
+#[receive(
+    contract = "cis3_nft",
+    name = "viewMessageHash",
+    parameter = "PermitParam",
+    return_value = "[u8;32]",
+    crypto_primitives,
+    mutable
+)]
+fn contract_view_message_hash<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<[u8; 32]> {
+    // Parse the parameter.
+    let mut cursor = ctx.parameter_cursor();
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial`. I.e. we read the `signature` and the
+    // `signer`, but not the `message` here.
+    let param: PermitParamPartial = cursor.get()?;
+
+    // The input parameter is `PermitParam` but we have only read the initial part
+    // of it with `PermitParamPartial` so far. We read in the `message` now.
+    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
+    // bytes.
+    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
+
+    cursor.read_exact(&mut message_bytes)?;
+
+    // The message signed in the Concordium browser wallet is prepended with the
+    // `account` address and 8 zero bytes. Accounts in the Concordium browser wallet
+    // can either sign a regular transaction (in that case the prepend is
+    // `account` address and the nonce of the account which is by design >= 1)
+    // or sign a message (in that case the prepend is `account` address and 8 zero
+    // bytes). Hence, the 8 zero bytes ensure that the user does not accidentally
+    // sign a transaction. The account nonce is of type u64 (8 bytes).
+    let mut msg_prepend = vec![0; 32 + 8];
+    // Prepend the `account` address of the signer.
+    msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
+    // Prepend 8 zero bytes.
+    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
+    // Calculate the message hash.
+    let message_hash =
+        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+
+    Ok(message_hash)
+}
+
 /// Verify an ed25519 signature and allow the transfer of tokens or update of an
 /// operator.
 ///
@@ -868,11 +916,9 @@ fn contract_permit<S: HasStateApi>(
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
     // Parse the parameter.
-    let mut cursor = ctx.parameter_cursor();
-    // The input parameter is `PermitParam` but we only read the initial part of it
-    // with `PermitParamPartial`. I.e. we only read the `signature`, the
-    // `signer` but WITHOUT the `message` here.
-    let param: PermitParamPartial = cursor.get()?;
+    let param: PermitParam = ctx.parameter_cursor().get()?;
+
+    let message = param.message;
 
     ensure!(
         param.signature.len() == 1
@@ -901,15 +947,6 @@ fn contract_permit<S: HasStateApi>(
     entry.1 += 1;
     drop(entry);
 
-    // The input parameter is `PermitParam` but we only read the initial part of it
-    // with `PermitParamPartial` so far. We read in the `message` now.
-    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
-    // bytes.
-    let mut message_bytes = Vec::with_capacity((cursor.size() - cursor.cursor_position()) as usize);
-    unsafe { message_bytes.set_len(message_bytes.capacity()) };
-    cursor.read_exact(&mut message_bytes)?;
-    let message: PermitMessage = Cursor::new(&message_bytes).get()?;
-
     // Check the nonce to prevent replay attacks.
     ensure_eq!(message.nonce, nonce, CustomContractError::NonceMismatch.into());
 
@@ -923,17 +960,7 @@ fn contract_permit<S: HasStateApi>(
     // Check signature is not expired.
     ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
-    // The message signed in the Concordium browser wallet is prepended with the
-    // `account` address and 8 zero bytes.
-    let mut msg_prepend = Vec::with_capacity(32 + 8);
-    unsafe { msg_prepend.set_len(msg_prepend.capacity()) };
-    // Prepend the `account` address of the signer.
-    msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
-    // Prepend 8 zero bytes.
-    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
-    // Calculate the message hash.
-    let message_hash =
-        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+    let message_hash = contract_view_message_hash(ctx, host, crypto_primitives)?;
 
     // Check signature.
     ensure!(
@@ -1321,8 +1348,8 @@ mod tests {
     const TOKEN_2: ContractTokenId = TokenIdU32(2);
 
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        196, 192, 27, 118, 180, 235, 162, 76, 181, 221, 105, 143, 190, 189, 85, 134, 52, 138, 64,
-        83, 146, 41, 250, 203, 19, 160, 187, 176, 134, 129, 40, 223,
+        135, 40, 213, 241, 57, 171, 239, 135, 24, 139, 191, 24, 185, 167, 91, 78, 39, 223, 129,
+        189, 107, 201, 204, 27, 117, 130, 160, 157, 116, 188, 60, 136,
     ]);
 
     const OTHER_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
@@ -1331,16 +1358,16 @@ mod tests {
     ]);
 
     const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-        79, 231, 200, 150, 120, 153, 22, 115, 11, 79, 97, 141, 103, 19, 132, 154, 37, 39, 219, 190,
-        193, 184, 27, 127, 53, 125, 7, 124, 80, 214, 25, 62, 255, 183, 66, 184, 214, 189, 103, 248,
-        194, 61, 88, 91, 91, 8, 26, 228, 240, 168, 207, 102, 62, 219, 199, 114, 163, 111, 76, 207,
-        44, 237, 247, 14,
+        99, 47, 86, 124, 147, 33, 64, 92, 226, 1, 160, 163, 134, 21, 218, 65, 239, 226, 89, 237,
+        225, 84, 255, 69, 173, 150, 205, 248, 96, 113, 142, 121, 189, 224, 124, 255, 114, 196, 209,
+        25, 198, 68, 85, 42, 140, 127, 12, 65, 63, 92, 245, 57, 11, 14, 160, 69, 137, 147, 214,
+        214, 55, 75, 217, 4,
     ]);
     const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-        199, 118, 105, 210, 22, 171, 213, 228, 149, 203, 70, 231, 248, 87, 225, 32, 37, 162, 157,
-        196, 35, 162, 118, 67, 240, 216, 252, 220, 26, 188, 162, 139, 227, 216, 174, 67, 1, 212,
-        152, 186, 181, 41, 109, 125, 180, 110, 208, 239, 88, 52, 140, 39, 151, 237, 242, 15, 107,
-        95, 243, 239, 192, 51, 175, 5,
+        222, 61, 228, 112, 250, 110, 0, 84, 160, 201, 116, 172, 116, 175, 170, 247, 136, 124, 122,
+        175, 180, 183, 179, 25, 203, 171, 117, 140, 215, 90, 190, 195, 192, 65, 46, 99, 213, 84,
+        230, 214, 163, 211, 244, 13, 109, 110, 115, 47, 197, 0, 67, 165, 110, 216, 6, 111, 27, 144,
+        84, 22, 102, 170, 155, 11,
     ]);
 
     /// Test helper function which creates a contract state with two tokens with
@@ -2021,6 +2048,22 @@ mod tests {
         claim_eq!(balance0, 0.into(), "Token balance of address0 should be 0");
         claim_eq!(balance1, 1.into(), "Token balance of address1 should be 1");
 
+        // Invoke `viewMessageHash` function.
+        let result: ContractResult<[u8; 32]> =
+            contract_view_message_hash(&ctx, &mut host, &crypto_primitives);
+
+        let message_hash = result.expect_report("Message hash should be viewable");
+
+        // Check signature.
+        claim!(
+            crypto_primitives.verify_ed25519_signature(
+                PUBLIC_KEY,
+                SIGNATURE_TRANSFER,
+                &message_hash
+            ),
+            "Signature should be correct"
+        );
+
         // Inovke `permit` function.
         let result: ContractResult<()> =
             contract_permit(&ctx, &mut host, &mut logger, &crypto_primitives);
@@ -2137,6 +2180,22 @@ mod tests {
 
         let parameter_bytes = to_bytes(&permit_transfer_param);
         ctx.set_parameter(&parameter_bytes);
+
+        // Invoke `viewMessageHash` function.
+        let result: ContractResult<[u8; 32]> =
+            contract_view_message_hash(&ctx, &mut host, &crypto_primitives);
+
+        let message_hash = result.expect_report("Message hash should be viewable");
+
+        // Check signature.
+        claim!(
+            crypto_primitives.verify_ed25519_signature(
+                PUBLIC_KEY,
+                SIGNATURE_UPDATE_OPERATOR,
+                &message_hash
+            ),
+            "Signature should be correct"
+        );
 
         // Inovke `permit` function.
         let result: ContractResult<()> =

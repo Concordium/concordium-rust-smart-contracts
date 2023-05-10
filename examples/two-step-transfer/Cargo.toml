@@ -2,7 +2,7 @@
 name = "two-step-transfer"
 version = "0.1.1"
 authors = ["Concordium <developers@concordium.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 description = "Two-step transfer smart contract."
 homepage = "https://github.com/concordium/concordium-rust-smart-contracts"
@@ -19,11 +19,11 @@ wee_alloc = ["concordium-std/wee_alloc"]
 version = "6"
 path = "../../concordium-std"
 default-features = false
+features = ["concordium-quickcheck"]
 
 [dev-dependencies.concordium-std]
 version = "6"
 path = "../../concordium-std"
-features = ["concordium-quickcheck"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

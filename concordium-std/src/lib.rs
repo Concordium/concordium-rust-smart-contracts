@@ -210,21 +210,10 @@
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
-#![cfg_attr(not(feature = "std"), no_std, feature(alloc_error_handler, core_intrinsics))]
+#![cfg_attr(not(feature = "std"), no_std, feature(core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
 pub extern crate alloc;
-
-#[cfg(not(feature = "std"))]
-#[alloc_error_handler]
-fn on_oom(_layout: alloc::alloc::Layout) -> ! {
-    #[cfg(target_arch = "wasm32")]
-    unsafe {
-        core::arch::wasm32::unreachable()
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    loop {}
-}
 
 /// Terminate execution immediately without panicking.
 /// When the `std` feature is enabled this is just [std::process::abort](https://doc.rust-lang.org/std/process/fn.abort.html).

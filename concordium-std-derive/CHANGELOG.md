@@ -2,6 +2,11 @@
  
 ## Unreleased changes
 
+## concordium-std-derive 5.2.0 (2023-05-08)
+
+- Fix `derive(SchemaType)` macro so that it allows the `concordium` attribute.
+- Bump Rust edition to `2021`.
+
 ## concordium-std-derive 5.1.0 (2022-12-14)
 
 - Add a `#[concordium_quickcheck]` macro that re-exports a customized QuickCheck function

@@ -58,12 +58,12 @@ enum ContractError {
     #[from(TransferError)]
     TransferError,
     /// Failed contract invoke.
-    ContractError,
+    ContractInvokeError,
     Unauthenticated,
 }
 
 impl<A> From<CallContractError<A>> for ContractError {
-    fn from(_: CallContractError<A>) -> Self { Self::ContractError }
+    fn from(_: CallContractError<A>) -> Self { Self::ContractInvokeError }
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -108,7 +108,7 @@ fn contract_buy_icecream<S: HasStateApi>(
     let weather = if let Some(mut weather) = weather {
         weather.get()?
     } else {
-        return Err(ContractError::ContractError);
+        return Err(ContractError::ContractInvokeError);
     };
 
     match weather {
@@ -319,6 +319,6 @@ mod tests {
 
         // Act + Assert (should panic)
         let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
-        claim_eq!(result, Err(ContractError::ContractError));
+        claim_eq!(result, Err(ContractError::ContractInvokeError));
     }
 }

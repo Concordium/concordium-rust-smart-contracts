@@ -1,8 +1,8 @@
 [package]
 name = "concordium-cis2"
-version = "3.0.0"
+version = "3.1.0"
 authors = ["Concordium <developers@concordium.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 description = "A collection of types for implementing CIS-2 Concordium Token Standard."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
@@ -11,7 +11,7 @@ readme = "./README.md"
 
 [dependencies.concordium-std]
 path = "../concordium-std"
-version = "6"
+version = "6.2"
 default-features = false
 
 [dependencies.primitive-types]

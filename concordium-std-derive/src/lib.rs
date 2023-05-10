@@ -1528,7 +1528,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
                 matches_tokens.extend(quote! {
                     #idx_lit => {
                         #field_tokens
-                        Ok(#data_name::#variant_ident#pattern)
+                        Ok(#data_name::#variant_ident #pattern)
                     },
                 })
             }
@@ -1556,7 +1556,7 @@ fn impl_deserial_with_state(ast: &syn::DeriveInput) -> syn::Result<TokenStream> 
 /// Derive the `SchemaType` trait for a type.
 /// If the feature `build-schema` is not enabled this is a no-op, i.e., it does
 /// not produce any code.
-#[proc_macro_derive(SchemaType, attributes(size_length))]
+#[proc_macro_derive(SchemaType, attributes(concordium))]
 pub fn schema_type_derive(input: TokenStream) -> TokenStream {
     unwrap_or_report(schema_type_derive_worker(input))
 }
@@ -2259,7 +2259,7 @@ fn impl_deletable(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 let variant_ident = &variant.ident;
 
                 matches_tokens.extend(quote! {
-                    #data_name::#variant_ident#pattern => {
+                    #data_name::#variant_ident #pattern => {
                         #field_tokens
                     },
                 })
@@ -2408,7 +2408,7 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!({#field_names});
-                        (quote!(#data_name::#variant_ident#pattern), pattern)
+                        (quote!(#data_name::#variant_ident #pattern), pattern)
                     }
                     syn::Fields::Unnamed(_) => {
                         for i in 0..variant.fields.len() {
@@ -2417,17 +2417,17 @@ fn impl_state_clone(ast: &syn::DeriveInput) -> syn::Result<TokenStream> {
                             field_names.extend(quote!(#field_ident,));
                         }
                         let pattern = quote!((#field_names));
-                        (quote!(#data_name::#variant_ident#pattern), pattern)
+                        (quote!(#data_name::#variant_ident #pattern), pattern)
                     }
                     syn::Fields::Unit => (
-                        quote!(#data_name::#variant_ident#field_names),
+                        quote!(#data_name::#variant_ident #field_names),
                         proc_macro2::TokenStream::new(),
                     ),
                 };
                 let variant_ident = &variant.ident;
 
                 matches_tokens.extend(quote! {
-                    #data_name::#variant_ident#pattern => {
+                    #data_name::#variant_ident #pattern => {
                         #field_tokens
                         #return_tokens
                     },

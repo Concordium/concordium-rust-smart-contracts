@@ -1,21 +1,22 @@
 [package]
-name = "e_sealing"
+name = "offchain-transfer"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
-edition = "2021"
+edition = "2018"
 license = "MPL-2.0"
+description = "Offchain transfer settlement smart contract."
+readme = "./README.md"
 
 [features]
-default = ["std", "wee_alloc"]
+default = ["std"]
 std = ["concordium-std/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies]
+byteorder = "1.3"
 concordium-std = {path = "../../concordium-std", default-features = false}
 
 [lib]
-crate-type=["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib"]
 
 [profile.release]
-opt-level = "s"
-codegen-units = 1
+opt-level = 3
