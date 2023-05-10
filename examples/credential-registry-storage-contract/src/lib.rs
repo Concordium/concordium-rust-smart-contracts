@@ -1,39 +1,68 @@
 //! The contract is used for storing verifiable credentials for the Web3Id
-//! infrastructure. The contract stores encrypted credential secrets with some
-//! metadata associated with them. The state contains a simple key-value store
-//! where each public key can store its associated encrypted credential so that
-//! the credential can be recovered by off-chain tools. The `keys` for the store
-//! are the Ed25519 public keys and the `values` are the `metadata +
-//! credential_secrets`. The metadata associated with the credential contains
-//! information needed for decoding the encrypted credential secret. Only if an
-//! off-chain tool has access to the private key (associated with the public
-//! key), it can decode the credential secrets in this smart contract
-//! (credential secrets cannot be decoded by third parties to preserve privacy).
-//! To enter credentials into this contract, only the associated private key to
-//! the public key can authorize the creation of an entry in this smart contract
-//! for its key. To authorize the entry the associated private key to the public
-//! key signs its metadata/credential_secret that it wants to store. This
-//! ensures that entries are generated/authorized by the public/private key pair
+//! infrastructure. The contract stores encrypted credentials (generated with
+//! the symmetric AES-256 encryption standard) with some metadata associated
+//! with them.
+//!
+//! The state contains a simple key-value store where each public key
+//! can store its associated encrypted credential so that the credential can be
+//! recovered by off-chain wallets. The `keys` for the store are the Ed25519
+//! public keys and the `values` are the `metadata + encrypted_credentials`. The
+//! metadata associated with the credential contains information needed for
+//! decoding the encrypted credential. Only if an off-chain tool has access to
+//! the AES secret key, it can decode the credentials in this smart contract
+//! (credentials cannot be decoded by third parties to preserve privacy). To
+//! enter credentials into this contract, only the associated private key to the
+//! public key can authorize the creation of an entry in this smart contract for
+//! its key. To authorize the entry the associated private key to the public key
+//! signs its metadata/encrypted_credential that it wants to store. This ensures
+//! that entries are generated/authorized by the public/private key pair
 //! that they are associated with. The entries in this contract are immutable
 //! and cannot be updated anymore once stored in this contract. Each
 //! public/private key pair can authorize/generate up to one entry in this
 //! contract.
+//!
+//! The Concordium wallets generate a new public-private key pair and an
+//! AES-256 secret key from a key path (example/dummy key path m/1’/2’/3’/4/0)
+//! whenever storing a new verifiable credential. E.g. the first public-private
+//! key pair/AES-256 secret key that the wallet creates will be derived from
+//! m/1’/2’/3’/4/0, the second public-private key pair/AES-256 secret key that
+//! the wallet creates will be derived from m/1’/2’/3’/4/1, … .
+//!
+//! Issuing of verifiable credentials works as follows:
+//! The dApp (run by the issuer of the verifiable credential):
+//!    - requests to generate a new public-private key pair/AES-256 secret key
+//!      in the wallet
+//!    - requests to encrypt the credentials (generated with the AES secret key)
+//!    - requests a signed message from the wallet (generated with the private
+//!      key)
+//! The issuer invokes the 'store' entrypoint in this contract to store the
+//! encrypted verifiable credential.
+//!
+//! Recovering verifiable credentials works as follows:
+//! Recovery of credentials in a newly installed wallet on a different device
+//! works because the wallet goes through the public keys derived from
+//! m/1’/2’/3’/4/0, m/1’/2’/3’/4/1, … until it does not find such a public key
+//! registered in this contract anymore. Some margin in the wallet will be
+//! implemented to deal with issuers that failed to correctly store/register the
+//! verifiable credentials in this contract.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_std::*;
 
+const SIGNARUTE_DOMAIN: &str = "WEB3ID:STORE";
+
 /// Metadata is a string of two bytes that contain information needed for
 /// decoding the credentials.
-#[derive(Serial, SchemaType, Clone, Copy, Deserial, PartialEq)]
+#[derive(Serial, SchemaType, Clone, Copy, Deserial, PartialEq, Debug)]
 struct Metadata([u8; 2]);
 
-#[derive(Serial, DeserialWithState, StateClone)]
-#[concordium(state_parameter = "S")]
-struct CredentialState<S: HasStateApi> {
+/// Part of the contract state.
+#[derive(Serial, Deserial, Clone)]
+struct CredentialState {
     /// Metadata associated with the credential.
-    metadata:          Metadata,
-    /// The `credential_secret` stored in this contract.
-    credential_secret: StateBox<Vec<u8>, S>,
+    metadata:             Metadata,
+    /// The `encrypted_credential` stored in this contract.
+    encrypted_credential: Vec<u8>,
 }
 
 /// The contract state.
@@ -41,7 +70,7 @@ struct CredentialState<S: HasStateApi> {
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     /// All verifiable credentials.
-    credential_registry: StateMap<PublicKeyEd25519, CredentialState<S>, S>,
+    credential_registry: StateMap<PublicKeyEd25519, CredentialState, S>,
 }
 
 // Function for creating the contract state.
@@ -74,11 +103,10 @@ enum CustomContractError {
     /// Failed signature verification: Signature was intended for a different
     /// contract.
     WrongContract,
-    /// Failed signature verification: Signature was intended for a different
-    /// entry_point.
-    WrongEntryPoint,
     /// Failed signature verification: Signature is expired.
     Expired,
+    /// Failed signature verification: Signed message could not be serialized.
+    SerializationError,
 }
 
 type ContractResult<A> = Result<A, CustomContractError>;
@@ -95,20 +123,20 @@ impl From<LogError> for CustomContractError {
 
 /// Credential state that is used as the input parameter or the return value for
 /// the `store/view` contract functions. It contains the metadata and the
-/// credential_secret.
+/// encrypted_credential.
 #[derive(Serialize, SchemaType, PartialEq)]
 struct SimpleCredentialState {
     /// Metadata associated with the credential.
-    metadata:          Metadata,
-    /// The credential_secret.
-    credential_secret: Vec<u8>,
+    metadata:             Metadata,
+    /// The `encrypted_credential`.
+    encrypted_credential: Vec<u8>,
 }
 
 /// The CredentialRegisteredEvent is logged when the `store` function is
 /// invoked.
 #[derive(Serialize, SchemaType)]
 pub struct CredentialRegisteredEvent {
-    /// Public_key associated with the stored credential.
+    /// Public key associated with the stored credential.
     public_key: PublicKeyEd25519,
 }
 
@@ -147,47 +175,69 @@ fn view<S: HasStateApi>(
 
     Ok(host.state().credential_registry.get(&public_key).map(|credential_state| {
         SimpleCredentialState {
-            metadata:          credential_state.metadata,
-            credential_secret: credential_state.credential_secret.clone(),
+            metadata:             credential_state.metadata,
+            encrypted_credential: credential_state.encrypted_credential.clone(),
         }
     }))
 }
 
-/// Part of the parameter type for the contract function `store`.
-/// Specifies the message that is signed.
-#[derive(SchemaType, Serialize)]
-struct SignedMessage {
-    /// The contract_address that the signature is intended for.
-    contract_address:  ContractAddress,
-    /// A timestamp to make signatures expire.
-    timestamp:         Timestamp,
-    /// The entry_point that the signature is intended for.
-    entry_point:       OwnedEntrypointName,
-    /// Metadata associated with the credential.
-    metadata:          Metadata,
-    /// The serialized credential_secret.
-    #[concordium(size_length = 2)]
-    credential_secret: Vec<u8>,
-}
-
 /// The parameter type for the contract function `store`.
-/// Takes a signature, the public_key(signer), and the message that was signed.
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Debug)]
 pub struct StoreParam {
+    /// The contract_address that the signature is intended for.
+    contract_address:     ContractAddress,
+    /// The serialized encrypted_credential.
+    #[concordium(size_length = 2)]
+    encrypted_credential: Vec<u8>,
+    /// Metadata associated with the credential.
+    metadata:             Metadata,
+    /// Public key that created the above signature.
+    public_key:           PublicKeyEd25519,
     /// Signature.
-    signature:  SignatureEd25519,
-    /// PublicKeyEd25519 that created the above signature.
-    public_key: PublicKeyEd25519,
-    /// Message that was signed.
-    message:    SignedMessage,
+    signature:            SignatureEd25519,
+    /// A timestamp to make signatures expire.
+    timestamp:            Timestamp,
 }
 
-#[derive(Serialize)]
-pub struct PartialStoreParam {
-    /// Signature.
-    signature:  SignatureEd25519,
-    /// PublicKeyEd25519 that created the above signature.
-    public_key: PublicKeyEd25519,
+impl StoreParam {
+    /// Prepare the message bytes for signature verification
+    fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
+        self.contract_address.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
+        self.encrypted_credential
+            .serial::<Vec<_>>(bytes)
+            .map_err(|_| CustomContractError::SerializationError)?;
+        self.metadata.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
+        self.timestamp.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
+        Ok(())
+    }
+}
+
+/// The parameter type for the contract function `serializationHelper`.
+#[derive(Serialize, SchemaType)]
+pub struct SerializationHelperParam {
+    /// The contract_address that the signature is intended for.
+    contract_address:     ContractAddress,
+    /// The serialized encrypted_credential.
+    #[concordium(size_length = 2)]
+    encrypted_credential: Vec<u8>,
+    /// Metadata associated with the credential.
+    metadata:             Metadata,
+    /// A timestamp to make signatures expire.
+    timestamp:            Timestamp,
+}
+
+/// Helper function that can be invoked at the front-end to serialize
+/// the message to be signed by the wallet.
+#[receive(
+    contract = "credential-registry-storage",
+    name = "serializationHelper",
+    parameter = "SerializationHelperParam"
+)]
+fn contract_serialization_helper<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    Ok(())
 }
 
 /// Store credential data.
@@ -215,51 +265,21 @@ fn store<S: HasStateApi>(
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
     // Parse the parameter.
-    let mut cursor = ctx.parameter_cursor();
-    // The input parameter is `StoreParam` but we only read the initial part of it
-    // with `PartialStoreParam`. I.e. we read the `signature` and the
-    // `public_key`, but not the `message` here.
-    let param: PartialStoreParam = cursor.get()?;
-
-    // We read in the `message` now. `(cursor.size() - cursor.cursor_position()` is
-    // the length of the message in bytes.
-    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
-
-    cursor.read_exact(&mut message_bytes)?;
-
-    // The plan is to develop the signature schema specific to verifiable
-    // credentials in the future but for the time being, we use the signature schema
-    // that is already implemented in the Concordium browser wallet. The message
-    // signed in the Concordium browser wallet is prepended with the `account`
-    // address and 8 zero bytes. Accounts in the Concordium browser wallet can
-    // either sign a regular transaction (in that case the prepend is `account`
-    // address and the nonce of the account which is by design >= 1) or sign a
-    // message (in that case the prepend is `account` address and 8 zero bytes).
-    // Hence, the 8 zero bytes ensure that the user does not accidentally sign a
-    // transaction. The account nonce is of type u64 (8 bytes).
-    let mut msg_prepend = vec![0; 32 + 8];
-    // Prepend the `account` address of the signer.
-    msg_prepend[0..32].copy_from_slice(&param.public_key.0);
-    // Prepend 8 zero bytes.
-    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
-    // Calculate the message hash.
-    let message_hash =
-        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
-
-    let message: SignedMessage = Cursor::new(&message_bytes).get()?;
+    let param: StoreParam = ctx.parameter_cursor().get()?;
 
     // Check that the signature was intended for this contract.
-    ensure_eq!(message.contract_address, ctx.self_address(), CustomContractError::WrongContract);
+    ensure_eq!(param.contract_address, ctx.self_address(), CustomContractError::WrongContract);
 
     // Check signature is not expired.
-    ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired);
+    ensure!(param.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired);
 
-    // Check signature was intended for this `entry_point`.
-    ensure_eq!(
-        message.entry_point.as_entrypoint_name(),
-        EntrypointName::new_unchecked("store"),
-        CustomContractError::WrongEntryPoint
-    );
+    // Perepare message bytes as it is signed by the wallet.
+    // Note that the message is prepended by a domain separation string.
+    let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
+    param.message_bytes(&mut message)?;
+
+    // Calculate the message hash.
+    let message_hash = crypto_primitives.hash_sha2_256(&message).0;
 
     // Check signature.
     ensure!(
@@ -271,11 +291,9 @@ fn store<S: HasStateApi>(
         CustomContractError::WrongSignature
     );
 
-    let (state, state_builder) = host.state_and_builder();
-
-    let entry = state.credential_registry.insert(param.public_key, CredentialState {
-        metadata:          message.metadata,
-        credential_secret: state_builder.new_box(message.credential_secret),
+    let entry = host.state_mut().credential_registry.insert(param.public_key, CredentialState {
+        metadata:             param.metadata,
+        encrypted_credential: param.encrypted_credential,
     });
 
     ensure!(entry.is_none(), CustomContractError::CredentialAlreadyRegisteredForGivenPublicKey);
@@ -301,12 +319,12 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        64, 20, 87, 123, 162, 122, 125, 40, 134, 22, 20, 188, 188, 154, 117, 110, 114, 203, 68,
-        160, 199, 217, 181, 85, 233, 150, 105, 166, 73, 197, 59, 10, 56, 9, 48, 14, 153, 75, 4,
-        204, 80, 236, 87, 161, 208, 138, 239, 90, 72, 163, 31, 235, 177, 240, 130, 31, 234, 111,
-        79, 55, 57, 68, 35, 13,
+        20, 121, 139, 239, 248, 47, 71, 217, 61, 170, 196, 195, 176, 211, 68, 213, 202, 70, 233,
+        183, 1, 73, 15, 84, 151, 244, 35, 24, 82, 223, 206, 67, 162, 134, 75, 67, 228, 77, 34, 27,
+        91, 131, 60, 88, 225, 173, 192, 235, 53, 154, 214, 139, 98, 60, 222, 194, 210, 43, 255,
+        245, 200, 250, 254, 4,
     ]);
-    const CREDENTIAL_SECRET: [u8; 2] = [43, 1];
+    const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
     const METADATA: Metadata = Metadata([43, 1]);
 
     // Test initialization succeeds.
@@ -326,7 +344,7 @@ mod tests {
         claim!(state.credential_registry.is_empty(), "Expect empty registry");
     }
 
-    /// Test only Setter can setMetadataUrl
+    /// Test storing and viewing of verifiable credentials
     #[concordium_test]
     fn test_store_and_view_function() {
         let mut state_builder = TestStateBuilder::new();
@@ -347,20 +365,16 @@ mod tests {
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
         // Set up the parameter.
-        let signed_message = SignedMessage {
-            contract_address:  ContractAddress {
+        let parameter = StoreParam {
+            signature:            SIGNATURE,
+            public_key:           PUBLIC_KEY,
+            contract_address:     ContractAddress {
                 index:    0,
                 subindex: 0,
             },
-            timestamp:         Timestamp::from_timestamp_millis(10000000000),
-            entry_point:       OwnedEntrypointName::new_unchecked("store".to_string()),
-            metadata:          METADATA,
-            credential_secret: CREDENTIAL_SECRET.to_vec(),
-        };
-        let parameter = StoreParam {
-            signature:  SIGNATURE,
-            public_key: PUBLIC_KEY,
-            message:    signed_message,
+            timestamp:            Timestamp::from_timestamp_millis(10000000000),
+            metadata:             METADATA,
+            encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
         };
 
         let parameter_bytes = to_bytes(&parameter);
@@ -390,15 +404,15 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         // Call the contract 'view' function.
-        let credential_secret = view(&ctx, &host);
+        let result = view(&ctx, &host);
 
         claim_eq!(
-            credential_secret.expect_report("Expect credential_secret as return value"),
+            result.expect_report("Expect credential as return value"),
             Some(SimpleCredentialState {
-                metadata:          METADATA,
-                credential_secret: CREDENTIAL_SECRET.to_vec(),
+                metadata:             METADATA,
+                encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
             }),
-            "Credential_secret should be viewable"
+            "Credential should be viewable"
         );
     }
 }
