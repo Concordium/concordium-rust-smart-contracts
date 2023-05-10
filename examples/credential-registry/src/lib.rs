@@ -383,18 +383,18 @@ enum Revoker {
     Other(PublicKeyEd25519),
 }
 
-/// Revocation reason.
+/// A short comment on a reason of revoking or restoring a credential.
 /// The string is of a limited size of 256 bytes in order to fit into a single
-/// log entry along with other data logged on revocation.
+/// log entry along with other data.
 #[derive(Serialize, SchemaType, Clone)]
-struct RevokeReason {
+struct Reason {
     #[concordium(size_length = 1)]
     reason: String,
 }
 
-impl From<String> for RevokeReason {
+impl From<String> for Reason {
     fn from(reason: String) -> Self {
-        RevokeReason {
+        Reason {
             reason,
         }
     }
@@ -413,7 +413,7 @@ struct RevokeCredentialEvent {
     /// An optional text clarifying the revocation reasons.
     /// The issuer can use this field to comment on the revocation, so the
     /// holder can observe it in the wallet.
-    reason:        Option<RevokeReason>,
+    reason:        Option<Reason>,
 }
 
 #[derive(Debug, Serialize, SchemaType)]
@@ -612,7 +612,7 @@ pub struct RevokeCredentialHolderParam {
     signing_data:  SigningData,
     signature:     SignatureEd25519,
     /// (Optional) reason for revoking the credential.
-    reason:        Option<RevokeReason>,
+    reason:        Option<Reason>,
 }
 
 /// Prepare the message bytes for the holeder
@@ -633,7 +633,7 @@ pub struct RevokeCredentialIssuerParam {
     /// Id of the credential to revoke.
     credential_id: CredentialID,
     /// (Optional) reason for revoking the credential.
-    reason:        Option<RevokeReason>,
+    reason:        Option<Reason>,
 }
 
 /// A parameter type for revoking a credential by a revocation authority.
@@ -647,7 +647,7 @@ pub struct RevokeCredentialOtherParam {
     /// Key index in the revocation keys map
     revocation_key_index: u8,
     /// (Optional) reason for revoking the credential.
-    reason:               Option<RevokeReason>,
+    reason:               Option<Reason>,
 }
 
 impl RevokeCredentialOtherParam {
@@ -1202,7 +1202,7 @@ pub struct RestoreCredentialIssuerParam {
     /// Id of the credential to restore.
     credential_id: CredentialID,
     /// (Optional) reason for restoring the credential.
-    reason:        Option<RevokeReason>,
+    reason:        Option<Reason>,
 }
 
 /// Restore credential by the issuer.
