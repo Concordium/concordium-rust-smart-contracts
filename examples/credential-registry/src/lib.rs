@@ -14,11 +14,11 @@
 //! - revoke a credential;
 //! - restore (cancelling revocation of) a revoked credential;
 //! - register a public key;
-//! - register a revocation authority key
+//! - register a revocation authority key;
 //! - update metadata;
 //! - add/update credential types.
 //!
-//! Revocation authorities are some entities chosen by the issuer that has
+//! Revocation authorities are some entities chosen by the issuer that have
 //! revocation capabilities. Their public keys are registered by the issuer and
 //! a revocation authority signs a revocation message with the corresponding
 //! secret key.
@@ -33,7 +33,7 @@
 //!
 //! ## Verifier's functionality
 //!
-//! - view credential status to verify VC validity.
+//! - view credential status to verify VC validity;
 //! - view credential data to verify proofs (verifiable presentations) requested
 //!   from holders.
 use concordium_cis2::*;
@@ -47,7 +47,7 @@ struct CredentialID {
     id: u128,
 }
 
-/// Credential type is a string that corresponds to a the value of the "name"
+/// Credential type is a string that corresponds to the value of the "name"
 /// attribute of the credential schema.
 type CredentialType = String;
 
@@ -299,7 +299,7 @@ impl<S: HasStateApi> State<S> {
         let mut credential =
             self.credentials.get_mut(&credential_id).ok_or(ContractError::CredentialNotFound)?;
         let status = credential.get_status(now);
-        // It is expected that the credemtial was previously revoked.
+        // It is expected that the credential was previously revoked.
         // It can expire by the time of restoring; in this case, it is still marked as
         // `revoked: false`, but the status will be `Expired`.
         ensure!(status == CredentialStatus::Revoked, ContractError::IncorrectStatusBeforeRestoring);
@@ -665,7 +665,7 @@ impl RevokeCredentialOtherParam {
 }
 
 /// Performs authorization based on the signature and the public key.
-/// The message is build from serialized `credential_id` and `signing_data`.
+/// The message is built from serialized `credential_id` and `signing_data`.
 fn authorize_with_signature(
     crypto_primitives: &impl HasCryptoPrimitives,
     ctx: &impl HasReceiveContext,
@@ -833,7 +833,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 
 /// Revoke a credential as a revocation authority.
 ///
-/// A revocation athority is any entity that hold a secret key corresponding to
+/// A revocation authority is any entity that holds a secret key corresponding to
 /// a public key registered by the issuer.
 ///
 /// A revocation authority is authenticatedby verifying the signature on the
@@ -841,7 +841,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// The public key is stored in `revocation_keys`. The index of the key in the
 /// list of revocation keys is provided as input.
 ///
-/// Note that nonce is used as a general way to prevent replay attacks. In this
+/// Note that a nonce is used as a general way to prevent replay attacks. In this
 /// particular case, the revocation is done once, however, the issuer could
 /// choose to implement an update method that restores the revoked credential.
 ///
@@ -1193,7 +1193,7 @@ fn contract_update_credential_schemas<S: HasStateApi>(
     Ok(())
 }
 
-/// A parameter type for revoking a credential by the issuer.
+/// A parameter type for restoring a credential by the issuer.
 #[derive(Serialize, SchemaType)]
 pub struct RestoreCredentialIssuerParam {
     /// Id of the credential to restore.
