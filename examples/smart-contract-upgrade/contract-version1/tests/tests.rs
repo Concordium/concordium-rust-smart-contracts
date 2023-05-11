@@ -1,8 +1,16 @@
 use concordium_smart_contract_testing::*;
+use concordium_std::Deserial;
 use smart_contract_upgrade::UpgradeParams;
 
 const ACC_ADDR_OWNER: AccountAddress = AccountAddress([0u8; 32]);
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
+
+#[derive(Deserial, Debug, PartialEq, Eq)]
+pub struct State {
+    admin:     AccountAddress,
+    old_state: String,
+    new_state: String,
+}
 
 fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
     let mut chain = Chain::new();
@@ -68,27 +76,52 @@ fn test_upgrade_without_migration_function() {
     };
 
     // Upgrade `contract_version1` to `contract_version2`.
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(), // Used for specifying the number of signatures.
-            ACC_ADDR_OWNER,         // Invoker account.
-            Address::Account(ACC_ADDR_OWNER), // Sender (can also be a contract).
-            Energy::from(10000),    // Maximum energy allowed for the update.
-            UpdateContractPayload {
-                address: initialization.contract_address, // The contract to update.
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_upgrade.upgrade".into(),
-                ), // The receive function to call.
-                message: OwnedParameter::from_serial(&input_parameter).expect("`UpgradeParams` should be a valid inut parameter"), // The parameter sent to the contract.
-                amount: Amount::from_ccd(0), // Sending the contract 0 CCD.
-            },
-        );
+    let update = chain.contract_update(
+        Signer::with_one_key(), // Used for specifying the number of signatures.
+        ACC_ADDR_OWNER,         // Invoker account.
+        Address::Account(ACC_ADDR_OWNER), // Sender (can also be a contract).
+        Energy::from(10000),    // Maximum energy allowed for the update.
+        UpdateContractPayload {
+            address: initialization.contract_address, // The contract to update.
+            receive_name: OwnedReceiveName::new_unchecked("smart_contract_upgrade.upgrade".into()), // The receive function to call.
+            message: OwnedParameter::from_serial(&input_parameter)
+                .expect("`UpgradeParams` should be a valid inut parameter"), // The parameter sent to the contract.
+            amount: Amount::from_ccd(0), // Sending the contract 0 CCD.
+        },
+    );
 
     assert_eq!(
         update.expect("Upgrade should succeed").state_changed,
         false,
         "State should not be changed because no `migration` function was called"
     );
+
+    let invoke = chain
+        .contract_invoke(
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      initialization.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "smart_contract_upgrade.view".to_string(),
+                ),
+                message:      OwnedParameter::empty(),
+            },
+        )
+        .expect("Invoking `view` should always succeed");
+
+    let state: State =
+        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+
+    assert_eq!(state, State {
+        admin:     ACC_ADDR_OWNER,
+        old_state: "This state should NOT be migrated as part of the smart contract upgrade."
+            .to_string(),
+        new_state: "This state should be migrated as part of the smart contract upgrade."
+            .to_string(),
+    });
 }
 
 #[test]
@@ -115,25 +148,49 @@ fn test_upgrade_with_migration_function() {
     };
 
     // Upgrade `contract_version1` to `contract_version2`.
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(), // Used for specifying the number of signatures.
-            ACC_ADDR_OWNER,         // Invoker account.
-            Address::Account(ACC_ADDR_OWNER), // Sender (can also be a contract).
-            Energy::from(10000),    // Maximum energy allowed for the update.
-            UpdateContractPayload {
-                address: initialization.contract_address, // The contract to update.
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_upgrade.upgrade".into(),
-                ), // The receive function to call.
-                message: OwnedParameter::from_serial(&input_parameter).expect("`UpgradeParams` should be a valid inut parameter"), // The parameter sent to the contract.
-                amount: Amount::from_ccd(0), // Sending the contract 0 CCD.
-            },
-        );
+    let update = chain.contract_update(
+        Signer::with_one_key(), // Used for specifying the number of signatures.
+        ACC_ADDR_OWNER,         // Invoker account.
+        Address::Account(ACC_ADDR_OWNER), // Sender (can also be a contract).
+        Energy::from(10000),    // Maximum energy allowed for the update.
+        UpdateContractPayload {
+            address: initialization.contract_address, // The contract to update.
+            receive_name: OwnedReceiveName::new_unchecked("smart_contract_upgrade.upgrade".into()), // The receive function to call.
+            message: OwnedParameter::from_serial(&input_parameter)
+                .expect("`UpgradeParams` should be a valid inut parameter"), // The parameter sent to the contract.
+            amount: Amount::from_ccd(0), // Sending the contract 0 CCD.
+        },
+    );
 
     assert_eq!(
         update.expect("Upgrade should succeed").state_changed,
         true,
         "State should be changed due to the `migration` function"
     );
+
+    let invoke = chain
+        .contract_invoke(
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      initialization.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "smart_contract_upgrade.view".to_string(),
+                ),
+                message:      OwnedParameter::empty(),
+            },
+        )
+        .expect("Invoking `view` should always succeed");
+
+    let state: State =
+        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+
+    assert_eq!(state, State {
+        admin:     ACC_ADDR_OWNER,
+        old_state: "This state should be migrated as part of the smart contract upgrade."
+            .to_string(),
+        new_state: "This is the new state.".to_string(),
+    });
 }
