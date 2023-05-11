@@ -21,7 +21,7 @@
 //! Revocation authorities are some entities chosen by the issuer that have
 //! revocation capabilities. Their public keys are registered by the issuer and
 //! a revocation authority signs a revocation message with the corresponding
-//! secret key.
+//! private key.
 //!
 //! ## Holder's functionality
 //!
@@ -833,7 +833,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 
 /// Revoke a credential as a revocation authority.
 ///
-/// A revocation authority is any entity that holds a secret key corresponding
+/// A revocation authority is any entity that holds a private key corresponding
 /// to a public key registered by the issuer.
 ///
 /// A revocation authority is authenticated by verifying the signature on the
