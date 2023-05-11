@@ -38,11 +38,11 @@ pub struct State {
 /// fails. This is useful for doing migration in the same transaction triggering
 /// the upgrade.
 #[derive(Serialize, SchemaType)]
-struct UpgradeParams {
+pub struct UpgradeParams {
     /// The new module reference.
-    module:  ModuleReference,
+    pub module:  ModuleReference,
     /// Optional entrypoint to call in the new module after upgrade.
-    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
 /// Smart contract errors.
