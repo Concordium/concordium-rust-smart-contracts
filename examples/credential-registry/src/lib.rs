@@ -785,12 +785,12 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 
     state.revoke_credential(now, credential_id)?;
 
-    logger.log(&RevokeCredentialEvent {
+    logger.log(&CredentialEvent::Revoke(RevokeCredentialEvent {
         credential_id,
         holder_id,
         reason: parameter.reason,
         revoker,
-    })?;
+    }))?;
     Ok(())
 }
 
@@ -836,12 +836,12 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 
     state.revoke_credential(now, credential_id)?;
 
-    logger.log(&RevokeCredentialEvent {
+    logger.log(&CredentialEvent::Revoke(RevokeCredentialEvent {
         credential_id,
         holder_id,
         reason: parameter.reason,
         revoker,
-    })?;
+    }))?;
     Ok(())
 }
 
@@ -928,12 +928,12 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     let credential_id = parameter.credential_id;
 
     state.revoke_credential(now, credential_id)?;
-    logger.log(&RevokeCredentialEvent {
+    logger.log(&CredentialEvent::Revoke(RevokeCredentialEvent {
         credential_id,
         holder_id,
         reason: parameter.reason,
         revoker,
-    })?;
+    }))?;
     Ok(())
 }
 
@@ -1248,7 +1248,6 @@ fn contract_restore_credential<S: HasStateApi>(
         .entry(parameter.credential_id)
         .occupied_or(ContractError::CredentialNotFound)?;
 
-    let revoker = Revoker::Issuer;
     let now = ctx.metadata().slot_time();
     let holder_id = registry_entry.holder_id;
     drop(registry_entry);
@@ -1256,12 +1255,11 @@ fn contract_restore_credential<S: HasStateApi>(
     let credential_id = parameter.credential_id;
 
     host.state_mut().restore_credential(now, credential_id)?;
-    logger.log(&RevokeCredentialEvent {
+    logger.log(&CredentialEvent::Restore(RestoreCredentialEvent {
         credential_id,
         holder_id,
         reason: parameter.reason,
-        revoker,
-    })?;
+    }))?;
     Ok(())
 }
 
@@ -1511,7 +1509,7 @@ mod tests {
         let schema_result = state.add_schema(credential_type, schema_ref);
         let register_result = state.register_credential(credential_id, &data, &mut state_builder);
 
-        // make sure that the credential has not expired yet
+        // Make sure that the credential has not expired yet
         let now = Timestamp::from_timestamp_millis(0);
         let revocation_result = state.revoke_credential(now, credential_id);
         let status_result = state.view_credential_status(now, credential_id);
@@ -1519,6 +1517,42 @@ mod tests {
             && register_result.is_ok()
             && revocation_result.is_ok()
             && status_result == Ok(CredentialStatus::Revoked)
+    }
+
+    /// Property: revoking and then restoring a credential gives the same status
+    /// as before revocation. In this case, restoring always succeeds.
+    #[concordium_quickcheck]
+    fn prop_revoke_restore(
+        credential_id: CredentialID,
+        credential_type: CredentialType,
+        schema_ref: SchemaRef,
+        mut data: CredentialInfo,
+    ) -> bool {
+        // Set credential type consistent with the schema registry
+        data.credential_type = credential_type.clone();
+        let mut state_builder = TestStateBuilder::new();
+        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
+        let schema_result = state.add_schema(credential_type, schema_ref);
+        let register_result = state.register_credential(credential_id, &data, &mut state_builder);
+
+        // Make sure that the credential has not expired yet
+        let now = Timestamp::from_timestamp_millis(0);
+
+        // Get original status
+        let original_status = state
+            .view_credential_status(now, credential_id)
+            .expect_report("Status query expected to succed");
+
+        let revocation_result = state.revoke_credential(now, credential_id);
+        let restoring_result = state.restore_credential(now, credential_id);
+        let status_after_restoring = state
+            .view_credential_status(now, credential_id)
+            .expect_report("Status query expected to succed");
+        schema_result.is_ok()
+            && register_result.is_ok()
+            && revocation_result.is_ok()
+            && restoring_result.is_ok()
+            && original_status == status_after_restoring
     }
 
     /// Property: registering an issuer key and querying it results in the same
@@ -1694,7 +1728,7 @@ mod tests {
         // Check the result.
         claim!(result.is_ok(), "Results in rejection: {:?}", result);
 
-        // Check the state.
+        // Check the status.
         let status = host
             .state()
             .view_credential_status(now, credential_id)
@@ -1705,12 +1739,96 @@ mod tests {
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
         claim_eq!(
             logger.logs[0],
-            to_bytes(&RevokeCredentialEvent {
+            to_bytes(&CredentialEvent::Revoke(RevokeCredentialEvent {
                 credential_id,
                 holder_id: PUBLIC_KEY,
                 revoker: Revoker::Holder,
                 reason: Some(revocation_reason.to_string().into())
-            }),
+            })),
+            "Incorrect revoke credential event logged"
+        );
+    }
+
+    /// Test the restore credential entrypoint.
+    #[concordium_test]
+    fn test_contract_restore_credential() {
+        let credential_id = 123123123.into();
+        let now = Timestamp::from_timestamp_millis(0);
+        let contract = ContractAddress {
+            index:    0,
+            subindex: 0,
+        };
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
+        ctx.set_owner(ACCOUNT_0);
+        ctx.set_self_address(contract);
+        ctx.set_metadata_slot_time(now);
+
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
+        let mut host = TestHost::new(state, state_builder);
+
+        let (state, state_builder) = host.state_and_builder();
+        let entry = credential_entry(state_builder);
+        let credential_info = entry.info();
+
+        // Create a credential schema
+        let (credential_type, schema_ref) = get_credential_schema();
+        state
+            .add_schema(credential_type, schema_ref.clone())
+            .expect_report("Schema registration failed");
+
+        // Create a credential the issuer is going to restore
+        let res = state.register_credential(credential_id, &credential_info, state_builder);
+
+        // Check that it was registered successfully
+        claim!(res.is_ok(), "Credential registration failed");
+
+        // Make sure the credeintial has `Revoked` status
+        let revoke_res = state.revoke_credential(now, credential_id);
+
+        // Check that the credential was revoked successfully.
+        claim!(revoke_res.is_ok(), "Credential revocation failed");
+
+        // Create input parameters.
+
+        let param = RestoreCredentialIssuerParam {
+            credential_id,
+            reason: None,
+        };
+        let parameter_bytes = to_bytes(&param);
+        ctx.set_parameter(&parameter_bytes);
+
+        // Check the status before restoring.
+        let status = host
+            .state()
+            .view_credential_status(now, credential_id)
+            .expect_report("Credential is expected to exist");
+        claim_eq!(status, CredentialStatus::Revoked, "Expected Revoked");
+
+        // Call the restore credential entrypoint
+        let res = contract_restore_credential(&ctx, &mut host, &mut logger);
+
+        // Check that it was restored succesfully
+        claim!(res.is_ok(), "Credential restoring failed");
+        // Check the status after restoring.
+        let status = host
+            .state()
+            .view_credential_status(now, credential_id)
+            .expect_report("Credential is expected to exist");
+        claim_eq!(status, CredentialStatus::Active, "Expected Active");
+
+        // Check the logs.
+        claim_eq!(logger.logs.len(), 1, "One event should be logged");
+        claim_eq!(
+            logger.logs[0],
+            to_bytes(&CredentialEvent::Restore(RestoreCredentialEvent {
+                credential_id,
+                holder_id: PUBLIC_KEY,
+                reason: None
+            })),
             "Incorrect revoke credential event logged"
         );
     }
