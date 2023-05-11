@@ -12,7 +12,7 @@ name: Clippy & fmt
 
 env:
   RUST_FMT: nightly-2023-04-01
-  RUST_VERSION: "1.60"
+  RUST_VERSION: "1.65"
 
 
 jobs:
@@ -45,6 +45,8 @@ jobs:
           - examples/two-step-transfer/Cargo.toml
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
+          - examples/offchain-transfers/Cargo.toml
+          - examples/credential-registry-storage-contract/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -404,6 +406,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/nametoken/Cargo.toml
+          - examples/credential-registry-storage-contract/Cargo.toml
 
         features:
           -
@@ -497,6 +500,8 @@ jobs:
           - examples/two-step-transfer/Cargo.toml
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
+          - examples/offchain-transfers/Cargo.toml
+          - examples/credential-registry-storage-contract/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -623,6 +628,8 @@ jobs:
           - examples/two-step-transfer/Cargo.toml
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
+          - examples/offchain-transfers/Cargo.toml
+          - examples/credential-registry-storage-contract/Cargo.toml
 
     steps:
       - name: Checkout sources

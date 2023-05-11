@@ -2406,9 +2406,9 @@ mod test {
         outer_map.insert(0u8, inner_map_1);
         outer_map.insert(1u8, inner_map_2);
         outer_map.clear();
-        let iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
-        assert!(iter.skip(1).next().is_none());
+        assert!(iter.nth(1).is_none());
     }
 
     #[test]
