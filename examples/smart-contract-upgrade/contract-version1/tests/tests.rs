@@ -90,9 +90,8 @@ fn test_upgrade_without_migration_function() {
         },
     );
 
-    assert_eq!(
-        update.expect("Upgrade should succeed").state_changed,
-        false,
+    assert!(
+        !update.expect("Upgrade should succeed").state_changed,
         "State should not be changed because no `migration` function was called"
     );
 
@@ -162,9 +161,8 @@ fn test_upgrade_with_migration_function() {
         },
     );
 
-    assert_eq!(
+    assert!(
         update.expect("Upgrade should succeed").state_changed,
-        true,
         "State should be changed due to the `migration` function"
     );
 
