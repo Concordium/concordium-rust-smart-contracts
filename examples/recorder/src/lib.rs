@@ -63,7 +63,7 @@ fn receive_transfer<S: HasStateApi>(
     let addresses = &host.state().addresses;
     let mut count = 0;
     for addr in addresses.iter() {
-        if host.invoke_transfer(&*addr, Amount::from_micro_ccd(0)).is_ok() {
+        if host.invoke_transfer(&addr, Amount::from_micro_ccd(0)).is_ok() {
             count += 1;
         }
     }

@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Set minimum Rust version to 1.65.
+
 ## concordium-std 6.2.0 (2023-05-08)
 
 - Add `write_root` helper function to write the root of the state trie. This is

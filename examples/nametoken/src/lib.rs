@@ -347,6 +347,8 @@ impl<S: HasStateApi> State<S> {
     /// Results in an error if the token ID does not exist in the state. Since
     /// this contract only contains NFTs, the balance will always be either 1
     /// or 0.
+    //  For maintainers: Ignoring the clippy warning as the suggestion is less readable.
+    #[allow(clippy::bool_to_int_with_if)]
     fn balance(
         &self,
         now: Timestamp,
