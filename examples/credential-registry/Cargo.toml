@@ -15,12 +15,13 @@ wee_alloc = ["concordium-std/wee_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
-concordium-std = {path = "../../concordium-std", version="6.1", default-features = false}
+concordium-std = {path = "../../concordium-std", version="6.1", features = ["concordium-quickcheck"], default-features = false}
 concordium-cis2 = {path = "../../concordium-cis2", version="3.0", default-features = false}
-quickcheck = { version = "1.0.3"}
+quickcheck = {version = "1.0.3"}
+getrandom = {version = "0.2", features = ["custom"], optional = true}
 
 [dev-dependencies]
-concordium-std = {path = "../../concordium-std", version="6.1", features = ["concordium-quickcheck"]}
+concordium-std = {path = "../../concordium-std", version="6.1"}
 
 [lib]
 crate-type=["cdylib", "rlib"]
