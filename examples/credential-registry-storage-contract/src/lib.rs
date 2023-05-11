@@ -49,7 +49,7 @@
 
 use concordium_std::*;
 
-const SIGNARUTE_DOMAIN: &str = "WEB3ID:STORE";
+const SIGNATURE_DOMAIN: &str = "WEB3ID:STORE";
 
 /// Metadata is a string of two bytes that contain information needed for
 /// decoding the credentials.
@@ -280,7 +280,7 @@ fn store<S: HasStateApi>(
 
     // Perepare message bytes as it is signed by the wallet.
     // Note that the message is prepended by a domain separation string.
-    let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
+    let mut message: Vec<u8> = SIGNATURE_DOMAIN.as_bytes().to_vec();
     param.message_bytes(&mut message)?;
 
     // Check signature.
