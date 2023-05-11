@@ -226,8 +226,13 @@ pub struct SerializationHelperParam {
     timestamp:            Timestamp,
 }
 
-/// Helper function that can be invoked at the front-end to serialize
-/// the message to be signed by the wallet.
+/// Helper function that can be invoked at the front end to serialize
+/// the `SerializationHelperParam` to be signed by the wallet. The
+/// `SerializationHelperParam` includes all the input parameters from
+/// `StoreParam` except for the `signature` and the `public_key`. We only need
+/// the input parameter schema of this function at the front end. The
+/// `serializationHelper` function is not executed at any point in time,
+/// therefore the logic of the function is irrelevant.
 #[receive(
     contract = "credential-registry-storage",
     name = "serializationHelper",
@@ -271,23 +276,16 @@ fn store<S: HasStateApi>(
     ensure_eq!(param.contract_address, ctx.self_address(), CustomContractError::WrongContract);
 
     // Check signature is not expired.
-    ensure!(param.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired);
+    ensure!(param.timestamp >= ctx.metadata().slot_time(), CustomContractError::Expired);
 
     // Perepare message bytes as it is signed by the wallet.
     // Note that the message is prepended by a domain separation string.
     let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
     param.message_bytes(&mut message)?;
 
-    // Calculate the message hash.
-    let message_hash = crypto_primitives.hash_sha2_256(&message).0;
-
     // Check signature.
     ensure!(
-        crypto_primitives.verify_ed25519_signature(
-            param.public_key,
-            param.signature,
-            &message_hash
-        ),
+        crypto_primitives.verify_ed25519_signature(param.public_key, param.signature, &message),
         CustomContractError::WrongSignature
     );
 
@@ -319,10 +317,10 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        20, 121, 139, 239, 248, 47, 71, 217, 61, 170, 196, 195, 176, 211, 68, 213, 202, 70, 233,
-        183, 1, 73, 15, 84, 151, 244, 35, 24, 82, 223, 206, 67, 162, 134, 75, 67, 228, 77, 34, 27,
-        91, 131, 60, 88, 225, 173, 192, 235, 53, 154, 214, 139, 98, 60, 222, 194, 210, 43, 255,
-        245, 200, 250, 254, 4,
+        79, 193, 117, 35, 254, 245, 122, 77, 3, 247, 197, 145, 79, 59, 133, 196, 111, 160, 34, 85,
+        70, 193, 100, 197, 117, 128, 233, 90, 93, 97, 88, 62, 151, 197, 114, 149, 143, 213, 86,
+        166, 64, 251, 17, 34, 192, 177, 39, 53, 93, 221, 86, 51, 171, 133, 248, 120, 97, 176, 99,
+        133, 64, 173, 17, 10,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
     const METADATA: Metadata = Metadata([43, 1]);
