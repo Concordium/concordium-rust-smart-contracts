@@ -416,6 +416,18 @@ struct RevokeCredentialEvent {
     reason:        Option<Reason>,
 }
 
+/// An untagged restoration event.
+/// For a tagged version use `CredentialEvent`.
+#[derive(Serialize, SchemaType)]
+struct RestoreCredentialEvent {
+    /// An identifier of a credential being restored.
+    credential_id: CredentialID,
+    /// A public key of the credential's holder.
+    holder_id:     PublicKeyEd25519,
+    /// An optional text clarifying the restoring reasons.
+    reason:        Option<Reason>,
+}
+
 #[derive(Debug, Serialize, SchemaType)]
 pub struct IssuerMetadataEvent {
     /// The location of the metadata.
@@ -434,6 +446,8 @@ enum CredentialEvent {
     Update(CredentialEventData),
     /// Credential revocation event.
     Revoke(RevokeCredentialEvent),
+    /// Credential restoration (reversing revocation) event.
+    Restore(RestoreCredentialEvent),
     /// Issuer's metadata changes, including the contract deployment.
     Metadata(IssuerMetadataEvent),
 }
@@ -701,8 +715,8 @@ fn authorize_with_signature(
 /// credential entry (`holder_id`).
 ///
 /// Note that nonce is used as a general way to prevent replay attacks. In this
-/// particular case, the revocation is done once, however, the issuer could
-/// choose to implement an update method that restores the revoked credential.
+/// particular case, tthe revocation can be reversed by the issuer by restoring
+/// the revoked credential.
 ///
 /// Logs RevokeCredentialEvent with `Holder` as the revoker.
 ///
@@ -1224,12 +1238,30 @@ pub struct RestoreCredentialIssuerParam {
 fn contract_restore_credential<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
-    _logger: &mut impl HasLogger,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let data: RestoreCredentialIssuerParam = ctx.parameter_cursor().get()?;
+    let parameter: RestoreCredentialIssuerParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let registry_entry = state
+        .credentials
+        .entry(parameter.credential_id)
+        .occupied_or(ContractError::CredentialNotFound)?;
+
+    let revoker = Revoker::Issuer;
     let now = ctx.metadata().slot_time();
-    host.state_mut().restore_credential(now, data.credential_id)?;
+    let holder_id = registry_entry.holder_id;
+    drop(registry_entry);
+
+    let credential_id = parameter.credential_id;
+
+    host.state_mut().restore_credential(now, credential_id)?;
+    logger.log(&RevokeCredentialEvent {
+        credential_id,
+        holder_id,
+        reason: parameter.reason,
+        revoker,
+    })?;
     Ok(())
 }
 
