@@ -629,7 +629,7 @@ pub struct RevokeCredentialHolderParam {
     reason:        Option<Reason>,
 }
 
-/// Prepare the message bytes for the holeder
+/// Prepare the message bytes for the holder
 impl RevokeCredentialHolderParam {
     fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
         self.credential_id
@@ -639,6 +639,40 @@ impl RevokeCredentialHolderParam {
         self.reason.serial(bytes).map_err(|_| ContractError::SerializationError)?;
         Ok(())
     }
+}
+
+/// The parameter type for the contract function
+/// `serializationHelperHolderRevoke`.
+/// Note that the order of the fields here should correspond to the
+/// serialization order of the ½message_bytes½ method of
+/// `RevokeCredentialHolderParam`
+#[derive(Serialize, SchemaType)]
+pub struct SerializationHelperHolderParam {
+    /// Id of the credential to revoke.
+    credential_id: CredentialID,
+    /// Info about the signature.
+    signing_data:  SigningData,
+    /// (Optional) reason for revoking the credential.
+    reason:        Option<Reason>,
+}
+
+/// Helper function that can be invoked at the front end to serialize
+/// the `SerializationHelperHolderParam` to be signed by the wallet. The
+/// `SerializationHelperHolderParam` includes all the input parameters from
+/// `RevokeCredentialHolderParam` except for the `signature`. We only need
+/// the input parameter schema of this function at the front end. The
+/// `serializationHelperHolderRevoke` function is not executed at any point in
+/// time, therefore the logic of the function is irrelevant.
+#[receive(
+    contract = "credential_registry",
+    name = "serializationHelperHolderRevoke",
+    parameter = "SerializationHelperHolderParam"
+)]
+fn contract_serialization_helper_holder_revoke<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    Ok(())
 }
 
 /// A parameter type for revoking a credential by the issuer.
@@ -675,6 +709,42 @@ impl RevokeCredentialOtherParam {
         self.reason.serial(bytes).map_err(|_| ContractError::SerializationError)?;
         Ok(())
     }
+}
+
+/// The parameter type for the contract function
+/// `serializationHelperOtherRevoke`.
+/// Note that the order of the fields here should correspond to the
+/// serialization order of the ½message_bytes½ method of
+/// `RevokeCredentialOtherParam`
+#[derive(Serialize, SchemaType)]
+pub struct SerializationHelperOtherParam {
+    /// Id of the credential to revoke.
+    credential_id:        CredentialID,
+    /// Info about the signature.
+    signing_data:         SigningData,
+    /// Key index in the revocation keys map
+    revocation_key_index: u8,
+    /// (Optional) reason for revoking the credential.
+    reason:               Option<Reason>,
+}
+
+/// Helper function that can be invoked at the front end to serialize
+/// the `SerializationHelperOtherParam` to be signed by the wallet. The
+/// `SerializationHelperOtherParam` includes all the input parameters from
+/// `RevokeCredentialOtherParam` except for the `signature`. We only need
+/// the input parameter schema of this function at the front end. The
+/// `serializationHelperOtherRevoke` function is not executed at any point in
+/// time, therefore the logic of the function is irrelevant.
+#[receive(
+    contract = "credential_registry",
+    name = "serializationHelperOtherRevoke",
+    parameter = "SerializationHelperOtherParam"
+)]
+fn contract_serialization_helper_hother_revoke<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    Ok(())
 }
 
 /// Performs authorization based on the signature and the public key.
