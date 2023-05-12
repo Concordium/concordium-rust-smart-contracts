@@ -184,6 +184,7 @@ enum ContractError {
     NotAuthorized,
     NonceMismatch,
     WrongContract,
+    WrongEntrypoint,
     ExpiredSignature,
     WrongSignature,
     SerializationError,
@@ -605,10 +606,12 @@ fn contract_register_credential<S: HasStateApi>(
 }
 
 /// Metadata of the signature
-#[derive(Serialize, SchemaType, Clone, Copy)]
+#[derive(Serialize, SchemaType, Clone)]
 struct SigningData {
     /// The contract_address that the signature is intended for.
     contract_address: ContractAddress,
+    /// The entry_point that the signature is intended for.
+    entry_point:      OwnedEntrypointName,
     /// A nonce to prevent replay attacks.
     nonce:            u64,
     /// A timestamp to make signatures expire.
@@ -764,6 +767,9 @@ fn authorize_with_signature(
     // Check that the signature was intended for this contract.
     ensure_eq!(signing_data.contract_address, ctx.self_address(), ContractError::WrongContract);
 
+    // Check that the signature was intended for entrypoint.
+    ensure_eq!(signing_data.entry_point, ctx.named_entrypoint(), ContractError::WrongEntrypoint);
+
     // Check signature is not expired.
     ensure!(signing_data.timestamp > ctx.metadata().slot_time(), ContractError::ExpiredSignature);
 
@@ -821,7 +827,6 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 
     let revoker = Revoker::Holder;
 
-    let signing_data = parameter.signing_data;
     let signature = parameter.signature;
 
     // Only holder-revocable entries can be revoked by the holder.
@@ -844,7 +849,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
         ctx,
         nonce,
         public_key,
-        signing_data,
+        parameter.signing_data,
         &message,
         signature,
     )?;
@@ -966,6 +971,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     let key_index = parameter.revocation_key_index;
     let mut entry =
         state.revocation_keys.entry(key_index).occupied_or(ContractError::CredentialNotFound)?;
+
     // Update the nonce.
     entry.1 += 1;
 
@@ -975,7 +981,6 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     // Set the revoker to be the revocation authority.
     let revoker = Revoker::Other(public_key);
 
-    let signing_data = parameter.signing_data;
     let signature = parameter.signature;
 
     // Perepare message bytes as it is signer by the wallet
@@ -988,7 +993,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
         ctx,
         nonce,
         public_key,
-        signing_data,
+        parameter.signing_data,
         &message,
         signature,
     )?;
@@ -1396,14 +1401,14 @@ mod tests {
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        158, 227, 186, 15, 248, 246, 229, 189, 113, 194, 89, 206, 199, 166, 128, 15, 193, 2, 85,
-        21, 217, 50, 11, 44, 140, 144, 10, 192, 191, 58, 124, 77,
+        57, 247, 130, 232, 65, 141, 49, 141, 52, 91, 68, 134, 17, 157, 180, 192, 166, 128, 134, 1,
+        244, 129, 69, 162, 47, 5, 129, 170, 81, 0, 89, 97,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        20, 81, 176, 61, 69, 213, 173, 93, 241, 158, 23, 201, 244, 38, 69, 168, 3, 17, 96, 73, 34,
-        43, 28, 240, 252, 255, 89, 189, 116, 29, 37, 214, 155, 229, 160, 14, 50, 49, 116, 106, 112,
-        11, 146, 130, 130, 121, 193, 203, 87, 101, 76, 172, 208, 49, 158, 26, 184, 165, 117, 191,
-        149, 86, 227, 8,
+        23, 17, 201, 125, 205, 113, 50, 200, 175, 16, 114, 91, 179, 114, 199, 107, 254, 245, 163,
+        34, 157, 41, 72, 120, 156, 4, 99, 99, 38, 40, 34, 150, 162, 96, 225, 236, 160, 252, 219,
+        164, 52, 168, 117, 221, 209, 241, 42, 47, 167, 24, 173, 29, 24, 63, 58, 130, 143, 30, 23,
+        231, 174, 250, 220, 5,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1741,6 +1746,9 @@ mod tests {
         ctx.set_owner(ISSUER_ACCOUNT);
         ctx.set_invoker(ISSUER_ACCOUNT);
         ctx.set_self_address(contract);
+        ctx.set_named_entrypoint(OwnedEntrypointName::new_unchecked(
+            "revokeCredentialHolder".into(),
+        ));
         ctx.set_metadata_slot_time(now);
 
         let mut logger = TestLogger::init();
@@ -1770,6 +1778,7 @@ mod tests {
         // Create singing data
         let signing_data = SigningData {
             contract_address: contract,
+            entry_point:      OwnedEntrypointName::new_unchecked("revokeCredentialHolder".into()),
             nonce:            1,
             timestamp:        Timestamp::from_timestamp_millis(10000000000),
         };
