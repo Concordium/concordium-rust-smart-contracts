@@ -1689,9 +1689,7 @@ mod tests {
 
         // Create a credential schema
         let (credential_type, schema_ref) = get_credential_schema();
-        state
-            .add_schema(credential_type, schema_ref)
-            .expect_report("Schema registration failed");
+        state.add_schema(credential_type, schema_ref).expect_report("Schema registration failed");
 
         // Create a credential the holder is going to revoke
         let res = state.register_credential(credential_id, &credential_info, state_builder);
@@ -1776,9 +1774,7 @@ mod tests {
 
         // Create a credential schema
         let (credential_type, schema_ref) = get_credential_schema();
-        state
-            .add_schema(credential_type, schema_ref)
-            .expect_report("Schema registration failed");
+        state.add_schema(credential_type, schema_ref).expect_report("Schema registration failed");
 
         // Create a credential the issuer is going to restore
         let res = state.register_credential(credential_id, &credential_info, state_builder);
