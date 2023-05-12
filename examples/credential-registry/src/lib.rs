@@ -48,7 +48,11 @@ struct CredentialID {
 
 /// Credential type is a string that corresponds to the value of the "name"
 /// attribute of the credential schema.
-type CredentialType = String;
+#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
+struct CredentialType {
+    #[concordium(size_length = 1)]
+    credential_type: String,
+}
 
 impl From<u128> for CredentialID {
     fn from(id: u128) -> Self {
@@ -1346,7 +1350,7 @@ mod tests {
     use test_infrastructure::*;
 
     impl Arbitrary for CredentialID {
-        fn arbitrary(g: &mut Gen) -> CredentialID {
+        fn arbitrary(g: &mut Gen) -> Self {
             CredentialID {
                 id: Arbitrary::arbitrary(g),
             }
@@ -1357,8 +1361,22 @@ mod tests {
         }
     }
 
+    impl Arbitrary for CredentialType {
+        fn arbitrary(g: &mut Gen) -> Self {
+            CredentialType {
+                credential_type: Arbitrary::arbitrary(g),
+            }
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            Box::new(self.credential_type.shrink().map(|s| CredentialType {
+                credential_type: s,
+            }))
+        }
+    }
+
     impl Arbitrary for SchemaRef {
-        fn arbitrary(g: &mut Gen) -> SchemaRef {
+        fn arbitrary(g: &mut Gen) -> Self {
             (MetadataUrl {
                 url:  Arbitrary::arbitrary(g),
                 hash: if Arbitrary::arbitrary(g) {
@@ -1379,7 +1397,9 @@ mod tests {
                 holder_id:        PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
                 holder_revocable: Arbitrary::arbitrary(g),
                 commitment:       Arbitrary::arbitrary(g),
-                credential_type:  Arbitrary::arbitrary(g),
+                credential_type:  CredentialType {
+                    credential_type: Arbitrary::arbitrary(g),
+                },
                 valid_from:       Arbitrary::arbitrary(g),
                 valid_until:      Arbitrary::arbitrary(g),
             }
@@ -1418,7 +1438,9 @@ mod tests {
         CredentialEntry {
             credential_data:  state_builder.new_box(CredentialData {
                 commitment:      [0u8; 48].to_vec(),
-                credential_type: "ExampleSchema".to_string(),
+                credential_type: CredentialType {
+                    credential_type: "ExampleSchema".to_string(),
+                },
             }),
             valid_from:       None,
             valid_until:      None,
@@ -1437,12 +1459,17 @@ mod tests {
     }
 
     fn get_credential_schema() -> (CredentialType, SchemaRef) {
-        ("ExampleSchema".to_string(), SchemaRef {
-            schema_ref: MetadataUrl {
-                url:  "https://example.com/schema.json".to_string(),
-                hash: None,
+        (
+            CredentialType {
+                credential_type: "ExampleSchema".to_string(),
             },
-        })
+            SchemaRef {
+                schema_ref: MetadataUrl {
+                    url:  "https://example.com/schema.json".to_string(),
+                    hash: None,
+                },
+            },
+        )
     }
 
     #[concordium_test]
