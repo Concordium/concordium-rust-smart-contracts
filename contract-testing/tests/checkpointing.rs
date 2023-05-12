@@ -78,7 +78,7 @@ fn test_case_1() {
         Amount::zero(),
     );
 
-    chain
+    let update = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_0,
@@ -95,6 +95,31 @@ fn test_case_1() {
             },
         )
         .expect("Updating contract should succeed");
+
+    // Check that all the trace elements are as expected, including the ones
+    // resulting in a failure. Some imports to simplify the names in the assert.
+    use ContractTraceElement::*;
+    use DebugTraceElement::*;
+    use InvokeExecutionError::*;
+    assert!(matches!(&update.trace_elements[..], [
+        Regular {
+            trace_element: Interrupted { .. },
+            ..
+        },
+        WithFailures {
+            error: Trap { .. },
+            trace_elements,
+            ..
+        },
+        Regular {
+            trace_element: Resumed { .. },
+            ..
+        },
+        Regular {
+            trace_element: Updated { .. },
+            ..
+        }
+    ] if matches!(trace_elements[..], [Regular { trace_element: Interrupted {..}, ..}, Regular { trace_element: Updated {..}, .. }, Regular { trace_element: Resumed {..}, .. }])));
 }
 
 /// This test has the following call pattern:

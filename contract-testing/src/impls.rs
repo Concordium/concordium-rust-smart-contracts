@@ -11,7 +11,7 @@ use concordium_base::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRate, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
     },
-    smart_contracts::{ContractEvent, ContractTraceElement, ModuleSource, WasmModule, WasmVersion},
+    smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost, InitContractPayload, UpdateContractPayload},
 };
 use concordium_smart_contract_engine::{
@@ -551,7 +551,7 @@ impl Chain {
         amount_reserved_for_energy: Amount,
         payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
-    ) -> Result<(InvokeResponse, ChangeSet, Vec<ContractTraceElement>), ContractInvokeError> {
+    ) -> Result<(InvokeResponse, ChangeSet, Vec<DebugTraceElement>), ContractInvokeError> {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
             return Err(self.convert_to_invoke_error(
@@ -559,6 +559,7 @@ impl Chain {
                     address: payload.address,
                 }
                 .into(),
+                Vec::new(),
                 energy_reserved,
                 *remaining_energy,
             ));
@@ -568,6 +569,7 @@ impl Chain {
         if payload.message.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
             return Err(self.convert_to_invoke_error(
                 ContractInvokeErrorKind::ParameterTooLarge,
+                Vec::new(),
                 energy_reserved,
                 *remaining_energy,
             ));
@@ -584,6 +586,7 @@ impl Chain {
         {
             return Err(self.convert_to_invoke_error(
                 ContractInvokeErrorKind::AmountTooLarge,
+                Vec::new(),
                 energy_reserved,
                 *remaining_energy,
             ));
@@ -592,6 +595,7 @@ impl Chain {
         let mut contract_invocation = EntrypointInvocationHandler {
             changeset: ChangeSet::new(),
             remaining_energy,
+            energy_reserved,
             chain: self,
             reserved_amount: amount_reserved_for_energy,
             invoker,
@@ -604,16 +608,19 @@ impl Chain {
             Ok((result, trace_elements)) => {
                 Ok((result, contract_invocation.changeset, trace_elements))
             }
-            Err(err) => {
-                Err(self.convert_to_invoke_error(err.into(), energy_reserved, *remaining_energy))
-            }
+            Err(err) => Err(self.convert_to_invoke_error(
+                err.into(),
+                Vec::new(),
+                energy_reserved,
+                *remaining_energy,
+            )),
         }
     }
 
     fn contract_invocation_process_response(
         &self,
         result: InvokeResponse,
-        trace_elements: Vec<ContractTraceElement>,
+        trace_elements: Vec<DebugTraceElement>,
         energy_reserved: Energy,
         remaining_energy: Energy,
         state_changed: bool,
@@ -633,6 +640,7 @@ impl Chain {
             }
             v1::InvokeResponse::Failure { kind } => Err(self.convert_to_invoke_error(
                 ContractInvokeErrorKind::ExecutionError { failure_kind: kind },
+                trace_elements,
                 energy_reserved,
                 remaining_energy,
             )),
@@ -671,6 +679,7 @@ impl Chain {
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
+                trace_elements:  Vec::new(),
                 kind:            ContractInvokeErrorKind::SenderDoesNotExist(sender),
             });
         }
@@ -680,6 +689,7 @@ impl Chain {
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
+                trace_elements:  Vec::new(),
                 kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
                     AccountDoesNotExist { address: invoker },
                 ),
@@ -701,6 +711,7 @@ impl Chain {
                 .ok_or(ContractInvokeError {
                     energy_used:     Energy::from(0),
                     transaction_fee: Amount::zero(),
+                    trace_elements:  Vec::new(),
                     kind:            ContractInvokeErrorKind::OutOfEnergy,
                 })?;
 
@@ -713,6 +724,7 @@ impl Chain {
             return Err(ContractInvokeError {
                 energy_used,
                 transaction_fee: self.parameters.calculate_energy_cost(energy_used),
+                trace_elements: Vec::new(),
                 kind: ContractInvokeErrorKind::InsufficientFunds,
             });
         }
@@ -791,6 +803,7 @@ impl Chain {
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
+                trace_elements:  Vec::new(),
                 kind:            ContractInvokeErrorKind::SenderDoesNotExist(sender),
             });
         }
@@ -799,6 +812,7 @@ impl Chain {
             return Err(ContractInvokeError {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
+                trace_elements:  Vec::new(),
                 kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
                     AccountDoesNotExist { address: invoker },
                 ),
@@ -813,6 +827,7 @@ impl Chain {
             return Err(ContractInvokeError {
                 energy_used,
                 transaction_fee: self.parameters.calculate_energy_cost(energy_used),
+                trace_elements: Vec::new(),
                 kind: ContractInvokeErrorKind::InsufficientFunds,
             });
         }
@@ -976,6 +991,7 @@ impl Chain {
     fn convert_to_invoke_error(
         &self,
         kind: ContractInvokeErrorKind,
+        trace_elements: Vec<DebugTraceElement>,
         energy_reserved: Energy,
         remaining_energy: Energy,
     ) -> ContractInvokeError {
@@ -989,6 +1005,7 @@ impl Chain {
         ContractInvokeError {
             energy_used,
             transaction_fee,
+            trace_elements,
             kind,
         }
     }
@@ -999,6 +1016,7 @@ impl Chain {
     fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvokeError {
         self.convert_to_invoke_error(
             ContractInvokeErrorKind::OutOfEnergy,
+            Vec::new(),
             energy_reserved,
             Energy::from(0),
         )

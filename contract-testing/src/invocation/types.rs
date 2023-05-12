@@ -28,7 +28,15 @@ pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     pub(crate) changeset: ChangeSet,
     /// The energy remaining for execution.
     pub(crate) remaining_energy: &'a mut Energy,
+    /// The energy reserved for the execution. Used for calculating intermediate
+    /// energy usages in contract trace elements.
+    pub(crate) energy_reserved: Energy,
+    /// An immutable reference to the chain, used for looking up information,
+    /// including contracts, modules, and accounts.
     pub(crate) chain: &'b Chain,
+    /// The next contract modification index to be given out.
+    /// The index is global per transaction, which is why this field is
+    /// needed.
     pub(crate) next_contract_modification_index: u32,
 }
 

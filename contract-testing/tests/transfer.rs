@@ -96,30 +96,33 @@ fn test_transfer() {
         Amount::from_micro_ccd(1000 - 17),
         chain.get_contract(contract_address).unwrap().self_balance
     );
-    assert_eq!(res_update.trace_elements[..], [
-        ContractTraceElement::Interrupted {
-            address: contract_address,
-            events:  Vec::new(),
-        },
-        ContractTraceElement::Transferred {
-            from:   contract_address,
-            amount: Amount::from_micro_ccd(17),
-            to:     ACC_0,
-        },
-        ContractTraceElement::Resumed {
-            address: contract_address,
-            success: true,
-        },
-        ContractTraceElement::Updated {
-            data: InstanceUpdatedEvent {
-                address:          contract_address,
-                amount:           Amount::zero(),
-                receive_name:     OwnedReceiveName::new_unchecked("transfer.send".into()),
-                contract_version: concordium_base::smart_contracts::WasmVersion::V1,
-                instigator:       Address::Account(ACC_0),
-                message:          parameter,
-                events:           Vec::new(),
+    assert_eq!(
+        res_update.success_trace_elements().collect::<Vec<_>>()[..],
+        [
+            &ContractTraceElement::Interrupted {
+                address: contract_address,
+                events:  Vec::new(),
             },
-        }
-    ])
+            &ContractTraceElement::Transferred {
+                from:   contract_address,
+                amount: Amount::from_micro_ccd(17),
+                to:     ACC_0,
+            },
+            &ContractTraceElement::Resumed {
+                address: contract_address,
+                success: true,
+            },
+            &ContractTraceElement::Updated {
+                data: InstanceUpdatedEvent {
+                    address:          contract_address,
+                    amount:           Amount::zero(),
+                    receive_name:     OwnedReceiveName::new_unchecked("transfer.send".into()),
+                    contract_version: concordium_base::smart_contracts::WasmVersion::V1,
+                    instigator:       Address::Account(ACC_0),
+                    message:          parameter,
+                    events:           Vec::new(),
+                },
+            }
+        ]
+    )
 }

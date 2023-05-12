@@ -75,9 +75,10 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Queries the balance of the invoker account, which will have have the
@@ -148,9 +149,10 @@ mod query_account_balance {
             // for the NRG use. Not the reserved amount.
             Some(initial_balance - res_update.transaction_fee - update_amount)
         );
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Makes a transfer to an account, then queries its balance and asserts
@@ -230,12 +232,15 @@ mod query_account_balance {
             chain.account_balance_available(ACC_1),
             Some(initial_balance + amount_to_send)
         );
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Transferred { .. },
-            ContractTraceElement::Resumed { .. },
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Transferred { .. },
+                ContractTraceElement::Resumed { .. },
+                ContractTraceElement::Updated { .. }
+            ]
+        ));
     }
 
     #[test]
@@ -297,9 +302,10 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Queries the balance of a missing account and asserts that it returns
@@ -364,9 +370,10 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 }
 
@@ -442,9 +449,10 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Test querying the balance of the contract instance itself. This
@@ -503,9 +511,10 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Test querying the balance after a transfer of CCD.
@@ -568,12 +577,15 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Transferred { .. },
-            ContractTraceElement::Resumed { .. },
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Transferred { .. },
+                ContractTraceElement::Resumed { .. },
+                ContractTraceElement::Updated { .. }
+            ]
+        ));
     }
 
     /// Test querying the balance of a contract that doesn't exist.
@@ -628,9 +640,10 @@ mod query_contract_balance {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 }
 
@@ -687,8 +700,9 @@ mod query_exchange_rates {
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.trace_elements[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 }

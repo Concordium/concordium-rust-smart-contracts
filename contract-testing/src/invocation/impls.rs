@@ -6,13 +6,14 @@ use crate::{
         to_interpreter_energy,
     },
     types::{Account, BalanceError, Contract, ContractModule, TransferError},
+    DebugTraceElement, ExecutionError, InvokeExecutionError,
 };
 use concordium_base::{
     base::{AccountAddressEq, Energy, InsufficientEnergy},
     constants::MAX_PARAMETER_LEN,
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ExchangeRates, ModuleReference, OwnedReceiveName,
+        ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
     },
     smart_contracts::{
         ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
@@ -234,7 +235,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         invoker: AccountAddress,
         sender: Address,
         payload: UpdateContractPayload,
-    ) -> Result<(InvokeResponse, Vec<ContractTraceElement>), TestConfigurationError> {
+    ) -> Result<(InvokeResponse, Vec<DebugTraceElement>), TestConfigurationError> {
         let mut stack = Vec::new();
         let mut trace_elements = Vec::new();
         stack.push(Next::Initial {
@@ -313,7 +314,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 success,
                             };
 
-                            trace_elements.push(resume_event);
+                            self.push_regular_trace_element(
+                                &mut trace_elements,
+                                resume_event,
+                                data.entrypoint.clone(),
+                            );
                             let receive_result = self.run_interpreter(|energy| {
                                 v1::resume_receive(
                                     config,
@@ -377,7 +382,12 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         },
                     };
                     // Add update event
-                    trace_elements.push(update_event);
+                    self.push_regular_trace_element(
+                        &mut trace_elements,
+                        update_event,
+                        invocation_data.entrypoint.clone(),
+                    );
+
                     // Save changes to changeset.
                     if state_changed {
                         self.save_state_changes(
@@ -418,7 +428,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     match interrupt {
                         v1::Interrupt::Transfer { to, amount } => {
                             // Add the interrupt event
-                            trace_elements.push(interrupt_event);
+                            self.push_regular_trace_element(
+                                &mut trace_elements,
+                                interrupt_event,
+                                invocation_data.entrypoint.clone(),
+                            );
 
                             let response = match self.transfer_from_contract_to_account(
                                 amount,
@@ -454,17 +468,27 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             let success = matches!(response, v1::InvokeResponse::Success { .. });
                             if success {
                                 // Add transfer event
-                                trace_elements.push(ContractTraceElement::Transferred {
+                                let transfer_event = ContractTraceElement::Transferred {
                                     from: invocation_data.address,
                                     amount,
                                     to,
-                                });
+                                };
+                                self.push_regular_trace_element(
+                                    &mut trace_elements,
+                                    transfer_event,
+                                    invocation_data.entrypoint.clone(),
+                                );
                             }
                             // Add resume event
-                            trace_elements.push(ContractTraceElement::Resumed {
+                            let resume_event = ContractTraceElement::Resumed {
                                 address: invocation_data.address,
                                 success,
-                            });
+                            };
+                            self.push_regular_trace_element(
+                                &mut trace_elements,
+                                resume_event,
+                                invocation_data.entrypoint.clone(),
+                            );
 
                             self.remaining_energy.tick_energy(
                                 concordium_base::transactions::cost::SIMPLE_TRANSFER,
@@ -484,7 +508,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             amount,
                         } => {
                             // Add the interrupt event
-                            trace_elements.push(interrupt_event);
+                            self.push_regular_trace_element(
+                                &mut trace_elements,
+                                interrupt_event,
+                                invocation_data.entrypoint.clone(),
+                            );
 
                             match self
                                 .chain
@@ -502,7 +530,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                         address: invocation_data.address,
                                         success: false,
                                     };
-                                    trace_elements.push(resume_event);
+                                    self.push_regular_trace_element(
+                                        &mut trace_elements,
+                                        resume_event,
+                                        invocation_data.entrypoint.clone(),
+                                    );
                                     stack.push(Next::Resume {
                                         data: invocation_data,
                                         config,
@@ -545,7 +577,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         }
                         v1::Interrupt::Upgrade { module_ref } => {
                             // Add the interrupt event.
-                            trace_elements.push(interrupt_event);
+                            self.push_regular_trace_element(
+                                &mut trace_elements,
+                                interrupt_event,
+                                invocation_data.entrypoint.clone(),
+                            );
 
                             // Charge a base cost.
                             self.remaining_energy
@@ -583,7 +619,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                             to:      module_ref,
                                         };
 
-                                        trace_elements.push(upgrade_event);
+                                        self.push_regular_trace_element(
+                                            &mut trace_elements,
+                                            upgrade_event,
+                                            invocation_data.entrypoint.clone(),
+                                        );
 
                                         v1::InvokeResponse::Success {
                                             new_balance: self.contract_balance_unchecked(
@@ -600,10 +640,15 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             };
 
                             let success = matches!(response, v1::InvokeResponse::Success { .. });
-                            trace_elements.push(ContractTraceElement::Resumed {
+                            let resumed_event = ContractTraceElement::Resumed {
                                 address: invocation_data.address,
                                 success,
-                            });
+                            };
+                            self.push_regular_trace_element(
+                                &mut trace_elements,
+                                resumed_event,
+                                invocation_data.entrypoint.clone(),
+                            );
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -684,9 +729,23 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     remaining_energy,
                 } => {
                     self.update_energy(remaining_energy);
-                    // Delete the trace of the failed part of the execution.
-                    // This is the current behaviour of the on-chain execution.
-                    trace_elements.truncate(invocation_data.trace_elements_checkpoint);
+                    // Remove the failure stack traces from the list and include them in a failure
+                    // element.
+                    let failure_traces =
+                        trace_elements.split_off(invocation_data.trace_elements_checkpoint);
+                    if !failure_traces.is_empty() {
+                        let with_failure = DebugTraceElement::WithFailures {
+                            contract_address: invocation_data.address,
+                            entrypoint:       invocation_data.entrypoint.clone(),
+                            error:            InvokeExecutionError::Reject {
+                                reason,
+                                return_value: return_value.clone(),
+                            },
+                            trace_elements:   failure_traces,
+                            energy_used:      self.energy_used(),
+                        };
+                        trace_elements.push(with_failure);
+                    }
                     // Reset the next modification index as well.
                     self.next_contract_modification_index = invocation_data.next_mod_idx_checkpoint;
                     invoke_response = Some(v1::InvokeResponse::Failure {
@@ -697,13 +756,26 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     });
                 }
                 v1::ReceiveResult::Trap {
-                    error: _, // FIXME: This would ideally be propagated to the caller.
+                    error,
                     remaining_energy,
                 } => {
                     self.update_energy(remaining_energy);
-                    // Delete the trace of the failed part of the execution.
-                    // This is the current behaviour of the on-chain execution.
-                    trace_elements.truncate(invocation_data.trace_elements_checkpoint);
+                    // Remove the failure stack traces from the list and include them in a failure
+                    // element.
+                    let failure_traces =
+                        trace_elements.split_off(invocation_data.trace_elements_checkpoint);
+                    if !failure_traces.is_empty() {
+                        let with_failure = DebugTraceElement::WithFailures {
+                            contract_address: invocation_data.address,
+                            entrypoint:       invocation_data.entrypoint.clone(),
+                            error:            InvokeExecutionError::Trap {
+                                error: ExecutionError(error),
+                            },
+                            trace_elements:   failure_traces,
+                            energy_used:      self.energy_used(),
+                        };
+                        trace_elements.push(with_failure);
+                    }
                     // Reset the next modification index as well.
                     self.next_contract_modification_index = invocation_data.next_mod_idx_checkpoint;
                     invoke_response = Some(v1::InvokeResponse::Failure {
@@ -1210,6 +1282,26 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
             // Convert this to an error so that we will short-circuit the processing.
             v1::ReceiveResult::OutOfEnergy => Err(InsufficientEnergy),
         }
+    }
+
+    /// The energy used so far in this transaction.
+    fn energy_used(&self) -> Energy { self.energy_reserved - *self.remaining_energy }
+
+    /// Helper for that constructs and pushes a [`DebugTraceElement::Regular`]
+    /// to the `trace_elements` list provided.
+    fn push_regular_trace_element(
+        &self,
+        trace_elements: &mut Vec<DebugTraceElement>,
+        trace_element: ContractTraceElement,
+        entrypoint: OwnedEntrypointName,
+    ) {
+        let energy_used = self.energy_used();
+        let new = DebugTraceElement::Regular {
+            entrypoint,
+            trace_element,
+            energy_used,
+        };
+        trace_elements.push(new);
     }
 }
 
