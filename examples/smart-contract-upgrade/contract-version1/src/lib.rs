@@ -38,16 +38,16 @@ pub struct State {
 /// fails. This is useful for doing migration in the same transaction triggering
 /// the upgrade.
 #[derive(Serialize, SchemaType)]
-struct UpgradeParams {
+pub struct UpgradeParams {
     /// The new module reference.
-    module:  ModuleReference,
+    pub module:  ModuleReference,
     /// Optional entrypoint to call in the new module after upgrade.
-    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
 /// Smart contract errors.
 #[derive(PartialEq, Eq, Reject, Serial, SchemaType)]
-enum CostumContractError {
+enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParamsError,
@@ -66,7 +66,7 @@ enum CostumContractError {
 }
 
 /// Mapping errors related to contract upgrades to CustomContractError.
-impl From<UpgradeError> for CostumContractError {
+impl From<UpgradeError> for CustomContractError {
     #[inline(always)]
     fn from(ue: UpgradeError) -> Self {
         match ue {
@@ -78,11 +78,11 @@ impl From<UpgradeError> for CostumContractError {
 }
 
 /// Mapping errors related to contract invocations to CustomContractError.
-impl<T> From<CallContractError<T>> for CostumContractError {
+impl<T> From<CallContractError<T>> for CustomContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
 }
 
-type ContractResult<A> = Result<A, CostumContractError>;
+type ContractResult<A> = Result<A, CustomContractError>;
 
 /// Init function that creates a new smart contract.
 #[init(contract = "smart_contract_upgrade")]
@@ -129,7 +129,7 @@ fn contract_view<'b, S: HasStateApi>(
     contract = "smart_contract_upgrade",
     name = "upgrade",
     parameter = "UpgradeParams",
-    error = "CostumContractError",
+    error = "CustomContractError",
     low_level
 )]
 fn contract_upgrade<S: HasStateApi>(
@@ -140,7 +140,7 @@ fn contract_upgrade<S: HasStateApi>(
     let state: State = host.state().read_root()?;
 
     // Check that only the admin is authorized to upgrade the smart contract.
-    ensure!(ctx.sender().matches_account(&state.admin), CostumContractError::Unauthorized);
+    ensure!(ctx.sender().matches_account(&state.admin), CustomContractError::Unauthorized);
     // Parse the parameter.
     let params: UpgradeParams = ctx.parameter_cursor().get()?;
     // Trigger the upgrade.
