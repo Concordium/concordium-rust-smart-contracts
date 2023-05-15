@@ -47,6 +47,7 @@ jobs:
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
           - examples/credential-registry-storage-contract/Cargo.toml
+          - examples/smart-contract-test-bench/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -502,6 +503,7 @@ jobs:
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
           - examples/credential-registry-storage-contract/Cargo.toml
+          - examples/smart-contract-test-bench/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -630,6 +632,7 @@ jobs:
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
           - examples/credential-registry-storage-contract/Cargo.toml
+          - examples/smart-contract-test-bench/Cargo.toml
 
     steps:
       - name: Checkout sources
