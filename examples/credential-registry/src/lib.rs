@@ -543,6 +543,7 @@ fn contract_credential_entry<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
+/// - The schema type is not registered.
 #[receive(
     contract = "credential_registry",
     name = "credentialStatus",
@@ -576,9 +577,9 @@ pub struct RegisterCredentialParameter {
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The caller is not the issuer
-/// - An entry with the given credential id already exists
-/// - Fails to log RegisterCredentialEvent
+/// - The caller is not the issuer.
+/// - An entry with the given credential id already exists/
+/// - Fails to log RegisterCredentialEvent.
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
@@ -609,7 +610,7 @@ fn contract_register_credential<S: HasStateApi>(
     Ok(())
 }
 
-/// Metadata of the signature
+/// Metadata of the signature.
 #[derive(Serialize, SchemaType, Clone)]
 struct SigningData {
     /// The contract_address that the signature is intended for.
