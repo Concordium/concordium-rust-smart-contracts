@@ -578,7 +578,8 @@ pub struct RegisterCredentialParameter {
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
-/// - An entry with the given credential id already exists/
+/// - An entry with the given credential id already exists.
+/// - The credential type is not registered.
 /// - Fails to log RegisterCredentialEvent.
 #[receive(
     contract = "credential_registry",
@@ -796,7 +797,7 @@ fn authorize_with_signature(
 /// credential entry (`holder_id`).
 ///
 /// Note that nonce is used as a general way to prevent replay attacks. In this
-/// particular case, tthe revocation can be reversed by the issuer by restoring
+/// particular case, the revocation can be reversed by the issuer by restoring
 /// the revoked credential.
 ///
 /// Logs RevokeCredentialEvent with `Holder` as the revoker.
