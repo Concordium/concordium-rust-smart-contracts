@@ -106,10 +106,8 @@ pub struct CredentialEntry<S: HasStateApi> {
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
     holder_revocable: bool,
-    /// The date from which the credential is considered valid. `None`
-    /// corresponsds to a credential that is valid immediately after being
-    /// issued.
-    valid_from:       Option<Timestamp>,
+    /// The date from which the credential is considered valid.
+    valid_from:       Timestamp,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
     valid_until:      Option<Timestamp>,
@@ -137,10 +135,8 @@ impl<S: HasStateApi> CredentialEntry<S> {
                 return CredentialStatus::Expired;
             }
         }
-        if let Some(valid_until) = self.valid_from {
-            if now < valid_until {
-                return CredentialStatus::NotActivated;
-            }
+        if now < self.valid_from {
+            return CredentialStatus::NotActivated;
         }
         CredentialStatus::Active
     }
@@ -494,10 +490,8 @@ pub struct CredentialInfo {
     /// credential.
     #[concordium(size_length = 2)]
     commitment:       Vec<u8>,
-    /// The date from which the credential is considered valid. `None`
-    /// corresponsds to a credential that is valid immediately after being
-    /// issued.
-    valid_from:       Option<Timestamp>,
+    /// The date from which the credential is considered valid.
+    valid_from:       Timestamp,
     /// After this date, the credential becomes expired. `None` corresponds to a
     /// credential that cannot expire.
     valid_until:      Option<Timestamp>,
@@ -1444,7 +1438,7 @@ mod tests {
                     credential_type: "ExampleSchema".to_string(),
                 },
             }),
-            valid_from:       None,
+            valid_from:       Timestamp::from_timestamp_millis(0),
             valid_until:      None,
             holder_id:        PUBLIC_KEY,
             holder_revocable: true,
@@ -1541,7 +1535,7 @@ mod tests {
         claim!(!entry.revoked);
         let now = Timestamp::from_timestamp_millis(10);
         // Set `valid_from` to time ahead of `now`.
-        entry.valid_from = Some(Timestamp::from_timestamp_millis(20));
+        entry.valid_from = Timestamp::from_timestamp_millis(20);
         let expected = CredentialStatus::NotActivated;
         let status = entry.get_status(now);
         claim_eq!(status, expected, "Expected status {:?}, got {:?}", expected, status);
