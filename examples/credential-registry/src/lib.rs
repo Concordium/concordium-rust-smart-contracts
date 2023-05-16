@@ -166,8 +166,8 @@ impl<S: HasStateApi> CredentialEntry<S> {
 pub struct State<S: HasStateApi> {
     issuer:          AccountAddress,
     issuer_metadata: MetadataUrl,
-    issuer_keys:     StateMap<u8, PublicKeyEd25519, S>,
-    revocation_keys: StateMap<u8, (PublicKeyEd25519, u64), S>,
+    issuer_keys:     StateMap<u16, PublicKeyEd25519, S>,
+    revocation_keys: StateMap<u16, (PublicKeyEd25519, u64), S>,
     credentials:     StateMap<CredentialID, CredentialEntry<S>, S>,
     schema_registry: StateMap<CredentialType, SchemaRef, S>,
 }
@@ -311,20 +311,20 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn register_issuer_key(&mut self, key_index: u8, pk: PublicKeyEd25519) -> ContractResult<()> {
+    fn register_issuer_key(&mut self, key_index: u16, pk: PublicKeyEd25519) -> ContractResult<()> {
         let res = self.issuer_keys.insert(key_index, pk);
         ensure!(res.is_none(), ContractError::KeyAlreadyExists);
         Ok(())
     }
 
-    fn remove_issuer_key(&mut self, key_index: u8) -> ContractResult<()> {
+    fn remove_issuer_key(&mut self, key_index: u16) -> ContractResult<()> {
         self.issuer_keys.remove(&key_index);
         Ok(())
     }
 
     fn register_revocation_key(
         &mut self,
-        key_index: u8,
+        key_index: u16,
         pk: PublicKeyEd25519,
     ) -> ContractResult<()> {
         let res = self.revocation_keys.insert(key_index, (pk, 0));
@@ -332,16 +332,16 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn view_revocation_key(&self, key_index: u8) -> ContractResult<(PublicKeyEd25519, u64)> {
+    fn view_revocation_key(&self, key_index: u16) -> ContractResult<(PublicKeyEd25519, u64)> {
         self.revocation_keys.get(&key_index).map(|x| *x).ok_or(ContractError::KeyNotFound)
     }
 
-    fn remove_revocation_key(&mut self, key_index: u8) -> ContractResult<()> {
+    fn remove_revocation_key(&mut self, key_index: u16) -> ContractResult<()> {
         self.issuer_keys.remove(&key_index);
         Ok(())
     }
 
-    fn view_issuer_keys(&self) -> Vec<(u8, PublicKeyEd25519)> {
+    fn view_issuer_keys(&self) -> Vec<(u16, PublicKeyEd25519)> {
         self.issuer_keys.iter().map(|x| (*x.0, *x.1)).collect()
     }
 
@@ -702,7 +702,7 @@ pub struct RevokeCredentialOtherParam {
     signing_data:         SigningData,
     signature:            SignatureEd25519,
     /// Key index in the revocation keys map
-    revocation_key_index: u8,
+    revocation_key_index: u16,
     /// (Optional) reason for revoking the credential.
     reason:               Option<Reason>,
 }
@@ -974,7 +974,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     let holder_id = registry_entry.holder_id;
     drop(registry_entry);
 
-    let key_index = parameter.revocation_key_index;
+    let key_index: u16 = parameter.revocation_key_index;
     let mut entry =
         state.revocation_keys.entry(key_index).occupied_or(ContractError::CredentialNotFound)?;
 
@@ -1020,7 +1020,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
 
 #[derive(Serial, Deserial, SchemaType)]
 pub struct RegisterPublicKeyParameter {
-    key_index: u8,
+    key_index: u16,
     key:       PublicKeyEd25519,
 }
 
@@ -1062,7 +1062,7 @@ fn contract_register_issuer_keys<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - Some of the key indices does not exist.
 #[derive(Serialize, SchemaType)]
-pub struct RemovePublicKeyParameters(#[concordium(size_length = 2)] pub Vec<u8>);
+pub struct RemovePublicKeyParameters(#[concordium(size_length = 2)] pub Vec<u16>);
 
 #[receive(
     contract = "credential_registry",
@@ -1168,7 +1168,7 @@ fn contract_revocation_key<S: HasStateApi>(
 fn contract_issuer_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<Vec<(u8, PublicKeyEd25519)>, ContractError> {
+) -> Result<Vec<(u16, PublicKeyEd25519)>, ContractError> {
     let keys = host.state().view_issuer_keys();
     Ok(keys)
 }
@@ -1662,7 +1662,7 @@ mod tests {
     /// Property: registering an issuer key and querying it results in the same
     /// value
     #[concordium_quickcheck]
-    fn prop_register_issuer_keys(key_index: u8, pk_bytes: Array32u8) -> bool {
+    fn prop_register_issuer_keys(key_index: u16, pk_bytes: Array32u8) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let Array32u8(bytes) = pk_bytes;
         let pk = PublicKeyEd25519(bytes);
@@ -1675,7 +1675,7 @@ mod tests {
     /// Property: registering a revocation key and querying it results in the
     /// same value
     #[concordium_quickcheck]
-    fn prop_register_revocation_key(key_index: u8, pk_bytes: Array32u8) -> bool {
+    fn prop_register_revocation_key(key_index: u16, pk_bytes: Array32u8) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let Array32u8(bytes) = pk_bytes;
         let pk = PublicKeyEd25519(bytes);
