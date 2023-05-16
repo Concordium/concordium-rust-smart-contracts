@@ -70,7 +70,7 @@
 //!     .unwrap();
 //!
 //! // Check the trace elements produced (updates, interrupts, resumes, transfers, etc.).
-//! assert!(matches!(update.success_trace_elements().collect::<Vec<_>>()[..], [ContractTraceElement::Updated{..}]));
+//! assert!(matches!(update.effective_trace_elements().collect::<Vec<_>>()[..], [ContractTraceElement::Updated{..}]));
 //!
 //! // Check the return value.
 //! assert_eq!(update.return_value, to_bytes(&84u8));

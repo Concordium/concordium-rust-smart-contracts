@@ -84,7 +84,7 @@ fn test() {
         .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
     assert!(
-        matches!(res_update_upgrade.success_trace_elements().collect::<Vec<_>>()[..], [
+        matches!(res_update_upgrade.effective_trace_elements().collect::<Vec<_>>()[..], [
                 ContractTraceElement::Interrupted { .. },
                 ContractTraceElement::Upgraded { from, to, .. },
                 ContractTraceElement::Resumed { .. },
@@ -92,7 +92,7 @@ fn test() {
             ] if *from == res_deploy_0.module_reference && *to == res_deploy_1.module_reference)
     );
     assert!(matches!(
-        res_update_new.success_trace_elements().collect::<Vec<_>>()[..],
+        res_update_new.effective_trace_elements().collect::<Vec<_>>()[..],
         [ContractTraceElement::Updated { .. }]
     ));
 }
@@ -154,7 +154,7 @@ fn test_self_invoke() {
         .expect("Updating valid contract should work");
 
     assert!(matches!(
-        res_update.success_trace_elements().collect::<Vec<_>>()[..],
+        res_update.effective_trace_elements().collect::<Vec<_>>()[..],
         [
             // Invoking `contract.name`
             ContractTraceElement::Interrupted { .. },
@@ -225,7 +225,7 @@ fn test_missing_module() {
         .expect("Updating valid contract should work");
 
     assert!(
-        matches!(res_update.success_trace_elements().collect::<Vec<_>>()[..], [
+        matches!(res_update.effective_trace_elements().collect::<Vec<_>>()[..], [
                 ContractTraceElement::Interrupted { .. },
                 // No upgrade event, as it is supposed to fail.
                 ContractTraceElement::Resumed { success, .. },
@@ -299,7 +299,7 @@ fn test_missing_contract() {
         .expect("Updating valid contract should work");
 
     assert!(
-        matches!(res_update.success_trace_elements().collect::<Vec<_>>()[..], [
+        matches!(res_update.effective_trace_elements().collect::<Vec<_>>()[..], [
                 ContractTraceElement::Interrupted { .. },
                 // No upgrade event, as it is supposed to fail.
                 ContractTraceElement::Resumed { success, .. },
@@ -377,7 +377,7 @@ fn test_twice_in_one_transaction() {
         .expect("Updating valid contract should work");
 
     assert!(
-        matches!(res_update.success_trace_elements().collect::<Vec<_>>()[..], [
+        matches!(res_update.effective_trace_elements().collect::<Vec<_>>()[..], [
                 // Invoke the contract itself to check the name entrypoint return value.
                 ContractTraceElement::Interrupted { .. },
                 ContractTraceElement::Updated { .. },
@@ -465,7 +465,7 @@ fn test_chained_contract() {
     // update.
     assert_eq!(
         res_update
-            .success_trace_elements()
+            .effective_trace_elements()
             .collect::<Vec<_>>()
             .len() as u32,
         6 * number_of_upgrades + 4
@@ -689,7 +689,7 @@ fn test_changing_entrypoint() {
 
     assert!(matches!(
         res_update_old_feature_0
-            .success_trace_elements()
+            .effective_trace_elements()
             .collect::<Vec<_>>()[..],
         [ContractTraceElement::Updated { .. }]
     ));
@@ -701,7 +701,7 @@ fn test_changing_entrypoint() {
     ));
     assert!(matches!(
         res_update_upgrade
-            .success_trace_elements()
+            .effective_trace_elements()
             .collect::<Vec<_>>()[..],
         [
             ContractTraceElement::Interrupted { .. },
@@ -718,7 +718,7 @@ fn test_changing_entrypoint() {
     ));
     assert!(matches!(
         res_update_new_feature_1
-            .success_trace_elements()
+            .effective_trace_elements()
             .collect::<Vec<_>>()[..],
         [ContractTraceElement::Updated { .. }]
     ));

@@ -751,7 +751,7 @@ impl Chain {
                     );
                     res.map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?
                 } else {
-                    // An error occured, so state hasn't changed.
+                    // An error occurred, so state hasn't changed.
                     false
                 };
                 self.contract_invocation_process_response(
@@ -853,7 +853,7 @@ impl Chain {
                         .collect_energy_for_state(&mut remaining_energy, contract_address)
                         .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?
                 } else {
-                    // An error occured, so state hasn't changed.
+                    // An error occurred, so state hasn't changed.
                     false
                 };
                 self.contract_invocation_process_response(

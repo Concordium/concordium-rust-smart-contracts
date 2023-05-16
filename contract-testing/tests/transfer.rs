@@ -97,7 +97,7 @@ fn test_transfer() {
         chain.get_contract(contract_address).unwrap().self_balance
     );
     assert_eq!(
-        res_update.success_trace_elements().collect::<Vec<_>>()[..],
+        res_update.effective_trace_elements().collect::<Vec<_>>()[..],
         [
             &ContractTraceElement::Interrupted {
                 address: contract_address,

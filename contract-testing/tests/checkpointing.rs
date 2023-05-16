@@ -96,6 +96,9 @@ fn test_case_1() {
         )
         .expect("Updating contract should succeed");
 
+    // Check that rollbacks occurred.
+    assert!(update.rollbacks_occurred());
+
     // Check that all the trace elements are as expected, including the ones
     // resulting in a failure. Some imports to simplify the names in the assert.
     use ContractTraceElement::*;
@@ -227,6 +230,9 @@ fn test_case_2() {
     assert_eq!(update_a_modify_proxy.address, res_init_a.contract_address);
     assert_eq!(update_a_modify_proxy.receive_name, "a.a_modify_proxy");
     assert!(updates.next().is_none(), "No more updates expected.");
+
+    // Check that no rollbacks occurred.
+    assert!(!trace.rollbacks_occurred());
 }
 
 /// This test has the following call pattern:
@@ -370,7 +376,7 @@ fn test_case_4() {
         Amount::zero(),
     );
 
-    chain
+    let update = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_0,
@@ -389,4 +395,7 @@ fn test_case_4() {
             },
         )
         .expect("Updating contract should succeed");
+
+    // Check that no rollbacks occurred.
+    assert!(!update.rollbacks_occurred());
 }

@@ -110,7 +110,7 @@ pub struct ModuleDeploySuccess {
     pub transaction_fee:  Amount,
 }
 
-/// An error that occured while deploying a [`ContractModule`].
+/// An error that occurred while deploying a [`ContractModule`].
 #[derive(Debug, Error)]
 #[error(
     "Module deployment failed after consuming {energy_used}NRG ({transaction_fee} microCCD) with \
@@ -126,7 +126,7 @@ pub struct ModuleDeployError {
     pub kind:            ModuleDeployErrorKind,
 }
 
-/// The specific kind of error that occured while deploying a
+/// The specific kind of error that occurred while deploying a
 /// [`ContractModule`].
 #[derive(Debug, Error)]
 pub enum ModuleDeployErrorKind {
@@ -196,7 +196,7 @@ pub struct ContractInitSuccess {
     pub transaction_fee:  Amount,
 }
 
-/// An error that occured in [`Chain::contract_init`].
+/// An error that occurred in [`Chain::contract_init`].
 #[derive(Debug, Error)]
 #[error(
     "Contract initialization failed after consuming {energy_used}NRG ({transaction_fee} microCCD) \
@@ -265,7 +265,7 @@ pub enum InitExecutionError {
     OutOfEnergy,
 }
 
-/// An error that occured while executing a contract init or receive function.
+/// An error that occurred while executing a contract init or receive function.
 #[derive(Debug, Error)]
 #[error("The contract execution halted due to: {0}")]
 pub struct ExecutionError(#[from] pub(crate) anyhow::Error);
@@ -273,7 +273,7 @@ pub struct ExecutionError(#[from] pub(crate) anyhow::Error);
 /// Represents a successful contract update (or invocation).
 #[derive(Debug)]
 pub struct ContractInvokeSuccess {
-    /// Host events that occured. This includes interrupts, resumes, and
+    /// Host events that occurred. This includes interrupts, resumes, and
     /// upgrades.
     pub trace_elements:  Vec<DebugTraceElement>,
     /// Energy used.
@@ -293,10 +293,10 @@ impl ContractInvokeSuccess {
     /// The events are returned in the order that they are emitted, and are
     /// paired with the address of the contract that emitted it.
     ///
-    /// Only events from successful trace elements are included. See
-    /// [`Self::success_trace_elements`] for more details.
+    /// Only events from effective trace elements are included. See
+    /// [`Self::effective_trace_elements`] for more details.
     pub fn events(&self) -> impl Iterator<Item = (ContractAddress, &[ContractEvent])> {
-        self.success_trace_elements().flat_map(|cte| {
+        self.effective_trace_elements().flat_map(|cte| {
             if let ContractTraceElement::Updated { data } = cte {
                 Some((data.address, data.events.as_slice()))
             } else {
@@ -309,10 +309,13 @@ impl ContractInvokeSuccess {
     /// invocation. The return value is an iterator over triples `(from, amount,
     /// to)` where `from` is the sender contract, and `to` is the receiver
     /// account. The transfers are returned in the order that they occurred.
+    ///
+    /// Only tranfers from effective trace elements are included. See
+    /// [`Self::effective_trace_elements`] for more details.
     pub fn account_transfers(
         &self,
     ) -> impl Iterator<Item = (ContractAddress, Amount, AccountAddress)> + '_ {
-        self.success_trace_elements().flat_map(|cte| {
+        self.effective_trace_elements().flat_map(|cte| {
             if let ContractTraceElement::Transferred { from, amount, to } = cte {
                 Some((*from, *amount, *to))
             } else {
@@ -321,15 +324,12 @@ impl ContractInvokeSuccess {
         })
     }
 
-    /// Get an iterator over all the successful [`ContractTraceElement`]s.
-    ///
-    /// That is, elements from `self.trace_elements`, which exist in
-    /// [`DebugTraceElement::Regular`] and is not a child of a
-    /// [`DebugTraceElement::WithFailures`].
+    /// Get an iterator over all the [`ContractTraceElement`]s that have *not*
+    /// been rolled back.
     ///
     /// The trace elements returned here corresponds to the ones returned by the
     /// node.
-    pub fn success_trace_elements(&self) -> impl Iterator<Item = &ContractTraceElement> {
+    pub fn effective_trace_elements(&self) -> impl Iterator<Item = &ContractTraceElement> {
         self.trace_elements.iter().filter_map(|cte| match cte {
             DebugTraceElement::Regular { trace_element, .. } => Some(trace_element),
             DebugTraceElement::WithFailures { .. } => None,
@@ -340,7 +340,7 @@ impl ContractInvokeSuccess {
     /// originated from.
     pub fn trace_elements(&self) -> BTreeMap<ContractAddress, Vec<ContractTraceElement>> {
         let mut map: BTreeMap<ContractAddress, Vec<ContractTraceElement>> = BTreeMap::new();
-        for event in self.success_trace_elements() {
+        for event in self.effective_trace_elements() {
             map.entry(Self::extract_contract_address(event))
                 .and_modify(|v| v.push(event.clone()))
                 .or_insert_with(|| vec![event.clone()]);
@@ -368,13 +368,26 @@ impl ContractInvokeSuccess {
     /// other calls are made) then first there will be "B updated" event,
     /// followed by "A updated", assuming the invocation of both succeeded.
     pub fn updates(&self) -> impl Iterator<Item = &InstanceUpdatedEvent> {
-        self.success_trace_elements().filter_map(|e| {
+        self.effective_trace_elements().filter_map(|e| {
             if let ContractTraceElement::Updated { data } = e {
                 Some(data)
             } else {
                 None
             }
         })
+    }
+
+    /// Check whether any rollbacks occurred.
+    ///
+    /// That is, whether any contract calls failed which lead to state and
+    /// balances being rolled back.
+    ///
+    /// If `true` is returned, the relevant traces can be seen in the
+    /// `self.trace_elements` vector.
+    pub fn rollbacks_occurred(&self) -> bool {
+        self.trace_elements
+            .iter()
+            .any(|element| matches!(element, DebugTraceElement::WithFailures { .. }))
     }
 }
 
@@ -400,12 +413,16 @@ pub enum DebugTraceElement {
     /// entrypoint, and energy usage.
     WithFailures {
         /// The address of the contract which failed.
+        /// This will always match the address in the last element in
+        /// `trace_elements` if the vector isn't empty.
         contract_address: ContractAddress,
         /// The entrypoint which failed.
+        /// This will always match the address in the last element in
+        /// `trace_elements` if the vector isn't empty.
         entrypoint:       OwnedEntrypointName,
         /// The error returned.
         error:            InvokeExecutionError,
-        /// Intermediate [`DebugTraceElement`]s which occured prior to failing.
+        /// Intermediate [`DebugTraceElement`]s which occurred prior to failing.
         /// These are the elements which are normally discared by the node.
         trace_elements:   Vec<DebugTraceElement>,
         /// The energy used so far.
@@ -427,7 +444,7 @@ pub enum InvokeExecutionError {
     Trap { error: ExecutionError },
 }
 
-/// An error that occured during a [`Chain::contract_update`] or
+/// An error that occurred during a [`Chain::contract_update`] or
 /// [`Chain::contract_invoke`].
 #[derive(Debug, Error)]
 #[error(
@@ -440,7 +457,7 @@ pub struct ContractInvokeError {
     /// The transaction fee. For [`Chain::contract_update`], this is the amount
     /// charged to the `invoker` account.
     pub transaction_fee: Amount,
-    /// Trace elements that occured before the contract failed.
+    /// Trace elements that occurred before the contract failed.
     pub trace_elements:  Vec<DebugTraceElement>,
     /// The specific reason for why the invocation failed.
     pub kind:            ContractInvokeErrorKind,

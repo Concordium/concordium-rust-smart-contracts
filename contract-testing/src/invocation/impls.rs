@@ -733,19 +733,21 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // element.
                     let failure_traces =
                         trace_elements.split_off(invocation_data.trace_elements_checkpoint);
-                    if !failure_traces.is_empty() {
-                        let with_failure = DebugTraceElement::WithFailures {
-                            contract_address: invocation_data.address,
-                            entrypoint:       invocation_data.entrypoint.clone(),
-                            error:            InvokeExecutionError::Reject {
-                                reason,
-                                return_value: return_value.clone(),
-                            },
-                            trace_elements:   failure_traces,
-                            energy_used:      self.energy_used(),
-                        };
-                        trace_elements.push(with_failure);
-                    }
+
+                    // Create a `WithFailures` element even if `failure_traces` is empty, as the
+                    // reject reason and energy usage is still relevant.
+                    let with_failure = DebugTraceElement::WithFailures {
+                        contract_address: invocation_data.address,
+                        entrypoint:       invocation_data.entrypoint.clone(),
+                        error:            InvokeExecutionError::Reject {
+                            reason,
+                            return_value: return_value.clone(),
+                        },
+                        trace_elements:   failure_traces,
+                        energy_used:      self.energy_used(),
+                    };
+                    trace_elements.push(with_failure);
+
                     // Reset the next modification index as well.
                     self.next_contract_modification_index = invocation_data.next_mod_idx_checkpoint;
                     invoke_response = Some(v1::InvokeResponse::Failure {
@@ -764,18 +766,20 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     // element.
                     let failure_traces =
                         trace_elements.split_off(invocation_data.trace_elements_checkpoint);
-                    if !failure_traces.is_empty() {
-                        let with_failure = DebugTraceElement::WithFailures {
-                            contract_address: invocation_data.address,
-                            entrypoint:       invocation_data.entrypoint.clone(),
-                            error:            InvokeExecutionError::Trap {
-                                error: ExecutionError(error),
-                            },
-                            trace_elements:   failure_traces,
-                            energy_used:      self.energy_used(),
-                        };
-                        trace_elements.push(with_failure);
-                    }
+
+                    // Create a `WithFailures` element even if `failure_traces` is empty, as the
+                    // error and energy usage is still relevant.
+                    let with_failure = DebugTraceElement::WithFailures {
+                        contract_address: invocation_data.address,
+                        entrypoint:       invocation_data.entrypoint.clone(),
+                        error:            InvokeExecutionError::Trap {
+                            error: ExecutionError(error),
+                        },
+                        trace_elements:   failure_traces,
+                        energy_used:      self.energy_used(),
+                    };
+                    trace_elements.push(with_failure);
+
                     // Reset the next modification index as well.
                     self.next_contract_modification_index = invocation_data.next_mod_idx_checkpoint;
                     invoke_response = Some(v1::InvokeResponse::Failure {
@@ -1211,7 +1215,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         let res = match f(available_interpreter_energy) {
             Ok(res) => res,
             Err(err) => {
-                // An error occured in the interpreter and it doesn't return the remaining
+                // An error occurred in the interpreter and it doesn't return the remaining
                 // energy. We convert this to a trap and set the energy to the
                 // last known amount.
                 return Ok(v1::ReceiveResult::Trap {

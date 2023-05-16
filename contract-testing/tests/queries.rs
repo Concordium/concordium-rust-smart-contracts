@@ -76,7 +76,7 @@ mod query_account_balance {
             )
         );
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -150,7 +150,7 @@ mod query_account_balance {
             Some(initial_balance - res_update.transaction_fee - update_amount)
         );
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -233,7 +233,7 @@ mod query_account_balance {
             Some(initial_balance + amount_to_send)
         );
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [
                 ContractTraceElement::Interrupted { .. },
                 ContractTraceElement::Transferred { .. },
@@ -303,7 +303,7 @@ mod query_account_balance {
             )
         );
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -371,7 +371,7 @@ mod query_account_balance {
             )
         );
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -450,7 +450,7 @@ mod query_contract_balance {
             .expect("Updating valid contract should work");
 
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -512,7 +512,7 @@ mod query_contract_balance {
             .expect("Updating valid contract should work");
 
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -578,7 +578,7 @@ mod query_contract_balance {
             .expect("Updating valid contract should work");
 
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [
                 ContractTraceElement::Interrupted { .. },
                 ContractTraceElement::Transferred { .. },
@@ -641,7 +641,7 @@ mod query_contract_balance {
             .expect("Updating valid contract should work");
 
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
@@ -701,7 +701,7 @@ mod query_exchange_rates {
             .expect("Updating valid contract should work");
 
         assert!(matches!(
-            res_update.success_trace_elements().collect::<Vec<_>>()[..],
+            res_update.effective_trace_elements().collect::<Vec<_>>()[..],
             [ContractTraceElement::Updated { .. }]
         ));
     }
