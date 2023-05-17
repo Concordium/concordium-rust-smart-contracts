@@ -324,16 +324,37 @@ impl ContractInvokeSuccess {
         })
     }
 
-    /// Get an iterator over all the [`ContractTraceElement`]s that have *not*
-    /// been rolled back.
+    /// Get an iterator over references of all the [`ContractTraceElement`]s
+    /// that have *not* been rolled back.
     ///
     /// The trace elements returned here corresponds to the ones returned by the
     /// node.
+    ///
+    /// See also [`Self::effective_trace_elements_cloned`] for a version with
+    /// clones.
     pub fn effective_trace_elements(&self) -> impl Iterator<Item = &ContractTraceElement> {
         self.trace_elements.iter().filter_map(|cte| match cte {
             DebugTraceElement::Regular { trace_element, .. } => Some(trace_element),
             DebugTraceElement::WithFailures { .. } => None,
         })
+    }
+
+    /// Get an iterator over clones of all the [`ContractTraceElement`]s that
+    /// have *not* been rolled back.
+    ///
+    /// The trace elements returned here corresponds to the ones returned by the
+    /// node.
+    ///
+    /// See also [`Self::effective_trace_elements`] for a version with
+    /// references.
+    pub fn effective_trace_elements_cloned(&self) -> Vec<ContractTraceElement> {
+        self.trace_elements
+            .iter()
+            .filter_map(|cte| match cte {
+                DebugTraceElement::Regular { trace_element, .. } => Some(trace_element.clone()),
+                DebugTraceElement::WithFailures { .. } => None,
+            })
+            .collect()
     }
 
     /// Get the successful trace elements grouped by which contract they
