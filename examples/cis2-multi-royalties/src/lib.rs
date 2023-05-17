@@ -277,7 +277,7 @@ impl<S: HasStateApi> State<S> {
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
+        mut amount:ContractTokenAmount,
         from: &Address,
         to: &Address,
         state_builder: &mut StateBuilder<S>,
@@ -302,11 +302,30 @@ impl<S: HasStateApi> State<S> {
             *from_balance -= amount;
         }
 
+        if self.pay_royalty {
+            let royal_parameters = CheckRoyaltyParams {
+                id: *token_id,
+                sale_price: amount.into(),
+            };
+
+            let royal_result = self.check_royalty_payments(royal_parameters); 
+
+            let mut royalties_state =
+            self.state.entry(royal_result.id).occupied_or(ContractError::InsufficientFunds)?;
+            let mut minter_balance = royalties_state
+                .balances
+                .entry(*token_id)
+                .occupied_or(ContractError::InsufficientFunds)?;
+
+            *minter_balance += concordium_cis2::TokenAmountU64(royal_result.payment);
+            amount -= concordium_cis2::TokenAmountU64(royal_result.payment);
+        }
+
         let mut to_address_state =
             self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
         let mut to_address_balance = to_address_state.balances.entry(*token_id).or_insert(0.into());
         *to_address_balance += amount;
-
+        
         Ok(())
     }
 
@@ -348,6 +367,19 @@ impl<S: HasStateApi> State<S> {
         implementors: Vec<ContractAddress>,
     ) {
         self.implementors.insert(std_id, implementors);
+    }
+
+    fn check_royalty_payments(
+        &mut self,
+        params: CheckRoyaltyParams
+    ) -> CheckRoyaltyResult {
+        let token_details = self.token_details.get(&params.id).unwrap(); // safe due to previous checks
+        let minter = token_details.minter;
+        let royalty_to_pay:u64 = params.sale_price / 100 * token_details.royalty;
+        CheckRoyaltyResult {
+            id: minter,
+            payment: royalty_to_pay, 
+        }
     }
 }
 
@@ -836,28 +868,22 @@ fn contract_set_implementor<S: HasStateApi>(
     contract = "cis2_multi_royalties",
     name = "check_royalty",
     parameter = "CheckRoyaltyParams",
-    error = "ContractError",    
+    error = "ContractError",
+    mutable,    
 )]
 fn contract_check_royalty<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<CheckRoyaltyResult> {
     ensure!(host.state().pay_royalty == true, concordium_cis2::Cis2Error::Custom(CustomContractError::ContractDoesNotPayRoyalties));
 
     let params: CheckRoyaltyParams = ctx.parameter_cursor().get()?;
     ensure!(params.sale_price > 0, concordium_cis2::Cis2Error::Custom(CustomContractError::NoRoyaltyPayable));
     ensure!(host.state().contains_token(&params.id), ContractError::InvalidTokenId);
-    
     let token_details = host.state().token_details.get(&params.id).unwrap(); // safe due to previous checks
     ensure!(token_details.royalty > 0, concordium_cis2::Cis2Error::Custom(CustomContractError::NoRoyaltyPayable));
-    let minter = token_details.minter;
-    let royalty_to_pay:u64 = params.sale_price / 100 * token_details.royalty;
-    let result = CheckRoyaltyResult {
-        id: minter,
-        payment: royalty_to_pay, 
-    };
-
-    Ok(result)
+    
+    Ok(host.state_mut().check_royalty_payments(params))
 }
 
 /// View function to see whether we support paying royalties
