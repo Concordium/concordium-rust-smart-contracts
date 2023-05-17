@@ -64,6 +64,12 @@ type ContractTokenId = TokenIdU8;
 /// Contract token amount type.
 type ContractTokenAmount = TokenAmountU64;
 
+/// The parameter for the contract function `init` which sets up the contract.
+#[derive(Serial, Deserial, SchemaType)]
+struct InitParams {
+    /// pay royalties on this contract
+    pay_royalty:  bool,
+}
 /// The parameter for the contract function `mint` which mints a number of
 /// token types and/or amounts of tokens to a given address.
 #[derive(Serial, Deserial, SchemaType)]
@@ -151,8 +157,6 @@ struct State<S> {
 
     token_details: StateMap<ContractTokenId, TokenDetails, S>,
 
-    royalty_percentage: u64,
-
     pay_royalty: bool,
 }
 
@@ -220,7 +224,6 @@ impl<S: HasStateApi> State<S> {
             tokens:       state_builder.new_set(),
             implementors: state_builder.new_map(),
             token_details: state_builder.new_map(),
-            royalty_percentage: 0,
             pay_royalty: false,
         }
     }
@@ -359,13 +362,18 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with a no token types.
-#[init(contract = "cis2_multi_royalties", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
+#[init(contract = "cis2_multi_royalties", 
+parameter = "InitParams",
+event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
 fn contract_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
+    ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
     // Construct the initial contract state.
-    Ok(State::empty(state_builder))
+    let params: InitParams = ctx.parameter_cursor().get()?;
+    let mut state = State::empty(state_builder);
+    state.pay_royalty = params.pay_royalty;
+    Ok(state)
 }
 
 #[derive(Serialize, SchemaType)]
@@ -834,7 +842,6 @@ fn contract_check_royalty<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<CheckRoyaltyResult> {
-    println!("checking royalty");
     ensure!(host.state().pay_royalty == true, concordium_cis2::Cis2Error::Custom(CustomContractError::ContractDoesNotPayRoyalties));
 
     let params: CheckRoyaltyParams = ctx.parameter_cursor().get()?;
@@ -900,8 +907,11 @@ mod tests {
     #[concordium_test]
     fn test_init() {
         // Setup the context
-        let ctx = TestInitContext::empty();
+        let mut ctx = TestInitContext::empty();
         let mut builder = TestStateBuilder::new();
+        let royalty = false;
+        let init_parameter_bytes = to_bytes(&royalty);
+        ctx.set_parameter(&init_parameter_bytes);
 
         // Call the contract function.
         let result = contract_init(&ctx, &mut builder);
@@ -1254,20 +1264,32 @@ mod tests {
     // test royalties are paid correctly
     #[concordium_test]
     fn test_royalties_paid() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
+        // initialise the contract ready for royalties
+        let mut init_state_builder = TestStateBuilder::new();
+        let mut ctx_init = TestInitContext::empty();
+        let royalty = true;
+        let init_parameter_bytes = to_bytes(&royalty);
+        ctx_init.set_parameter(&init_parameter_bytes);
+
+        let _ = contract_init(&ctx_init, &mut init_state_builder);
+
+        let mut ctx_roy = TestReceiveContext::empty();
         let royalty = CheckRoyaltyParams {
             id: TOKEN_0,
             sale_price:   200,
         };
-        let parameter: CheckRoyaltyParams = CheckRoyaltyParams::from(royalty);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
+        
+        let mut roy_state_builder = TestStateBuilder::new();
+        let mut state = initial_state_with_royalties(&mut roy_state_builder);
+        
+        state.mint(&TOKEN_0, 400.into(), &ADDRESS_0, & mut roy_state_builder, 50);
 
-         let mut state_builder = TestStateBuilder::new();
-        let state = initial_state_with_royalties(&mut state_builder);
-        let host = TestHost::new(state, state_builder);
-        let royalties: CheckRoyaltyResult = contract_check_royalty(&ctx, &host).unwrap();
+        let mut host = TestHost::new(state, roy_state_builder);
+        let roy_parameter: CheckRoyaltyParams = CheckRoyaltyParams::from(royalty);
+        let roy_parameter_bytes = to_bytes(&roy_parameter);
+        ctx_roy.set_parameter(&roy_parameter_bytes);
+
+         let royalties: CheckRoyaltyResult = contract_check_royalty(&ctx_roy, &mut host).unwrap();
         
         claim_eq!(royalties.id, ADDRESS_0, "Incorrect address paid royalities");        
         claim_eq!(royalties.payment, 100, "Incorrect amount of royalities paid");
@@ -1290,10 +1312,9 @@ mod tests {
      let mut state_builder = TestStateBuilder::new();
      let mut state = initial_state(&mut state_builder);
      state.pay_royalty = true;
-     state.royalty_percentage = 50;
-     let host = TestHost::new(state, state_builder);
+     let mut host = TestHost::new(state, state_builder);
      
-     let result = contract_check_royalty(&ctx, &host);
+     let result = contract_check_royalty(&ctx, &mut host);
      // Check the result.
      let err = result.expect_err_report("Expected to fail with 0 price");
      claim_eq!(err, 
@@ -1319,10 +1340,9 @@ fn test_royalties_with_zero_royalty_percentage() {
     let mut state_builder = TestStateBuilder::new();
     let mut state = initial_state(&mut state_builder);
     state.pay_royalty = true;
-    state.royalty_percentage = 0;
-    let host = TestHost::new(state, state_builder);
+    let mut host = TestHost::new(state, state_builder);
     
-    let result = contract_check_royalty(&ctx, &host);
+    let result = contract_check_royalty(&ctx, &mut host);
     // Check the result.
     let err = result.expect_err_report("Expected to fail with 0 price");
     claim_eq!(err, 
@@ -1348,9 +1368,8 @@ fn test_royalties_with_zero_royalty_percentage() {
         let mut state_builder = TestStateBuilder::new();
         let mut state = initial_state(&mut state_builder);
         state.pay_royalty = true;
-        state.royalty_percentage = 50;
-        let host = TestHost::new(state, state_builder);
-        let result = contract_check_royalty(&ctx, &host);
+        let mut host = TestHost::new(state, state_builder);
+        let result = contract_check_royalty(&ctx, &mut host);
         // Check the result.
         let err = result.expect_err_report("Expected to fail with invalid tokenID");
         claim_eq!(err, 
