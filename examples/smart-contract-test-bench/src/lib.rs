@@ -33,6 +33,8 @@ const SIGNATURE: SignatureEd25519 = SignatureEd25519([
 
 const HASH: HashSha2256 = concordium_std::HashSha2256([2u8; 32]);
 
+const STRING: &str = "abc";
+
 /// The contract state.
 #[derive(Serial, Deserial, Clone, SchemaType)]
 struct State {
@@ -45,6 +47,10 @@ struct State {
     hash_value:             HashSha2256,
     signature_value:        SignatureEd25519,
     public_key_value:       PublicKeyEd25519,
+    timestamp_value:        Timestamp,
+    option_value:           Option<u8>,
+    #[concordium(size_length = 2)]
+    string_value:           String,
 }
 
 /// Init function that creates this smart_contract_test_bench.
@@ -66,6 +72,9 @@ fn contract_init<S: HasStateApi>(
         hash_value:             HASH,
         signature_value:        SIGNATURE,
         public_key_value:       PUBLIC_KEY,
+        timestamp_value:        Timestamp::from_timestamp_millis(11),
+        option_value:           None,
+        string_value:           STRING.to_string(),
     })
 }
 
@@ -471,6 +480,156 @@ fn get_signature<S: HasStateApi>(
 
 #[receive(
     contract = "smart_contract_test_bench",
+    name = "set_timestamp",
+    parameter = "Timestamp",
+    error = "ContractError",
+    mutable
+)]
+fn set_timestamp<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<(), ContractError> {
+    let value: Timestamp = ctx.parameter_cursor().get()?;
+    host.state_mut().timestamp_value = value;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "set_timestamp_payable",
+    parameter = "Timestamp",
+    error = "ContractError",
+    mutable,
+    payable
+)]
+fn set_timestamp_payable<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+    _amount: Amount,
+) -> Result<(), ContractError> {
+    let value: Timestamp = ctx.parameter_cursor().get()?;
+    host.state_mut().timestamp_value = value;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "get_timestamp",
+    return_value = "Timestamp",
+    error = "ContractError",
+    mutable
+)]
+fn get_timestamp<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<Timestamp, ContractError> {
+    Ok(host.state_mut().timestamp_value)
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "set_string",
+    parameter = "String",
+    error = "ContractError",
+    mutable
+)]
+fn set_string<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<(), ContractError> {
+    let value: String = ctx.parameter_cursor().get()?;
+    host.state_mut().string_value = value;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "set_string_payable",
+    parameter = "String",
+    error = "ContractError",
+    mutable,
+    payable
+)]
+fn set_string_payable<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+    _amount: Amount,
+) -> Result<(), ContractError> {
+    let value: String = ctx.parameter_cursor().get()?;
+    host.state_mut().string_value = value;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "get_string",
+    return_value = "String",
+    error = "ContractError",
+    mutable
+)]
+fn get_string<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<String, ContractError> {
+    Ok(host.state_mut().string_value.clone())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "set_option_u8",
+    parameter = "Option<u8>",
+    error = "ContractError",
+    mutable
+)]
+fn set_option_u8<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<(), ContractError> {
+    let value: Option<u8> = ctx.parameter_cursor().get()?;
+    host.state_mut().option_value = value;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "set_option_u8_payable",
+    parameter = "Option<u8>",
+    error = "ContractError",
+    mutable,
+    payable
+)]
+fn set_option_u8_payable<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+    _amount: Amount,
+) -> Result<(), ContractError> {
+    let value: Option<u8> = ctx.parameter_cursor().get()?;
+    host.state_mut().option_value = value;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "get_option_u8",
+    return_value = "Option<u8>",
+    error = "ContractError",
+    mutable
+)]
+fn get_option_u8<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<Option<u8>, ContractError> {
+    Ok(host.state_mut().option_value)
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
     name = "set_address_array",
     parameter = "Vec<Address>",
     error = "ContractError",
@@ -581,6 +740,19 @@ fn get_object<S: HasStateApi>(
 
 #[receive(
     contract = "smart_contract_test_bench",
+    name = "success",
+    error = "ContractError",
+    mutable
+)]
+fn success<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<(), ContractError> {
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
     name = "reverts",
     error = "ContractError",
     mutable
@@ -606,6 +778,26 @@ fn internal_call_reverts<S: HasStateApi>(
         &ctx.self_address(),
         &Parameter::empty(),
         EntrypointName::new_unchecked("reverts"),
+        Amount::zero(),
+    )?;
+
+    Ok(())
+}
+
+#[receive(
+    contract = "smart_contract_test_bench",
+    name = "internal_call_success",
+    error = "ContractError",
+    mutable
+)]
+fn internal_call_success<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State, StateApiType = S>,
+) -> Result<(), ContractError> {
+    host.invoke_contract(
+        &ctx.self_address(),
+        &Parameter::empty(),
+        EntrypointName::new_unchecked("success"),
         Amount::zero(),
     )?;
 
