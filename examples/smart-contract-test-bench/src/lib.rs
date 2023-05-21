@@ -8,7 +8,7 @@ enum ContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
-    /// SmartContractReverts.
+    /// This smart contract reverts.
     SmartContractReverts,
     /// Failed to invoke a contract.
     InvokeError,
@@ -696,6 +696,12 @@ fn set_object<S: HasStateApi>(
     host.state_mut().u8_value = value.u8_value;
     host.state_mut().u16_value = value.u16_value;
     host.state_mut().address_array = value.address_array;
+    host.state_mut().hash_value = value.hash_value;
+    host.state_mut().signature_value = value.signature_value;
+    host.state_mut().public_key_value = value.public_key_value;
+    host.state_mut().timestamp_value = value.timestamp_value;
+    host.state_mut().option_value = value.option_value;
+    host.state_mut().string_value = value.string_value;
 
     Ok(())
 }
@@ -720,6 +726,12 @@ fn set_object_payable<S: HasStateApi>(
     host.state_mut().u8_value = value.u8_value;
     host.state_mut().u16_value = value.u16_value;
     host.state_mut().address_array = value.address_array;
+    host.state_mut().hash_value = value.hash_value;
+    host.state_mut().signature_value = value.signature_value;
+    host.state_mut().public_key_value = value.public_key_value;
+    host.state_mut().timestamp_value = value.timestamp_value;
+    host.state_mut().option_value = value.option_value;
+    host.state_mut().string_value = value.string_value;
 
     Ok(())
 }
