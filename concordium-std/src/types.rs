@@ -1045,6 +1045,18 @@ impl FromStr for PublicKeyEd25519 {
     }
 }
 
+#[cfg(feature = "concordium-quickcheck")]
+impl quickcheck::Arbitrary for PublicKeyEd25519 {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        let lower: u128 = quickcheck::Arbitrary::arbitrary(g);
+        let upper: u128 = quickcheck::Arbitrary::arbitrary(g);
+        let mut out = [0u8; 32];
+        out[..16].copy_from_slice(&lower.to_le_bytes());
+        out[16..].copy_from_slice(&upper.to_le_bytes());
+        PublicKeyEd25519(out)
+    }
+}
+
 /// Public key for ECDSA over Secp256k1. Must be 33 bytes long.
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(transparent)]
