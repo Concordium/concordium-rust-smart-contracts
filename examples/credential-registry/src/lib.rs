@@ -450,24 +450,66 @@ struct CredentialSchemaRefEvent {
 
 /// Tagged credential registry event.
 /// This version should be used for logging the events.
-#[derive(Serialize, SchemaType)]
+#[derive(SchemaType)]
 enum CredentialEvent {
     /// Credential registration event. Logged when an entry in the registry is
     /// created for the first time.
     Register(CredentialEventData),
-    /// Credential update event. Logged when updating an existing credential
-    /// entry.
-    Update(CredentialEventData),
     /// Credential revocation event.
     Revoke(RevokeCredentialEvent),
     /// Credential restoration (reversing revocation) event.
     Restore(RestoreCredentialEvent),
     /// Issuer's metadata changes, including the contract deployment.
     IssuerMetadata(MetadataUrl),
-    /// Issuer's metadata changes, including the contract deployment.
+    /// Credential's metadata changes.
     CredentialMetadata(CredentialMetadataEvent),
-    /// Issuer's metadata changes, including the contract deployment.
+    /// Credential's schema changes.
     Schema(CredentialSchemaRefEvent),
+}
+
+impl Serial for CredentialEvent {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            CredentialEvent::Register(data) => {
+                255u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::Revoke(data) => {
+                254u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::Restore(data) => {
+                253u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::IssuerMetadata(data) => {
+                252u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::CredentialMetadata(data) => {
+                251u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::Schema(data) => {
+                250u8.serial(out)?;
+                data.serial(out)
+            }
+        }
+    }
+}
+
+impl Deserial for CredentialEvent {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        match source.get()? {
+            255u8 => Ok(Self::Register(source.get()?)),
+            254u8 => Ok(Self::Revoke(source.get()?)),
+            253u8 => Ok(Self::Restore(source.get()?)),
+            252u8 => Ok(Self::IssuerMetadata(source.get()?)),
+            251u8 => Ok(Self::CredentialMetadata(source.get()?)),
+            250u8 => Ok(Self::Schema(source.get()?)),
+            _ => Err(ParseError {}),
+        }
+    }
 }
 
 /// Init function that creates a fresh registry state given the issuer's
