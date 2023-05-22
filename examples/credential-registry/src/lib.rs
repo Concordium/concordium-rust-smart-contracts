@@ -163,7 +163,6 @@ impl<S: HasStateApi> CredentialEntry<S> {
 pub struct State<S: HasStateApi> {
     issuer:              AccountAddress,
     issuer_metadata:     MetadataUrl,
-    issuer_keys:         StateSet<PublicKeyEd25519, S>,
     /// The currently active set of revocation keys.
     revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
     /// All revocation keys that have been used at any point in the past.
@@ -218,7 +217,6 @@ impl<S: HasStateApi> State<S> {
             issuer,
             issuer_metadata,
             schema_registry: state_builder.new_map(),
-            issuer_keys: state_builder.new_set(),
             revocation_keys: state_builder.new_map(),
             credentials: state_builder.new_map(),
             all_revocation_keys: state_builder.new_set(),
@@ -313,17 +311,6 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn register_issuer_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
-        let res = self.issuer_keys.insert(pk);
-        ensure!(res, ContractError::KeyAlreadyExists);
-        Ok(())
-    }
-
-    fn remove_issuer_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
-        ensure!(self.issuer_keys.remove(&pk), ContractError::KeyDoesNotExist);
-        Ok(())
-    }
-
     fn register_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
         let res = self.all_revocation_keys.insert(pk);
         ensure!(res, ContractError::KeyAlreadyExists);
@@ -343,10 +330,6 @@ impl<S: HasStateApi> State<S> {
             self.revocation_keys.remove(&pk);
             Ok(())
         }
-    }
-
-    fn view_issuer_keys(&self) -> Vec<PublicKeyEd25519> {
-        self.issuer_keys.iter().map(|x| *x).collect()
     }
 
     fn update_issuer_metadata(&mut self, issuer_metadata: &MetadataUrl) {
@@ -995,65 +978,10 @@ pub struct RegisterPublicKeyParameters {
     pub keys: Vec<PublicKeyEd25519>,
 }
 
-/// Register the issuer's public keys.
-/// These keys are for off-chain use only. The registry is just used as a
-/// storage and some credentials issued off-chain can be signed with the
-/// issuer's keys.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - Some of the keys already exist.
-#[receive(
-    contract = "credential_registry",
-    name = "registerIssuerKeys",
-    parameter = "RegisterPublicKeyParameters",
-    error = "ContractError",
-    mutable
-)]
-fn contract_register_issuer_keys<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> Result<(), ContractError> {
-    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let RegisterPublicKeyParameters {
-        keys,
-    } = ctx.parameter_cursor().get()?;
-    for key in keys {
-        host.state_mut().register_issuer_key(key)?;
-    }
-    Ok(())
-}
-
 #[derive(Serialize, SchemaType)]
 pub struct RemovePublicKeyParameters {
     #[concordium(size_length = 2)]
     pub keys: Vec<PublicKeyEd25519>,
-}
-
-/// Remove the issuer's public keys.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - One or more of the keys do not exist.
-#[receive(
-    contract = "credential_registry",
-    name = "removeIssuerKeys",
-    parameter = "RemovePublicKeyParameters",
-    error = "ContractError",
-    mutable
-)]
-fn contract_remove_issuer_keys<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> Result<(), ContractError> {
-    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let RemovePublicKeyParameters {
-        keys,
-    } = ctx.parameter_cursor().get()?;
-    for key in keys {
-        host.state_mut().remove_issuer_key(key)?;
-    }
-    Ok(())
 }
 
 /// Register revocation authorities public keys.
@@ -1130,21 +1058,6 @@ fn contract_revocation_keys<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<Vec<(PublicKeyEd25519, u64)>, ContractError> {
     Ok(host.state().view_revocation_keys())
-}
-
-/// A view entrypoint that returns a vector of issuer's keys.
-#[receive(
-    contract = "credential_registry",
-    name = "issuerKeys",
-    error = "ContractError",
-    return_value = "Vec<PublicKeyEd25519>"
-)]
-fn contract_issuer_keys<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<Vec<PublicKeyEd25519>, ContractError> {
-    let keys = host.state().view_issuer_keys();
-    Ok(keys)
 }
 
 /// A view entrypoint to get the metadata URL and checksum.
@@ -1643,19 +1556,6 @@ mod tests {
             && revocation_result.is_ok()
             && restoring_result.is_ok()
             && original_status == status_after_restoring
-    }
-
-    /// Property: registering an issuer key and querying it results in the same
-    /// value
-    #[concordium_quickcheck]
-    fn prop_register_issuer_keys(pk_bytes: Array32u8) -> bool {
-        let mut state_builder = TestStateBuilder::new();
-        let Array32u8(bytes) = pk_bytes;
-        let pk = PublicKeyEd25519(bytes);
-        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
-        let register_result = state.register_issuer_key(PublicKeyEd25519(bytes));
-        let query_result = state.view_issuer_keys();
-        register_result.is_ok() && query_result.contains(&pk)
     }
 
     /// Property: registering a revocation key in fresh state and querying it
