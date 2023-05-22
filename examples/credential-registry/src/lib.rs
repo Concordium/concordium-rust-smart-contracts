@@ -279,6 +279,19 @@ impl<S: HasStateApi> State<S> {
         Ok(schema.clone())
     }
 
+    fn update_credential_metadata(
+        &mut self,
+        credential_id: &CredentialID,
+        issuer_metadata: MetadataUrl,
+    ) -> ContractResult<()> {
+        if let Some(mut entry) = self.credentials.get_mut(credential_id) {
+            entry.credential_data.metadata_url = issuer_metadata;
+            Ok(())
+        } else {
+            Err(ContractError::CredentialNotFound)
+        }
+    }
+
     fn revoke_credential(
         &mut self,
         now: Timestamp,
@@ -361,6 +374,8 @@ struct CredentialEventData {
     schema_ref:      SchemaRef,
     /// Type of the credential.
     credential_type: CredentialType,
+    /// The original credential's metadata.
+    metadata_url:    MetadataUrl,
 }
 
 /// A type for specifying who is revoking a credential, when registering a
@@ -420,10 +435,17 @@ struct RestoreCredentialEvent {
     reason:        Option<Reason>,
 }
 
-#[derive(Debug, Serialize, SchemaType)]
-pub struct IssuerMetadataEvent {
-    /// The location of the metadata.
-    pub metadata_url: MetadataUrl,
+#[derive(Serialize, SchemaType)]
+struct CredentialMetadataEvent {
+    credential_id: CredentialID,
+    metadata_url:  MetadataUrl,
+}
+
+/// The schema reference has been updated for the credential type.
+#[derive(Serialize, SchemaType)]
+struct CredentialSchemaRefEvent {
+    r#type:     CredentialType,
+    schema_ref: SchemaRef,
 }
 
 /// Tagged credential registry event.
@@ -441,7 +463,11 @@ enum CredentialEvent {
     /// Credential restoration (reversing revocation) event.
     Restore(RestoreCredentialEvent),
     /// Issuer's metadata changes, including the contract deployment.
-    Metadata(IssuerMetadataEvent),
+    IssuerMetadata(MetadataUrl),
+    /// Issuer's metadata changes, including the contract deployment.
+    CredentialMetadata(CredentialMetadataEvent),
+    /// Issuer's metadata changes, including the contract deployment.
+    Schema(CredentialSchemaRefEvent),
 }
 
 /// Init function that creates a fresh registry state given the issuer's
@@ -460,9 +486,7 @@ fn init<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
     let issuer_metadata: MetadataUrl = ctx.parameter_cursor().get()?;
-    logger.log(&CredentialEvent::Metadata(IssuerMetadataEvent {
-        metadata_url: issuer_metadata.clone(),
-    }))?;
+    logger.log(&CredentialEvent::IssuerMetadata(issuer_metadata.clone()))?;
     Ok(State::new(state_builder, ctx.init_origin(), issuer_metadata))
 }
 
@@ -594,6 +618,7 @@ fn contract_register_credential<S: HasStateApi>(
         holder_id:       parameter.credential_info.holder_id,
         schema_ref:      schema,
         credential_type: parameter.credential_info.credential_type,
+        metadata_url:    parameter.credential_info.metadata_url,
     }))?;
     Ok(())
 }
@@ -1096,9 +1121,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data = ctx.parameter_cursor().get()?;
     host.state_mut().update_issuer_metadata(&data);
-    logger.log(&CredentialEvent::Metadata(IssuerMetadataEvent {
-        metadata_url: data,
-    }))?;
+    logger.log(&CredentialEvent::IssuerMetadata(data))?;
     Ok(())
 }
 
@@ -1134,16 +1157,22 @@ struct CredentialSchemaParam {
     name = "addCredentialSchemas",
     parameter = "CredentialSchemaParam",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_add_credential_schemas<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data: CredentialSchemaParam = ctx.parameter_cursor().get()?;
     for (id, schema_ref) in data.schemas {
-        host.state_mut().add_schema(id, schema_ref)?;
+        host.state_mut().add_schema(id.clone(), schema_ref.clone())?;
+        logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
+            r#type: id,
+            schema_ref,
+        }))?;
     }
     Ok(())
 }
@@ -1164,17 +1193,70 @@ fn contract_add_credential_schemas<S: HasStateApi>(
     name = "updateCredentialSchemas",
     parameter = "CredentialSchemaParam",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_update_credential_schemas<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data: CredentialSchemaParam = ctx.parameter_cursor().get()?;
     for (id, schema_ref) in data.schemas {
-        host.state_mut().update_schema(id, schema_ref)?;
+        host.state_mut().update_schema(id.clone(), schema_ref.clone())?;
+        logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
+            r#type: id,
+            schema_ref,
+        }))?;
     }
+    // emit event.
+    Ok(())
+}
+
+#[derive(Serialize, SchemaType)]
+struct CredentialMetadataParam {
+    /// The id of the credential to update.
+    credential_id: CredentialID,
+    /// The new metadata URL.
+    metadata_url:  MetadataUrl,
+}
+
+/// Update existing credential metadata URL.
+///
+/// Can be called only by the issuer.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The caller is not the issuer.
+/// - Some of the credentials are not present.
+#[receive(
+    contract = "credential_registry",
+    name = "updateCredentialMetadata",
+    parameter = "Vec<CredentialMetadataParam>",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_update_credential_metadata<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> Result<(), ContractError> {
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
+    let data: Vec<CredentialMetadataParam> = ctx.parameter_cursor().get()?;
+    for CredentialMetadataParam {
+        credential_id,
+        metadata_url,
+    } in data
+    {
+        host.state_mut().update_credential_metadata(&credential_id, metadata_url.clone())?;
+        logger.log(&CredentialEvent::CredentialMetadata(CredentialMetadataEvent {
+            credential_id,
+            metadata_url,
+        }))?;
+    }
+    // emit event.
     Ok(())
 }
 
@@ -1388,9 +1470,7 @@ mod tests {
 
         claim_eq!(
             logger.logs[0],
-            to_bytes(&CredentialEvent::Metadata(IssuerMetadataEvent {
-                metadata_url: university_issuer,
-            })),
+            to_bytes(&CredentialEvent::IssuerMetadata(university_issuer)),
             "Incorrect issuer metadata event logged"
         );
     }
@@ -1640,7 +1720,11 @@ mod tests {
                 credential_id,
                 holder_id: PUBLIC_KEY,
                 schema_ref,
-                credential_type
+                credential_type,
+                metadata_url: MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                },
             })),
             "Incorrect register credential event logged"
         );
