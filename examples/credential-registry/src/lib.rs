@@ -95,6 +95,8 @@ pub struct CredentialData {
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
     credential_type: CredentialType,
+    /// Metadata URL of the credential (not to be confused with the metadata URL
+    /// of the **issuer**).
     metadata_url:    MetadataUrl,
 }
 
@@ -156,18 +158,18 @@ impl<S: HasStateApi> CredentialEntry<S> {
 }
 
 /// The registry state.
-// NOTE: keys are stored in a map to keep the indices of other keys fixed when adding/removing a
-// key, as opposed to storing them in a vector. The indices are defined externally to the contract
-// by the issuer.
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
-    issuer:          AccountAddress,
-    issuer_metadata: MetadataUrl,
-    issuer_keys:     StateSet<PublicKeyEd25519, S>,
-    revocation_keys: StateMap<PublicKeyEd25519, u64, S>,
-    credentials:     StateMap<CredentialID, CredentialEntry<S>, S>,
-    schema_registry: StateMap<CredentialType, SchemaRef, S>,
+    issuer:              AccountAddress,
+    issuer_metadata:     MetadataUrl,
+    issuer_keys:         StateSet<PublicKeyEd25519, S>,
+    /// The currently active set of revocation keys.
+    revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
+    /// All revocation keys that have been used at any point in the past.
+    all_revocation_keys: StateSet<PublicKeyEd25519, S>,
+    credentials:         StateMap<CredentialID, CredentialEntry<S>, S>,
+    schema_registry:     StateMap<CredentialType, SchemaRef, S>,
 }
 
 /// Contract Errors.
@@ -180,6 +182,7 @@ enum ContractError {
     IncorrectStatusBeforeRevocation,
     IncorrectStatusBeforeRestoring,
     KeyAlreadyExists,
+    KeyDoesNotExist,
     SchemaNotFound,
     SchemaAlreadyExists,
     NotAuthorized,
@@ -218,6 +221,7 @@ impl<S: HasStateApi> State<S> {
             issuer_keys: state_builder.new_set(),
             revocation_keys: state_builder.new_map(),
             credentials: state_builder.new_map(),
+            all_revocation_keys: state_builder.new_set(),
         }
     }
 
@@ -316,11 +320,13 @@ impl<S: HasStateApi> State<S> {
     }
 
     fn remove_issuer_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
-        self.issuer_keys.remove(&pk);
+        ensure!(self.issuer_keys.remove(&pk), ContractError::KeyDoesNotExist);
         Ok(())
     }
 
     fn register_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
+        let res = self.all_revocation_keys.insert(pk);
+        ensure!(res, ContractError::KeyAlreadyExists);
         let res = self.revocation_keys.insert(pk, 0);
         ensure!(res.is_none(), ContractError::KeyAlreadyExists);
         Ok(())
@@ -331,7 +337,7 @@ impl<S: HasStateApi> State<S> {
     }
 
     fn remove_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
-        self.issuer_keys.remove(&pk);
+        ensure!(self.issuer_keys.remove(&pk), ContractError::KeyDoesNotExist);
         Ok(())
     }
 
@@ -697,15 +703,15 @@ pub struct RevocationDataOther {
     credential_id:  CredentialID,
     /// Info about the signature.
     signing_data:   SigningData,
-    /// Key index in the revocation keys map
+    /// The key with which the revocation payload is signed.
     revocation_key: PublicKeyEd25519,
     /// (Optional) reason for revoking the credential.
     reason:         Option<Reason>,
 }
 
 /// Helper function that can be invoked at the front end to serialize
-/// the `SerializationHelperOtherParam` to be signed by the wallet. The
-/// `SerializationHelperOtherParam` includes all the input parameters from
+/// the `RevocationDataOther` to be signed by the wallet. The
+/// `RevocationDataOther` includes all the input parameters from
 /// `RevokeCredentialOtherParam` except for the `signature`. We only need
 /// the input parameter schema of this function at the front end. The
 /// `serializationHelperOtherRevoke` function is not executed at any point in
@@ -896,8 +902,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 ///
 /// A revocation authority is authenticated by verifying the signature on the
 /// input to the entrypoint with the autority's public key.
-/// The public key is stored in `revocation_keys`. The index of the key in the
-/// list of revocation keys is provided as input.
+/// The public key is stored in `revocation_keys`.
 ///
 /// Note that a nonce is used as a general way to prevent replay attacks. In
 /// this particular case, the revocation is done once, however, the issuer could
@@ -907,7 +912,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - No entry for the key index.
+/// - The revocation key could not be found.
 /// - Signature validation has failed.
 /// - An entry with the given credential id does not exist
 /// - The credential status is not one of `Active` or `NotActivated`
@@ -993,7 +998,7 @@ pub struct RegisterPublicKeyParameters {
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Some of the key indices already exist.
+/// - Some of the keys already exist.
 #[receive(
     contract = "credential_registry",
     name = "registerIssuerKeys",
@@ -1015,17 +1020,17 @@ fn contract_register_issuer_keys<S: HasStateApi>(
     Ok(())
 }
 
-/// Remove the issuer's public keys.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - Some of the key indices does not exist.
 #[derive(Serialize, SchemaType)]
 pub struct RemovePublicKeyParameters {
     #[concordium(size_length = 2)]
     pub keys: Vec<PublicKeyEd25519>,
 }
 
+/// Remove the issuer's public keys.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - One or more of the keys do not exist.
 #[receive(
     contract = "credential_registry",
     name = "removeIssuerKeys",
@@ -1053,7 +1058,7 @@ fn contract_remove_issuer_keys<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Some of the key indices already exist.
+/// - Some of the keys already exist.
 /// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
@@ -1081,7 +1086,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Some of the key indices do not exist.
+/// - Some of the keys do not exist.
 /// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
@@ -1109,7 +1114,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The revocation key index does not exist.
+/// - The revocation key does not exist.
 #[receive(
     contract = "credential_registry",
     name = "revocationKeys",
