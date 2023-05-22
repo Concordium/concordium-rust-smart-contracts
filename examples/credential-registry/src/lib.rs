@@ -1438,14 +1438,14 @@ mod tests {
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        57, 247, 130, 232, 65, 141, 49, 141, 52, 91, 68, 134, 17, 157, 180, 192, 166, 128, 134, 1,
-        244, 129, 69, 162, 47, 5, 129, 170, 81, 0, 89, 97,
+        138, 136, 227, 221, 116, 9, 241, 149, 253, 82, 219, 45, 60, 186, 93, 114, 202, 103, 9, 191,
+        29, 148, 18, 27, 243, 116, 136, 1, 180, 15, 111, 92,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        23, 17, 201, 125, 205, 113, 50, 200, 175, 16, 114, 91, 179, 114, 199, 107, 254, 245, 163,
-        34, 157, 41, 72, 120, 156, 4, 99, 99, 38, 40, 34, 150, 162, 96, 225, 236, 160, 252, 219,
-        164, 52, 168, 117, 221, 209, 241, 42, 47, 167, 24, 173, 29, 24, 63, 58, 130, 143, 30, 23,
-        231, 174, 250, 220, 5,
+        191, 11, 84, 18, 144, 253, 37, 242, 115, 21, 225, 119, 102, 0, 18, 53, 216, 131, 255, 148,
+        158, 158, 175, 106, 12, 116, 43, 111, 140, 193, 11, 69, 129, 10, 0, 184, 68, 30, 181, 149,
+        148, 102, 41, 115, 19, 158, 78, 212, 52, 23, 23, 15, 115, 226, 240, 245, 215, 84, 166, 179,
+        12, 166, 199, 7,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1825,7 +1825,7 @@ mod tests {
             timestamp:        Timestamp::from_timestamp_millis(10000000000),
         };
 
-        // Create input parematers for revocation.
+        // Create input parameters for revocation.
 
         let revocation_reason = "Just because";
 
