@@ -337,8 +337,12 @@ impl<S: HasStateApi> State<S> {
     }
 
     fn remove_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
-        ensure!(self.issuer_keys.remove(&pk), ContractError::KeyDoesNotExist);
-        Ok(())
+        if self.revocation_keys.get(&pk).is_none() {
+            Err(ContractError::KeyDoesNotExist)
+        } else {
+            self.revocation_keys.remove(&pk);
+            Ok(())
+        }
     }
 
     fn view_issuer_keys(&self) -> Vec<PublicKeyEd25519> {
