@@ -559,7 +559,7 @@ pub struct CredentialQueryResponse {
 #[receive(
     contract = "credential_registry",
     name = "credentialEntry",
-    parameter = "CredentialID",
+    parameter = "CredentialHolderId",
     error = "ContractError",
     return_value = "CredentialQueryResponse"
 )]
@@ -580,7 +580,7 @@ fn contract_credential_entry<S: HasStateApi>(
 #[receive(
     contract = "credential_registry",
     name = "credentialStatus",
-    parameter = "CredentialID",
+    parameter = "CredentialHolderId",
     error = "ContractError",
     return_value = "CredentialStatus"
 )]
