@@ -150,7 +150,7 @@ pub struct State<S: HasStateApi> {
     revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
     /// All revocation keys that have been used at any point in the past.
     all_revocation_keys: StateSet<PublicKeyEd25519, S>,
-    /// Mapping of credential owners to entries.
+    /// Mapping of credential holders to entries.
     credentials:         StateMap<PublicKeyEd25519, CredentialEntry<S>, S>,
     schema_registry:     StateMap<CredentialType, SchemaRef, S>,
 }
