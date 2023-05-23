@@ -190,6 +190,8 @@ impl From<LogError> for ContractError {
 
 type ContractResult<A> = Result<A, ContractError>;
 
+/// Credentials are identified by a holder's public key.
+/// Each time a credential is issued, a fresh key pair is generated.
 type CredentialHolderId = PublicKeyEd25519;
 
 /// Functions for creating, updating and querying the contract state.
@@ -422,8 +424,8 @@ struct CredentialMetadataEvent {
 /// The schema reference has been updated for the credential type.
 #[derive(Serialize, SchemaType)]
 struct CredentialSchemaRefEvent {
-    r#type:     CredentialType,
-    schema_ref: SchemaRef,
+    credential_type: CredentialType,
+    schema_ref:      SchemaRef,
 }
 
 /// Tagged credential registry event.
@@ -836,7 +838,6 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
     // Note that the message is prepended by a domain separation string
     let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
     parameter.message_bytes(&mut message)?;
-
     authorize_with_signature(
         crypto_primitives,
         ctx,
@@ -861,7 +862,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 }
 
 /// Revoke a credential as an issuer.
-/// Can be called by the contrat owner.
+/// Can be called by the issuer.
 ///
 /// Logs RevokeCredentialEvent with `Issuer` as the revoker.
 ///
@@ -1172,7 +1173,7 @@ fn contract_add_credential_schemas<S: HasStateApi>(
     for (id, schema_ref) in data.schemas {
         host.state_mut().add_schema(id.clone(), schema_ref.clone())?;
         logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
-            r#type: id,
+            credential_type: id,
             schema_ref,
         }))?;
     }
@@ -1208,7 +1209,7 @@ fn contract_update_credential_schemas<S: HasStateApi>(
     for (id, schema_ref) in data.schemas {
         host.state_mut().update_schema(id.clone(), schema_ref.clone())?;
         logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
-            r#type: id,
+            credential_type: id,
             schema_ref,
         }))?;
     }
@@ -1370,29 +1371,19 @@ mod tests {
         }
     }
 
-    // A wrapper for an array for implementing an `Arbitrary` instance
-    #[derive(Clone, Debug)]
-    struct Array32u8([u8; 32]);
-
-    impl Arbitrary for Array32u8 {
-        fn arbitrary(g: &mut Gen) -> Array32u8 {
-            Array32u8([0u8; 32].map(|_| Arbitrary::arbitrary(g)))
-        }
-    }
-
     const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        138, 136, 227, 221, 116, 9, 241, 149, 253, 82, 219, 45, 60, 186, 93, 114, 202, 103, 9, 191,
-        29, 148, 18, 27, 243, 116, 136, 1, 180, 15, 111, 92,
+        82, 233, 199, 239, 90, 118, 225, 123, 77, 93, 157, 192, 209, 255, 148, 148, 66, 183, 84,
+        250, 48, 68, 108, 51, 67, 195, 164, 88, 1, 172, 244, 39,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        191, 11, 84, 18, 144, 253, 37, 242, 115, 21, 225, 119, 102, 0, 18, 53, 216, 131, 255, 148,
-        158, 158, 175, 106, 12, 116, 43, 111, 140, 193, 11, 69, 129, 10, 0, 184, 68, 30, 181, 149,
-        148, 102, 41, 115, 19, 158, 78, 212, 52, 23, 23, 15, 115, 226, 240, 245, 215, 84, 166, 179,
-        12, 166, 199, 7,
+        82, 183, 189, 204, 95, 81, 233, 231, 211, 63, 65, 45, 191, 83, 65, 5, 17, 40, 90, 89, 225,
+        104, 145, 40, 6, 224, 9, 237, 33, 246, 239, 246, 113, 122, 102, 2, 232, 126, 233, 176, 123,
+        115, 213, 215, 28, 48, 105, 135, 102, 166, 50, 70, 23, 15, 90, 237, 56, 121, 120, 15, 43,
+        215, 208, 15,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1631,10 +1622,8 @@ mod tests {
     /// Property: registering a revocation key in fresh state and querying it
     /// results in the same value
     #[concordium_quickcheck]
-    fn prop_register_revocation_key(pk_bytes: Array32u8) -> bool {
+    fn prop_register_revocation_key(pk: PublicKeyEd25519) -> bool {
         let mut state_builder = TestStateBuilder::new();
-        let Array32u8(bytes) = pk_bytes;
-        let pk = PublicKeyEd25519(bytes);
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let register_result = state.register_revocation_key(pk);
         let query_result =
