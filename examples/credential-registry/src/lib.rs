@@ -663,7 +663,7 @@ impl RevokeCredentialHolderParam {
 /// The parameter type for the contract function
 /// `serializationHelperHolderRevoke`.
 /// Note that the order of the fields here should correspond to the
-/// serialization order of the ½message_bytes½ method of
+/// serialization order of the `message_bytes` method of
 /// `RevokeCredentialHolderParam`
 #[derive(Serialize, SchemaType)]
 pub struct RevocationDataHolder {
