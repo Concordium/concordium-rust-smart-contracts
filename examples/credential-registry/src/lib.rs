@@ -39,27 +39,12 @@
 use concordium_cis2::*;
 use concordium_std::*;
 
-/// The type for a credential identifier.
-/// The identifier is generated externally by the issuer.
-#[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Copy, Debug)]
-struct CredentialID {
-    id: u128,
-}
-
 /// Credential type is a string that corresponds to the value of the "name"
 /// attribute of the credential schema.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 struct CredentialType {
     #[concordium(size_length = 1)]
     credential_type: String,
-}
-
-impl From<u128> for CredentialID {
-    fn from(id: u128) -> Self {
-        CredentialID {
-            id,
-        }
-    }
 }
 
 /// A schema reference is a schema URL or DID address pointing to the JSON
@@ -95,14 +80,15 @@ pub struct CredentialData {
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
     credential_type: CredentialType,
+    /// Metadata URL of the credential (not to be confused with the metadata URL
+    /// of the **issuer**).
+    metadata_url:    MetadataUrl,
 }
 
 /// Public data of a verifiable credential.
 #[derive(Serial, DeserialWithState, Debug)]
 #[concordium(state_parameter = "S")]
 pub struct CredentialEntry<S: HasStateApi> {
-    /// The holder's identifier is a public key.
-    holder_id:        PublicKeyEd25519,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
     holder_revocable: bool,
@@ -141,31 +127,32 @@ impl<S: HasStateApi> CredentialEntry<S> {
         CredentialStatus::Active
     }
 
-    fn info(&self) -> CredentialInfo {
+    fn info(&self, holder_id: CredentialHolderId) -> CredentialInfo {
         CredentialInfo {
-            holder_id:        self.holder_id,
+            holder_id,
             holder_revocable: self.holder_revocable,
-            commitment:       self.credential_data.commitment.clone(),
-            credential_type:  self.credential_data.credential_type.clone(),
-            valid_from:       self.valid_from,
-            valid_until:      self.valid_until,
+            commitment: self.credential_data.commitment.clone(),
+            credential_type: self.credential_data.credential_type.clone(),
+            valid_from: self.valid_from,
+            valid_until: self.valid_until,
+            metadata_url: self.credential_data.metadata_url.clone(),
         }
     }
 }
 
 /// The registry state.
-// NOTE: keys are stored in a map to keep the indices of other keys fixed when adding/removing a
-// key, as opposed to storing them in a vector. The indices are defined externally to the contract
-// by the issuer.
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
-    issuer:          AccountAddress,
-    issuer_metadata: MetadataUrl,
-    issuer_keys:     StateMap<u16, PublicKeyEd25519, S>,
-    revocation_keys: StateMap<u16, (PublicKeyEd25519, u64), S>,
-    credentials:     StateMap<CredentialID, CredentialEntry<S>, S>,
-    schema_registry: StateMap<CredentialType, SchemaRef, S>,
+    issuer:              AccountAddress,
+    issuer_metadata:     MetadataUrl,
+    /// The currently active set of revocation keys.
+    revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
+    /// All revocation keys that have been used at any point in the past.
+    all_revocation_keys: StateSet<PublicKeyEd25519, S>,
+    /// Mapping of credential holders to entries.
+    credentials:         StateMap<PublicKeyEd25519, CredentialEntry<S>, S>,
+    schema_registry:     StateMap<CredentialType, SchemaRef, S>,
 }
 
 /// Contract Errors.
@@ -178,7 +165,7 @@ enum ContractError {
     IncorrectStatusBeforeRevocation,
     IncorrectStatusBeforeRestoring,
     KeyAlreadyExists,
-    KeyNotFound,
+    KeyDoesNotExist,
     SchemaNotFound,
     SchemaAlreadyExists,
     NotAuthorized,
@@ -203,6 +190,10 @@ impl From<LogError> for ContractError {
 
 type ContractResult<A> = Result<A, ContractError>;
 
+/// Credentials are identified by a holder's public key.
+/// Each time a credential is issued, a fresh key pair is generated.
+type CredentialHolderId = PublicKeyEd25519;
+
 /// Functions for creating, updating and querying the contract state.
 impl<S: HasStateApi> State<S> {
     fn new(
@@ -214,15 +205,15 @@ impl<S: HasStateApi> State<S> {
             issuer,
             issuer_metadata,
             schema_registry: state_builder.new_map(),
-            issuer_keys: state_builder.new_map(),
             revocation_keys: state_builder.new_map(),
             credentials: state_builder.new_map(),
+            all_revocation_keys: state_builder.new_set(),
         }
     }
 
     fn view_credential_info(
         &self,
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
     ) -> ContractResult<CredentialQueryResponse> {
         let entry =
             self.credentials.get(&credential_id).ok_or(ContractError::CredentialNotFound)?;
@@ -231,7 +222,7 @@ impl<S: HasStateApi> State<S> {
             .get(&entry.credential_data.credential_type)
             .ok_or(ContractError::SchemaNotFound)?;
         Ok(CredentialQueryResponse {
-            credential_info:  entry.info(),
+            credential_info:  entry.info(credential_id),
             revocation_nonce: entry.revocation_nonce,
             schema_ref:       schema_ref.clone(),
         })
@@ -240,7 +231,7 @@ impl<S: HasStateApi> State<S> {
     fn view_credential_status(
         &self,
         now: Timestamp,
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
     ) -> ContractResult<CredentialStatus> {
         self.credentials
             .get(&credential_id)
@@ -250,7 +241,6 @@ impl<S: HasStateApi> State<S> {
 
     fn register_credential(
         &mut self,
-        credential_id: CredentialID,
         credential_info: &CredentialInfo,
         state_builder: &mut StateBuilder<S>,
     ) -> ContractResult<SchemaRef> {
@@ -259,26 +249,39 @@ impl<S: HasStateApi> State<S> {
             .get(&credential_info.credential_type)
             .ok_or(ContractError::SchemaNotFound)?;
         let credential_entry = CredentialEntry {
-            holder_id:        credential_info.holder_id,
             holder_revocable: credential_info.holder_revocable,
             valid_from:       credential_info.valid_from,
             valid_until:      credential_info.valid_until,
             credential_data:  state_builder.new_box(CredentialData {
                 commitment:      credential_info.commitment.clone(),
                 credential_type: credential_info.credential_type.clone(),
+                metadata_url:    credential_info.metadata_url.clone(),
             }),
             revocation_nonce: 0,
             revoked:          false,
         };
-        let res = self.credentials.insert(credential_id, credential_entry);
+        let res = self.credentials.insert(credential_info.holder_id, credential_entry);
         ensure!(res.is_none(), ContractError::CredentialAlreadyExists);
         Ok(schema.clone())
+    }
+
+    fn update_credential_metadata(
+        &mut self,
+        credential_id: &CredentialHolderId,
+        issuer_metadata: MetadataUrl,
+    ) -> ContractResult<()> {
+        if let Some(mut entry) = self.credentials.get_mut(credential_id) {
+            entry.credential_data.metadata_url = issuer_metadata;
+            Ok(())
+        } else {
+            Err(ContractError::CredentialNotFound)
+        }
     }
 
     fn revoke_credential(
         &mut self,
         now: Timestamp,
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
     ) -> ContractResult<()> {
         let mut credential =
             self.credentials.get_mut(&credential_id).ok_or(ContractError::CredentialNotFound)?;
@@ -294,7 +297,7 @@ impl<S: HasStateApi> State<S> {
     fn restore_credential(
         &mut self,
         now: Timestamp,
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
     ) -> ContractResult<()> {
         let mut credential =
             self.credentials.get_mut(&credential_id).ok_or(ContractError::CredentialNotFound)?;
@@ -307,38 +310,25 @@ impl<S: HasStateApi> State<S> {
         Ok(())
     }
 
-    fn register_issuer_key(&mut self, key_index: u16, pk: PublicKeyEd25519) -> ContractResult<()> {
-        let res = self.issuer_keys.insert(key_index, pk);
+    fn register_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
+        let res = self.all_revocation_keys.insert(pk);
+        ensure!(res, ContractError::KeyAlreadyExists);
+        let res = self.revocation_keys.insert(pk, 0);
         ensure!(res.is_none(), ContractError::KeyAlreadyExists);
         Ok(())
     }
 
-    fn remove_issuer_key(&mut self, key_index: u16) -> ContractResult<()> {
-        self.issuer_keys.remove(&key_index);
-        Ok(())
+    fn view_revocation_keys(&self) -> Vec<(PublicKeyEd25519, u64)> {
+        self.revocation_keys.iter().map(|(pk, nonce)| (*pk, *nonce)).collect()
     }
 
-    fn register_revocation_key(
-        &mut self,
-        key_index: u16,
-        pk: PublicKeyEd25519,
-    ) -> ContractResult<()> {
-        let res = self.revocation_keys.insert(key_index, (pk, 0));
-        ensure!(res.is_none(), ContractError::KeyAlreadyExists);
-        Ok(())
-    }
-
-    fn view_revocation_key(&self, key_index: u16) -> ContractResult<(PublicKeyEd25519, u64)> {
-        self.revocation_keys.get(&key_index).map(|x| *x).ok_or(ContractError::KeyNotFound)
-    }
-
-    fn remove_revocation_key(&mut self, key_index: u16) -> ContractResult<()> {
-        self.issuer_keys.remove(&key_index);
-        Ok(())
-    }
-
-    fn view_issuer_keys(&self) -> Vec<(u16, PublicKeyEd25519)> {
-        self.issuer_keys.iter().map(|x| (*x.0, *x.1)).collect()
+    fn remove_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
+        if self.revocation_keys.get(&pk).is_none() {
+            Err(ContractError::KeyDoesNotExist)
+        } else {
+            self.revocation_keys.remove(&pk);
+            Ok(())
+        }
     }
 
     fn update_issuer_metadata(&mut self, issuer_metadata: &MetadataUrl) {
@@ -362,14 +352,14 @@ impl<S: HasStateApi> State<S> {
 /// Used by the tagged event `CredentialEvent`.
 #[derive(Serialize, SchemaType)]
 struct CredentialEventData {
-    /// An identifier of a credential being registered/updated.
-    credential_id:   CredentialID,
     /// A public key of the credential's holder.
     holder_id:       PublicKeyEd25519,
     /// A reference to the credential JSON schema.
     schema_ref:      SchemaRef,
     /// Type of the credential.
     credential_type: CredentialType,
+    /// The original credential's metadata.
+    metadata_url:    MetadataUrl,
 }
 
 /// A type for specifying who is revoking a credential, when registering a
@@ -405,52 +395,101 @@ impl From<String> for Reason {
 /// For a tagged version use `CredentialEvent`.
 #[derive(Serialize, SchemaType)]
 struct RevokeCredentialEvent {
-    /// An identifier of a credential being revoked.
-    credential_id: CredentialID,
     /// A public key of the credential's holder.
-    holder_id:     PublicKeyEd25519,
+    holder_id: CredentialHolderId,
     /// Who revokes the credential.
-    revoker:       Revoker,
+    revoker:   Revoker,
     /// An optional text clarifying the revocation reasons.
     /// The issuer can use this field to comment on the revocation, so the
     /// holder can observe it in the wallet.
-    reason:        Option<Reason>,
+    reason:    Option<Reason>,
 }
 
 /// An untagged restoration event.
 /// For a tagged version use `CredentialEvent`.
 #[derive(Serialize, SchemaType)]
 struct RestoreCredentialEvent {
-    /// An identifier of a credential being restored.
-    credential_id: CredentialID,
     /// A public key of the credential's holder.
-    holder_id:     PublicKeyEd25519,
+    holder_id: CredentialHolderId,
     /// An optional text clarifying the restoring reasons.
-    reason:        Option<Reason>,
+    reason:    Option<Reason>,
 }
 
-#[derive(Debug, Serialize, SchemaType)]
-pub struct IssuerMetadataEvent {
-    /// The location of the metadata.
-    pub metadata_url: MetadataUrl,
+#[derive(Serialize, SchemaType)]
+struct CredentialMetadataEvent {
+    credential_id: CredentialHolderId,
+    metadata_url:  MetadataUrl,
+}
+
+/// The schema reference has been updated for the credential type.
+#[derive(Serialize, SchemaType)]
+struct CredentialSchemaRefEvent {
+    credential_type: CredentialType,
+    schema_ref:      SchemaRef,
 }
 
 /// Tagged credential registry event.
 /// This version should be used for logging the events.
-#[derive(Serialize, SchemaType)]
+#[derive(SchemaType)]
 enum CredentialEvent {
     /// Credential registration event. Logged when an entry in the registry is
     /// created for the first time.
     Register(CredentialEventData),
-    /// Credential update event. Logged when updating an existing credential
-    /// entry.
-    Update(CredentialEventData),
     /// Credential revocation event.
     Revoke(RevokeCredentialEvent),
     /// Credential restoration (reversing revocation) event.
     Restore(RestoreCredentialEvent),
     /// Issuer's metadata changes, including the contract deployment.
-    Metadata(IssuerMetadataEvent),
+    IssuerMetadata(MetadataUrl),
+    /// Credential's metadata changes.
+    CredentialMetadata(CredentialMetadataEvent),
+    /// Credential's schema changes.
+    Schema(CredentialSchemaRefEvent),
+}
+
+impl Serial for CredentialEvent {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        match self {
+            CredentialEvent::Register(data) => {
+                255u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::Revoke(data) => {
+                254u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::Restore(data) => {
+                253u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::IssuerMetadata(data) => {
+                252u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::CredentialMetadata(data) => {
+                251u8.serial(out)?;
+                data.serial(out)
+            }
+            CredentialEvent::Schema(data) => {
+                250u8.serial(out)?;
+                data.serial(out)
+            }
+        }
+    }
+}
+
+impl Deserial for CredentialEvent {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        match source.get()? {
+            255u8 => Ok(Self::Register(source.get()?)),
+            254u8 => Ok(Self::Revoke(source.get()?)),
+            253u8 => Ok(Self::Restore(source.get()?)),
+            252u8 => Ok(Self::IssuerMetadata(source.get()?)),
+            251u8 => Ok(Self::CredentialMetadata(source.get()?)),
+            250u8 => Ok(Self::Schema(source.get()?)),
+            _ => Err(ParseError {}),
+        }
+    }
 }
 
 /// Init function that creates a fresh registry state given the issuer's
@@ -469,9 +508,7 @@ fn init<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> InitResult<State<S>> {
     let issuer_metadata: MetadataUrl = ctx.parameter_cursor().get()?;
-    logger.log(&CredentialEvent::Metadata(IssuerMetadataEvent {
-        metadata_url: issuer_metadata.clone(),
-    }))?;
+    logger.log(&CredentialEvent::IssuerMetadata(issuer_metadata.clone()))?;
     Ok(State::new(state_builder, ctx.init_origin(), issuer_metadata))
 }
 
@@ -482,7 +519,7 @@ fn sender_is_issuer<S: HasStateApi>(ctx: &impl HasReceiveContext, state: &State<
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialInfo {
     /// The holder's identifier is a public key.
-    holder_id:        PublicKeyEd25519,
+    holder_id:        CredentialHolderId,
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
     holder_revocable: bool,
@@ -498,6 +535,8 @@ pub struct CredentialInfo {
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
     credential_type:  CredentialType,
+    /// Link to the metadata of this credential.
+    metadata_url:     MetadataUrl,
 }
 
 /// Response to a credential data query.
@@ -555,15 +594,6 @@ fn contract_credential_status<S: HasStateApi>(
     Ok(status)
 }
 
-/// Data for registering and updating a credential registy entry.
-#[derive(Serial, Deserial, SchemaType)]
-pub struct RegisterCredentialParameter {
-    /// Credential ID
-    credential_id:   CredentialID,
-    /// Input data for the credential entry.
-    credential_info: CredentialInfo,
-}
-
 /// Register a new credential with the given id and data.
 /// Logs RegisterCredentialEvent.
 ///
@@ -578,7 +608,7 @@ pub struct RegisterCredentialParameter {
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
-    parameter = "RegisterCredentialParameter",
+    parameter = "CredentialInfo",
     error = "ContractError",
     enable_logger,
     mutable
@@ -589,18 +619,14 @@ fn contract_register_credential<S: HasStateApi>(
     logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let parameter: RegisterCredentialParameter = ctx.parameter_cursor().get()?;
+    let credential_info: CredentialInfo = ctx.parameter_cursor().get()?;
     let (state, state_bulder) = host.state_and_builder();
-    let schema = state.register_credential(
-        parameter.credential_id,
-        &parameter.credential_info,
-        state_bulder,
-    )?;
+    let schema = state.register_credential(&credential_info, state_bulder)?;
     logger.log(&CredentialEvent::Register(CredentialEventData {
-        credential_id:   parameter.credential_id,
-        holder_id:       parameter.credential_info.holder_id,
+        holder_id:       credential_info.holder_id,
         schema_ref:      schema,
-        credential_type: parameter.credential_info.credential_type,
+        credential_type: credential_info.credential_type,
+        metadata_url:    credential_info.metadata_url,
     }))?;
     Ok(())
 }
@@ -623,24 +649,14 @@ const SIGNARUTE_DOMAIN: &str = "WEB3ID:REVOKE";
 /// A parameter type for revoking a credential by the holder.
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialHolderParam {
-    /// Id of the credential to revoke.
-    credential_id: CredentialID,
-    /// Info about the signature.
-    signing_data:  SigningData,
-    signature:     SignatureEd25519,
-    /// (Optional) reason for revoking the credential.
-    reason:        Option<Reason>,
+    signature: SignatureEd25519,
+    data:      RevocationDataHolder,
 }
 
 /// Prepare the message bytes for the holder
 impl RevokeCredentialHolderParam {
     fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
-        self.credential_id
-            .serial::<Vec<_>>(bytes)
-            .map_err(|_| ContractError::SerializationError)?;
-        self.signing_data.serial(bytes).map_err(|_| ContractError::SerializationError)?;
-        self.reason.serial(bytes).map_err(|_| ContractError::SerializationError)?;
-        Ok(())
+        self.data.serial(bytes).map_err(|_| ContractError::SerializationError)
     }
 }
 
@@ -650,9 +666,9 @@ impl RevokeCredentialHolderParam {
 /// serialization order of the ½message_bytes½ method of
 /// `RevokeCredentialHolderParam`
 #[derive(Serialize, SchemaType)]
-pub struct SerializationHelperHolderParam {
+pub struct RevocationDataHolder {
     /// Id of the credential to revoke.
-    credential_id: CredentialID,
+    credential_id: CredentialHolderId,
     /// Info about the signature.
     signing_data:  SigningData,
     /// (Optional) reason for revoking the credential.
@@ -660,8 +676,8 @@ pub struct SerializationHelperHolderParam {
 }
 
 /// Helper function that can be invoked at the front end to serialize
-/// the `SerializationHelperHolderParam` to be signed by the wallet. The
-/// `SerializationHelperHolderParam` includes all the input parameters from
+/// the `RevocationDataholder` to be signed by the wallet. The
+/// `RevocationDataholder` includes all the input parameters from
 /// `RevokeCredentialHolderParam` except for the `signature`. We only need
 /// the input parameter schema of this function at the front end. The
 /// `serializationHelperHolderRevoke` function is not executed at any point in
@@ -669,7 +685,7 @@ pub struct SerializationHelperHolderParam {
 #[receive(
     contract = "credential_registry",
     name = "serializationHelperHolderRevoke",
-    parameter = "SerializationHelperHolderParam"
+    parameter = "RevocationDataHolder"
 )]
 fn contract_serialization_helper_holder_revoke<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -682,7 +698,7 @@ fn contract_serialization_helper_holder_revoke<S: HasStateApi>(
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialIssuerParam {
     /// Id of the credential to revoke.
-    credential_id: CredentialID,
+    credential_id: CredentialHolderId,
     /// (Optional) reason for revoking the credential.
     reason:        Option<Reason>,
 }
@@ -690,50 +706,32 @@ pub struct RevokeCredentialIssuerParam {
 /// A parameter type for revoking a credential by a revocation authority.
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialOtherParam {
-    /// Id of the credential to revoke.
-    credential_id:        CredentialID,
-    /// Info about the signature.
-    signing_data:         SigningData,
-    signature:            SignatureEd25519,
-    /// Key index in the revocation keys map
-    revocation_key_index: u16,
-    /// (Optional) reason for revoking the credential.
-    reason:               Option<Reason>,
+    signature: SignatureEd25519,
+    data:      RevocationDataOther,
 }
 
 impl RevokeCredentialOtherParam {
     /// Prepare the message bytes for a revocation authority
     fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
-        self.credential_id
-            .serial::<Vec<_>>(bytes)
-            .map_err(|_| ContractError::SerializationError)?;
-        self.signing_data.serial(bytes).map_err(|_| ContractError::SerializationError)?;
-        self.revocation_key_index.serial(bytes).map_err(|_| ContractError::SerializationError)?;
-        self.reason.serial(bytes).map_err(|_| ContractError::SerializationError)?;
-        Ok(())
+        self.data.serial(bytes).map_err(|_| ContractError::SerializationError)
     }
 }
 
-/// The parameter type for the contract function
-/// `serializationHelperOtherRevoke`.
-/// Note that the order of the fields here should correspond to the
-/// serialization order of the ½message_bytes½ method of
-/// `RevokeCredentialOtherParam`
 #[derive(Serialize, SchemaType)]
-pub struct SerializationHelperOtherParam {
+pub struct RevocationDataOther {
     /// Id of the credential to revoke.
-    credential_id:        CredentialID,
+    credential_id:  CredentialHolderId,
     /// Info about the signature.
-    signing_data:         SigningData,
-    /// Key index in the revocation keys map
-    revocation_key_index: u8,
+    signing_data:   SigningData,
+    /// The key with which the revocation payload is signed.
+    revocation_key: PublicKeyEd25519,
     /// (Optional) reason for revoking the credential.
-    reason:               Option<Reason>,
+    reason:         Option<Reason>,
 }
 
 /// Helper function that can be invoked at the front end to serialize
-/// the `SerializationHelperOtherParam` to be signed by the wallet. The
-/// `SerializationHelperOtherParam` includes all the input parameters from
+/// the `RevocationDataOther` to be signed by the wallet. The
+/// `RevocationDataOther` includes all the input parameters from
 /// `RevokeCredentialOtherParam` except for the `signature`. We only need
 /// the input parameter schema of this function at the front end. The
 /// `serializationHelperOtherRevoke` function is not executed at any point in
@@ -741,7 +739,7 @@ pub struct SerializationHelperOtherParam {
 #[receive(
     contract = "credential_registry",
     name = "serializationHelperOtherRevoke",
-    parameter = "SerializationHelperOtherParam"
+    parameter = "RevocationDataOther"
 )]
 fn contract_serialization_helper_hother_revoke<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -773,12 +771,9 @@ fn authorize_with_signature(
     // Check signature is not expired.
     ensure!(signing_data.timestamp > ctx.metadata().slot_time(), ContractError::ExpiredSignature);
 
-    // Calculate the message hash.
-    let message_hash = crypto_primitives.hash_sha2_256(message).0;
-
     // Check the signature.
     ensure!(
-        crypto_primitives.verify_ed25519_signature(public_key, signature, &message_hash),
+        crypto_primitives.verify_ed25519_signature(public_key, signature, message),
         ContractError::WrongSignature
     );
     Ok(())
@@ -822,7 +817,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
     let state = host.state_mut();
     let mut registry_entry = state
         .credentials
-        .entry(parameter.credential_id)
+        .entry(parameter.data.credential_id)
         .occupied_or(ContractError::CredentialNotFound)?;
 
     let revoker = Revoker::Holder;
@@ -836,41 +831,38 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
     registry_entry.revocation_nonce += 1;
 
     // Get the public key and the current nonce.
-    let public_key = registry_entry.holder_id;
+    let public_key = parameter.data.credential_id;
     let nonce = registry_entry.revocation_nonce;
 
     // Perepare message bytes as it is signer by the wallet
     // Note that the message is prepended by a domain separation string
     let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
     parameter.message_bytes(&mut message)?;
-
     authorize_with_signature(
         crypto_primitives,
         ctx,
         nonce,
         public_key,
-        parameter.signing_data,
+        parameter.data.signing_data,
         &message,
         signature,
     )?;
-    let credential_id = parameter.credential_id;
+    let credential_id = parameter.data.credential_id;
     let now = ctx.metadata().slot_time();
-    let holder_id = registry_entry.holder_id;
     drop(registry_entry);
 
     state.revoke_credential(now, credential_id)?;
 
     logger.log(&CredentialEvent::Revoke(RevokeCredentialEvent {
-        credential_id,
-        holder_id,
-        reason: parameter.reason,
+        holder_id: public_key,
+        reason: parameter.data.reason,
         revoker,
     }))?;
     Ok(())
 }
 
 /// Revoke a credential as an issuer.
-/// Can be called by the contrat owner.
+/// Can be called by the issuer.
 ///
 /// Logs RevokeCredentialEvent with `Issuer` as the revoker.
 ///
@@ -904,7 +896,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 
     let revoker = Revoker::Issuer;
     let now = ctx.metadata().slot_time();
-    let holder_id = registry_entry.holder_id;
+    let holder_id = parameter.credential_id;
     drop(registry_entry);
 
     let credential_id = parameter.credential_id;
@@ -912,7 +904,6 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
     state.revoke_credential(now, credential_id)?;
 
     logger.log(&CredentialEvent::Revoke(RevokeCredentialEvent {
-        credential_id,
         holder_id,
         reason: parameter.reason,
         revoker,
@@ -927,8 +918,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 ///
 /// A revocation authority is authenticated by verifying the signature on the
 /// input to the entrypoint with the autority's public key.
-/// The public key is stored in `revocation_keys`. The index of the key in the
-/// list of revocation keys is provided as input.
+/// The public key is stored in `revocation_keys`.
 ///
 /// Note that a nonce is used as a general way to prevent replay attacks. In
 /// this particular case, the revocation is done once, however, the issuer could
@@ -938,7 +928,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - No entry for the key index.
+/// - The revocation key could not be found.
 /// - Signature validation has failed.
 /// - An entry with the given credential id does not exist
 /// - The credential status is not one of `Active` or `NotActivated`
@@ -963,20 +953,19 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     let state = host.state_mut();
     let registry_entry = state
         .credentials
-        .entry(parameter.credential_id)
+        .entry(parameter.data.credential_id)
         .occupied_or(ContractError::CredentialNotFound)?;
-    let holder_id = registry_entry.holder_id;
+    let holder_id = parameter.data.credential_id;
     drop(registry_entry);
 
-    let key_index: u16 = parameter.revocation_key_index;
+    let public_key = parameter.data.revocation_key;
     let mut entry =
-        state.revocation_keys.entry(key_index).occupied_or(ContractError::CredentialNotFound)?;
+        state.revocation_keys.entry(public_key).occupied_or(ContractError::CredentialNotFound)?;
 
     // Update the nonce.
-    entry.1 += 1;
+    *entry += 1;
 
-    let nonce = entry.1;
-    let public_key = entry.0;
+    let nonce = *entry;
 
     // Set the revoker to be the revocation authority.
     let revoker = Revoker::Other(public_key);
@@ -993,88 +982,34 @@ fn contract_revoke_credential_other<S: HasStateApi>(
         ctx,
         nonce,
         public_key,
-        parameter.signing_data,
+        parameter.data.signing_data,
         &message,
         signature,
     )?;
     let now = ctx.metadata().slot_time();
     drop(entry);
 
-    let credential_id = parameter.credential_id;
+    let credential_id = parameter.data.credential_id;
 
     state.revoke_credential(now, credential_id)?;
     logger.log(&CredentialEvent::Revoke(RevokeCredentialEvent {
-        credential_id,
         holder_id,
-        reason: parameter.reason,
+        reason: parameter.data.reason,
         revoker,
     }))?;
     Ok(())
 }
 
-#[derive(Serial, Deserial, SchemaType)]
-pub struct RegisterPublicKeyParameter {
-    key_index: u16,
-    key:       PublicKeyEd25519,
+#[derive(Serialize, SchemaType)]
+pub struct RegisterPublicKeyParameters {
+    #[concordium(size_length = 2)]
+    pub keys: Vec<PublicKeyEd25519>,
 }
 
 #[derive(Serialize, SchemaType)]
-pub struct RegisterPublicKeyParameters(
-    #[concordium(size_length = 2)] pub Vec<RegisterPublicKeyParameter>,
-);
-
-/// Register the issuer's public keys.
-/// These keys are for off-chain use only. The registry is just used as a
-/// storage and some credentials issued off-chain can be signed with the
-/// issuer's keys.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - Some of the key indices already exist.
-#[receive(
-    contract = "credential_registry",
-    name = "registerIssuerKeys",
-    parameter = "RegisterPublicKeyParameters",
-    error = "ContractError",
-    mutable
-)]
-fn contract_register_issuer_keys<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> Result<(), ContractError> {
-    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let RegisterPublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
-    for parameter in parameters {
-        host.state_mut().register_issuer_key(parameter.key_index, parameter.key)?;
-    }
-    Ok(())
-}
-
-/// Remove the issuer's public keys.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - Some of the key indices does not exist.
-#[derive(Serialize, SchemaType)]
-pub struct RemovePublicKeyParameters(#[concordium(size_length = 2)] pub Vec<u16>);
-
-#[receive(
-    contract = "credential_registry",
-    name = "removeIssuerKeys",
-    parameter = "RemovePublicKeyParameters",
-    error = "ContractError",
-    mutable
-)]
-fn contract_remove_issuer_keys<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> Result<(), ContractError> {
-    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let RemovePublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
-    for index in parameters {
-        host.state_mut().remove_issuer_key(index)?;
-    }
-    Ok(())
+pub struct RemovePublicKeyParameters {
+    #[concordium(size_length = 2)]
+    pub keys: Vec<PublicKeyEd25519>,
 }
 
 /// Register revocation authorities public keys.
@@ -1083,7 +1018,7 @@ fn contract_remove_issuer_keys<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Some of the key indices already exist.
+/// - Some of the keys already exist.
 /// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
@@ -1097,9 +1032,11 @@ fn contract_register_revocation_keys<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let RegisterPublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
-    for parameter in parameters {
-        host.state_mut().register_revocation_key(parameter.key_index, parameter.key)?;
+    let RegisterPublicKeyParameters {
+        keys,
+    } = ctx.parameter_cursor().get()?;
+    for key in keys {
+        host.state_mut().register_revocation_key(key)?;
     }
     Ok(())
 }
@@ -1109,7 +1046,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Some of the key indices do not exist.
+/// - Some of the keys do not exist.
 /// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
@@ -1123,9 +1060,11 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
-    let RemovePublicKeyParameters(parameters) = ctx.parameter_cursor().get()?;
-    for index in parameters {
-        host.state_mut().remove_revocation_key(index)?;
+    let RemovePublicKeyParameters {
+        keys,
+    } = ctx.parameter_cursor().get()?;
+    for key in keys {
+        host.state_mut().remove_revocation_key(key)?;
     }
     Ok(())
 }
@@ -1135,36 +1074,18 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The revocation key index does not exist.
+/// - The revocation key does not exist.
 #[receive(
     contract = "credential_registry",
-    name = "revocationKey",
-    parameter = "u8",
+    name = "revocationKeys",
     error = "ContractError",
-    return_value = "(PublicKeyEd25519, u64)",
-    mutable
+    return_value = "Vec<(PublicKeyEd25519, u64)>"
 )]
-fn contract_revocation_key<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> Result<(PublicKeyEd25519, u64), ContractError> {
-    let index = ctx.parameter_cursor().get()?;
-    host.state().view_revocation_key(index)
-}
-
-/// A view entrypoint that returns a vector of issuer's keys.
-#[receive(
-    contract = "credential_registry",
-    name = "issuerKeys",
-    error = "ContractError",
-    return_value = "Vec<(u8, PublicKeyEd25519)>"
-)]
-fn contract_issuer_keys<S: HasStateApi>(
+fn contract_revocation_keys<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<Vec<(u16, PublicKeyEd25519)>, ContractError> {
-    let keys = host.state().view_issuer_keys();
-    Ok(keys)
+) -> Result<Vec<(PublicKeyEd25519, u64)>, ContractError> {
+    Ok(host.state().view_revocation_keys())
 }
 
 /// A view entrypoint to get the metadata URL and checksum.
@@ -1203,9 +1124,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data = ctx.parameter_cursor().get()?;
     host.state_mut().update_issuer_metadata(&data);
-    logger.log(&CredentialEvent::Metadata(IssuerMetadataEvent {
-        metadata_url: data,
-    }))?;
+    logger.log(&CredentialEvent::IssuerMetadata(data))?;
     Ok(())
 }
 
@@ -1241,16 +1160,22 @@ struct CredentialSchemaParam {
     name = "addCredentialSchemas",
     parameter = "CredentialSchemaParam",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_add_credential_schemas<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data: CredentialSchemaParam = ctx.parameter_cursor().get()?;
     for (id, schema_ref) in data.schemas {
-        host.state_mut().add_schema(id, schema_ref)?;
+        host.state_mut().add_schema(id.clone(), schema_ref.clone())?;
+        logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
+            credential_type: id,
+            schema_ref,
+        }))?;
     }
     Ok(())
 }
@@ -1271,17 +1196,70 @@ fn contract_add_credential_schemas<S: HasStateApi>(
     name = "updateCredentialSchemas",
     parameter = "CredentialSchemaParam",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_update_credential_schemas<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let data: CredentialSchemaParam = ctx.parameter_cursor().get()?;
     for (id, schema_ref) in data.schemas {
-        host.state_mut().update_schema(id, schema_ref)?;
+        host.state_mut().update_schema(id.clone(), schema_ref.clone())?;
+        logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
+            credential_type: id,
+            schema_ref,
+        }))?;
     }
+    // emit event.
+    Ok(())
+}
+
+#[derive(Serialize, SchemaType)]
+struct CredentialMetadataParam {
+    /// The id of the credential to update.
+    credential_id: CredentialHolderId,
+    /// The new metadata URL.
+    metadata_url:  MetadataUrl,
+}
+
+/// Update existing credential metadata URL.
+///
+/// Can be called only by the issuer.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The caller is not the issuer.
+/// - Some of the credentials are not present.
+#[receive(
+    contract = "credential_registry",
+    name = "updateCredentialMetadata",
+    parameter = "Vec<CredentialMetadataParam>",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_update_credential_metadata<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
+) -> Result<(), ContractError> {
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
+    let data: Vec<CredentialMetadataParam> = ctx.parameter_cursor().get()?;
+    for CredentialMetadataParam {
+        credential_id,
+        metadata_url,
+    } in data
+    {
+        host.state_mut().update_credential_metadata(&credential_id, metadata_url.clone())?;
+        logger.log(&CredentialEvent::CredentialMetadata(CredentialMetadataEvent {
+            credential_id,
+            metadata_url,
+        }))?;
+    }
+    // emit event.
     Ok(())
 }
 
@@ -1289,7 +1267,7 @@ fn contract_update_credential_schemas<S: HasStateApi>(
 #[derive(Serialize, SchemaType)]
 pub struct RestoreCredentialIssuerParam {
     /// Id of the credential to restore.
-    credential_id: CredentialID,
+    credential_id: CredentialHolderId,
     /// (Optional) reason for restoring the credential.
     reason:        Option<Reason>,
 }
@@ -1324,14 +1302,13 @@ fn contract_restore_credential<S: HasStateApi>(
         .occupied_or(ContractError::CredentialNotFound)?;
 
     let now = ctx.metadata().slot_time();
-    let holder_id = registry_entry.holder_id;
+    let holder_id = parameter.credential_id;
     drop(registry_entry);
 
     let credential_id = parameter.credential_id;
 
     host.state_mut().restore_credential(now, credential_id)?;
     logger.log(&CredentialEvent::Restore(RestoreCredentialEvent {
-        credential_id,
         holder_id,
         reason: parameter.reason,
     }))?;
@@ -1344,18 +1321,6 @@ mod tests {
     use super::*;
     use quickcheck::*;
     use test_infrastructure::*;
-
-    impl Arbitrary for CredentialID {
-        fn arbitrary(g: &mut Gen) -> Self {
-            CredentialID {
-                id: Arbitrary::arbitrary(g),
-            }
-        }
-
-        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-            Box::new(self.id.shrink().map(|id| id.into()))
-        }
-    }
 
     impl Arbitrary for CredentialType {
         fn arbitrary(g: &mut Gen) -> Self {
@@ -1398,17 +1363,11 @@ mod tests {
                 },
                 valid_from:       Arbitrary::arbitrary(g),
                 valid_until:      Arbitrary::arbitrary(g),
+                metadata_url:     MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                },
             }
-        }
-    }
-
-    // A wrapper for an array for implementing an `Arbitrary` instance
-    #[derive(Clone, Debug)]
-    struct Array32u8([u8; 32]);
-
-    impl Arbitrary for Array32u8 {
-        fn arbitrary(g: &mut Gen) -> Array32u8 {
-            Array32u8([0u8; 32].map(|_| Arbitrary::arbitrary(g)))
         }
     }
 
@@ -1417,14 +1376,14 @@ mod tests {
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        57, 247, 130, 232, 65, 141, 49, 141, 52, 91, 68, 134, 17, 157, 180, 192, 166, 128, 134, 1,
-        244, 129, 69, 162, 47, 5, 129, 170, 81, 0, 89, 97,
+        82, 233, 199, 239, 90, 118, 225, 123, 77, 93, 157, 192, 209, 255, 148, 148, 66, 183, 84,
+        250, 48, 68, 108, 51, 67, 195, 164, 88, 1, 172, 244, 39,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        23, 17, 201, 125, 205, 113, 50, 200, 175, 16, 114, 91, 179, 114, 199, 107, 254, 245, 163,
-        34, 157, 41, 72, 120, 156, 4, 99, 99, 38, 40, 34, 150, 162, 96, 225, 236, 160, 252, 219,
-        164, 52, 168, 117, 221, 209, 241, 42, 47, 167, 24, 173, 29, 24, 63, 58, 130, 143, 30, 23,
-        231, 174, 250, 220, 5,
+        82, 183, 189, 204, 95, 81, 233, 231, 211, 63, 65, 45, 191, 83, 65, 5, 17, 40, 90, 89, 225,
+        104, 145, 40, 6, 224, 9, 237, 33, 246, 239, 246, 113, 122, 102, 2, 232, 126, 233, 176, 123,
+        115, 213, 215, 28, 48, 105, 135, 102, 166, 50, 70, 23, 15, 90, 237, 56, 121, 120, 15, 43,
+        215, 208, 15,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1437,10 +1396,13 @@ mod tests {
                 credential_type: CredentialType {
                     credential_type: "ExampleSchema".to_string(),
                 },
+                metadata_url:    MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                },
             }),
             valid_from:       Timestamp::from_timestamp_millis(0),
             valid_until:      None,
-            holder_id:        PUBLIC_KEY,
             holder_revocable: true,
             revocation_nonce: 0,
             revoked:          false,
@@ -1487,9 +1449,7 @@ mod tests {
 
         claim_eq!(
             logger.logs[0],
-            to_bytes(&CredentialEvent::Metadata(IssuerMetadataEvent {
-                metadata_url: university_issuer,
-            })),
+            to_bytes(&CredentialEvent::IssuerMetadata(university_issuer)),
             "Incorrect issuer metadata event logged"
         );
     }
@@ -1547,10 +1507,13 @@ mod tests {
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
-            holder_id:        data.holder_id,
             credential_data:  state_builder.new_box(CredentialData {
                 commitment:      data.commitment,
                 credential_type: data.credential_type,
+                metadata_url:    MetadataUrl {
+                    url:  "123456".into(),
+                    hash: None,
+                },
             }),
             revocation_nonce: nonce,
             holder_revocable: data.holder_revocable,
@@ -1565,7 +1528,7 @@ mod tests {
     /// same credential data, which is not revoked and has nonce = `0`
     #[concordium_quickcheck]
     fn prop_register_credential(
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
         credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
@@ -1573,10 +1536,11 @@ mod tests {
     ) -> bool {
         // Set credential type consistent with the schema registry
         data.credential_type = credential_type.clone();
+        data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
-        let register_result = state.register_credential(credential_id, &data, &mut state_builder);
+        let register_result = state.register_credential(&data, &mut state_builder);
         let query_result = state.view_credential_info(credential_id);
         let status = state.view_credential_status(now, credential_id);
         if let Ok(fetched_data) = query_result {
@@ -1595,17 +1559,18 @@ mod tests {
     /// expeced to succeed.
     #[concordium_quickcheck]
     fn prop_revocation(
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
         credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
     ) -> bool {
         // Set credential type consistent with the schema registry
         data.credential_type = credential_type.clone();
+        data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
-        let register_result = state.register_credential(credential_id, &data, &mut state_builder);
+        let register_result = state.register_credential(&data, &mut state_builder);
 
         // Make sure that the credential has not expired yet
         let now = Timestamp::from_timestamp_millis(0);
@@ -1621,17 +1586,18 @@ mod tests {
     /// as before revocation. In this case, restoring always succeeds.
     #[concordium_quickcheck]
     fn prop_revoke_restore(
-        credential_id: CredentialID,
+        credential_id: CredentialHolderId,
         credential_type: CredentialType,
         schema_ref: SchemaRef,
         mut data: CredentialInfo,
     ) -> bool {
         // Set credential type consistent with the schema registry
         data.credential_type = credential_type.clone();
+        data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
-        let register_result = state.register_credential(credential_id, &data, &mut state_builder);
+        let register_result = state.register_credential(&data, &mut state_builder);
 
         // Make sure that the credential has not expired yet
         let now = Timestamp::from_timestamp_millis(0);
@@ -1653,31 +1619,17 @@ mod tests {
             && original_status == status_after_restoring
     }
 
-    /// Property: registering an issuer key and querying it results in the same
-    /// value
+    /// Property: registering a revocation key in fresh state and querying it
+    /// results in the same value
     #[concordium_quickcheck]
-    fn prop_register_issuer_keys(key_index: u16, pk_bytes: Array32u8) -> bool {
+    fn prop_register_revocation_key(pk: PublicKeyEd25519) -> bool {
         let mut state_builder = TestStateBuilder::new();
-        let Array32u8(bytes) = pk_bytes;
-        let pk = PublicKeyEd25519(bytes);
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
-        let register_result = state.register_issuer_key(key_index, PublicKeyEd25519(bytes));
-        let query_result = state.view_issuer_keys();
-        register_result.is_ok() && query_result.contains(&(key_index, pk))
-    }
-
-    /// Property: registering a revocation key and querying it results in the
-    /// same value
-    #[concordium_quickcheck]
-    fn prop_register_revocation_key(key_index: u16, pk_bytes: Array32u8) -> bool {
-        let mut state_builder = TestStateBuilder::new();
-        let Array32u8(bytes) = pk_bytes;
-        let pk = PublicKeyEd25519(bytes);
-        let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
-        let register_result = state.register_revocation_key(key_index, PublicKeyEd25519(bytes));
-        let query_result = state.view_revocation_key(key_index);
-        if let Ok(fetched_data) = query_result {
-            register_result.is_ok() && fetched_data.0 == pk
+        let register_result = state.register_revocation_key(pk);
+        let query_result =
+            state.view_revocation_keys().iter().any(|(stored_pk, _)| stored_pk == &pk);
+        if query_result {
+            register_result.is_ok()
         } else {
             false
         }
@@ -1686,7 +1638,6 @@ mod tests {
     /// Test the credential registration entrypoint.
     #[concordium_test]
     fn test_contract_register_credential() {
-        let credential_id = 123123123.into();
         let now = Timestamp::from_timestamp_millis(0);
         let contract = ContractAddress {
             index:    0,
@@ -1708,10 +1659,7 @@ mod tests {
 
         // Create input parameters.
 
-        let param = RegisterCredentialParameter {
-            credential_id,
-            credential_info: entry.info(),
-        };
+        let param = entry.info(PUBLIC_KEY);
         let parameter_bytes = to_bytes(&param);
         ctx.set_parameter(&parameter_bytes);
 
@@ -1728,14 +1676,18 @@ mod tests {
         claim!(res.is_ok(), "Credential registration failed");
         let fetched: CredentialQueryResponse = host
             .state()
-            .view_credential_info(credential_id)
+            .view_credential_info(PUBLIC_KEY)
             .expect_report("Credential is expected to exist");
-        claim_eq!(fetched.credential_info, entry.info(), "Credential info expected to be equal");
+        claim_eq!(
+            fetched.credential_info,
+            entry.info(PUBLIC_KEY),
+            "Credential info expected to be equal"
+        );
         claim_eq!(fetched.revocation_nonce, 0, "Revocation nonce expected to be 0");
 
         let status = host
             .state()
-            .view_credential_status(now, credential_id)
+            .view_credential_status(now, PUBLIC_KEY)
             .expect_report("Status query expected to succeed");
         claim_eq!(status, CredentialStatus::Active);
 
@@ -1744,10 +1696,13 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&CredentialEvent::Register(CredentialEventData {
-                credential_id,
                 holder_id: PUBLIC_KEY,
                 schema_ref,
-                credential_type
+                credential_type,
+                metadata_url: MetadataUrl {
+                    url:  "".into(),
+                    hash: None,
+                },
             })),
             "Incorrect register credential event logged"
         );
@@ -1757,7 +1712,6 @@ mod tests {
     /// credential.
     #[concordium_test]
     fn test_revoke_by_holder() {
-        let credential_id = 123123123.into();
         let now = Timestamp::from_timestamp_millis(0);
         let contract = ContractAddress {
             index:    0,
@@ -1781,7 +1735,7 @@ mod tests {
 
         let (state, state_builder) = host.state_and_builder();
         let entry = credential_entry(state_builder);
-        let credential_info = entry.info();
+        let credential_info = entry.info(PUBLIC_KEY);
 
         claim!(
             credential_info.holder_revocable,
@@ -1793,7 +1747,7 @@ mod tests {
         state.add_schema(credential_type, schema_ref).expect_report("Schema registration failed");
 
         // Create a credential the holder is going to revoke
-        let res = state.register_credential(credential_id, &credential_info, state_builder);
+        let res = state.register_credential(&credential_info, state_builder);
 
         // Check that it was registered successfully
         claim!(res.is_ok(), "Credential registration failed");
@@ -1806,15 +1760,17 @@ mod tests {
             timestamp:        Timestamp::from_timestamp_millis(10000000000),
         };
 
-        // Create input parematers for revocation.
+        // Create input parameters for revocation.
 
         let revocation_reason = "Just because";
 
         let revoke_param = RevokeCredentialHolderParam {
-            credential_id,
-            signing_data,
             signature: SIGNATURE,
-            reason: Some(revocation_reason.to_string().into()),
+            data:      RevocationDataHolder {
+                credential_id: PUBLIC_KEY,
+                signing_data,
+                reason: Some(revocation_reason.to_string().into()),
+            },
         };
 
         let parameter_bytes = to_bytes(&revoke_param);
@@ -1831,7 +1787,7 @@ mod tests {
         // Check the status.
         let status = host
             .state()
-            .view_credential_status(now, credential_id)
+            .view_credential_status(now, PUBLIC_KEY)
             .expect_report("Credential is expected to exist");
         claim_eq!(status, CredentialStatus::Revoked);
 
@@ -1840,10 +1796,9 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&CredentialEvent::Revoke(RevokeCredentialEvent {
-                credential_id,
                 holder_id: PUBLIC_KEY,
-                revoker: Revoker::Holder,
-                reason: Some(revocation_reason.to_string().into())
+                revoker:   Revoker::Holder,
+                reason:    Some(revocation_reason.to_string().into()),
             })),
             "Incorrect revoke credential event logged"
         );
@@ -1852,7 +1807,6 @@ mod tests {
     /// Test the restore credential entrypoint.
     #[concordium_test]
     fn test_contract_restore_credential() {
-        let credential_id = 123123123.into();
         let now = Timestamp::from_timestamp_millis(0);
         let contract = ContractAddress {
             index:    0,
@@ -1872,20 +1826,20 @@ mod tests {
 
         let (state, state_builder) = host.state_and_builder();
         let entry = credential_entry(state_builder);
-        let credential_info = entry.info();
+        let credential_info = entry.info(PUBLIC_KEY);
 
         // Create a credential schema
         let (credential_type, schema_ref) = get_credential_schema();
         state.add_schema(credential_type, schema_ref).expect_report("Schema registration failed");
 
         // Create a credential the issuer is going to restore
-        let res = state.register_credential(credential_id, &credential_info, state_builder);
+        let res = state.register_credential(&credential_info, state_builder);
 
         // Check that it was registered successfully
         claim!(res.is_ok(), "Credential registration failed");
 
         // Make sure the credeintial has `Revoked` status
-        let revoke_res = state.revoke_credential(now, credential_id);
+        let revoke_res = state.revoke_credential(now, PUBLIC_KEY);
 
         // Check that the credential was revoked successfully.
         claim!(revoke_res.is_ok(), "Credential revocation failed");
@@ -1893,8 +1847,8 @@ mod tests {
         // Create input parameters.
 
         let param = RestoreCredentialIssuerParam {
-            credential_id,
-            reason: None,
+            credential_id: PUBLIC_KEY,
+            reason:        None,
         };
         let parameter_bytes = to_bytes(&param);
         ctx.set_parameter(&parameter_bytes);
@@ -1902,7 +1856,7 @@ mod tests {
         // Check the status before restoring.
         let status = host
             .state()
-            .view_credential_status(now, credential_id)
+            .view_credential_status(now, PUBLIC_KEY)
             .expect_report("Credential is expected to exist");
         claim_eq!(status, CredentialStatus::Revoked, "Expected Revoked");
 
@@ -1914,7 +1868,7 @@ mod tests {
         // Check the status after restoring.
         let status = host
             .state()
-            .view_credential_status(now, credential_id)
+            .view_credential_status(now, PUBLIC_KEY)
             .expect_report("Credential is expected to exist");
         claim_eq!(status, CredentialStatus::Active, "Expected Active");
 
@@ -1923,9 +1877,8 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&CredentialEvent::Restore(RestoreCredentialEvent {
-                credential_id,
                 holder_id: PUBLIC_KEY,
-                reason: None
+                reason:    None,
             })),
             "Incorrect revoke credential event logged"
         );

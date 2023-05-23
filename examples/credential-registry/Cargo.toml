@@ -19,9 +19,6 @@ concordium-std = {path = "../../concordium-std", version="6.1", features = ["con
 concordium-cis2 = {path = "../../concordium-cis2", version="3.0", default-features = false}
 quickcheck = {version = "1.0.3"}
 
-[dev-dependencies]
-concordium-std = {path = "../../concordium-std", version="6.1"}
-
 [lib]
 crate-type=["cdylib", "rlib"]
 
