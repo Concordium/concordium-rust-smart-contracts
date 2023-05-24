@@ -16,8 +16,17 @@ wee_alloc = ["concordium-std/wee_alloc"]
 [dependencies]
 concordium-std = {path = "../../../concordium-std", default-features = false}
 
+[dev-dependencies]
+concordium-smart-contract-testing = "1.0"
+
 [lib]
 crate-type=["cdylib", "rlib"]
+
+#`concordium-smart-contract-testing` uses the below libraries as well. We overwrite them with the ones used 
+#in this repository so we can test the newest version of the libraries with the Ci pipelines.
+[patch.crates-io]
+concordium-contracts-common = {path = "../../../concordium-contracts-common/concordium-contracts-common"}
+concordium-contracts-common-derive = {path = "../../../concordium-contracts-common/concordium-contracts-common-derive"}
 
 [profile.release]
 opt-level = "s"
