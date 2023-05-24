@@ -10,12 +10,11 @@
 //! ## Issuer's  functionality
 //!
 //! - register a new credential;
-//! - update an existing credential;
 //! - revoke a credential;
-//! - restore (cancelling revocation of) a revoked credential;
-//! - register a public key;
-//! - register a revocation authority key;
-//! - update metadata;
+//! - restore (cancel revocation of) a revoked credential;
+//! - register/remove revocation authority keys;
+//! - update the issuer's metadata;
+//! - update the credential metadata;
 //! - add/update credential types.
 //!
 //! Revocation authorities are some entities chosen by the issuer that have
@@ -36,6 +35,8 @@
 //! - view credential status to verify VC validity;
 //! - view credential data to verify proofs (verifiable presentations) requested
 //!   from holders.
+
+// TODO: remove the CIS-2 dependency once MetadataUrl is moved to concordium-std
 use concordium_cis2::*;
 use concordium_std::*;
 
@@ -47,7 +48,7 @@ struct CredentialType {
     credential_type: String,
 }
 
-/// A schema reference is a schema URL or DID address pointing to the JSON
+/// A schema reference is a schema URL pointing to the JSON
 /// schema for a verifiable credential.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 struct SchemaRef {
@@ -70,7 +71,7 @@ pub enum CredentialStatus {
     NotActivated,
 }
 
-/// A vector Pedersen commitment and credential type.
+/// A vector Pedersen commitment, credential type and metadata.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialData {
     /// A vector Pedersen commitment to the attributes of the verifiable
@@ -102,7 +103,7 @@ pub struct CredentialEntry<S: HasStateApi> {
     revocation_nonce: u64,
     /// Revocation flag
     revoked:          bool,
-    /// Commitment and schema reference
+    /// Commitment, schema reference, and credential metadata.
     /// This data is only needed when credential info is requested. In other
     /// operations, `StateBox` defers loading credential data.
     credential_data:  StateBox<CredentialData, S>,
@@ -415,6 +416,8 @@ struct RestoreCredentialEvent {
     reason:    Option<Reason>,
 }
 
+/// An untagged credential metadata event. Emitted when updating the credential
+/// metadata. For a tagged version use `CredentialEvent`.
 #[derive(Serialize, SchemaType)]
 struct CredentialMetadataEvent {
     credential_id: CredentialHolderId,
@@ -458,19 +461,19 @@ impl Serial for CredentialEvent {
                 254u8.serial(out)?;
                 data.serial(out)
             }
-            CredentialEvent::Restore(data) => {
+            CredentialEvent::IssuerMetadata(data) => {
                 253u8.serial(out)?;
                 data.serial(out)
             }
-            CredentialEvent::IssuerMetadata(data) => {
+            CredentialEvent::CredentialMetadata(data) => {
                 252u8.serial(out)?;
                 data.serial(out)
             }
-            CredentialEvent::CredentialMetadata(data) => {
+            CredentialEvent::Schema(data) => {
                 251u8.serial(out)?;
                 data.serial(out)
             }
-            CredentialEvent::Schema(data) => {
+            CredentialEvent::Restore(data) => {
                 250u8.serial(out)?;
                 data.serial(out)
             }
@@ -483,10 +486,10 @@ impl Deserial for CredentialEvent {
         match source.get()? {
             255u8 => Ok(Self::Register(source.get()?)),
             254u8 => Ok(Self::Revoke(source.get()?)),
-            253u8 => Ok(Self::Restore(source.get()?)),
-            252u8 => Ok(Self::IssuerMetadata(source.get()?)),
-            251u8 => Ok(Self::CredentialMetadata(source.get()?)),
-            250u8 => Ok(Self::Schema(source.get()?)),
+            253u8 => Ok(Self::IssuerMetadata(source.get()?)),
+            252u8 => Ok(Self::CredentialMetadata(source.get()?)),
+            251u8 => Ok(Self::Schema(source.get()?)),
+            250u8 => Ok(Self::Restore(source.get()?)),
             _ => Err(ParseError {}),
         }
     }
@@ -512,6 +515,7 @@ fn init<S: HasStateApi>(
     Ok(State::new(state_builder, ctx.init_origin(), issuer_metadata))
 }
 
+/// Check whether the transaction `sender` is the issuer.
 fn sender_is_issuer<S: HasStateApi>(ctx: &impl HasReceiveContext, state: &State<S>) -> bool {
     ctx.sender().matches_account(&state.issuer)
 }
@@ -543,7 +547,7 @@ pub struct CredentialInfo {
 #[derive(Serialize, SchemaType, Clone, Debug)]
 pub struct CredentialQueryResponse {
     credential_info:  CredentialInfo,
-    /// A schema URL or DID address pointing to the JSON schema for a verifiable
+    /// A schema URL pointing to the JSON schema for a verifiable
     /// credential.
     schema_ref:       SchemaRef,
     /// The nonce is used to avoid replay attacks when checking the holder's
@@ -576,7 +580,6 @@ fn contract_credential_entry<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
-/// - The schema type is not registered.
 #[receive(
     contract = "credential_registry",
     name = "credentialStatus",
@@ -599,12 +602,14 @@ fn contract_credential_status<S: HasStateApi>(
 ///
 /// Can be called only by the issuer.
 ///
+/// Logs `CredentialEvent::Register`.
+///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - An entry with the given credential id already exists.
 /// - The credential type is not registered.
-/// - Fails to log RegisterCredentialEvent.
+/// - Fails to log the event.
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
@@ -644,6 +649,8 @@ struct SigningData {
     timestamp:        Timestamp,
 }
 
+/// A message prefix for revocation requests by holders and revocation
+/// authorities.
 const SIGNARUTE_DOMAIN: &str = "WEB3ID:REVOKE";
 
 /// A parameter type for revoking a credential by the holder.
@@ -662,9 +669,6 @@ impl RevokeCredentialHolderParam {
 
 /// The parameter type for the contract function
 /// `serializationHelperHolderRevoke`.
-/// Note that the order of the fields here should correspond to the
-/// serialization order of the `message_bytes` method of
-/// `RevokeCredentialHolderParam`
 #[derive(Serialize, SchemaType)]
 pub struct RevocationDataHolder {
     /// Id of the credential to revoke.
@@ -677,7 +681,7 @@ pub struct RevocationDataHolder {
 
 /// Helper function that can be invoked at the front end to serialize
 /// the `RevocationDataholder` to be signed by the wallet. The
-/// `RevocationDataholder` includes all the input parameters from
+/// `RevocationDataHolder` includes all the input parameters from
 /// `RevokeCredentialHolderParam` except for the `signature`. We only need
 /// the input parameter schema of this function at the front end. The
 /// `serializationHelperHolderRevoke` function is not executed at any point in
@@ -749,7 +753,6 @@ fn contract_serialization_helper_hother_revoke<S: HasStateApi>(
 }
 
 /// Performs authorization based on the signature and the public key.
-/// The message is built from serialized `credential_id` and `signing_data`.
 fn authorize_with_signature(
     crypto_primitives: &impl HasCryptoPrimitives,
     ctx: &impl HasReceiveContext,
@@ -781,22 +784,26 @@ fn authorize_with_signature(
 
 /// Revoke a credential as a holder.
 ///
-/// Holder is authenticated by verifying the signature on the input to the
-/// entrypoint with the holder's public key. The public key is stored in the
-/// credential entry (`holder_id`).
+/// The holder is authenticated by verifying the signature on the input to the
+/// entrypoint with the holder's public key. The public key is used as the
+/// credential identifier.
 ///
 /// Note that nonce is used as a general way to prevent replay attacks. In this
 /// particular case, the revocation can be reversed by the issuer by restoring
 /// the revoked credential.
 ///
-/// Logs RevokeCredentialEvent with `Holder` as the revoker.
+/// Logs `CredentialEvent::Revoke` with `Holder` as the revoker.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Signature validation has failed.
 /// - An entry with the given credential id does not exist.
+/// - A redential is not holder-revocable.
+/// - Signature validation has failed, meaning that some of the following has
+///   happened: nonce is incorrect, the signed message was not intended for this
+///   contract/entrypoint, the signature has expired or the signature
+///   verification has failed.
 /// - The credential status is not one of `Active` or `NotActivated`.
-/// - Fails to log RevokeCredentialEvent.
+/// - Fails to log the event.
 #[receive(
     contract = "credential_registry",
     name = "revokeCredentialHolder",
@@ -834,7 +841,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
     let public_key = parameter.data.credential_id;
     let nonce = registry_entry.revocation_nonce;
 
-    // Perepare message bytes as it is signer by the wallet
+    // Perepare message bytes as it is signed by the wallet
     // Note that the message is prepended by a domain separation string
     let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
     parameter.message_bytes(&mut message)?;
@@ -862,16 +869,17 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 }
 
 /// Revoke a credential as an issuer.
-/// Can be called by the issuer.
 ///
-/// Logs RevokeCredentialEvent with `Issuer` as the revoker.
+/// Can be called only by the issuer.
+///
+/// Logs `CredentialEvent::Revoke` with `Issuer` as the revoker.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - An entry with the given credential id does not exist.
 /// - The credential status is not one of `Active` or `NotActivated`.
-/// - Fails to log RevokeCredentialEvent.
+/// - Fails to log the event.
 #[receive(
     contract = "credential_registry",
     name = "revokeCredentialIssuer",
@@ -924,15 +932,18 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// this particular case, the revocation is done once, however, the issuer could
 /// choose to implement an update method that restores the revoked credential.
 ///
-///  Logs RevokeCredentialEvent with `Other` as the revoker.
+///  Logs `CredentialEvent::Revoke` with `Other` as the revoker.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The revocation key could not be found.
-/// - Signature validation has failed.
 /// - An entry with the given credential id does not exist
+/// - The revocation key could not be found.
+/// - Signature validation has failed, meaning that some of the following has
+///   happened: nonce is incorrect, the signed message was not intended for this
+///   contract/entrypoint, the signature has expired or the signature
+///   verification has failed.
 /// - The credential status is not one of `Active` or `NotActivated`
-/// - Fails to log RevokeCredentialEvent
+/// - Fails to log the event.
 #[receive(
     contract = "credential_registry",
     name = "revokeCredentialOther",
@@ -960,7 +971,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
 
     let public_key = parameter.data.revocation_key;
     let mut entry =
-        state.revocation_keys.entry(public_key).occupied_or(ContractError::CredentialNotFound)?;
+        state.revocation_keys.entry(public_key).occupied_or(ContractError::KeyDoesNotExist)?;
 
     // Update the nonce.
     *entry += 1;
@@ -1013,12 +1024,17 @@ pub struct RemovePublicKeyParameters {
 }
 
 /// Register revocation authorities public keys.
+///
 /// These keys are used to authorize the revocation (applies to the whole
-/// registry). Only the issuer can call the entrypoint.
+/// registry). The contract keep track of all keys ever sen by this contract.
+/// Some keys can be removed from the available keys, but registering them again
+/// is not possible. This prevents resetting the key's nonce.
+///
+/// Only the issuer can call the entrypoint.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Some of the keys already exist.
+/// - Some of the keys were previously used with this contract.
 /// - The caller is not the issuer.
 #[receive(
     contract = "credential_registry",
@@ -1042,6 +1058,10 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 }
 
 /// Remove revocation authorities public keys.
+///
+/// Note that it is not possible to register the same key after removing it.
+/// This prevents resetting the key's nonce.
+///
 /// Only the issuer can call the entrypoint.
 ///
 /// It rejects if:
@@ -1069,12 +1089,11 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     Ok(())
 }
 
-/// A view entrypoint for looking up a revocation key.
+/// A view entrypoint returning currently available revocation keys.
 /// Returns a public key and the nonce.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - The revocation key does not exist.
 #[receive(
     contract = "credential_registry",
     name = "revocationKeys",
@@ -1088,7 +1107,7 @@ fn contract_revocation_keys<S: HasStateApi>(
     Ok(host.state().view_revocation_keys())
 }
 
-/// A view entrypoint to get the metadata URL and checksum.
+/// A view entrypoint to get the issuer's metadata URL and checksum.
 #[receive(
     contract = "credential_registry",
     name = "issuerMetadata",
@@ -1102,12 +1121,16 @@ fn contract_issuer_metadata<S: HasStateApi>(
     Ok(host.state().issuer_metadata.clone())
 }
 
-/// Update issuer's metadata
+/// Update issuer's metadata.
+///
+/// Can be called only by the issuer.
+///
+/// Logs `CredentialEvent::IssuerMetadata`.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
-/// - It fails to log `IssuerMetadataEvent`
+/// - It fails to log the event.
 #[receive(
     contract = "credential_registry",
     name = "updateIssuerMetadata",
@@ -1151,10 +1174,13 @@ struct CredentialSchemaParam {
 ///
 /// Can be called only by the issuer.
 ///
+/// Logs `CredentialEvent::Schema` for each schema in the input.
+///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - Some of the schemas are already added.
+/// - Fails to log the event for any of the schemas.
 #[receive(
     contract = "credential_registry",
     name = "addCredentialSchemas",
@@ -1185,12 +1211,15 @@ fn contract_add_credential_schemas<S: HasStateApi>(
 /// schemas. An intended use case is to update a reference if the URL to the
 /// JSON document has changed, but the JSON document itself remains the same.
 ///
+/// Logs `CredentialEvent::Schema` for each schema in the input.
+///
 /// Can be called only by the issuer.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - Some of the schemas are not present.
+/// - Fails to log the event for any of the schemas.
 #[receive(
     contract = "credential_registry",
     name = "updateCredentialSchemas",
@@ -1213,7 +1242,6 @@ fn contract_update_credential_schemas<S: HasStateApi>(
             schema_ref,
         }))?;
     }
-    // emit event.
     Ok(())
 }
 
@@ -1229,10 +1257,13 @@ struct CredentialMetadataParam {
 ///
 /// Can be called only by the issuer.
 ///
+/// Logs `redentialEvent::CredentialMetadata`.
+///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - Some of the credentials are not present.
+/// - Fails to log the event for any of the input credentials.
 #[receive(
     contract = "credential_registry",
     name = "updateCredentialMetadata",
@@ -1259,7 +1290,6 @@ fn contract_update_credential_metadata<S: HasStateApi>(
             metadata_url,
         }))?;
     }
-    // emit event.
     Ok(())
 }
 
@@ -1275,11 +1305,16 @@ pub struct RestoreCredentialIssuerParam {
 /// Restore credential by the issuer.
 /// Restoring means reverting revocation.
 ///
+/// Can be called only by the issuer.
+///
+/// Logs `CredentialEvent::Restore`.
+///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - Credential does not exist.
 /// - Credential status is different from `Revoked`.
+/// - Fails to log the event.
 #[receive(
     contract = "credential_registry",
     name = "restoreCredential",
@@ -1322,6 +1357,12 @@ mod tests {
     use quickcheck::*;
     use test_infrastructure::*;
 
+    // Define `Arbitrary` instances for data types used in the contract.
+    // The instances are used for randimized by property-based testing.
+
+    // It is convenient to use arbitrary data even for simple properites, because it
+    // allows us to avoid defining input data manually.
+
     impl Arbitrary for CredentialType {
         fn arbitrary(g: &mut Gen) -> Self {
             CredentialType {
@@ -1350,8 +1391,6 @@ mod tests {
         }
     }
 
-    // It is convenient to use arbitrary data even for simple properites, because it
-    // allows us to avoid defining input data manually.
     impl Arbitrary for CredentialInfo {
         fn arbitrary(g: &mut Gen) -> Self {
             CredentialInfo {
