@@ -1,5 +1,5 @@
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Vec, Serial
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
 use concordium_contracts_common::{AccountBalance, Amount, ParseError};
 use core::{fmt, str::FromStr};

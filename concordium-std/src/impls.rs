@@ -2992,10 +2992,9 @@ impl Deserial for MetadataUrl {
         // Deserialize url as a string with size_length = 2
         let len: u16 = source.get()?;
         let bytes = deserial_vector_no_length(source, len as usize)?;
-        Ok(MetadataUrl { 
-            url: String::from_utf8(bytes).map_err(|_| ParseError::default())?,
+        Ok(MetadataUrl {
+            url:  String::from_utf8(bytes).map_err(|_| ParseError::default())?,
             hash: Deserial::deserial(source)?,
-         }
-        )
+        })
     }
 }
