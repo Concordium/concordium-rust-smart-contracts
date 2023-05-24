@@ -453,6 +453,7 @@ enum CredentialEvent {
 impl Serial for CredentialEvent {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
+            // CIS-4 standard events are nubered from 255 down
             CredentialEvent::Register(data) => {
                 255u8.serial(out)?;
                 data.serial(out)
@@ -473,8 +474,9 @@ impl Serial for CredentialEvent {
                 251u8.serial(out)?;
                 data.serial(out)
             }
+            // Restore event is not covered by CIS-4; it gets `0` tag.
             CredentialEvent::Restore(data) => {
-                250u8.serial(out)?;
+                0u8.serial(out)?;
                 data.serial(out)
             }
         }
@@ -489,7 +491,7 @@ impl Deserial for CredentialEvent {
             253u8 => Ok(Self::IssuerMetadata(source.get()?)),
             252u8 => Ok(Self::CredentialMetadata(source.get()?)),
             251u8 => Ok(Self::Schema(source.get()?)),
-            250u8 => Ok(Self::Restore(source.get()?)),
+            0u8 => Ok(Self::Restore(source.get()?)),
             _ => Err(ParseError {}),
         }
     }
