@@ -448,8 +448,6 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> A {
 // Getters for testing-context
 impl HasChainMetadata for TestChainMeta {
     fn slot_time(&self) -> SlotTime { unwrap_ctx_field(self.slot_time, "metadata.slot_time") }
-
-    fn block_time(&self) -> Timestamp { self.slot_time() }
 }
 
 pub struct TestIterator {

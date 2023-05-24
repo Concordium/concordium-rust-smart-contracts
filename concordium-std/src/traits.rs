@@ -40,7 +40,7 @@ pub trait HasChainMetadata {
     /// Get time in milliseconds at the beginning of this block.
     fn slot_time(&self) -> SlotTime;
     /// Get time in milliseconds at the beginning of this block.
-    fn block_time(&self) -> Timestamp;
+    fn block_time(&self) -> Timestamp { self.slot_time() }
 }
 
 /// A type which has access to a policy of a credential.

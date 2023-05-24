@@ -222,7 +222,7 @@ extern "C" {
     pub fn get_receive_entrypoint(start: *mut u8);
 
     // Getters for the chain meta data
-    /// Slot time (in milliseconds) from chain meta data
+    /// Slot time from chain meta data
     /// Note that this is a Timestamp (unix timestamp with millisecond
     /// precision).
     pub fn get_slot_time() -> u64;
