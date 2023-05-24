@@ -1,10 +1,10 @@
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Vec, Serial
 };
 use concordium_contracts_common::{AccountBalance, Amount, ParseError};
 use core::{fmt, str::FromStr};
 // Re-export for backward compatibility.
-pub use concordium_contracts_common::ExchangeRates;
+pub use concordium_contracts_common::*;
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -1246,4 +1246,13 @@ pub enum StateError {
     IteratorAlreadyDeleted,
     /// No nodes exist with the given prefix.
     SubtreeWithPrefixNotFound,
+}
+
+/// The location of the metadata and an optional hash of the content.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct MetadataUrl {
+    /// The URL following the specification RFC1738.
+    pub url:  String,
+    /// A optional hash of the content.
+    pub hash: Option<HashSha2256>,
 }

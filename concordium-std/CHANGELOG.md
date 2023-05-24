@@ -3,6 +3,9 @@
 ## Unreleased changes
 
 - Set minimum Rust version to 1.65.
+- Add `MetadataUrl` along with the schema and serialization. It is used by CIS
+  standards to represent the location of the metadata and an optional hash of
+  the content.
 
 ## concordium-std 6.2.0 (2023-05-08)
 
