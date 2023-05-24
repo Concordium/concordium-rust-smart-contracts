@@ -431,6 +431,23 @@ struct CredentialSchemaRefEvent {
     schema_ref:      SchemaRef,
 }
 
+#[derive(Serialize, SchemaType)]
+enum RevocationKeyAction {
+    Register,
+    Remove,
+}
+
+/// An untagged revocation key event.
+/// Emitted when keys are registered and removed.
+/// For a tagged version use `CredentialEvent`.
+#[derive(Serialize, SchemaType)]
+struct RevocationKeyEvent {
+    /// The public key that is registered/removed
+    key:    PublicKeyEd25519,
+    /// Regisrer/remove action.
+    action: RevocationKeyAction,
+}
+
 /// Tagged credential registry event.
 /// This version should be used for logging the events.
 #[derive(SchemaType)]
@@ -448,12 +465,14 @@ enum CredentialEvent {
     CredentialMetadata(CredentialMetadataEvent),
     /// Credential's schema changes.
     Schema(CredentialSchemaRefEvent),
+    /// Revocation key changes
+    RevocationKey(RevocationKeyEvent),
 }
 
 impl Serial for CredentialEvent {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
-            // CIS-4 standard events are nubered from 255 down
+            // CIS-4 standard events are numbered from 255 counting down
             CredentialEvent::Register(data) => {
                 255u8.serial(out)?;
                 data.serial(out)
@@ -474,6 +493,10 @@ impl Serial for CredentialEvent {
                 251u8.serial(out)?;
                 data.serial(out)
             }
+            CredentialEvent::RevocationKey(data) => {
+                250u8.serial(out)?;
+                data.serial(out)
+            }
             // Restore event is not covered by CIS-4; it gets `0` tag.
             CredentialEvent::Restore(data) => {
                 0u8.serial(out)?;
@@ -491,6 +514,7 @@ impl Deserial for CredentialEvent {
             253u8 => Ok(Self::IssuerMetadata(source.get()?)),
             252u8 => Ok(Self::CredentialMetadata(source.get()?)),
             251u8 => Ok(Self::Schema(source.get()?)),
+            250u8 => Ok(Self::RevocationKey(source.get()?)),
             0u8 => Ok(Self::Restore(source.get()?)),
             _ => Err(ParseError {}),
         }
@@ -1034,20 +1058,25 @@ pub struct RemovePublicKeyParameters {
 ///
 /// Only the issuer can call the entrypoint.
 ///
+/// Logs `CredentialEvent::RevocationKey` with the `Register` action.
+///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Some of the keys were previously used with this contract.
 /// - The caller is not the issuer.
+/// - Fails to log the event for any key in the input.
 #[receive(
     contract = "credential_registry",
     name = "registerRevocationKeys",
     parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_register_revocation_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RegisterPublicKeyParameters {
@@ -1055,6 +1084,10 @@ fn contract_register_revocation_keys<S: HasStateApi>(
     } = ctx.parameter_cursor().get()?;
     for key in keys {
         host.state_mut().register_revocation_key(key)?;
+        logger.log(&CredentialEvent::RevocationKey(RevocationKeyEvent {
+            key,
+            action: RevocationKeyAction::Register,
+        }))?;
     }
     Ok(())
 }
@@ -1066,20 +1099,25 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 ///
 /// Only the issuer can call the entrypoint.
 ///
+/// Logs `CredentialEvent::RevocationKey` with the `Remove` action.
+///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Some of the keys do not exist.
 /// - The caller is not the issuer.
+/// - Fails to log the event for any key in the input.
 #[receive(
     contract = "credential_registry",
     name = "removeRevocationKeys",
     parameter = "RemovePublicKeyParameters",
     error = "ContractError",
+    enable_logger,
     mutable
 )]
 fn contract_remove_revocation_keys<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    logger: &mut impl HasLogger,
 ) -> Result<(), ContractError> {
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RemovePublicKeyParameters {
@@ -1087,6 +1125,10 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     } = ctx.parameter_cursor().get()?;
     for key in keys {
         host.state_mut().remove_revocation_key(key)?;
+        logger.log(&CredentialEvent::RevocationKey(RevocationKeyEvent {
+            key,
+            action: RevocationKeyAction::Remove,
+        }))?;
     }
     Ok(())
 }
