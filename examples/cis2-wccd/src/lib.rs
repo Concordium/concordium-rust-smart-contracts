@@ -90,7 +90,7 @@ struct State<S: HasStateApi> {
     /// `StateBox` allows for lazy loading data. This is helpful
     /// in the situations when one wants to do a partial update not touching
     /// this field, which can be large.
-    metadata_url: StateBox<concordium_cis2::MetadataUrl, S>,
+    metadata_url: StateBox<MetadataUrl, S>,
 }
 
 /// The parameter type for the contract function `unwrap`.
@@ -161,7 +161,7 @@ struct ReturnBasicState {
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
     paused:       bool,
     /// The metadata URL of the token.
-    metadata_url: concordium_cis2::MetadataUrl,
+    metadata_url: MetadataUrl,
 }
 
 /// The parameter type for the contract function `setMetadataUrl`.
@@ -170,7 +170,7 @@ struct SetMetadataUrlParams {
     /// The URL following the specification RFC1738.
     url:  String,
     /// The hash of the document stored at the above URL.
-    hash: Option<Sha256>,
+    hash: Option<HashSha2256>,
 }
 
 /// The parameter type for the contract function `setPaused`.
@@ -348,11 +348,7 @@ impl From<CustomContractError> for ContractError {
 
 impl<S: HasStateApi> State<S> {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(
-        state_builder: &mut StateBuilder<S>,
-        admin: Address,
-        metadata_url: concordium_cis2::MetadataUrl,
-    ) -> Self {
+    fn new(state_builder: &mut StateBuilder<S>, admin: Address, metadata_url: MetadataUrl) -> Self {
         State {
             admin,
             paused: false,
@@ -1165,10 +1161,10 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+        let initial_metadata_hash: HashSha2256 =
+            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
 
-        let metadata_url = concordium_cis2::MetadataUrl {
+        let metadata_url = MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),
             hash: Some(initial_metadata_hash),
         };
@@ -1194,8 +1190,8 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+        let initial_metadata_hash: HashSha2256 =
+            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
 
         // Set up the parameter.
         let parameter = SetMetadataUrlParams {
@@ -1264,10 +1260,10 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+        let initial_metadata_hash: HashSha2256 =
+            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
 
-        let metadata_url = concordium_cis2::MetadataUrl {
+        let metadata_url = MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),
             hash: Some(initial_metadata_hash),
         };
@@ -1281,7 +1277,7 @@ mod tests {
 
         // Create a new_url and a new_hash
         let new_url = "https://some.example/token/wccd/updated".to_string();
-        let new_hash = crypto_primitives.hash_sha2_256("document2".as_bytes()).0;
+        let new_hash = HashSha2256(crypto_primitives.hash_sha2_256("document2".as_bytes()).0);
 
         // Set up the parameter.
         let parameter = SetMetadataUrlParams {
@@ -1355,10 +1351,10 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
+        let initial_metadata_hash: HashSha2256 =
+            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
 
-        let metadata_url = concordium_cis2::MetadataUrl {
+        let metadata_url = MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),
             hash: Some(initial_metadata_hash),
         };
