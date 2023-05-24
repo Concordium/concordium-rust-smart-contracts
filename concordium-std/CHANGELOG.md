@@ -3,6 +3,7 @@
 ## Unreleased changes
 
 - Set minimum Rust version to 1.65.
+- Introduce `block_time` for `HasChainMetadata` which should be used for contracts written on P6 and onwards.
 
 ## concordium-std 6.2.0 (2023-05-08)
 
