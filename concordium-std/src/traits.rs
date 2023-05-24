@@ -40,6 +40,7 @@ pub trait HasChainMetadata {
     /// Get time in milliseconds at the beginning of this block.
     fn slot_time(&self) -> SlotTime;
     /// Get time in milliseconds at the beginning of this block.
+    #[inline(always)]
     fn block_time(&self) -> Timestamp { self.slot_time() }
 }
 
