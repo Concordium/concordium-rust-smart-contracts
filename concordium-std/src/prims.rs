@@ -223,6 +223,8 @@ extern "C" {
 
     // Getters for the chain meta data
     /// Slot time (in milliseconds) from chain meta data
+    /// Note that this is a Timestamp (unix timestamp with millisecond
+    /// precision).
     pub fn get_slot_time() -> u64;
 
     // Cryptographic primitives

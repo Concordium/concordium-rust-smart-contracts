@@ -1640,6 +1640,11 @@ impl HasChainMetadata for ExternChainMeta {
     fn slot_time(&self) -> SlotTime {
         Timestamp::from_timestamp_millis(unsafe { prims::get_slot_time() })
     }
+
+    #[inline(always)]
+    fn block_time(&self) -> Timestamp {
+        Timestamp::from_timestamp_millis(unsafe { prims::get_slot_time() })
+    }
 }
 
 impl AttributesCursor {
