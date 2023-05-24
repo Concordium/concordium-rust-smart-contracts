@@ -32,6 +32,8 @@
 //! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::{collections::BTreeMap, *};
+// Re-export for backward compatibility.
+pub use concordium_std::MetadataUrl;
 #[cfg(not(feature = "std"))]
 use core::{fmt, ops};
 #[cfg(feature = "std")]

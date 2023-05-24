@@ -46,6 +46,9 @@ pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
 
+/// Sha256 digest
+pub type Sha256 = [u8; 32];
+
 // Types
 
 /// Contract token ID type.
@@ -170,7 +173,7 @@ struct SetMetadataUrlParams {
     /// The URL following the specification RFC1738.
     url:  String,
     /// The hash of the document stored at the above URL.
-    hash: Option<HashSha2256>,
+    hash: Option<Sha256>,
 }
 
 /// The parameter type for the contract function `setPaused`.
@@ -1161,8 +1164,8 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: HashSha2256 =
-            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
 
         let metadata_url = MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),
@@ -1190,8 +1193,8 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: HashSha2256 =
-            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
 
         // Set up the parameter.
         let parameter = SetMetadataUrlParams {
@@ -1260,8 +1263,8 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: HashSha2256 =
-            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
 
         let metadata_url = MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),
@@ -1277,7 +1280,7 @@ mod tests {
 
         // Create a new_url and a new_hash
         let new_url = "https://some.example/token/wccd/updated".to_string();
-        let new_hash = HashSha2256(crypto_primitives.hash_sha2_256("document2".as_bytes()).0);
+        let new_hash = crypto_primitives.hash_sha2_256("document2".as_bytes()).0;
 
         // Set up the parameter.
         let parameter = SetMetadataUrlParams {
@@ -1351,8 +1354,8 @@ mod tests {
         // Set up crypto primitives to hash the document.
         let crypto_primitives = TestCryptoPrimitives::new();
         // The hash of the document stored at the above URL.
-        let initial_metadata_hash: HashSha2256 =
-            HashSha2256(crypto_primitives.hash_sha2_256("document".as_bytes()).0);
+        let initial_metadata_hash: Sha256 =
+            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
 
         let metadata_url = MetadataUrl {
             url:  INITIAL_TOKEN_METADATA_URL.to_string(),

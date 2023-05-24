@@ -2969,9 +2969,10 @@ unsafe impl<T: Clone, S> StateClone<S> for T {
 
 impl schema::SchemaType for MetadataUrl {
     fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            ("url".to_string(), schema::Type::String(schema::SizeLength::U16)),
-            ("hash".to_string(), Option::<HashSha2256>::get_type()),
+        schema::Type::Struct(schema::Fields::Named(crate::vec![
+            (String::from("url"), schema::Type::String(schema::SizeLength::U16)),
+            // Use the `HashSha2256` schema to represent `hash` as a hex string.
+            (String::from("hash"), Option::<HashSha2256>::get_type()),
         ]))
     }
 }

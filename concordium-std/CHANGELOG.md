@@ -3,9 +3,8 @@
 ## Unreleased changes
 
 - Set minimum Rust version to 1.65.
-- Add `MetadataUrl` along with the schema and serialization. It is used by CIS
-  standards to represent the location of the metadata and an optional hash of
-  the content.
+- Move `MetadataUrl` from the CIS-2 library to `concordium-std` along with the schema and serialization to make it available to other CIS standards.
+- Change the `MetadataUrl` schema: use hex string representation for `hash`.
 
 ## concordium-std 6.2.0 (2023-05-08)
 

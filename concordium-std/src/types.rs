@@ -4,7 +4,7 @@ use crate::{
 use concordium_contracts_common::{AccountBalance, Amount, ParseError};
 use core::{fmt, str::FromStr};
 // Re-export for backward compatibility.
-pub use concordium_contracts_common::*;
+pub use concordium_contracts_common::ExchangeRates;
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
@@ -1252,7 +1252,7 @@ pub enum StateError {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MetadataUrl {
     /// The URL following the specification RFC1738.
-    pub url:  String,
+    pub url:  crate::String,
     /// A optional hash of the content.
-    pub hash: Option<HashSha2256>,
+    pub hash: Option<[u8; 32]>,
 }
