@@ -12,3 +12,15 @@ fn deletable() {
     let t = trybuild::TestCases::new();
     t.pass("tests/derive-deletable/success-*.rs");
 }
+
+#[test]
+fn serial() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/derive-serial/success-*.rs");
+}
+
+#[test]
+fn deserial() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/derive-deserial/success-*.rs");
+}
