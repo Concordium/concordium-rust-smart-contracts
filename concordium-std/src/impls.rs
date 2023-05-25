@@ -2966,3 +2966,36 @@ unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for 
 unsafe impl<T: Clone, S> StateClone<S> for T {
     unsafe fn clone_state(&self, _cloned_state_api: &S) -> Self { self.clone() }
 }
+
+impl schema::SchemaType for MetadataUrl {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(crate::vec![
+            (String::from("url"), schema::Type::String(schema::SizeLength::U16)),
+            // Use the `HashSha2256` schema to represent `hash` as a hex string.
+            (String::from("hash"), Option::<HashSha2256>::get_type()),
+        ]))
+    }
+}
+
+impl Serial for MetadataUrl {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        // Serialize url as a string with size_length = 2
+        let bytes = self.url.as_bytes();
+        let len = bytes.len() as u16;
+        len.serial(out)?;
+        serial_vector_no_length(bytes, out)?;
+        self.hash.serial(out)
+    }
+}
+
+impl Deserial for MetadataUrl {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        // Deserialize url as a string with size_length = 2
+        let len: u16 = source.get()?;
+        let bytes = deserial_vector_no_length(source, len as usize)?;
+        Ok(MetadataUrl {
+            url:  String::from_utf8(bytes).map_err(|_| ParseError::default())?,
+            hash: Deserial::deserial(source)?,
+        })
+    }
+}
