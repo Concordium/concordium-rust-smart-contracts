@@ -24,3 +24,10 @@ fn deserial() {
     let t = trybuild::TestCases::new();
     t.pass("tests/derive-deserial/success-*.rs");
 }
+
+#[cfg(feature = "build-schema")]
+#[test]
+fn schema_type() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/derive-schema-type/success-*.rs");
+}

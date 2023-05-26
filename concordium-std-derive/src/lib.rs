@@ -1567,8 +1567,6 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
 
     let data_name = &ast.ident;
 
-    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
-
     let body = match ast.data {
         syn::Data::Struct(ref data) => {
             let fields_tokens = schema_type_fields(&data.fields)?;
@@ -1607,9 +1605,28 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         _ => syn::Error::new(ast.span(), "Union is not supported").to_compile_error(),
     };
 
+    let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
+
+    // Extend where clauses bounding generics to implement SchemaType.
+    let where_clause_extra: proc_macro2::TokenStream = ast
+        .generics
+        .type_params()
+        .map(|type_param| {
+            let type_param_ident = &type_param.ident;
+            quote! (#type_param_ident: concordium_std::schema::SchemaType,)
+        })
+        .collect();
+
+    let where_clauses_tokens = if let Some(where_clauses) = where_clauses {
+        let predicates = &where_clauses.predicates;
+        quote!(#predicates, where_clause_extra)
+    } else {
+        where_clause_extra
+    };
+
     let out = quote! {
         #[automatically_derived]
-        impl #impl_generics concordium_std::schema::SchemaType for #data_name #ty_generics #where_clauses {
+        impl #impl_generics concordium_std::schema::SchemaType for #data_name #ty_generics where #where_clauses_tokens {
             fn get_type() -> concordium_std::schema::Type {
                 #body
             }
