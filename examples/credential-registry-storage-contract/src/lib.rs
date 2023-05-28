@@ -214,8 +214,8 @@ pub struct DataToSign {
 }
 
 /// Helper function that can be invoked at the front end to serialize
-/// the `SerializationHelperParam` to be signed by the wallet. The
-/// `SerializationHelperParam` includes all the input parameters from
+/// the `DataToSign` to be signed by the wallet. The
+/// `DataToSign` includes all the input parameters from
 /// `StoreParam` except for the `signature` and the `public_key`. We only need
 /// the input parameter schema of this function at the front end. The
 /// `serializationHelper` function is not executed at any point in time,
@@ -304,10 +304,10 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        79, 193, 117, 35, 254, 245, 122, 77, 3, 247, 197, 145, 79, 59, 133, 196, 111, 160, 34, 85,
-        70, 193, 100, 197, 117, 128, 233, 90, 93, 97, 88, 62, 151, 197, 114, 149, 143, 213, 86,
-        166, 64, 251, 17, 34, 192, 177, 39, 53, 93, 221, 86, 51, 171, 133, 248, 120, 97, 176, 99,
-        133, 64, 173, 17, 10,
+        22, 151, 161, 95, 94, 245, 49, 247, 194, 212, 230, 43, 230, 59, 70, 97, 130, 222, 62, 186,
+        160, 143, 102, 88, 84, 95, 201, 123, 8, 214, 167, 101, 232, 237, 34, 15, 112, 218, 224,
+        185, 129, 87, 178, 109, 94, 150, 45, 23, 94, 227, 84, 165, 149, 165, 184, 157, 176, 42,
+        174, 237, 232, 10, 221, 15,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
     const METADATA: Metadata = Metadata([43, 1]);
@@ -349,19 +349,21 @@ mod tests {
         });
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
+        let data = DataToSign {
+            contract_address:     ContractAddress {
+                index:    0,
+                subindex: 0,
+            },
+            timestamp:            Timestamp::from_timestamp_millis(10000000000),
+            metadata:             METADATA,
+            encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
+        };
+
         // Set up the parameter.
         let parameter = StoreParam {
-            signature:  SIGNATURE,
+            signature: SIGNATURE,
             public_key: PUBLIC_KEY,
-            data:       DataToSign {
-                contract_address:     ContractAddress {
-                    index:    0,
-                    subindex: 0,
-                },
-                timestamp:            Timestamp::from_timestamp_millis(10000000000),
-                metadata:             METADATA,
-                encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
-            },
+            data,
         };
 
         let parameter_bytes = to_bytes(&parameter);
