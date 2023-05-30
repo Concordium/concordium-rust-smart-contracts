@@ -35,9 +35,6 @@
 //! - view credential status to verify VC validity;
 //! - view credential data to verify proofs (verifiable presentations) requested
 //!   from holders.
-
-// TODO: remove the CIS-2 dependency once MetadataUrl is moved to concordium-std
-use concordium_cis2::*;
 use concordium_std::*;
 
 /// Credential type is a string that corresponds to the value of the "name"
@@ -145,7 +142,9 @@ impl<S: HasStateApi> CredentialEntry<S> {
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
+    /// An account address of the issuer.
     issuer:              AccountAddress,
+    /// A reference to the isser metadata.
     issuer_metadata:     MetadataUrl,
     /// The currently active set of revocation keys.
     revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
@@ -153,6 +152,7 @@ pub struct State<S: HasStateApi> {
     all_revocation_keys: StateSet<PublicKeyEd25519, S>,
     /// Mapping of credential holders to entries.
     credentials:         StateMap<PublicKeyEd25519, CredentialEntry<S>, S>,
+    /// A mapping from credential types to schema references.
     schema_registry:     StateMap<CredentialType, SchemaRef, S>,
 }
 

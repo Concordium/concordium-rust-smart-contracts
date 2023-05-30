@@ -1046,6 +1046,9 @@ impl FromStr for PublicKeyEd25519 {
 }
 
 #[cfg(feature = "concordium-quickcheck")]
+/// Arbitrary public keys.
+/// Note that this is a simple generator that might produce an array of bytes
+/// that is not a valid public key.
 impl quickcheck::Arbitrary for PublicKeyEd25519 {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         let lower: u128 = quickcheck::Arbitrary::arbitrary(g);
