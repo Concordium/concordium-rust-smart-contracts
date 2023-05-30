@@ -1259,3 +1259,12 @@ pub enum StateError {
     /// No nodes exist with the given prefix.
     SubtreeWithPrefixNotFound,
 }
+
+/// The location of the metadata and an optional hash of the content.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct MetadataUrl {
+    /// The URL following the specification RFC1738.
+    pub url:  crate::String,
+    /// A optional hash of the content.
+    pub hash: Option<[u8; 32]>,
+}

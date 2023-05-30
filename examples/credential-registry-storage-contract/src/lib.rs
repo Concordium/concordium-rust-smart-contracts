@@ -164,7 +164,7 @@ fn contract_init<S: HasStateApi>(
     contract = "credential-registry-storage",
     name = "view",
     parameter = "PublicKeyEd25519",
-    return_value = "SimpleCredentialState",
+    return_value = "Option<SimpleCredentialState>",
     error = "CustomContractError"
 )]
 fn view<S: HasStateApi>(
@@ -184,37 +184,24 @@ fn view<S: HasStateApi>(
 /// The parameter type for the contract function `store`.
 #[derive(Serialize, SchemaType, Debug)]
 pub struct StoreParam {
-    /// The contract_address that the signature is intended for.
-    contract_address:     ContractAddress,
-    /// The serialized encrypted_credential.
-    #[concordium(size_length = 2)]
-    encrypted_credential: Vec<u8>,
-    /// Metadata associated with the credential.
-    metadata:             Metadata,
     /// Public key that created the above signature.
-    public_key:           PublicKeyEd25519,
+    public_key: PublicKeyEd25519,
     /// Signature.
-    signature:            SignatureEd25519,
-    /// A timestamp to make signatures expire.
-    timestamp:            Timestamp,
+    signature:  SignatureEd25519,
+    data:       DataToSign,
 }
 
 impl StoreParam {
     /// Prepare the message bytes for signature verification
     fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
-        self.contract_address.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
-        self.encrypted_credential
-            .serial::<Vec<_>>(bytes)
-            .map_err(|_| CustomContractError::SerializationError)?;
-        self.metadata.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
-        self.timestamp.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
+        self.data.serial(bytes).map_err(|_| CustomContractError::SerializationError)?;
         Ok(())
     }
 }
 
 /// The parameter type for the contract function `serializationHelper`.
-#[derive(Serialize, SchemaType)]
-pub struct SerializationHelperParam {
+#[derive(Serialize, SchemaType, Debug)]
+pub struct DataToSign {
     /// The contract_address that the signature is intended for.
     contract_address:     ContractAddress,
     /// The serialized encrypted_credential.
@@ -227,8 +214,8 @@ pub struct SerializationHelperParam {
 }
 
 /// Helper function that can be invoked at the front end to serialize
-/// the `SerializationHelperParam` to be signed by the wallet. The
-/// `SerializationHelperParam` includes all the input parameters from
+/// the `DataToSign` to be signed by the wallet. The
+/// `DataToSign` includes all the input parameters from
 /// `StoreParam` except for the `signature` and the `public_key`. We only need
 /// the input parameter schema of this function at the front end. The
 /// `serializationHelper` function is not executed at any point in time,
@@ -236,7 +223,7 @@ pub struct SerializationHelperParam {
 #[receive(
     contract = "credential-registry-storage",
     name = "serializationHelper",
-    parameter = "SerializationHelperParam"
+    parameter = "DataToSign"
 )]
 fn contract_serialization_helper<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
@@ -273,10 +260,10 @@ fn store<S: HasStateApi>(
     let param: StoreParam = ctx.parameter_cursor().get()?;
 
     // Check that the signature was intended for this contract.
-    ensure_eq!(param.contract_address, ctx.self_address(), CustomContractError::WrongContract);
+    ensure_eq!(param.data.contract_address, ctx.self_address(), CustomContractError::WrongContract);
 
     // Check signature is not expired.
-    ensure!(param.timestamp >= ctx.metadata().slot_time(), CustomContractError::Expired);
+    ensure!(param.data.timestamp >= ctx.metadata().slot_time(), CustomContractError::Expired);
 
     // Perepare message bytes as it is signed by the wallet.
     // Note that the message is prepended by a domain separation string.
@@ -290,8 +277,8 @@ fn store<S: HasStateApi>(
     );
 
     let entry = host.state_mut().credential_registry.insert(param.public_key, CredentialState {
-        metadata:             param.metadata,
-        encrypted_credential: param.encrypted_credential,
+        metadata:             param.data.metadata,
+        encrypted_credential: param.data.encrypted_credential,
     });
 
     ensure!(entry.is_none(), CustomContractError::CredentialAlreadyRegisteredForGivenPublicKey);
@@ -317,10 +304,10 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        79, 193, 117, 35, 254, 245, 122, 77, 3, 247, 197, 145, 79, 59, 133, 196, 111, 160, 34, 85,
-        70, 193, 100, 197, 117, 128, 233, 90, 93, 97, 88, 62, 151, 197, 114, 149, 143, 213, 86,
-        166, 64, 251, 17, 34, 192, 177, 39, 53, 93, 221, 86, 51, 171, 133, 248, 120, 97, 176, 99,
-        133, 64, 173, 17, 10,
+        22, 151, 161, 95, 94, 245, 49, 247, 194, 212, 230, 43, 230, 59, 70, 97, 130, 222, 62, 186,
+        160, 143, 102, 88, 84, 95, 201, 123, 8, 214, 167, 101, 232, 237, 34, 15, 112, 218, 224,
+        185, 129, 87, 178, 109, 94, 150, 45, 23, 94, 227, 84, 165, 149, 165, 184, 157, 176, 42,
+        174, 237, 232, 10, 221, 15,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
     const METADATA: Metadata = Metadata([43, 1]);
@@ -362,10 +349,7 @@ mod tests {
         });
         ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(0));
 
-        // Set up the parameter.
-        let parameter = StoreParam {
-            signature:            SIGNATURE,
-            public_key:           PUBLIC_KEY,
+        let data = DataToSign {
             contract_address:     ContractAddress {
                 index:    0,
                 subindex: 0,
@@ -373,6 +357,13 @@ mod tests {
             timestamp:            Timestamp::from_timestamp_millis(10000000000),
             metadata:             METADATA,
             encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
+        };
+
+        // Set up the parameter.
+        let parameter = StoreParam {
+            signature: SIGNATURE,
+            public_key: PUBLIC_KEY,
+            data,
         };
 
         let parameter_bytes = to_bytes(&parameter);
