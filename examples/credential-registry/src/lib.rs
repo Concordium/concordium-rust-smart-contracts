@@ -1622,7 +1622,7 @@ mod tests {
         data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state = State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata());
-        let schema_result = state.add_schema(credential_type, schema_ref);
+        let schema_result = state.add_schema(credential_type, schema_ref.clone());
         let register_result = state.register_credential(&data, &mut state_builder);
         let query_result = state.view_credential_info(credential_id);
         let status = state.view_credential_status(now, credential_id);
@@ -1630,7 +1630,8 @@ mod tests {
             schema_result.is_ok()
                 && register_result.is_ok()
                 && status.map_or(false, |x| x != CredentialStatus::Revoked)
-                && (fetched_data.credential_info == data)
+                && fetched_data.credential_info == data
+                && fetched_data.schema_ref == schema_ref
                 && fetched_data.revocation_nonce == 0
         } else {
             false
