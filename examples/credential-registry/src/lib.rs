@@ -686,7 +686,7 @@ fn contract_credential_status<S: HasStateApi>(
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
-    parameter = "CredentialInfo",
+    parameter = "RegisterCredentialParam",
     error = "ContractError",
     enable_logger,
     mutable
