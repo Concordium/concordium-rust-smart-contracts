@@ -25,6 +25,13 @@ enum MyOtherEnum<A, B> {
     Two(A, B),
 }
 
+#[derive(Deserial)]
+#[concordium(bound(deserial = ""))]
+struct ExplicitBound<A> {
+    field: marker::PhantomData<A>,
+}
+struct NotImplemtingDeserial;
+
 fn main() {
     {
         let bytes = [0u8; 9];
@@ -41,5 +48,10 @@ fn main() {
     {
         let bytes = [1u8; 10];
         let _value: MyOtherEnum<u64, u8> = from_bytes(&bytes).expect("Deserialize MyOtherStruct");
+    }
+    {
+        let bytes = [0u8; 0];
+        let _value: ExplicitBound<NotImplemtingDeserial> =
+            from_bytes(&bytes).expect("Deserialize ExplicitBound");
     }
 }
