@@ -205,7 +205,7 @@ impl<T> From<CallContractError<T>> for ContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::ContractInvocationError }
 }
 
-/// Mapping errors related to contract invocations to ContractError.
+/// Mapping errors related to the parameter size to ContractError.
 impl From<ExceedsParameterSize> for ContractError {
     fn from(_cce: ExceedsParameterSize) -> Self { Self::AuxDataTooBig }
 }
