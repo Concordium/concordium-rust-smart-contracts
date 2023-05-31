@@ -1187,7 +1187,7 @@ const CONCORDIUM_ATTRIBUTE: &str = "concordium";
 const VALID_CONCORDIUM_FIELD_ATTRIBUTES: [&str; 3] = ["size_length", "ensure_ordered", "rename"];
 
 /// A list of valid concordium attributes
-const VALID_CONCORDIUM_ATTRIBUTES: [&str; 1] = ["state_parameter"];
+const VALID_CONCORDIUM_ATTRIBUTES: [&str; 2] = ["state_parameter", "bound"];
 
 /// Finds concordium field attributes.
 fn get_concordium_field_attributes(attributes: &[syn::Attribute]) -> syn::Result<Vec<syn::Meta>> {
@@ -1358,6 +1358,161 @@ fn check_for_name_collisions(
         return Err(error_at_first_def);
     }
     Ok(())
+}
+
+/// The value of the bound attribute, e.g. "A: Serial, B: Deserial".
+#[cfg(feature = "build-schema")]
+type BoundAttributeValue = syn::punctuated::Punctuated<syn::WherePredicate, syn::token::Comma>;
+
+/// Bound attribute on some type.
+#[cfg(feature = "build-schema")]
+#[derive(Debug)]
+enum BoundAttribute {
+    /// Represents a bound shared across all of the derived traits.
+    /// E.g. the attribute: `bound = "A : Serial + Deserial"`
+    Shared(BoundAttributeValue),
+    /// Represents bounds explicitly set for each derived trait.
+    /// E.g. the attribute: `bound(serial = "A : Serial", deserial = "A :
+    /// Deserial")`
+    Separate(SeparateBoundValue),
+}
+
+/// Represents bounds explicitly set for each derived trait.
+///
+/// E.g. `bound(serial = "A : Serial", deserial = "A : Deserial")`
+#[cfg(feature = "build-schema")]
+#[derive(Debug)]
+struct SeparateBoundValue {
+    /// Bounds set for SchemaType.
+    schema_type: Option<BoundAttributeValue>,
+}
+
+/// Concordium attributes supported on containers.
+#[cfg(feature = "build-schema")]
+#[derive(Debug)]
+struct ContainerAttributes {
+    /// All of the `bound` attributes, either of the form `bound(serial = "..",
+    /// deserial = "..", schema_type = "..")` or `bound = ".."`.
+    bounds: Vec<BoundAttribute>,
+}
+
+#[cfg(feature = "build-schema")]
+impl ContainerAttributes {
+    /// Collect shared and explicit bounds set for the implementation of
+    /// `SchemaType`. `None` meaning no bound attributes are provided.
+    fn schema_type_bounds(&self) -> Option<BoundAttributeValue> {
+        let mut bounds: Option<BoundAttributeValue> = None;
+        for attribute in self.bounds.iter() {
+            if let BoundAttribute::Shared(bound)
+            | BoundAttribute::Separate(SeparateBoundValue {
+                schema_type: Some(bound),
+                ..
+            }) = attribute
+            {
+                bounds.get_or_insert(BoundAttributeValue::new()).extend(bound.clone());
+            }
+        }
+        bounds
+    }
+}
+
+#[cfg(feature = "build-schema")]
+impl TryFrom<&[syn::Attribute]> for ContainerAttributes {
+    type Error = syn::Error;
+
+    fn try_from(attributes: &[syn::Attribute]) -> Result<Self, Self::Error> {
+        let metas = get_concordium_attributes(attributes, false)?;
+        // Collect and combine all errors if any.
+        let mut error_option: Option<syn::Error> = None;
+        let mut bounds = Vec::new();
+        for meta in metas.iter() {
+            if meta.path().is_ident("bound") {
+                match BoundAttribute::try_from(meta) {
+                    Err(new_err) => match error_option.as_mut() {
+                        Some(error) => error.combine(new_err),
+                        None => error_option = Some(new_err),
+                    },
+                    Ok(bound) => bounds.push(bound),
+                }
+            }
+        }
+
+        if let Some(err) = error_option {
+            Err(err)
+        } else {
+            Ok(ContainerAttributes {
+                bounds,
+            })
+        }
+    }
+}
+
+#[cfg(feature = "build-schema")]
+impl TryFrom<&syn::MetaList> for SeparateBoundValue {
+    type Error = syn::Error;
+
+    fn try_from(list: &syn::MetaList) -> Result<Self, Self::Error> {
+        let items = &list.nested;
+        if items.is_empty() {
+            return Err(syn::Error::new(list.span(), "bound attribute cannot be empty"));
+        }
+        let mut schema_type: Option<BoundAttributeValue> = None;
+
+        for item in items {
+            let syn::NestedMeta::Meta(nested_meta) = item else {
+                        return Err(syn::Error::new(item.span(), "bound attribute list can only contain name value pairs"));
+                    };
+            let syn::Meta::NameValue(name_value) = nested_meta else {
+                return Err(syn::Error::new(nested_meta.span(), "bound attribute list must contain named values"))
+            };
+            if name_value.path.is_ident("serial") || name_value.path.is_ident("deserial") {
+                continue;
+            } else if name_value.path.is_ident("schema_type") {
+                let syn::Lit::Str(lit_str) = &name_value.lit else {
+                            return Err(syn::Error::new(name_value.lit.span(), "bound attribute must be a string literal"))
+                        };
+                let value = lit_str.parse_with(BoundAttributeValue::parse_terminated)?;
+                if let Some(schema_type_value) = schema_type.as_mut() {
+                    schema_type_value.extend(value)
+                } else {
+                    schema_type = Some(value);
+                };
+            } else {
+                return Err(syn::Error::new(
+                    item.span(),
+                    "bound attribute list only allow the keys 'serial' and 'deserial'",
+                ));
+            }
+        }
+
+        Ok(Self {
+            schema_type,
+        })
+    }
+}
+
+#[cfg(feature = "build-schema")]
+impl TryFrom<&syn::Meta> for BoundAttribute {
+    type Error = syn::Error;
+
+    fn try_from(meta: &syn::Meta) -> Result<Self, Self::Error> {
+        match meta {
+            syn::Meta::List(list) => {
+                Ok(BoundAttribute::Separate(SeparateBoundValue::try_from(list)?))
+            }
+            syn::Meta::NameValue(name_value) => {
+                let syn::Lit::Str(ref lit_str) = name_value.lit else {
+                    return Err(syn::Error::new(name_value.lit.span(), "bound attribute must be a string literal"))
+                };
+
+                let value = lit_str.parse_with(BoundAttributeValue::parse_terminated)?;
+                Ok(BoundAttribute::Shared(value))
+            }
+            syn::Meta::Path(_) => {
+                Err(syn::Error::new(meta.span(), "bound attribute value is invalid"))
+            }
+        }
+    }
 }
 
 /// Derive the DeserialWithState trait. See the documentation of
@@ -1605,24 +1760,30 @@ fn schema_type_derive_worker(input: TokenStream) -> syn::Result<TokenStream> {
         _ => syn::Error::new(ast.span(), "Union is not supported").to_compile_error(),
     };
 
+    let container_attributes = ContainerAttributes::try_from(ast.attrs.as_slice())?;
     let (impl_generics, ty_generics, where_clauses) = ast.generics.split_for_impl();
 
-    // Extend where clauses bounding generics to implement SchemaType.
-    let where_clause_extra: proc_macro2::TokenStream = ast
-        .generics
-        .type_params()
-        .map(|type_param| {
-            let type_param_ident = &type_param.ident;
-            quote! (#type_param_ident: concordium_std::schema::SchemaType,)
-        })
-        .collect();
+    let where_clauses_tokens =
+        if let Some(attribute_bounds) = container_attributes.schema_type_bounds() {
+            attribute_bounds.into_token_stream()
+        } else {
+            // Extend where clauses bounding generics to implement SchemaType.
+            let where_clause_extra: proc_macro2::TokenStream = ast
+                .generics
+                .type_params()
+                .map(|type_param| {
+                    let type_param_ident = &type_param.ident;
+                    quote! (#type_param_ident: concordium_std::schema::SchemaType,)
+                })
+                .collect();
 
-    let where_clauses_tokens = if let Some(where_clauses) = where_clauses {
-        let predicates = &where_clauses.predicates;
-        quote!(#predicates, where_clause_extra)
-    } else {
-        where_clause_extra
-    };
+            if let Some(where_clauses) = where_clauses {
+                let predicates = &where_clauses.predicates;
+                quote!(#predicates, where_clause_extra)
+            } else {
+                where_clause_extra
+            }
+        };
 
     let out = quote! {
         #[automatically_derived]
