@@ -202,15 +202,15 @@ impl StoreParam {
 /// The parameter type for the contract function `serializationHelper`.
 #[derive(Serialize, SchemaType, Debug)]
 pub struct DataToSign {
+    /// A timestamp to make signatures expire.
+    timestamp:            Timestamp,
     /// The contract_address that the signature is intended for.
     contract_address:     ContractAddress,
+    /// Metadata associated with the credential.
+    metadata:             Metadata,
     /// The serialized encrypted_credential.
     #[concordium(size_length = 2)]
     encrypted_credential: Vec<u8>,
-    /// Metadata associated with the credential.
-    metadata:             Metadata,
-    /// A timestamp to make signatures expire.
-    timestamp:            Timestamp,
 }
 
 /// Helper function that can be invoked at the front end to serialize
@@ -304,10 +304,10 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        22, 151, 161, 95, 94, 245, 49, 247, 194, 212, 230, 43, 230, 59, 70, 97, 130, 222, 62, 186,
-        160, 143, 102, 88, 84, 95, 201, 123, 8, 214, 167, 101, 232, 237, 34, 15, 112, 218, 224,
-        185, 129, 87, 178, 109, 94, 150, 45, 23, 94, 227, 84, 165, 149, 165, 184, 157, 176, 42,
-        174, 237, 232, 10, 221, 15,
+        13, 222, 247, 236, 178, 112, 59, 144, 60, 211, 81, 134, 97, 201, 22, 173, 36, 199, 164,
+        217, 156, 107, 204, 83, 201, 153, 189, 77, 86, 238, 251, 220, 183, 221, 238, 114, 244, 219,
+        132, 61, 167, 79, 230, 52, 73, 86, 101, 176, 153, 223, 103, 8, 197, 26, 82, 178, 162, 119,
+        204, 239, 82, 114, 25, 7,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
     const METADATA: Metadata = Metadata([43, 1]);
