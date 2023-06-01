@@ -54,7 +54,7 @@ const SIGNATURE_DOMAIN: &str = "WEB3ID:STORE";
 /// Metadata is a string of two bytes that contain information needed for
 /// decoding the credentials.
 #[derive(Serial, SchemaType, Clone, Copy, Deserial, PartialEq, Debug)]
-struct Metadata([u8; 2]);
+struct Metadata(u16);
 
 /// Part of the contract state.
 #[derive(Serial, Deserial, Clone)]
@@ -310,7 +310,7 @@ mod tests {
         204, 239, 82, 114, 25, 7,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
-    const METADATA: Metadata = Metadata([43, 1]);
+    const METADATA: Metadata = Metadata(43 + 256);
 
     // Test initialization succeeds.
     #[concordium_test]
