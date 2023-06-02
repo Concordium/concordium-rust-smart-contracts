@@ -7,7 +7,7 @@ contracts for the Concordium blockchain in the Rust programming languages, as
 well as some sample smart contracts. The core library is
 [concordium-std](./concordium-std).
 
-The core library provide procedural macros to reduce the amount of boilerplate the user needs to write,
+The core library provides procedural macros to reduce the amount of boilerplate the user needs to write,
 while the `concordium-std` library exposes a high-level API that smart contract
 writers can use when writing contracts, alleviating them from the need to deal
 with low-level details of how the interaction with the chain works.
