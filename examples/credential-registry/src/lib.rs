@@ -558,7 +558,7 @@ pub struct InitParams {
 /// Init function that creates a fresh registry state given the issuer's
 /// metadata, storage contract address and initial credential schemas.
 ///
-/// Logs `CredentialEvent::IssuerMetadata, CredentialEvent::Schema
+/// Logs `CredentialEvent::IssuerMetadata` and `CredentialEvent::Schema`.
 ///
 /// It rejects if:
 ///   - Fails to log the events.
@@ -625,7 +625,7 @@ pub struct CredentialInfo {
 pub struct RegisterCredentialParam {
     /// Public credential data.
     credential_info: CredentialInfo,
-    /// Auxiliary data. In this contract is is used to pass encrypted private
+    /// Auxiliary data. In this contract it is used to pass encrypted private
     /// credential data to the credential storage contract.
     #[concordium(size_length = 2)]
     auxiliary_data:  Vec<u8>,
