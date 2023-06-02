@@ -467,7 +467,7 @@ enum RevocationKeyAction {
 struct RevocationKeyEvent {
     /// The public key that is registered/removed
     key:    PublicKeyEd25519,
-    /// Regisrer/remove action.
+    /// A register/remove action.
     action: RevocationKeyAction,
 }
 
@@ -553,15 +553,23 @@ pub struct InitParams {
     /// Credential schemas available right after initialization.
     #[concordium(size_length = 1)]
     schemas:         Vec<(CredentialType, SchemaRef)>,
+    /// The issuer for the registry. If `None`, the `init_origin` is used as
+    /// `issuer`.
+    issuer:          Option<AccountAddress>,
+    /// Revocation keys available right after initialization.
+    revocation_keys: Vec<PublicKeyEd25519>,
 }
 
 /// Init function that creates a fresh registry state given the issuer's
 /// metadata, storage contract address and initial credential schemas.
 ///
-/// Logs `CredentialEvent::IssuerMetadata` and `CredentialEvent::Schema`.
+/// Logs `CredentialEvent::IssuerMetadata`, `CredentialEvent::RevocationKey`
+/// (with the `Register` action) for each key in the input, and
+/// `CredentialEvent::Schema` for each schema in the input.
 ///
 /// It rejects if:
 ///   - Fails to log the events.
+///   - Fails to register any of the initial revocation keys.
 ///   - Fails to add any of the inital schemas.
 #[init(
     contract = "credential_registry",
@@ -578,10 +586,17 @@ fn init<S: HasStateApi>(
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
     let mut state = State::new(
         state_builder,
-        ctx.init_origin(),
+        parameter.issuer.unwrap_or(ctx.init_origin()),
         parameter.issuer_metadata,
         parameter.storage_address,
     );
+    for pk in parameter.revocation_keys {
+        state.register_revocation_key(pk)?;
+        logger.log(&CredentialEvent::RevocationKey(RevocationKeyEvent {
+            key:    pk,
+            action: RevocationKeyAction::Register,
+        }))?;
+    }
     for (credential_type, schema_ref) in parameter.schemas {
         state.add_schema(credential_type.clone(), schema_ref.clone())?;
         logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
@@ -1610,6 +1625,8 @@ mod tests {
             issuer_metadata: issuer_metadata(),
             schemas,
             storage_address: STORAGE_CONTRACT,
+            issuer: ISSUER_ACCOUNT.into(),
+            revocation_keys: vec![PUBLIC_KEY],
         });
         ctx.set_parameter(&parameter_bytes);
 
@@ -1621,6 +1638,7 @@ mod tests {
         let fetched_schema =
             state.schema_registry.get(&schema.0).expect_report("Schema must be in the state");
         claim_eq!(*fetched_schema, schema.1, "Incorrect schema in the state");
+        claim_eq!(state.issuer, ISSUER_ACCOUNT.into(), "Incorrect issuer in the state");
         claim_eq!(
             state.storage_address,
             STORAGE_CONTRACT,
@@ -1634,7 +1652,7 @@ mod tests {
 
         // Check that the correct events were logged.
 
-        claim_eq!(logger.logs.len(), 2, "Incorrect number of logged events");
+        claim_eq!(logger.logs.len(), 3, "Incorrect number of logged events");
 
         claim_eq!(
             logger.logs[0],
@@ -1643,6 +1661,14 @@ mod tests {
         );
         claim_eq!(
             logger.logs[1],
+            to_bytes(&CredentialEvent::RevocationKey(RevocationKeyEvent {
+                key:    PUBLIC_KEY,
+                action: RevocationKeyAction::Register,
+            })),
+            "Incorrect revocation key event logged"
+        );
+        claim_eq!(
+            logger.logs[2],
             to_bytes(&CredentialEvent::Schema(CredentialSchemaRefEvent {
                 credential_type: schema.0,
                 schema_ref:      schema.1,
