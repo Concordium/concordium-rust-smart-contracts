@@ -556,7 +556,7 @@ pub struct InitParams {
 }
 
 /// Init function that creates a fresh registry state given the issuer's
-/// metadata
+/// metadata, storage contract address and initial credential schemas.
 ///
 /// Logs `CredentialEvent::IssuerMetadata, CredentialEvent::Schema
 ///
