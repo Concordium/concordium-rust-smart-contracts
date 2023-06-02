@@ -546,14 +546,23 @@ impl Deserial for CredentialEvent {
 
 #[derive(Serialize, SchemaType)]
 pub struct InitParams {
+    /// The issuer's metadata.
     issuer_metadata: MetadataUrl,
+    /// An address of the credential storage contract.
     storage_address: ContractAddress,
+    /// Credential schemas available right after initialization.
+    #[concordium(size_length = 1)]
+    schemas:         Vec<(CredentialType, SchemaRef)>,
 }
 
 /// Init function that creates a fresh registry state given the issuer's
 /// metadata
 ///
-/// Logs `IssuerMetadataEvent`
+/// Logs `CredentialEvent::IssuerMetadata, CredentialEvent::Schema
+///
+/// It rejects if:
+///   - Fails to log the events.
+///   - Fails to add any of the inital schemas.
 #[init(
     contract = "credential_registry",
     parameter = "InitParams",
@@ -567,12 +576,20 @@ fn init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let parameter: InitParams = ctx.parameter_cursor().get()?;
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
-    Ok(State::new(
+    let mut state = State::new(
         state_builder,
         ctx.init_origin(),
         parameter.issuer_metadata,
         parameter.storage_address,
-    ))
+    );
+    for (credential_type, schema_ref) in parameter.schemas {
+        state.add_schema(credential_type.clone(), schema_ref.clone())?;
+        logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
+            credential_type,
+            schema_ref,
+        }))?;
+    }
+    Ok(state)
 }
 
 /// Check whether the transaction `sender` is the issuer.
@@ -1586,8 +1603,11 @@ mod tests {
 
         ctx.set_init_origin(ISSUER_ACCOUNT);
 
+        let schemas = vec![get_credential_schema()];
+
         let parameter_bytes = to_bytes(&InitParams {
             issuer_metadata: issuer_metadata(),
+            schemas,
             storage_address: STORAGE_CONTRACT,
         });
         ctx.set_parameter(&parameter_bytes);
