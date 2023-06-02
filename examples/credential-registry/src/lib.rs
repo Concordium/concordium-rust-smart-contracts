@@ -1614,7 +1614,25 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let state_result = init(&ctx, &mut state_builder, &mut logger);
-        state_result.expect_report("Contract initialization results in an error");
+        let state = state_result.expect_report("Contract initialization results in an error");
+
+        // Check that the initial parameters are in the state.
+        claim_eq!(state.storage_address, STORAGE_CONTRACT, "Incorrect storage contract address");
+        let fetched_schema =
+            state.schema_registry.get(&schema.0).expect_report("Schema must be in the state");
+        claim_eq!(*fetched_schema, schema.1, "Incorrect schema in the state");
+        claim_eq!(
+            state.storage_address,
+            STORAGE_CONTRACT,
+            "Incorrect storage contract address in the state"
+        );
+        claim_eq!(
+            state.issuer_metadata,
+            issuer_metadata(),
+            "Incorrect issuer metadata in the state"
+        );
+
+        // Check that the correct events were logged.
 
         claim_eq!(logger.logs.len(), 2, "Incorrect number of logged events");
 
