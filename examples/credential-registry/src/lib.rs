@@ -586,7 +586,7 @@ fn init<S: HasStateApi>(
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
     let mut state = State::new(
         state_builder,
-        parameter.issuer.unwrap_or(ctx.init_origin()),
+        parameter.issuer.unwrap_or_else(|| ctx.init_origin()),
         parameter.issuer_metadata,
         parameter.storage_address,
     );
@@ -1638,7 +1638,7 @@ mod tests {
         let fetched_schema =
             state.schema_registry.get(&schema.0).expect_report("Schema must be in the state");
         claim_eq!(*fetched_schema, schema.1, "Incorrect schema in the state");
-        claim_eq!(state.issuer, ISSUER_ACCOUNT.into(), "Incorrect issuer in the state");
+        claim_eq!(state.issuer, ISSUER_ACCOUNT, "Incorrect issuer in the state");
         claim_eq!(
             state.storage_address,
             STORAGE_CONTRACT,
