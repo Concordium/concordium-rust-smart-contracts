@@ -1603,8 +1603,9 @@ mod tests {
 
         ctx.set_init_origin(ISSUER_ACCOUNT);
 
-        let schemas = vec![get_credential_schema()];
+        let schema = get_credential_schema();
 
+        let schemas = vec![schema.clone()];
         let parameter_bytes = to_bytes(&InitParams {
             issuer_metadata: issuer_metadata(),
             schemas,
@@ -1615,10 +1616,20 @@ mod tests {
         let state_result = init(&ctx, &mut state_builder, &mut logger);
         state_result.expect_report("Contract initialization results in an error");
 
+        claim_eq!(logger.logs.len(), 2, "Incorrect number of logged events");
+
         claim_eq!(
             logger.logs[0],
             to_bytes(&CredentialEvent::IssuerMetadata(issuer_metadata())),
             "Incorrect issuer metadata event logged"
+        );
+        claim_eq!(
+            logger.logs[1],
+            to_bytes(&CredentialEvent::Schema(CredentialSchemaRefEvent {
+                credential_type: schema.0,
+                schema_ref:      schema.1,
+            })),
+            "Incorrect schema event logged"
         );
     }
 
