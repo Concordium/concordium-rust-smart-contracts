@@ -557,6 +557,7 @@ pub struct InitParams {
     /// `issuer`.
     issuer:          Option<AccountAddress>,
     /// Revocation keys available right after initialization.
+    #[concordium(size_length = 1)]
     revocation_keys: Vec<PublicKeyEd25519>,
 }
 
