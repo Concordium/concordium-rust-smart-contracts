@@ -497,27 +497,27 @@ impl Serial for CredentialEvent {
         match self {
             // CIS-4 standard events are numbered from 255 counting down
             CredentialEvent::Register(data) => {
-                255u8.serial(out)?;
+                249u8.serial(out)?;
                 data.serial(out)
             }
             CredentialEvent::Revoke(data) => {
-                254u8.serial(out)?;
+                248u8.serial(out)?;
                 data.serial(out)
             }
             CredentialEvent::IssuerMetadata(data) => {
-                253u8.serial(out)?;
+                247u8.serial(out)?;
                 data.serial(out)
             }
             CredentialEvent::CredentialMetadata(data) => {
-                252u8.serial(out)?;
+                246u8.serial(out)?;
                 data.serial(out)
             }
             CredentialEvent::Schema(data) => {
-                251u8.serial(out)?;
+                245u8.serial(out)?;
                 data.serial(out)
             }
             CredentialEvent::RevocationKey(data) => {
-                250u8.serial(out)?;
+                244u8.serial(out)?;
                 data.serial(out)
             }
             // Restore event is not covered by CIS-4; it gets `0` tag.
@@ -532,12 +532,12 @@ impl Serial for CredentialEvent {
 impl Deserial for CredentialEvent {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         match source.get()? {
-            255u8 => Ok(Self::Register(source.get()?)),
-            254u8 => Ok(Self::Revoke(source.get()?)),
-            253u8 => Ok(Self::IssuerMetadata(source.get()?)),
-            252u8 => Ok(Self::CredentialMetadata(source.get()?)),
-            251u8 => Ok(Self::Schema(source.get()?)),
-            250u8 => Ok(Self::RevocationKey(source.get()?)),
+            249u8 => Ok(Self::Register(source.get()?)),
+            248u8 => Ok(Self::Revoke(source.get()?)),
+            247u8 => Ok(Self::IssuerMetadata(source.get()?)),
+            246u8 => Ok(Self::CredentialMetadata(source.get()?)),
+            245u8 => Ok(Self::Schema(source.get()?)),
+            244u8 => Ok(Self::RevocationKey(source.get()?)),
             0u8 => Ok(Self::Restore(source.get()?)),
             _ => Err(ParseError {}),
         }
