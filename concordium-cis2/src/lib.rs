@@ -32,6 +32,8 @@
 //! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::{collections::BTreeMap, *};
+// Re-export for backward compatibility.
+pub use concordium_std::MetadataUrl;
 #[cfg(not(feature = "std"))]
 use core::{fmt, ops};
 #[cfg(feature = "std")]
@@ -61,30 +63,6 @@ pub const BURN_EVENT_TAG: u8 = u8::MAX - 2;
 pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
 /// Tag for the CIS2 TokenMetadata event.
 pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
-
-/// Sha256 digest
-pub type Sha256 = [u8; 32];
-
-/// The location of the metadata and an optional hash of the content.
-// Note: For the serialization to be derived according to the CIS2
-// specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, PartialEq, Eq, Clone)]
-pub struct MetadataUrl {
-    /// The URL following the specification RFC1738.
-    #[concordium(size_length = 2)]
-    pub url:  String,
-    /// A optional hash of the content.
-    pub hash: Option<Sha256>,
-}
-
-impl schema::SchemaType for MetadataUrl {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            ("url".to_string(), schema::Type::String(schema::SizeLength::U16)),
-            ("hash".to_string(), Option::<Sha256>::get_type()),
-        ]))
-    }
-}
 
 /// Trait for marking types as CIS2 token IDs.
 /// For a type to be a valid CIS2 token ID it must implement SchemaType and
