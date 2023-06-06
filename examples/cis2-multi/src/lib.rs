@@ -46,7 +46,7 @@ type ContractTokenAmount = TokenAmountU64;
 #[derive(Serial, Deserial, SchemaType)]
 struct MintParam {
     token_amount: ContractTokenAmount,
-    metadata_url: MetadataUrl
+    metadata_url: MetadataUrl,
 }
 
 /// The parameter for the contract function `mint` which mints a number of
@@ -99,7 +99,7 @@ struct State<S> {
     /// The state of addresses.
     state:        StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    tokens:       StateMap<ContractTokenId,MetadataUrl,S>,
+    tokens:       StateMap<ContractTokenId, MetadataUrl, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -182,7 +182,9 @@ impl<S: HasStateApi> State<S> {
 
     /// Check that the token ID currently exists in this contract.
     #[inline(always)]
-    fn contains_token(&self, token_id: &ContractTokenId) -> bool { self.get_token(token_id).is_some() }
+    fn contains_token(&self, token_id: &ContractTokenId) -> bool {
+        self.get_token(token_id).is_some()
+    }
 
     fn get_token(&self, token_id: &ContractTokenId) -> Option<MetadataUrl> {
         self.tokens.get(token_id).map(|x| x.to_owned())
@@ -404,7 +406,7 @@ fn contract_mint<S: HasStateApi>(
         // Metadata URL for the token.
         logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
             token_id,
-            metadata_url: mint_param.metadata_url
+            metadata_url: mint_param.metadata_url,
         }))?;
     }
     Ok(())
@@ -765,26 +767,29 @@ mod tests {
     fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         let mut state = State::empty(state_builder);
         state.mint(
-            &TOKEN_0, 
-            &MintParam { 
-                token_amount: 400.into(), 
-                metadata_url: MetadataUrl { 
-                    url: format!("https://some.example/token/{TOKEN_0}").to_owned(), 
-                    hash: None 
-                } 
-            }, 
-            &ADDRESS_0, 
-            state_builder);
+            &TOKEN_0,
+            &MintParam {
+                token_amount: 400.into(),
+                metadata_url: MetadataUrl {
+                    url:  format!("https://some.example/token/{TOKEN_0}").to_owned(),
+                    hash: None,
+                },
+            },
+            &ADDRESS_0,
+            state_builder,
+        );
         state.mint(
-            &TOKEN_1, 
-            &MintParam { 
-                token_amount: 1.into(), 
-                metadata_url: MetadataUrl { 
-                    url: format!("https://some.example/token/{TOKEN_1}").to_owned(), 
-                    hash: None 
-                }
-            }, 
-            &ADDRESS_0, state_builder);
+            &TOKEN_1,
+            &MintParam {
+                token_amount: 1.into(),
+                metadata_url: MetadataUrl {
+                    url:  format!("https://some.example/token/{TOKEN_1}").to_owned(),
+                    hash: None,
+                },
+            },
+            &ADDRESS_0,
+            state_builder,
+        );
         state
     }
 
@@ -818,14 +823,14 @@ mod tests {
         let mut tokens = collections::BTreeMap::new();
         tokens.insert(TOKEN_0, MintParam {
             token_amount: 400.into(),
-            metadata_url:     MetadataUrl {
+            metadata_url: MetadataUrl {
                 url:  "https://some.example/token/02".to_string(),
                 hash: None,
             },
         });
         tokens.insert(TOKEN_1, MintParam {
             token_amount: 1.into(),
-            metadata_url:     MetadataUrl {
+            metadata_url: MetadataUrl {
                 url:  "https://some.example/token/2A".to_string(),
                 hash: None,
             },
