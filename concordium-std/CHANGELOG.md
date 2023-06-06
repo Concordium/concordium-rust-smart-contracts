@@ -2,9 +2,20 @@
 
 ## Unreleased changes
 
+- Set minimum Rust version to 1.65.
+- Move `MetadataUrl` from the CIS-2 library to `concordium-std` along with the schema and serialization to make it available to other CIS standards.
+- Change the `MetadataUrl` schema: use hex string representation for `hash`.
+- Introduce a new method `block_time` as an alias to `slot_time` in the `HasChainMetadata` trait.
+
+## concordium-std 6.2.0 (2023-05-08)
+
 - Add `write_root` helper function to write the root of the state trie. This is
   useful in migrations when upgrading smart contracts.
 - Bump Rust edition to `2021`.
+- Remove the use of `alloc_error_handler` since the feature is no longer
+  available in recent nightly builds of the compiler. This can increase the
+  smart contract size slightly.
+- Set minimum Rust version to 1.60.
 
 ## concordium-std 6.1.1 (2023-03-16)
 

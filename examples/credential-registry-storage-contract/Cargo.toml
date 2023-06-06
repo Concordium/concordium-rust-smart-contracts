@@ -1,5 +1,5 @@
 [package]
-name = "cis3_nft_sponsored_txs"
+name = "credential_registry_storage_contract"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
@@ -7,18 +7,16 @@ license = "MPL-2.0"
 
 [features]
 default = ["std", "wee_alloc", "crypto-primitives"]
-std = ["concordium-std/std", "concordium-cis2/std"]
+std = ["concordium-std/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
-concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
 
 [lib]
 crate-type=["cdylib", "rlib"]
 
 [profile.release]
-panic = "abort"
-opt-level = "s"
 codegen-units = 1
+opt-level = "s"

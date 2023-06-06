@@ -19,11 +19,11 @@ wee_alloc = ["concordium-std/wee_alloc"]
 version = "6"
 path = "../../concordium-std"
 default-features = false
+features = ["concordium-quickcheck"]
 
 [dev-dependencies.concordium-std]
 version = "6"
 path = "../../concordium-std"
-features = ["concordium-quickcheck"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

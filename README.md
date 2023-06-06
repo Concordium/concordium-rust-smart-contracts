@@ -4,11 +4,10 @@
 
 This repository consists of the core standard library for writing smart
 contracts for the Concordium blockchain in the Rust programming languages, as
-well as some sample smart contracts. The core libraries are
-[concordium-std](./concordium-std) and its helper crate of procedural macros
-[concordium-std-derive](./concordium-std-derive).
+well as some sample smart contracts. The core library is
+[concordium-std](./concordium-std).
 
-The procedural macros reduce the amount of boilerplate the user needs to write,
+The core library provides procedural macros to reduce the amount of boilerplate the user needs to write,
 while the `concordium-std` library exposes a high-level API that smart contract
 writers can use when writing contracts, alleviating them from the need to deal
 with low-level details of how the interaction with the chain works.
@@ -51,16 +50,16 @@ Changes to any of the packages must be such that
 - ```cargo clippy --all``` produces no warnings
 - ```rustfmt``` makes no changes.
 
-Everything in this repository should build with rust version 1.53 (it should work with 1.51 and up, but we do not test regularly) however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
+Everything in this repository should build with rust version 1.65 however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
 ```
-cargo +nightly-2022-06-09 fmt
+cargo +nightly-2023-04-01 fmt
 ```
 
 (the exact version used by the CI can be found in [.github/workflows/linter.yml](.github/workflows/linter.yml) file).
 You will need to have a recent enough nightly version installed, which can be done via
 
 ```
-rustup toolchain install nightly-2022-06-09
+rustup toolchain install nightly-2023-04-01
 ```
 
 or similar, using the [rustup](https://rustup.rs/) tool. See the documentation of the tool for more details.

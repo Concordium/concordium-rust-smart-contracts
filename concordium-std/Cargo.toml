@@ -1,8 +1,9 @@
 [package]
 name = "concordium-std"
-version = "6.1.1"
+version = "6.2.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
+rust-version = "1.65"
 license = "MPL-2.0"
 description = "A standard library for writing smart contracts for the Concordium blockchain in Rust."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
@@ -20,22 +21,19 @@ ed25519-zebra = { version = "2.2", optional = true }
 quickcheck = {version = "1", optional = true }
 getrandom = { version = "0.2", features = ["custom"], optional = true }
 
-[dependencies.concordium-std-derive]
-path = "../concordium-std-derive"
-version = "5.1"
-
 [dependencies.concordium-contracts-common]
 path = "../concordium-contracts-common/concordium-contracts-common"
-version = "5.3.1"
+version = "6.0"
 default-features = false
+features = ["smart-contract"]
 
 [features]
 default = ["std"]
 std = ["concordium-contracts-common/std"]
-wasm-test = ["concordium-std-derive/wasm-test"]
-build-schema = ["concordium-std-derive/build-schema"]
+wasm-test = ["concordium-contracts-common/wasm-test"]
+build-schema = ["concordium-contracts-common/build-schema"]
 crypto-primitives = ["sha2", "sha3", "secp256k1", "ed25519-zebra"]
-concordium-quickcheck = ["concordium-std-derive/concordium-quickcheck", "getrandom", "quickcheck", "concordium-contracts-common/concordium-quickcheck", "std"]
+concordium-quickcheck = ["getrandom", "quickcheck", "concordium-contracts-common/concordium-quickcheck", "std"]
 
 [lib]
 crate-type = ["rlib"]
