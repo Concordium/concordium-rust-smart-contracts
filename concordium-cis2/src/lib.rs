@@ -791,6 +791,7 @@ pub enum Cis2Event<T: IsTokenId, A: IsTokenAmount> {
     TokenMetadata(TokenMetadataEvent<T>),
 }
 
+// Implemented manually to specify the discriminating tag.
 impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
@@ -899,7 +900,7 @@ impl<T: IsTokenId, A: IsTokenAmount> Deserial for Cis2Event<T, A> {
 }
 
 /// The different errors the contract can produce.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, SchemaType, Serial)]
 pub enum Cis2Error<R> {
     /// Invalid token id (Error code: -42000001).
     InvalidTokenId,
@@ -910,31 +911,6 @@ pub enum Cis2Error<R> {
     Unauthorized,
     /// Custom error
     Custom(R),
-}
-
-impl<R: schema::SchemaType> schema::SchemaType for Cis2Error<R> {
-    fn get_type() -> schema::Type {
-        schema::Type::Enum(Vec::from([
-            (String::from("InvalidTokenId"), schema::Fields::None),
-            (String::from("InsufficientFunds"), schema::Fields::None),
-            (String::from("Unauthorized"), schema::Fields::None),
-            (String::from("Custom"), schema::Fields::Unnamed(Vec::from([R::get_type()]))),
-        ]))
-    }
-}
-
-impl<R: Serial> Serial for Cis2Error<R> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        match self {
-            Cis2Error::InvalidTokenId => out.write_u8(0),
-            Cis2Error::InsufficientFunds => out.write_u8(1),
-            Cis2Error::Unauthorized => out.write_u8(2),
-            Cis2Error::Custom(r) => {
-                out.write_u8(3)?;
-                r.serial(out)
-            }
-        }
-    }
 }
 
 /// Convert `Cis2Error` into a reject with error code:
@@ -1050,7 +1026,7 @@ where
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants and the order of their fields
 // cannot be changed.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, SchemaType)]
 pub enum Receiver {
     /// The receiver is an account address.
     Account(
@@ -1084,22 +1060,6 @@ impl Receiver {
     }
 }
 
-impl schema::SchemaType for Receiver {
-    fn get_type() -> schema::Type {
-        schema::Type::Enum(vec![
-            (String::from("Account"), schema::Fields::Unnamed(vec![AccountAddress::get_type()])),
-            (
-                String::from("Contract"),
-                schema::Fields::Unnamed(vec![
-                    ContractAddress::get_type(),
-                    // The below string represents the function entrypoint
-                    schema::Type::String(schema::SizeLength::U16),
-                ]),
-            ),
-        ])
-    }
-}
-
 impl From<AccountAddress> for Receiver {
     fn from(address: AccountAddress) -> Self { Self::from_account(address) }
 }
@@ -1108,6 +1068,7 @@ impl From<AccountAddress> for Receiver {
 #[derive(Debug, Serialize, Clone)]
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
 
+// Implemented manually to hide the newtype wrapper.
 impl schema::SchemaType for AdditionalData {
     fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U16) }
 }
@@ -1128,7 +1089,7 @@ impl AsRef<[u8]> for AdditionalData {
 /// A single transfer of some amount of a token.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, SchemaType)]
 pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -1143,24 +1104,13 @@ pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     pub data:     AdditionalData,
 }
 
-impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Transfer<T, A> {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            (String::from("token_id"), T::get_type()),
-            (String::from("amount"), A::get_type()),
-            (String::from("from"), Address::get_type()),
-            (String::from("to"), Receiver::get_type()),
-            (String::from("data"), AdditionalData::get_type()),
-        ]))
-    }
-}
-
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize, Clone)]
 pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
     #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
 );
 
+// Implemented manually to hide the newtype wrapper.
 impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for TransferParams<T, A> {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T, A>::get_type()))
@@ -1178,7 +1128,7 @@ impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<
 /// The update to an the operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Clone, Copy, SchemaType)]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -1186,19 +1136,10 @@ pub enum OperatorUpdate {
     Add,
 }
 
-impl schema::SchemaType for OperatorUpdate {
-    fn get_type() -> schema::Type {
-        schema::Type::Enum(vec![
-            ("Remove".to_string(), schema::Fields::None),
-            ("Add".to_string(), schema::Fields::None),
-        ])
-    }
-}
-
 /// A single update of an operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, SchemaType)]
 pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,
@@ -1208,19 +1149,11 @@ pub struct UpdateOperator {
     pub operator: Address,
 }
 
-impl schema::SchemaType for UpdateOperator {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            ("update".to_string(), OperatorUpdate::get_type()),
-            ("operator".to_string(), Address::get_type()),
-        ]))
-    }
-}
-
 /// The parameter type for the contract function `updateOperator`.
 #[derive(Debug, Serialize, Clone)]
 pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
 
+// Implemented manually to hide the newtype wrapper.
 impl schema::SchemaType for UpdateOperatorParams {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(UpdateOperator::get_type()))
@@ -1230,21 +1163,12 @@ impl schema::SchemaType for UpdateOperatorParams {
 /// A query for the balance of a given address for a given token.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct BalanceOfQuery<T: IsTokenId> {
     /// The ID of the token for which to query the balance of.
     pub token_id: T,
     /// The address for which to query the balance of.
     pub address:  Address,
-}
-
-impl<T: IsTokenId> schema::SchemaType for BalanceOfQuery<T> {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            ("token_id".to_string(), T::get_type()),
-            ("address".to_string(), Address::get_type()),
-        ]))
-    }
 }
 
 /// The parameter type for the contract function `balanceOf`.
@@ -1257,6 +1181,7 @@ pub struct BalanceOfQueryParams<T: IsTokenId> {
     pub queries: Vec<BalanceOfQuery<T>>,
 }
 
+// Implemented manually to hide the newtype wrapper.
 impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(BalanceOfQuery::<T>::get_type()))
@@ -1269,6 +1194,7 @@ impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
 #[derive(Debug, Serialize)]
 pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
+// Implemented manually to hide the newtype wrapper.
 impl<A: IsTokenAmount> schema::SchemaType for BalanceOfQueryResponse<A> {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(A::get_type()))
@@ -1286,21 +1212,12 @@ impl<A: IsTokenAmount> AsRef<[A]> for BalanceOfQueryResponse<A> {
 /// A query for the operator of a given address for a given token.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub struct OperatorOfQuery {
     /// The ID of the token for which to query the balance of.
     pub owner:   Address,
     /// The address for which to check for being an operator of the owner.
     pub address: Address,
-}
-
-impl schema::SchemaType for OperatorOfQuery {
-    fn get_type() -> schema::Type {
-        schema::Type::Struct(schema::Fields::Named(vec![
-            ("owner".to_string(), Address::get_type()),
-            ("address".to_string(), Address::get_type()),
-        ]))
-    }
 }
 
 /// The parameter type for the contract function `operatorOf`.
@@ -1311,6 +1228,7 @@ pub struct OperatorOfQueryParams {
     pub queries: Vec<OperatorOfQuery>,
 }
 
+// Implemented manually to hide the newtype wrapper.
 impl schema::SchemaType for OperatorOfQueryParams {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(OperatorOfQuery::get_type()))
@@ -1324,6 +1242,7 @@ impl schema::SchemaType for OperatorOfQueryParams {
 #[derive(Debug, Serialize)]
 pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] pub Vec<bool>);
 
+// Implemented manually to hide the newtype wrapper.
 impl schema::SchemaType for OperatorOfQueryResponse {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(bool::get_type()))
@@ -1348,6 +1267,7 @@ pub struct TokenMetadataQueryParams<T: IsTokenId> {
     pub queries: Vec<T>,
 }
 
+// Implemented manually to hide the newtype wrapper.
 impl<T: IsTokenId> schema::SchemaType for TokenMetadataQueryParams<T> {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(T::get_type()))
@@ -1360,6 +1280,7 @@ impl<T: IsTokenId> schema::SchemaType for TokenMetadataQueryParams<T> {
 #[derive(Debug, Serialize)]
 pub struct TokenMetadataQueryResponse(#[concordium(size_length = 2)] pub Vec<MetadataUrl>);
 
+// Implemented manually to hide the newtype wrapper.
 impl schema::SchemaType for TokenMetadataQueryResponse {
     fn get_type() -> schema::Type {
         schema::Type::List(schema::SizeLength::U16, Box::new(MetadataUrl::get_type()))
@@ -1378,7 +1299,7 @@ impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct OnReceivingCis2Params<T: IsTokenId, A: IsTokenAmount> {
+pub struct OnReceivingCis2Params<T, A> {
     /// The ID of the token received.
     pub token_id: T,
     /// The amount of tokens received.
@@ -1487,7 +1408,7 @@ impl schema::SchemaType for SupportsQueryParams {
 /// The query result type for whether a smart contract supports a standard.
 // Note: For the serialization to be derived according to the CIS0
 // specification, the order of the variants and their fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
 pub enum SupportResult {
     /// The standard is not supported.
     NoSupport,
@@ -1495,26 +1416,6 @@ pub enum SupportResult {
     Support,
     /// The standard is supported by using another contract address.
     SupportBy(#[concordium(size_length = 1)] Vec<ContractAddress>),
-}
-
-// This is implemented manually because another manual implementation depends on
-// this. Currently it is not practical to rely on a derived schema type in a
-// manual implemented schema type, because the derived version only generates
-// the implementation with a specific feature enabled.
-impl schema::SchemaType for SupportResult {
-    fn get_type() -> schema::Type {
-        schema::Type::Enum(vec![
-            ("NoSupport".to_string(), schema::Fields::None),
-            ("Support".to_string(), schema::Fields::None),
-            (
-                "SupportBy".to_string(),
-                schema::Fields::Unnamed(vec![schema::Type::List(
-                    schema::SizeLength::U8,
-                    Box::new(ContractAddress::get_type()),
-                )]),
-            ),
-        ])
-    }
 }
 
 /// The response which is sent back when calling the contract function
