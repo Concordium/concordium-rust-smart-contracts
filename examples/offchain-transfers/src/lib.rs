@@ -9,7 +9,7 @@
  * # Description
  * This contract implements a simple settlement mechanism for off-chain
  * payments. It is an example of so-called "rollups" since it allows to roll
- * multiple off-chain transaction up into a single on-chain settlement
+ * multiple off-chain transactions up into a single on-chain settlement
  * transaction (and thereby save transaction fees). The intended use of the
  * contract is as follows:
  *  * The smart contract is initialized with [contract_init] by appointing a
@@ -62,7 +62,7 @@ use std::{collections::HashSet, convert::TryInto};
 pub type SettlementID = u64;
 
 /// A tuple describing either a sender or receiver with an amount in a transfer
-#[derive(Clone, Serialize, SchemaType)]
+#[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct AddressAmount {
     /// The sender or receiver
     address: AccountAddress,
@@ -73,7 +73,7 @@ pub struct AddressAmount {
 /// A transfer consisting of possibly multiple inputs with different amounts and
 /// several receivers A transfer is syntactically valid if the sent amounts
 /// match the received amounts
-#[derive(Clone, Serialize, SchemaType)]
+#[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct Transfer {
     /// The list of senders
     pub send_transfers:    Vec<AddressAmount>,
@@ -85,7 +85,7 @@ pub struct Transfer {
 }
 
 /// A settlement defines a (potential) update to the balance sheet
-#[derive(Clone, Serialize, SchemaType)]
+#[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct Settlement {
     /// Unique ID
     id:            SettlementID,
@@ -141,7 +141,7 @@ pub enum InitError {
     #[from(ParseError)]
     ParseParams,
 }
-/// The result type for smart contract initalization
+/// The result type for smart contract initialization
 type InitResult<A> = Result<A, InitError>;
 
 /// The different errors the smart contract calls can produce.
@@ -158,7 +158,7 @@ pub enum ReceiveError {
     InvalidTransfer,
     /// End time is not expressible, i.e., would overflow.
     TimeOverflow,
-    /// We have reached the end of our IDs (unlikely to happe)
+    /// We have reached the end of our IDs (unlikely to happen)
     CounterOverflow,
     /// Not authorized as validator
     NotAValidator,
@@ -257,7 +257,7 @@ fn get_liabilities(settlements: &[Settlement], sender_address: AccountAddress) -
 ///
 /// # Parameter
 ///
-/// [Amount] - the requested `payout` .
+/// [Amount] - the requested `payout`.
 ///
 /// # Description
 /// Allow the user (the caller) to withdraw funds from the settlement contract.
@@ -269,7 +269,7 @@ fn get_liabilities(settlements: &[Settlement], sender_address: AccountAddress) -
 /// In short, a user as sufficient funds to withdraw `payout` CCDs if:
 /// > balance - outstanding liabilities >= payout
 ///
-/// This defensive payout mechanism ensures that that user balance sheet
+/// This defensive payout mechanism ensures that user balance sheet
 /// stays positive for any possible finalization of (a subset) outstanding
 /// settlements.   
 #[receive(contract = "offchain-transfers", name = "withdraw", mutable, parameter = "Amount")]
@@ -292,7 +292,7 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
     let liabilities = get_liabilities(&host.state().settlements, sender_address);
 
     {
-        // ensure that user has sufficient funds even in the worst case
+        // ensure that the user has sufficient funds even in the worst case
         // where all liabilities are deducted and no credit is added
         let mut balance = host
             .state_mut()
@@ -343,7 +343,7 @@ fn is_transfer_valid(transfer: &Transfer) -> bool {
 /// transfer.
 /// The transfer is syntactically valid if it does not generate or delete funds.
 ///
-/// To form the [Settlement] the smart contracts adds and a unique id
+/// To form the [Settlement] the smart contract adds a unique id
 /// and the finality time. The finality time is computed from the timestamp
 /// of the call and the `finality_time` in the smart contract config
 ///
@@ -403,7 +403,7 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 /// outstanding settlements.
 ///
 /// The call is lazy in the sense that it does not check whether the
-/// new settlement queuue could be applied to the current balance sheet.
+/// new settlement queue could be applied to the current balance sheet.
 #[receive(contract = "offchain-transfers", name = "veto", mutable)]
 #[inline(always)]
 pub fn contract_receive_veto<S: HasStateApi>(
@@ -428,7 +428,7 @@ fn is_settlement_valid<S: HasStateApi>(
     balance_sheet: &StateMap<AccountAddress, Amount, S>,
 ) -> bool {
     // check whether all senders have sufficient funds with respect to the updated
-    // state first get set of all senders (to avoid duplicate checks) and then
+    // state first get of all senders (to avoid duplicate checks) and then
     // check for each sender in set
     let mut sender_addresses = HashSet::new();
     for send_transfer in settlement.transfer.send_transfers.iter() {
@@ -571,7 +571,7 @@ pub fn contract_get_settlement<S: HasStateApi>(
     // Parse the parameter.
     let id: SettlementID = ctx.parameter_cursor().get()?;
     // Build the response.
-    let result = host.state().settlements.iter().find(|s| s.id != id);
+    let result = host.state().settlements.iter().find(|s| s.id == id);
 
     match result {
         None => Ok(None),
@@ -807,7 +807,7 @@ mod tests {
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
-        host.state_mut().settlements.push(settlement1);
+        host.state_mut().settlements.push(settlement1.clone());
         let settlement2 = Settlement {
             id:            2,
             transfer:      Transfer {
@@ -853,10 +853,22 @@ mod tests {
         };
         host.state_mut().settlements.push(settlement3);
 
-        //Test 1: Alice should have 40 CCDs available -> Try to withdraw 41
         let mut ctx = TestReceiveContext::empty();
         ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(alice));
+
+        //Test 1: Viewing settlement1
+        let parameter_bytes = to_bytes(&1u64);
+        ctx.set_parameter(&parameter_bytes);
+        let res = contract_get_settlement(&ctx, &host);
+
+        claim_eq!(
+            res.expect("Result should contain a settlement"),
+            Some(settlement1),
+            "Should return settlement1"
+        );
+
+        //Test 1: Alice should have 40 CCDs available -> Try to withdraw 41
         let parameter_bytes = to_bytes(&Amount::from_ccd(41));
         ctx.set_parameter(&parameter_bytes);
 

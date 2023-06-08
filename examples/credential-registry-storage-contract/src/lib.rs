@@ -164,7 +164,7 @@ fn contract_init<S: HasStateApi>(
     contract = "credential-registry-storage",
     name = "view",
     parameter = "PublicKeyEd25519",
-    return_value = "SimpleCredentialState",
+    return_value = "Option<SimpleCredentialState>",
     error = "CustomContractError"
 )]
 fn view<S: HasStateApi>(
