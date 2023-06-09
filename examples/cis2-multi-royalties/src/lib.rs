@@ -74,7 +74,7 @@ struct MintParams {
     /// A collection of tokens to mint.
     tokens:             collections::BTreeMap<ContractTokenId, ContractTokenAmount>,
     /// Royalty payable to minter (in percentage)
-    royalty_percentage: u64,
+    royalty_percentage: u8,
 }
 
 /// The parameter type for the contract function `setImplementors`.
@@ -100,7 +100,7 @@ struct CheckRoyaltyParams {
 
 #[derive(Debug, Serialize, SchemaType)]
 struct CheckRoyaltyResult {
-    /// The identifier of the payee.
+    /// The Address of the payee.
     royalty_receiver: Address,
     /// The royalties to pay.
     payment:          u64,
@@ -122,7 +122,7 @@ struct TokenDetails {
     /// Who minted this token.
     minter:  Address,
     /// The percentage royalty.
-    royalty: u64,
+    royalty: u8,
 }
 
 impl<S: HasStateApi> AddressState<S> {
@@ -230,7 +230,7 @@ impl<S: HasStateApi> State<S> {
         amount: ContractTokenAmount,
         owner: &Address,
         state_builder: &mut StateBuilder<S>,
-        royalty: u64,
+        royalty: u8,
     ) {
         self.tokens.insert(*token_id);
         self.token_details.insert(*token_id, TokenDetails {
@@ -371,7 +371,7 @@ impl<S: HasStateApi> State<S> {
             self.token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
 
         let minter = token_details.minter;
-        let royalty_to_pay: u64 = params.sale_price / 100 * token_details.royalty;
+        let royalty_to_pay: u64 = params.sale_price / 100 * token_details.royalty as u64;
         Ok(CheckRoyaltyResult {
             royalty_receiver: minter,
             payment:          royalty_to_pay,
@@ -491,10 +491,7 @@ fn contract_mint<S: HasStateApi>(
 
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
-    ensure!(
-        params.royalty_percentage <= 100,
-        concordium_cis2::Cis2Error::Custom(CustomContractError::InvalidRoyaltyValue)
-    );
+    ensure!(params.royalty_percentage <= 100, CustomContractError::InvalidRoyaltyValue.into());
 
     let (state, builder) = host.state_and_builder();
     for (token_id, token_amount) in params.tokens {
@@ -573,9 +570,8 @@ fn contract_transfer<S: HasStateApi>(
                 id:         token_id,
                 sale_price: amount.into(),
             };
-            let royal_result = state.calculate_royalty_payments(royalty_parameters);
-            ensure!(royal_result.is_ok(), ContractError::InvalidTokenId);
-            royalties = Some(royal_result.unwrap());
+            let royal_result = state.calculate_royalty_payments(royalty_parameters)?;
+            royalties = Some(royal_result);
         }
 
         // Update the contract state
@@ -587,7 +583,7 @@ fn contract_transfer<S: HasStateApi>(
             logger.log(&Cis2Event::Transfer(TransferEvent {
                 token_id,
                 amount: concordium_cis2::TokenAmountU64(royalties.as_ref().unwrap().payment),
-                from: to_address,
+                from,
                 to: royalties.as_ref().unwrap().royalty_receiver,
             }))?;
             receivers_amount -=
@@ -902,23 +898,14 @@ fn contract_check_royalty<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<CheckRoyaltyResult> {
-    ensure!(
-        host.state().pay_royalty,
-        concordium_cis2::Cis2Error::Custom(CustomContractError::ContractDoesNotPayRoyalties)
-    );
+    ensure!(host.state().pay_royalty, CustomContractError::ContractDoesNotPayRoyalties.into());
 
     let params: CheckRoyaltyParams = ctx.parameter_cursor().get()?;
-    ensure!(
-        params.sale_price > 0,
-        concordium_cis2::Cis2Error::Custom(CustomContractError::NoRoyaltyPayable)
-    );
+    ensure!(params.sale_price > 0, CustomContractError::NoRoyaltyPayable.into());
     ensure!(host.state().contains_token(&params.id), ContractError::InvalidTokenId);
     let token_details =
-        host.state().token_details.get(&params.id).ok_or(ContractError::InvalidTokenId).unwrap();
-    ensure!(
-        token_details.royalty > 0,
-        concordium_cis2::Cis2Error::Custom(CustomContractError::NoRoyaltyPayable)
-    );
+        host.state().token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
+    ensure!(token_details.royalty > 0, CustomContractError::NoRoyaltyPayable.into());
 
     host.state_mut().calculate_royalty_payments(params)
 }
@@ -1306,8 +1293,8 @@ mod tests {
         let mut builder1 = TestStateBuilder::new();
         let state1 = initial_state(&mut builder1);
         let host = TestHost::new(state1, builder1);
-        let royalty_paid = supports_interface(&ctx, &host);
-        claim_eq!(royalty_paid.unwrap(), false, "Royalty incorrectly initialised");
+        let royalty_paid = supports_interface(&ctx, &host).expect("Invoke should succeed");
+        claim_eq!(royalty_paid, false, "Royalty incorrectly initialised");
 
         let mut builder2 = TestStateBuilder::new();
         let mut state2 = initial_state(&mut builder2);
@@ -1378,7 +1365,7 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_1,
+                from:     ADDRESS_0,
                 to:       ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   ContractTokenAmount::from(50),
@@ -1407,7 +1394,7 @@ mod tests {
             id:         TOKEN_0,
             sale_price: 0,
         };
-        let parameter: CheckRoyaltyParams = CheckRoyaltyParams::from(royalty);
+        let parameter: CheckRoyaltyParams = royalty;
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
@@ -1421,7 +1408,7 @@ mod tests {
         let err = result.expect_err_report("Expected to fail with 0 price");
         claim_eq!(
             err,
-            concordium_cis2::Cis2Error::Custom(CustomContractError::NoRoyaltyPayable),
+            CustomContractError::NoRoyaltyPayable.into(),
             "Error should be no royalty payable"
         )
     }
@@ -1436,7 +1423,7 @@ mod tests {
             id:         TOKEN_0,
             sale_price: 200,
         };
-        let parameter: CheckRoyaltyParams = CheckRoyaltyParams::from(royalty);
+        let parameter: CheckRoyaltyParams = royalty;
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
@@ -1450,7 +1437,7 @@ mod tests {
         let err = result.expect_err_report("Expected to fail with 0 price");
         claim_eq!(
             err,
-            concordium_cis2::Cis2Error::Custom(CustomContractError::NoRoyaltyPayable),
+            CustomContractError::NoRoyaltyPayable.into(),
             "Error should be no royalty payable"
         )
     }
@@ -1465,7 +1452,7 @@ mod tests {
             id:         TokenIdU8(5),
             sale_price: 200,
         };
-        let parameter: CheckRoyaltyParams = CheckRoyaltyParams::from(royalty);
+        let parameter: CheckRoyaltyParams = royalty;
         let parameter_bytes = to_bytes(&parameter);
         ctx.set_parameter(&parameter_bytes);
 
