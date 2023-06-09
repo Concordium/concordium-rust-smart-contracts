@@ -1065,13 +1065,9 @@ impl From<AccountAddress> for Receiver {
 }
 
 /// Additional information to include with a transfer.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
-
-// Implemented manually to hide the newtype wrapper.
-impl schema::SchemaType for AdditionalData {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U16) }
-}
 
 impl AdditionalData {
     /// Construct an AdditionalData containing no data.
@@ -1105,17 +1101,11 @@ pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
 }
 
 /// The parameter type for the contract function `transfer`.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
 pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
     #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
 );
-
-// Implemented manually to hide the newtype wrapper.
-impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for TransferParams<T, A> {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(Transfer::<T, A>::get_type()))
-    }
-}
 
 impl<T: IsTokenId, A: IsTokenAmount> From<Vec<Transfer<T, A>>> for TransferParams<T, A> {
     fn from(transfers: Vec<Transfer<T, A>>) -> Self { TransferParams(transfers) }
@@ -1150,15 +1140,9 @@ pub struct UpdateOperator {
 }
 
 /// The parameter type for the contract function `updateOperator`.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
 pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
-
-// Implemented manually to hide the newtype wrapper.
-impl schema::SchemaType for UpdateOperatorParams {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(UpdateOperator::get_type()))
-    }
-}
 
 /// A query for the balance of a given address for a given token.
 // Note: For the serialization to be derived according to the CIS2
@@ -1174,32 +1158,20 @@ pub struct BalanceOfQuery<T: IsTokenId> {
 /// The parameter type for the contract function `balanceOf`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct BalanceOfQueryParams<T: IsTokenId> {
     /// List of balance queries.
     #[concordium(size_length = 2)]
     pub queries: Vec<BalanceOfQuery<T>>,
 }
 
-// Implemented manually to hide the newtype wrapper.
-impl<T: IsTokenId> schema::SchemaType for BalanceOfQueryParams<T> {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(BalanceOfQuery::<T>::get_type()))
-    }
-}
-
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
 /// It consists of the list of results corresponding to the list of queries.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
-
-// Implemented manually to hide the newtype wrapper.
-impl<A: IsTokenAmount> schema::SchemaType for BalanceOfQueryResponse<A> {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(A::get_type()))
-    }
-}
 
 impl<A: IsTokenAmount> From<Vec<A>> for BalanceOfQueryResponse<A> {
     fn from(results: Vec<A>) -> Self { BalanceOfQueryResponse(results) }
@@ -1221,33 +1193,21 @@ pub struct OperatorOfQuery {
 }
 
 /// The parameter type for the contract function `operatorOf`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct OperatorOfQueryParams {
     /// List of operatorOf queries.
     #[concordium(size_length = 2)]
     pub queries: Vec<OperatorOfQuery>,
 }
 
-// Implemented manually to hide the newtype wrapper.
-impl schema::SchemaType for OperatorOfQueryParams {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(OperatorOfQuery::get_type()))
-    }
-}
-
 /// The response which is sent back when calling the contract function
 /// `operatorOf`.
 /// It consists of the list of result in the same order and length as the
 /// queries in the parameter.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] pub Vec<bool>);
-
-// Implemented manually to hide the newtype wrapper.
-impl schema::SchemaType for OperatorOfQueryResponse {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(bool::get_type()))
-    }
-}
 
 impl From<Vec<bool>> for OperatorOfQueryResponse {
     fn from(results: Vec<bool>) -> Self { OperatorOfQueryResponse(results) }
@@ -1260,32 +1220,20 @@ impl AsRef<[bool]> for OperatorOfQueryResponse {
 /// The parameter type for the contract function `tokenMetadata`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct TokenMetadataQueryParams<T: IsTokenId> {
     /// List of balance queries.
     #[concordium(size_length = 2)]
     pub queries: Vec<T>,
 }
 
-// Implemented manually to hide the newtype wrapper.
-impl<T: IsTokenId> schema::SchemaType for TokenMetadataQueryParams<T> {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(T::get_type()))
-    }
-}
-
 /// The response which is sent back when calling the contract function
 /// `tokenMetadata`.
 /// It consists of the list of results corresponding to the list of queries.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct TokenMetadataQueryResponse(#[concordium(size_length = 2)] pub Vec<MetadataUrl>);
-
-// Implemented manually to hide the newtype wrapper.
-impl schema::SchemaType for TokenMetadataQueryResponse {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(MetadataUrl::get_type()))
-    }
-}
 
 impl From<Vec<MetadataUrl>> for TokenMetadataQueryResponse {
     fn from(results: Vec<MetadataUrl>) -> Self { TokenMetadataQueryResponse(results) }
@@ -1354,15 +1302,11 @@ impl<'a> StandardIdentifier<'a> {
 /// Consists of a string of ASCII characters up to a length of 255.
 ///
 /// See [StandardIdentifier] for the borrowed version.
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq, Eq, SchemaType)]
+#[concordium(transparent)]
 pub struct StandardIdentifierOwned {
     #[concordium(size_length = 1)]
     id: String,
-}
-
-// This is implemented manually to flatten and simplify the schema.
-impl schema::SchemaType for StandardIdentifierOwned {
-    fn get_type() -> schema::Type { schema::Type::String(schema::SizeLength::U8) }
 }
 
 impl StandardIdentifierOwned {
@@ -1391,18 +1335,12 @@ impl StandardIdentifierOwned {
 }
 
 /// The parameter type for the contract function `supports`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct SupportsQueryParams {
     /// The list of support queries.
     #[concordium(size_length = 2)]
     pub queries: Vec<StandardIdentifierOwned>,
-}
-
-// This is implemented manually to flatten and simplify the schema.
-impl schema::SchemaType for SupportsQueryParams {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(StandardIdentifierOwned::get_type()))
-    }
 }
 
 /// The query result type for whether a smart contract supports a standard.
@@ -1421,18 +1359,12 @@ pub enum SupportResult {
 /// The response which is sent back when calling the contract function
 /// `supports`. It consists of a list of results corresponding to the list of
 /// queries.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct SupportsQueryResponse {
     /// List of support results corresponding to the list of queries.
     #[concordium(size_length = 2)]
     pub results: Vec<SupportResult>,
-}
-
-// This is implemented manually to flatten and simplify the schema.
-impl schema::SchemaType for SupportsQueryResponse {
-    fn get_type() -> schema::Type {
-        schema::Type::List(schema::SizeLength::U16, Box::new(SupportResult::get_type()))
-    }
 }
 
 impl From<Vec<SupportResult>> for SupportsQueryResponse {
