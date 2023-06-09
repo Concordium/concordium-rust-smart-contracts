@@ -49,10 +49,9 @@ use concordium_std::*;
 
 const SIGNATURE_DOMAIN: &str = "WEB3ID:STORE";
 
-/// Version is a string of two bytes that contain information needed for
-/// decoding the credentials.
-#[derive(Serial, SchemaType, Clone, Copy, Deserial, PartialEq, Debug)]
-struct Version(u16);
+/// Version is a number that is used when decoding a credential by off-chain
+/// tools.
+type Version = u16;
 
 /// Part of the contract state.
 #[derive(Serial, Deserial, Clone)]
@@ -302,13 +301,13 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        13, 222, 247, 236, 178, 112, 59, 144, 60, 211, 81, 134, 97, 201, 22, 173, 36, 199, 164,
-        217, 156, 107, 204, 83, 201, 153, 189, 77, 86, 238, 251, 220, 183, 221, 238, 114, 244, 219,
-        132, 61, 167, 79, 230, 52, 73, 86, 101, 176, 153, 223, 103, 8, 197, 26, 82, 178, 162, 119,
-        204, 239, 82, 114, 25, 7,
+        218, 87, 238, 248, 169, 170, 187, 125, 142, 60, 95, 218, 221, 193, 157, 184, 243, 243, 254,
+        38, 162, 26, 5, 126, 58, 69, 15, 236, 141, 16, 196, 8, 187, 94, 139, 108, 249, 180, 135,
+        74, 157, 80, 125, 18, 250, 220, 162, 26, 2, 87, 193, 248, 194, 216, 19, 6, 173, 4, 135,
+        227, 62, 69, 83, 7,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
-    const VERSION: Version = Version(43 + 256);
+    const VERSION: Version = 0;
 
     // Test initialization succeeds.
     #[concordium_test]
@@ -373,7 +372,7 @@ mod tests {
         let result = store(&ctx, &mut host, &mut logger, &crypto_primitives);
 
         // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
+        claim!(result.is_ok(), "Results in rejection: {:?}", result);
 
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
