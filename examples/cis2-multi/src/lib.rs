@@ -771,7 +771,7 @@ mod tests {
             &MintParam {
                 token_amount: 400.into(),
                 metadata_url: MetadataUrl {
-                    url:  format!("https://some.example/token/{TOKEN_0}").to_owned(),
+                    url:  format!("https://some.example/token/{TOKEN_0}"),
                     hash: None,
                 },
             },
@@ -783,7 +783,7 @@ mod tests {
             &MintParam {
                 token_amount: 1.into(),
                 metadata_url: MetadataUrl {
-                    url:  format!("https://some.example/token/{TOKEN_1}").to_owned(),
+                    url:  format!("https://some.example/token/{TOKEN_1}"),
                     hash: None,
                 },
             },
