@@ -1,25 +1,23 @@
 //! The contract is used for storing verifiable credentials for the Web3Id
 //! infrastructure. The contract stores encrypted credentials (generated with
-//! the symmetric AES-256 encryption standard) with some metadata associated
-//! with them.
+//! the symmetric AES-256 encryption standard) and a version.
 //!
 //! The state contains a simple key-value store where each public key
 //! can store its associated encrypted credential so that the credential can be
 //! recovered by off-chain wallets. The `keys` for the store are the Ed25519
-//! public keys and the `values` are the `metadata + encrypted_credentials`. The
-//! metadata associated with the credential contains information needed for
-//! decoding the encrypted credential. Only if an off-chain tool has access to
-//! the AES secret key, it can decode the credentials in this smart contract
-//! (credentials cannot be decoded by third parties to preserve privacy). To
-//! enter credentials into this contract, only the associated private key to the
-//! public key can authorize the creation of an entry in this smart contract for
-//! its key. To authorize the entry the associated private key to the public key
-//! signs its metadata/encrypted_credential that it wants to store. This ensures
-//! that entries are generated/authorized by the public/private key pair
-//! that they are associated with. The entries in this contract are immutable
-//! and cannot be updated anymore once stored in this contract. Each
-//! public/private key pair can authorize/generate up to one entry in this
-//! contract.
+//! public keys and the `values` are the `version + encrypted_credentials`. The
+//! version information is used by off-chain tools for decoding the encrypted
+//! credential. Only if an off-chain tool has access to the AES secret key, it
+//! can decode the credentials in this smart contract (credentials cannot be
+//! decoded by third parties to preserve privacy). To enter credentials into
+//! this contract, only the associated private key to the public key can
+//! authorize the creation of an entry in this smart contract for its key. To
+//! authorize the entry the associated private key to the public key signs its
+//! version/ encrypted_credential that it wants to store. This ensures that
+//! entries are generated/authorized by the public/private key pair that they
+//! are associated with. The entries in this contract are immutable and cannot
+//! be updated anymore once stored in this contract. Each public/private key
+//! pair can authorize/generate up to one entry in this contract.
 //!
 //! The Concordium wallets generate a new public-private key pair and an
 //! AES-256 secret key from a key path (example/dummy key path m/1’/2’/3’/4/0)
@@ -51,16 +49,15 @@ use concordium_std::*;
 
 const SIGNATURE_DOMAIN: &str = "WEB3ID:STORE";
 
-/// Metadata is a string of two bytes that contain information needed for
-/// decoding the credentials.
-#[derive(Serial, SchemaType, Clone, Copy, Deserial, PartialEq, Debug)]
-struct Metadata(u16);
+/// Version is a number that is used when decoding a credential by off-chain
+/// tools.
+type Version = u16;
 
 /// Part of the contract state.
 #[derive(Serial, Deserial, Clone)]
 struct CredentialState {
-    /// Metadata associated with the credential.
-    metadata:             Metadata,
+    /// Version of the credential.
+    version:              Version,
     /// The `encrypted_credential` stored in this contract.
     encrypted_credential: Vec<u8>,
 }
@@ -122,12 +119,12 @@ impl From<LogError> for CustomContractError {
 }
 
 /// Credential state that is used as the input parameter or the return value for
-/// the `store/view` contract functions. It contains the metadata and the
+/// the `store/view` contract functions. It contains the version and the
 /// encrypted_credential.
 #[derive(Serialize, SchemaType, PartialEq)]
 struct SimpleCredentialState {
-    /// Metadata associated with the credential.
-    metadata:             Metadata,
+    /// Version of the credential..
+    version:              Version,
     /// The `encrypted_credential`.
     encrypted_credential: Vec<u8>,
 }
@@ -175,7 +172,7 @@ fn view<S: HasStateApi>(
 
     Ok(host.state().credential_registry.get(&public_key).map(|credential_state| {
         SimpleCredentialState {
-            metadata:             credential_state.metadata,
+            version:              credential_state.version,
             encrypted_credential: credential_state.encrypted_credential.clone(),
         }
     }))
@@ -206,8 +203,8 @@ pub struct DataToSign {
     timestamp:            Timestamp,
     /// The contract_address that the signature is intended for.
     contract_address:     ContractAddress,
-    /// Metadata associated with the credential.
-    metadata:             Metadata,
+    /// Version of the credential.
+    version:              Version,
     /// The serialized encrypted_credential.
     #[concordium(size_length = 2)]
     encrypted_credential: Vec<u8>,
@@ -277,7 +274,7 @@ fn store<S: HasStateApi>(
     );
 
     let entry = host.state_mut().credential_registry.insert(param.public_key, CredentialState {
-        metadata:             param.data.metadata,
+        version:              param.data.version,
         encrypted_credential: param.data.encrypted_credential,
     });
 
@@ -304,13 +301,13 @@ mod tests {
         115, 6, 164, 14, 89, 135, 129, 114, 208, 90, 66, 99,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        13, 222, 247, 236, 178, 112, 59, 144, 60, 211, 81, 134, 97, 201, 22, 173, 36, 199, 164,
-        217, 156, 107, 204, 83, 201, 153, 189, 77, 86, 238, 251, 220, 183, 221, 238, 114, 244, 219,
-        132, 61, 167, 79, 230, 52, 73, 86, 101, 176, 153, 223, 103, 8, 197, 26, 82, 178, 162, 119,
-        204, 239, 82, 114, 25, 7,
+        218, 87, 238, 248, 169, 170, 187, 125, 142, 60, 95, 218, 221, 193, 157, 184, 243, 243, 254,
+        38, 162, 26, 5, 126, 58, 69, 15, 236, 141, 16, 196, 8, 187, 94, 139, 108, 249, 180, 135,
+        74, 157, 80, 125, 18, 250, 220, 162, 26, 2, 87, 193, 248, 194, 216, 19, 6, 173, 4, 135,
+        227, 62, 69, 83, 7,
     ]);
     const ENCRYPTED_CREDENTIAL: [u8; 2] = [43, 1];
-    const METADATA: Metadata = Metadata(43 + 256);
+    const VERSION: Version = 0;
 
     // Test initialization succeeds.
     #[concordium_test]
@@ -355,7 +352,7 @@ mod tests {
                 subindex: 0,
             },
             timestamp:            Timestamp::from_timestamp_millis(10000000000),
-            metadata:             METADATA,
+            version:              VERSION,
             encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
         };
 
@@ -375,7 +372,7 @@ mod tests {
         let result = store(&ctx, &mut host, &mut logger, &crypto_primitives);
 
         // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
+        claim!(result.is_ok(), "Results in rejection: {:?}", result);
 
         // Check the logs.
         claim_eq!(logger.logs.len(), 1, "One event should be logged");
@@ -398,7 +395,7 @@ mod tests {
         claim_eq!(
             result.expect_report("Expect credential as return value"),
             Some(SimpleCredentialState {
-                metadata:             METADATA,
+                version:              VERSION,
                 encrypted_credential: ENCRYPTED_CREDENTIAL.to_vec(),
             }),
             "Credential should be viewable"
