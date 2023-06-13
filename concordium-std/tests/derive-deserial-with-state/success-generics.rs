@@ -1,6 +1,6 @@
-//! Ensure that `derive(DeserialWithState)` can generate trait implementation
+//! Ensure that `derive(DeserialWithState)` can generate a trait implementation
 //! when `#[concordium(state_parameter)]` attribute value is not just
-//! a type identifier but a type path to trait's associated type
+//! a type identifier but a type path to the trait's associated type.
 use concordium_std::*;
 
 #[derive(DeserialWithState)]

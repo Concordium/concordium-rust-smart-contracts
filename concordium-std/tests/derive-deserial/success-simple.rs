@@ -1,4 +1,4 @@
-/// Test ensuring derivation works for a simple types.
+/// Test ensuring derivation works for simple types.
 use concordium_std::*;
 
 #[derive(Deserial)]
