@@ -371,7 +371,9 @@ impl<S: HasStateApi> State<S> {
             self.token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
 
         let minter = token_details.minter;
-        let royalty_to_pay: u64 = params.sale_price / 100 * token_details.royalty as u64;
+        let royalty_to_pay: u64 =
+            (params.sale_price as f64 * token_details.royalty as f64 / 100.0) as u64;
+
         Ok(CheckRoyaltyResult {
             royalty_receiver: minter,
             payment:          royalty_to_pay,
@@ -550,7 +552,6 @@ fn contract_transfer<S: HasStateApi>(
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
     for Transfer {
         token_id,
         amount,
@@ -570,6 +571,7 @@ fn contract_transfer<S: HasStateApi>(
                 id:         token_id,
                 sale_price: amount.into(),
             };
+
             let royal_result = state.calculate_royalty_payments(royalty_parameters)?;
             royalties = Some(royal_result);
         }
@@ -583,7 +585,7 @@ fn contract_transfer<S: HasStateApi>(
             logger.log(&Cis2Event::Transfer(TransferEvent {
                 token_id,
                 amount: concordium_cis2::TokenAmountU64(royalties.as_ref().unwrap().payment),
-                from,
+                from: to_address,
                 to: royalties.as_ref().unwrap().royalty_receiver,
             }))?;
             receivers_amount -=
@@ -886,7 +888,7 @@ fn contract_set_implementor<S: HasStateApi>(
 /// It rejects if:
 /// - The contract does not pay royalties
 /// - The return result would be 0
-/// - The token is not recognised
+/// - The token id does not exist in state
 #[receive(
     contract = "cis2_multi_royalties",
     name = "check_royalty",
@@ -911,8 +913,12 @@ fn contract_check_royalty<S: HasStateApi>(
 }
 
 /// View function to see whether we support paying royalties
-#[receive(contract = "cis2_multi_royalties", name = "supports_interface", return_value = "bool")]
-fn supports_interface<S: HasStateApi>(
+#[receive(
+    contract = "cis2_multi_royalties",
+    name = "contract_pays_royalties",
+    return_value = "bool"
+)]
+fn contract_pays_royalties<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<bool> {
@@ -933,6 +939,8 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
+    const ACCOUNT_2: AccountAddress = AccountAddress([2u8; 32]);
+    const ADDRESS_2: Address = Address::Account(ACCOUNT_2);
     const TOKEN_0: ContractTokenId = TokenIdU8(2);
     const TOKEN_1: ContractTokenId = TokenIdU8(42);
 
@@ -1293,14 +1301,14 @@ mod tests {
         let mut builder1 = TestStateBuilder::new();
         let state1 = initial_state(&mut builder1);
         let host = TestHost::new(state1, builder1);
-        let royalty_paid = supports_interface(&ctx, &host).expect("Invoke should succeed");
+        let royalty_paid = contract_pays_royalties(&ctx, &host).expect("Invoke should succeed");
         claim_eq!(royalty_paid, false, "Royalty incorrectly initialised");
 
         let mut builder2 = TestStateBuilder::new();
         let mut state2 = initial_state(&mut builder2);
         state2.pay_royalty = true;
         let host = TestHost::new(state2, builder2);
-        let royalty_paid = supports_interface(&ctx, &host);
+        let royalty_paid = contract_pays_royalties(&ctx, &host);
         claim_eq!(royalty_paid.unwrap(), true, "Royalty incorrectly initialised");
     }
 
@@ -1311,7 +1319,7 @@ mod tests {
         let mut builder = TestStateBuilder::new();
         let state = initial_state(&mut builder);
         let host = TestHost::new(state, builder);
-        let royalty_paid = supports_interface(&ctx, &host);
+        let royalty_paid = contract_pays_royalties(&ctx, &host);
         claim_eq!(royalty_paid.unwrap(), false, "Royalty incorrectly initialised");
     }
 
@@ -1365,7 +1373,7 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
+                from:     ADDRESS_1,
                 to:       ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   ContractTokenAmount::from(50),
@@ -1381,6 +1389,77 @@ mod tests {
                 amount:   ContractTokenAmount::from(50),
             })),
             "Incorrect event emitted 2"
+        );
+
+        // second transfer
+        let mut second_ctx = TestReceiveContext::empty();
+        second_ctx.set_sender(ADDRESS_1);
+
+        let second_transfer = Transfer {
+            token_id: TOKEN_0,
+            amount:   ContractTokenAmount::from(10),
+            from:     ADDRESS_1,
+            to:       Receiver::from_account(ACCOUNT_2),
+            data:     AdditionalData::empty(),
+        };
+        let second_parameter = TransferParams::from(vec![second_transfer]);
+        let second_parameter_bytes = to_bytes(&second_parameter);
+        second_ctx.set_parameter(&second_parameter_bytes);
+
+        let mut second_logger = TestLogger::init();
+
+        // Call the contract function.
+        let second_result: ContractResult<()> =
+            contract_transfer(&second_ctx, &mut host, &mut second_logger);
+        // Check the result.
+        claim!(second_result.is_ok(), "Results in rejection");
+
+        // Check the state.
+        let second_balance0 =
+            host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
+        let second_balance1 =
+            host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
+        let second_balance2 =
+            host.state().balance(&TOKEN_0, &ADDRESS_2).expect_report("Token is expected to exist");
+        claim_eq!(
+            second_balance0,
+            355.into(),
+            "Token owner balance should be increase by the royalty payment."
+        );
+        claim_eq!(
+            second_balance1,
+            40.into(),
+            "Token receiver balance should be decreased by the transferred amount"
+        );
+
+        claim_eq!(
+            second_balance2,
+            5.into(),
+            "Token receiver balance should be increased by the transferred amount - the royalty \
+             payment"
+        );
+
+        // Check the logs.
+        claim_eq!(second_logger.logs.len(), 2, "Only two events should be logged");
+        claim_eq!(
+            second_logger.logs[0],
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
+                from:     ADDRESS_2,
+                to:       ADDRESS_0,
+                token_id: TOKEN_0,
+                amount:   ContractTokenAmount::from(5),
+            })),
+            "Incorrect event emitted 3"
+        );
+        claim_eq!(
+            second_logger.logs[1],
+            to_bytes(&Cis2Event::Transfer(TransferEvent {
+                from:     ADDRESS_1,
+                to:       ADDRESS_2,
+                token_id: TOKEN_0,
+                amount:   ContractTokenAmount::from(5),
+            })),
+            "Incorrect event emitted 4"
         );
     }
 
