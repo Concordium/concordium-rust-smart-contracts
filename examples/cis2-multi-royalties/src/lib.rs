@@ -301,18 +301,17 @@ impl<S: HasStateApi> State<S> {
             *from_balance -= amount;
         }
 
-        if royalties.is_some() {
-            let temp_royalties = royalties.as_ref().unwrap();
-            let mut royalties_state =
-                self.state.entry(temp_royalties.royalty_receiver).occupied_or(
-                    concordium_cis2::Cis2Error::Custom(CustomContractError::InvalidRoyaltyAddress),
-                )?;
+        if let Some(royalties) = royalties {
+            let mut royalties_state = self
+                .state
+                .entry(royalties.royalty_receiver)
+                .occupied_or(CustomContractError::InvalidRoyaltyAddress)?;
 
             let mut minter_balance =
                 royalties_state.balances.entry(*token_id).or_insert(TokenAmountU64(0));
 
-            *minter_balance += concordium_cis2::TokenAmountU64(temp_royalties.payment);
-            amount -= concordium_cis2::TokenAmountU64(temp_royalties.payment);
+            *minter_balance += concordium_cis2::TokenAmountU64(royalties.payment);
+            amount -= concordium_cis2::TokenAmountU64(royalties.payment);
         }
 
         let mut to_address_state =
@@ -371,8 +370,7 @@ impl<S: HasStateApi> State<S> {
             self.token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
 
         let minter = token_details.minter;
-        let royalty_to_pay: u64 =
-            (params.sale_price as f64 * token_details.royalty as f64 / 100.0) as u64;
+        let royalty_to_pay: u64 = params.sale_price * token_details.royalty as u64 / 100;
 
         Ok(CheckRoyaltyResult {
             royalty_receiver: minter,
@@ -580,16 +578,15 @@ fn contract_transfer<S: HasStateApi>(
         state.transfer(&token_id, amount, &from, &to_address, builder, &royalties)?;
 
         let mut receivers_amount = amount;
-        if royalties.is_some() {
+        if let Some(royalties) = royalties {
             // Log transfer event
             logger.log(&Cis2Event::Transfer(TransferEvent {
                 token_id,
-                amount: concordium_cis2::TokenAmountU64(royalties.as_ref().unwrap().payment),
-                from: to_address,
-                to: royalties.as_ref().unwrap().royalty_receiver,
+                amount: concordium_cis2::TokenAmountU64(royalties.payment),
+                from,
+                to: royalties.royalty_receiver,
             }))?;
-            receivers_amount -=
-                concordium_cis2::TokenAmountU64(royalties.as_ref().unwrap().payment);
+            receivers_amount -= concordium_cis2::TokenAmountU64(royalties.payment);
         }
         // Log transfer event
         logger.log(&Cis2Event::Transfer(TransferEvent {
@@ -1301,15 +1298,17 @@ mod tests {
         let mut builder1 = TestStateBuilder::new();
         let state1 = initial_state(&mut builder1);
         let host = TestHost::new(state1, builder1);
-        let royalty_paid = contract_pays_royalties(&ctx, &host).expect("Invoke should succeed");
+        let royalty_paid =
+            contract_pays_royalties(&ctx, &host).expect_report("Invoke should succeed");
         claim_eq!(royalty_paid, false, "Royalty incorrectly initialised");
 
         let mut builder2 = TestStateBuilder::new();
         let mut state2 = initial_state(&mut builder2);
         state2.pay_royalty = true;
         let host = TestHost::new(state2, builder2);
-        let royalty_paid = contract_pays_royalties(&ctx, &host);
-        claim_eq!(royalty_paid.unwrap(), true, "Royalty incorrectly initialised");
+        let royalty_paid =
+            contract_pays_royalties(&ctx, &host).expect_report("Invoke should succeed");
+        claim_eq!(royalty_paid, true, "Royalty incorrectly initialised");
     }
 
     // test royalties are initialised properly
@@ -1319,8 +1318,9 @@ mod tests {
         let mut builder = TestStateBuilder::new();
         let state = initial_state(&mut builder);
         let host = TestHost::new(state, builder);
-        let royalty_paid = contract_pays_royalties(&ctx, &host);
-        claim_eq!(royalty_paid.unwrap(), false, "Royalty incorrectly initialised");
+        let royalty_paid =
+            contract_pays_royalties(&ctx, &host).expect_report("Invoke should succeed");
+        claim_eq!(royalty_paid, false, "Royalty incorrectly initialised");
     }
 
     // test royalties are paid correctly
@@ -1373,7 +1373,7 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_1,
+                from:     ADDRESS_0,
                 to:       ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   ContractTokenAmount::from(50),
@@ -1444,7 +1444,7 @@ mod tests {
         claim_eq!(
             second_logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_2,
+                from:     ADDRESS_1,
                 to:       ADDRESS_0,
                 token_id: TOKEN_0,
                 amount:   ContractTokenAmount::from(5),
