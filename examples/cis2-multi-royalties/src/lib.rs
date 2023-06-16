@@ -181,6 +181,8 @@ enum CustomContractError {
     InvalidRoyaltyValue,
     /// Royalty payment destination address should be known.
     InvalidRoyaltyAddress,
+    /// Overflow in royalty calculation.
+    Overflow,
 }
 
 type ContractError = Cis2Error<CustomContractError>;
@@ -370,7 +372,11 @@ impl<S: HasStateApi> State<S> {
             self.token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
 
         let minter = token_details.minter;
-        let royalty_to_pay: u64 = params.sale_price * token_details.royalty as u64 / 100;
+        let royalty_to_pay: u64 = params
+            .sale_price
+            .checked_mul(token_details.royalty as u64)
+            .ok_or(CustomContractError::Overflow)?
+            / 100;
 
         Ok(CheckRoyaltyResult {
             royalty_receiver: minter,
@@ -602,7 +608,7 @@ fn contract_transfer<S: HasStateApi>(
         if let Receiver::Contract(address, entrypoint_name) = to {
             let parameter = OnReceivingCis2Params {
                 token_id,
-                amount,
+                amount: receivers_amount,
                 from,
                 data,
             };
@@ -1303,24 +1309,11 @@ mod tests {
         claim_eq!(royalty_paid, false, "Royalty incorrectly initialised");
 
         let mut builder2 = TestStateBuilder::new();
-        let mut state2 = initial_state(&mut builder2);
-        state2.pay_royalty = true;
+        let state2 = initial_state_with_royalties(&mut builder2);
         let host = TestHost::new(state2, builder2);
         let royalty_paid =
             contract_pays_royalties(&ctx, &host).expect_report("Invoke should succeed");
         claim_eq!(royalty_paid, true, "Royalty incorrectly initialised");
-    }
-
-    // test royalties are initialised properly
-    #[concordium_test]
-    fn test_royalties() {
-        let ctx = TestReceiveContext::empty();
-        let mut builder = TestStateBuilder::new();
-        let state = initial_state(&mut builder);
-        let host = TestHost::new(state, builder);
-        let royalty_paid =
-            contract_pays_royalties(&ctx, &host).expect_report("Invoke should succeed");
-        claim_eq!(royalty_paid, false, "Royalty incorrectly initialised");
     }
 
     // test royalties are paid correctly
