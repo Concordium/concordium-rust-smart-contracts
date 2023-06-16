@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
 - Include `ContractTraceElement`s for failed contract executions, including internal failures.
   - Introduce the enum `DebugTraceElement`, which has information about trace elements, including failed ones and the cause of error, and the energy usage.

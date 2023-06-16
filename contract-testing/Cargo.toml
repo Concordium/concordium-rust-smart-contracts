@@ -1,6 +1,6 @@
 [package]
 name = "concordium-smart-contract-testing"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.65"
 license = "MPL-2.0"
@@ -13,9 +13,9 @@ exclude = ["tests"] # Do not publish tests.
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-concordium_base = {version = "1.2", path = "../concordium-base/rust-src/concordium_base"}
-concordium-smart-contract-engine = {version = "1.2", path = "../concordium-base/smart-contracts/wasm-chain-integration"}
-concordium-wasm = {version = "1.1", path = "../concordium-base/smart-contracts/wasm-transform"}
+concordium_base = {version = "2.0", path = "../concordium-base/rust-src/concordium_base"}
+concordium-smart-contract-engine = {version = "2.0", path = "../concordium-base/smart-contracts/wasm-chain-integration"}
+concordium-wasm = {version = "2.0", path = "../concordium-base/smart-contracts/wasm-transform"}
 sha2 = "0.10"
 anyhow = "1"
 thiserror = "1.0"
