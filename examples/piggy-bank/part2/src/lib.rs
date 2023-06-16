@@ -20,7 +20,7 @@ use concordium_std::*;
 
 /// The state of the piggy bank
 #[derive(Debug, SchemaType, Serialize, PartialEq, Eq, Clone, Copy)]
-enum PiggyBankState {
+pub enum PiggyBankState {
     /// Alive and well, allows for CCD to be inserted.
     Intact,
     /// The piggy bank has been emptied, preventing further CCD to be inserted.
