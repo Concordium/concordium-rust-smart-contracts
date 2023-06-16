@@ -22,7 +22,6 @@ jobs:
     strategy:
       matrix:
         crates:
-          - concordium-std-derive/Cargo.toml
           - concordium-std/Cargo.toml
           - concordium-cis2/Cargo.toml
           - examples/voting/Cargo.toml
@@ -254,7 +253,6 @@ jobs:
 
         lib-crates:
           - concordium-std/Cargo.toml
-          - concordium-std-derive/Cargo.toml
 
         features:
           -
@@ -331,7 +329,6 @@ jobs:
 
         lib-crates:
           - concordium-std/Cargo.toml
-          - concordium-std-derive/Cargo.toml
 
         features:
           - wasm-test
