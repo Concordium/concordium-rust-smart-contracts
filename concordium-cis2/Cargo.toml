@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "3.1.0"
+version = "4.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
 license = "MPL-2.0"
@@ -11,7 +11,7 @@ readme = "./README.md"
 
 [dependencies.concordium-std]
 path = "../concordium-std"
-version = "6.2"
+version = "7.0"
 default-features = false
 
 [dependencies.primitive-types]
