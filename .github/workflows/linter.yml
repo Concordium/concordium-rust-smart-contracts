@@ -28,6 +28,7 @@ jobs:
           - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
+          - examples/cis2-multi-royalties/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
@@ -403,6 +404,7 @@ jobs:
           - examples/cis2-wccd/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis2-multi/Cargo.toml
+          - examples/cis2-multi-royalties/Cargo.toml
           - examples/nametoken/Cargo.toml
           - examples/credential-registry-storage-contract/Cargo.toml
 
@@ -483,6 +485,7 @@ jobs:
           - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
+          - examples/cis2-multi-royalties/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
@@ -612,6 +615,7 @@ jobs:
           - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
           - examples/cis2-multi/Cargo.toml
+          - examples/cis2-multi-royalties/Cargo.toml
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
