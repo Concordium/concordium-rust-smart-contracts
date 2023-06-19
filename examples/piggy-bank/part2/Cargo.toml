@@ -18,12 +18,12 @@ std = ["concordium-std/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies.concordium-std]
-version = "6"
+version = "7"
 path = "../../../concordium-std"
 default-features = false
 
 [dev-dependencies]
-concordium-smart-contract-testing = "1.0"
+concordium-smart-contract-testing = "2.0"
 
 [profile.release]
 opt-level = 3

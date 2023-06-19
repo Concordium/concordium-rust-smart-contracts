@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+## concordium-cis2 4.0.0 (2023-06-16)
+
+- Bump concordium-std to version 7.
+
 ## concordium-cis2 3.1.0 (2023-05-08)
 
 - Derive `PartialEq` and `Eq` for the `MetadataUrl` from the CIS2 library.
