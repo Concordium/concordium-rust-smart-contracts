@@ -2,7 +2,11 @@
 
 ## Unreleased changes
 
+## concordium-std 7.0.0 (2023-06-16)
+
 - Set minimum Rust version to 1.65.
+- Move `MetadataUrl` from the CIS-2 library to `concordium-std` along with the schema and serialization to make it available to other CIS standards.
+- Change the `MetadataUrl` schema: use hex string representation for `hash`.
 - Introduce a new method `block_time` as an alias to `slot_time` in the `HasChainMetadata` trait.
 
 ## concordium-std 6.2.0 (2023-05-08)

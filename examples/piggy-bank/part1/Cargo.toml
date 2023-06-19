@@ -18,7 +18,7 @@ std = ["concordium-std/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies.concordium-std]
-version = "6"
+version = "7"
 path = "../../../concordium-std"
 default-features = false
 
