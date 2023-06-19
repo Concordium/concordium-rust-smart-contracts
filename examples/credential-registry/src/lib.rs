@@ -17,11 +17,6 @@
 //! - update the credential metadata;
 //! - add/update credential types.
 //!
-//! Credential registration involves calling a credential storage contract that
-//! stores private credential data in the encrypted form. The data can only be
-//! decryped by its holder. The storage contract is used for recovering the
-//! holder's credentials in the wallets.
-//!
 //! ## Holder's functionality
 //!
 //! - revoke a credential by signing a revocation message.
@@ -73,13 +68,9 @@ pub enum CredentialStatus {
     NotActivated,
 }
 
-/// A vector Pedersen commitment, credential type and metadata.
+/// A credential type and metadata.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 pub struct CredentialData {
-    /// A vector Pedersen commitment to the attributes of the verifiable
-    /// credential.
-    #[concordium(size_length = 2)]
-    commitment:      Vec<u8>,
     /// A type of the credential that is used to identify which schema the
     /// credential is based on.
     credential_type: CredentialType,
@@ -105,7 +96,7 @@ pub struct CredentialEntry<S: HasStateApi> {
     revocation_nonce: u64,
     /// Revocation flag
     revoked:          bool,
-    /// Commitment, schema reference, and credential metadata.
+    /// Schema reference and credential metadata.
     /// This data is only needed when credential info is requested. In other
     /// operations, `StateBox` defers loading credential data.
     credential_data:  StateBox<CredentialData, S>,
@@ -134,7 +125,6 @@ impl<S: HasStateApi> CredentialEntry<S> {
         CredentialInfo {
             holder_id,
             holder_revocable: self.holder_revocable,
-            commitment: self.credential_data.commitment.clone(),
             credential_type: self.credential_data.credential_type.clone(),
             valid_from: self.valid_from,
             valid_until: self.valid_until,
@@ -147,8 +137,12 @@ impl<S: HasStateApi> CredentialEntry<S> {
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
-    /// An account address of the issuer.
-    issuer:              AccountAddress,
+    /// An account address of the issuer. It is used for authorization in
+    /// entrypoints that can be call only by the issuer.
+    issuer_account:      AccountAddress,
+    /// The issuer's public key. It is used by off-chain code to verify
+    /// signatures on credential data.
+    issuer_key:          PublicKeyEd25519,
     /// A reference to the isser metadata.
     issuer_metadata:     MetadataUrl,
     /// The currently active set of revocation keys.
@@ -159,9 +153,6 @@ pub struct State<S: HasStateApi> {
     credentials:         StateMap<PublicKeyEd25519, CredentialEntry<S>, S>,
     /// A mapping from credential types to schema references.
     schema_registry:     StateMap<CredentialType, SchemaRef, S>,
-    /// A credential storage contract address.
-    /// This contract is used to store encrypted private credential data.
-    storage_address:     ContractAddress,
 }
 
 /// Contract Errors.
@@ -220,18 +211,18 @@ type CredentialHolderId = PublicKeyEd25519;
 impl<S: HasStateApi> State<S> {
     fn new(
         state_builder: &mut StateBuilder<S>,
-        issuer: AccountAddress,
+        issuer_account: AccountAddress,
+        issuer_key: PublicKeyEd25519,
         issuer_metadata: MetadataUrl,
-        storage_address: ContractAddress,
     ) -> Self {
         State {
-            issuer,
+            issuer_account,
+            issuer_key,
             issuer_metadata,
             schema_registry: state_builder.new_map(),
             revocation_keys: state_builder.new_map(),
             credentials: state_builder.new_map(),
             all_revocation_keys: state_builder.new_set(),
-            storage_address,
         }
     }
 
@@ -277,7 +268,6 @@ impl<S: HasStateApi> State<S> {
             valid_from:       credential_info.valid_from,
             valid_until:      credential_info.valid_until,
             credential_data:  state_builder.new_box(CredentialData {
-                commitment:      credential_info.commitment.clone(),
                 credential_type: credential_info.credential_type.clone(),
                 metadata_url:    credential_info.metadata_url.clone(),
             }),
@@ -548,21 +538,21 @@ impl Deserial for CredentialEvent {
 pub struct InitParams {
     /// The issuer's metadata.
     issuer_metadata: MetadataUrl,
-    /// An address of the credential storage contract.
-    storage_address: ContractAddress,
     /// Credential schemas available right after initialization.
     #[concordium(size_length = 1)]
     schemas:         Vec<(CredentialType, SchemaRef)>,
     /// The issuer for the registry. If `None`, the `init_origin` is used as
     /// `issuer`.
-    issuer:          Option<AccountAddress>,
+    issuer_account:  Option<AccountAddress>,
+    /// The issuer's public key.
+    issuer_key:      PublicKeyEd25519,
     /// Revocation keys available right after initialization.
     #[concordium(size_length = 1)]
     revocation_keys: Vec<PublicKeyEd25519>,
 }
 
 /// Init function that creates a fresh registry state given the issuer's
-/// metadata, storage contract address and initial credential schemas.
+/// metadata and initial credential schemas.
 ///
 /// Logs `CredentialEvent::IssuerMetadata`, `CredentialEvent::RevocationKey`
 /// (with the `Register` action) for each key in the input, and
@@ -587,9 +577,9 @@ fn init<S: HasStateApi>(
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
     let mut state = State::new(
         state_builder,
-        parameter.issuer.unwrap_or_else(|| ctx.init_origin()),
+        parameter.issuer_account.unwrap_or_else(|| ctx.init_origin()),
+        parameter.issuer_key,
         parameter.issuer_metadata,
-        parameter.storage_address,
     );
     for pk in parameter.revocation_keys {
         state.register_revocation_key(pk)?;
@@ -610,7 +600,7 @@ fn init<S: HasStateApi>(
 
 /// Check whether the transaction `sender` is the issuer.
 fn sender_is_issuer<S: HasStateApi>(ctx: &impl HasReceiveContext, state: &State<S>) -> bool {
-    ctx.sender().matches_account(&state.issuer)
+    ctx.sender().matches_account(&state.issuer_account)
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
@@ -620,10 +610,6 @@ pub struct CredentialInfo {
     /// If this flag is set to `true` the holder can send a signed message to
     /// revoke their credential.
     holder_revocable: bool,
-    /// A vector Pedersen commitment to the attributes of the verifiable
-    /// credential.
-    #[concordium(size_length = 2)]
-    commitment:       Vec<u8>,
     /// The date from which the credential is considered valid.
     valid_from:       Timestamp,
     /// After this date, the credential becomes expired. `None` corresponds to a
@@ -636,13 +622,12 @@ pub struct CredentialInfo {
     metadata_url:     MetadataUrl,
 }
 
-/// Parameters for registering a credential and storing encrypted private data.
+/// Parameters for registering a credential
 #[derive(Serialize, SchemaType, Clone, Debug)]
 pub struct RegisterCredentialParam {
     /// Public credential data.
     credential_info: CredentialInfo,
-    /// Auxiliary data. In this contract it is used to pass encrypted private
-    /// credential data to the credential storage contract.
+    /// Any additional data required by the issuer in the registration process.
     #[concordium(size_length = 2)]
     auxiliary_data:  Vec<u8>,
 }
@@ -713,9 +698,7 @@ fn contract_credential_status<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - An entry with the given credential id already exists.
 /// - The credential type is not registered.
-/// - The auxiliary data is too big to fit into the parameter limits.
 /// - Fails to log the event.
-/// - A call to the storage contract fails.
 #[receive(
     contract = "credential_registry",
     name = "registerCredential",
@@ -733,8 +716,6 @@ fn contract_register_credential<S: HasStateApi>(
     let parameter: RegisterCredentialParam = ctx.parameter_cursor().get()?;
     let credential_info = parameter.credential_info;
     let (state, state_bulder) = host.state_and_builder();
-    let storage_address = state.storage_address;
-    // Register the credential
     let schema = state.register_credential(&credential_info, state_bulder)?;
     logger.log(&CredentialEvent::Register(CredentialEventData {
         holder_id:       credential_info.holder_id,
@@ -742,16 +723,6 @@ fn contract_register_credential<S: HasStateApi>(
         credential_type: credential_info.credential_type,
         metadata_url:    credential_info.metadata_url,
     }))?;
-    let store_entrypoint: OwnedEntrypointName =
-        OwnedEntrypointName::new_unchecked("store".to_string());
-    let store_parameter = Parameter::try_from(parameter.auxiliary_data.as_slice())?;
-    // Store the private credential data by calling the credential storage contract.
-    host.invoke_contract_raw(
-        &storage_address,
-        store_parameter,
-        store_entrypoint.as_entrypoint_name(),
-        Amount::zero(),
-    )?;
     Ok(())
 }
 
@@ -1288,18 +1259,18 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
     Ok(())
 }
 
-/// A view entrypoint for querying the issuer account address
+/// A view entrypoint for querying the issuer's public key.
 #[receive(
     contract = "credential_registry",
     name = "issuer",
     error = "ContractError",
-    return_value = "AccountAddress"
+    return_value = "PublicKeyEd25519"
 )]
 fn contract_issuer<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<AccountAddress, ContractError> {
-    Ok(host.state().issuer)
+) -> Result<PublicKeyEd25519, ContractError> {
+    Ok(host.state().issuer_key)
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -1533,7 +1504,6 @@ mod tests {
             CredentialInfo {
                 holder_id:        PublicKeyEd25519([0u8; 32].map(|_| Arbitrary::arbitrary(g))),
                 holder_revocable: Arbitrary::arbitrary(g),
-                commitment:       Arbitrary::arbitrary(g),
                 credential_type:  CredentialType {
                     credential_type: Arbitrary::arbitrary(g),
                 },
@@ -1551,10 +1521,6 @@ mod tests {
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const STORAGE_CONTRACT: ContractAddress = ContractAddress {
-        index:    1,
-        subindex: 0,
-    };
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         82, 233, 199, 239, 90, 118, 225, 123, 77, 93, 157, 192, 209, 255, 148, 148, 66, 183, 84,
         250, 48, 68, 108, 51, 67, 195, 164, 88, 1, 172, 244, 39,
@@ -1572,7 +1538,6 @@ mod tests {
     fn credential_entry<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> CredentialEntry<S> {
         CredentialEntry {
             credential_data:  state_builder.new_box(CredentialData {
-                commitment:      [0u8; 48].to_vec(),
                 credential_type: CredentialType {
                     credential_type: "ExampleSchema".to_string(),
                 },
@@ -1625,8 +1590,8 @@ mod tests {
         let parameter_bytes = to_bytes(&InitParams {
             issuer_metadata: issuer_metadata(),
             schemas,
-            storage_address: STORAGE_CONTRACT,
-            issuer: ISSUER_ACCOUNT.into(),
+            issuer_account: ISSUER_ACCOUNT.into(),
+            issuer_key: PUBLIC_KEY,
             revocation_keys: vec![PUBLIC_KEY],
         });
         ctx.set_parameter(&parameter_bytes);
@@ -1635,16 +1600,10 @@ mod tests {
         let state = state_result.expect_report("Contract initialization results in an error");
 
         // Check that the initial parameters are in the state.
-        claim_eq!(state.storage_address, STORAGE_CONTRACT, "Incorrect storage contract address");
         let fetched_schema =
             state.schema_registry.get(&schema.0).expect_report("Schema must be in the state");
         claim_eq!(*fetched_schema, schema.1, "Incorrect schema in the state");
-        claim_eq!(state.issuer, ISSUER_ACCOUNT, "Incorrect issuer in the state");
-        claim_eq!(
-            state.storage_address,
-            STORAGE_CONTRACT,
-            "Incorrect storage contract address in the state"
-        );
+        claim_eq!(state.issuer_account, ISSUER_ACCOUNT, "Incorrect issuer in the state");
         claim_eq!(
             state.issuer_metadata,
             issuer_metadata(),
@@ -1732,7 +1691,6 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
             credential_data:  state_builder.new_box(CredentialData {
-                commitment:      data.commitment,
                 credential_type: data.credential_type,
                 metadata_url:    MetadataUrl {
                     url:  "123456".into(),
@@ -1763,7 +1721,7 @@ mod tests {
         data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+            State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref.clone());
         let register_result = state.register_credential(&data, &mut state_builder);
         let query_result = state.view_credential_info(credential_id);
@@ -1795,7 +1753,7 @@ mod tests {
         data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+            State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
         let register_result = state.register_credential(&data, &mut state_builder);
 
@@ -1823,7 +1781,7 @@ mod tests {
         data.holder_id = credential_id;
         let mut state_builder = TestStateBuilder::new();
         let mut state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+            State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let schema_result = state.add_schema(credential_type, schema_ref);
         let register_result = state.register_credential(&data, &mut state_builder);
 
@@ -1853,7 +1811,7 @@ mod tests {
     fn prop_register_revocation_key(pk: PublicKeyEd25519) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let mut state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+            State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let register_result = state.register_revocation_key(pk);
         let query_result =
             state.view_revocation_keys().iter().any(|(stored_pk, _)| stored_pk == &pk);
@@ -1881,19 +1839,10 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+        let state = State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let mut host = TestHost::new(state, state_builder);
 
         let entry = credential_entry(host.state_builder());
-
-        // Mock the storage contract. The test assumes that the call to the storage
-        // contract succeeds.
-        host.setup_mock_entrypoint(
-            STORAGE_CONTRACT,
-            OwnedEntrypointName::new_unchecked("store".to_string()),
-            MockFn::new_v1(|_, _, _, _| Ok((false, ()))),
-        );
 
         // Create input parameters.
 
@@ -1971,8 +1920,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+        let state = State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let mut host = TestHost::new(state, state_builder);
 
         let (state, state_builder) = host.state_and_builder();
@@ -2063,8 +2011,7 @@ mod tests {
 
         let mut logger = TestLogger::init();
         let mut state_builder = TestStateBuilder::new();
-        let state =
-            State::new(&mut state_builder, ISSUER_ACCOUNT, issuer_metadata(), STORAGE_CONTRACT);
+        let state = State::new(&mut state_builder, ISSUER_ACCOUNT, PUBLIC_KEY, issuer_metadata());
         let mut host = TestHost::new(state, state_builder);
 
         let (state, state_builder) = host.state_and_builder();
