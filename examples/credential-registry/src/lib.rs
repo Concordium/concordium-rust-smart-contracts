@@ -177,7 +177,6 @@ enum ContractError {
     SerializationError,
     LogFull,
     LogMalformed,
-    ContractInvocationError,
     AuxDataTooBig,
 }
 
@@ -189,11 +188,6 @@ impl From<LogError> for ContractError {
             LogError::Malformed => Self::LogMalformed,
         }
     }
-}
-
-/// Mapping errors related to contract invocations to ContractError.
-impl<T> From<CallContractError<T>> for ContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::ContractInvocationError }
 }
 
 /// Mapping errors related to the parameter size to ContractError.
@@ -384,7 +378,7 @@ enum Revoker {
     Holder,
     /// `Other` is used for the cases when the revoker is not the issuer or
     /// holder. In this contract it is a revocation authority, which is
-    /// identified using ther public key.
+    /// identified using a public key.
     Other(PublicKeyEd25519),
 }
 
@@ -1015,7 +1009,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// to a public key registered by the issuer.
 ///
 /// A revocation authority is authenticated by verifying the signature on the
-/// input to the entrypoint with the autority's public key.
+/// input to the entrypoint with the authority's public key.
 /// The public key is stored in `revocation_keys`.
 ///
 /// Note that a nonce is used as a general way to prevent replay attacks. In
@@ -1073,7 +1067,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
 
     let signature = parameter.signature;
 
-    // Perepare message bytes as it is signer by the wallet
+    // Prepare message bytes as it is signed by the wallet
     // Note that the message is prepended by a domain separation string
     let mut message: Vec<u8> = SIGNARUTE_DOMAIN.as_bytes().to_vec();
     parameter.message_bytes(&mut message)?;
@@ -1116,7 +1110,7 @@ pub struct RemovePublicKeyParameters {
 /// Register revocation authorities public keys.
 ///
 /// These keys are used to authorize the revocation (applies to the whole
-/// registry). The contract keep track of all keys ever sen by this contract.
+/// registry). The contract keeps track of all keys ever seen by this contract.
 /// Some keys can be removed from the available keys, but registering them again
 /// is not possible. This prevents resetting the key's nonce.
 ///
@@ -1466,9 +1460,9 @@ mod tests {
     use test_infrastructure::*;
 
     // Define `Arbitrary` instances for data types used in the contract.
-    // The instances are used for randimized by property-based testing.
+    // The instances are used for randomized by property-based testing.
 
-    // It is convenient to use arbitrary data even for simple properites, because it
+    // It is convenient to use arbitrary data even for simple properties, because it
     // allows us to avoid defining input data manually.
 
     impl Arbitrary for CredentialType {
@@ -2028,7 +2022,7 @@ mod tests {
         // Check that it was registered successfully
         claim!(res.is_ok(), "Credential registration failed");
 
-        // Make sure the credeintial has `Revoked` status
+        // Make sure the credential has the `Revoked` status
         let revoke_res = state.revoke_credential(now, PUBLIC_KEY);
 
         // Check that the credential was revoked successfully.
