@@ -31,6 +31,9 @@
 //! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is defined
 //! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
+
+pub mod cis2_client;
+
 use concordium_std::{collections::BTreeMap, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;

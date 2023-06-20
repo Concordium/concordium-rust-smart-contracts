@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+## concordium-cis2 4.0.1 (2023-06-20)
+
+- Added Cis2Client
+
 ## concordium-cis2 4.0.0 (2023-06-16)
 
 - Bump concordium-std to version 7.
