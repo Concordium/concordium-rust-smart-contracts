@@ -138,12 +138,12 @@ impl<S: HasStateApi> CredentialEntry<S> {
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
     /// An account address of the issuer. It is used for authorization in
-    /// entrypoints that can be call only by the issuer.
+    /// entrypoints that can be called only by the issuer.
     issuer_account:      AccountAddress,
     /// The issuer's public key. It is used by off-chain code to verify
     /// signatures on credential data.
     issuer_key:          PublicKeyEd25519,
-    /// A reference to the isser metadata.
+    /// A reference to the issuer metadata.
     issuer_metadata:     MetadataUrl,
     /// The currently active set of revocation keys.
     revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
