@@ -35,22 +35,34 @@ pub(crate) struct ChainParameters {
     pub(crate) euro_per_energy: ExchangeRate,
 }
 
+#[derive(Debug)]
+/// The connection and runtime needed for communicating with an external node.
+pub(crate) struct ExternalNodeConnection {
+    /// An instantiated v2 Client from the Rust SDK. Used for communicating with
+    /// a node.
+    pub(crate) client:  concordium_rust_sdk::v2::Client,
+    /// A Tokio runtime used to execute the async methods of the `client`.
+    pub(crate) runtime: tokio::runtime::Runtime,
+}
+
 /// Represents the blockchain and supports a number of operations, including
 /// creating accounts, deploying modules, initializing contract, updating
 /// contracts and invoking contracts.
 #[derive(Debug)]
 pub struct Chain {
-    pub(crate) parameters:          ChainParameters,
+    pub(crate) parameters:               ChainParameters,
     /// Accounts and info about them.
     /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
     /// as one account.
-    pub(crate) accounts:            BTreeMap<AccountAddressEq, Account>,
+    pub(crate) accounts:                 BTreeMap<AccountAddressEq, Account>,
     /// Smart contract modules.
-    pub(crate) modules:             BTreeMap<ModuleReference, ContractModule>,
+    pub(crate) modules:                  BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
-    pub(crate) contracts:           BTreeMap<ContractAddress, Contract>,
+    pub(crate) contracts:                BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
-    pub(crate) next_contract_index: u64,
+    pub(crate) next_contract_index:      u64,
+    /// An optional connection to an external node.
+    pub(crate) external_node_connection: Option<ExternalNodeConnection>,
 }
 
 /// A smart contract instance.
@@ -600,3 +612,37 @@ pub struct ExchangeRateError;
 #[derive(Debug, Error)]
 #[error("Any signer must have at least one key.")]
 pub struct ZeroKeysError;
+
+/// Errors that occur while setting up the connection to an external node.
+#[derive(Debug, thiserror::Error)]
+pub enum SetupExternalNodeError {
+    /// It was not possible to connect to a node on the provided endpoint.
+    #[error("Could not connect to the provided endpoint.")]
+    CannotConnect,
+    /// The endpoint provided was malformed.
+    #[error("The provided endpoint is malformed: '{endpoint}'.")]
+    MalformedEndpoint { endpoint: String },
+    /// Request timed out.
+    #[error("The request timed out.")]
+    Timeout,
+}
+
+/// Errors that occur while trying to communicate with an external node.
+#[derive(Debug, Error)]
+pub enum ExternalNodeError {
+    /// An external node has not been configured.
+    #[error("An external node has not been configured.")]
+    NotConfigured,
+    /// The query could not be performed.
+    #[error("Could not perform the query.")]
+    QueryError,
+    /// Request timed out.
+    #[error("The request timed out.")]
+    Timeout,
+}
+
+/// The error returned when an external node has not been configured prior to
+/// using it.
+#[derive(Debug, Error)]
+#[error("An external node has not been configured.")]
+pub struct ExternalNodeNotConfigured;

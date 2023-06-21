@@ -14,6 +14,7 @@ use concordium_base::{
     smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost, InitContractPayload, UpdateContractPayload},
 };
+use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::{
     v0,
     v1::{self, InvokeResponse},
@@ -21,7 +22,14 @@ use concordium_smart_contract_engine::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{collections::BTreeMap, path::Path, str::FromStr, sync::Arc};
+use tokio::{
+    runtime,
+    time::{timeout, Duration},
+};
+
+/// The duration set for timeouts when communicating with an external node.
+const EXTERNAL_NODE_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
 
 impl Default for Chain {
     fn default() -> Self { Self::new() }
@@ -93,15 +101,16 @@ impl Chain {
         euro_per_energy: ExchangeRate,
     ) -> Result<Self, ExchangeRateError> {
         Ok(Self {
-            parameters:          ChainParameters::new_with_time_and_rates(
+            parameters:               ChainParameters::new_with_time_and_rates(
                 block_time,
                 micro_ccd_per_euro,
                 euro_per_energy,
             )?,
-            accounts:            BTreeMap::new(),
-            modules:             BTreeMap::new(),
-            contracts:           BTreeMap::new(),
-            next_contract_index: 0,
+            accounts:                 BTreeMap::new(),
+            modules:                  BTreeMap::new(),
+            contracts:                BTreeMap::new(),
+            next_contract_index:      0,
+            external_node_connection: None,
         })
     }
 
@@ -1056,6 +1065,167 @@ impl Chain {
         Ok(())
     }
 
+    /// Set the exchange rates for Euro, CCD, and Energy by querying the
+    /// external node.
+    ///
+    /// The external node must be setup prior to this call via the method
+    /// [`Chain::setup_external_node_connection`], otherwise an error is
+    /// returned.
+    ///
+    /// *Example:*
+    ///
+    /// ```no_run
+    /// # use concordium_smart_contract_testing::*;
+    /// let mut chain = Chain::new();
+    /// chain
+    ///     .setup_external_node_connection("http://node.testnet.concordium.com:20000")
+    ///     .unwrap();
+    /// chain.set_exchange_rates_via_external_node().unwrap();
+    /// ```
+    pub fn set_exchange_rates_via_external_node(&mut self) -> Result<(), ExternalNodeError> {
+        let connection = self.external_node_connection()?;
+
+        // A future for getting the exchange rates. Executed below.
+        let get_exchange_rates = async {
+            let chain_parameters = connection
+                .client
+                .get_block_chain_parameters(sdk::v2::BlockIdentifier::LastFinal)
+                .await?
+                .response;
+            let (euro_per_energy, micro_ccd_per_euro) = match chain_parameters {
+                sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+            };
+            Ok::<_, ExternalNodeError>((euro_per_energy, micro_ccd_per_euro))
+        };
+
+        // Get the values from the external node with a timeout.
+        let (euro_per_energy, micro_ccd_per_euro) = connection.runtime.block_on(async {
+            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, get_exchange_rates)
+                .await
+                .map_err(|_| ExternalNodeError::Timeout)?
+        })?;
+
+        // We assume that the queryied values are valid.
+        self.parameters.micro_ccd_per_euro = micro_ccd_per_euro;
+        self.parameters.euro_per_energy = euro_per_energy;
+
+        Ok(())
+    }
+
+    /// Set the block time by querying the external node.
+    ///
+    /// The external node must be setup prior to this call via the method
+    /// [`Chain::setup_external_node_connection`], otherwise an error is
+    /// returned.
+    ///
+    /// If the queried block time is prior to January 1, 1970 0:00:00 UTC (aka
+    /// “UNIX timestamp”), a block time of `0` will be used instead.
+    ///
+    /// *Example:*
+    ///
+    /// ```no_run
+    /// # use concordium_smart_contract_testing::*;
+    /// let mut chain = Chain::new();
+    /// chain
+    ///     .setup_external_node_connection("http://node.testnet.concordium.com:20000")
+    ///     .unwrap();
+    /// chain.set_block_time_via_external_node().unwrap();
+    /// ```
+    pub fn set_block_time_via_external_node(&mut self) -> Result<(), ExternalNodeError> {
+        let connection = self.external_node_connection()?;
+
+        // A future for getting the block time. Executed below.
+        let get_block_time = async {
+            let block_info = connection
+                .client
+                .get_block_info(sdk::v2::BlockIdentifier::LastFinal)
+                .await?
+                .response;
+            let block_time = block_info.block_slot_time;
+            Ok::<_, ExternalNodeError>(block_time)
+        };
+
+        // Get the values from the external node with a timeout.
+        let block_time = connection.runtime.block_on(async {
+            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, get_block_time)
+                .await
+                .map_err(|_| ExternalNodeError::Timeout)?
+        })?;
+
+        // Get the timestamp in milliseconds *before or after* the unix epoch.
+        let timestamp_before_after: i64 = block_time.timestamp_millis();
+        // Our `Timestamp` only supports times *after* the unix epoch, so we use `0` if
+        // the queried timestamp is negative.
+        let timestamp_after: u64 = i64::max(timestamp_before_after, 0) as u64;
+        self.parameters.block_time = Timestamp::from_timestamp_millis(timestamp_after);
+
+        Ok(())
+    }
+
+    /// Set up a connection to an external Concordium node.
+    ///
+    /// The connection can be used for getting the current exchange rates
+    /// between CCD, Euro and Energy.
+    ///
+    /// *Example:*
+    ///
+    /// ```no_run
+    /// # use concordium_smart_contract_testing::*;
+    /// # let mut chain = Chain::new();
+    /// chain
+    ///     .setup_external_node_connection("http://node.testnet.concordium.com:20000")
+    ///     .unwrap();
+    /// ```
+    pub fn setup_external_node_connection(
+        &mut self,
+        endpoint: &str,
+    ) -> Result<(), SetupExternalNodeError> {
+        let endpoint: sdk::v2::Endpoint = FromStr::from_str(endpoint)?;
+        // Create the Tokio runtime. This should never fail, unless nested runtimes are
+        // created.
+        let runtime = runtime::Builder::new_multi_thread()
+            // Enable time, so timeouts can be used.
+            .enable_time()
+            // Enable I/O, so networking and other types of calls are possible.
+            .enable_io()
+            .thread_keep_alive(Duration::from_secs(2))
+            .build()
+            .expect("Internal error: Could not create Tokio runtime.");
+
+        // A future for getting the client. Executed below.
+        let get_client = async {
+            // Try to create the client, which also checks that the connection is valid.
+            let client = sdk::v2::Client::new(endpoint).await?;
+            Ok::<sdk::v2::Client, SetupExternalNodeError>(client)
+        };
+
+        // Get the client synchronously by blocking until the async returns.
+        let client = runtime.block_on(async {
+            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, get_client)
+                .await
+                .map_err(|_| SetupExternalNodeError::Timeout)?
+        })?;
+
+        // Set or replace the node connection.
+        self.external_node_connection = Some(ExternalNodeConnection { client, runtime });
+
+        Ok(())
+    }
+
+    /// Try to get the [`ExternalNodeConnection`] or return an error.
+    ///
+    /// The connection is only available, if the [`Chain`] has been created with
+    fn external_node_connection(
+        &mut self,
+    ) -> Result<&mut ExternalNodeConnection, ExternalNodeNotConfigured> {
+        match &mut self.external_node_connection {
+            None => Err(ExternalNodeNotConfigured),
+            Some(data) => Ok(data),
+        }
+    }
+
     /// Return the current microCCD per euro exchange rate.
     pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.parameters.micro_ccd_per_euro }
 
@@ -1299,6 +1469,20 @@ fn check_exchange_rates(
 /// A helper function for converting `[v0::Logs]` into [`Vec<ContractEvent>`].
 pub(crate) fn contract_events_from_logs(logs: v0::Logs) -> Vec<ContractEvent> {
     logs.logs.into_iter().map(ContractEvent::from).collect()
+}
+
+impl From<concordium_rust_sdk::endpoints::QueryError> for ExternalNodeError {
+    fn from(_: concordium_rust_sdk::endpoints::QueryError) -> Self { ExternalNodeError::QueryError }
+}
+
+impl From<concordium_rust_sdk::endpoints::Error> for SetupExternalNodeError {
+    fn from(_: concordium_rust_sdk::endpoints::Error) -> Self {
+        SetupExternalNodeError::CannotConnect
+    }
+}
+
+impl From<ExternalNodeNotConfigured> for ExternalNodeError {
+    fn from(_: ExternalNodeNotConfigured) -> Self { Self::NotConfigured }
 }
 
 #[cfg(test)]
