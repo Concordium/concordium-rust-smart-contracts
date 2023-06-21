@@ -622,6 +622,9 @@ pub struct RegisterCredentialParam {
     /// Public credential data.
     credential_info: CredentialInfo,
     /// Any additional data required by the issuer in the registration process.
+    /// This data is not used in this contract. However, it is part of the CIS-4
+    /// standard that this contract implements; `auxiliary_data` can be
+    /// used, for example, to implement signature-based authentication.
     #[concordium(size_length = 2)]
     auxiliary_data:  Vec<u8>,
 }
@@ -786,9 +789,15 @@ fn contract_serialization_helper_holder_revoke<S: HasStateApi>(
 #[derive(Serialize, SchemaType)]
 pub struct RevokeCredentialIssuerParam {
     /// Id of the credential to revoke.
-    credential_id: CredentialHolderId,
+    credential_id:  CredentialHolderId,
     /// (Optional) reason for revoking the credential.
-    reason:        Option<Reason>,
+    reason:         Option<Reason>,
+    /// Any additional data required by the issuer in the registration process.
+    /// This data is not used in this contract. However, it is part of the CIS-4
+    /// standard that this contract implements; `auxiliary_data` can be
+    /// used, for example, to implement signature-based authentication.
+    #[concordium(size_length = 2)]
+    auxiliary_data: Vec<u8>,
 }
 
 /// A parameter type for revoking a credential by a revocation authority.
@@ -1098,13 +1107,25 @@ fn contract_revoke_credential_other<S: HasStateApi>(
 #[derive(Serialize, SchemaType)]
 pub struct RegisterPublicKeyParameters {
     #[concordium(size_length = 2)]
-    pub keys: Vec<PublicKeyEd25519>,
+    pub keys:       Vec<PublicKeyEd25519>,
+    /// Any additional data required for registering keys.
+    /// This data is not used in this contract. However, it is part of the CIS-4
+    /// standard that this contract implements; `auxiliary_data` can be
+    /// used, for example, to implement signature-based authentication.
+    #[concordium(size_length = 2)]
+    auxiliary_data: Vec<u8>,
 }
 
 #[derive(Serialize, SchemaType)]
 pub struct RemovePublicKeyParameters {
     #[concordium(size_length = 2)]
-    pub keys: Vec<PublicKeyEd25519>,
+    pub keys:       Vec<PublicKeyEd25519>,
+    /// Any additional data required for removing keys.
+    /// This data is not used in this contract. However, it is part of the CIS-4
+    /// standard that this contract implements; `auxiliary_data` can be
+    /// used, for example, to implement signature-based authentication.
+    #[concordium(size_length = 2)]
+    auxiliary_data: Vec<u8>,
 }
 
 /// Register revocation authorities public keys.
@@ -1139,6 +1160,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RegisterPublicKeyParameters {
         keys,
+        ..
     } = ctx.parameter_cursor().get()?;
     for key in keys {
         host.state_mut().register_revocation_key(key)?;
@@ -1180,6 +1202,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     let RemovePublicKeyParameters {
         keys,
+        ..
     } = ctx.parameter_cursor().get()?;
     for key in keys {
         host.state_mut().remove_revocation_key(key)?;
