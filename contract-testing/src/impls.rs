@@ -1231,6 +1231,9 @@ impl Chain {
 
     /// Return the current euro per energy exchange rate.
     pub fn euro_per_energy(&self) -> ExchangeRate { self.parameters.euro_per_energy }
+
+    /// Return the current block time.
+    pub fn block_time(&self) -> Timestamp { self.parameters.block_time }
 }
 
 impl Account {

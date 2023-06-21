@@ -24,7 +24,7 @@ pub struct ContractModule {
 pub(crate) struct ChainParameters {
     /// The block time viewable inside the smart contracts.
     /// Defaults to `0`.
-    pub block_time:                SlotTime,
+    pub(crate) block_time:         SlotTime,
     /// MicroCCD per Euro ratio.
     // This is not public because we ensure a reasonable value during the construction of the
     // [`Chain`].

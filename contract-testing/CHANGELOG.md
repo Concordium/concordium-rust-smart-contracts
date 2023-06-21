@@ -6,6 +6,7 @@
   - Add the method `setup_external_node_connection` for configuring the external node to use.
   - Add the method `set_exchange_rates_via_external_node` for setting the exchange rates.
   - Add the method `set_block_time_via_external_node` for setting the block time.
+  - Add the method `block_time` to get the current block time.
 
 ## 2.0.0
 
