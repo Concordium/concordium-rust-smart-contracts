@@ -2,7 +2,7 @@ use concordium_base::{
     base::{AccountAddressEq, Energy},
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
-        ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
+        ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime, Timestamp,
     },
     hashes::BlockHash,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
@@ -21,6 +21,7 @@ pub struct ContractModule {
     pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
+/// The chain parameters.
 #[derive(Debug)]
 pub(crate) struct ChainParameters {
     /// The block time viewable inside the smart contracts.
@@ -36,8 +37,8 @@ pub(crate) struct ChainParameters {
     pub(crate) euro_per_energy: ExchangeRate,
 }
 
-#[derive(Debug)]
 /// The connection and runtime needed for communicating with an external node.
+#[derive(Debug)]
 pub(crate) struct ExternalNodeConnection {
     /// An instantiated v2 Client from the Rust SDK. Used for communicating with
     /// a node.
@@ -69,6 +70,19 @@ pub struct Chain {
     pub(crate) next_contract_index:      u64,
     /// An optional connection to an external node.
     pub(crate) external_node_connection: Option<ExternalNodeConnection>,
+}
+
+/// A builder for the [`Chain`].
+#[derive(Debug, Default)]
+pub struct ChainBuilder {
+    /// The configured endpoint for an external node connection.
+    pub(crate) external_node_endpoint: Option<String>,
+    /// The configured exchange rate between microCCD and euro.
+    pub(crate) micro_ccd_per_euro:     Option<ExchangeRate>,
+    /// The configured exchange rate between euro and energy.
+    pub(crate) euro_per_energy:        Option<ExchangeRate>,
+    /// The configured block time.
+    pub(crate) block_time:             Option<Timestamp>,
 }
 
 /// A smart contract instance.
@@ -620,7 +634,7 @@ pub struct ExchangeRateError;
 pub struct ZeroKeysError;
 
 /// Errors that occur while setting up the connection to an external node.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SetupExternalNodeError {
     /// It was not possible to connect to a node on the provided endpoint.
     #[error("Could not connect to the provided endpoint.")]
@@ -634,7 +648,7 @@ pub enum SetupExternalNodeError {
 }
 
 /// Errors that occur while trying to communicate with an external node.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum ExternalNodeError {
     /// An external node has not been configured.
     #[error("An external node has not been configured.")]
@@ -649,6 +663,22 @@ pub enum ExternalNodeError {
 
 /// The error returned when an external node has not been configured prior to
 /// using it.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 #[error("An external node has not been configured.")]
 pub struct ExternalNodeNotConfigured;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ChainBuilderError {
+    /// The provided exchange rates are not valid.
+    /// Meaning that they do not correspond to one energy costing less than
+    /// `u64::MAX / `
+    /// [`concordium_base::constants::MAX_ALLOWED_INVOKE_ENERGY`]`.
+    #[error("An exchange rate was too high.")]
+    ExchangeRateError,
+    /// An error occurred while setting up the connection to an external node.
+    #[error("Error occurred while setting up the connection to an external node: {error}")]
+    SetupExternalNodeError {
+        #[from]
+        error: SetupExternalNodeError,
+    },
+}

@@ -98,7 +98,7 @@ pub use concordium_base::{
     contracts_common::{
         from_bytes, to_bytes, AccountAddress, Address, Amount, ContractAddress, ContractName,
         EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
-        OwnedParameter, OwnedReceiveName, Parameter, ReceiveName, SlotTime,
+        OwnedParameter, OwnedReceiveName, Parameter, ReceiveName, SlotTime, Timestamp,
     },
     hashes::BlockHash,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
