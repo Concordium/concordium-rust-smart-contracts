@@ -4,6 +4,7 @@ use concordium_base::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
+    hashes::BlockHash,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
 };
 use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
@@ -40,9 +41,14 @@ pub(crate) struct ChainParameters {
 pub(crate) struct ExternalNodeConnection {
     /// An instantiated v2 Client from the Rust SDK. Used for communicating with
     /// a node.
-    pub(crate) client:  concordium_rust_sdk::v2::Client,
+    pub(crate) client:       concordium_rust_sdk::v2::Client,
     /// A Tokio runtime used to execute the async methods of the `client`.
-    pub(crate) runtime: tokio::runtime::Runtime,
+    pub(crate) runtime:      tokio::runtime::Runtime,
+    /// The block hash to use for queries.
+    /// The hash is "sticky" in the sense that the first query without a
+    /// provided blockhash will set this field and further queries without a
+    /// hash will continue to use this value.
+    pub(crate) sticky_block: Option<BlockHash>,
 }
 
 /// Represents the blockchain and supports a number of operations, including

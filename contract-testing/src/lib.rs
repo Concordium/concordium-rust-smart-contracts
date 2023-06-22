@@ -100,6 +100,7 @@ pub use concordium_base::{
         EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
         OwnedParameter, OwnedReceiveName, Parameter, ReceiveName, SlotTime,
     },
+    hashes::BlockHash,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::{InitContractPayload, UpdateContractPayload},
 };

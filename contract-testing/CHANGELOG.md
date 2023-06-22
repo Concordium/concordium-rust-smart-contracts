@@ -7,6 +7,8 @@
   - Add the method `set_exchange_rates_via_external_node` for setting the exchange rates.
   - Add the method `set_block_time_via_external_node` for setting the block time.
   - Add the method `block_time` to get the current block time.
+  - Add the method `sticky_block` for viewing the "sticky block", a concept explained in the `*via_external_node` methods.
+- Add the `BlockHash` type (re-exported from internal crate) for use in the methods above.
 
 ## 2.0.0
 

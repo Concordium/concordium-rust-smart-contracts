@@ -11,6 +11,7 @@ use concordium_base::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRate, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
     },
+    hashes::BlockHash,
     smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
     transactions::{self, cost, InitContractPayload, UpdateContractPayload},
 };
@@ -22,7 +23,7 @@ use concordium_smart_contract_engine::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
-use std::{collections::BTreeMap, path::Path, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, future::Future, path::Path, str::FromStr, sync::Arc};
 use tokio::{
     runtime,
     time::{timeout, Duration},
@@ -1068,44 +1069,59 @@ impl Chain {
     /// Set the exchange rates for Euro, CCD, and Energy by querying the
     /// external node.
     ///
+    /// Use the `block` parameter to specify the block used when querying the
+    /// block time. For consistency between queries, the first block hash
+    /// used will be "sticky", which means that it is saved and used for
+    /// subsequent queries, unless overridden by specifying a `block`. If
+    /// `block == None` for the first query, it will use the *last final
+    /// block* instead. In either case, the block hash will be saved and
+    /// used for future queries.
+    /// To see the "sticky block", use [`sticky_block`][Chain::sticky_block].
+    ///
     /// The external node must be setup prior to this call via the method
     /// [`Chain::setup_external_node_connection`], otherwise an error is
     /// returned.
     ///
-    /// *Example:*
+    /// # Example
     ///
     /// ```no_run
     /// # use concordium_smart_contract_testing::*;
+    /// use std::str::FromStr;
+    ///
     /// let mut chain = Chain::new();
     /// chain
     ///     .setup_external_node_connection("http://node.testnet.concordium.com:20000")
     ///     .unwrap();
-    /// chain.set_exchange_rates_via_external_node().unwrap();
+    ///
+    /// // Use the last final block and set the "sticky block" to it.
+    /// chain.set_exchange_rates_via_external_node(None).unwrap();
+    ///
+    /// // Use a specific block instead of the sticky block.
+    /// // This does not change the sticky block.
+    /// chain
+    ///     .set_exchange_rates_via_external_node(Some(
+    ///         BlockHash::from_str("95ff82f26892a2327c3e7ac582224a54d75c367341fbff209bce552d81349eb0")
+    ///             .unwrap(),
+    ///     ))
+    ///     .unwrap();
     /// ```
-    pub fn set_exchange_rates_via_external_node(&mut self) -> Result<(), ExternalNodeError> {
+    pub fn set_exchange_rates_via_external_node(
+        &mut self,
+        block: Option<BlockHash>,
+    ) -> Result<(), ExternalNodeError> {
         let connection = self.external_node_connection()?;
 
-        // A future for getting the exchange rates. Executed below.
-        let get_exchange_rates = async {
-            let chain_parameters = connection
-                .client
-                .get_block_chain_parameters(sdk::v2::BlockIdentifier::LastFinal)
-                .await?
-                .response;
-            let (euro_per_energy, micro_ccd_per_euro) = match chain_parameters {
-                sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-            };
-            Ok::<_, ExternalNodeError>((euro_per_energy, micro_ccd_per_euro))
-        };
-
-        // Get the values from the external node with a timeout.
-        let (euro_per_energy, micro_ccd_per_euro) = connection.runtime.block_on(async {
-            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, get_exchange_rates)
-                .await
-                .map_err(|_| ExternalNodeError::Timeout)?
-        })?;
+        // Get the values from the external node.
+        let (euro_per_energy, micro_ccd_per_euro) =
+            connection.with_client(block, |block_identifier, mut client| async move {
+                let response = client.get_block_chain_parameters(block_identifier).await?;
+                let (euro_per_energy, micro_ccd_per_euro) = match response.response {
+                    sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                    sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                    sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                };
+                Ok((response.block_hash, (euro_per_energy, micro_ccd_per_euro)))
+            })?;
 
         // We assume that the queryied values are valid.
         self.parameters.micro_ccd_per_euro = micro_ccd_per_euro;
@@ -1116,6 +1132,15 @@ impl Chain {
 
     /// Set the block time by querying the external node.
     ///
+    /// Use the `block` parameter to specify the block used when querying the
+    /// block time. For consistency between queries, the first block hash
+    /// used will be "sticky", which means that it is saved and used for
+    /// subsequent queries, unless overridden by specifying a `block`. If
+    /// `block == None` for the first query, it will use the *last final
+    /// block* instead. In either case, the block hash will be saved and
+    /// used for future queries.
+    /// To see the "sticky block", use [`sticky_block`][Chain::sticky_block].
+    ///
     /// The external node must be setup prior to this call via the method
     /// [`Chain::setup_external_node_connection`], otherwise an error is
     /// returned.
@@ -1123,42 +1148,46 @@ impl Chain {
     /// If the queried block time is prior to January 1, 1970 0:00:00 UTC (aka
     /// “UNIX timestamp”), a block time of `0` will be used instead.
     ///
-    /// *Example:*
+    /// # Example
     ///
     /// ```no_run
     /// # use concordium_smart_contract_testing::*;
+    /// use std::str::FromStr;
+    ///
     /// let mut chain = Chain::new();
     /// chain
     ///     .setup_external_node_connection("http://node.testnet.concordium.com:20000")
     ///     .unwrap();
-    /// chain.set_block_time_via_external_node().unwrap();
+    /// // Use the last final block and set the "sticky block" to it.
+    /// chain.set_block_time_via_external_node(None).unwrap();
+    ///
+    /// // Use a specific block instead of the sticky block.
+    /// // This does not change the sticky block.
+    /// chain
+    ///     .set_block_time_via_external_node(Some(
+    ///         BlockHash::from_str("95ff82f26892a2327c3e7ac582224a54d75c367341fbff209bce552d81349eb0")
+    ///             .unwrap(),
+    ///     ))
+    ///     .unwrap();
     /// ```
-    pub fn set_block_time_via_external_node(&mut self) -> Result<(), ExternalNodeError> {
+    pub fn set_block_time_via_external_node(
+        &mut self,
+        block: Option<BlockHash>,
+    ) -> Result<(), ExternalNodeError> {
         let connection = self.external_node_connection()?;
 
-        // A future for getting the block time. Executed below.
-        let get_block_time = async {
-            let block_info = connection
-                .client
-                .get_block_info(sdk::v2::BlockIdentifier::LastFinal)
-                .await?
-                .response;
-            let block_time = block_info.block_slot_time;
-            Ok::<_, ExternalNodeError>(block_time)
-        };
+        // Get the timestamp in milliseconds *before or after* the unix epoch from the
+        // external node.
+        let timestamp_before_or_after =
+            connection.with_client(block, |block_identifier, mut client| async move {
+                let response = client.get_block_info(block_identifier).await?;
+                let block_time = response.response.block_slot_time.timestamp_millis();
+                Ok((response.block_hash, block_time))
+            })?;
 
-        // Get the values from the external node with a timeout.
-        let block_time = connection.runtime.block_on(async {
-            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, get_block_time)
-                .await
-                .map_err(|_| ExternalNodeError::Timeout)?
-        })?;
-
-        // Get the timestamp in milliseconds *before or after* the unix epoch.
-        let timestamp_before_after: i64 = block_time.timestamp_millis();
         // Our `Timestamp` only supports times *after* the unix epoch, so we use `0` if
         // the queried timestamp is negative.
-        let timestamp_after: u64 = i64::max(timestamp_before_after, 0) as u64;
+        let timestamp_after: u64 = i64::max(timestamp_before_or_after, 0) as u64;
         self.parameters.block_time = Timestamp::from_timestamp_millis(timestamp_after);
 
         Ok(())
@@ -1169,7 +1198,7 @@ impl Chain {
     /// The connection can be used for getting the current exchange rates
     /// between CCD, Euro and Energy.
     ///
-    /// *Example:*
+    /// # Example
     ///
     /// ```no_run
     /// # use concordium_smart_contract_testing::*;
@@ -1209,7 +1238,11 @@ impl Chain {
         })?;
 
         // Set or replace the node connection.
-        self.external_node_connection = Some(ExternalNodeConnection { client, runtime });
+        self.external_node_connection = Some(ExternalNodeConnection {
+            client,
+            runtime,
+            sticky_block: None,
+        });
 
         Ok(())
     }
@@ -1234,6 +1267,68 @@ impl Chain {
 
     /// Return the current block time.
     pub fn block_time(&self) -> Timestamp { self.parameters.block_time }
+
+    /// Return the "sticky block", i.e. the block that is saved and will be used
+    /// by default for future queries.
+    ///
+    /// See [`set_block_time_via_external_node`][Chain::set_block_time_via_external_node] for a more detailed explanation.
+    pub fn sticky_block(&self) -> Option<BlockHash> {
+        self.external_node_connection
+            .as_ref()
+            .and_then(|conn| conn.sticky_block)
+    }
+}
+
+impl ExternalNodeConnection {
+    /// Execute an async task with the [`sdk::v2::Client`].
+    ///
+    /// The task will be performed using one of the following three blocks:
+    ///  1. If a `block` hash is provided, it will be used.
+    ///  2. Otherwise, if `self.sticky_block` is `Some`, it will be used.
+    ///  3. Lastly, if neither are present, the last final block is used.
+    ///
+    /// If `self.sticky_block` is `None`, then it will be set to the block used
+    /// in cases 1 and 3.
+    ///
+    /// If the task takes longer than [`EXTERNAL_NODE_TIMEOUT_DURATION`] then
+    /// the connection times out and an [`Err(ExternalNodeError::Timeout)`] is
+    /// returned.
+    fn with_client<T, F, Fut>(
+        &mut self,
+        block: Option<BlockHash>,
+        f: F,
+    ) -> Result<T, ExternalNodeError>
+    where
+        F: FnOnce(sdk::v2::BlockIdentifier, sdk::v2::Client) -> Fut,
+        Fut: Future<Output = Result<(BlockHash, T), ExternalNodeError>>, {
+        // Get the block identifier in one of the three ways.
+        let block_identifier = match (block, self.sticky_block) {
+            // Case 1
+            (Some(block), _) => sdk::v2::BlockIdentifier::Given(block),
+            // Case 2
+            (_, Some(sticky_block)) => sdk::v2::BlockIdentifier::Given(sticky_block),
+            // Case 3
+            _ => sdk::v2::BlockIdentifier::LastFinal,
+        };
+        // Clone the client so it can be moved to the async block.
+        let client = self.client.clone();
+        // Run the future and timeout if it takes too long.
+        let res = self.runtime.block_on(async move {
+            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, f(block_identifier, client))
+                .await
+                .map_err(|_| ExternalNodeError::Timeout)?
+        });
+        // Extract the return value and maybe set the stick block.
+        match res {
+            Ok((block_hash, return_value)) => {
+                if self.sticky_block.is_none() {
+                    self.sticky_block = Some(block_hash)
+                }
+                Ok(return_value)
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
 
 impl Account {
