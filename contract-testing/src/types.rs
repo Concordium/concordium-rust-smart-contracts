@@ -44,10 +44,10 @@ pub(crate) struct ExternalNodeConnection {
     pub(crate) client:       concordium_rust_sdk::v2::Client,
     /// A Tokio runtime used to execute the async methods of the `client`.
     pub(crate) runtime:      tokio::runtime::Runtime,
-    /// The block hash to use for queries.
-    /// The hash is "sticky" in the sense that the first query without a
-    /// provided blockhash will set this field and further queries without a
-    /// hash will continue to use this value.
+    /// The sticky block hash to use for queries without specific blocks.
+    ///
+    /// The hash is "sticky" in the sense that it is set on the first query and
+    /// will be used for subsequent queries that do *not* specify block hash.
     pub(crate) sticky_block: Option<BlockHash>,
 }
 
