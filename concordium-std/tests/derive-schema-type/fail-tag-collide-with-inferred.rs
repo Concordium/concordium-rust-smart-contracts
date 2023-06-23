@@ -1,4 +1,4 @@
-//! Ensure `derive(SchemaType)` fails when 'tag' attribute are collides with the
+//! Ensure `derive(SchemaType)` fails when a 'tag' attribute collides with the
 //! default tag for another variant.
 use concordium_std::*;
 
