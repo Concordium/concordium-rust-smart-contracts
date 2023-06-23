@@ -473,7 +473,6 @@ struct RevocationKeyEvent {
 
 /// Tagged credential registry event.
 /// This version should be used for logging the events.
-#[derive(SchemaType)]
 enum CredentialEvent {
     /// Credential registration event. Logged when an entry in the registry is
     /// created for the first time.
@@ -490,6 +489,63 @@ enum CredentialEvent {
     Schema(CredentialSchemaRefEvent),
     /// Revocation key changes
     RevocationKey(RevocationKeyEvent),
+}
+
+// Implementing a custom schemaType use tags required by CIS-4.
+impl schema::SchemaType for CredentialEvent {
+    fn get_type() -> schema::Type {
+        schema::Type::TaggedEnum(collections::BTreeMap::from([
+            (
+                249,
+                (
+                    "Register".to_string(),
+                    schema::Fields::Unnamed(Vec::from([CredentialEventData::get_type()])),
+                ),
+            ),
+            (
+                248,
+                (
+                    "Revoke".to_string(),
+                    schema::Fields::Unnamed(Vec::from([RevokeCredentialEvent::get_type()])),
+                ),
+            ),
+            (
+                247,
+                (
+                    "IssuerMetadata".to_string(),
+                    schema::Fields::Unnamed(Vec::from([MetadataUrl::get_type()])),
+                ),
+            ),
+            (
+                246,
+                (
+                    "CredentialMetadata".to_string(),
+                    schema::Fields::Unnamed(Vec::from([CredentialMetadataEvent::get_type()])),
+                ),
+            ),
+            (
+                245,
+                (
+                    "Schema".to_string(),
+                    schema::Fields::Unnamed(Vec::from([CredentialSchemaRefEvent::get_type()])),
+                ),
+            ),
+            (
+                244,
+                (
+                    "RevocationKey".to_string(),
+                    schema::Fields::Unnamed(Vec::from([RevocationKeyEvent::get_type()])),
+                ),
+            ),
+            (
+                0, // Restore event is not covered by CIS-4; it gets `0` tag.
+                (
+                    "Restore".to_string(),
+                    schema::Fields::Unnamed(Vec::from([RestoreCredentialEvent::get_type()])),
+                ),
+            ),
+        ]))
+    }
 }
 
 impl Serial for CredentialEvent {
