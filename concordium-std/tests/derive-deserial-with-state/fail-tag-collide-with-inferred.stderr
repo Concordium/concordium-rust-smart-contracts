@@ -1,0 +1,11 @@
+error: The tag of 'Two' collides with the tag of 'One'.
+  --> tests/derive-deserial-with-state/fail-tag-collide-with-inferred.rs:10:18
+   |
+10 |     #[concordium(tag = 0)]
+   |                  ^^^
+
+error: The tag of 'One' collides with the tag of 'Two'.
+ --> tests/derive-deserial-with-state/fail-tag-collide-with-inferred.rs:9:5
+  |
+9 |     One(StateSet<u32, S>),
+  |     ^^^

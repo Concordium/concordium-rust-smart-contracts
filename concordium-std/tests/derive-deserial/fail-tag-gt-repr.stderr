@@ -1,0 +1,5 @@
+error: 'tag' attribute value of 256 cannot be represented by the type u8 set in 'repr(u8)'
+ --> tests/derive-deserial/fail-tag-gt-repr.rs:8:18
+  |
+8 |     #[concordium(tag = 256)]
+  |                  ^^^
