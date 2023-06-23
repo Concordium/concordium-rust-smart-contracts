@@ -499,49 +499,73 @@ impl schema::SchemaType for CredentialEvent {
                 249,
                 (
                     "Register".to_string(),
-                    schema::Fields::Unnamed(Vec::from([CredentialEventData::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("holder_id".to_string(), PublicKeyEd25519::get_type()),
+                        ("schema_ref".to_string(), SchemaRef::get_type()),
+                        ("credential_type".to_string(), CredentialType::get_type()),
+                        ("metadata_url".to_string(), MetadataUrl::get_type()),
+                    ])),
                 ),
             ),
             (
                 248,
                 (
                     "Revoke".to_string(),
-                    schema::Fields::Unnamed(Vec::from([RevokeCredentialEvent::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("holder_id".to_string(), CredentialHolderId::get_type()),
+                        ("revoker".to_string(), Revoker::get_type()),
+                        ("reason".to_string(), Option::<Reason>::get_type()),
+                    ])),
                 ),
             ),
             (
                 247,
                 (
                     "IssuerMetadata".to_string(),
-                    schema::Fields::Unnamed(Vec::from([MetadataUrl::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("url".to_string(), schema::Type::String(schema::SizeLength::U16)),
+                        ("hash".to_string(), Option::<HashSha2256>::get_type()),
+                    ])),
                 ),
             ),
             (
                 246,
                 (
                     "CredentialMetadata".to_string(),
-                    schema::Fields::Unnamed(Vec::from([CredentialMetadataEvent::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("credential_id".to_string(), CredentialHolderId::get_type()),
+                        ("metadata_url".to_string(), MetadataUrl::get_type()),
+                    ])),
                 ),
             ),
             (
                 245,
                 (
                     "Schema".to_string(),
-                    schema::Fields::Unnamed(Vec::from([CredentialSchemaRefEvent::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("credential_type".to_string(), CredentialType::get_type()),
+                        ("schema_ref".to_string(), SchemaRef::get_type()),
+                    ])),
                 ),
             ),
             (
                 244,
                 (
                     "RevocationKey".to_string(),
-                    schema::Fields::Unnamed(Vec::from([RevocationKeyEvent::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("key".to_string(), PublicKeyEd25519::get_type()),
+                        ("action".to_string(), RevocationKeyAction::get_type()),
+                    ])),
                 ),
             ),
             (
                 0, // Restore event is not covered by CIS-4; it gets `0` tag.
                 (
                     "Restore".to_string(),
-                    schema::Fields::Unnamed(Vec::from([RestoreCredentialEvent::get_type()])),
+                    schema::Fields::Named(Vec::from([
+                        ("holder_id".to_string(), CredentialHolderId::get_type()),
+                        ("reason".to_string(), Option::<Reason>::get_type()),
+                    ])),
                 ),
             ),
         ]))
