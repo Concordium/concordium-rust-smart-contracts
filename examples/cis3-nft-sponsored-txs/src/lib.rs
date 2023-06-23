@@ -84,7 +84,8 @@ pub const REGISTRATION_EVENT_TAG: u8 = 0u8;
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 
 /// Tagged events to be serialized for the event log.
-#[derive(Debug)]
+#[derive(Debug, Serial)]
+#[concordium(repr(u8))]
 enum Event {
     /// Registration of a public key for a given account. The
     /// corresponding private key will have to sign the message that
@@ -92,6 +93,7 @@ enum Event {
     Registration(RegistrationEvent),
     /// The event tracks the nonce used by the signer of the `PermitMessage`
     /// whenever the `permit` function is invoked.
+    #[concordium(tag = 250)]
     Nonce(NonceEvent),
 }
 
@@ -195,21 +197,6 @@ impl schema::SchemaType for Event {
             ),
         );
         schema::Type::TaggedEnum(event_map)
-    }
-}
-
-impl Serial for Event {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        match self {
-            Event::Registration(event) => {
-                out.write_u8(REGISTRATION_EVENT_TAG)?;
-                event.serial(out)
-            }
-            Event::Nonce(event) => {
-                out.write_u8(NONCE_EVENT_TAG)?;
-                event.serial(out)
-            }
-        }
     }
 }
 
