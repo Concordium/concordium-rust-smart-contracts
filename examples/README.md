@@ -18,6 +18,8 @@ The list of contracts is as follows
   intermediate contract instead works around this limitation.
 - [cis2-multi](./cis2-multi) An example implementation of the CIS-2 Concordium Token Standard
   containing multiple token types.
+- [cis2-multi-royalties](./cis2-multi-royalties) An example implementation of the CIS-2 Concordium Token Standard which allows the token minter to be paid royalties
+  containing multiple token types.
 - [cis2-nft](./cis2-nft) An example implementation of the CIS-2 Concordium Token Standard
   containing NFTs.
 - [cis2-wccd](./cis2-wccd) An upgradable example implementation of the CIS-2 Concordium Token Standard
