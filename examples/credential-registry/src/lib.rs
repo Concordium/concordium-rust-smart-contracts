@@ -1275,18 +1275,30 @@ fn contract_revocation_keys<S: HasStateApi>(
     Ok(host.state().view_revocation_keys())
 }
 
-/// A view entrypoint to get the issuer's metadata URL and checksum.
+#[derive(Serialize, SchemaType)]
+struct MetadataResponse {
+    metadata_url:      MetadataUrl,
+    credential_type:   CredentialType,
+    credential_schema: SchemaRef,
+}
+
+/// A view entrypoint to get the registry metadata.
 #[receive(
     contract = "credential_registry",
-    name = "issuerMetadata",
+    name = "registryMetadata",
     error = "ContractError",
-    return_value = "MetadataUrl"
+    return_value = "MetadataResponse"
 )]
-fn contract_issuer_metadata<S: HasStateApi>(
+fn contract_registry_metadata<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> Result<MetadataUrl, ContractError> {
-    Ok(host.state().issuer_metadata.clone())
+) -> Result<MetadataResponse, ContractError> {
+    let state = host.state();
+    Ok(MetadataResponse {
+        metadata_url:      state.issuer_metadata.clone(),
+        credential_type:   state.credential_type.clone(),
+        credential_schema: state.credential_schema.clone(),
+    })
 }
 
 /// Update issuer's metadata.
