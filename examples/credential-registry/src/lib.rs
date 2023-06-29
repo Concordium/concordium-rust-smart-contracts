@@ -7,6 +7,13 @@
 //! VC life cycle and querying VCs data and status. The intended users are
 //! issuers of VCs, holders of VCs, revocation authorities and verifiers.
 //!
+//! When initializing a contract, the issuer provides a type and a schema
+//! reference for the credentials in the registry. The schema reference points
+//! to a JSON document describing the structure of verifiable credentials in the
+//! registry (attributes and their types). If the issuer wants to issue
+//! verifiable credentials of several types, they can deploy several instances
+//! of this contract with different credential types.
+//!
 //! ## Issuer's  functionality
 //!
 //! - register a new credential;
