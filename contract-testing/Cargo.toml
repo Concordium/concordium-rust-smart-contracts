@@ -16,7 +16,7 @@ exclude = ["tests"] # Do not publish tests.
 concordium_base = {version = "2.0", path = "../concordium-base/rust-src/concordium_base"}
 concordium-smart-contract-engine = {version = "2.0", path = "../concordium-base/smart-contracts/wasm-chain-integration"}
 concordium-wasm = {version = "2.0", path = "../concordium-base/smart-contracts/wasm-transform"}
-concordium-rust-sdk = "2.4"
+concordium-rust-sdk = "3.0"
 tokio = { version = "1.28", features = ["rt-multi-thread", "time"] }
 sha2 = "0.10"
 anyhow = "1"
