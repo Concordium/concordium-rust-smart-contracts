@@ -716,7 +716,7 @@ pub enum ChainBuilderError {
     },
     /// Could not configure the block time because both the
     /// [`ChainBuilder::block_time`] and
-    /// [`ChainBuilder::block_time_from_external`] was provided, which is not
+    /// [`ChainBuilder::block_time_from_external`] were provided, which is not
     /// allowed.
     #[error(
         "Conflicting block time configuration: `block_time` and `block_time_from_external` cannot \
@@ -725,7 +725,7 @@ pub enum ChainBuilderError {
     ConflictingBlockTime,
     /// Could not configure the microCCD/euro exchange rate because both the
     /// [`ChainBuilder::micro_ccd_per_euro`] and
-    /// [`ChainBuilder::micro_ccd_per_euro_from_external`] was provided, which
+    /// [`ChainBuilder::micro_ccd_per_euro_from_external`] were provided, which
     /// is not allowed.
     #[error(
         "Conflicting microCCD per euro configuration: `micro_ccd_per_euro` and \
@@ -734,7 +734,7 @@ pub enum ChainBuilderError {
     ConflictingMicroCCDPerEuro,
     /// Could not configure the euro/energy exchange rate because both the
     /// [`ChainBuilder::euro_per_energy`] and
-    /// [`ChainBuilder::euro_per_energy_from_external`] was provided, which is
+    /// [`ChainBuilder::euro_per_energy_from_external`] were provided, which is
     /// not allowed.
     #[error(
         "Conflicting euro per energy configuration: `euro_per_energy` and \
