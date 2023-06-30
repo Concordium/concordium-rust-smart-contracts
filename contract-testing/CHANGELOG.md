@@ -5,7 +5,7 @@
 - Add functionality for setting the exchange rates and block time of the chain based on queries from an external node.
   - Configured via a builder pattern, see `Chain::builder`.
 - Add methods to `Chain`:
-  - `external_query_block` to get the default block used for external queries
+  - `external_query_block` to get the default block used for external 
   - `block_time` to get the block time
   - `tick_block_time` to increase the block time by a `Duration`
 - Add the following types by re-exporting them from internal crates:
@@ -13,6 +13,8 @@
   - `Timestamp` which `SlotTime` is an alias of.
   - `Duration`
   - `Endpoint`
+- Add methods to the `Chain` for adding external accounts and contracts and for invoking contracts on an external node.
+  - See the `Chain` method `contract_invoke_external` for more details.
 
 ## 2.0.0
 

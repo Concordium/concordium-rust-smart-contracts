@@ -23,7 +23,13 @@ use concordium_smart_contract_engine::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
-use std::{collections::BTreeMap, future::Future, path::Path, sync::Arc};
+use sdk::types::smart_contracts::InvokeContractResult;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    path::Path,
+    sync::Arc,
+};
 use tokio::{runtime, time::timeout};
 
 /// The timeout duration set for queries with an external node.
@@ -970,17 +976,17 @@ impl Chain {
     /// If successful, all changes will be saved.
     ///
     /// **Parameters:**
+    ///  - `signer`: a [`Signer`] with a number of keys. The number of keys
+    ///    affects the cost of the transaction.
     ///  - `invoker`: the account paying for the transaction.
     ///  - `sender`: the sender of the message, can be an account or contract.
     ///    For top-level invocations, such as those caused by sending a contract
     ///    update transaction on the chain, the `sender` is always the
     ///    `invoker`. Here we provide extra freedom for testing invocations
     ///    where the sender differs.
-    ///  - `contract_address`: the contract to update.
-    ///  - `entrypoint`: the entrypoint to call.
-    ///  - `parameter`: the contract parameter.
-    ///  - `amount`: the amount sent to the contract.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
+    ///  - `payload`: The data detailing which contract contract and receive
+    ///    method to call etc.
     pub fn contract_update(
         &mut self,
         signer: Signer,
@@ -1102,13 +1108,12 @@ impl Chain {
     /// functions.
     ///
     /// **Parameters:**
-    ///  - `invoker`: the account paying for the transaction.
-    ///  - `sender`: the sender of the transaction, can also be a contract.
-    ///  - `contract_address`: the contract to update.
-    ///  - `entrypoint`: the entrypoint to call.
-    ///  - `parameter`: the contract parameter.
-    ///  - `amount`: the amount sent to the contract.
+    ///  - `invoker`: the account used as invoker. Since this isn't a
+    ///    transaction, it won't be charged.
+    ///  - `sender`: the sender, can also be a contract.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
+    ///  - `payload`: The data detailing which contract contract and receive
+    ///    method to call etc.
     pub fn contract_invoke(
         &self,
         invoker: AccountAddress,
@@ -1186,6 +1191,107 @@ impl Chain {
         }
     }
 
+    /// Invoke an external contract entrypoint.
+    ///
+    /// Similar to [`Chain::contract_invoke`](Self::contract_invoke) except that
+    /// it invokes a contract on the external node.
+    ///
+    /// **Parameters:**
+    ///  - `invoker`: the account used as invoker.
+    ///     - The account must exist on the connected node.
+    ///  - `sender`: the sender, can also be a contract.
+    ///     - The sender exist on the connected node.
+    ///  - `energy_reserved`: the maximum energy that can be used in the update.
+    ///  - `payload`: The data detailing which contract contract and receive
+    ///    method to call etc.
+    ///  - `block`: The block in which the invocation will be simulated, as if
+    ///    it was at the end of the block. If `None` is provided, the
+    ///    `external_query_block` is used instead.
+    ///
+    ///  # Example:
+    ///
+    ///  ```no_run
+    ///  # use concordium_smart_contract_testing::*;
+    ///  let mut chain = Chain::builder()
+    ///                     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
+    ///                     .build()
+    ///                     .unwrap();
+    ///
+    ///  // Set up an external contract.
+    ///  let external_contract =
+    /// chain.add_external_contract(ContractAddress::new(1010, 0)).unwrap();
+    ///
+    ///  // Set up an external account.
+    ///  let external_acc =
+    /// chain.add_external_account("
+    /// 3U4sfVSqGG6XK8g6eho2qRYtnHc4MWJBG1dfxdtPGbfHwFxini".parse().unwrap()).
+    /// unwrap();
+    ///
+    /// let res = chain.contract_invoke_external(
+    ///     Some(ExternalAddress::Account(external_acc)),
+    ///     10000.into(),
+    ///     InvokeExternalContractPayload {
+    ///         amount:       Amount::zero(),
+    ///         address:      external_contract,
+    ///         receive_name:
+    /// OwnedReceiveName::new_unchecked("my_contract.view".to_string()),
+    ///         message:      OwnedParameter::empty(),
+    ///     },
+    ///     None,
+    /// );
+    /// ```
+    pub fn contract_invoke_external(
+        &mut self,
+        sender: Option<ExternalAddress>,
+        energy_reserved: Energy,
+        payload: InvokeExternalContractPayload,
+        block: Option<BlockHash>,
+    ) -> Result<ContractInvokeExternalSuccess, ContractInvokeExternalError> {
+        let connection = self.external_node_connection_mut().unwrap();
+
+        // Make the invocation.
+        let invoke_result: InvokeContractResult =
+            connection.with_client(block, |block_identifier, mut client| async move {
+                let invoke_result = client
+                    .invoke_instance(
+                        block_identifier,
+                        &sdk::types::smart_contracts::ContractContext {
+                            invoker:   sender.map(|ext_addr| ext_addr.to_address()),
+                            contract:  payload.address.address,
+                            amount:    payload.amount,
+                            method:    payload.receive_name,
+                            parameter: payload.message,
+                            energy:    energy_reserved,
+                        },
+                    )
+                    .await?
+                    .response;
+                Ok::<_, ExternalNodeError>(invoke_result)
+            })?;
+
+        // Convert the result.
+        match invoke_result {
+            InvokeContractResult::Success {
+                return_value,
+                events,
+                used_energy,
+            } => Ok(ContractInvokeExternalSuccess {
+                trace_elements: events,
+                energy_used:    used_energy,
+                return_value:   return_value.map(|rv| rv.value).unwrap_or_default(),
+            }),
+            InvokeContractResult::Failure {
+                return_value,
+                reason,
+                used_energy,
+            } => Err(ContractInvokeExternalError::Failure {
+                reason,
+                energy_used: used_energy,
+                return_value: return_value.map(|rv| rv.value).unwrap_or_default(),
+            }),
+        }
+    }
+
     /// Create an account.
     ///
     /// If an account with a matching address already exists this method will
@@ -1215,6 +1321,68 @@ impl Chain {
     /// ```
     pub fn create_account(&mut self, account: Account) -> Option<Account> {
         self.accounts.insert(account.address.into(), account)
+    }
+
+    /// Add an external account from a connected external node.
+    ///
+    /// If the account exists on the external node at the time of the
+    /// `external_query_block`, then an [`ExernalAccountAddress`] is returned.
+    /// The address can be used with [`Chain::contract_invoke_external`].
+    /// Otherwise, an error is returned.
+    ///
+    /// Barring external node errors, the method is idempotent, and so it can be
+    /// called multiple times with the same effect.
+    pub fn add_external_account(
+        &mut self,
+        address: AccountAddress,
+    ) -> Result<ExternalAccountAddress, ExternalNodeError> {
+        let connection = self.external_node_connection_mut()?;
+
+        let external_addr =
+            connection.with_client(None, |block_identifier, mut client| async move {
+                // Try to get the account info to verify the existence of the account, but
+                // discard the result.
+                client
+                    .get_account_info(
+                        &sdk::v2::AccountIdentifier::Address(address),
+                        block_identifier,
+                    )
+                    .await?;
+                Ok::<_, ExternalNodeError>(ExternalAccountAddress { address })
+            })?;
+
+        connection.accounts.insert(external_addr);
+
+        Ok(external_addr)
+    }
+
+    /// Add an external contract from a connected external node.
+    ///
+    /// If the contract exists on the external node at the time of the
+    /// `external_query_block`, then an [`ExernalContractAddress`] is returned.
+    /// The address can be used with [`Chain::contract_invoke_external`].
+    /// Otherwise, an error is returned.
+    ///
+    /// Barring external node errors, the method is idempotent, and so it can be
+    /// called multiple times with the same effect.
+    pub fn add_external_contract(
+        &mut self,
+        address: ContractAddress,
+    ) -> Result<ExternalContractAddress, ExternalNodeError> {
+        let connection = self.external_node_connection_mut()?;
+
+        let external_addr =
+            connection.with_client(None, |block_identifier, mut client| async move {
+                // Try to get the contract instance info to verify the existence of the
+                // contract, but discard the result.
+                client.get_instance_info(address, block_identifier).await?;
+                Ok::<_, ExternalNodeError>(ExternalContractAddress { address })
+            })?;
+
+        // TODO: Mention that this is idempotent.
+        connection.contracts.insert(external_addr);
+
+        Ok(external_addr)
     }
 
     /// Create a contract address by giving it the next available index.
@@ -1524,6 +1692,8 @@ impl Chain {
             client,
             runtime,
             query_block: checked_query_block,
+            accounts: BTreeSet::new(),
+            contracts: BTreeSet::new(),
         });
 
         Ok(())
@@ -1982,6 +2152,7 @@ mod tests {
 #[cfg(test)]
 mod io_tests {
     use super::*;
+    use crate::*;
 
     /// Test that building a chain using the external node parameters works.
     #[test]
@@ -2037,5 +2208,45 @@ mod io_tests {
         assert!(matches!(err, ChainBuilderError::SetupExternalNodeError {
             error: SetupExternalNodeError::CannotCheckQueryBlockExistence { .. },
         }));
+    }
+
+    /// Invoke an external contract and check that it succeeds. Also check that
+    /// the energy is correct.
+    #[test]
+    fn test_contract_invoke_external() {
+        let mut chain = Chain::builder()
+            .external_node_connection(Endpoint::from_static(
+                "http://node.testnet.concordium.com:20000",
+            ))
+            .build()
+            .unwrap();
+
+        // A CIS-2 contract.
+        let external_contr = chain
+            .add_external_contract(ContractAddress::new(5089, 0))
+            .unwrap();
+
+        let external_acc = chain
+            .add_external_account(
+                "3U4sfVSqGG6XK8g6eho2qRYtnHc4MWJBG1dfxdtPGbfHwFxini"
+                    .parse()
+                    .unwrap(),
+            )
+            .unwrap();
+
+        let res = chain
+            .contract_invoke_external(
+                Some(external_acc.into()),
+                10000.into(),
+                InvokeExternalContractPayload {
+                    amount:       Amount::zero(),
+                    address:      external_contr,
+                    receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".into()),
+                    message:      OwnedParameter::empty(),
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(res.energy_used, 1851.into());
     }
 }
