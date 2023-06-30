@@ -652,9 +652,12 @@ pub enum SetupExternalNodeError {
         #[from]
         error: sdk::endpoints::Error,
     },
-    /// Request timed out.
-    #[error("The request timed out.")]
-    Timeout,
+    /// The attempt to connect to an external node timed out.
+    #[error("The attempt to connect to an external node timed out.")]
+    ConnectTimeout,
+    /// The query to check the `external_query_block` timed out.
+    #[error("The query to check the `external_query_block` timed out.")]
+    CheckQueryBlockTimeout,
     /// The specified external query block does not exist.
     #[error("The specified external query block {query_block} does not exist.")]
     QueryBlockDoesNotExist { query_block: BlockHash },
@@ -682,9 +685,9 @@ pub enum ExternalNodeError {
         #[from]
         error: sdk::endpoints::QueryError,
     },
-    /// Request timed out.
-    #[error("The request timed out.")]
-    Timeout,
+    /// The query timed out.
+    #[error("The query timed out.")]
+    QueryTimeout,
 }
 
 /// The error returned when an external node has not been configured prior to

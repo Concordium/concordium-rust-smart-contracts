@@ -26,8 +26,11 @@ use num_integer::Integer;
 use std::{collections::BTreeMap, future::Future, path::Path, sync::Arc};
 use tokio::{runtime, time::timeout};
 
-/// The duration set for timeouts when communicating with an external node.
-const EXTERNAL_NODE_TIMEOUT_DURATION: tokio::time::Duration = tokio::time::Duration::from_secs(10);
+/// The timeout duration set for queries with an external node.
+const EXTERNAL_NODE_QUERY_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
+
+/// The timeout duration set for connecting to an external node.
+const EXTERNAL_NODE_CONNECT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(3);
 
 impl Default for Chain {
     fn default() -> Self { Self::new() }
@@ -1506,15 +1509,13 @@ impl Chain {
 
         // Get the client synchronously by blocking until the async returns.
         let (client, checked_query_block) = runtime.block_on(async {
-            let client = timeout(EXTERNAL_NODE_TIMEOUT_DURATION, get_client)
+            let client = timeout(EXTERNAL_NODE_CONNECT_TIMEOUT, get_client)
                 .await
-                .map_err(|_| SetupExternalNodeError::Timeout)??;
-            let checked_query_block = timeout(
-                EXTERNAL_NODE_TIMEOUT_DURATION,
-                get_block_info(client.clone()),
-            )
-            .await
-            .map_err(|_| SetupExternalNodeError::Timeout)??;
+                .map_err(|_| SetupExternalNodeError::ConnectTimeout)??;
+            let checked_query_block =
+                timeout(EXTERNAL_NODE_QUERY_TIMEOUT, get_block_info(client.clone()))
+                    .await
+                    .map_err(|_| SetupExternalNodeError::CheckQueryBlockTimeout)??;
             Ok::<_, SetupExternalNodeError>((client, checked_query_block))
         })?;
 
@@ -1607,9 +1608,9 @@ impl ExternalNodeConnection {
         let client = self.client.clone();
         // Run the future and timeout if it takes too long.
         self.runtime.block_on(async move {
-            timeout(EXTERNAL_NODE_TIMEOUT_DURATION, f(block_identifier, client))
+            timeout(EXTERNAL_NODE_QUERY_TIMEOUT, f(block_identifier, client))
                 .await
-                .map_err(|_| ExternalNodeError::Timeout)?
+                .map_err(|_| ExternalNodeError::QueryTimeout)?
         })
     }
 }
