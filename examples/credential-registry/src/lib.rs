@@ -3,9 +3,9 @@
 //!
 //! # Description
 //!
-//! The contract keeps track of credential public data, allows for managing the
-//! VC life cycle and querying VCs data and status. The intended users are
-//! issuers of VCs, holders of VCs, revocation authorities and verifiers.
+//! The contract keeps track of credentials' public data, allows managing the
+//! VC life cycle. and querying VCs data and status. The intended users are
+//! issuers of VCs, holders of VCs, revocation authorities, and verifiers.
 //!
 //! When initializing a contract, the issuer provides a type and a schema
 //! reference for the credentials in the registry. The schema reference points
@@ -22,7 +22,7 @@
 //! - register/remove revocation authority keys;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
-//! - add/update credential types.
+//! - update credential schema reference.
 //!
 //! ## Holder's functionality
 //!
@@ -45,7 +45,7 @@
 use concordium_std::*;
 
 /// Credential type is a string that corresponds to the value of the "name"
-/// attribute of the credential schema.
+/// attribute of the JSON credential schema.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Clone, Debug)]
 struct CredentialType {
     #[concordium(size_length = 1)]
@@ -172,7 +172,6 @@ enum ContractError {
     SerializationError,
     LogFull,
     LogMalformed,
-    AuxDataTooBig,
 }
 
 /// Mapping errors related to logging to ContractError.
@@ -183,11 +182,6 @@ impl From<LogError> for ContractError {
             LogError::Malformed => Self::LogMalformed,
         }
     }
-}
-
-/// Mapping errors related to the parameter size to ContractError.
-impl From<ExceedsParameterSize> for ContractError {
-    fn from(_cce: ExceedsParameterSize) -> Self { Self::AuxDataTooBig }
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -737,7 +731,6 @@ fn contract_credential_status<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 /// - An entry with the given credential id already exists.
-/// - The credential type is not registered.
 /// - Fails to log the event.
 #[receive(
     contract = "credential_registry",
@@ -1275,10 +1268,14 @@ fn contract_revocation_keys<S: HasStateApi>(
     Ok(host.state().view_revocation_keys())
 }
 
+/// A response type for the registry metadata request.
 #[derive(Serialize, SchemaType)]
 struct MetadataResponse {
-    metadata_url:      MetadataUrl,
+    /// A reference to the issuer's metadata.
+    issuer_metadata:   MetadataUrl,
+    /// The type of credentials used.
     credential_type:   CredentialType,
+    /// A reference to the JSON schema corresponding to this type.
     credential_schema: SchemaRef,
 }
 
@@ -1295,7 +1292,7 @@ fn contract_registry_metadata<S: HasStateApi>(
 ) -> Result<MetadataResponse, ContractError> {
     let state = host.state();
     Ok(MetadataResponse {
-        metadata_url:      state.issuer_metadata.clone(),
+        issuer_metadata:   state.issuer_metadata.clone(),
         credential_type:   state.credential_type.clone(),
         credential_schema: state.credential_schema.clone(),
     })
