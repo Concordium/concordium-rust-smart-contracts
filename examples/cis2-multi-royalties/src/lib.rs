@@ -607,10 +607,10 @@ fn contract_transfer<S: HasStateApi>(
             )?;
         }
 
-        if royal_result.is_some() {
-            let royalty_amount = Amount::from_micro_ccd(royal_result.unwrap().payment);
+        if let Some(royal_result) = royal_result {
+            let royalty_amount = Amount::from_micro_ccd(royal_result.payment);
 
-            if let Address::Account(val) = royal_result.unwrap().royalty_receiver {
+            if let Address::Account(val) = royal_result.royalty_receiver {
                 match host.invoke_transfer(&val, royalty_amount) {
                     Ok(_) => (),
                     Err(_) => {
