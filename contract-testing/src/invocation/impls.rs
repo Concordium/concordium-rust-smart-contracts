@@ -10,7 +10,6 @@ use crate::{
 };
 use concordium_base::{
     base::{AccountAddressEq, Energy, InsufficientEnergy},
-    constants::MAX_PARAMETER_LEN,
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
@@ -199,11 +198,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     energy,
                 },
                 instance_state,
-                v1::ReceiveParams {
-                    max_parameter_size:           MAX_PARAMETER_LEN,
-                    limit_logs_and_return_values: false,
-                    support_queries:              true,
-                },
+                v1::ReceiveParams::new_p6(),
             )
         })?;
         // Set up some data needed for recursively processing the receive until the end,

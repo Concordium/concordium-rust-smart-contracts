@@ -19,6 +19,7 @@ use concordium_smart_contract_engine::{
     v1::{self, InvokeResponse},
     InterpreterEnergy,
 };
+use concordium_wasm::validate::ValidationConfig;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
@@ -238,6 +239,7 @@ impl Chain {
         // Construct the artifact.
         let artifact =
             match concordium_wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
+                ValidationConfig::V1,
                 &v1::ConcordiumAllowedImports {
                     support_upgrade: true,
                 },
@@ -264,8 +266,13 @@ impl Chain {
             });
         }
         self.modules.insert(module_reference, ContractModule {
-            size:     wasm_module.source.size(),
-            artifact: Arc::new(artifact),
+            // we follow protocol 6 semantics, and don't count the custom section size towards
+            // module size.
+            size:     wasm_module
+                .source
+                .size()
+                .saturating_sub(artifact.custom_sections_size),
+            artifact: Arc::new(artifact.artifact),
         });
         Ok(ModuleDeploySuccess {
             module_reference,
