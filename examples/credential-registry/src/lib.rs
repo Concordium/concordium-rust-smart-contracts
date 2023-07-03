@@ -602,6 +602,7 @@ pub struct InitParams {
 /// `CredentialEvent::Schema` for each schema in the input.
 ///
 /// It rejects if:
+///   - Fails to parse the input parameter.
 ///   - Fails to log the events.
 ///   - Fails to register any of the initial revocation keys.
 #[init(
