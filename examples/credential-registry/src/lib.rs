@@ -971,12 +971,12 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
     // Only holder-revocable entries can be revoked by the holder.
     ensure!(registry_entry.holder_revocable, ContractError::NotAuthorized);
 
-    // Update the nonce.
-    registry_entry.revocation_nonce += 1;
-
     // Get the public key and the current nonce.
     let public_key = parameter.data.credential_id;
     let nonce = registry_entry.revocation_nonce;
+
+    // Update the nonce.
+    registry_entry.revocation_nonce += 1;
 
     // Perepare message bytes as it is signed by the wallet
     // Note that the message is prepended by a domain separation string
@@ -1540,8 +1540,12 @@ mod tests {
                 valid_from:       Arbitrary::arbitrary(g),
                 valid_until:      Arbitrary::arbitrary(g),
                 metadata_url:     MetadataUrl {
-                    url:  "".into(),
-                    hash: None,
+                    url:  Arbitrary::arbitrary(g),
+                    hash: if Arbitrary::arbitrary(g) {
+                        Some([0u8; 32].map(|_| Arbitrary::arbitrary(g)))
+                    } else {
+                        None
+                    },
                 },
             }
         }
@@ -1551,15 +1555,16 @@ mod tests {
     const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
+    // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-        82, 233, 199, 239, 90, 118, 225, 123, 77, 93, 157, 192, 209, 255, 148, 148, 66, 183, 84,
-        250, 48, 68, 108, 51, 67, 195, 164, 88, 1, 172, 244, 39,
+        172, 5, 96, 236, 139, 208, 146, 88, 124, 42, 62, 124, 86, 108, 35, 242, 32, 11, 7, 48, 193,
+        61, 177, 220, 104, 169, 145, 4, 8, 1, 236, 112,
     ]);
     const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        82, 183, 189, 204, 95, 81, 233, 231, 211, 63, 65, 45, 191, 83, 65, 5, 17, 40, 90, 89, 225,
-        104, 145, 40, 6, 224, 9, 237, 33, 246, 239, 246, 113, 122, 102, 2, 232, 126, 233, 176, 123,
-        115, 213, 215, 28, 48, 105, 135, 102, 166, 50, 70, 23, 15, 90, 237, 56, 121, 120, 15, 43,
-        215, 208, 15,
+        254, 138, 58, 131, 209, 45, 191, 52, 98, 228, 26, 234, 155, 245, 244, 226, 0, 153, 104,
+        111, 201, 136, 243, 167, 251, 116, 110, 206, 172, 223, 41, 180, 90, 22, 63, 43, 157, 129,
+        226, 75, 49, 33, 155, 76, 160, 133, 127, 146, 150, 80, 199, 201, 80, 98, 179, 43, 46, 46,
+        211, 222, 185, 216, 12, 4,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1987,7 +1992,7 @@ mod tests {
         let signing_data = SigningData {
             contract_address: contract,
             entry_point:      OwnedEntrypointName::new_unchecked("revokeCredentialHolder".into()),
-            nonce:            1,
+            nonce:            0,
             timestamp:        Timestamp::from_timestamp_millis(10000000000),
         };
 
