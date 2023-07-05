@@ -1110,10 +1110,11 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     let mut entry =
         state.revocation_keys.entry(public_key).occupied_or(ContractError::KeyDoesNotExist)?;
 
-    // Update the nonce.
-    *entry += 1;
-
+    // Get the current nonce value
     let nonce = *entry;
+
+    // Update the nonce in the state.
+    *entry += 1;
 
     // Set the revoker to be the revocation authority.
     let revoker = Revoker::Other(public_key);
