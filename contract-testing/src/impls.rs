@@ -5,14 +5,16 @@ use crate::{
 };
 use anyhow::anyhow;
 use concordium_base::{
-    base::{Energy, InsufficientEnergy},
-    constants::{MAX_ALLOWED_INVOKE_ENERGY, MAX_WASM_MODULE_SIZE},
+    base::{AccountThreshold, Energy, InsufficientEnergy},
+    constants::MAX_WASM_MODULE_SIZE,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRate, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
     },
     smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
-    transactions::{self, cost, InitContractPayload, UpdateContractPayload},
+    transactions::{
+        self, cost, AccountAccessStructure, InitContractPayload, UpdateContractPayload,
+    },
 };
 use concordium_smart_contract_engine::{
     v0,
@@ -1071,21 +1073,53 @@ impl Chain {
 }
 
 impl Account {
-    /// Create new [`Account`](Self) with the provided account policy.
-    pub fn new_with_policy(
+    /// Create new [`Account`](Self) with the provided account policy and keys.
+    pub fn new_with_policy_and_keys(
         address: AccountAddress,
         balance: AccountBalance,
         policy: OwnedPolicy,
+        keys: AccountAccessStructure,
     ) -> Self {
         Self {
             balance,
             policy,
             address,
+            keys,
         }
     }
 
+    /// Create new [`Account`](Self) with the provided account keys and balance.
+    /// See [`new`][Self::new] for what the default policy is.
+    pub fn new_with_keys(
+        address: AccountAddress,
+        balance: AccountBalance,
+        keys: AccountAccessStructure,
+    ) -> Self {
+        Self {
+            balance,
+            policy: Self::empty_policy(),
+            address,
+            keys,
+        }
+    }
+
+    /// Create new [`Account`](Self) with the provided account policy.
+    /// The account keys are initialized with an [`AccountAccessStructure`]
+    /// with a threshold of 1, and no keys. So it is impossible to verify any
+    /// signatures with the access structure.
+    pub fn new_with_policy(
+        address: AccountAddress,
+        balance: AccountBalance,
+        policy: OwnedPolicy,
+    ) -> Self {
+        Self::new_with_policy_and_keys(address, balance, policy, AccountAccessStructure {
+            threshold: AccountThreshold::try_from(1u8).expect("1 is a valid threshold."),
+            keys:      BTreeMap::new(),
+        })
+    }
+
     /// Create a new [`Account`](Self) with the provided balance and a default
-    /// account policy.
+    /// account policy and default account access structure.
     ///
     /// See [`new`][Self::new] for what the default policy is.
     pub fn new_with_balance(address: AccountAddress, balance: AccountBalance) -> Self {
@@ -1099,6 +1133,10 @@ impl Account {
     ///   - `created_at`: unix epoch,
     ///   - `valid_to`: unix epoch + `u64::MAX` milliseconds,
     ///   - `items`: none,
+    ///
+    /// The account keys are initialized with an [`AccountAccessStructure`]
+    /// with a threshold of 1, and no keys. So it is impossible to verify any
+    /// signatures with the access structure.
     ///
     /// The [`AccountBalance`] will be created with the provided
     /// `total_balance`.
@@ -1284,7 +1322,7 @@ pub fn energy_to_amount(
 /// Helper function that checks the validity of the exchange rates.
 ///
 /// More specifically, it checks that the cost of one energy is <= `u64::MAX /
-/// [`MAX_ALLOWED_INVOKE_ENERGY`]`, which ensures that overflows won't occur.
+/// `100_000_000_000`, which ensures that overflows won't occur.
 fn check_exchange_rates(
     euro_per_energy: ExchangeRate,
     micro_ccd_per_euro: ExchangeRate,
@@ -1293,7 +1331,7 @@ fn check_exchange_rates(
         BigUint::from(euro_per_energy.numerator()) * micro_ccd_per_euro.numerator();
     let micro_ccd_per_energy_denominator: BigUint =
         BigUint::from(euro_per_energy.denominator()) * micro_ccd_per_euro.denominator();
-    let max_allowed_micro_ccd_to_energy = u64::MAX / MAX_ALLOWED_INVOKE_ENERGY.energy;
+    let max_allowed_micro_ccd_to_energy = u64::MAX / 100_000_000_000u64;
     let micro_ccd_per_energy =
         u64::try_from(micro_ccd_per_energy_numerator / micro_ccd_per_energy_denominator)
             .map_err(|_| ExchangeRateError)?;
@@ -1318,7 +1356,7 @@ mod tests {
     /// comments.
     #[test]
     fn check_exchange_rates_works() {
-        let max_allowed_micro_ccd_per_energy = u64::MAX / MAX_ALLOWED_INVOKE_ENERGY.energy;
+        let max_allowed_micro_ccd_per_energy = u64::MAX / 100_000_000_000;
         check_exchange_rates(
             ExchangeRate::new_unchecked(max_allowed_micro_ccd_per_energy + 1, 1),
             ExchangeRate::new_unchecked(1, 1),

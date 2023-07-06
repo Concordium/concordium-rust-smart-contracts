@@ -10,16 +10,23 @@ use crate::{
 };
 use concordium_base::{
     base::{AccountAddressEq, Energy, InsufficientEnergy},
+    common::{
+        self,
+        types::{CredentialIndex, KeyIndex, Signature},
+    },
+    constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
     },
+    id::types::SchemeId,
     smart_contracts::{
         ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
     },
-    transactions::UpdateContractPayload,
+    transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
 };
 use concordium_smart_contract_engine::{
+    constants::verify_ed25519_cost,
     v0,
     v1::{self, trie, InvokeResponse},
     ExecResult, InterpreterEnergy,
@@ -716,6 +723,96 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 response: Some(response),
                             });
                         }
+                        v1::Interrupt::CheckAccountSignature { address, payload } => {
+                            self.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
+                            )?;
+                            // Due to borrow checker limitations we don't use self.account_keys here
+                            // since it leads to clashes with the mutable borrow of
+                            // self.remaining_energy below.
+                            let response =
+                                match self.chain.accounts.get(&address.into()).map(|a| &a.keys) {
+                                    Some(keys) => {
+                                        // attempt to deserialize the payload after
+                                        // looking up the account.
+                                        // This is the order in the scheduler as
+                                        // well, and the order matters
+                                        // since the response to the contract is
+                                        // different depending on failure kind.
+                                        match deserial_signature_and_data_from_contract(&payload) {
+                                            Ok((num_sigs, ref sigs, data)) => {
+                                                self.remaining_energy.tick_energy(
+                                                // This cannot overflow on any data that can be
+                                                // supplied.
+                                                // Data_len will always be at most u32, and the
+                                                // number of
+                                                // signatures is at most 256*256.
+                                                Energy::from(
+                                                    u64::from(num_sigs)
+                                                        * verify_ed25519_cost(data.len() as u32),
+                                                ),
+                                            )?;
+                                                if verify_data_signature(keys, data, sigs) {
+                                                    v1::InvokeResponse::Success {
+                                                        new_balance: self
+                                                            .contract_balance_unchecked(
+                                                                invocation_data.address,
+                                                            ),
+                                                        data:        None,
+                                                    }
+                                                } else {
+                                                    v1::InvokeResponse::Failure {
+                                                        kind:
+                                                            v1::InvokeFailure::SignatureCheckFailed,
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => v1::InvokeResponse::Failure {
+                                                kind: v1::InvokeFailure::SignatureDataMalformed,
+                                            },
+                                        }
+                                    }
+                                    None => v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::NonExistentAccount,
+                                    },
+                                };
+                            stack.push(Next::Resume {
+                                data: invocation_data,
+                                config,
+                                response: Some(response),
+                            });
+                        }
+                        v1::Interrupt::QueryAccountKeys { address } => {
+                            self.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
+                            )?;
+                            let response = match self.account_keys(address) {
+                                Some(keys) => {
+                                    let response_data = common::to_bytes(&keys);
+                                    let num_keys = keys.num_keys();
+                                    self.remaining_energy.tick_energy(
+                                        constants::contract_instance_query_account_keys_return_cost(
+                                            num_keys,
+                                        ),
+                                    )?;
+                                    v1::InvokeResponse::Success {
+                                        // Balance of contract querying. Does not change for this
+                                        // request.
+                                        new_balance: self
+                                            .contract_balance_unchecked(invocation_data.address),
+                                        data:        Some(response_data),
+                                    }
+                                }
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                },
+                            };
+                            stack.push(Next::Resume {
+                                data: invocation_data,
+                                config,
+                                response: Some(response),
+                            });
+                        }
                     }
                 }
                 v1::ReceiveResult::Reject {
@@ -1078,6 +1175,13 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         }
     }
 
+    /// Looks up the account keys.
+    fn account_keys(&self, address: AccountAddress) -> Option<&AccountAccessStructure> {
+        // The account keys cannot change during a smart contract transaction, so
+        // there is no need to check in the changeset.
+        self.chain.accounts.get(&address.into()).map(|a| &a.keys)
+    }
+
     /// Saves a mutable state for a contract in the changeset.
     ///
     /// If the contract already has an entry in the changeset, the old state
@@ -1302,6 +1406,72 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         };
         trace_elements.push(new);
     }
+}
+
+/// Return a triple of
+/// - the number of signatures
+/// - the signatures
+/// - the data
+fn deserial_signature_and_data_from_contract(
+    payload: &[u8],
+) -> anyhow::Result<(
+    u32,
+    BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>,
+    &[u8],
+)> {
+    let mut source = std::io::Cursor::new(payload);
+    use concordium_base::common::Get;
+    use std::io::Read;
+    let mut out = BTreeMap::new();
+    let mut last = None;
+    let outer_len: u8 = source.get()?;
+    let mut num_sigs = 0;
+    for _ in 0..outer_len {
+        let idx = source.get()?;
+        anyhow::ensure!(
+            last < Some(idx),
+            "Credential indices must be strictly increasing."
+        );
+        last = Some(idx);
+        let inner_len: u8 = source.get()?;
+        let mut inner_map = BTreeMap::new();
+        let mut x = None;
+        for _ in 0..inner_len {
+            let k = source.get()?;
+            num_sigs += 1;
+            let sig = match source.get()? {
+                SchemeId::Ed25519 => {
+                    let mut sig = vec![0u8; ED25519_SIGNATURE_LENGTH];
+                    source.read_exact(&mut sig)?;
+                    Signature { sig }
+                }
+            };
+
+            if let Some((old_k, old_v)) = x.take() {
+                anyhow::ensure!(
+                    k > old_k,
+                    "Next key {k} not larger than previous key {old_k}."
+                );
+                inner_map.insert(old_k, old_v);
+            }
+            x = Some((k, sig));
+        }
+        if let Some((k, v)) = x {
+            inner_map.insert(k, v);
+        }
+        out.insert(idx, inner_map);
+    }
+    //
+    let data_len = {
+        let mut buf = [0u8; 4];
+        source.read_exact(&mut buf)?;
+        u32::from_le_bytes(buf)
+    };
+    Ok((
+        num_sigs,
+        out,
+        &payload[source.position() as usize..][..data_len as usize],
+    ))
 }
 
 impl ChangeSet {

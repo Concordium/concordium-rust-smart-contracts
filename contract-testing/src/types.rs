@@ -5,6 +5,7 @@ use concordium_base::{
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
+    transactions::AccountAccessStructure,
 };
 use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
 use concordium_wasm::artifact;
@@ -78,6 +79,8 @@ pub struct Account {
     pub balance: AccountBalance,
     /// Account policy.
     pub policy:  OwnedPolicy,
+    /// Account's public keys.
+    pub keys:    AccountAccessStructure,
 }
 
 /// A signer with a number of keys, the amount of which affects the cost of
