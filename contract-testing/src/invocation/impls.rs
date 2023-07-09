@@ -1,6 +1,6 @@
 use super::types::*;
 use crate::{
-    constants,
+    constants::{self, verify_ed25519_energy_cost},
     impls::{
         contract_events_from_logs, from_interpreter_energy, lookup_module_cost,
         to_interpreter_energy,
@@ -26,7 +26,6 @@ use concordium_base::{
     transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
 };
 use concordium_smart_contract_engine::{
-    constants::verify_ed25519_cost,
     v0,
     v1::{self, trie, InvokeResponse},
     ExecResult, InterpreterEnergy,
@@ -742,16 +741,16 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                         match deserial_signature_and_data_from_contract(&payload) {
                                             Ok((num_sigs, ref sigs, data)) => {
                                                 self.remaining_energy.tick_energy(
-                                                // This cannot overflow on any data that can be
-                                                // supplied.
-                                                // Data_len will always be at most u32, and the
-                                                // number of
-                                                // signatures is at most 256*256.
-                                                Energy::from(
-                                                    u64::from(num_sigs)
-                                                        * verify_ed25519_cost(data.len() as u32),
-                                                ),
-                                            )?;
+                                                    // This cannot overflow on any data that can be
+                                                    // supplied.
+                                                    // Data_len will always be at most u32, and the
+                                                    // number of
+                                                    // signatures is at most 256*256.
+                                                    verify_ed25519_energy_cost(
+                                                        num_sigs,
+                                                        data.len() as u32,
+                                                    ),
+                                                )?;
                                                 if verify_data_signature(keys, data, sigs) {
                                                     v1::InvokeResponse::Success {
                                                         new_balance: self
