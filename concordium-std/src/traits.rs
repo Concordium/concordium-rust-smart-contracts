@@ -6,8 +6,9 @@
 use crate::vec::Vec;
 use crate::{
     types::{LogError, StateError},
-    CallContractResult, EntryRaw, ExchangeRates, HashKeccak256, HashSha2256, HashSha3256, Key,
-    OccupiedEntryRaw, PublicKeyEcdsaSecp256k1, PublicKeyEd25519, QueryAccountBalanceResult,
+    AccountSignatures, CallContractResult, CheckAccountSignatureResult, EntryRaw, ExchangeRates,
+    HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw, PublicKeyEcdsaSecp256k1,
+    PublicKeyEd25519, QueryAccountBalanceResult, QueryAccountPublicKeysResult,
     QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
     SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
 };
@@ -405,6 +406,17 @@ pub trait HasHost<State>: Sized {
     /// Note: Querying the contract itself returns the balance of the contract
     /// including the amount transferred as part of the invocation.
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult;
+
+    /// Get the account's public keys.
+    fn account_public_keys(&self, address: AccountAddress) -> QueryAccountPublicKeysResult;
+
+    /// Verify the signature with account's public keys.
+    fn check_account_signature(
+        &self,
+        address: AccountAddress,
+        signatures: &AccountSignatures,
+        data: &[u8],
+    ) -> CheckAccountSignatureResult;
 
     /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;

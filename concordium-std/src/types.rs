@@ -1,7 +1,10 @@
+use crate as concordium_std;
 use crate::{
     cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
-use concordium_contracts_common::{AccountBalance, Amount, ParseError};
+use concordium_contracts_common::{
+    AccountBalance, AccountThreshold, Amount, ParseError, SchemaType, SignatureThreshold,
+};
 use core::{fmt, str::FromStr};
 // Re-export for backward compatibility.
 pub use concordium_contracts_common::ExchangeRates;
@@ -643,6 +646,18 @@ pub struct QueryAccountBalanceError;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct QueryContractBalanceError;
 
+/// Error for querying account's public keys.
+/// No account found for the provided account address.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct QueryAccountPublicKeysError;
+
+/// Error for checking an account signature.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CheckAccountSignatureError {
+    MissingAccount,
+    MalformedData,
+}
+
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`CallContractError`], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
@@ -671,6 +686,56 @@ pub type QueryAccountBalanceResult = Result<AccountBalance, QueryAccountBalanceE
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`QueryContractBalanceError`] and result to [`Amount`].
 pub type QueryContractBalanceResult = Result<Amount, QueryContractBalanceError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryAccountPublicKeysError`] and result to [`AccountPublicKeys`].
+pub type QueryAccountPublicKeysResult = Result<AccountPublicKeys, QueryAccountPublicKeysError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`CheckAccountSignatureError`] and result to [`bool`].
+pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
+
+pub type KeyIndex = u8;
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+pub enum PublicKey {
+    Ed25519(PublicKeyEd25519),
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+pub struct CredentialPublicKeys {
+    #[concordium(size_length = 1)]
+    pub(crate) keys:      crate::collections::BTreeMap<KeyIndex, PublicKey>,
+    pub(crate) threshold: SignatureThreshold,
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+pub struct AccountPublicKeys {
+    #[concordium(size_length = 1)]
+    pub(crate) keys:      crate::collections::BTreeMap<CredentialIndex, CredentialPublicKeys>,
+    pub(crate) threshold: AccountThreshold,
+}
+
+pub type CredentialIndex = u8;
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+pub enum Signature {
+    Ed25519(SignatureEd25519),
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+#[concordium(transparent)]
+pub struct AccountSignatures {
+    #[concordium(size_length = 1)]
+    pub(crate) sigs: crate::collections::BTreeMap<CredentialIndex, CredentialSignatures>,
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+#[concordium(transparent)]
+pub(crate) struct CredentialSignatures {
+    #[concordium(size_length = 1)]
+    sigs: crate::collections::BTreeMap<KeyIndex, Signature>,
+}
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]
