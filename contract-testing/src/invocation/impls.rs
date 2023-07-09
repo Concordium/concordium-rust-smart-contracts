@@ -1408,17 +1408,24 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     }
 }
 
+/// A triple of number of signatures,
+/// the signatures, and the data.
+/// The number of signatures is in principle recoverable from the second
+/// component, but since that is nested map it is awkward to do, and since we
+/// learn the number during deserialization anyhow we return it here.
+type DeserializedSignatureAndData<'a> = (
+    u32,
+    BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>,
+    &'a [u8],
+);
+
 /// Return a triple of
 /// - the number of signatures
 /// - the signatures
 /// - the data
 fn deserial_signature_and_data_from_contract(
     payload: &[u8],
-) -> anyhow::Result<(
-    u32,
-    BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>,
-    &[u8],
-)> {
+) -> anyhow::Result<DeserializedSignatureAndData> {
     let mut source = std::io::Cursor::new(payload);
     use concordium_base::common::Get;
     use std::io::Read;
