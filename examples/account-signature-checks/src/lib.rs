@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! A basic example showing how to retrieve account keys, and check account
 //! signatures.
 use concordium_std::*;
