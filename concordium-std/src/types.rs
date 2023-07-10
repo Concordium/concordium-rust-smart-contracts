@@ -695,10 +695,10 @@ pub type QueryAccountPublicKeysResult = Result<AccountPublicKeys, QueryAccountPu
 /// [`CheckAccountSignatureError`] and result to [`bool`].
 pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
 
-pub type KeyIndex = u8;
+pub(crate) type KeyIndex = u8;
 
 #[derive(crate::Serialize, Debug, SchemaType)]
-pub enum PublicKey {
+pub(crate) enum PublicKey {
     Ed25519(PublicKeyEd25519),
 }
 
@@ -716,7 +716,7 @@ pub struct AccountPublicKeys {
     pub(crate) threshold: AccountThreshold,
 }
 
-pub type CredentialIndex = u8;
+pub(crate) type CredentialIndex = u8;
 
 #[derive(crate::Serialize, Debug, SchemaType)]
 pub enum Signature {
