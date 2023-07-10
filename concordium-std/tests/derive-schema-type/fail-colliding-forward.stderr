@@ -1,0 +1,11 @@
+error: The tag of 'Three' collides with the tag of 'Two'.
+  --> tests/derive-schema-type/fail-colliding-forward.rs:13:28
+   |
+13 |     #[concordium(forward = 5)]
+   |                            ^
+
+error: The tag of 'Two' collides with the tag of 'Three'.
+  --> tests/derive-schema-type/fail-colliding-forward.rs:10:29
+   |
+10 |     #[concordium(forward = [5, 6])]
+   |                             ^
