@@ -5,7 +5,7 @@ name = "account_signature_checks"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
-authors = [ "Aleš Bizjak <ab@concordium.com>" ]
+authors = [ "Concordium <developers@concordium.com>" ]
 description = "An example of how to check account signatures"
 
 [features]
