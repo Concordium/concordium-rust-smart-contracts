@@ -34,7 +34,7 @@
 //! the admin address to a new address, and update the metadata URL.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis2::{Cis2Event, *};
-use concordium_std::{collections::BTreeMap, *};
+use concordium_std::*;
 
 /// The id of the wCCD token in this contract.
 const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
@@ -193,93 +193,14 @@ struct NewAdminEvent {
 }
 
 /// Tagged events to be serialized for the event log.
+#[derive(SchemaType, Serial)]
+#[concordium(repr(u8))]
 enum WccdEvent {
-    NewAdmin(NewAdminEvent),
+    NewAdmin {
+        new_admin: NewAdminEvent,
+    },
+    #[concordium(forward = cis2_events)]
     Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
-}
-
-impl Serial for WccdEvent {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        match self {
-            WccdEvent::NewAdmin(event) => {
-                out.write_u8(NEW_ADMIN_EVENT_TAG)?;
-                event.serial(out)
-            }
-            WccdEvent::Cis2Event(event) => event.serial(out),
-        }
-    }
-}
-
-/// Manual implementation of the `WccdEventSchema` which includes both the
-/// events specified in this contract and the events specified in the CIS-2
-/// library. The events are tagged to distinguish them on-chain.
-impl schema::SchemaType for WccdEvent {
-    fn get_type() -> schema::Type {
-        let mut event_map = BTreeMap::new();
-        event_map.insert(
-            NEW_ADMIN_EVENT_TAG,
-            (
-                "NewAdmin".to_string(),
-                schema::Fields::Named(vec![(String::from("new_admin"), Address::get_type())]),
-            ),
-        );
-        event_map.insert(
-            TRANSFER_EVENT_TAG,
-            (
-                "Transfer".to_string(),
-                schema::Fields::Named(vec![
-                    (String::from("token_id"), ContractTokenId::get_type()),
-                    (String::from("amount"), ContractTokenAmount::get_type()),
-                    (String::from("from"), Address::get_type()),
-                    (String::from("to"), Address::get_type()),
-                ]),
-            ),
-        );
-        event_map.insert(
-            MINT_EVENT_TAG,
-            (
-                "Mint".to_string(),
-                schema::Fields::Named(vec![
-                    (String::from("token_id"), ContractTokenId::get_type()),
-                    (String::from("amount"), ContractTokenAmount::get_type()),
-                    (String::from("owner"), Address::get_type()),
-                ]),
-            ),
-        );
-        event_map.insert(
-            BURN_EVENT_TAG,
-            (
-                "Burn".to_string(),
-                schema::Fields::Named(vec![
-                    (String::from("token_id"), ContractTokenId::get_type()),
-                    (String::from("amount"), ContractTokenAmount::get_type()),
-                    (String::from("owner"), Address::get_type()),
-                ]),
-            ),
-        );
-        event_map.insert(
-            UPDATE_OPERATOR_EVENT_TAG,
-            (
-                "UpdateOperator".to_string(),
-                schema::Fields::Named(vec![
-                    (String::from("update"), OperatorUpdate::get_type()),
-                    (String::from("owner"), Address::get_type()),
-                    (String::from("operator"), Address::get_type()),
-                ]),
-            ),
-        );
-        event_map.insert(
-            TOKEN_METADATA_EVENT_TAG,
-            (
-                "TokenMetadata".to_string(),
-                schema::Fields::Named(vec![
-                    (String::from("token_id"), ContractTokenId::get_type()),
-                    (String::from("metadata_url"), MetadataUrl::get_type()),
-                ]),
-            ),
-        );
-        schema::Type::TaggedEnum(event_map)
-    }
 }
 
 /// The different errors the contract can produce.
@@ -541,9 +462,11 @@ fn contract_init<S: HasStateApi>(
     )))?;
 
     // Log event for the new admin.
-    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
-        new_admin: invoker,
-    }))?;
+    logger.log(&WccdEvent::NewAdmin {
+        new_admin: NewAdminEvent {
+            new_admin: invoker,
+        },
+    })?;
 
     Ok(state)
 }
@@ -702,9 +625,11 @@ fn contract_update_admin<S: HasStateApi>(
     host.state_mut().admin = new_admin;
 
     // Log a new admin event.
-    logger.log(&WccdEvent::NewAdmin(NewAdminEvent {
-        new_admin,
-    }))?;
+    logger.log(&WccdEvent::NewAdmin {
+        new_admin: NewAdminEvent {
+            new_admin,
+        },
+    })?;
 
     Ok(())
 }
@@ -1246,9 +1171,11 @@ mod tests {
             "Missing event with metadata for the token"
         );
         claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin(NewAdminEvent {
-                new_admin: ADDRESS_0,
-            }))),
+            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin {
+                new_admin: NewAdminEvent {
+                    new_admin: ADDRESS_0,
+                },
+            })),
             "Missing event for the new admin"
         );
     }
@@ -1731,9 +1658,11 @@ mod tests {
 
         // Check the event
         claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin(NewAdminEvent {
-                new_admin: NEW_ADMIN_ADDRESS,
-            }))),
+            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin {
+                new_admin: NewAdminEvent {
+                    new_admin: NEW_ADMIN_ADDRESS,
+                },
+            })),
             "Missing event for the new admin"
         );
     }
