@@ -527,7 +527,7 @@ impl schema::SchemaType for CredentialEvent {
 impl Serial for CredentialEvent {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
-            // CIS-4 standard events are numbered from 255 counting down
+            // CIS-4 standard events are numbered from 249 counting down
             CredentialEvent::Register(data) => {
                 249u8.serial(out)?;
                 data.serial(out)
