@@ -1,9 +1,15 @@
 use concordium_base::{
     base::{AccountAddressEq, Energy},
+    common::{
+        self,
+        types::{CredentialIndex, KeyIndex, Signature},
+    },
+    constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
         AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
+    id::types::SchemeId,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::AccountAccessStructure,
 };
@@ -81,6 +87,90 @@ pub struct Account {
     pub policy:  OwnedPolicy,
     /// Account's public keys.
     pub keys:    AccountAccessStructure,
+}
+
+/// A signature with account's keys.
+#[derive(Debug, Clone)]
+pub struct AccountSignatures {
+    /// It is assumed that the inner `Signature` will always be for ed25519
+    /// scheme, so will have length 64 bytes.
+    pub(crate) sigs: BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>,
+}
+
+impl From<AccountSignatures> for BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>> {
+    fn from(value: AccountSignatures) -> Self { value.sigs }
+}
+
+impl From<BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>> for AccountSignatures {
+    fn from(sigs: BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>) -> Self {
+        Self { sigs }
+    }
+}
+
+impl AccountSignatures {
+    /// Return the number of signatures contained in the structure.
+    pub fn num_signatures(&self) -> u32 { self.sigs.values().map(|v| v.len() as u32).sum() }
+}
+
+impl common::Serial for AccountSignatures {
+    fn serial<B: common::Buffer>(&self, out: &mut B) {
+        (self.sigs.len() as u8).serial(out);
+        for (k, v) in self.sigs.iter() {
+            k.serial(out);
+            (v.len() as u8).serial(out);
+            for (ki, sig) in v.iter() {
+                ki.serial(out);
+                // ed25519 scheme tag.
+                0u8.serial(out);
+                out.write_all(&sig.sig)
+                    .expect("Writing to buffer does not fail.");
+            }
+        }
+    }
+}
+
+impl common::Deserial for AccountSignatures {
+    fn deserial<R: common::ReadBytesExt>(source: &mut R) -> common::ParseResult<Self> {
+        use common::Get;
+        let outer_len = u8::deserial(source)?;
+        let mut last = None;
+        let mut sigs = BTreeMap::new();
+        for _ in 0..outer_len {
+            let idx = source.get()?;
+            anyhow::ensure!(
+                last < Some(idx),
+                "Credential indices must be strictly increasing."
+            );
+            last = Some(idx);
+            let inner_len: u8 = source.get()?;
+            let mut inner_map = BTreeMap::new();
+            let mut x = None;
+            for _ in 0..inner_len {
+                let k = source.get()?;
+                let sig = match source.get()? {
+                    SchemeId::Ed25519 => {
+                        let mut sig = vec![0u8; ED25519_SIGNATURE_LENGTH];
+                        source.read_exact(&mut sig)?;
+                        Signature { sig }
+                    }
+                };
+
+                if let Some((old_k, old_v)) = x.take() {
+                    anyhow::ensure!(
+                        k > old_k,
+                        "Next key {k} not larger than previous key {old_k}."
+                    );
+                    inner_map.insert(old_k, old_v);
+                }
+                x = Some((k, sig));
+            }
+            if let Some((k, v)) = x {
+                inner_map.insert(k, v);
+            }
+            sigs.insert(idx, inner_map);
+        }
+        Ok(Self { sigs })
+    }
 }
 
 /// A signer with a number of keys, the amount of which affects the cost of

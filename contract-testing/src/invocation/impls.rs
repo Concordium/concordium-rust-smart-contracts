@@ -6,20 +6,15 @@ use crate::{
         to_interpreter_energy,
     },
     types::{Account, BalanceError, Contract, ContractModule, TransferError},
-    DebugTraceElement, ExecutionError, InvokeExecutionError,
+    AccountSignatures, DebugTraceElement, ExecutionError, InvokeExecutionError,
 };
 use concordium_base::{
     base::{AccountAddressEq, Energy, InsufficientEnergy},
-    common::{
-        self,
-        types::{CredentialIndex, KeyIndex, Signature},
-    },
-    constants::ED25519_SIGNATURE_LENGTH,
+    common,
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
     },
-    id::types::SchemeId,
     smart_contracts::{
         ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
     },
@@ -739,7 +734,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                         // since the response to the contract is
                                         // different depending on failure kind.
                                         match deserial_signature_and_data_from_contract(&payload) {
-                                            Ok((num_sigs, ref sigs, data)) => {
+                                            Ok((sigs, data)) => {
+                                                let num_sigs = sigs.num_signatures();
                                                 self.remaining_energy.tick_energy(
                                                     // This cannot overflow on any data that can be
                                                     // supplied.
@@ -751,7 +747,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                                         data.len() as u32,
                                                     ),
                                                 )?;
-                                                if verify_data_signature(keys, data, sigs) {
+                                                if verify_data_signature(keys, data, &sigs.into()) {
                                                     v1::InvokeResponse::Success {
                                                         new_balance: self
                                                             .contract_balance_unchecked(
@@ -1407,16 +1403,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     }
 }
 
-/// A triple of number of signatures,
-/// the signatures, and the data.
-/// The number of signatures is in principle recoverable from the second
-/// component, but since that is nested map it is awkward to do, and since we
-/// learn the number during deserialization anyhow we return it here.
-type DeserializedSignatureAndData<'a> = (
-    u32,
-    BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>,
-    &'a [u8],
-);
+/// A pair of the signatures, and the data.
+type DeserializedSignatureAndData<'a> = (AccountSignatures, &'a [u8]);
 
 /// Return a triple of
 /// - the number of signatures
@@ -1426,47 +1414,10 @@ fn deserial_signature_and_data_from_contract(
     payload: &[u8],
 ) -> anyhow::Result<DeserializedSignatureAndData> {
     let mut source = std::io::Cursor::new(payload);
-    use concordium_base::common::Get;
+    use common::Deserial;
     use std::io::Read;
-    let mut out = BTreeMap::new();
-    let mut last = None;
-    let outer_len: u8 = source.get()?;
-    let mut num_sigs = 0;
-    for _ in 0..outer_len {
-        let idx = source.get()?;
-        anyhow::ensure!(
-            last < Some(idx),
-            "Credential indices must be strictly increasing."
-        );
-        last = Some(idx);
-        let inner_len: u8 = source.get()?;
-        let mut inner_map = BTreeMap::new();
-        let mut x = None;
-        for _ in 0..inner_len {
-            let k = source.get()?;
-            num_sigs += 1;
-            let sig = match source.get()? {
-                SchemeId::Ed25519 => {
-                    let mut sig = vec![0u8; ED25519_SIGNATURE_LENGTH];
-                    source.read_exact(&mut sig)?;
-                    Signature { sig }
-                }
-            };
 
-            if let Some((old_k, old_v)) = x.take() {
-                anyhow::ensure!(
-                    k > old_k,
-                    "Next key {k} not larger than previous key {old_k}."
-                );
-                inner_map.insert(old_k, old_v);
-            }
-            x = Some((k, sig));
-        }
-        if let Some((k, v)) = x {
-            inner_map.insert(k, v);
-        }
-        out.insert(idx, inner_map);
-    }
+    let signatures = AccountSignatures::deserial(&mut source)?;
     //
     let data_len = {
         let mut buf = [0u8; 4];
@@ -1474,8 +1425,7 @@ fn deserial_signature_and_data_from_contract(
         u32::from_le_bytes(buf)
     };
     Ok((
-        num_sigs,
-        out,
+        signatures,
         &payload[source.position() as usize..][..data_len as usize],
     ))
 }
