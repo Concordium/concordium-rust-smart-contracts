@@ -136,5 +136,4 @@ fn test() {
         rv, 0,
         "Signature check should succeed, the return value should be 0."
     );
-    println!("{}", res_invoke_check_signature.energy_used);
 }
