@@ -1,12 +1,9 @@
 use concordium_base::{
     base::{AccountAddressEq, Energy},
-    common::{
-        self,
-        types::{CredentialIndex, KeyIndex, Signature},
-    },
+    common::types::{CredentialIndex, KeyIndex, Signature},
     constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
-        AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
+        self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
     },
     id::types::SchemeId,
@@ -112,35 +109,34 @@ impl AccountSignatures {
     pub fn num_signatures(&self) -> u32 { self.sigs.values().map(|v| v.len() as u32).sum() }
 }
 
-impl common::Serial for AccountSignatures {
-    fn serial<B: common::Buffer>(&self, out: &mut B) {
-        (self.sigs.len() as u8).serial(out);
+impl contracts_common::Serial for AccountSignatures {
+    fn serial<W: contracts_common::Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        (self.sigs.len() as u8).serial(out)?;
         for (k, v) in self.sigs.iter() {
-            k.serial(out);
-            (v.len() as u8).serial(out);
+            k.serial(out)?;
+            (v.len() as u8).serial(out)?;
             for (ki, sig) in v.iter() {
-                ki.serial(out);
+                ki.serial(out)?;
                 // ed25519 scheme tag.
-                0u8.serial(out);
-                out.write_all(&sig.sig)
-                    .expect("Writing to buffer does not fail.");
+                0u8.serial(out)?;
+                out.write_all(&sig.sig)?;
             }
         }
+        Ok(())
     }
 }
 
-impl common::Deserial for AccountSignatures {
-    fn deserial<R: common::ReadBytesExt>(source: &mut R) -> common::ParseResult<Self> {
-        use common::Get;
+impl contracts_common::Deserial for AccountSignatures {
+    fn deserial<R: contracts_common::Read>(source: &mut R) -> contracts_common::ParseResult<Self> {
+        use contracts_common::Get;
         let outer_len = u8::deserial(source)?;
         let mut last = None;
         let mut sigs = BTreeMap::new();
         for _ in 0..outer_len {
             let idx = source.get()?;
-            anyhow::ensure!(
-                last < Some(idx),
-                "Credential indices must be strictly increasing."
-            );
+            if last >= Some(idx) {
+                return Err(contracts_common::ParseError {});
+            }
             last = Some(idx);
             let inner_len: u8 = source.get()?;
             let mut inner_map = BTreeMap::new();
@@ -156,10 +152,9 @@ impl common::Deserial for AccountSignatures {
                 };
 
                 if let Some((old_k, old_v)) = x.take() {
-                    anyhow::ensure!(
-                        k > old_k,
-                        "Next key {k} not larger than previous key {old_k}."
-                    );
+                    if k <= old_k {
+                        return Err(contracts_common::ParseError {});
+                    }
                     inner_map.insert(old_k, old_v);
                 }
                 x = Some((k, sig));

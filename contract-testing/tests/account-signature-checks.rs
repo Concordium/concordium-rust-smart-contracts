@@ -1,7 +1,6 @@
 //! This module contains tests for checking account signatures, and retrieving
 //! account's public keys.
 use concordium_base::{
-    common,
     contracts_common::{self, AccountBalance, AccountThreshold, SignatureThreshold},
     id::types::AccountKeys,
     transactions::AccountAccessStructure,
@@ -95,27 +94,21 @@ fn test() {
             },
         )
         .expect("Querying contract should work");
-    let rv = common::from_bytes::<AccountAccessStructure, _>(&mut std::io::Cursor::new(
-        &res_invoke_get_keys.return_value,
-    ))
-    .expect("Return value should be deserializable.");
+    let rv =
+        contracts_common::from_bytes::<AccountAccessStructure>(&res_invoke_get_keys.return_value)
+            .expect("Return value should be deserializable.");
     assert_eq!(
         rv, acc_structure,
         "Retrieved account structure does not match the expected one."
     );
 
+    // Data is a serialization of a 30-element byte array with 4 byte length prefix
+    // (in little endian).
     let data: [u8; 34] = [
         30, 0, 0, 0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32, 33, 34,
     ];
     let signatures = AccountSignatures::from(acc_keys.sign_data(&data[4..]));
-    let parameter = {
-        let mut parameter = ACC_0.0.to_vec();
-        use common::Serial;
-        signatures.serial(&mut parameter);
-        data.serial(&mut parameter);
-        parameter
-    };
 
     let res_invoke_check_signature = chain
         .contract_invoke(
@@ -125,7 +118,8 @@ fn test() {
             UpdateContractPayload {
                 address:      res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.check_signature".into()),
-                message:      OwnedParameter::new_unchecked(parameter),
+                message:      OwnedParameter::from_serial(&(ACC_0, &signatures, data))
+                    .expect("Enough space."),
                 amount:       Amount::zero(),
             },
         )

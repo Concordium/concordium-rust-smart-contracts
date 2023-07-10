@@ -1413,9 +1413,8 @@ type DeserializedSignatureAndData<'a> = (AccountSignatures, &'a [u8]);
 fn deserial_signature_and_data_from_contract(
     payload: &[u8],
 ) -> anyhow::Result<DeserializedSignatureAndData> {
-    let mut source = std::io::Cursor::new(payload);
-    use common::Deserial;
-    use std::io::Read;
+    use concordium_base::contracts_common::{Deserial, Read};
+    let mut source = concordium_base::contracts_common::Cursor::new(payload);
 
     let signatures = AccountSignatures::deserial(&mut source)?;
     //
@@ -1424,10 +1423,7 @@ fn deserial_signature_and_data_from_contract(
         source.read_exact(&mut buf)?;
         u32::from_le_bytes(buf)
     };
-    Ok((
-        signatures,
-        &payload[source.position() as usize..][..data_len as usize],
-    ))
+    Ok((signatures, &payload[source.offset..][..data_len as usize]))
 }
 
 impl ChangeSet {
