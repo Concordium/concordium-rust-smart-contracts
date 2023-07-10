@@ -4,7 +4,7 @@
 
 - Support adding attribute `#[concordium(repr(u))]` for enum types, where `u` is either `u8` or `u16`. Setting this changes the integer serialization used for the variant tags in derive macros such as  `Serial`, `Deserial`, `DeserialWithState` and `SchemaType`.
 - Support adding attribute `#[concordium(tag = n)]` for enum variants, where `n` is some unsigned integer literal. Setting this attribute on a variant overrides the tag used in derive macros such as `Serial`, `Deserial`, `DeserialWithState` and `SchemaType`. Note that setting `#[concordium(repr(u*))]` is required when using this attribute.
-
+- Support adding `#[concordium(forward = n)]`, for enum variants, where `n` is either an unsigned integer literal, `cis2_events`, `cis3_events`, `cis4_events` or an array of the same options. Setting this attribute on a variant overrides the (de)serialization to flatten with the (de)serialization of the inner field when  using derive macros such as `Serial`, `Deserial`, `DeserialWithState` and `SchemaType`. Note that setting `#[concordium(repr(u*))]` is required when using this attribute.
 
 ## concordium-std 7.0.0 (2023-06-16)
 
