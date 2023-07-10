@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! # A Concordium V1 smart contract
 use concordium_std::*;
 use core::fmt::Debug;
