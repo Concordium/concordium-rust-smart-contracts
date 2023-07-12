@@ -128,6 +128,9 @@ impl contracts_common::Serial for AccountSignatures {
 
 impl contracts_common::Deserial for AccountSignatures {
     fn deserial<R: contracts_common::Read>(source: &mut R) -> contracts_common::ParseResult<Self> {
+        // We essentially unroll the definitions of `deserial_map_no_length` here since
+        // the inner type, the Signature, does not have exactly the right
+        // serialization instance that we need.
         use contracts_common::Get;
         let outer_len = u8::deserial(source)?;
         let mut last = None;
@@ -140,7 +143,7 @@ impl contracts_common::Deserial for AccountSignatures {
             last = Some(idx);
             let inner_len: u8 = source.get()?;
             let mut inner_map = BTreeMap::new();
-            let mut x = None;
+            let mut last_inner = None;
             for _ in 0..inner_len {
                 let k = source.get()?;
                 let sig = match source.get()? {
@@ -151,15 +154,15 @@ impl contracts_common::Deserial for AccountSignatures {
                     }
                 };
 
-                if let Some((old_k, old_v)) = x.take() {
+                if let Some((old_k, old_v)) = last_inner.take() {
                     if k <= old_k {
                         return Err(contracts_common::ParseError {});
                     }
                     inner_map.insert(old_k, old_v);
                 }
-                x = Some((k, sig));
+                last_inner = Some((k, sig));
             }
-            if let Some((k, v)) = x {
+            if let Some((k, v)) = last_inner {
                 inner_map.insert(k, v);
             }
             sigs.insert(idx, inner_map);

@@ -1406,23 +1406,19 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 /// A pair of the signatures, and the data.
 type DeserializedSignatureAndData<'a> = (AccountSignatures, &'a [u8]);
 
-/// Return a triple of
-/// - the number of signatures
-/// - the signatures
-/// - the data
+/// Deserialize the signatures and data from the slice.
+/// Note that this does not ensure that the entire data is read, i.e., there can
+/// be leftover data in the slice, which matches the behaviour in the node.
 fn deserial_signature_and_data_from_contract(
     payload: &[u8],
 ) -> anyhow::Result<DeserializedSignatureAndData> {
-    use concordium_base::contracts_common::{Deserial, Read};
+    // Imported locally only since it is critical that we use the right Deserial
+    // trait.
+    use concordium_base::contracts_common::Deserial;
     let mut source = concordium_base::contracts_common::Cursor::new(payload);
 
     let signatures = AccountSignatures::deserial(&mut source)?;
-    //
-    let data_len = {
-        let mut buf = [0u8; 4];
-        source.read_exact(&mut buf)?;
-        u32::from_le_bytes(buf)
-    };
+    let data_len = u32::deserial(&mut source)?;
     Ok((signatures, &payload[source.offset..][..data_len as usize]))
 }
 

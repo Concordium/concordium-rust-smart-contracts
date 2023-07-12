@@ -26,7 +26,7 @@ pub(crate) fn contract_instance_query_account_keys_return_cost(num_keys: u32) ->
     }
 }
 
-/// Cost **in energy** of verification of an ed25519.
+/// Cost **in energy** of verification of an ed25519 signature.
 /// This should match the cost of
 /// [`verify_ed22519_cost`](concordium_smart_contract_engine::constants::verify_ed25519_cost)
 /// except the latter is the cost in interpreter energy, and this on is in
