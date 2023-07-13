@@ -187,6 +187,7 @@ struct SetPausedParams {
 /// A NewAdminEvent introduced by this smart contract.
 #[derive(Serial, SchemaType)]
 #[repr(transparent)]
+#[concordium(transparent)]
 struct NewAdminEvent {
     /// New admin address.
     new_admin: Address,
