@@ -749,14 +749,14 @@ pub enum Signature {
 /// credential indexes, and the inner map maps key indices to [`Signature`]s.
 pub struct AccountSignatures {
     #[concordium(size_length = 1)]
-    pub(crate) sigs: crate::collections::BTreeMap<CredentialIndex, CredentialSignatures>,
+    pub sigs: crate::collections::BTreeMap<CredentialIndex, CredentialSignatures>,
 }
 
 #[derive(crate::Serialize, Debug, SchemaType)]
 #[concordium(transparent)]
-pub(crate) struct CredentialSignatures {
+pub struct CredentialSignatures {
     #[concordium(size_length = 1)]
-    sigs: crate::collections::BTreeMap<KeyIndex, Signature>,
+    pub sigs: crate::collections::BTreeMap<KeyIndex, Signature>,
 }
 
 /// A type representing the attributes, lazily acquired from the host.
