@@ -1,0 +1,5 @@
+error: 'forward' attribute tag value of 500 cannot be represented by the type u8 set in 'repr(u8)'
+  --> tests/derive-serial/fail-forward-gt-repr.rs:11:29
+   |
+11 |     #[concordium(forward = [500, 6])]
+   |                             ^^^

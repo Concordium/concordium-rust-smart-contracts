@@ -1,0 +1,11 @@
+error: The tag of 'Three' collides with the tag of 'Two'.
+  --> tests/derive-serial/fail-colliding-tag-forward.rs:13:18
+   |
+13 |     #[concordium(tag = 5)]
+   |                  ^^^
+
+error: The tag of 'Two' collides with the tag of 'Three'.
+  --> tests/derive-serial/fail-colliding-tag-forward.rs:10:29
+   |
+10 |     #[concordium(forward = [5, 6])]
+   |                             ^

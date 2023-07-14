@@ -1,0 +1,11 @@
+error: The tag of 'Two' collides with the tag of 'One'.
+  --> tests/derive-deserial-with-state/fail-forward-collide-with-inferred.rs:11:29
+   |
+11 |     #[concordium(forward = [0, 6])]
+   |                             ^
+
+error: The tag of 'One' collides with the tag of 'Two'.
+ --> tests/derive-deserial-with-state/fail-forward-collide-with-inferred.rs:8:5
+  |
+8 |     One {
+  |     ^^^
