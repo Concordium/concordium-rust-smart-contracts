@@ -36,7 +36,7 @@ pub(crate) struct ChainParameters {
     /// Euro per Energy ratio.
     // This is not public because we ensure a reasonable value during the construction of the
     // [`Chain`].
-    pub(crate) euro_per_energy: ExchangeRate,
+    pub(crate) euro_per_energy:    ExchangeRate,
 }
 
 /// Represents the blockchain and supports a number of operations, including
