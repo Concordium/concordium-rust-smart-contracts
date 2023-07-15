@@ -1563,7 +1563,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
 
     fn account_public_keys(&self, _address: AccountAddress) -> QueryAccountPublicKeysResult {
         unimplemented!(
-            "The test infrastructure will be deprecaated and so does not implement new \
+            "The test infrastructure will be deprecated and so does not implement new \
              functionality."
         )
     }
@@ -1575,7 +1575,7 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
         _data: &[u8],
     ) -> CheckAccountSignatureResult {
         unimplemented!(
-            "The test infrastructure will be deprecaated and so does not implement new \
+            "The test infrastructure will be deprecated and so does not implement new \
              functionality."
         )
     }
