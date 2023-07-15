@@ -263,7 +263,7 @@ impl<S: HasStateApi> State<S> {
         metadata: MetadataUrl,
     ) -> ContractResult<()> {
         if let Some(mut entry) = self.credentials.get_mut(credential_id) {
-            entry.metadata_url.update(|_| metadata);
+            *entry.metadata_url = metadata;
             Ok(())
         } else {
             Err(ContractError::CredentialNotFound)
