@@ -7,6 +7,11 @@
 - Support adding `#[concordium(forward = n)]`, for enum variants, where `n` is either an unsigned integer literal, `cis2_events`, `cis3_events`, `cis4_events` or an array of the same options.
   Setting this attribute on a variant overrides the (de)serialization to flatten with the (de)serialization of the inner field when using derive macros such as `Serial`, `Deserial`, `DeserialWithState` and `SchemaType`.
   Note that setting `#[concordium(repr(u*))]` is required when using this attribute.
+- Support protocol 6 smart contract extensions. In particular the `HasHost`
+  trait is extended with two additional host operations, `account_public_keys`
+  and `check_account_signature` corresponding to the two new host functions
+  available in protocol 6. Two new types were added to support these operations,
+  `AccountSignatures` and `AccountPublicKeys`.
 
 ## concordium-std 7.0.0 (2023-06-16)
 
