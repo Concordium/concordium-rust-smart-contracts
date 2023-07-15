@@ -705,18 +705,24 @@ pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
 pub(crate) type KeyIndex = u8;
 
 #[derive(crate::Serialize, Debug, SchemaType)]
+/// A public indexed by the signature scheme. Currently only a
+/// single scheme is supported, `ed25519`.
 pub(crate) enum PublicKey {
     Ed25519(PublicKeyEd25519),
 }
 
 #[derive(crate::Serialize, Debug, SchemaType)]
-pub struct CredentialPublicKeys {
+pub(crate) struct CredentialPublicKeys {
     #[concordium(size_length = 1)]
     pub(crate) keys:      crate::collections::BTreeMap<KeyIndex, PublicKey>,
     pub(crate) threshold: SignatureThreshold,
 }
 
 #[derive(crate::Serialize, Debug, SchemaType)]
+/// Public keys of an account, together with the thresholds.
+/// This type is deliberately made opaque, but it has serialization instances
+/// since inside smart contracts there is no need to inspect the values other
+/// than to pass them to verification functions.
 pub struct AccountPublicKeys {
     #[concordium(size_length = 1)]
     pub(crate) keys:      crate::collections::BTreeMap<CredentialIndex, CredentialPublicKeys>,
@@ -726,12 +732,21 @@ pub struct AccountPublicKeys {
 pub(crate) type CredentialIndex = u8;
 
 #[derive(crate::Serialize, Debug, SchemaType)]
+#[non_exhaustive]
+/// A cryptographic signature indexed by the signature scheme. Currently only a
+/// single scheme is supported, `ed25519`.
 pub enum Signature {
     Ed25519(SignatureEd25519),
 }
 
 #[derive(crate::Serialize, Debug, SchemaType)]
 #[concordium(transparent)]
+/// Account signatures. This is an analogue of transaction signatures that are
+/// part of transactions that get sent to the chain.
+///
+/// This type is deliberately made opaque, but it has serialization instances.
+/// It should be thought of as a nested map, indexed on the outer layer by
+/// credential indexes, and the inner map maps key indices to [`Signature`]s.
 pub struct AccountSignatures {
     #[concordium(size_length = 1)]
     pub(crate) sigs: crate::collections::BTreeMap<CredentialIndex, CredentialSignatures>,
