@@ -411,6 +411,14 @@ pub trait HasHost<State>: Sized {
     fn account_public_keys(&self, address: AccountAddress) -> QueryAccountPublicKeysResult;
 
     /// Verify the signature with account's public keys.
+    ///
+    /// - `address` is the address of the account
+    /// - `signatures` is the [`AccountSignatures`] that are to be checked
+    /// - `data` is the data that the signatures are on.
+    ///
+    /// The response is an error if the account is missing, and if the
+    /// signatures were correctly parsed then it is a boolean indicating
+    /// whether the check succeeded or failed.
     fn check_account_signature(
         &self,
         address: AccountAddress,

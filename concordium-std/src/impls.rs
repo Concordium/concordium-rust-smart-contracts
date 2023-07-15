@@ -1992,7 +1992,7 @@ fn parse_query_contract_balance_response_code(
 ///   - the first 3 bytes encodes the return value index.
 /// - In case of failure the 4th byte is used, and encodes the enviroment
 ///   failure where:
-///    - '0x02' encodes missing contract.
+///    - '0x02' encodes missing account.
 fn parse_query_account_public_keys_response_code(
     code: u64,
 ) -> Result<ExternCallResponse, QueryAccountPublicKeysError> {
@@ -2009,13 +2009,15 @@ fn parse_query_account_public_keys_response_code(
     }
 }
 
-/// Decode the account public keys query response code.
+/// Decode the response from checking account signatures.
 ///
 /// - Success if the last 5 bytes are all zero:
-///   - the first 3 bytes encodes the return value index.
 /// - In case of failure the 4th byte is used, and encodes the enviroment
 ///   failure where:
-///    - '0x02' encodes missing contract.
+///    - '0x02' encodes missing account.
+///    - '0x0a' encodes malformed data, i.e., the call was made with incorrect
+///      data.
+///    - '0x0b' encodes that signature validation failed.
 fn parse_check_account_signature_response_code(
     code: u64,
 ) -> Result<bool, CheckAccountSignatureError> {
@@ -2122,6 +2124,8 @@ fn query_exchange_rates_worker() -> ExchangeRates {
     ExchangeRates::deserial(&mut response).unwrap_abort()
 }
 
+/// Helper factoring out the common behaviour of `account_public_keys` for the
+/// two extern hosts below.
 fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPublicKeysResult {
     let data: &[u8] = address.as_ref();
     let response = unsafe {

@@ -49,6 +49,7 @@ jobs:
           - examples/offchain-transfers/Cargo.toml
           - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2

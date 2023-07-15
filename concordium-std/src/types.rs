@@ -654,7 +654,14 @@ pub struct QueryAccountPublicKeysError;
 /// Error for checking an account signature.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CheckAccountSignatureError {
+    /// The account does not exist in the state.
     MissingAccount,
+    /// The signature data could not be parsed, i.e.,
+    /// we could not deserialize the signature map and the data to check the
+    /// signature against. This should typically not happen since the
+    /// `concordium-std` library prevents calls that could trigger it, but
+    /// is here for completeness since it is a possible error returned from
+    /// the node.
     MalformedData,
 }
 

@@ -8,6 +8,8 @@ the logic of the contract is reasonable, or safe.
 **Do not use these contracts as-is for anything other then experimenting.**
 
 The list of contracts is as follows
+- [account-signature-checks](./account-signature-checks) A simple contract that
+  demonstrates how account signature checks can be performed in smart contracts.
 - [two-step-transfer](./two-step-transfer) A contract that acts like an account (can send, store and accept CCD),
  but requires n > 1 ordained accounts to agree to the sending of CCD before it is accepted.
 - [auction](./auction) A contract implementing an simple auction.
