@@ -9,7 +9,7 @@ use core::fmt::Debug;
 enum Error {
     /// Failed parsing the parameter.
     #[from(ParseError)]
-    ParseParamsError,
+    ParseParams,
     /// Account that we wanted was not present.
     MissingAccount,
     /// Signature data was malformed.
