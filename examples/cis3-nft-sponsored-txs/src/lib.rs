@@ -320,25 +320,23 @@ enum CustomContractError {
     LogFull,
     /// Failed logging: Log is malformed.
     LogMalformed,
-    /// Account that we wanted was not present.
-    MissingAccount,
-    /// Signature data was malformed.
-    MalformedData,
+    /// Failed to query public key of account because account does not exist on
+    /// chain.
+    AccountDoesNotExist,
     /// Only account with one credential and one public key is supported
     OnlyAccountWithOneCredentialAndOnePublicKeySupported,
-    /// Failing to mint new tokens because one of the token IDs already exists
+    /// Failed to mint new tokens because one of the token IDs already exists
     /// in this contract.
     TokenIdAlreadyExists,
-    /// Failing to mint new token because max token_id is reached.
+    /// Failed to mint new token because max token_id is reached.
     MaxTokenID,
     /// Failed to invoke a contract.
     InvokeContractError,
-    /// Failing to update the public key of an account that already has a public
-    /// key registered.
-    AccountAlreadyRegistered,
-    /// Failing to get the public key. No public key was registered for the
-    /// given account.
-    NoPublicKey,
+    /// Failed to verify signature because signer account does not exist on
+    /// chain.
+    MissingAccount,
+    /// Failed to verify signature because data was malformed.
+    MalformedData,
     /// Failed signature verification: Invalid signature.
     WrongSignature,
     /// Failed signature verification: A different nonce is expected.
@@ -362,8 +360,8 @@ type ContractResult<A> = Result<A, ContractError>;
 
 /// Mapping CustomContractError to ContractError
 impl From<CheckAccountSignatureError> for CustomContractError {
-    fn from(c: CheckAccountSignatureError) -> Self {
-        match c {
+    fn from(e: CheckAccountSignatureError) -> Self {
+        match e {
             CheckAccountSignatureError::MissingAccount => Self::MissingAccount,
             CheckAccountSignatureError::MalformedData => Self::MalformedData,
         }
@@ -874,10 +872,8 @@ fn contract_permit<S: HasStateApi>(
     let message_hash = contract_view_message_hash(ctx, host, crypto_primitives)?;
 
     // Check signature.
-    // TODO: The `unwrap` should be replaced by `?` but currently it produces an
-    // error that from trait is not correctly implemented.
     let valid_signature =
-        host.check_account_signature(param.signer, &param.signature, &message_hash).unwrap();
+        host.check_account_signature(param.signer, &param.signature, &message_hash)?;
     ensure!(valid_signature, CustomContractError::WrongSignature.into());
 
     if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
@@ -1045,75 +1041,103 @@ fn contract_balance_of<S: HasStateApi>(
         let amount = host.state().balance(&query.token_id, &query.address)?;
         response.push(amount);
     }
-    let result = ContractBalanceOfQueryResponse::from(response);
-    Ok(result)
+    Ok(ContractBalanceOfQueryResponse::from(response))
 }
 
 /// Response type for the function `publicKeyOf`.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct ContractPublicKeyQueryResponse(
-    #[concordium(size_length = 2)] pub Vec<Option<(PublicKeyEd25519, u64)>>,
+pub struct PublicKeyOfQueryResponse(
+    #[concordium(size_length = 2)] pub Vec<Option<AccountPublicKeys>>,
 );
 
-impl From<Vec<Option<(PublicKeyEd25519, u64)>>> for ContractPublicKeyQueryResponse {
-    fn from(results: concordium_std::Vec<Option<(concordium_std::PublicKeyEd25519, u64)>>) -> Self {
-        ContractPublicKeyQueryResponse(results)
+impl From<Vec<Option<AccountPublicKeys>>> for PublicKeyOfQueryResponse {
+    fn from(results: concordium_std::Vec<Option<AccountPublicKeys>>) -> Self {
+        PublicKeyOfQueryResponse(results)
     }
 }
 
 /// The parameter type for the contract function `publicKeyOf`. A query for the
 /// public key and nonce of a given account.
-// type ContractPublicKeyQueryParams = PublicKeyOfQueryParams;
-
-/// The parameter type for the contract function `publicKeyOf`. A query for the
-/// public key and nonce of a given account.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct PublicKeyOfQueryParams {
+pub struct VecOfAccountAddresses {
     /// List of public key queries.
     #[concordium(size_length = 2)]
-    pub queries: Vec<PublicKeyQuery>,
+    pub queries: Vec<AccountAddressStruct>,
 }
 
 /// Part of the parameter type for the contract function `publicKeyOf`.
 #[derive(Debug, Serialize, SchemaType)]
-pub struct PublicKeyQuery {
+pub struct AccountAddressStruct {
     /// The account for which the public key and nonce should be queried.
     pub account: AccountAddress,
 }
 
-/// Get the public keys and noces of accounts.
+/// Get the public keys of accounts. `None` is returned if the account does not
+/// exist on chain.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-// #[receive(
-//     contract = "cis3_nft",
-//     name = "publicKeyOf",
-//     parameter = "ContractPublicKeyQueryParams",
-//     return_value = "ContractPublicKeyQueryResponse",
-//     error = "ContractError"
-// )]
-// fn contract_public_key_of<S: HasStateApi>(
-//     ctx: &impl HasReceiveContext,
-//     host: &impl HasHost<State<S>, StateApiType = S>,
-// ) -> ContractResult<ContractPublicKeyQueryResponse> {
-//     // Parse the parameter.
-//     let params: ContractPublicKeyQueryParams = ctx.parameter_cursor().get()?;
-//     // Build the response.
-//     let mut response: Vec<Option<(PublicKeyEd25519, u64)>> =
-//         Vec::with_capacity(params.queries.len());
-//     for query in params.queries {
-//         // Query the state for the public_key and nonce.
-//         let entry = host
-//             .state()
-//             .public_key_registry
-//             .get(&query.account)
-//             .map(|registry_entry| (registry_entry.0, registry_entry.1));
+#[receive(
+    contract = "cis3_nft",
+    name = "publicKeyOf",
+    parameter = "VecOfAccountAddresses",
+    return_value = "PublicKeyOfQueryResponse",
+    error = "ContractError"
+)]
+fn contract_public_key_of<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<PublicKeyOfQueryResponse> {
+    // Parse the parameter.
+    let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response: Vec<Option<AccountPublicKeys>> = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
+        // Query the public_key.
+        let public_keys = host.account_public_keys(query.account).ok();
 
-//         response.push(entry);
-//     }
-//     let result = ContractPublicKeyQueryResponse::from(response);
-//     Ok(result)
-// }
+        response.push(public_keys);
+    }
+    let result = PublicKeyOfQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Response type for the function `nonceOf`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct NonceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<u64>);
+
+impl From<Vec<u64>> for NonceOfQueryResponse {
+    fn from(results: concordium_std::Vec<u64>) -> Self { NonceOfQueryResponse(results) }
+}
+
+/// Get the nonces of accounts.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis3_nft",
+    name = "nonceOf",
+    parameter = "VecOfAccountAddresses",
+    return_value = "NonceOfQueryResponse",
+    error = "ContractError"
+)]
+fn contract_nonce_of<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<NonceOfQueryResponse> {
+    // Parse the parameter.
+    let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response: Vec<u64> = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
+        // Query the next nonce.
+        let nonce =
+            host.state().nonces_registry.get(&query.account).map(|nonce| *nonce).unwrap_or(0);
+
+        response.push(nonce);
+    }
+    Ok(NonceOfQueryResponse::from(response))
+}
 
 /// Parameter type for the CIS-2 function `tokenMetadata` specialized to the
 /// subset of TokenIDs used by this contract.

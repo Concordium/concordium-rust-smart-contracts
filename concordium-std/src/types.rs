@@ -704,29 +704,29 @@ pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
 
 pub(crate) type KeyIndex = u8;
 
-#[derive(crate::Serialize, Debug, SchemaType)]
+#[derive(crate::Serialize, Debug, SchemaType, PartialEq, Eq)]
 /// A public indexed by the signature scheme. Currently only a
 /// single scheme is supported, `ed25519`.
-pub(crate) enum PublicKey {
+pub enum PublicKey {
     Ed25519(PublicKeyEd25519),
 }
 
-#[derive(crate::Serialize, Debug, SchemaType)]
-pub(crate) struct CredentialPublicKeys {
+#[derive(crate::Serialize, Debug, SchemaType, PartialEq, Eq)]
+pub struct CredentialPublicKeys {
     #[concordium(size_length = 1)]
-    pub(crate) keys:      crate::collections::BTreeMap<KeyIndex, PublicKey>,
-    pub(crate) threshold: SignatureThreshold,
+    pub keys:      crate::collections::BTreeMap<KeyIndex, PublicKey>,
+    pub threshold: SignatureThreshold,
 }
 
-#[derive(crate::Serialize, Debug, SchemaType)]
+#[derive(crate::Serialize, Debug, SchemaType, PartialEq, Eq)]
 /// Public keys of an account, together with the thresholds.
 /// This type is deliberately made opaque, but it has serialization instances
 /// since inside smart contracts there is no need to inspect the values other
 /// than to pass them to verification functions.
 pub struct AccountPublicKeys {
     #[concordium(size_length = 1)]
-    pub(crate) keys:      crate::collections::BTreeMap<CredentialIndex, CredentialPublicKeys>,
-    pub(crate) threshold: AccountThreshold,
+    pub keys:      crate::collections::BTreeMap<CredentialIndex, CredentialPublicKeys>,
+    pub threshold: AccountThreshold,
 }
 
 pub(crate) type CredentialIndex = u8;
