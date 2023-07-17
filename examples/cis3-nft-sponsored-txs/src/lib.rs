@@ -93,12 +93,12 @@ enum Event {
 
 /// The NonceEvent is logged when the `permit` function is invoked. The event
 /// tracks the nonce used by the signer of the `PermitMessage`.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct NonceEvent {
     /// Account that signed the `PermitMessage`.
-    account: AccountAddress,
+    pub account: AccountAddress,
     /// The nonce that was used in the `PermitMessage`.
-    nonce:   u64,
+    pub nonce:   u64,
 }
 
 // Implementing a custom schemaType to the `Event` combining all CIS2/CIS3
@@ -179,12 +179,12 @@ impl schema::SchemaType for Event {
 
 /// Contract token ID type.
 /// To save bytes we use a token ID type limited to a `u32`.
-type ContractTokenId = TokenIdU32;
+pub type ContractTokenId = TokenIdU32;
 
 /// Contract token amount.
 /// Since the tokens are non-fungible the total supply of any token will be at
 /// most 1 and it is fine to use a small type for representing token amounts.
-type ContractTokenAmount = TokenAmountU8;
+pub type ContractTokenAmount = TokenAmountU8;
 
 /// The parameter for the contract function `mint` which mints one
 /// token to a given address.
