@@ -1,6 +1,9 @@
 //! This module contains integration tests for the cis3-sponsored-transaction
 //! contract. To run them, use `cargo test`.
-use cis3_nft_sponsored_txs::{MintParams, PermitMessage, PermitParam};
+use cis3_nft_sponsored_txs::{
+    ContractTokenAmount, ContractTokenId, MintParams, NonceEvent, PermitMessage, PermitParam,
+    NONCE_EVENT_TAG,
+};
 use concordium_cis2::{TokenIdU32, *};
 use concordium_smart_contract_testing::*;
 use concordium_std::{AccountSignatures, CredentialSignatures, SignatureEd25519, Timestamp};
@@ -33,8 +36,6 @@ const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
     101, 101, 155, 226, 130, 77, 47, 243, 161, 219, 100, 208, 106, 109, 102, 189, 171, 159, 22,
     179, 148, 0,
 ]);
-
-type ContractTokenAmount = TokenAmountU8;
 
 /// A helper method for setting up:
 ///  - The chain,
@@ -129,7 +130,7 @@ fn test_permit_transfer() {
     };
 
     // Mint token.
-    let update = chain
+    let _ = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
@@ -159,9 +160,8 @@ fn test_permit_transfer() {
         queries: vec![balance_of_query, balance_of_query2],
     };
 
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
+    let invoke = chain
+        .contract_invoke(
             ACC_ADDR_OWNER,
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
@@ -176,7 +176,7 @@ fn test_permit_transfer() {
         .expect("Should be able to balanceOf");
 
     let balance_of: BalanceOfQueryResponse<ContractTokenAmount> =
-        from_bytes(&update.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("View should always return a valid result");
 
     assert_eq!(balance_of.0, [TokenAmountU8(0), TokenAmountU8(1)]);
 
@@ -215,7 +215,7 @@ fn test_permit_transfer() {
     };
 
     // Transfer token with the permit function.
-    let _ = chain
+    let update = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
@@ -231,6 +231,49 @@ fn test_permit_transfer() {
         )
         .expect("Should be able to transfer token with permit");
 
+    // Check logged events.
+    let events: Vec<(ContractAddress, &[ContractEvent])> = update.events().collect();
+
+    // Check transfer event.
+    let transfer_event = &events[0].1[0];
+
+    // Check event tag.
+    assert_eq!(transfer_event.as_ref()[0], TRANSFER_EVENT_TAG, "Transfer event tag is wrong");
+
+    // We remove the tag byte at the beginning of the event.
+    let transfer_event_type: TransferEvent<ContractTokenId, ContractTokenAmount> =
+        from_bytes(&transfer_event.as_ref()[1..]).expect("Tag removal should work");
+
+    assert_eq!(
+        transfer_event_type,
+        TransferEvent {
+            token_id: TOKEN_1,
+            amount:   ContractTokenAmount::from(1),
+            from:     ADDR_OTHER,
+            to:       ADDR_OWNER,
+        },
+        "Transfer event is wrong"
+    );
+
+    // Check nonce event.
+    let nonce_event = &events[0].1[1];
+
+    // Check event tag.
+    assert_eq!(nonce_event.as_ref()[0], NONCE_EVENT_TAG, "Nonce event tag is wrong");
+
+    // We remove the tag byte at the beginning of the event.
+    let nonce_event_type: NonceEvent =
+        from_bytes(&nonce_event.as_ref()[1..]).expect("Tag removal should work");
+
+    assert_eq!(
+        nonce_event_type,
+        NonceEvent {
+            account: ACC_ADDR_OTHER,
+            nonce:   0,
+        },
+        "Nonce event is wrong"
+    );
+
     // Check balances in state
     let balance_of_query = BalanceOfQuery {
         token_id: TOKEN_1,
@@ -245,9 +288,8 @@ fn test_permit_transfer() {
         queries: vec![balance_of_query, balance_of_query2],
     };
 
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
+    let invoke = chain
+        .contract_invoke(
             ACC_ADDR_OWNER,
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
@@ -262,7 +304,7 @@ fn test_permit_transfer() {
         .expect("Should be able to balanceOf");
 
     let balance_of: BalanceOfQueryResponse<ContractTokenAmount> =
-        from_bytes(&update.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("View should always return a valid result");
 
     assert_eq!(balance_of.0, [TokenAmountU8(1), TokenAmountU8(0)]);
 }
@@ -283,9 +325,8 @@ fn test_update_operator() {
     };
 
     // Check operator in state
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
+    let invoke = chain
+        .contract_invoke(
             ACC_ADDR_OWNER,
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
@@ -300,7 +341,7 @@ fn test_update_operator() {
         .expect("Should be able to query operatorOf");
 
     let is_operator_of: OperatorOfQueryResponse =
-        from_bytes(&update.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("View should always return a valid result");
 
     assert_eq!(is_operator_of.0, [false]);
 
@@ -337,7 +378,7 @@ fn test_update_operator() {
     };
 
     // Update operator with the permit function.
-    let _ = chain
+    let update = chain
         .contract_update(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
@@ -353,6 +394,52 @@ fn test_update_operator() {
         )
         .expect("Should be able to update operator with permit");
 
+    // Check logged events.
+    let events: Vec<(ContractAddress, &[ContractEvent])> = update.events().collect();
+
+    // Check update operator event.
+    let update_operator_event = &events[0].1[0];
+
+    // Check event tag
+    assert_eq!(
+        update_operator_event.as_ref()[0],
+        UPDATE_OPERATOR_EVENT_TAG,
+        "Update operator event tag is wrong"
+    );
+
+    // We remove the tag byte at the beginning of the event.
+    let update_operator_event_type: UpdateOperatorEvent =
+        from_bytes(&update_operator_event.as_ref()[1..]).expect("Tag removal should work");
+
+    assert_eq!(
+        update_operator_event_type,
+        UpdateOperatorEvent {
+            update:   OperatorUpdate::Add,
+            owner:    ADDR_OTHER,
+            operator: ADDR_OWNER,
+        },
+        "Update operator event is wrong"
+    );
+
+    // Check nonce event.
+    let nonce_event = &events[0].1[1];
+
+    // Check event tag
+    assert_eq!(nonce_event.as_ref()[0], NONCE_EVENT_TAG, "Nonce event tag is wrong");
+
+    // We remove the tag byte at the beginning of the event.
+    let nonce_event_type: NonceEvent =
+        from_bytes(&nonce_event.as_ref()[1..]).expect("Tag removal should work");
+
+    assert_eq!(
+        nonce_event_type,
+        NonceEvent {
+            account: ACC_ADDR_OTHER,
+            nonce:   0,
+        },
+        "Nonce event is wrong"
+    );
+
     // Check operator in state
     let operator_of_query = OperatorOfQuery {
         address: ADDR_OWNER,
@@ -364,9 +451,8 @@ fn test_update_operator() {
     };
 
     // Check operator in state
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
+    let invoke = chain
+        .contract_invoke(
             ACC_ADDR_OWNER,
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
@@ -381,7 +467,7 @@ fn test_update_operator() {
         .expect("Should be able to query operatorOf");
 
     let is_operator_of: OperatorOfQueryResponse =
-        from_bytes(&update.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("View should always return a valid result");
 
     assert_eq!(is_operator_of.0, [true])
 }
