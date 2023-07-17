@@ -1,18 +1,23 @@
 //! This module contains integration tests for the cis3-sponsored-transaction
 //! contract. To run them, use `cargo test`.
 use cis3_nft_sponsored_txs::{
-    ContractTokenAmount, ContractTokenId, MintParams, NonceEvent, PermitMessage, PermitParam,
-    NONCE_EVENT_TAG,
+    AccountAddressStruct, ContractTokenAmount, ContractTokenId, MintParams, NonceEvent,
+    NonceOfQueryResponse, PermitMessage, PermitParam, PublicKeyOfQueryResponse,
+    VecOfAccountAddresses, NONCE_EVENT_TAG,
 };
 use concordium_cis2::{TokenIdU32, *};
-use concordium_smart_contract_testing::*;
-use concordium_std::{AccountSignatures, CredentialSignatures, SignatureEd25519, Timestamp};
+use concordium_smart_contract_testing::{AccountAccessStructure, *};
+use concordium_std::{
+    AccountPublicKeys, AccountSignatures, CredentialSignatures, PublicKey, SignatureEd25519,
+    Timestamp,
+};
 use std::collections::BTreeMap;
 
 const ACC_ADDR_OWNER: AccountAddress = AccountAddress([0u8; 32]);
 const ADDR_OWNER: Address = Address::Account(ACC_ADDR_OWNER);
 const ACC_ADDR_OTHER: AccountAddress = AccountAddress([1u8; 32]);
 const ADDR_OTHER: Address = Address::Account(ACC_ADDR_OTHER);
+const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 
 const TOKEN_1: TokenIdU32 = TokenIdU32(1);
@@ -61,10 +66,7 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
 
     let credential_public_keys = CredentialPublicKeys {
         keys:      inner_key_map,
-        threshold: SignatureThreshold {
-            threshold: 1,
-            kind:      std::marker::PhantomData,
-        },
+        threshold: SignatureThreshold::ONE,
     };
 
     let mut key_map: BTreeMap<CredentialIndex, CredentialPublicKeys> = BTreeMap::new();
@@ -77,10 +79,7 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
 
     let keys = AccountAccessStructure {
         keys:      key_map,
-        threshold: AccountThreshold {
-            threshold: 1,
-            kind:      std::marker::PhantomData,
-        },
+        threshold: AccountThreshold::ONE,
     };
     chain.create_account(Account::new_with_keys(ACC_ADDR_OTHER, balance, keys));
     chain.create_account(Account::new(ACC_ADDR_OWNER, ACC_INITIAL_BALANCE));
@@ -117,6 +116,174 @@ fn test_init() {
         Some(Amount::zero()),
         "Contract should be initilized with 0 CCD"
     );
+}
+
+/// Test `nonceOf` query. We check that the nonce of `ACC_ADDR_OTHER` is 1 when
+/// the account already sent one sponsored transaction. We check that the nonce
+/// of `ACC_ADDR_OWNER` is 0 when the account did not send any sponsored
+/// transaction. We check that the nonce of `NON_EXISTING_ACCOUNT` is 0.
+#[test]
+fn test_nonce_of_query() {
+    let (mut chain, initialization) = setup_chain_and_contract();
+
+    // To increase the nonce of account `ACC_ADDR_OTHER`, we invoke the
+    // `update_permit` function with a valid signature from account
+    // `ACC_ADDR_OTHER`.
+
+    // Create input parematers for the `permit` updateOperator function.
+    let update_operator = UpdateOperator {
+        update:   OperatorUpdate::Add,
+        operator: ADDR_OWNER,
+    };
+    let payload = UpdateOperatorParams(vec![update_operator]);
+
+    let mut inner_signature_map = BTreeMap::new();
+    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(SIGNATURE_UPDATE_OPERATOR));
+
+    let mut signature_map = BTreeMap::new();
+    signature_map.insert(0u8, CredentialSignatures {
+        sigs: inner_signature_map,
+    });
+
+    let permit_update_operator_param = PermitParam {
+        signature: AccountSignatures {
+            sigs: signature_map,
+        },
+        signer:    ACC_ADDR_OTHER,
+        message:   PermitMessage {
+            timestamp:        Timestamp::from_timestamp_millis(10000000000),
+            contract_address: ContractAddress {
+                index:    0,
+                subindex: 0,
+            },
+            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce:            0,
+            payload:          to_bytes(&payload),
+        },
+    };
+
+    // Update operator with the permit function.
+    let _ = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      initialization.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
+                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to update operator with permit");
+
+    // Check if correct nonces are returned by the `nonceOf` function.
+    let nonce_query_vector = VecOfAccountAddresses {
+        queries: vec![
+            AccountAddressStruct {
+                account: ACC_ADDR_OTHER,
+            },
+            AccountAddressStruct {
+                account: ACC_ADDR_OWNER,
+            },
+            AccountAddressStruct {
+                account: NON_EXISTING_ACCOUNT,
+            },
+        ],
+    };
+
+    let invoke = chain
+        .contract_invoke(
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      initialization.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.nonceOf".to_string()),
+                message:      OwnedParameter::from_serial(&nonce_query_vector)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to query publicKeyOf");
+
+    let nonces: NonceOfQueryResponse =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    assert_eq!(
+        nonces.0[0], 1,
+        "Nonce of ACC_ADDR_OTHER should be 1 because the account already sent one sponsored \
+         transaction"
+    );
+    assert_eq!(
+        nonces.0[1], 0,
+        "Nonce of ACC_ADDR_OWNER should be 0 because the account did not send any sponsored \
+         transaction"
+    );
+    assert_eq!(nonces.0[2], 0, "Nonce of non-existing account should be 0");
+}
+
+/// Test `publicKeyOf` query. `ACC_ADDR_OTHER` should have its correct keys
+/// returned. `NON_EXISTING_ACCOUNT` should have `None` returned because it does
+/// not exist on chain.
+#[test]
+fn test_public_key_of_query() {
+    let (chain, initialization) = setup_chain_and_contract();
+
+    let public_key_of_query_vector = VecOfAccountAddresses {
+        queries: vec![
+            AccountAddressStruct {
+                account: ACC_ADDR_OTHER,
+            },
+            AccountAddressStruct {
+                account: NON_EXISTING_ACCOUNT,
+            },
+        ],
+    };
+
+    let invoke = chain
+        .contract_invoke(
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      initialization.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.publicKeyOf".to_string()),
+                message:      OwnedParameter::from_serial(&public_key_of_query_vector)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to query publicKeyOf");
+
+    let public_keys_of: PublicKeyOfQueryResponse =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    let mut inner_key_map: BTreeMap<u8, PublicKey> = BTreeMap::new();
+
+    inner_key_map.insert(0u8, PublicKey::Ed25519(concordium_std::PublicKeyEd25519(PUBLIC_KEY)));
+
+    let credential_public_keys = concordium_std::CredentialPublicKeys {
+        keys:      inner_key_map,
+        threshold: SignatureThreshold::ONE,
+    };
+
+    let mut key_map: BTreeMap<u8, concordium_std::CredentialPublicKeys> = BTreeMap::new();
+    key_map.insert(0u8, credential_public_keys);
+
+    let account_public_keys: AccountPublicKeys = AccountPublicKeys {
+        keys:      key_map,
+        threshold: AccountThreshold::ONE,
+    };
+
+    assert_eq!(
+        public_keys_of.0[0],
+        Some(account_public_keys),
+        "An existing account should have correct public keys returned"
+    );
+    assert!(public_keys_of.0[1].is_none(), "Non existing account should have no public keys");
 }
 
 /// Permit transfer function.
@@ -173,10 +340,10 @@ fn test_permit_transfer() {
                     .expect("Should be a valid inut parameter"),
             },
         )
-        .expect("Should be able to balanceOf");
+        .expect("Should be able to query balanceOf");
 
     let balance_of: BalanceOfQueryResponse<ContractTokenAmount> =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
 
     assert_eq!(balance_of.0, [TokenAmountU8(0), TokenAmountU8(1)]);
 
@@ -275,17 +442,17 @@ fn test_permit_transfer() {
     );
 
     // Check balances in state
-    let balance_of_query = BalanceOfQuery {
+    let balance_of_query_owner = BalanceOfQuery {
         token_id: TOKEN_1,
         address:  ADDR_OWNER,
     };
-    let balance_of_query2 = BalanceOfQuery {
+    let balance_of_query_other = BalanceOfQuery {
         token_id: TOKEN_1,
         address:  ADDR_OTHER,
     };
 
     let balance_of_query_vector = BalanceOfQueryParams {
-        queries: vec![balance_of_query, balance_of_query2],
+        queries: vec![balance_of_query_owner, balance_of_query_other],
     };
 
     let invoke = chain
@@ -301,10 +468,10 @@ fn test_permit_transfer() {
                     .expect("Should be a valid inut parameter"),
             },
         )
-        .expect("Should be able to balanceOf");
+        .expect("Should be able to query balanceOf");
 
     let balance_of: BalanceOfQueryResponse<ContractTokenAmount> =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
 
     assert_eq!(balance_of.0, [TokenAmountU8(1), TokenAmountU8(0)]);
 }
@@ -341,7 +508,7 @@ fn test_update_operator() {
         .expect("Should be able to query operatorOf");
 
     let is_operator_of: OperatorOfQueryResponse =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
 
     assert_eq!(is_operator_of.0, [false]);
 
@@ -400,7 +567,7 @@ fn test_update_operator() {
     // Check update operator event.
     let update_operator_event = &events[0].1[0];
 
-    // Check event tag
+    // Check event tag.
     assert_eq!(
         update_operator_event.as_ref()[0],
         UPDATE_OPERATOR_EVENT_TAG,
@@ -424,7 +591,7 @@ fn test_update_operator() {
     // Check nonce event.
     let nonce_event = &events[0].1[1];
 
-    // Check event tag
+    // Check event tag.
     assert_eq!(nonce_event.as_ref()[0], NONCE_EVENT_TAG, "Nonce event tag is wrong");
 
     // We remove the tag byte at the beginning of the event.
@@ -467,7 +634,7 @@ fn test_update_operator() {
         .expect("Should be able to query operatorOf");
 
     let is_operator_of: OperatorOfQueryResponse =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
 
     assert_eq!(is_operator_of.0, [true])
 }

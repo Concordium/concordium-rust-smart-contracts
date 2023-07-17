@@ -974,6 +974,24 @@ where
     fn from(err: NewReceiveNameError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
+impl<X> From<CheckAccountSignatureError> for Cis2Error<X>
+where
+    X: From<CheckAccountSignatureError>,
+{
+    #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
+    fn from(err: CheckAccountSignatureError) -> Self { Cis2Error::Custom(X::from(err)) }
+}
+
+impl<X> From<QueryAccountPublicKeysError> for Cis2Error<X>
+where
+    X: From<QueryAccountPublicKeysError>,
+{
+    #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
+    fn from(err: QueryAccountPublicKeysError) -> Self { Cis2Error::Custom(X::from(err)) }
+}
+
 impl<X> From<NewContractNameError> for Cis2Error<X>
 where
     X: From<NewContractNameError>,
