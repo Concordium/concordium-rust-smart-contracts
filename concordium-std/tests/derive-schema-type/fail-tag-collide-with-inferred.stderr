@@ -1,0 +1,11 @@
+error: The tag of 'Two' collides with the tag of 'One'.
+ --> tests/derive-schema-type/fail-tag-collide-with-inferred.rs:9:18
+  |
+9 |     #[concordium(tag = 0)]
+  |                  ^^^
+
+error: The tag of 'One' collides with the tag of 'Two'.
+ --> tests/derive-schema-type/fail-tag-collide-with-inferred.rs:8:5
+  |
+8 |     One,
+  |     ^^^

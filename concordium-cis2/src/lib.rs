@@ -779,22 +779,29 @@ pub struct TokenMetadataEvent<T: IsTokenId> {
 }
 
 /// Tagged CIS2 event to be serialized for the event log.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[concordium(repr(u8))]
 pub enum Cis2Event<T: IsTokenId, A: IsTokenAmount> {
     /// A transfer between two addresses of some amount of tokens.
+    #[concordium(tag = 255)]
     Transfer(TransferEvent<T, A>),
     /// Creation of new tokens, could be both adding some amounts to an existing
     /// token or introduce an entirely new token ID.
+    #[concordium(tag = 254)]
     Mint(MintEvent<T, A>),
     /// Destruction of tokens removing some amounts of a token.
+    #[concordium(tag = 253)]
     Burn(BurnEvent<T, A>),
     /// Updates to an operator for a specific address and token id.
+    #[concordium(tag = 252)]
     UpdateOperator(UpdateOperatorEvent),
     /// Setting the metadata for a token.
+    #[concordium(tag = 251)]
     TokenMetadata(TokenMetadataEvent<T>),
 }
 
-// Implemented manually to specify the discriminating tag.
+// Implemented manually to use named fields in the schema thereby simplifying
+// it.
 impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
@@ -854,51 +861,6 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
             ),
         );
         schema::Type::TaggedEnum(event_map)
-    }
-}
-
-impl<T: IsTokenId, A: IsTokenAmount> Serial for Cis2Event<T, A> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        match self {
-            Cis2Event::Transfer(event) => {
-                out.write_u8(TRANSFER_EVENT_TAG)?;
-                event.serial(out)
-            }
-            Cis2Event::Mint(event) => {
-                out.write_u8(MINT_EVENT_TAG)?;
-                event.serial(out)
-            }
-            Cis2Event::Burn(event) => {
-                out.write_u8(BURN_EVENT_TAG)?;
-                event.serial(out)
-            }
-            Cis2Event::UpdateOperator(event) => {
-                out.write_u8(UPDATE_OPERATOR_EVENT_TAG)?;
-                event.serial(out)
-            }
-            Cis2Event::TokenMetadata(event) => {
-                out.write_u8(TOKEN_METADATA_EVENT_TAG)?;
-                event.serial(out)
-            }
-        }
-    }
-}
-
-impl<T: IsTokenId, A: IsTokenAmount> Deserial for Cis2Event<T, A> {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let tag = source.read_u8()?;
-        match tag {
-            TRANSFER_EVENT_TAG => TransferEvent::<T, A>::deserial(source).map(Cis2Event::Transfer),
-            MINT_EVENT_TAG => MintEvent::<T, A>::deserial(source).map(Cis2Event::Mint),
-            BURN_EVENT_TAG => BurnEvent::<T, A>::deserial(source).map(Cis2Event::Burn),
-            UPDATE_OPERATOR_EVENT_TAG => {
-                UpdateOperatorEvent::deserial(source).map(Cis2Event::UpdateOperator)
-            }
-            TOKEN_METADATA_EVENT_TAG => {
-                TokenMetadataEvent::<T>::deserial(source).map(Cis2Event::TokenMetadata)
-            }
-            _ => Err(ParseError::default()),
-        }
     }
 }
 

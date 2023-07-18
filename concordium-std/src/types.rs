@@ -1,7 +1,10 @@
+use crate as concordium_std;
 use crate::{
     cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
-use concordium_contracts_common::{AccountBalance, Amount, ParseError};
+use concordium_contracts_common::{
+    AccountBalance, AccountThreshold, Amount, ParseError, SchemaType, SignatureThreshold,
+};
 use core::{fmt, str::FromStr};
 // Re-export for backward compatibility.
 pub use concordium_contracts_common::ExchangeRates;
@@ -643,6 +646,25 @@ pub struct QueryAccountBalanceError;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct QueryContractBalanceError;
 
+/// Error for querying account's public keys.
+/// No account found for the provided account address.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct QueryAccountPublicKeysError;
+
+/// Error for checking an account signature.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CheckAccountSignatureError {
+    /// The account does not exist in the state.
+    MissingAccount,
+    /// The signature data could not be parsed, i.e.,
+    /// we could not deserialize the signature map and the data to check the
+    /// signature against. This should typically not happen since the
+    /// `concordium-std` library prevents calls that could trigger it, but
+    /// is here for completeness since it is a possible error returned from
+    /// the node.
+    MalformedData,
+}
+
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`CallContractError`], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
@@ -671,6 +693,71 @@ pub type QueryAccountBalanceResult = Result<AccountBalance, QueryAccountBalanceE
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`QueryContractBalanceError`] and result to [`Amount`].
 pub type QueryContractBalanceResult = Result<Amount, QueryContractBalanceError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryAccountPublicKeysError`] and result to [`AccountPublicKeys`].
+pub type QueryAccountPublicKeysResult = Result<AccountPublicKeys, QueryAccountPublicKeysError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`CheckAccountSignatureError`] and result to [`bool`].
+pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
+
+pub(crate) type KeyIndex = u8;
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+/// A public indexed by the signature scheme. Currently only a
+/// single scheme is supported, `ed25519`.
+pub(crate) enum PublicKey {
+    Ed25519(PublicKeyEd25519),
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+pub(crate) struct CredentialPublicKeys {
+    #[concordium(size_length = 1)]
+    pub(crate) keys:      crate::collections::BTreeMap<KeyIndex, PublicKey>,
+    pub(crate) threshold: SignatureThreshold,
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+/// Public keys of an account, together with the thresholds.
+/// This type is deliberately made opaque, but it has serialization instances
+/// since inside smart contracts there is no need to inspect the values other
+/// than to pass them to verification functions.
+pub struct AccountPublicKeys {
+    #[concordium(size_length = 1)]
+    pub(crate) keys:      crate::collections::BTreeMap<CredentialIndex, CredentialPublicKeys>,
+    pub(crate) threshold: AccountThreshold,
+}
+
+pub(crate) type CredentialIndex = u8;
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+#[non_exhaustive]
+/// A cryptographic signature indexed by the signature scheme. Currently only a
+/// single scheme is supported, `ed25519`.
+pub enum Signature {
+    Ed25519(SignatureEd25519),
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+#[concordium(transparent)]
+/// Account signatures. This is an analogue of transaction signatures that are
+/// part of transactions that get sent to the chain.
+///
+/// This type is deliberately made opaque, but it has serialization instances.
+/// It should be thought of as a nested map, indexed on the outer layer by
+/// credential indexes, and the inner map maps key indices to [`Signature`]s.
+pub struct AccountSignatures {
+    #[concordium(size_length = 1)]
+    pub(crate) sigs: crate::collections::BTreeMap<CredentialIndex, CredentialSignatures>,
+}
+
+#[derive(crate::Serialize, Debug, SchemaType)]
+#[concordium(transparent)]
+pub(crate) struct CredentialSignatures {
+    #[concordium(size_length = 1)]
+    sigs: crate::collections::BTreeMap<KeyIndex, Signature>,
+}
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]
