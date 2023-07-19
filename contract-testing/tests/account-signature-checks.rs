@@ -118,7 +118,7 @@ fn test() {
             UpdateContractPayload {
                 address:      res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.check_signature".into()),
-                message:      OwnedParameter::from_serial(&(ACC_0, &signatures, data))
+                message:      OwnedParameter::from_serial(&(ACC_0, data, &signatures))
                     .expect("Enough space."),
                 amount:       Amount::zero(),
             },
