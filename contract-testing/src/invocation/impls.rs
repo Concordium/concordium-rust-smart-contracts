@@ -1416,10 +1416,11 @@ fn deserial_signature_and_data_from_contract(
     // trait.
     use concordium_base::contracts_common::Deserial;
     let mut source = concordium_base::contracts_common::Cursor::new(payload);
-
-    let signatures = AccountSignatures::deserial(&mut source)?;
     let data_len = u32::deserial(&mut source)?;
-    Ok((signatures, &payload[source.offset..][..data_len as usize]))
+    let data = &payload[source.offset..][..data_len as usize];
+    source.offset += data_len as usize;
+    let signatures = AccountSignatures::deserial(&mut source)?;
+    Ok((signatures, data))
 }
 
 impl ChangeSet {
@@ -1505,7 +1506,7 @@ impl ChangeSet {
 
         // Then persist all the changes.
         for (addr, changes) in current.contracts.iter_mut() {
-            let mut contract = persisted_contracts
+            let contract = persisted_contracts
                 .get_mut(addr)
                 .expect("Precondition violation: contract must exist");
             // Update balance.
@@ -1532,7 +1533,7 @@ impl ChangeSet {
         }
         // Persist account changes.
         for (addr, changes) in current.accounts.iter() {
-            let mut account = persisted_accounts
+            let account = persisted_accounts
                 .get_mut(addr)
                 .expect("Precondition violation: account must exist");
             // Update balance.
