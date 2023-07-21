@@ -1316,9 +1316,7 @@ pub struct TestHost<State> {
     missing_contracts:       BTreeSet<ContractAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State>
-    for TestHost<State>
-{
+impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -1810,20 +1808,20 @@ impl<State: DeserialWithState<TestStateApi>> TestHost<State> {
             .read_root()
             .expect_report("Could not deserialize root entry from state clone");
         Self {
-            mocking_fns:             self.mocking_fns.clone(),
-            transfers:               self.transfers.clone(),
-            contract_balance:        self.contract_balance.clone(),
-            contract_address:        self.contract_address,
-            mocking_upgrades:        self.mocking_upgrades.clone(),
-            state_builder:           StateBuilder {
-                state_api: cloned_state_api.clone(),
+            mocking_fns: self.mocking_fns.clone(),
+            transfers: self.transfers.clone(),
+            contract_balance: self.contract_balance.clone(),
+            contract_address: self.contract_address,
+            mocking_upgrades: self.mocking_upgrades.clone(),
+            state_builder: StateBuilder {
+                state_api: cloned_state_api,
             },
             state,
-            missing_accounts:        self.missing_accounts.clone(),
-            missing_contracts:       self.missing_contracts.clone(),
-            query_account_balances:  self.query_account_balances.clone(),
+            missing_accounts: self.missing_accounts.clone(),
+            missing_contracts: self.missing_contracts.clone(),
+            query_account_balances: self.query_account_balances.clone(),
             query_contract_balances: self.query_contract_balances.clone(),
-            query_exchange_rates:    self.query_exchange_rates,
+            query_exchange_rates: self.query_exchange_rates,
         }
     }
 
@@ -1913,16 +1911,16 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 #[cfg(test)]
 mod test {
     use super::TestStateApi;
+    #[allow(deprecated)]
+    use crate::StateClone;
     use crate::{
         cell::RefCell,
         rc::Rc,
         test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox,
-        StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox, StateMap,
+        StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Cursor, Deserial, Read, Seek, SeekFrom, Write};
-    #[allow(deprecated)]
-    use crate::StateClone;
 
     #[test]
     fn test_testhost_balance_queries_reflect_transfers() {
