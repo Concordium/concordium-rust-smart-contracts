@@ -1316,7 +1316,7 @@ pub struct TestHost<State> {
     missing_contracts:       BTreeSet<ContractAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
+impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State>
     for TestHost<State>
 {
     type ReturnValueType = Cursor<Vec<u8>>;
@@ -1800,12 +1800,15 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-impl<State: StateClone<TestStateApi>> TestHost<State> {
+impl<State: DeserialWithState<TestStateApi>> TestHost<State> {
     /// Make a deep clone of the host, including the whole state and all
     /// references to the state. Used for rolling back the host and state,
     /// fx when using [`with_rollback`].
     fn checkpoint(&self) -> Self {
         let cloned_state_api = self.state_builder.state_api.clone_deep();
+        let state: State = cloned_state_api
+            .read_root()
+            .expect_report("Could not deserialize root entry from state clone");
         Self {
             mocking_fns:             self.mocking_fns.clone(),
             transfers:               self.transfers.clone(),
@@ -1815,7 +1818,7 @@ impl<State: StateClone<TestStateApi>> TestHost<State> {
             state_builder:           StateBuilder {
                 state_api: cloned_state_api.clone(),
             },
-            state:                   unsafe { self.state.clone_state(&cloned_state_api) },
+            state,
             missing_accounts:        self.missing_accounts.clone(),
             missing_contracts:       self.missing_contracts.clone(),
             query_account_balances:  self.query_account_balances.clone(),
@@ -1914,10 +1917,12 @@ mod test {
         cell::RefCell,
         rc::Rc,
         test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox, StateClone,
+        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox,
         StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Cursor, Deserial, Read, Seek, SeekFrom, Write};
+    #[allow(deprecated)]
+    use crate::StateClone;
 
     #[test]
     fn test_testhost_balance_queries_reflect_transfers() {
@@ -2518,7 +2523,9 @@ mod test {
 
         // Make clones
         let state_clone = state.clone_deep();
+        #[allow(deprecated)]
         let b2_loaded_clone = unsafe { b2_loaded.clone_state(&state_clone) };
+        #[allow(deprecated)]
         let b2_ref_clone = unsafe { b2_ref.clone_state(&state_clone) };
 
         // Modify originals

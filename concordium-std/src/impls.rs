@@ -3016,6 +3016,7 @@ impl schema::SchemaType for HashKeccak256 {
     fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
 
+#[allow(deprecated)]
 unsafe impl<T, S: HasStateApi> StateClone<S> for StateSet<T, S> {
     unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
         Self {
@@ -3026,6 +3027,7 @@ unsafe impl<T, S: HasStateApi> StateClone<S> for StateSet<T, S> {
     }
 }
 
+#[allow(deprecated)]
 unsafe impl<T, V, S: HasStateApi> StateClone<S> for StateMap<T, V, S> {
     unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
         Self {
@@ -3037,6 +3039,7 @@ unsafe impl<T, V, S: HasStateApi> StateClone<S> for StateMap<T, V, S> {
     }
 }
 
+#[allow(deprecated)]
 unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
     unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
         let inner_value = match &*self.inner.get() {
@@ -3076,6 +3079,7 @@ unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for 
 
 /// Blanket implementation for all cloneable, flat types that don't have
 /// references to items in the state.
+#[allow(deprecated)]
 unsafe impl<T: Clone, S> StateClone<S> for T {
     unsafe fn clone_state(&self, _cloned_state_api: &S) -> Self { self.clone() }
 }

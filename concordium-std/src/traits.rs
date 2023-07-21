@@ -630,6 +630,10 @@ where
 ///
 /// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
 /// [iwr]: crate::test_infrastructure::TestHost::with_rollback
+#[deprecated(
+    since = "8.0.0",
+    note="Test infrastructure no longer requires this trait to be implemented by state types"
+)]
 pub unsafe trait StateClone<S> {
     /// Make a clone of the type while using the `cloned_state_api`.
     ///
