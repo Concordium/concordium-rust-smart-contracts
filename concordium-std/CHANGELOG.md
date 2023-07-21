@@ -12,6 +12,8 @@
   and `check_account_signature` corresponding to the two new host functions
   available in protocol 6. Two new types were added to support these operations,
   `AccountSignatures` and `AccountPublicKeys`.
+- Contract state no longer needs to implement `StateClone` trait in order to work with test infrastructure.
+  `StateClone` itself is marked as deprecated, for smoother transition
 
 ## concordium-std 7.0.0 (2023-06-16)
 
