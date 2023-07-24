@@ -2141,9 +2141,9 @@ fn check_account_signature_worker(
     data: &[u8],
 ) -> CheckAccountSignatureResult {
     let mut buffer = address.0.to_vec();
-    signatures.serial(&mut buffer).unwrap_abort();
     (data.len() as u32).serial(&mut buffer).unwrap_abort();
     buffer.extend_from_slice(data);
+    signatures.serial(&mut buffer).unwrap_abort();
 
     let response = unsafe {
         prims::invoke(
@@ -2152,6 +2152,8 @@ fn check_account_signature_worker(
             buffer.len() as u32,
         )
     };
+    // Be explicit that the buffer must survive up to here.
+    drop(buffer);
     parse_check_account_signature_response_code(response)
 }
 
