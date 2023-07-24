@@ -1814,6 +1814,10 @@ const INVOKE_QUERY_CONTRACT_BALANCE_TAG: u32 = 3;
 /// Tag of the query exchange rates operation expected by the host. See
 /// [prims::invoke].
 const INVOKE_QUERY_EXCHANGE_RATES_TAG: u32 = 4;
+/// Tag of the operation to check the account's signature [prims::invoke].
+const INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG: u32 = 5;
+/// Tag of the query account's public keys [prims::invoke].
+const INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG: u32 = 6;
 
 /// Check whether the response code from calling `invoke` is encoding a failure
 /// and map out the byte used for the error code.
@@ -1982,6 +1986,56 @@ fn parse_query_contract_balance_response_code(
     }
 }
 
+/// Decode the account public keys query response code.
+///
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure where:
+///    - '0x02' encodes missing account.
+fn parse_query_account_public_keys_response_code(
+    code: u64,
+) -> Result<ExternCallResponse, QueryAccountPublicKeysError> {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x02 {
+            Err(QueryAccountPublicKeysError)
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        Ok(ExternCallResponse::new(return_value_index))
+    }
+}
+
+/// Decode the response from checking account signatures.
+///
+/// - Success if the last 5 bytes are all zero:
+/// - In case of failure the 4th byte is used, and encodes the enviroment
+///   failure where:
+///    - '0x02' encodes missing account.
+///    - '0x0a' encodes malformed data, i.e., the call was made with incorrect
+///      data.
+///    - '0x0b' encodes that signature validation failed.
+fn parse_check_account_signature_response_code(
+    code: u64,
+) -> Result<bool, CheckAccountSignatureError> {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x02 {
+            Err(CheckAccountSignatureError::MissingAccount)
+        } else if error_code == 0x0a {
+            Err(CheckAccountSignatureError::MalformedData)
+        } else if error_code == 0x0b {
+            Ok(false)
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    } else {
+        Ok(true)
+    }
+}
+
 /// Decode the exchange rate response code.
 ///
 /// - Success if the last 5 bytes are all zero:
@@ -2068,6 +2122,37 @@ fn query_exchange_rates_worker() -> ExchangeRates {
 
     let mut response = parse_query_exchange_rates_response_code(response_code);
     ExchangeRates::deserial(&mut response).unwrap_abort()
+}
+
+/// Helper factoring out the common behaviour of `account_public_keys` for the
+/// two extern hosts below.
+fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPublicKeysResult {
+    let data: &[u8] = address.as_ref();
+    let response = unsafe {
+        prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr() as *const u8, 32)
+    };
+    let mut return_value = parse_query_account_public_keys_response_code(response)?;
+    Ok(AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
+}
+
+fn check_account_signature_worker(
+    address: AccountAddress,
+    signatures: &AccountSignatures,
+    data: &[u8],
+) -> CheckAccountSignatureResult {
+    let mut buffer = address.0.to_vec();
+    signatures.serial(&mut buffer).unwrap_abort();
+    (data.len() as u32).serial(&mut buffer).unwrap_abort();
+    buffer.extend_from_slice(data);
+
+    let response = unsafe {
+        prims::invoke(
+            INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG,
+            buffer.as_ptr() as *const u8,
+            buffer.len() as u32,
+        )
+    };
+    parse_check_account_signature_response_code(response)
 }
 
 impl<S> StateBuilder<S>
@@ -2317,6 +2402,19 @@ where
         parse_upgrade_response_code(response)
     }
 
+    fn account_public_keys(&self, address: AccountAddress) -> QueryAccountPublicKeysResult {
+        query_account_public_keys_worker(address)
+    }
+
+    fn check_account_signature(
+        &self,
+        address: AccountAddress,
+        signatures: &AccountSignatures,
+        data: &[u8],
+    ) -> CheckAccountSignatureResult {
+        check_account_signature_worker(address, signatures, data)
+    }
+
     fn state(&self) -> &S { &self.state }
 
     fn state_mut(&mut self) -> &mut S { &mut self.state }
@@ -2380,6 +2478,19 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
         let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
         parse_upgrade_response_code(response)
+    }
+
+    fn account_public_keys(&self, address: AccountAddress) -> QueryAccountPublicKeysResult {
+        query_account_public_keys_worker(address)
+    }
+
+    fn check_account_signature(
+        &self,
+        address: AccountAddress,
+        signatures: &AccountSignatures,
+        data: &[u8],
+    ) -> CheckAccountSignatureResult {
+        check_account_signature_worker(address, signatures, data)
     }
 
     #[inline(always)]

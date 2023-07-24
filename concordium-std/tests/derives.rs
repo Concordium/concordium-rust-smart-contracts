@@ -5,6 +5,7 @@
 fn deserial_with_state() {
     let t = trybuild::TestCases::new();
     t.pass("tests/derive-deserial-with-state/success-*.rs");
+    t.compile_fail("tests/derive-deserial-with-state/fail-*.rs");
 }
 
 #[test]
@@ -17,16 +18,19 @@ fn deletable() {
 fn serial() {
     let t = trybuild::TestCases::new();
     t.pass("tests/derive-serial/success-*.rs");
+    t.compile_fail("tests/derive-serial/fail-*.rs");
 }
 
 #[test]
 fn deserial() {
     let t = trybuild::TestCases::new();
     t.pass("tests/derive-deserial/success-*.rs");
+    t.compile_fail("tests/derive-deserial/fail-*.rs");
 }
 
 #[test]
 fn schema_type() {
     let t = trybuild::TestCases::new();
     t.pass("tests/derive-schema-type/success-*.rs");
+    t.compile_fail("tests/derive-schema-type/fail-*.rs");
 }

@@ -1560,6 +1560,25 @@ impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>>
     fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>) {
         (&mut self.state, &mut self.state_builder)
     }
+
+    fn account_public_keys(&self, _address: AccountAddress) -> QueryAccountPublicKeysResult {
+        unimplemented!(
+            "The test infrastructure will be deprecated and so does not implement new \
+             functionality."
+        )
+    }
+
+    fn check_account_signature(
+        &self,
+        _address: AccountAddress,
+        _signatures: &AccountSignatures,
+        _data: &[u8],
+    ) -> CheckAccountSignatureResult {
+        unimplemented!(
+            "The test infrastructure will be deprecated and so does not implement new \
+             functionality."
+        )
+    }
 }
 
 impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
