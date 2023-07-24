@@ -2,9 +2,7 @@
 
 ## Unreleased changes
 
-## concordium-cis2 4.0.1 (2023-06-20)
-
-- Added Cis2Client
+- Added `Cis2Client` to the library. This can be used from one smart contract to call into other cis2 compatible smart contracts in a type safe way.
 
 ## concordium-cis2 4.0.0 (2023-06-16)
 

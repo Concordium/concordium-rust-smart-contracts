@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "4.0.1"
+version = "4.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
 license = "MPL-2.0"
