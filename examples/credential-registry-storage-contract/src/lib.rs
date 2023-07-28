@@ -63,7 +63,7 @@ struct CredentialState {
 }
 
 /// The contract state.
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     /// All verifiable credentials.

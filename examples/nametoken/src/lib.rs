@@ -90,7 +90,7 @@ struct RegisterNameParams {
 }
 
 /// Data for each name.
-#[derive(Serial, DeserialWithState, Deletable, StateClone)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct NameInfo<S: HasStateApi> {
     /// Name owner
@@ -119,7 +119,7 @@ impl<S: HasStateApi> NameInfo<S> {
 }
 
 /// The state for each address.
-#[derive(Serial, DeserialWithState, Deletable, StateClone)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The tokens owned by this address.
@@ -139,7 +139,7 @@ impl<S: HasStateApi> AddressState<S> {
 
 /// The contract state.
 
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     /// The address of the administrating account.
