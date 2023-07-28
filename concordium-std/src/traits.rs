@@ -613,34 +613,3 @@ where
         source: &mut R,
     ) -> ParseResult<Self>;
 }
-
-/// Types that can be cloned along with the state.
-///
-/// Used for rolling back the test state when errors occur in a receive
-/// function. See [`TestHost::with_rollback`][iwr] and
-/// [`TestHost::invoke_contract_raw`][icr].
-///
-/// # Safety
-///
-/// Marked unsafe because special care should be taken when
-/// implementing this trait. In particular, one should only use the supplied
-/// `cloned_state_api`, or (shallow) clones thereof. Creating a new
-/// [`HasStateApi`] or using a `deep_clone` will lead to an inconsistent state
-/// and undefined behaviour.
-///
-/// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
-/// [iwr]: crate::test_infrastructure::TestHost::with_rollback
-#[deprecated(
-    since = "8.0.0",
-    note = "Test infrastructure no longer requires this trait to be implemented by state types"
-)]
-pub unsafe trait StateClone<S> {
-    /// Make a clone of the type while using the `cloned_state_api`.
-    ///
-    /// # Safety
-    ///
-    /// Marked unsafe because this function *should not* be called
-    /// directly. It is only used within generated code and in the test
-    /// infrastructure.
-    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self;
-}

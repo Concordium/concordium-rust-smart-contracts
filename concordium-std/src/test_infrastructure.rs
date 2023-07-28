@@ -1911,16 +1911,14 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 #[cfg(test)]
 mod test {
     use super::TestStateApi;
-    #[allow(deprecated)]
-    use crate::StateClone;
     use crate::{
         cell::RefCell,
         rc::Rc,
         test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox, StateMap,
-        StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateMap, StateSet,
+        INITIAL_NEXT_ITEM_PREFIX,
     };
-    use concordium_contracts_common::{to_bytes, Cursor, Deserial, Read, Seek, SeekFrom, Write};
+    use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     #[test]
     fn test_testhost_balance_queries_reflect_transfers() {
@@ -2479,62 +2477,5 @@ mod test {
         let actual_size =
             state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
         assert_eq!(expected_size as u32, actual_size);
-    }
-
-    #[test]
-    /// Test that deep cloning a statebox, in both of its internal forms, work
-    /// as expected.
-    fn deep_cloning_state_box() {
-        let state = TestStateApi::new();
-        let mut state_builder = TestStateBuilder::open(state.clone());
-
-        // Helper function.
-        fn get_loaded_entry_cursor_pos<T: concordium_contracts_common::Serial>(
-            b: &StateBox<T, TestStateApi>,
-        ) -> u32 {
-            match unsafe { &*b.inner.get() } {
-                crate::StateBoxInner::Loaded {
-                    entry,
-                    modified: _,
-                    value: _,
-                } => entry.cursor_position(),
-                crate::StateBoxInner::Reference {
-                    prefix: _,
-                } => panic!("Cannot be called on StateBoxInner::Reference"),
-            }
-        }
-
-        // These boxes have InnerBox::Loaded
-        let b1_loaded = state_builder.new_box(101010);
-        let mut b2_loaded = state_builder.new_box(b1_loaded);
-
-        let b2_bytes = to_bytes(&b2_loaded);
-
-        let b2_loaded_cursor_pos = get_loaded_entry_cursor_pos(&b2_loaded);
-
-        // Deserial to get boxes with InnerBox::Reference
-        let mut b2_ref = StateBox::<StateBox<i32, _>, _>::deserial_with_state(
-            &state,
-            &mut Cursor::new(b2_bytes),
-        )
-        .unwrap();
-
-        // Make clones
-        let state_clone = state.clone_deep();
-        #[allow(deprecated)]
-        let b2_loaded_clone = unsafe { b2_loaded.clone_state(&state_clone) };
-        #[allow(deprecated)]
-        let b2_ref_clone = unsafe { b2_ref.clone_state(&state_clone) };
-
-        // Modify originals
-        b2_loaded.update(|b| b.update(|x| *x += 1)); // 101011
-        b2_ref.update(|b| b.update(|x| *x += 1)); // 101012
-
-        // Check that clones are unchanged
-        let b2_loaded_clone_cursor_pos = get_loaded_entry_cursor_pos(&b2_loaded_clone);
-
-        assert_eq!(*b2_loaded_clone.get().get(), 101010);
-        assert_eq!(*b2_ref_clone.get().get(), 101010);
-        assert_eq!(b2_loaded_clone_cursor_pos, b2_loaded_cursor_pos);
     }
 }
