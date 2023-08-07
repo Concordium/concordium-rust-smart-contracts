@@ -20,39 +20,7 @@ const TRANSFER_ENTRYPOINT_NAME: EntrypointName = EntrypointName::new_unchecked("
 const UPDATE_OPERATOR_ENTRYPOINT_NAME: EntrypointName =
     EntrypointName::new_unchecked("updateOperator");
 
-/// Wrapper for `Cis2Error<T>`. This allows for various traits to be
-/// implemented.
-#[derive(Debug)]
-pub struct Cis2ErrorWrapper<T>(Cis2Error<T>);
-
-impl<T> From<Cis2Error<T>> for Cis2ErrorWrapper<T> {
-    fn from(e: Cis2Error<T>) -> Self { Cis2ErrorWrapper(e) }
-}
-
-impl<T> AsRef<Cis2Error<T>> for Cis2ErrorWrapper<T> {
-    fn as_ref(&self) -> &Cis2Error<T> { &self.0 }
-}
-
-impl<T: Serial> Serial for Cis2ErrorWrapper<T> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
-}
-
-impl<T: Deserial> Deserial for Cis2ErrorWrapper<T> {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let tag = source.read_u8()?;
-        match tag {
-            0 => Ok(Cis2ErrorWrapper(Cis2Error::InvalidTokenId)),
-            1 => Ok(Cis2ErrorWrapper(Cis2Error::InsufficientFunds)),
-            2 => Ok(Cis2ErrorWrapper(Cis2Error::Unauthorized)),
-            3 => {
-                let t = T::deserial(source)?;
-                Ok(Cis2ErrorWrapper(Cis2Error::Custom(t)))
-            }
-            _ => bail!(ParseError {}),
-        }
-    }
-}
-pub type InvokeContractError<T> = CallContractError<Cis2ErrorWrapper<T>>;
+pub type InvokeContractError<T> = CallContractError<Cis2Error<T>>;
 
 /// Errors which can be returned by the `Cis2Client`.
 #[derive(Debug)]
@@ -70,7 +38,7 @@ impl<T: Serial> Serial for Cis2ClientError<T> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         match self {
             Cis2ClientError::InvokeContractError(e) => {
-                out.write_u8(3)?;
+                out.write_u8(2)?;
                 match e {
                     CallContractError::AmountTooLarge => out.write_u8(0),
                     CallContractError::MissingAccount => out.write_u8(1),
@@ -121,7 +89,7 @@ impl<T: Read, R: Deserial> TryFrom<CallContractError<T>> for Cis2ClientError<R> 
             } => Ok(Cis2ClientError::InvokeContractError(InvokeContractError::LogicReject {
                 reason,
                 return_value: {
-                    let cis2_error = Cis2ErrorWrapper::<R>::deserial(&mut return_value);
+                    let cis2_error = Cis2Error::<R>::deserial(&mut return_value);
                     match cis2_error {
                         Ok(cis2_error) => cis2_error,
                         Err(_) => bail!(Cis2ClientError::ParseResult),
@@ -294,8 +262,9 @@ impl Cis2Client {
 
     /// Calls the `transfer` entrypoint of the CIS2 contract to transfer the
     /// given amount of tokens from the given owner to the given receiver.
-    /// If the transfer is successful, it returns `Ok(())`, else it returns an
-    /// `Err`.
+    /// If the transfer is successful and the state is modified, it returns
+    /// `Ok(true)`, else it returns `Ok(false)`. If there is an error, it
+    /// returns `Err`.
     ///
     /// # Examples
     /// ```rust
@@ -332,8 +301,10 @@ impl Cis2Client {
     }
 
     /// Calls the `updateOperator` of the CIS2 contract.
-    /// If the update is successful, it returns `Ok(())`, else it returns an
-    /// `Err`. # Examples
+    /// If the update is successful and the state is modified, it returns `Ok(true)`, else it returns `Ok(false)`.
+    /// If there is an error, it returns `Err`.
+    /// 
+    /// # Examples
     /// ```rust
     /// use concordium_cis2::{cis2_client::*, *};
     /// use concordium_std::{test_infrastructure::*, *};
