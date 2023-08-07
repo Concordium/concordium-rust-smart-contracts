@@ -43,10 +43,11 @@
 //! identities) and each credential has one (or several) public-private key
 //! pairs. The key/signature structures of an account are represented as
 //! two-level maps (e.g. BTreeMap<CredentialIndexU8, BTreeMap<PublicKeyIndexU8,
-//! Ed25519PublicKey>> or BTreeMap<CredentialIndexU8, BTreeMap<SignatureIndexU8,
-//! Signature>>). The outer map has an `AccountThreshold` (number of credentials
-//! needed to sign the transaction initiated by that account) and the inner map
-//! has a `SignatureThreshold` (number of Ed25519Signatures needed for a
+//! PublicKey>> or BTreeMap<CredentialIndexU8, BTreeMap<SignatureIndexU8,
+//! Signature>>). The outer map of `BTreeMap<CredentialIndexU8,
+//! BTreeMap<PublicKeyIndexU8, PublicKey>>` has an `AccountThreshold` (number of
+//! credentials needed to sign the transaction initiated by that account) and
+//! the inner map has a `SignatureThreshold` (number of Signatures needed for a
 //! specific credential so that this credential is considered to have signed the
 //! transaction initiated by that account). The CIS3 standard supports multi-sig
 //! accounts. But for simplicity, this contract supports only basic accounts
@@ -344,7 +345,7 @@ type ContractError = Cis2Error<CustomContractError>;
 
 type ContractResult<A> = Result<A, ContractError>;
 
-/// Mapping CustomContractError to ContractError
+/// Mapping account signature error to CustomContractError
 impl From<CheckAccountSignatureError> for CustomContractError {
     fn from(e: CheckAccountSignatureError) -> Self {
         match e {
