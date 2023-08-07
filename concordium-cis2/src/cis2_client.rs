@@ -301,9 +301,10 @@ impl Cis2Client {
     }
 
     /// Calls the `updateOperator` of the CIS2 contract.
-    /// If the update is successful and the state is modified, it returns `Ok(true)`, else it returns `Ok(false)`.
-    /// If there is an error, it returns `Err`.
-    /// 
+    /// If the update is successful and the state is modified, it returns
+    /// `Ok(true)`, else it returns `Ok(false)`. If there is an error, it
+    /// returns `Err`.
+    ///
     /// # Examples
     /// ```rust
     /// use concordium_cis2::{cis2_client::*, *};
