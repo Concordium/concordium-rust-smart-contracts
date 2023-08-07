@@ -865,7 +865,7 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
 }
 
 /// The different errors the contract can produce.
-#[derive(Debug, PartialEq, Eq, SchemaType, Serial)]
+#[derive(Debug, PartialEq, Eq, SchemaType, Serial, Deserial)]
 pub enum Cis2Error<R> {
     /// Invalid token id (Error code: -42000001).
     InvalidTokenId,
