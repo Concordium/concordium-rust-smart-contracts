@@ -1,9 +1,7 @@
 use crate::{
     cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
-use concordium_contracts_common::{
-    AccountBalance, Amount, ParseError
-};
+use concordium_contracts_common::{AccountBalance, Amount, ParseError};
 use core::{fmt, str::FromStr};
 // Re-export for backward compatibility.
 pub use concordium_contracts_common::ExchangeRates;
@@ -695,12 +693,12 @@ pub type QueryContractBalanceResult = Result<Amount, QueryContractBalanceError>;
 
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`QueryAccountPublicKeysError`] and result to [`AccountPublicKeys`].
-pub type QueryAccountPublicKeysResult = Result<crate::AccountPublicKeys, QueryAccountPublicKeysError>;
+pub type QueryAccountPublicKeysResult =
+    Result<crate::AccountPublicKeys, QueryAccountPublicKeysError>;
 
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`CheckAccountSignatureError`] and result to [`bool`].
 pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
-
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]

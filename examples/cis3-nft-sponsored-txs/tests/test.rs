@@ -61,7 +61,10 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
 
     inner_key_map.insert(
         KeyIndex(0u8),
-        VerifyKey::Ed25519VerifyKey(ed25519_dalek::PublicKey::from_bytes(&PUBLIC_KEY).unwrap()),
+        VerifyKey::Ed25519VerifyKey(
+            ed25519_dalek::PublicKey::from_bytes(&PUBLIC_KEY)
+                .expect("Should be able to create public key"),
+        ),
     );
 
     let credential_public_keys = CredentialPublicKeys {

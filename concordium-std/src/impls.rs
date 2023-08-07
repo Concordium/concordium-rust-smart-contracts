@@ -2918,7 +2918,6 @@ where
     fn delete(mut self) { self.clear(); }
 }
 
-
 impl Serial for HashSha2256 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
 }
