@@ -3,13 +3,13 @@ type Ok = f32;
 type Err = f64;
 type Default = str;
 
-#[derive(concordium_std::Deserial)]
+#[derive(concordium_std::Serial)]
 pub struct InnerStruct<A> {
     pub num: u32,
     pub a: A,
 }
 
-#[derive(concordium_std::Deserial)]
+#[derive(concordium_std::Serial)]
 #[concordium(repr(u8))]
 pub enum InnerEnum<B> {
     One(u32),
@@ -19,7 +19,7 @@ pub enum InnerEnum<B> {
     Three(ForwardedEnum),
 }
 
-#[derive(concordium_std::Deserial)]
+#[derive(concordium_std::Serial)]
 #[concordium(repr(u8))]
 pub enum ForwardedEnum {
     #[concordium(tag = 5)]
@@ -30,13 +30,13 @@ pub enum ForwardedEnum {
     Beta(u16),
 }
 
-#[derive(concordium_std::Deserial)]
+#[derive(concordium_std::Serial)]
 #[concordium(bound(deserial = ""))]
 pub struct ZeroSized<A> {
     _phantom: std::marker::PhantomData<A>,
 }
 
-#[derive(concordium_std::Deserial)]
+#[derive(concordium_std::Serial)]
 pub struct State<A, B> {
     pub inner_struct: InnerStruct<A>,
     pub inner_enum: InnerEnum<B>,
