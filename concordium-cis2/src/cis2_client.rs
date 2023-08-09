@@ -1,5 +1,5 @@
 //! CIS2 client is the intermediatory layer between any contract and
-//! CIS2 comliant contract.
+//! CIS2 compliant contract.
 //!
 //! # Description
 //! It allows the contract to abstract away the logic of calling the
@@ -25,11 +25,11 @@ pub type InvokeContractError<T> = CallContractError<Cis2Error<T>>;
 /// Errors which can be returned by the `Cis2Client`.
 #[derive(Debug)]
 pub enum Cis2ClientError<T> {
-    /// When there is an error invoking the CIS2 contract.
+    /// Invoking the contract returned the given error.
     InvokeContractError(InvokeContractError<T>),
-    /// When there is an error parsing the result.
+    /// The response from the contract could not be parsed.
     ParseResult,
-    /// When the response is invalid. Ex. When the response is empty vector for
+    /// The response was not as expected, for example the response is an empty vector for
     /// a single query.
     InvalidResponse,
 }
@@ -88,13 +88,7 @@ impl<T: Read, R: Deserial> TryFrom<CallContractError<T>> for Cis2ClientError<R> 
                 mut return_value,
             } => Ok(Cis2ClientError::InvokeContractError(InvokeContractError::LogicReject {
                 reason,
-                return_value: {
-                    let cis2_error = Cis2Error::<R>::deserial(&mut return_value);
-                    match cis2_error {
-                        Ok(cis2_error) => cis2_error,
-                        Err(_) => bail!(Cis2ClientError::ParseResult),
-                    }
-                },
+                return_value: Cis2Error::<R>::deserial(&mut return_value)?,
             })),
             CallContractError::Trap => {
                 Ok(Cis2ClientError::InvokeContractError(InvokeContractError::Trap))
@@ -169,7 +163,9 @@ impl Cis2Client {
         };
         let mut res: SupportsQueryResponse =
             self.invoke_contract_read_only(host, SUPPORTS_ENTRYPOINT_NAME, &params)?;
-        Cis2Client::first(&mut res.results)
+        let res = res.results.pop().ok_or(Cis2ClientError::InvalidResponse)?;
+
+        Ok(res)
     }
 
     /// Calls the `operatorOf` entrypoint of the CIS2 contract to check if the
@@ -217,10 +213,12 @@ impl Cis2Client {
         };
         let mut res: OperatorOfQueryResponse =
             self.invoke_contract_read_only(host, OPERATOR_OF_ENTRYPOINT_NAME, params)?;
-        Cis2Client::first(&mut res.0)
+        let res = res.0.pop().ok_or(Cis2ClientError::InvalidResponse)?;
+        
+        Ok(res)
     }
 
-    /// calls the `balanceOf` entrypoint of the CIS2 contract to get the balance
+    /// Calls the `balanceOf` entrypoint of the CIS2 contract to get the balance
     /// of the given owner for the given token. If the balance is returned,
     /// it returns `Ok(balance)`, else it returns `Err`.
     /// # Examples
@@ -257,7 +255,9 @@ impl Cis2Client {
 
         let mut res: BalanceOfQueryResponse<A> =
             self.invoke_contract_read_only(host, BALANCE_OF_ENTRYPOINT_NAME, &params)?;
-        Cis2Client::first(&mut res.0)
+        let res = res.0.pop().ok_or(Cis2ClientError::InvalidResponse)?;
+
+        Ok(res)
     }
 
     /// Calls the `transfer` entrypoint of the CIS2 contract to transfer the
@@ -384,14 +384,6 @@ impl Cis2Client {
         };
 
         Ok(res)
-    }
-
-    fn first<T, E>(array: &mut Vec<T>) -> Result<T, Cis2ClientError<E>> {
-        // If the contract returns a response, but the response is empty, it is an
-        // error. Since for a single query the response should be non-empty.
-        ensure!(!array.is_empty(), Cis2ClientError::InvalidResponse);
-
-        Ok(array.swap_remove(0))
     }
 }
 

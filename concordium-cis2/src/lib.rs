@@ -32,7 +32,8 @@
 //! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
 
-pub mod cis2_client;
+mod cis2_client;
+pub use cis2_client::Cis2Client;
 
 use concordium_std::{collections::BTreeMap, *};
 // Re-export for backward compatibility.
