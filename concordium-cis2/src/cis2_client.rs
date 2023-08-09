@@ -29,8 +29,8 @@ pub enum Cis2ClientError<T> {
     InvokeContractError(InvokeContractError<T>),
     /// The response from the contract could not be parsed.
     ParseResult,
-    /// The response was not as expected, for example the response is an empty vector for
-    /// a single query.
+    /// The response was not as expected, for example the response is an empty
+    /// vector for a single query.
     InvalidResponse,
 }
 
@@ -214,7 +214,7 @@ impl Cis2Client {
         let mut res: OperatorOfQueryResponse =
             self.invoke_contract_read_only(host, OPERATOR_OF_ENTRYPOINT_NAME, params)?;
         let res = res.0.pop().ok_or(Cis2ClientError::InvalidResponse)?;
-        
+
         Ok(res)
     }
 
