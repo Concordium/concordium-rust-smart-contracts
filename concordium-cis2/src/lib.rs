@@ -33,8 +33,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod cis2_client;
-pub use cis2_client::Cis2Client;
-pub use cis2_client::Cis2ClientError;
+pub use cis2_client::{Cis2Client, Cis2ClientError};
 
 use concordium_std::{collections::BTreeMap, *};
 // Re-export for backward compatibility.
