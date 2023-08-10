@@ -105,7 +105,7 @@ impl<T> From<ParseError> for Cis2ClientError<T> {
 ///
 /// ## Examples
 /// ```rust
-/// use concordium_cis2::cis2_client::Cis2Client;
+/// use concordium_cis2::Cis2Client;
 /// use concordium_std::ContractAddress;
 /// let cis_contract_address = ContractAddress::new(0, 0);
 /// Cis2Client::new(cis_contract_address);
@@ -132,7 +132,7 @@ impl Cis2Client {
     ///
     /// # Examples
     /// ```rust
-    /// use concordium_cis2::{cis2_client::*, *};
+    /// use concordium_cis2::*;
     /// use concordium_std::{test_infrastructure::*, *};
     /// let mut host = TestHost::new((), TestStateBuilder::new());
     /// host.setup_mock_entrypoint(
@@ -176,7 +176,7 @@ impl Cis2Client {
     ///
     /// # Examples
     /// ```rust
-    /// use concordium_cis2::{cis2_client::*, *};
+    /// use concordium_cis2::*;
     /// use concordium_std::{test_infrastructure::*, *};
     ///
     /// let mut host = TestHost::new((), TestStateBuilder::new());
@@ -223,7 +223,7 @@ impl Cis2Client {
     /// it returns `Ok(balance)`, else it returns `Err`.
     /// # Examples
     /// ```rust
-    /// use concordium_cis2::{cis2_client::*, *};
+    /// use concordium_cis2::*;
     /// use concordium_std::{test_infrastructure::*, *};
     /// let mut host = TestHost::new((), TestStateBuilder::new());
     /// host.setup_mock_entrypoint(
@@ -268,7 +268,7 @@ impl Cis2Client {
     ///
     /// # Examples
     /// ```rust
-    /// use concordium_cis2::{cis2_client::*, *};
+    /// use concordium_cis2::*;
     /// use concordium_std::{test_infrastructure::*, *};
     /// let mut host = TestHost::new((), TestStateBuilder::new());
     /// host.setup_mock_entrypoint(
@@ -307,7 +307,7 @@ impl Cis2Client {
     ///
     /// # Examples
     /// ```rust
-    /// use concordium_cis2::{cis2_client::*, *};
+    /// use concordium_cis2::*;
     /// use concordium_std::{test_infrastructure::*, *};
     /// let mut host = TestHost::new((), TestStateBuilder::new());
     /// host.setup_mock_entrypoint(
@@ -389,9 +389,7 @@ impl Cis2Client {
 
 #[cfg(test)]
 mod test {
-    use crate::cis2_client::*;
-
-    use super::Cis2Client;
+    use crate::*;
     use concordium_std::test_infrastructure::*;
 
     const INDEX: u64 = 0;
