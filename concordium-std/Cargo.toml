@@ -22,8 +22,8 @@ quickcheck = {version = "1", optional = true }
 getrandom = { version = "0.2", features = ["custom"], optional = true }
 
 [dependencies.concordium-contracts-common]
-path = "../../../LocalTestingLibrary/concordium-smart-contract-tools/concordium-base/concordium-contracts-common/concordium-contracts-common"
-version = "7.1"
+path = "../concordium-contracts-common/concordium-contracts-common"
+version = "7.0"
 default-features = false
 features = ["smart-contract"]
 
