@@ -47,7 +47,6 @@ jobs:
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
     steps:
@@ -407,7 +406,6 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-multi-royalties/Cargo.toml
           - examples/nametoken/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
         features:
@@ -506,7 +504,6 @@ jobs:
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
     steps:
@@ -637,7 +634,6 @@ jobs:
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
     steps:
