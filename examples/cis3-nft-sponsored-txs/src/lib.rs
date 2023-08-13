@@ -39,21 +39,21 @@
 //! signed message.
 //!
 //! Concordium supports natively multi-sig accounts. Each account address on
-//! Concordium is controlled by one (or several) credentials (real-world
-//! identities) and each credential has one (or several) public-private key
-//! pairs. The key/signature structures of an account are represented as
-//! two-level maps (e.g. BTreeMap<CredentialIndexU8, BTreeMap<PublicKeyIndexU8,
-//! PublicKey>> or BTreeMap<CredentialIndexU8, BTreeMap<SignatureIndexU8,
-//! Signature>>). The outer map of `BTreeMap<CredentialIndexU8,
-//! BTreeMap<PublicKeyIndexU8, PublicKey>>` has an `AccountThreshold` (number of
-//! credentials needed to sign the transaction initiated by that account) and
-//! the inner map has a `SignatureThreshold` (number of Signatures needed for a
-//! specific credential so that this credential is considered to have signed the
-//! transaction initiated by that account). The CIS3 standard supports multi-sig
-//! accounts. But for simplicity, this contract supports only basic accounts
-//! that have exactly one credential and exactly one public key for that
-//! credential. As a result, all signaturesMaps/publicKeyMaps in this contract,
-//! will have only one value at key 0 in the inner and outer maps.
+//! Concordium is controlled by one or several credential(s) (real-world
+//! identities) and each credential has one or several public-private key
+//! pair(s). Both the key and signature structures of an account are represented
+//! as two-level maps (e.g. BTreeMap<CredentialIndexU8,
+//! BTreeMap<PublicKeyIndexU8, PublicKey>> or BTreeMap<CredentialIndexU8,
+//! BTreeMap<SignatureIndexU8, Signature>>). The outer map of
+//! `BTreeMap<CredentialIndexU8, BTreeMap<PublicKeyIndexU8, PublicKey>>` has an
+//! `AccountThreshold` (number of credentials needed to sign the transaction
+//! initiated by that account) and the inner map has a `SignatureThreshold`
+//! (number of Signatures needed for a specific credential so that this
+//! credential is considered to have signed the transaction initiated by that
+//! account). The CIS3 standard supports multi-sig accounts. For basic accounts
+//! (that have exactly one credential and exactly one public key for that
+//! credential), the signaturesMaps/publicKeyMaps in this contract, will have
+//! only one value at key 0 in the inner and outer maps.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::*;
@@ -336,8 +336,6 @@ enum CustomContractError {
     WrongEntryPoint,
     /// Failed signature verification: Signature is expired.
     Expired,
-    /// Failed signature verification: Signature map is misconfigured.
-    SignatureMapMisconfigured,
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
@@ -561,10 +559,11 @@ fn contract_view<S: HasStateApi>(
 
     let all_tokens = state.all_tokens.iter().map(|x| *x).collect();
 
-    let mut all_nonces = Vec::new();
-    for (account_address, nonce) in state.nonces_registry.iter() {
-        all_nonces.push((*account_address, *nonce));
-    }
+    let all_nonces: Vec<_> = state
+        .nonces_registry
+        .iter()
+        .map(|(account_address, nonce)| (*account_address, *nonce))
+        .collect();
 
     Ok(ViewState {
         state: inner_state,
@@ -796,7 +795,7 @@ fn contract_view_message_hash<S: HasStateApi>(
 ///   if:
 ///     - The `token_id` does not exist.
 ///     - The token is not owned by the `from` address.
-///     - The receive hook function calls rejects.
+///     - The receive hook function call rejects.
 #[receive(
     contract = "cis3_nft",
     name = "permit",
@@ -813,19 +812,6 @@ fn contract_permit<S: HasStateApi>(
 ) -> ContractResult<()> {
     // Parse the parameter.
     let param: PermitParam = ctx.parameter_cursor().get()?;
-
-    ensure!(
-        param.signature.sigs.len() == 1
-            && param
-                .signature
-                .sigs
-                .get(&0)
-                .ok_or(CustomContractError::SignatureMapMisconfigured)?
-                .sigs
-                .len()
-                == 1,
-        CustomContractError::SignatureMapMisconfigured.into()
-    );
 
     // Update the nonce.
     let mut entry = host.state_mut().nonces_registry.entry(param.signer).or_insert_with(|| 0);
