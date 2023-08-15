@@ -275,11 +275,7 @@ pub struct PermitMessage {
 /// Takes a signature, the signer, and the message that was signed.
 #[derive(Serialize, SchemaType)]
 pub struct PermitParam {
-    /// Signature/s. The CIS3 standard supports multi-sig accounts. But for
-    /// simplicity, this contract only supports signatures that were generated
-    /// by accounts with exactly one public key (one credential with one public
-    /// key for that credential). The signature has to be at the key 0 in
-    /// both maps of the two-level map `AccountSignatures`.
+    /// Signature/s. The CIS3 standard supports multi-sig accounts.
     pub signature: AccountSignatures,
     /// Account that created the above signature.
     pub signer:    AccountAddress,
@@ -289,11 +285,7 @@ pub struct PermitParam {
 
 #[derive(Serialize)]
 pub struct PermitParamPartial {
-    /// Signature/s. The CIS3 standard supports multi-sig accounts. But for
-    /// simplicity, this contract only supports signatures that were generated
-    /// by accounts with exactly one public key (one credential with one public
-    /// key for that credential). The signature has to be at the key 0 in
-    /// both maps of the two-level map `AccountSignatures`.
+    /// Signature/s. The CIS3 standard supports multi-sig accounts.
     signature: AccountSignatures,
     /// Account that created the above signature.
     signer:    AccountAddress,
@@ -1014,6 +1006,7 @@ fn contract_balance_of<S: HasStateApi>(
 
 /// Response type for the function `publicKeyOf`.
 #[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct PublicKeyOfQueryResponse(
     #[concordium(size_length = 2)] pub Vec<Option<AccountPublicKeys>>,
 );
@@ -1027,17 +1020,11 @@ impl From<Vec<Option<AccountPublicKeys>>> for PublicKeyOfQueryResponse {
 /// The parameter type for the contract functions `publicKeyOf/noneOf`. A query
 /// for the public key/nonce of a given account.
 #[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct VecOfAccountAddresses {
     /// List of queries.
     #[concordium(size_length = 2)]
-    pub queries: Vec<AccountAddressStruct>,
-}
-
-/// Part of the parameter type for the contract function `publicKeyOf/nonceOf`.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct AccountAddressStruct {
-    /// The account for which the public key/nonce should be queried.
-    pub account: AccountAddress,
+    pub queries: Vec<AccountAddress>,
 }
 
 /// Get the public keys of accounts. `None` is returned if the account does not
@@ -1060,9 +1047,9 @@ fn contract_public_key_of<S: HasStateApi>(
     let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response: Vec<Option<AccountPublicKeys>> = Vec::with_capacity(params.queries.len());
-    for query in params.queries {
+    for account in params.queries {
         // Query the public_key.
-        let public_keys = host.account_public_keys(query.account).ok();
+        let public_keys = host.account_public_keys(account).ok();
 
         response.push(public_keys);
     }
@@ -1072,6 +1059,7 @@ fn contract_public_key_of<S: HasStateApi>(
 
 /// Response type for the function `nonceOf`.
 #[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
 pub struct NonceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<u64>);
 
 impl From<Vec<u64>> for NonceOfQueryResponse {
@@ -1097,10 +1085,9 @@ fn contract_nonce_of<S: HasStateApi>(
     let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response: Vec<u64> = Vec::with_capacity(params.queries.len());
-    for query in params.queries {
+    for account in params.queries {
         // Query the next nonce.
-        let nonce =
-            host.state().nonces_registry.get(&query.account).map(|nonce| *nonce).unwrap_or(0);
+        let nonce = host.state().nonces_registry.get(&account).map(|nonce| *nonce).unwrap_or(0);
 
         response.push(nonce);
     }
