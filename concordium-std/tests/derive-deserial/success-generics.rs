@@ -26,6 +26,35 @@ enum MyOtherEnum<A, B> {
 }
 
 #[derive(Deserial)]
+struct WithStateParameterWhere<S>
+where
+    S: Clone,
+    S: PartialOrd, {
+    value: S,
+}
+
+#[rustfmt::skip] // skip formatting to maintain lack of trailing comma
+mod inner {
+    use super::*;
+    #[derive(Deserial)]
+    struct WithStateParameterWhereTwo<S>
+    where
+        S: Clone,
+        // note the lack of comma compared to the test above
+        S: PartialOrd {
+        value: S,
+    }
+
+    #[derive(Deserial)]
+    struct WithStateParameterWhereThree<S>
+    where // empty where clause
+    {
+        value: S,
+    }
+}
+
+
+#[derive(Deserial)]
 #[concordium(bound(deserial = ""))]
 struct ExplicitBound<A> {
     field: marker::PhantomData<A>,
