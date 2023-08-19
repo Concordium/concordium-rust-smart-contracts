@@ -15,8 +15,8 @@ cargo concordium build -e --out contract.wasm.v1
 Run the following command to run the unit and integration tests:
 
 ```
-cargo concordium test 
+cargo concordium test
 ```
 ```
-cargo test 
+cargo test
 ```

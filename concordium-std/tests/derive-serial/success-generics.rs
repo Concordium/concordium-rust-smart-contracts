@@ -31,6 +31,37 @@ struct WithStateParameter<S: HasStateApi> {
     test_map: StateMap<u32, String, S>,
 }
 
+#[derive(Serial)]
+#[concordium(state_parameter = "S")]
+struct WithStateParameterWhere<S>
+where
+    S: HasStateApi,
+    S: Clone, {
+    test_map: StateMap<u32, String, S>,
+}
+
+#[rustfmt::skip] // skip formatting to maintain lack of trailing comma
+mod inner {
+    use super::*;
+    #[derive(Serial)]
+    #[concordium(state_parameter = "S")]
+    struct WithStateParameterWhereTwo<S>
+    where
+        S: HasStateApi,
+        S: Clone { // note the lack of comma compared to the test above
+        test_map: StateMap<u32, String, S>,
+    }
+
+    #[derive(Serial)]
+    #[concordium(state_parameter = "S")]
+    struct WithStateParameterWhereThree<S: HasStateApi>
+    where // empty where clause
+        {
+        test_map: StateMap<u32, String, S>,
+    }
+}
+
+
 trait ProxyTrait {
     type State: HasStateApi;
 }
