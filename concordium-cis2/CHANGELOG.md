@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Derive `PartialEq` and `Eq` for the `TransferEvent`, `MintEvent`, `BurnEvent`, `UpdateOperatorEvent`, `TokenMetadataEvent`, `OperatorUpdate`, and `UpdateOperator` types.
+- Added `Cis2Client` to the library. This can be used from one smart contract to call into other cis2 compatible smart contracts in a type safe way.
+
 ## concordium-cis2 4.0.0 (2023-06-16)
 
 - Bump concordium-std to version 7.

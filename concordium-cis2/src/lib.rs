@@ -31,6 +31,10 @@
 //! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is defined
 //! and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
+
+mod cis2_client;
+pub use cis2_client::{Cis2Client, Cis2ClientError};
+
 use concordium_std::{collections::BTreeMap, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;
@@ -862,7 +866,7 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
 }
 
 /// The different errors the contract can produce.
-#[derive(Debug, PartialEq, Eq, SchemaType, Serial)]
+#[derive(Debug, PartialEq, Eq, SchemaType, Serial, Deserial)]
 pub enum Cis2Error<R> {
     /// Invalid token id (Error code: -42000001).
     InvalidTokenId,
