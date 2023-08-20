@@ -12,8 +12,8 @@ std = ["concordium-std/std", "concordium-cis2/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies]
-concordium-std = {version = "7.0", default-features = false}
-concordium-cis2 = {version = "4.0", default-features = false}
+concordium-std = {version = "8.0", default-features = false}
+concordium-cis2 = {version = "5.0", default-features = false}
 
 [lib]
 crate-type=["cdylib", "rlib"]

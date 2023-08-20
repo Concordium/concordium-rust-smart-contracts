@@ -11,7 +11,7 @@ readme = "./README.md"
 
 [dependencies.concordium-std]
 path = "../concordium-std"
-version = "7.0"
+version = "8.0"
 default-features = false
 
 [dependencies.primitive-types]
