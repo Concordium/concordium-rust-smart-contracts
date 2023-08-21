@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## 3.0.0
+
 - Support protocol 6 semantics, in particular validation assumes protocol 6
   semantics now, allowing sign extension instructions and new operations for
   querying account's public keys, and checking signatures with account's keys.
