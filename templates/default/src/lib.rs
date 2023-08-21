@@ -5,7 +5,7 @@ use concordium_std::*;
 use core::fmt::Debug;
 
 /// Your smart contract state.
-#[derive(Serialize, SchemaType, Clone)]
+#[derive(Serialize, SchemaType)]
 pub struct State {
     // Your state
 }

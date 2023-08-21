@@ -192,7 +192,7 @@ pub struct MintParams {
 }
 
 /// The state for each address.
-#[derive(Serial, DeserialWithState, Deletable, StateClone)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The tokens owned by this address.
@@ -213,7 +213,7 @@ impl<S: HasStateApi> AddressState<S> {
 /// The contract state.
 // Note: The specification does not specify how to structure the contract state
 // and this could be structured in a more space efficient way depending on the use case.
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// Counter to increase the `token_id` at every mint function invoke.

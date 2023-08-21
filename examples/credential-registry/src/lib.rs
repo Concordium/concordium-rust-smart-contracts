@@ -130,7 +130,7 @@ impl<S: HasStateApi> CredentialEntry<S> {
 }
 
 /// The registry state.
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
     /// An account address of the issuer. It is used for authorization in

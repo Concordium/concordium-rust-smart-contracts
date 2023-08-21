@@ -2,7 +2,7 @@
 //! simplest case when `#[concordium(state_parameter)]` is set.
 use concordium_std::*;
 
-#[derive(Serial, DeserialWithState, Deletable, StateClone)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     map: StateMap<u8, u16, S>,

@@ -70,7 +70,7 @@ struct VotingView {
 }
 
 /// The contract state
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     /// The description of the election.

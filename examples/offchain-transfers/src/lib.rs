@@ -115,7 +115,7 @@ pub struct ContractConfig {
 }
 
 /// The smart contract state
-#[derive(StateClone, Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S> {
     /// The configuration of the contract
