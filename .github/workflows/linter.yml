@@ -79,6 +79,7 @@ jobs:
         crates:
           - templates/default
           - templates/cis2-nft
+          - templates/credential-registry
     env:
       PROJECT_NAME: my-project
 
@@ -108,8 +109,8 @@ jobs:
         run: |
           # TEMPLATE_DIR=`pwd`
           mv $PROJECT_NAME ${{ runner.temp }}/
-          # sed -i "s/{version = \"7.0\", default-features = false}/{path = \"${TEMPLATE_DIR//\//\\\/}\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          # sed -i "s/{version = \"4.0\", default-features = false}/{path = \"${TEMPLATE_DIR//\//\\\/}\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          # sed -i "s/version = \"7.0\", default-features = false/path = \"${TEMPLATE_DIR//\//\\\/}\/concordium-std\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          # sed -i "s/version = \"4.0\", default-features = false/path = \"${TEMPLATE_DIR//\//\\\/}\/concordium-cis2\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           cd ${{ runner.temp }}/$PROJECT_NAME
           cargo test
 
