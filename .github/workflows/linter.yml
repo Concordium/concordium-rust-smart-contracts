@@ -128,6 +128,7 @@ jobs:
         crates:
           - templates/default
           - templates/cis2-nft
+          - templates/credential-registry
 
     env:
       PROJECT_NAME: cis2-nft
