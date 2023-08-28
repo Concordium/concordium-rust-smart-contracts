@@ -3,3 +3,4 @@ cargo_generate_version = ">= 0.16.0, < 0.19.0"
 
 [placeholders]
 description = { type="string", prompt="Description for the project?" }
+restorable = { type="bool", prompt="Can revocation be canceled?", default=false }

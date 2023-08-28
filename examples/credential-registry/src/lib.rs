@@ -18,11 +18,11 @@
 //!
 //! - register a new credential;
 //! - revoke a credential;
-//! - restore (cancel revocation of) a revoked credential;
 //! - register/remove revocation authority keys;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
-//! - update credential schema reference.
+//! - update credential schema reference;
+//! - restore (cancel revocation of) a revoked credential.
 //!
 //! ## Holder's functionality
 //!
@@ -1065,9 +1065,9 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// input to the entrypoint with the authority's public key.
 /// The public key is stored in `revocation_keys`.
 ///
-/// Note that a nonce is used as a general way to prevent replay attacks. In
-/// this particular case, the revocation is done once, however, the issuer could
-/// choose to implement an update method that restores the revoked credential.
+/// Note that a nonce is used as a general way to prevent replay attacks. The
+/// issuer can choose to implement a function that restores the revoked
+/// credential.
 ///
 ///  Logs `CredentialEvent::Revoke` with `Other` as the revoker.
 ///

@@ -18,11 +18,11 @@
 //!
 //! - register a new credential;
 //! - revoke a credential;
-//! - restore (cancel revocation of) a revoked credential;
 //! - register/remove revocation authority keys;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
-//! - update credential schema reference.
+{% if restorable %}//! - update credential schema reference;
+//! - restore (cancel revocation of) a revoked credential.{% else %}//! - update credential schema reference.{% endif %}
 //!
 //! ## Holder's functionality
 //!
@@ -130,7 +130,7 @@ impl<S: HasStateApi> CredentialEntry<S> {
 }
 
 /// The registry state.
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
     /// An account address of the issuer. It is used for authorization in
@@ -162,8 +162,8 @@ enum ContractError {
     ParseParamsError,
     CredentialNotFound,
     CredentialAlreadyExists,
-    IncorrectStatusBeforeRevocation,
-    IncorrectStatusBeforeRestoring,
+    IncorrectStatusBeforeRevocation,{% if restorable %}
+    IncorrectStatusBeforeRestoring,{% endif %}
     KeyAlreadyExists,
     KeyDoesNotExist,
     NotAuthorized,
@@ -263,7 +263,7 @@ impl<S: HasStateApi> State<S> {
         metadata: MetadataUrl,
     ) -> ContractResult<()> {
         if let Some(mut entry) = self.credentials.get_mut(credential_id) {
-            entry.metadata_url.update(|_| metadata);
+            *entry.metadata_url = metadata;
             Ok(())
         } else {
             Err(ContractError::CredentialNotFound)
@@ -285,7 +285,7 @@ impl<S: HasStateApi> State<S> {
         credential.revoked = true;
         Ok(())
     }
-
+{% if restorable %}
     fn restore_credential(
         &mut self,
         now: Timestamp,
@@ -301,7 +301,7 @@ impl<S: HasStateApi> State<S> {
         credential.revoked = false;
         Ok(())
     }
-
+{% endif %}
     fn register_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
         let res = self.all_revocation_keys.insert(pk);
         ensure!(res, ContractError::KeyAlreadyExists);
@@ -379,7 +379,7 @@ struct RevokeCredentialEvent {
     /// The issuer can use this field to comment on the revocation, so the
     /// holder can observe it in the wallet.
     reason:    Option<Reason>,
-}
+}{% if restorable %}
 
 /// An untagged restoration event.
 /// For a tagged version use `CredentialEvent`.
@@ -389,7 +389,7 @@ struct RestoreCredentialEvent {
     holder_id: CredentialHolderId,
     /// An optional text clarifying the restoring reasons.
     reason:    Option<Reason>,
-}
+}{% endif %}
 
 /// An untagged credential metadata event. Emitted when updating the credential
 /// metadata. For a tagged version use `CredentialEvent`.
@@ -431,8 +431,8 @@ enum CredentialEvent {
     Register(CredentialEventData),
     /// Credential revocation event.
     Revoke(RevokeCredentialEvent),
-    /// Credential restoration (reversing revocation) event.
-    Restore(RestoreCredentialEvent),
+    {% if restorable %}/// Credential restoration (reversing revocation) event.
+    Restore(RestoreCredentialEvent),{% endif %}
     /// Issuer's metadata changes, including the contract deployment.
     IssuerMetadata(MetadataUrl),
     /// Credential's metadata changes.
@@ -509,7 +509,7 @@ impl schema::SchemaType for CredentialEvent {
                         ("action".to_string(), RevocationKeyAction::get_type()),
                     ])),
                 ),
-            ),
+            ),{% if restorable %}
             (
                 0, // Restore event is not covered by CIS-4; it gets `0` tag.
                 (
@@ -519,7 +519,7 @@ impl schema::SchemaType for CredentialEvent {
                         ("reason".to_string(), Option::<Reason>::get_type()),
                     ])),
                 ),
-            ),
+            ),{% endif %}
         ]))
     }
 }
@@ -551,12 +551,12 @@ impl Serial for CredentialEvent {
             CredentialEvent::RevocationKey(data) => {
                 244u8.serial(out)?;
                 data.serial(out)
-            }
+            }{% if restorable %}
             // Restore event is not covered by CIS-4; it gets `0` tag.
             CredentialEvent::Restore(data) => {
                 0u8.serial(out)?;
                 data.serial(out)
-            }
+            }{% endif %}
         }
     }
 }
@@ -570,7 +570,7 @@ impl Deserial for CredentialEvent {
             246u8 => Ok(Self::CredentialMetadata(source.get()?)),
             245u8 => Ok(Self::Schema(source.get()?)),
             244u8 => Ok(Self::RevocationKey(source.get()?)),
-            0u8 => Ok(Self::Restore(source.get()?)),
+{% if restorable %}            0u8 => Ok(Self::Restore(source.get()?)),{% endif %}
             _ => Err(ParseError {}),
         }
     }
@@ -606,7 +606,7 @@ pub struct InitParams {
 ///   - Fails to log the events.
 ///   - Fails to register any of the initial revocation keys.
 #[init(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     parameter = "InitParams",
     event = "CredentialEvent",
     enable_logger
@@ -692,7 +692,7 @@ pub struct CredentialQueryResponse {
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "credentialEntry",
     parameter = "CredentialHolderId",
     error = "ContractError",
@@ -712,7 +712,7 @@ fn contract_credential_entry<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "credentialStatus",
     parameter = "CredentialHolderId",
     error = "ContractError",
@@ -741,7 +741,7 @@ fn contract_credential_status<S: HasStateApi>(
 /// - An entry with the given credential id already exists.
 /// - Fails to log the event.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "registerCredential",
     parameter = "RegisterCredentialParam",
     error = "ContractError",
@@ -818,7 +818,7 @@ pub struct RevocationDataHolder {
 /// `serializationHelperHolderRevoke` function is not executed at any point in
 /// time, therefore the logic of the function is irrelevant.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "serializationHelperHolderRevoke",
     parameter = "RevocationDataHolder"
 )]
@@ -878,7 +878,7 @@ pub struct RevocationDataOther {
 /// `serializationHelperOtherRevoke` function is not executed at any point in
 /// time, therefore the logic of the function is irrelevant.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "serializationHelperOtherRevoke",
     parameter = "RevocationDataOther"
 )]
@@ -942,7 +942,7 @@ fn authorize_with_signature(
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log the event.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "revokeCredentialHolder",
     parameter = "RevokeCredentialHolderParam",
     error = "ContractError",
@@ -1018,7 +1018,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log the event.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "revokeCredentialIssuer",
     parameter = "RevokeCredentialIssuerParam",
     error = "ContractError",
@@ -1065,9 +1065,9 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// input to the entrypoint with the authority's public key.
 /// The public key is stored in `revocation_keys`.
 ///
-/// Note that a nonce is used as a general way to prevent replay attacks. In
-/// this particular case, the revocation is done once, however, the issuer could
-/// choose to implement an update method that restores the revoked credential.
+/// Note that a nonce is used as a general way to prevent replay attacks. The
+/// issuer can choose to implement a function that restores the revoked
+/// credential.
 ///
 ///  Logs `CredentialEvent::Revoke` with `Other` as the revoker.
 ///
@@ -1082,7 +1082,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// - The credential status is not one of `Active` or `NotActivated`
 /// - Fails to log the event.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "revokeCredentialOther",
     parameter = "RevokeCredentialOtherParam",
     error = "ContractError",
@@ -1190,7 +1190,7 @@ pub struct RemovePublicKeyParameters {
 /// - The caller is not the issuer.
 /// - Fails to log the event for any key in the input.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "registerRevocationKeys",
     parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
@@ -1232,7 +1232,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - Fails to log the event for any key in the input.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "removeRevocationKeys",
     parameter = "RemovePublicKeyParameters",
     error = "ContractError",
@@ -1265,7 +1265,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "revocationKeys",
     error = "ContractError",
     return_value = "Vec<(PublicKeyEd25519, u64)>"
@@ -1290,7 +1290,7 @@ struct MetadataResponse {
 
 /// A view entrypoint to get the registry metadata.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "registryMetadata",
     error = "ContractError",
     return_value = "MetadataResponse"
@@ -1318,7 +1318,7 @@ fn contract_registry_metadata<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - It fails to log the event.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "updateIssuerMetadata",
     parameter = "MetadataUrl",
     error = "ContractError",
@@ -1339,7 +1339,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
 
 /// A view entrypoint for querying the issuer's public key.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "issuer",
     error = "ContractError",
     return_value = "PublicKeyEd25519"
@@ -1364,7 +1364,7 @@ fn contract_issuer<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "updateCredentialSchema",
     parameter = "SchemaRef",
     error = "ContractError",
@@ -1407,7 +1407,7 @@ struct CredentialMetadataParam {
 /// - Some of the credentials are not present.
 /// - Fails to log the event for any of the input credentials.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "updateCredentialMetadata",
     parameter = "Vec<CredentialMetadataParam>",
     error = "ContractError",
@@ -1433,7 +1433,7 @@ fn contract_update_credential_metadata<S: HasStateApi>(
         }))?;
     }
     Ok(())
-}
+}{% if restorable %}
 
 /// A parameter type for restoring a credential by the issuer.
 #[derive(Serialize, SchemaType)]
@@ -1458,7 +1458,7 @@ pub struct RestoreCredentialIssuerParam {
 /// - Credential status is different from `Revoked`.
 /// - Fails to log the event.
 #[receive(
-    contract = "{{crate_name}}",
+    contract = "credential_registry",
     name = "restoreCredential",
     parameter = "RestoreCredentialIssuerParam",
     error = "ContractError",
@@ -1490,7 +1490,7 @@ fn contract_restore_credential<S: HasStateApi>(
         reason: parameter.reason,
     }))?;
     Ok(())
-}
+}{% endif %}
 
 #[concordium_cfg_test]
 mod tests {
@@ -1794,7 +1794,7 @@ mod tests {
         register_result.is_ok()
             && revocation_result.is_ok()
             && status_result == Ok(CredentialStatus::Revoked)
-    }
+    }{% if restorable %}
 
     /// Property: revoking and then restoring a credential gives the same status
     /// as before revocation. In this case, restoring always succeeds.
@@ -1834,7 +1834,7 @@ mod tests {
             && revocation_result.is_ok()
             && restoring_result.is_ok()
             && original_status == status_after_restoring
-    }
+    }{% endif %}
 
     /// Property: registering a revocation key in fresh state and querying it
     /// results in the same value
@@ -2039,7 +2039,7 @@ mod tests {
             })),
             "Incorrect revoke credential event logged"
         );
-    }
+    }{% if restorable %}
 
     /// Test the restore credential entrypoint.
     #[concordium_test]
@@ -2123,5 +2123,5 @@ mod tests {
             })),
             "Incorrect revoke credential event logged"
         );
-    }
+    }{% endif %}
 }

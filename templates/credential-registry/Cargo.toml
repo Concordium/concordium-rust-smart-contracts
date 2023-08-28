@@ -1,9 +1,11 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [package]
 name = "{{crate_name}}"
 version = "0.1.0"
-authors = [ "{{authors}}" ]
 edition = "2021"
 license = "MPL-2.0"
+authors = [ "{{authors}}" ]
 description = "{{description}}"
 
 [features]
@@ -13,7 +15,7 @@ wee_alloc = ["concordium-std/wee_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
-concordium-std = {version = "7.0", default-features = false, features = ["concordium-quickcheck"]}
+concordium-std = {version="8.0", features = ["concordium-quickcheck"], default-features = false}
 quickcheck = {version = "1"}
 
 [lib]
