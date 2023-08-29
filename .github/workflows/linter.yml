@@ -218,6 +218,7 @@ jobs:
           - templates/credential-registry
     env:
       PROJECT_NAME: credential-registry
+      PROJECT_DESCRIPTION: "An example credential registry smart contract"
 
     steps:
       - name: Checkout sources
@@ -230,7 +231,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=\"An example credential registry smart contract\" -d restorable=true"
+          other: "-d description=${{ env.PROJECT_DESCRIPTION }} -d restorable=true"
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
