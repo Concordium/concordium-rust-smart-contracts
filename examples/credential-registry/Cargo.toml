@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
 authors = [ "Concordium <developers@concordium.com>" ]
-description = "An example credential registry smart contract"
+description = "Example-credential-registry"
 
 [features]
 default = ["std", "crypto-primitives", "wee_alloc"]
