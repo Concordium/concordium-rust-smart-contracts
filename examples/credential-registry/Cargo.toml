@@ -15,7 +15,7 @@ wee_alloc = ["concordium-std/wee_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
-concordium-std = {path = "../../concordium-std", version="8.0",  default-features = false, features = ["concordium-quickcheck"]}
+concordium-std = {path = "../../concordium-std", version = "8.0",  default-features = false, features = ["concordium-quickcheck"]}
 quickcheck = {version = "1"}
 
 [lib]
