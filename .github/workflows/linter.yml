@@ -218,7 +218,7 @@ jobs:
           - templates/credential-registry
     env:
       PROJECT_NAME: credential-registry
-      PROJECT_DESCRIPTION: "An example credential registry smart contract"
+      PROJECT_DESCRIPTION: "'An example credential registry smart contract'"
 
     steps:
       - name: Checkout sources
