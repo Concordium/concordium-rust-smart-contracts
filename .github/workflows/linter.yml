@@ -246,7 +246,7 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"8.0\", default-features = false/path = \"..\/..\/concordium-std\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"8.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
 
