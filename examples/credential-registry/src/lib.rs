@@ -163,9 +163,12 @@ enum ContractError {
     CredentialNotFound,
     CredentialAlreadyExists,
     IncorrectStatusBeforeRevocation,
+
     IncorrectStatusBeforeRestoring,
+
     KeyAlreadyExists,
     KeyDoesNotExist,
+
     NotAuthorized,
     NonceMismatch,
     WrongContract,
@@ -208,8 +211,8 @@ impl<S: HasStateApi> State<S> {
             issuer_key,
             issuer_metadata,
             revocation_keys: state_builder.new_map(),
-            credentials: state_builder.new_map(),
             all_revocation_keys: state_builder.new_set(),
+            credentials: state_builder.new_map(),
             credential_type,
             credential_schema,
         }
@@ -618,6 +621,7 @@ fn init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let parameter: InitParams = ctx.parameter_cursor().get()?;
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
+
     let mut state = State::new(
         state_builder,
         parameter.issuer_account.unwrap_or_else(|| ctx.init_origin()),
@@ -626,6 +630,7 @@ fn init<S: HasStateApi>(
         parameter.credential_type.clone(),
         parameter.schema.clone(),
     );
+
     for pk in parameter.revocation_keys {
         state.register_revocation_key(pk)?;
         logger.log(&CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -633,6 +638,7 @@ fn init<S: HasStateApi>(
             action: RevocationKeyAction::Register,
         }))?;
     }
+
     logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
         credential_type: parameter.credential_type,
         schema_ref:      parameter.schema,
@@ -925,9 +931,9 @@ fn authorize_with_signature(
 /// entrypoint with the holder's public key. The public key is used as the
 /// credential identifier.
 ///
-/// Note that nonce is used as a general way to prevent replay attacks. In this
-/// particular case, the revocation can be reversed by the issuer by restoring
-/// the revoked credential.
+/// Note that nonce is used as a general way to prevent replay attacks. The
+/// issuer can choose to implement a function that restores the revoked
+/// credential.
 ///
 /// Logs `CredentialEvent::Revoke` with `Holder` as the revoker.
 ///
@@ -1648,6 +1654,7 @@ mod tests {
             to_bytes(&CredentialEvent::IssuerMetadata(issuer_metadata())),
             "Incorrect issuer metadata event logged"
         );
+
         claim_eq!(
             logger.logs[1],
             to_bytes(&CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -1656,6 +1663,7 @@ mod tests {
             })),
             "Incorrect revocation key event logged"
         );
+
         claim_eq!(
             logger.logs[2],
             to_bytes(&CredentialEvent::Schema(CredentialSchemaRefEvent {

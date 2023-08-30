@@ -112,6 +112,46 @@ jobs:
           cd ${{ runner.temp }}/$PROJECT_NAME
           cargo test
 
+  # The credential-registry template generated with the `cargo-generate` command for all combination of parameters
+  # and it is checked that the 'cargo test' command can be executed without errors on the generated smart contract.
+  cargo-generate-templates:
+    name: Credential registry template generation
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        restorable: ["true", "false"]
+        revocable_by_others: ["true", "false"]
+    env:
+      PROJECT_NAME: my-project
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Run cargo-generate
+        uses: cargo-generate/cargo-generate-action@v0.16.0
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: templates/credential-registry
+          other: "-d description=myProject -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      # we need to move the generated project to a temp folder, away from the template project
+      # otherwise `cargo` runs would fail
+      # see https://github.com/rust-lang/cargo/issues/9922
+      # Run all tests, including doc tests.
+      - name: Run cargo test
+        run: |
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          cd ${{ runner.temp }}/$PROJECT_NAME
+          cargo test
+
   # All templates are generated with the `cargo-generate` command
   # and it is checked that the schemas can be built as part of the 'clippy' command.
   clippy-template:
@@ -142,7 +182,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d restorable=true"
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d restorable=true -d revocable_by_others=true"
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
