@@ -79,7 +79,6 @@ jobs:
         crates:
           - templates/default
           - templates/cis2-nft
-          - templates/credential-registry
     env:
       PROJECT_NAME: my-project
 
@@ -94,7 +93,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d restorable=true"
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/"
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
