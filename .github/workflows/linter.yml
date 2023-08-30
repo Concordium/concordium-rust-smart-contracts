@@ -114,7 +114,7 @@ jobs:
 
   # The credential-registry template generated with the `cargo-generate` command for all combination of parameters
   # and it is checked that the 'cargo test' command can be executed without errors on the generated smart contract.
-  cargo-generate-templates:
+  cargo-generate-credential-registry-template:
     name: Credential registry template generation
     runs-on: ubuntu-latest
     strategy:
