@@ -269,7 +269,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=Example-credential-registry -d restorable=true"
+          other: "-d description=Example-credential-registry -d restorable=true -d revocable_by_others=true"
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
