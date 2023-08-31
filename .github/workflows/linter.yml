@@ -315,7 +315,7 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        uses: cargo-generate/cargo-generate-action@v0.18.3
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
