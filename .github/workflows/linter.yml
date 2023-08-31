@@ -319,7 +319,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=Example-credential-registry -d template-type=default"
+          other: "-d description=Example-credential-registry -d template_type=default"
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
