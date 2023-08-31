@@ -16,9 +16,9 @@
 //!
 //! ## Issuer's  functionality
 //!
+{% if revocable_by_others %}//! - register/remove revocation authority keys;{% else %}//!{% endif %}
 //! - register a new credential;
 //! - revoke a credential;
-//! - register/remove revocation authority keys;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
 {% if restorable %}//! - update credential schema reference;

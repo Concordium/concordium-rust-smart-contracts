@@ -16,9 +16,9 @@
 //!
 //! ## Issuer's  functionality
 //!
+//! - register/remove revocation authority keys;
 //! - register a new credential;
 //! - revoke a credential;
-//! - register/remove revocation authority keys;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
 //! - update credential schema reference;
