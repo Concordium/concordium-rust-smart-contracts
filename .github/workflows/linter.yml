@@ -315,7 +315,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.18.3
+        # version 0.17.0 is required for the rhai pre-script to work correctly
+        uses: cargo-generate/cargo-generate-action@v0.17.0
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
