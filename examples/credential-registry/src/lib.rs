@@ -179,7 +179,7 @@ enum ContractError {
     LogFull,
     LogMalformed,
 
-    InvokeContractError,
+    ContractInvocationError,
     FailedUpgradeMissingModule,
     FailedUpgradeMissingContract,
     FailedUpgradeUnsupportedModuleVersion,
@@ -1518,7 +1518,7 @@ struct UpgradeParams {
 
 /// Mapping errors related to contract invocations to ContractError.
 impl<T> From<CallContractError<T>> for ContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self { Self::ContractInvocationError }
 }
 
 /// Mapping errors related to contract upgrades to ContractError.
