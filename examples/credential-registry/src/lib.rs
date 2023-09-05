@@ -1642,9 +1642,11 @@ mod tests {
 
     const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
     const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
-    const CREDANIAL_METADATA_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
+    const CREDANIAL_METADATA_URL: &str =
+        "https://example-university.com/diplomas/university-vc-metadata.json";
     const CREDENTIAL_TYPE: &str = "UniversityDegreeCredential";
-    const CREDENTIAL_SCHEMA_URL: &str = "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
+    const CREDENTIAL_SCHEMA_URL: &str =
+        "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
@@ -1808,7 +1810,7 @@ mod tests {
 
     /// Property: once the `revoked` flag is set to `true`, the status is
     /// always `Revoked` regardless of the valid_from and valid_until values
-    #[concordium_quickcheck(num_tests=500)]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
@@ -1824,7 +1826,7 @@ mod tests {
 
     /// Property: registering a credential and then querying it results in the
     /// same credential data, which is not revoked and has nonce = `0`
-    #[concordium_quickcheck(num_tests=500)]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_register_credential(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1858,7 +1860,7 @@ mod tests {
     /// Property: if a credential is revoked successfully, the status changes to
     /// `Revoked`. The test is designed in such a way that the revocation is
     /// expeced to succeed.
-    #[concordium_quickcheck(num_tests=500)]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_revocation(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1888,7 +1890,7 @@ mod tests {
 
     /// Property: revoking and then restoring a credential gives the same status
     /// as before revocation. In this case, restoring always succeeds.
-    #[concordium_quickcheck(num_tests=500)]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_revoke_restore(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1928,7 +1930,7 @@ mod tests {
 
     /// Property: registering a revocation key in fresh state and querying it
     /// results in the same value
-    #[concordium_quickcheck(num_tests=500)]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_register_revocation_key(
         pk: PublicKeyEd25519,
         credential_type: CredentialType,
