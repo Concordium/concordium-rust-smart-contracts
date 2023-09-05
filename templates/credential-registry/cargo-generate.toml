@@ -13,5 +13,5 @@ revocable_by_others = true
 restorable = true
 
 [conditional.'template_type == "custom"'.placeholders]
-revocable_by_others = { type = "bool", prompt = "Can credentials be revoked by someone other than the issuer or the holder?", default = true }
+revocable_by_others = { type = "bool", prompt = "Can credentials be revoked by someone other than the issuer or the holder?", default = false }
 restorable = { type = "bool", prompt = "Can revocation be reverted?", default = false }

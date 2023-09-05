@@ -180,6 +180,11 @@ enum ContractError {
     SerializationError,
     LogFull,
     LogMalformed,
+
+    InvokeContractError,
+    FailedUpgradeMissingModule,
+    FailedUpgradeMissingContract,
+    FailedUpgradeUnsupportedModuleVersion,
 }
 
 /// Mapping errors related to logging to ContractError.
@@ -1598,6 +1603,83 @@ fn contract_restore_credential<S: HasStateApi>(
     Ok(())
 }
 {% endif %}
+/// The parameter type for the contract function `upgrade`.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
+#[derive(Debug, Serialize, SchemaType)]
+struct UpgradeParams {
+    /// The new module reference.
+    module:  ModuleReference,
+    /// Optional entrypoint to call in the new module after upgrade.
+    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
+/// Mapping errors related to contract invocations to ContractError.
+impl<T> From<CallContractError<T>> for ContractError {
+    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+}
+
+/// Mapping errors related to contract upgrades to ContractError.
+impl From<UpgradeError> for ContractError {
+    #[inline(always)]
+    fn from(ue: UpgradeError) -> Self {
+        match ue {
+            UpgradeError::MissingModule => Self::FailedUpgradeMissingModule,
+            UpgradeError::MissingContract => Self::FailedUpgradeMissingContract,
+            UpgradeError::UnsupportedModuleVersion => Self::FailedUpgradeUnsupportedModuleVersion,
+        }
+    }
+}
+
+/// Upgrade this smart contract instance to a new module and call optionally a
+/// migration function after the upgrade.
+///
+/// It rejects if:
+/// - Sender is not the issuer.
+/// - It fails to parse the parameter.
+/// - If the upgrade fails.
+/// - If the migration invoke fails.
+///
+/// This function is marked as `low_level`. This is **necessary** since the
+/// high-level mutable functions store the state of the contract at the end of
+/// execution. This conflicts with migration since the shape of the state
+/// **might** be changed by the migration function. If the state is then written
+/// by this function it would overwrite the state stored by the migration
+/// function.
+#[receive(
+    contract = "credential_registry",
+    name = "upgrade",
+    parameter = "UpgradeParams",
+    error = "ContractError",
+    low_level
+)]
+fn contract_upgrade<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<S>,
+) -> ContractResult<()> {
+    // Read the top-level contract state.
+    let state: State<S> = host.state().read_root()?;
+
+    // Check that only the issuer is authorized to upgrade the smart contract.
+    ensure!(sender_is_issuer(ctx, &state), ContractError::NotAuthorized);
+    // Parse the parameter.
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
+    // Trigger the upgrade.
+    host.upgrade(params.module)?;
+    // Call the migration function if provided.
+    if let Some((func, parameters)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameters.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
+    Ok(())
+}
+
 #[concordium_cfg_test]
 mod tests {
 
@@ -1659,7 +1741,10 @@ mod tests {
     }
 
     const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
-    const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
+    const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
+    const CREDANIAL_METADATA_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
+    const CREDENTIAL_TYPE: &str = "UniversityDegreeCredential";
+    const CREDENTIAL_SCHEMA_URL: &str = "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
@@ -1680,7 +1765,7 @@ mod tests {
     fn credential_entry<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> CredentialEntry<S> {
         CredentialEntry {
             metadata_url:     state_builder.new_box(MetadataUrl {
-                url:  "".into(),
+                url:  CREDANIAL_METADATA_URL.into(),
                 hash: None,
             }),
             valid_from:       Timestamp::from_timestamp_millis(0),
@@ -1693,7 +1778,7 @@ mod tests {
 
     fn issuer_metadata() -> MetadataUrl {
         MetadataUrl {
-            url:  ISSUER_URL.to_string(),
+            url:  ISSUER_METADATA_URL.to_string(),
             hash: None,
         }
     }
@@ -1701,11 +1786,11 @@ mod tests {
     fn get_credential_schema() -> (CredentialType, SchemaRef) {
         (
             CredentialType {
-                credential_type: "ExampleSchema".to_string(),
+                credential_type: CREDENTIAL_TYPE.to_string(),
             },
             SchemaRef {
                 schema_ref: MetadataUrl {
-                    url:  "https://example.com/schema.json".to_string(),
+                    url:  CREDENTIAL_SCHEMA_URL.to_string(),
                     hash: None,
                 },
             },
@@ -1825,14 +1910,11 @@ mod tests {
 
     /// Property: once the `revoked` flag is set to `true`, the status is
     /// always `Revoked` regardless of the valid_from and valid_until values
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests=500)]
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
-            metadata_url:     state_builder.new_box(MetadataUrl {
-                url:  "123456".into(),
-                hash: None,
-            }),
+            metadata_url:     state_builder.new_box(data.metadata_url),
             revocation_nonce: nonce,
             holder_revocable: data.holder_revocable,
             valid_from:       data.valid_from,
@@ -1844,7 +1926,7 @@ mod tests {
 
     /// Property: registering a credential and then querying it results in the
     /// same credential data, which is not revoked and has nonce = `0`
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests=500)]
     fn prop_register_credential(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1878,7 +1960,7 @@ mod tests {
     /// Property: if a credential is revoked successfully, the status changes to
     /// `Revoked`. The test is designed in such a way that the revocation is
     /// expeced to succeed.
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests=500)]
     fn prop_revocation(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1908,7 +1990,7 @@ mod tests {
 
     /// Property: revoking and then restoring a credential gives the same status
     /// as before revocation. In this case, restoring always succeeds.
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests=500)]
     fn prop_revoke_restore(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1948,7 +2030,7 @@ mod tests {
 {% if revocable_by_others %}
     /// Property: registering a revocation key in fresh state and querying it
     /// results in the same value
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests=500)]
     fn prop_register_revocation_key(
         pk: PublicKeyEd25519,
         credential_type: CredentialType,
@@ -2043,7 +2125,7 @@ mod tests {
                 schema_ref,
                 credential_type,
                 metadata_url: MetadataUrl {
-                    url:  "".into(),
+                    url:  CREDANIAL_METADATA_URL.into(),
                     hash: None,
                 },
             })),
