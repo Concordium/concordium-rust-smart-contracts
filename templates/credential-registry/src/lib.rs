@@ -1,5 +1,6 @@
 //! This smart contract implements an example on-chain registry for the public
-//! part of verifiable credentials (VCs).
+//! part of verifiable credentials (VCs). The contract follows CIS-4: Credential
+//! Registry Standard.
 //!
 //! # Description
 //!
@@ -14,15 +15,16 @@
 //! verifiable credentials of several types, they can deploy several instances
 //! of this contract with different credential types.
 //!
-//! ## Issuer's  functionality
+//! ## Issuer's functionality
 //!
 {% if revocable_by_others %}//! - register/remove revocation authority keys;{% else %}//!{% endif %}
 //! - register a new credential;
 //! - revoke a credential;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
-{% if restorable %}//! - update credential schema reference;
-//! - restore (cancel revocation of) a revoked credential.{% else %}//! - update credential schema reference.{% endif %}
+//! - update credential schema reference;
+{% if restorable %}//! - upgrade the contract, set implementors;
+//! - restore (cancel revocation of) a revoked credential.{% else %}//! - upgrade the contract, set implementors.{% endif %}
 //!
 //! ## Holder's functionality
 //!
@@ -42,7 +44,16 @@
 //! - view credential status to verify VC validity;
 //! - view credential data to verify proofs (verifiable presentations) requested
 //!   from holders.
+use concordium_cis2::*;
 use concordium_std::*;
+
+/// The standard identifier for the CIS-4: Credential Registry Standard
+pub const CIS4_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-4");
+
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+    [CIS0_STANDARD_IDENTIFIER, CIS4_STANDARD_IDENTIFIER];
 
 /// Credential type is a string that corresponds to the value of the "name"
 /// attribute of the JSON credential schema.
@@ -153,6 +164,9 @@ pub struct State<S: HasStateApi> {
     /// A reference to a JSON document containing the credential schema for the
     /// given credential type.
     credential_schema:   SchemaRef,
+    /// Map with contract addresses providing implementations of additional
+    /// standards.
+    implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
 }
 
 /// Contract Errors.
@@ -222,6 +236,7 @@ impl<S: HasStateApi> State<S> {
             credentials: state_builder.new_map(),
             credential_type,
             credential_schema,
+            implementors: state_builder.new_map(),
         }
     }
 
@@ -332,6 +347,22 @@ impl<S: HasStateApi> State<S> {
             Ok(())
         }
     }{% endif %}
+
+    fn has_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
+        if let Some(addresses) = self.implementors.get(std_id) {
+            SupportResult::SupportBy(addresses.to_vec())
+        } else {
+            SupportResult::NoSupport
+        }
+    }
+
+    fn set_implementors(
+        &mut self,
+        std_id: StandardIdentifierOwned,
+        implementors: Vec<ContractAddress>,
+    ) {
+        self.implementors.insert(std_id, implementors);
+    }
 }
 
 /// Data for events of registering and updating a credential.
@@ -622,7 +653,7 @@ pub struct InitParams {
 ///   - Fails to parse the input parameter.
 ///   - Fails to log the events.{% endif %}
 #[init(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     parameter = "InitParams",
     event = "CredentialEvent",
     enable_logger
@@ -720,7 +751,7 @@ pub struct CredentialQueryResponse {
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "credentialEntry",
     parameter = "CredentialHolderId",
     error = "ContractError",
@@ -740,7 +771,7 @@ fn contract_credential_entry<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "credentialStatus",
     parameter = "CredentialHolderId",
     error = "ContractError",
@@ -769,7 +800,7 @@ fn contract_credential_status<S: HasStateApi>(
 /// - An entry with the given credential id already exists.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registerCredential",
     parameter = "RegisterCredentialParam",
     error = "ContractError",
@@ -846,7 +877,7 @@ pub struct RevocationDataHolder {
 /// `serializationHelperHolderRevoke` function is not executed at any point in
 /// time, therefore the logic of the function is irrelevant.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "serializationHelperHolderRevoke",
     parameter = "RevocationDataHolder"
 )]
@@ -906,7 +937,7 @@ pub struct RevocationDataOther {
 /// `serializationHelperOtherRevoke` function is not executed at any point in
 /// time, therefore the logic of the function is irrelevant.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "serializationHelperOtherRevoke",
     parameter = "RevocationDataOther"
 )]
@@ -970,7 +1001,7 @@ fn authorize_with_signature(
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialHolder",
     parameter = "RevokeCredentialHolderParam",
     error = "ContractError",
@@ -1046,7 +1077,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialIssuer",
     parameter = "RevokeCredentialIssuerParam",
     error = "ContractError",
@@ -1110,7 +1141,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// - The credential status is not one of `Active` or `NotActivated`
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialOther",
     parameter = "RevokeCredentialOtherParam",
     error = "ContractError",
@@ -1183,7 +1214,7 @@ fn contract_revoke_credential_other<S: HasStateApi>(
 /// the issuer or the holder. The CIS-4 standard requires to have such an
 /// entrypoint. Therefore, it is present, but always returns an error.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialOther",
     parameter = "RevokeCredentialOtherParam",
     error = "ContractError",
@@ -1241,7 +1272,7 @@ pub struct RemovePublicKeyParameters {
 /// - The caller is not the issuer.
 /// - Fails to log the event for any key in the input.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registerRevocationKeys",
     parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
@@ -1273,7 +1304,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 /// the issuer or the holder. The CIS-4 standard requires to have such an
 /// entrypoint. Therefore, it is present, but always returns an error.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registerRevocationKeys",
     parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
@@ -1304,7 +1335,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - Fails to log the event for any key in the input.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "removeRevocationKeys",
     parameter = "RemovePublicKeyParameters",
     error = "ContractError",
@@ -1337,7 +1368,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
 /// the issuer or the holder. The CIS-4 standard requires to have such an
 /// entrypoint. Therefore, it is present, but always returns an error.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "removeRevocationKeys",
     parameter = "RemovePublicKeyParameters",
     error = "ContractError",
@@ -1358,7 +1389,7 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revocationKeys",
     error = "ContractError",
     return_value = "Vec<(PublicKeyEd25519, u64)>"
@@ -1376,7 +1407,7 @@ fn contract_revocation_keys<S: HasStateApi>(
 /// the issuer or the holder. The CIS-4 standard requires to have such an
 /// entrypoint. Therefore, it is present, but always returns an error.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revocationKeys",
     error = "ContractError",
     return_value = "Vec<(PublicKeyEd25519, u64)>"
@@ -1401,7 +1432,7 @@ struct MetadataResponse {
 
 /// A view entrypoint to get the registry metadata.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registryMetadata",
     error = "ContractError",
     return_value = "MetadataResponse"
@@ -1429,7 +1460,7 @@ fn contract_registry_metadata<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - It fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "updateIssuerMetadata",
     parameter = "MetadataUrl",
     error = "ContractError",
@@ -1450,7 +1481,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
 
 /// A view entrypoint for querying the issuer's public key.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "issuer",
     error = "ContractError",
     return_value = "PublicKeyEd25519"
@@ -1475,7 +1506,7 @@ fn contract_issuer<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "updateCredentialSchema",
     parameter = "SchemaRef",
     error = "ContractError",
@@ -1518,7 +1549,7 @@ struct CredentialMetadataParam {
 /// - Some of the credentials are not present.
 /// - Fails to log the event for any of the input credentials.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "updateCredentialMetadata",
     parameter = "Vec<CredentialMetadataParam>",
     error = "ContractError",
@@ -1569,7 +1600,7 @@ pub struct RestoreCredentialIssuerParam {
 /// - Credential status is different from `Revoked`.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "restoreCredential",
     parameter = "RestoreCredentialIssuerParam",
     error = "ContractError",
@@ -1603,6 +1634,75 @@ fn contract_restore_credential<S: HasStateApi>(
     Ok(())
 }
 {% endif %}
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "{{crate_name}}",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
+)]
+fn contract_supports<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().has_implementors(&std_id));
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
+/// Set the addresses for an implementation given a standard identifier and a
+/// list of contract addresses.
+///
+/// It rejects if:
+/// - Sender is not the issuer.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "{{crate_name}}",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    error = "ContractError",
+    mutable
+)]
+fn contract_set_implementor<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Check that only the issuer is authorized to set implementors.
+    ensure!(sender_is_issuer(ctx, &host.state()), ContractError::NotAuthorized);
+    // Parse the parameter.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+    // Update the implementors in the state
+    host.state_mut().set_implementors(params.id, params.implementors);
+    Ok(())
+}
+
 /// The parameter type for the contract function `upgrade`.
 /// Takes the new module and optionally an entrypoint to call in the new module
 /// after triggering the upgrade. The upgrade is reverted if the entrypoint
@@ -1649,7 +1749,7 @@ impl From<UpgradeError> for ContractError {
 /// by this function it would overwrite the state stored by the migration
 /// function.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "upgrade",
     parameter = "UpgradeParams",
     error = "ContractError",

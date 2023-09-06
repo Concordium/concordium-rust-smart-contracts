@@ -1,5 +1,6 @@
 //! This smart contract implements an example on-chain registry for the public
-//! part of verifiable credentials (VCs).
+//! part of verifiable credentials (VCs). The contract follows CIS-4: Credential
+//! Registry Standard.
 //!
 //! # Description
 //!
@@ -14,7 +15,7 @@
 //! verifiable credentials of several types, they can deploy several instances
 //! of this contract with different credential types.
 //!
-//! ## Issuer's  functionality
+//! ## Issuer's functionality
 //!
 //! - register/remove revocation authority keys;
 //! - register a new credential;
@@ -22,6 +23,7 @@
 //! - update the issuer's metadata;
 //! - update the credential metadata;
 //! - update credential schema reference;
+//! - upgrade the contract, set implementors;
 //! - restore (cancel revocation of) a revoked credential.
 //!
 //! ## Holder's functionality
@@ -42,7 +44,16 @@
 //! - view credential status to verify VC validity;
 //! - view credential data to verify proofs (verifiable presentations) requested
 //!   from holders.
+use concordium_cis2::*;
 use concordium_std::*;
+
+/// The standard identifier for the CIS-4: Credential Registry Standard
+pub const CIS4_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-4");
+
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+    [CIS0_STANDARD_IDENTIFIER, CIS4_STANDARD_IDENTIFIER];
 
 /// Credential type is a string that corresponds to the value of the "name"
 /// attribute of the JSON credential schema.
@@ -153,6 +164,9 @@ pub struct State<S: HasStateApi> {
     /// A reference to a JSON document containing the credential schema for the
     /// given credential type.
     credential_schema:   SchemaRef,
+    /// Map with contract addresses providing implementations of additional
+    /// standards.
+    implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
 }
 
 /// Contract Errors.
@@ -220,6 +234,7 @@ impl<S: HasStateApi> State<S> {
             credentials: state_builder.new_map(),
             credential_type,
             credential_schema,
+            implementors: state_builder.new_map(),
         }
     }
 
@@ -329,6 +344,22 @@ impl<S: HasStateApi> State<S> {
             self.revocation_keys.remove(&pk);
             Ok(())
         }
+    }
+
+    fn has_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
+        if let Some(addresses) = self.implementors.get(std_id) {
+            SupportResult::SupportBy(addresses.to_vec())
+        } else {
+            SupportResult::NoSupport
+        }
+    }
+
+    fn set_implementors(
+        &mut self,
+        std_id: StandardIdentifierOwned,
+        implementors: Vec<ContractAddress>,
+    ) {
+        self.implementors.insert(std_id, implementors);
     }
 }
 
@@ -1500,6 +1531,75 @@ fn contract_restore_credential<S: HasStateApi>(
         holder_id,
         reason: parameter.reason,
     }))?;
+    Ok(())
+}
+
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "credential_registry",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
+)]
+fn contract_supports<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().has_implementors(&std_id));
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
+/// Set the addresses for an implementation given a standard identifier and a
+/// list of contract addresses.
+///
+/// It rejects if:
+/// - Sender is not the issuer.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "credential_registry",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    error = "ContractError",
+    mutable
+)]
+fn contract_set_implementor<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Check that only the issuer is authorized to set implementors.
+    ensure!(sender_is_issuer(ctx, &host.state()), ContractError::NotAuthorized);
+    // Parse the parameter.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+    // Update the implementors in the state
+    host.state_mut().set_implementors(params.id, params.implementors);
     Ok(())
 }
 
