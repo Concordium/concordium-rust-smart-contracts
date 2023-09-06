@@ -17,19 +17,19 @@
 //!
 //! ## Issuer's functionality
 //!
-//! - register/remove revocation authority keys;
+{% if revocable_by_others %}//! - register/remove revocation authority keys;{% else %}//!{% endif %}
 //! - register a new credential;
 //! - revoke a credential;
 //! - update the issuer's metadata;
 //! - update the credential metadata;
 //! - update credential schema reference;
-//! - upgrade the contract, set implementors;
-//! - restore (cancel revocation of) a revoked credential.
+{% if restorable %}//! - upgrade the contract, set implementors;
+//! - restore (cancel revocation of) a revoked credential.{% else %}//! - upgrade the contract, set implementors.{% endif %}
 //!
 //! ## Holder's functionality
 //!
 //! - revoke a credential by signing a revocation message.
-//!
+//!{% if revocable_by_others %}
 //! ## Revocation authority's functionality
 //!
 //! Revocation authorities are some entities chosen by the issuer that have
@@ -37,7 +37,7 @@
 //! a revocation authority signs a revocation message with the corresponding
 //! private key.
 //!
-//! - revoke a credential by signing a revocation message.
+//! - revoke a credential by signing a revocation message.{%endif%}
 //!
 //! ## Verifier's functionality
 //!
@@ -151,11 +151,11 @@ pub struct State<S: HasStateApi> {
     /// signatures on credential data.
     issuer_key:          PublicKeyEd25519,
     /// A reference to the issuer metadata.
-    issuer_metadata:     MetadataUrl,
+    issuer_metadata:     MetadataUrl,{% if revocable_by_others %}
     /// The currently active set of revocation keys.
     revocation_keys:     StateMap<PublicKeyEd25519, u64, S>,
     /// All revocation keys that have been used at any point in the past.
-    all_revocation_keys: StateSet<PublicKeyEd25519, S>,
+    all_revocation_keys: StateSet<PublicKeyEd25519, S>,{% endif %}
     /// Mapping of credential holders to entries.
     credentials:         StateMap<PublicKeyEd25519, CredentialEntry<S>, S>,
     /// A string representing the credential type. This string corresponds to
@@ -177,12 +177,14 @@ enum ContractError {
     CredentialNotFound,
     CredentialAlreadyExists,
     IncorrectStatusBeforeRevocation,
-
+{% if restorable %}
     IncorrectStatusBeforeRestoring,
-
+{% endif %}{% if revocable_by_others %}
     KeyAlreadyExists,
     KeyDoesNotExist,
-
+{% else %}
+    NotSupported,
+{% endif %}
     NotAuthorized,
     NonceMismatch,
     WrongContract,
@@ -228,9 +230,9 @@ impl<S: HasStateApi> State<S> {
         State {
             issuer_account,
             issuer_key,
-            issuer_metadata,
+            issuer_metadata,{% if revocable_by_others %}
             revocation_keys: state_builder.new_map(),
-            all_revocation_keys: state_builder.new_set(),
+            all_revocation_keys: state_builder.new_set(),{% endif %}
             credentials: state_builder.new_map(),
             credential_type,
             credential_schema,
@@ -308,7 +310,7 @@ impl<S: HasStateApi> State<S> {
         credential.revoked = true;
         Ok(())
     }
-
+{% if restorable %}
     fn restore_credential(
         &mut self,
         now: Timestamp,
@@ -323,8 +325,8 @@ impl<S: HasStateApi> State<S> {
         ensure!(status == CredentialStatus::Revoked, ContractError::IncorrectStatusBeforeRestoring);
         credential.revoked = false;
         Ok(())
-    }
-
+    }{% endif %}
+{% if revocable_by_others %}
     fn register_revocation_key(&mut self, pk: PublicKeyEd25519) -> ContractResult<()> {
         let res = self.all_revocation_keys.insert(pk);
         ensure!(res, ContractError::KeyAlreadyExists);
@@ -344,7 +346,7 @@ impl<S: HasStateApi> State<S> {
             self.revocation_keys.remove(&pk);
             Ok(())
         }
-    }
+    }{% endif %}
 
     fn has_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
         if let Some(addresses) = self.implementors.get(std_id) {
@@ -382,11 +384,11 @@ struct CredentialEventData {
 #[derive(Serialize, SchemaType)]
 enum Revoker {
     Issuer,
-    Holder,
+    Holder,{% if revocable_by_others %}
     /// `Other` is used for the cases when the revoker is not the issuer or
     /// holder. In this contract it is a revocation authority, which is
     /// identified using a public key.
-    Other(PublicKeyEd25519),
+    Other(PublicKeyEd25519),{% endif %}
 }
 
 /// A short comment on a reason of revoking or restoring a credential.
@@ -418,7 +420,7 @@ struct RevokeCredentialEvent {
     /// The issuer can use this field to comment on the revocation, so the
     /// holder can observe it in the wallet.
     reason:    Option<Reason>,
-}
+}{% if restorable %}
 
 /// An untagged restoration event.
 /// For a tagged version use `CredentialEvent`.
@@ -428,7 +430,7 @@ struct RestoreCredentialEvent {
     holder_id: CredentialHolderId,
     /// An optional text clarifying the restoring reasons.
     reason:    Option<Reason>,
-}
+}{% endif %}
 
 /// An untagged credential metadata event. Emitted when updating the credential
 /// metadata. For a tagged version use `CredentialEvent`.
@@ -470,8 +472,8 @@ enum CredentialEvent {
     Register(CredentialEventData),
     /// Credential revocation event.
     Revoke(RevokeCredentialEvent),
-    /// Credential restoration (reversing revocation) event.
-    Restore(RestoreCredentialEvent),
+    {% if restorable %}/// Credential restoration (reversing revocation) event.
+    Restore(RestoreCredentialEvent),{% endif %}
     /// Issuer's metadata changes, including the contract deployment.
     IssuerMetadata(MetadataUrl),
     /// Credential's metadata changes.
@@ -548,7 +550,7 @@ impl schema::SchemaType for CredentialEvent {
                         ("action".to_string(), RevocationKeyAction::get_type()),
                     ])),
                 ),
-            ),
+            ),{% if restorable %}
             (
                 0, // Restore event is not covered by CIS-4; it gets `0` tag.
                 (
@@ -558,7 +560,7 @@ impl schema::SchemaType for CredentialEvent {
                         ("reason".to_string(), Option::<Reason>::get_type()),
                     ])),
                 ),
-            ),
+            ),{% endif %}
         ]))
     }
 }
@@ -590,12 +592,12 @@ impl Serial for CredentialEvent {
             CredentialEvent::RevocationKey(data) => {
                 244u8.serial(out)?;
                 data.serial(out)
-            }
+            }{% if restorable %}
             // Restore event is not covered by CIS-4; it gets `0` tag.
             CredentialEvent::Restore(data) => {
                 0u8.serial(out)?;
                 data.serial(out)
-            }
+            }{% endif %}
         }
     }
 }
@@ -609,7 +611,7 @@ impl Deserial for CredentialEvent {
             246u8 => Ok(Self::CredentialMetadata(source.get()?)),
             245u8 => Ok(Self::Schema(source.get()?)),
             244u8 => Ok(Self::RevocationKey(source.get()?)),
-            0u8 => Ok(Self::Restore(source.get()?)),
+{% if restorable %}            0u8 => Ok(Self::Restore(source.get()?)),{% endif %}
             _ => Err(ParseError {}),
         }
     }
@@ -627,15 +629,15 @@ pub struct InitParams {
     /// `issuer`.
     issuer_account:  Option<AccountAddress>,
     /// The issuer's public key.
-    issuer_key:      PublicKeyEd25519,
+    issuer_key:      PublicKeyEd25519,{% if revocable_by_others %}
     /// Revocation keys available right after initialization.
     #[concordium(size_length = 1)]
-    revocation_keys: Vec<PublicKeyEd25519>,
+    revocation_keys: Vec<PublicKeyEd25519>,{% endif %}
 }
 
 /// Init function that creates a fresh registry state given the required
 /// initialisation data.
-///
+{% if revocable_by_others %}///
 /// Logs `CredentialEvent::IssuerMetadata`, `CredentialEvent::RevocationKey`
 /// (with the `Register` action) for each key in the input, and
 /// `CredentialEvent::Schema` for each schema in the input.
@@ -643,9 +645,15 @@ pub struct InitParams {
 /// It rejects if:
 ///   - Fails to parse the input parameter.
 ///   - Fails to log the events.
-///   - Fails to register any of the initial revocation keys.
+///   - Fails to register any of the initial revocation keys.{% else %}
+/// Logs `CredentialEvent::IssuerMetadata`, and `CredentialEvent::Schema`
+/// for each schema in the input.
+///
+/// It rejects if:
+///   - Fails to parse the input parameter.
+///   - Fails to log the events.{% endif %}
 #[init(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     parameter = "InitParams",
     event = "CredentialEvent",
     enable_logger
@@ -657,7 +665,7 @@ fn init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let parameter: InitParams = ctx.parameter_cursor().get()?;
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
-
+{% if revocable_by_others %}
     let mut state = State::new(
         state_builder,
         parameter.issuer_account.unwrap_or_else(|| ctx.init_origin()),
@@ -673,7 +681,16 @@ fn init<S: HasStateApi>(
             key:    pk,
             action: RevocationKeyAction::Register,
         }))?;
-    }
+    }{% else %}
+    let state = State::new(
+        state_builder,
+        parameter.issuer_account.unwrap_or_else(|| ctx.init_origin()),
+        parameter.issuer_key,
+        parameter.issuer_metadata,
+        parameter.credential_type.clone(),
+        parameter.schema.clone(),
+    );
+{% endif %}
 
     logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
         credential_type: parameter.credential_type,
@@ -734,7 +751,7 @@ pub struct CredentialQueryResponse {
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "credentialEntry",
     parameter = "CredentialHolderId",
     error = "ContractError",
@@ -754,7 +771,7 @@ fn contract_credential_entry<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The credential with the given id does not exist.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "credentialStatus",
     parameter = "CredentialHolderId",
     error = "ContractError",
@@ -783,7 +800,7 @@ fn contract_credential_status<S: HasStateApi>(
 /// - An entry with the given credential id already exists.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registerCredential",
     parameter = "RegisterCredentialParam",
     error = "ContractError",
@@ -860,7 +877,7 @@ pub struct RevocationDataHolder {
 /// `serializationHelperHolderRevoke` function is not executed at any point in
 /// time, therefore the logic of the function is irrelevant.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "serializationHelperHolderRevoke",
     parameter = "RevocationDataHolder"
 )]
@@ -892,14 +909,14 @@ pub struct RevokeCredentialOtherParam {
     signature: SignatureEd25519,
     data:      RevocationDataOther,
 }
-
+{% if revocable_by_others %}
 impl RevokeCredentialOtherParam {
     /// Prepare the message bytes for a revocation authority
     fn message_bytes(&self, bytes: &mut Vec<u8>) -> ContractResult<()> {
         self.data.serial(bytes).map_err(|_| ContractError::SerializationError)
     }
 }
-
+{% endif %}
 #[derive(Serialize, SchemaType)]
 pub struct RevocationDataOther {
     /// Id of the credential to revoke.
@@ -920,7 +937,7 @@ pub struct RevocationDataOther {
 /// `serializationHelperOtherRevoke` function is not executed at any point in
 /// time, therefore the logic of the function is irrelevant.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "serializationHelperOtherRevoke",
     parameter = "RevocationDataOther"
 )]
@@ -984,7 +1001,7 @@ fn authorize_with_signature(
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialHolder",
     parameter = "RevokeCredentialHolderParam",
     error = "ContractError",
@@ -1060,7 +1077,7 @@ fn contract_revoke_credential_holder<S: HasStateApi>(
 /// - The credential status is not one of `Active` or `NotActivated`.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialIssuer",
     parameter = "RevokeCredentialIssuerParam",
     error = "ContractError",
@@ -1097,7 +1114,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
     }))?;
     Ok(())
 }
-
+{% if revocable_by_others %}
 /// Revoke a credential as a revocation authority.
 ///
 /// A revocation authority is any entity that holds a private key corresponding
@@ -1124,7 +1141,7 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// - The credential status is not one of `Active` or `NotActivated`
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revokeCredentialOther",
     parameter = "RevokeCredentialOtherParam",
     error = "ContractError",
@@ -1190,7 +1207,30 @@ fn contract_revoke_credential_other<S: HasStateApi>(
     }))?;
     Ok(())
 }
-
+{% else %}
+/// Revoke a credential as a revocation authority.
+/// 
+/// This contract does not support revoking credentials by anyone other than
+/// the issuer or the holder. The CIS-4 standard requires to have such an
+/// entrypoint. Therefore, it is present, but always returns an error.
+#[receive(
+    contract = "{{crate_name}}",
+    name = "revokeCredentialOther",
+    parameter = "RevokeCredentialOtherParam",
+    error = "ContractError",
+    crypto_primitives,
+    enable_logger,
+    mutable
+)]
+fn contract_revoke_credential_other<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    _logger: &mut impl HasLogger,
+    _crypto_primitives: &impl HasCryptoPrimitives,
+) -> Result<(), ContractError> {
+    Err(ContractError::NotSupported)
+}
+{% endif %}
 #[derive(Serialize, SchemaType)]
 pub struct RegisterPublicKeyParameters {
     #[concordium(size_length = 2)]
@@ -1214,7 +1254,7 @@ pub struct RemovePublicKeyParameters {
     #[concordium(size_length = 2)]
     auxiliary_data: Vec<u8>,
 }
-
+{% if revocable_by_others %}
 /// Register revocation authorities public keys.
 ///
 /// These keys are used to authorize the revocation (applies to the whole
@@ -1232,7 +1272,7 @@ pub struct RemovePublicKeyParameters {
 /// - The caller is not the issuer.
 /// - Fails to log the event for any key in the input.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registerRevocationKeys",
     parameter = "RegisterPublicKeyParameters",
     error = "ContractError",
@@ -1257,8 +1297,29 @@ fn contract_register_revocation_keys<S: HasStateApi>(
         }))?;
     }
     Ok(())
+}{% else %}
+/// Register revocation authorities public keys.
+/// 
+/// This contract does not support revoking credentials by anyone other than
+/// the issuer or the holder. The CIS-4 standard requires to have such an
+/// entrypoint. Therefore, it is present, but always returns an error.
+#[receive(
+    contract = "{{crate_name}}",
+    name = "registerRevocationKeys",
+    parameter = "RegisterPublicKeyParameters",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_register_revocation_keys<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    _logger: &mut impl HasLogger,
+) -> Result<(), ContractError> {
+    Err(ContractError::NotSupported)
 }
-
+{% endif %}
+{% if revocable_by_others %}
 /// Remove revocation authorities public keys.
 ///
 /// Note that it is not possible to register the same key after removing it.
@@ -1274,7 +1335,7 @@ fn contract_register_revocation_keys<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - Fails to log the event for any key in the input.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "removeRevocationKeys",
     parameter = "RemovePublicKeyParameters",
     error = "ContractError",
@@ -1300,14 +1361,35 @@ fn contract_remove_revocation_keys<S: HasStateApi>(
     }
     Ok(())
 }
-
+{% else %}
+/// Remove revocation authorities public keys.
+/// 
+/// This contract does not support revoking credentials by anyone other than
+/// the issuer or the holder. The CIS-4 standard requires to have such an
+/// entrypoint. Therefore, it is present, but always returns an error.
+#[receive(
+    contract = "{{crate_name}}",
+    name = "removeRevocationKeys",
+    parameter = "RemovePublicKeyParameters",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_remove_revocation_keys<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+    _logger: &mut impl HasLogger,
+) -> Result<(), ContractError> {
+    Err(ContractError::NotSupported)
+}
+{% endif %}{% if revocable_by_others %}
 /// A view entrypoint returning currently available revocation keys.
 /// Returns a public key and the nonce.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "revocationKeys",
     error = "ContractError",
     return_value = "Vec<(PublicKeyEd25519, u64)>"
@@ -1318,7 +1400,25 @@ fn contract_revocation_keys<S: HasStateApi>(
 ) -> Result<Vec<(PublicKeyEd25519, u64)>, ContractError> {
     Ok(host.state().view_revocation_keys())
 }
-
+{% else %}
+/// A view entrypoint returning currently available revocation keys.
+/// 
+/// This contract does not support revoking credentials by anyone other than
+/// the issuer or the holder. The CIS-4 standard requires to have such an
+/// entrypoint. Therefore, it is present, but always returns an error.
+#[receive(
+    contract = "{{crate_name}}",
+    name = "revocationKeys",
+    error = "ContractError",
+    return_value = "Vec<(PublicKeyEd25519, u64)>"
+)]
+fn contract_revocation_keys<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    _host: &impl HasHost<State<S>, StateApiType = S>,
+) -> Result<Vec<(PublicKeyEd25519, u64)>, ContractError> {
+    Err(ContractError::NotSupported)
+}
+{% endif %}
 /// A response type for the registry metadata request.
 #[derive(Serialize, SchemaType)]
 struct MetadataResponse {
@@ -1332,7 +1432,7 @@ struct MetadataResponse {
 
 /// A view entrypoint to get the registry metadata.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "registryMetadata",
     error = "ContractError",
     return_value = "MetadataResponse"
@@ -1360,7 +1460,7 @@ fn contract_registry_metadata<S: HasStateApi>(
 /// - The caller is not the issuer.
 /// - It fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "updateIssuerMetadata",
     parameter = "MetadataUrl",
     error = "ContractError",
@@ -1381,7 +1481,7 @@ fn contract_update_issuer_metadata<S: HasStateApi>(
 
 /// A view entrypoint for querying the issuer's public key.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "issuer",
     error = "ContractError",
     return_value = "PublicKeyEd25519"
@@ -1406,7 +1506,7 @@ fn contract_issuer<S: HasStateApi>(
 /// - It fails to parse the parameter.
 /// - The caller is not the issuer.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "updateCredentialSchema",
     parameter = "SchemaRef",
     error = "ContractError",
@@ -1449,7 +1549,7 @@ struct CredentialMetadataParam {
 /// - Some of the credentials are not present.
 /// - Fails to log the event for any of the input credentials.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "updateCredentialMetadata",
     parameter = "Vec<CredentialMetadataParam>",
     error = "ContractError",
@@ -1476,7 +1576,7 @@ fn contract_update_credential_metadata<S: HasStateApi>(
     }
     Ok(())
 }
-
+{% if restorable %}
 /// A parameter type for restoring a credential by the issuer.
 #[derive(Serialize, SchemaType)]
 pub struct RestoreCredentialIssuerParam {
@@ -1500,7 +1600,7 @@ pub struct RestoreCredentialIssuerParam {
 /// - Credential status is different from `Revoked`.
 /// - Fails to log the event.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "restoreCredential",
     parameter = "RestoreCredentialIssuerParam",
     error = "ContractError",
@@ -1533,14 +1633,14 @@ fn contract_restore_credential<S: HasStateApi>(
     }))?;
     Ok(())
 }
-
+{% endif %}
 /// Get the supported standards or addresses for a implementation given list of
 /// standard identifiers.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "supports",
     parameter = "SupportsQueryParams",
     return_value = "SupportsQueryResponse",
@@ -1584,7 +1684,7 @@ struct SetImplementorsParams {
 /// - Sender is not the issuer.
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
     error = "ContractError",
@@ -1649,7 +1749,7 @@ impl From<UpgradeError> for ContractError {
 /// by this function it would overwrite the state stored by the migration
 /// function.
 #[receive(
-    contract = "credential_registry",
+    contract = "{{crate_name}}",
     name = "upgrade",
     parameter = "UpgradeParams",
     error = "ContractError",
@@ -1813,8 +1913,8 @@ mod tests {
         let parameter_bytes = to_bytes(&InitParams {
             issuer_metadata: issuer_metadata(),
             issuer_account:  ISSUER_ACCOUNT.into(),
-            issuer_key:      PUBLIC_KEY,
-            revocation_keys: vec![PUBLIC_KEY],
+            issuer_key:      PUBLIC_KEY,{% if revocable_by_others %}
+            revocation_keys: vec![PUBLIC_KEY],{% endif %}
             credential_type: schema.0.clone(),
             schema:          schema.1.clone(),
         });
@@ -1833,15 +1933,17 @@ mod tests {
         );
 
         // Check that the correct events were logged.
-
+{% if revocable_by_others %}
         claim_eq!(logger.logs.len(), 3, "Incorrect number of logged events");
-
+{% else %}
+        claim_eq!(logger.logs.len(), 2, "Incorrect number of logged events");
+{% endif %}
         claim_eq!(
             logger.logs[0],
             to_bytes(&CredentialEvent::IssuerMetadata(issuer_metadata())),
             "Incorrect issuer metadata event logged"
         );
-
+{% if revocable_by_others %}
         claim_eq!(
             logger.logs[1],
             to_bytes(&CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -1850,9 +1952,9 @@ mod tests {
             })),
             "Incorrect revocation key event logged"
         );
-
+{% endif %}
         claim_eq!(
-            logger.logs[2],
+            {% if revocable_by_others %}logger.logs[2],{% else %}logger.logs[1],{% endif %}
             to_bytes(&CredentialEvent::Schema(CredentialSchemaRefEvent {
                 credential_type: schema.0,
                 schema_ref:      schema.1,
@@ -1986,7 +2088,7 @@ mod tests {
         register_result.is_ok()
             && revocation_result.is_ok()
             && status_result == Ok(CredentialStatus::Revoked)
-    }
+    }{% if restorable %}
 
     /// Property: revoking and then restoring a credential gives the same status
     /// as before revocation. In this case, restoring always succeeds.
@@ -2026,8 +2128,8 @@ mod tests {
             && revocation_result.is_ok()
             && restoring_result.is_ok()
             && original_status == status_after_restoring
-    }
-
+    }{% endif %}
+{% if revocable_by_others %}
     /// Property: registering a revocation key in fresh state and querying it
     /// results in the same value
     #[concordium_quickcheck(num_tests = 500)]
@@ -2054,7 +2156,7 @@ mod tests {
             false
         }
     }
-
+{% endif %}
     /// Test the credential registration entrypoint.
     #[concordium_test]
     fn test_contract_register_credential() {
@@ -2231,7 +2333,7 @@ mod tests {
             })),
             "Incorrect revoke credential event logged"
         );
-    }
+    }{% if restorable %}
 
     /// Test the restore credential entrypoint.
     #[concordium_test]
@@ -2315,5 +2417,5 @@ mod tests {
             })),
             "Incorrect revoke credential event logged"
         );
-    }
+    }{% endif %}
 }

@@ -1,0 +1,17 @@
+[template]
+cargo_generate_version = ">= 0.17.0, < 0.19.0"
+
+[hooks]
+pre = ["pre-script.rhai"] # a script for setting default values for the variables when `template_type = default`
+
+[placeholders]
+description = { type = "string", prompt = "Description for the project?" }
+template_type = { type = "string", prompt = "Select template type ('full' includes all features and is recommended for first-time users; 'custom' allows configuring who can revoke credentials and whether they can be restored)", choices = ["full", "custom"], default = "full"}
+
+[values]
+revocable_by_others = true
+restorable = true
+
+[conditional.'template_type == "custom"'.placeholders]
+revocable_by_others = { type = "bool", prompt = "Can credentials be revoked by someone other than the issuer or the holder?", default = false }
+restorable = { type = "bool", prompt = "Can revocation be reverted?", default = false }
