@@ -89,7 +89,7 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
@@ -131,7 +131,7 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: templates/credential-registry
@@ -178,7 +178,7 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
@@ -228,7 +228,7 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: templates/credential-registry
@@ -272,7 +272,7 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
@@ -316,7 +316,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
-        # version 0.17.5 is required for the rhai pre-script to work correctly
+        # at least version 0.17.0 is required for the rhai pre-script to work correctly;
+        # the closest available version of `cargo-generate-action` is 0.17.5
         uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
