@@ -1695,7 +1695,7 @@ fn contract_set_implementor<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     // Check that only the issuer is authorized to set implementors.
-    ensure!(sender_is_issuer(ctx, &host.state()), ContractError::NotAuthorized);
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
