@@ -98,7 +98,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
 
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
@@ -140,7 +140,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
 
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
@@ -182,7 +182,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=default"
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=full"
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -281,7 +281,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
 
       # Run diff to check if there are any differences between the generated smart contracts
       # and the example smart contracts. The templates have hardcoded versions of `concordium-std`
@@ -322,12 +322,12 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=Example-credential-registry -d template_type=default"
+          other: "-d description=Example-credential-registry -d template_type=full"
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
 
       # Run diff to check if there are any differences between the generated smart contract
       # and the example smart contract. The template have hardcoded versions of `concordium-std`

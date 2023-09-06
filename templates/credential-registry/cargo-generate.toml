@@ -6,7 +6,7 @@ pre = ["pre-script.rhai"] # a script for setting default values for the variable
 
 [placeholders]
 description = { type = "string", prompt = "Description for the project?" }
-template_type = { type = "string", prompt = "Select template type ('default' recommended for first-time users)", choices = ["default", "custom"], default = "default"}
+template_type = { type = "string", prompt = "Select template type ('full' includes all features and is recommended for first-time users; 'custom' allows configuring who can revoke credentials and whether they can be restored)", choices = ["full", "custom"], default = "full"}
 
 [values]
 revocable_by_others = true
