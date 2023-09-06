@@ -89,6 +89,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
         uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
@@ -131,6 +133,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
         uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
@@ -178,6 +182,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
         uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
@@ -228,6 +234,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
         uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
@@ -272,6 +280,8 @@ jobs:
           submodules: true
 
       - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
         uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
