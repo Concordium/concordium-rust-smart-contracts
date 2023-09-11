@@ -1,8 +1,8 @@
+# Credential registry contract
+
 This smart contract implements an example on-chain registry for the public
 part of verifiable credentials (VCs). The contract follows CIS-4: Credential
 Registry Standard.
-
-# Description
 
 The contract keeps track of credentials' public data, allows managing the
 VC life cycle. and querying VCs data and status. The intended users are
