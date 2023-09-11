@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Set minimum Rust version to 1.66.
+
 ## concordium-std 8.0.0 (2023-08-21)
 
 - Support adding attribute `#[concordium(repr(u))]` for enum types, where `u` is either `u8` or `u16`. Setting this changes the integer serialization used for the variant tags in derive macros such as  `Serial`, `Deserial`, `DeserialWithState` and `SchemaType`.
