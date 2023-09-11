@@ -352,6 +352,7 @@ jobs:
           sed -i "s/version = \"5.0\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/README.md examples/credential-registry/README.md
 
   clippy-cis2:
     name: Clippy
