@@ -70,7 +70,7 @@ impl ChainParameters {
     /// parameters are provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
-    /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
+    /// more than `u64::MAX / 100_000_000_000`.
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
@@ -397,7 +397,7 @@ impl Chain {
     /// provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
-    /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
+    /// more than `u64::MAX / 100_000_000_000`.
     ///
     /// *For more configuration options and flexibility, use the builder
     /// pattern. See [`Chain::builder`].*
@@ -1370,7 +1370,7 @@ impl Chain {
     /// Try to set the exchange rates on the chain.
     ///
     /// Will fail if they result in the cost of one energy being larger than
-    /// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    /// `u64::MAX / 100_000_000_000`.
     pub fn set_exchange_rates(
         &mut self,
         micro_ccd_per_euro: ExchangeRate,
@@ -1848,7 +1848,8 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 /// ```
 ///
 /// To convert the `energy` parameter to mCCD (the vertical lines represent
-/// ceiling): ```markdown
+/// ceiling):
+/// ```markdown
 /// ⌈       mCCD  ⌉    ⌈ NRG * mCCD ⌉
 /// | NRG * ----  | = | ---------- | = mCCD
 /// |       NRG   |   |    NRG     |

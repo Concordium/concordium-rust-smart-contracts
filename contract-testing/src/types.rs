@@ -723,7 +723,7 @@ pub struct AccountDoesNotExist {
 
 /// The provided exchange rates are not valid.
 /// Meaning that they do not correspond to one energy costing less than
-/// `u64::MAX / ` [`concordium_base::constants::MAX_ALLOWED_INVOKE_ENERGY`]`.
+/// `u64::MAX / 100_000_000_000`.
 #[derive(Debug, Error)]
 #[error("An exchange rate was too high.")]
 pub struct ExchangeRateError;
@@ -791,8 +791,7 @@ pub struct ExternalNodeNotConfigured;
 pub enum ChainBuilderError {
     /// The provided exchange rates are not valid.
     /// Meaning that they do not correspond to one energy costing less than
-    /// `u64::MAX / `
-    /// [`concordium_base::constants::MAX_ALLOWED_INVOKE_ENERGY`]`.
+    /// `u64::MAX / 100_000_000_000`.
     #[error("An exchange rate was too high.")]
     ExchangeRateError,
     /// An error occurred while setting up the connection to an external node.
