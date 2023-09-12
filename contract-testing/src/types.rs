@@ -921,13 +921,13 @@ impl ExternalAddress {
     ///
     /// This is an internal method instead of a [`From`] implementation, as it
     /// should be difficult to conflate external and regular addresses.
-    pub(crate) fn to_address(&self) -> Address {
+    pub(crate) fn to_address(self) -> Address {
         match self {
             ExternalAddress::Account(ExternalAccountAddress { address }) => {
-                Address::Account(*address)
+                Address::Account(address)
             }
             ExternalAddress::Contract(ExternalContractAddress { address }) => {
-                Address::Contract(*address)
+                Address::Contract(address)
             }
         }
     }
