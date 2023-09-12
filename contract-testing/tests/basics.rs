@@ -6,7 +6,7 @@ const ACC_0: AccountAddress = AccountAddress([0; 32]);
 const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
 
 #[test]
-fn fib_reentry_and_cost_test() {
+fn basics() {
     let mut chain = Chain::new_with_time_and_rates(
         SlotTime::from_timestamp_millis(0),
         // Set a specific value, taken from testnet, to compare the exact amounts charged.

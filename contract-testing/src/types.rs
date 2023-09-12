@@ -1,11 +1,15 @@
 use concordium_base::{
     base::{AccountAddressEq, Energy},
+    common::types::{CredentialIndex, KeyIndex, Signature},
+    constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
-        AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
+        self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
         ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime, Timestamp,
     },
     hashes::BlockHash,
+    id::types::SchemeId,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
+    transactions::AccountAccessStructure,
 };
 use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
@@ -119,6 +123,93 @@ pub struct Account {
     pub balance: AccountBalance,
     /// Account policy.
     pub policy:  OwnedPolicy,
+    /// Account's public keys.
+    pub keys:    AccountAccessStructure,
+}
+
+/// A signature with account's keys.
+#[derive(Debug, Clone)]
+pub struct AccountSignatures {
+    /// It is assumed that the inner `Signature` will always be for ed25519
+    /// scheme, so will have length 64 bytes.
+    pub(crate) sigs: BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>,
+}
+
+impl From<AccountSignatures> for BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>> {
+    fn from(value: AccountSignatures) -> Self { value.sigs }
+}
+
+impl From<BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>> for AccountSignatures {
+    fn from(sigs: BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>) -> Self {
+        Self { sigs }
+    }
+}
+
+impl AccountSignatures {
+    /// Return the number of signatures contained in the structure.
+    pub fn num_signatures(&self) -> u32 { self.sigs.values().map(|v| v.len() as u32).sum() }
+}
+
+impl contracts_common::Serial for AccountSignatures {
+    fn serial<W: contracts_common::Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        (self.sigs.len() as u8).serial(out)?;
+        for (k, v) in self.sigs.iter() {
+            k.serial(out)?;
+            (v.len() as u8).serial(out)?;
+            for (ki, sig) in v.iter() {
+                ki.serial(out)?;
+                // ed25519 scheme tag.
+                0u8.serial(out)?;
+                out.write_all(&sig.sig)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl contracts_common::Deserial for AccountSignatures {
+    fn deserial<R: contracts_common::Read>(source: &mut R) -> contracts_common::ParseResult<Self> {
+        // We essentially unroll the definitions of `deserial_map_no_length` here since
+        // the inner type, the Signature, does not have exactly the right
+        // serialization instance that we need.
+        use contracts_common::Get;
+        let outer_len = u8::deserial(source)?;
+        let mut last = None;
+        let mut sigs = BTreeMap::new();
+        for _ in 0..outer_len {
+            let idx = source.get()?;
+            if last >= Some(idx) {
+                return Err(contracts_common::ParseError {});
+            }
+            last = Some(idx);
+            let inner_len: u8 = source.get()?;
+            let mut inner_map = BTreeMap::new();
+            let mut last_inner = None;
+            for _ in 0..inner_len {
+                let k = source.get()?;
+                let sig = match source.get()? {
+                    SchemeId::Ed25519 => {
+                        let mut sig = vec![0u8; ED25519_SIGNATURE_LENGTH];
+                        source.read_exact(&mut sig)?;
+                        Signature { sig }
+                    }
+                };
+
+                if let Some((old_k, old_v)) = last_inner.take() {
+                    if k <= old_k {
+                        return Err(contracts_common::ParseError {});
+                    }
+                    inner_map.insert(old_k, old_v);
+                }
+                last_inner = Some((k, sig));
+            }
+            if let Some((k, v)) = last_inner {
+                inner_map.insert(k, v);
+            }
+            sigs.insert(idx, inner_map);
+        }
+        Ok(Self { sigs })
+    }
 }
 
 /// A signer with a number of keys, the amount of which affects the cost of

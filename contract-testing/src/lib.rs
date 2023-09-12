@@ -95,15 +95,17 @@ pub use types::*;
 // Re-export types.
 pub use concordium_base::{
     base::Energy,
+    common::types::{CredentialIndex, KeyIndex},
     contracts_common::{
-        from_bytes, to_bytes, AccountAddress, Address, Amount, ContractAddress, ContractName,
-        Duration, EntrypointName, ExchangeRate, ModuleReference, OwnedContractName,
-        OwnedEntrypointName, OwnedParameter, OwnedReceiveName, Parameter, ReceiveName, SlotTime,
-        Timestamp,
+        from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address, Amount,
+        ContractAddress, Duration, Timestamp, ContractName, EntrypointName, ExchangeRate, ModuleReference,
+        OwnedContractName, OwnedEntrypointName, OwnedParameter, OwnedReceiveName, Parameter,
+        ReceiveName, SignatureThreshold, SlotTime,
     },
     hashes::BlockHash,
+    id::types::{CredentialPublicKeys, VerifyKey},
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
-    transactions::{InitContractPayload, UpdateContractPayload},
+    transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
 };
 pub use concordium_rust_sdk::v2::Endpoint;
 pub use concordium_smart_contract_engine::v1::InvokeFailure;
