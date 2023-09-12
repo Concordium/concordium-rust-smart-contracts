@@ -1,12 +1,10 @@
 //! This module contains tests that test various basic things, such as state
 //! reentry and energy usage and amounts charged.
 use concordium_smart_contract_testing::*;
-
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
+mod helpers;
 
 #[test]
-fn fib_reentry_and_cost_test() {
+fn basics() {
     let mut chain = Chain::new_with_time_and_rates(
         SlotTime::from_timestamp_millis(0),
         // Set a specific value, taken from testnet, to compare the exact amounts charged.
@@ -16,21 +14,20 @@ fn fib_reentry_and_cost_test() {
     .expect("Values known to be in range.");
 
     let initial_balance = Amount::from_ccd(100_000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let deployment = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/fib.wasm", WASM_TEST_FOLDER))
-                .expect("Module should exist."),
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("fib.wasm")).expect("Module should exist."),
         )
         .expect("Deploying valid module should work");
 
     let init = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 amount:    Amount::zero(),
@@ -44,8 +41,8 @@ fn fib_reentry_and_cost_test() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -58,8 +55,8 @@ fn fib_reentry_and_cost_test() {
 
     let view = chain
         .contract_invoke(
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -81,7 +78,7 @@ fn fib_reentry_and_cost_test() {
     // Check that the account was correctly charged for all transactions.
     // This also asserts that the account wasn't charged for the invoke.
     assert_eq!(
-        chain.account_balance_available(ACC_0),
+        chain.account_balance_available(helpers::ACC_0),
         Some(
             initial_balance
                 - deployment.transaction_fee

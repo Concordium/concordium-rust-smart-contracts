@@ -1,16 +1,16 @@
 use super::types::*;
 use crate::{
-    constants,
+    constants::{self, verify_ed25519_energy_cost},
     impls::{
         contract_events_from_logs, from_interpreter_energy, lookup_module_cost,
         to_interpreter_energy,
     },
     types::{Account, BalanceError, Contract, ContractModule, TransferError},
-    DebugTraceElement, ExecutionError, InvokeExecutionError,
+    AccountSignatures, DebugTraceElement, ExecutionError, InvokeExecutionError,
 };
 use concordium_base::{
     base::{AccountAddressEq, Energy, InsufficientEnergy},
-    constants::MAX_PARAMETER_LEN,
+    common,
     contracts_common::{
         to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
         ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
@@ -18,7 +18,7 @@ use concordium_base::{
     smart_contracts::{
         ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
     },
-    transactions::UpdateContractPayload,
+    transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
 };
 use concordium_smart_contract_engine::{
     v0,
@@ -199,11 +199,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     energy,
                 },
                 instance_state,
-                v1::ReceiveParams {
-                    max_parameter_size:           MAX_PARAMETER_LEN,
-                    limit_logs_and_return_values: false,
-                    support_queries:              true,
-                },
+                v1::ReceiveParams::new_p6(),
             )
         })?;
         // Set up some data needed for recursively processing the receive until the end,
@@ -721,6 +717,97 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 response: Some(response),
                             });
                         }
+                        v1::Interrupt::CheckAccountSignature { address, payload } => {
+                            self.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
+                            )?;
+                            // Due to borrow checker limitations we don't use self.account_keys here
+                            // since it leads to clashes with the mutable borrow of
+                            // self.remaining_energy below.
+                            let response =
+                                match self.chain.accounts.get(&address.into()).map(|a| &a.keys) {
+                                    Some(keys) => {
+                                        // attempt to deserialize the payload after
+                                        // looking up the account.
+                                        // This is the order in the scheduler as
+                                        // well, and the order matters
+                                        // since the response to the contract is
+                                        // different depending on failure kind.
+                                        match deserial_signature_and_data_from_contract(&payload) {
+                                            Ok((sigs, data)) => {
+                                                let num_sigs = sigs.num_signatures();
+                                                self.remaining_energy.tick_energy(
+                                                    // This cannot overflow on any data that can be
+                                                    // supplied.
+                                                    // Data_len will always be at most u32, and the
+                                                    // number of
+                                                    // signatures is at most 256*256.
+                                                    verify_ed25519_energy_cost(
+                                                        num_sigs,
+                                                        data.len() as u32,
+                                                    ),
+                                                )?;
+                                                if verify_data_signature(keys, data, &sigs.into()) {
+                                                    v1::InvokeResponse::Success {
+                                                        new_balance: self
+                                                            .contract_balance_unchecked(
+                                                                invocation_data.address,
+                                                            ),
+                                                        data:        None,
+                                                    }
+                                                } else {
+                                                    v1::InvokeResponse::Failure {
+                                                        kind:
+                                                            v1::InvokeFailure::SignatureCheckFailed,
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => v1::InvokeResponse::Failure {
+                                                kind: v1::InvokeFailure::SignatureDataMalformed,
+                                            },
+                                        }
+                                    }
+                                    None => v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::NonExistentAccount,
+                                    },
+                                };
+                            stack.push(Next::Resume {
+                                data: invocation_data,
+                                config,
+                                response: Some(response),
+                            });
+                        }
+                        v1::Interrupt::QueryAccountKeys { address } => {
+                            self.remaining_energy.tick_energy(
+                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
+                            )?;
+                            let response = match self.account_keys(address) {
+                                Some(keys) => {
+                                    let response_data = common::to_bytes(&keys);
+                                    let num_keys = keys.num_keys();
+                                    self.remaining_energy.tick_energy(
+                                        constants::contract_instance_query_account_keys_return_cost(
+                                            num_keys,
+                                        ),
+                                    )?;
+                                    v1::InvokeResponse::Success {
+                                        // Balance of contract querying. Does not change for this
+                                        // request.
+                                        new_balance: self
+                                            .contract_balance_unchecked(invocation_data.address),
+                                        data:        Some(response_data),
+                                    }
+                                }
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                },
+                            };
+                            stack.push(Next::Resume {
+                                data: invocation_data,
+                                config,
+                                response: Some(response),
+                            });
+                        }
                     }
                 }
                 v1::ReceiveResult::Reject {
@@ -1083,6 +1170,13 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         }
     }
 
+    /// Looks up the account keys.
+    fn account_keys(&self, address: AccountAddress) -> Option<&AccountAccessStructure> {
+        // The account keys cannot change during a smart contract transaction, so
+        // there is no need to check in the changeset.
+        self.chain.accounts.get(&address.into()).map(|a| &a.keys)
+    }
+
     /// Saves a mutable state for a contract in the changeset.
     ///
     /// If the contract already has an entry in the changeset, the old state
@@ -1309,6 +1403,26 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     }
 }
 
+/// A pair of the signatures, and the data.
+type DeserializedSignatureAndData<'a> = (AccountSignatures, &'a [u8]);
+
+/// Deserialize the signatures and data from the slice.
+/// Note that this does not ensure that the entire data is read, i.e., there can
+/// be leftover data in the slice, which matches the behaviour in the node.
+fn deserial_signature_and_data_from_contract(
+    payload: &[u8],
+) -> anyhow::Result<DeserializedSignatureAndData> {
+    // Imported locally only since it is critical that we use the right Deserial
+    // trait.
+    use concordium_base::contracts_common::Deserial;
+    let mut source = concordium_base::contracts_common::Cursor::new(payload);
+    let data_len = u32::deserial(&mut source)?;
+    let data = &payload[source.offset..][..data_len as usize];
+    source.offset += data_len as usize;
+    let signatures = AccountSignatures::deserial(&mut source)?;
+    Ok((signatures, data))
+}
+
 impl ChangeSet {
     /// Creates a new changeset with one empty [`Changes`] element on the
     /// stack..
@@ -1392,7 +1506,7 @@ impl ChangeSet {
 
         // Then persist all the changes.
         for (addr, changes) in current.contracts.iter_mut() {
-            let mut contract = persisted_contracts
+            let contract = persisted_contracts
                 .get_mut(addr)
                 .expect("Precondition violation: contract must exist");
             // Update balance.
@@ -1419,7 +1533,7 @@ impl ChangeSet {
         }
         // Persist account changes.
         for (addr, changes) in current.accounts.iter() {
-            let mut account = persisted_accounts
+            let account = persisted_accounts
                 .get_mut(addr)
                 .expect("Precondition violation: account must exist");
             // Update balance.

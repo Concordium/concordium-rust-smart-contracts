@@ -4,9 +4,7 @@
 //! See more details about the specific test inside the `self-balance.wat` and
 //! `self-blaance-nested.wat` files.
 use concordium_smart_contract_testing::*;
-
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
+mod helpers;
 
 /// Invoke an entrypoint and transfer to ourselves.
 /// The before and after self-balances are the same.
@@ -23,8 +21,8 @@ fn test_invoke_1() {
     );
     let result = chain.contract_update(
         Signer::with_one_key(),
-        ACC_0,
-        Address::Account(ACC_0),
+        helpers::ACC_0,
+        Address::Account(helpers::ACC_0),
         Energy::from(10000),
         UpdateContractPayload {
             address:      contract_address,
@@ -53,7 +51,7 @@ fn test_invoke_2() {
     let res_init_another = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref,
@@ -73,8 +71,8 @@ fn test_invoke_2() {
     );
     let result = chain.contract_update(
         Signer::with_one_key(),
-        ACC_0,
-        Address::Account(ACC_0),
+        helpers::ACC_0,
+        Address::Account(helpers::ACC_0),
         Energy::from(10000),
         UpdateContractPayload {
             address:      self_address,
@@ -99,21 +97,20 @@ fn deploy_and_init(
 ) -> (Chain, ContractAddress, ModuleReference) {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/{}", WASM_TEST_FOLDER, file_name))
-                .expect("module should exist"),
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file(file_name)).expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
     let res_init = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,

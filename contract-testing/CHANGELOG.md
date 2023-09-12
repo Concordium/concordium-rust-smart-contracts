@@ -16,6 +16,16 @@
 - Add methods to the `Chain` for adding external accounts and contracts and for invoking contracts on an external node.
   - See the `Chain` method `contract_invoke_external` for more details.
 
+## 3.0.0
+
+- Support protocol 6 semantics, in particular validation assumes protocol 6
+  semantics now, allowing sign extension instructions and new operations for
+  querying account's public keys, and checking signatures with account's keys.
+- Add `AccountSignatures` structure.
+- Add an `AccountAccessStructure` to the `Account` structure. This is a breaking
+  change. Extend the constructors of `Account` to allow constructing accounts
+  with this access structure.
+
 ## 2.0.0
 
 - Include `ContractTraceElement`s for failed contract executions, including internal failures.

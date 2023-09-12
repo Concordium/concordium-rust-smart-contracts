@@ -1,21 +1,19 @@
 //! Tests for the contract default method/fallback functionality.
 
 use concordium_smart_contract_testing::*;
-
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
+mod helpers;
 
 #[test]
 fn test_fallback() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/fallback.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("fallback.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -23,7 +21,7 @@ fn test_fallback() {
     let res_init_two = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -37,7 +35,7 @@ fn test_fallback() {
     let res_init_one = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -55,8 +53,8 @@ fn test_fallback() {
     // and the fallback will try to look up a non-existing return value.
     let res_invoke_1 = chain
         .contract_invoke(
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init_one.contract_address,
@@ -78,8 +76,8 @@ fn test_fallback() {
     let parameter = OwnedParameter::from_serial(&"ASDF").expect("Parameter has valid size.");
     let res_invoke_2 = chain
         .contract_invoke(
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init_one.contract_address,

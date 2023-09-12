@@ -3,21 +3,19 @@
 //! contract.
 
 use concordium_smart_contract_testing::*;
-
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
+mod helpers;
 
 #[test]
 fn test_error_codes() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(1000000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/caller.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("caller.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -25,7 +23,7 @@ fn test_error_codes() {
     let res_init = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -54,8 +52,8 @@ fn test_error_codes() {
     let res_update_0 = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
@@ -88,8 +86,8 @@ fn test_error_codes() {
     let res_update_1 = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
@@ -120,8 +118,8 @@ fn test_error_codes() {
     let res_update_2 = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
@@ -154,8 +152,8 @@ fn test_error_codes() {
     let res_update_3 = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
@@ -188,8 +186,8 @@ fn test_error_codes() {
     let res_update_4 = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
@@ -225,8 +223,8 @@ fn test_error_codes() {
     let res_update_6 = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init.contract_address,

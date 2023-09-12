@@ -5,10 +5,7 @@
 //! made must be rolled back. That is also the case if a nested contract call
 //! fails.
 use concordium_smart_contract_testing::*;
-
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
-const ACC_1: AccountAddress = AccountAddress([1; 32]);
+mod helpers;
 
 /// This test has the following call pattern:
 /// A
@@ -24,13 +21,13 @@ const ACC_1: AccountAddress = AccountAddress([1; 32]);
 fn test_case_1() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("checkpointing.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -38,7 +35,7 @@ fn test_case_1() {
     let res_init_a = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -52,7 +49,7 @@ fn test_case_1() {
     let res_init_b = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -81,8 +78,8 @@ fn test_case_1() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init_a.contract_address,
@@ -142,13 +139,13 @@ fn test_case_1() {
 fn test_case_2() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("checkpointing.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -156,7 +153,7 @@ fn test_case_2() {
     let res_init_a = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -170,7 +167,7 @@ fn test_case_2() {
     let res_init_b = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -199,8 +196,8 @@ fn test_case_2() {
     let trace = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init_a.contract_address,
@@ -248,14 +245,14 @@ fn test_case_2() {
 fn test_case_3() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
-    chain.create_account(Account::new(ACC_1, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_1, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("checkpointing.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -263,7 +260,7 @@ fn test_case_3() {
     let res_init_a = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -277,7 +274,7 @@ fn test_case_3() {
     chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -291,13 +288,13 @@ fn test_case_3() {
     chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init_a.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
-                message:      OwnedParameter::from_serial(&ACC_1)
+                message:      OwnedParameter::from_serial(&helpers::ACC_1)
                     .expect("Parameter has valid size"),
                 // We supply three micro CCDs as we're instructing the contract to carry out a
                 // transfer instead of a call. See the contract for
@@ -322,13 +319,13 @@ fn test_case_3() {
 fn test_case_4() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/checkpointing.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("checkpointing.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -336,7 +333,7 @@ fn test_case_4() {
     let res_init_a = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -350,7 +347,7 @@ fn test_case_4() {
     let res_init_b = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -379,8 +376,8 @@ fn test_case_4() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      res_init_a.contract_address,
