@@ -23,6 +23,7 @@ anyhow = "1"
 thiserror = "1.0"
 num-bigint = "0.4"
 num-integer = "0.1"
+toml_edit = "=0.19.14" # Fix the version to .14, as .15 has MSRV 1.66. Remove this line when upgrading out MSRV.
 
 [dev-dependencies]
 rand = "0.7"

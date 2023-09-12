@@ -386,6 +386,10 @@ impl ChainBuilder {
     }
 }
 
+impl Default for ChainBuilder {
+    fn default() -> Self { Self::new() }
+}
+
 impl Chain {
     /// Get a [`ChainBuilder`] for constructing a new [`Chain`] with a builder
     /// pattern.

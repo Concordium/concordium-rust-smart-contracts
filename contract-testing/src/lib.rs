@@ -98,9 +98,9 @@ pub use concordium_base::{
     common::types::{CredentialIndex, KeyIndex},
     contracts_common::{
         from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address, Amount,
-        ContractAddress, Duration, Timestamp, ContractName, EntrypointName, ExchangeRate, ModuleReference,
+        ContractAddress, ContractName, Duration, EntrypointName, ExchangeRate, ModuleReference,
         OwnedContractName, OwnedEntrypointName, OwnedParameter, OwnedReceiveName, Parameter,
-        ReceiveName, SignatureThreshold, SlotTime,
+        ReceiveName, SignatureThreshold, SlotTime, Timestamp,
     },
     hashes::BlockHash,
     id::types::{CredentialPublicKeys, VerifyKey},
