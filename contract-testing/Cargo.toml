@@ -13,10 +13,10 @@ exclude = ["tests"] # Do not publish tests.
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-concordium_base = {version = "3.0", path = "../concordium-base/rust-src/concordium_base"}
-concordium-smart-contract-engine = {version = "3.0", path = "../concordium-base/smart-contracts/wasm-chain-integration"}
-concordium-wasm = {version = "3.0", path = "../concordium-base/smart-contracts/wasm-transform"}
-concordium-rust-sdk = "3.0"
+concordium_base = {version = "3.0", path = "../concordium-rust-sdk/concordium-base/rust-src/concordium_base"}
+concordium-smart-contract-engine = {version = "3.0", path = "../concordium-rust-sdk/concordium-base/smart-contracts/wasm-chain-integration"}
+concordium-wasm = {version = "3.0", path = "../concordium-rust-sdk/concordium-base/smart-contracts/wasm-transform"}
+concordium-rust-sdk = {version = "3.0", path = "../concordium-rust-sdk"}
 tokio = { version = "1.28", features = ["rt-multi-thread", "time"] }
 sha2 = "0.10"
 anyhow = "1"
