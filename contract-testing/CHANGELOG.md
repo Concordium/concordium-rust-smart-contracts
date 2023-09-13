@@ -13,6 +13,7 @@
   - `Timestamp` which `SlotTime` is an alias of.
   - `Duration`
   - `Endpoint`
+- Bump minimum supported Rust version to `1.66`.
 
 ## 3.0.0
 
