@@ -1254,13 +1254,13 @@ impl Chain {
     /// );
     /// ```
     pub fn contract_invoke_external(
-        &mut self,
+        &self,
         sender: Option<ExternalAddress>,
         energy_reserved: Energy,
         payload: InvokeExternalContractPayload,
         block: Option<BlockHash>,
     ) -> Result<ContractInvokeExternalSuccess, ContractInvokeExternalError> {
-        let connection = self.external_node_connection_mut().unwrap();
+        let connection = self.external_node_connection().unwrap();
 
         // Make the invocation.
         let invoke_result: InvokeContractResult =
@@ -1392,7 +1392,6 @@ impl Chain {
                 Ok::<_, ExternalNodeError>(ExternalContractAddress { address })
             })?;
 
-        // TODO: Mention that this is idempotent.
         connection.contracts.insert(external_addr);
 
         Ok(external_addr)
