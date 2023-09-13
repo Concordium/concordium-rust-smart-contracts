@@ -2,7 +2,7 @@
 name = "concordium-smart-contract-testing"
 version = "3.0.0"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.66"
 license = "MPL-2.0"
 readme = "README.md"
 description = "A companion crate to `concordium-std` that supports off-chain end-to-end testing of smart contracts."
@@ -23,7 +23,6 @@ anyhow = "1"
 thiserror = "1.0"
 num-bigint = "0.4"
 num-integer = "0.1"
-toml_edit = "=0.19.14" # Fix the version to .14, as .15 has MSRV 1.66. Remove this line when upgrading out MSRV.
 
 [dev-dependencies]
 rand = "0.7"

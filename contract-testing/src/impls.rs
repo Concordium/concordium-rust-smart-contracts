@@ -1557,8 +1557,8 @@ impl Chain {
 
     /// Get the microCCD per euro and euro per energy exchange rates by querying
     /// an external node using the external query block.
-    fn get_exchange_rates_via_external_node(&mut self) -> Result<ExchangeRates, ExternalNodeError> {
-        let connection = self.external_node_connection_mut()?;
+    fn get_exchange_rates_via_external_node(&self) -> Result<ExchangeRates, ExternalNodeError> {
+        let connection = self.external_node_connection()?;
 
         // Get the values from the external node.
         connection.with_client(None, |block_identifier, mut client| async move {
@@ -1772,8 +1772,10 @@ impl ExternalNodeConnection {
     /// If the task takes longer than [`EXTERNAL_NODE_TIMEOUT_DURATION`] then
     /// the connection times out and an [`Err(ExternalNodeError::Timeout)`] is
     /// returned.
+    ///
+    /// *This method cannot be nested, as that will cause a panic.*
     fn with_client<T, F, Fut>(
-        &mut self,
+        &self,
         block: Option<BlockHash>,
         f: F,
     ) -> Result<T, ExternalNodeError>
