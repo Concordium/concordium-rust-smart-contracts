@@ -1856,7 +1856,7 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 /// To convert the `energy` parameter to mCCD (the vertical lines represent
 /// ceiling):
 /// ```markdown
-/// ⌈       mCCD  ⌉    ⌈ NRG * mCCD ⌉
+/// ⌈       mCCD  ⌉   ⌈ NRG * mCCD ⌉
 /// | NRG * ----  | = | ---------- | = mCCD
 /// |       NRG   |   |    NRG     |
 /// ```
