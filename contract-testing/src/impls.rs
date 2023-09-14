@@ -178,7 +178,7 @@ impl ChainBuilder {
         self
     }
 
-    /// Configure the exchange rate between microCCD and euro.
+    /// Configure the 'microCCD per euro' exchange rate.
     ///
     /// By default the rate is `50000 / 1`.
     ///
@@ -198,7 +198,7 @@ impl ChainBuilder {
         self
     }
 
-    /// Configure the exchange rate between microCCD and euro.
+    /// Configure the 'euro per energy' exchange rate.
     ///
     /// By default the rate is `1 / 50000`.
     ///
@@ -368,13 +368,13 @@ impl ChainBuilder {
 
         match (self.block_time, self.block_time_from_external) {
             (Some(_), true) => return Err(ChainBuilderError::ConflictingBlockTime),
-            (Some(block_time), _) => {
+            (Some(block_time), false) => {
                 chain.parameters.block_time = block_time;
             }
-            (_, true) => {
+            (None, true) => {
                 chain.set_block_time_via_external_node()?;
             }
-            _ => (),
+            (None, false) => (),
         }
 
         // Replace the default block time if provided.
