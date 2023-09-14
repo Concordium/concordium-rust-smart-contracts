@@ -98,12 +98,14 @@ pub use concordium_base::{
     common::types::{CredentialIndex, KeyIndex},
     contracts_common::{
         from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address, Amount,
-        ContractAddress, ContractName, EntrypointName, ExchangeRate, ModuleReference,
+        ContractAddress, ContractName, Duration, EntrypointName, ExchangeRate, ModuleReference,
         OwnedContractName, OwnedEntrypointName, OwnedParameter, OwnedReceiveName, Parameter,
-        ReceiveName, SignatureThreshold, SlotTime,
+        ReceiveName, SignatureThreshold, SlotTime, Timestamp,
     },
+    hashes::BlockHash,
     id::types::{CredentialPublicKeys, VerifyKey},
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
 };
+pub use concordium_rust_sdk::v2::Endpoint;
 pub use concordium_smart_contract_engine::v1::InvokeFailure;

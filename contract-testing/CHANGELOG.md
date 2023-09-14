@@ -2,6 +2,19 @@
 
 ## Unreleased changes
 
+- Add functionality for setting the exchange rates and block time of the chain based on queries from an external node.
+  - Configured via a builder pattern, see `Chain::builder`.
+- Add methods to `Chain`:
+  - `external_query_block` to get the default block used for external queries
+  - `block_time` to get the block time
+  - `tick_block_time` to increase the block time by a `Duration`
+- Add the following types by re-exporting them from internal crates:
+  - `BlockHash`
+  - `Timestamp` which `SlotTime` is an alias of.
+  - `Duration`
+  - `Endpoint`
+- Bump minimum supported Rust version to `1.66`.
+
 ## 3.0.0
 
 - Support protocol 6 semantics, in particular validation assumes protocol 6

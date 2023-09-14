@@ -6,9 +6,7 @@ use concordium_base::{
     transactions::AccountAccessStructure,
 };
 use concordium_smart_contract_testing::*;
-
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
+mod helpers;
 
 /// Test that we can query the correct account keys.
 #[test]
@@ -44,7 +42,7 @@ fn test() {
     );
     let acc_structure: AccountAccessStructure = (&acc_keys).into();
     chain.create_account(Account::new_with_keys(
-        ACC_0,
+        helpers::ACC_0,
         AccountBalance {
             total:  initial_balance,
             staked: Amount::zero(),
@@ -56,19 +54,16 @@ fn test() {
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!(
-                "{}/account-signature-checks.wasm",
-                WASM_TEST_FOLDER
-            ))
-            .expect("module should exist"),
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("account-signature-checks.wasm"))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
     let res_init = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
@@ -82,13 +77,13 @@ fn test() {
 
     let res_invoke_get_keys = chain
         .contract_invoke(
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.get_keys".into()),
-                message:      OwnedParameter::from_serial(&ACC_0)
+                message:      OwnedParameter::from_serial(&helpers::ACC_0)
                     .expect("Parameter has valid size"),
                 amount:       Amount::zero(),
             },
@@ -112,13 +107,13 @@ fn test() {
 
     let res_invoke_check_signature = chain
         .contract_invoke(
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.check_signature".into()),
-                message:      OwnedParameter::from_serial(&(ACC_0, data, &signatures))
+                message:      OwnedParameter::from_serial(&(helpers::ACC_0, data, &signatures))
                     .expect("Enough space."),
                 amount:       Amount::zero(),
             },

@@ -9,13 +9,15 @@ use concordium_base::{
     constants::MAX_WASM_MODULE_SIZE,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ExchangeRate, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
+        Duration, ExchangeRate, ExchangeRates, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
     },
+    hashes::BlockHash,
     smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
     transactions::{
         self, cost, AccountAccessStructure, InitContractPayload, UpdateContractPayload,
     },
 };
+use concordium_rust_sdk::{self as sdk, v2::Endpoint};
 use concordium_smart_contract_engine::{
     v0,
     v1::{self, InvokeResponse},
@@ -24,7 +26,14 @@ use concordium_smart_contract_engine::{
 use concordium_wasm::validate::ValidationConfig;
 use num_bigint::BigUint;
 use num_integer::Integer;
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{collections::BTreeMap, future::Future, path::Path, sync::Arc};
+use tokio::{runtime, time::timeout};
+
+/// The timeout duration set for queries with an external node.
+const EXTERNAL_NODE_QUERY_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
+
+/// The timeout duration set for connecting to an external node.
+const EXTERNAL_NODE_CONNECT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(3);
 
 impl Default for Chain {
     fn default() -> Self { Self::new() }
@@ -61,7 +70,7 @@ impl ChainParameters {
     /// parameters are provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
-    /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
+    /// more than `u64::MAX / 100_000_000_000`.
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
@@ -84,33 +93,343 @@ impl ChainParameters {
     }
 }
 
+impl ChainBuilder {
+    /// Create a new [`ChainBuilder`] for constructing the [`Chain`].
+    ///
+    /// Can also be created via the [`Chain::builder`] method.
+    ///
+    /// To complete the building process, use [`ChainBuilder::build`], see the
+    /// example below.
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    ///
+    /// let chain = ChainBuilder::new()
+    ///             // Use zero or more builder methods, for example:
+    ///             .micro_ccd_per_euro(ExchangeRate::new_unchecked(50000, 1))
+    ///             .block_time(Timestamp::from_timestamp_millis(123))
+    ///             // Then build:
+    ///             .build()
+    ///             .unwrap();
+    /// ```
+    pub fn new() -> Self {
+        Self {
+            external_node_endpoint: None,
+            external_query_block: None,
+            micro_ccd_per_euro: None,
+            micro_ccd_per_euro_from_external: false,
+            euro_per_energy: None,
+            euro_per_energy_from_external: false,
+            block_time: None,
+            block_time_from_external: false,
+        }
+    }
+
+    /// Configure a connection to an external Concordium node.
+    ///
+    /// The connection can be used for getting the current exchange rates
+    /// between CCD, Euro and Energy.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = Chain::builder()
+    ///     .external_node_connection(Endpoint::from_static(
+    ///         "http://node.testnet.concordium.com:20000",
+    ///     ))
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn external_node_connection(mut self, endpoint: impl Into<Endpoint>) -> Self {
+        self.external_node_endpoint = Some(endpoint.into());
+        self
+    }
+
+    /// Configure the block to be used for all external queries.
+    ///
+    /// If this is not set, then the last final block will be queried during
+    /// [`ChainBuilder::build`] and saved, so it can be used for future queries.
+    ///
+    /// This can only be used in combination with
+    /// [`external_node_connection`][Self::external_node_connection].
+    ///
+    /// To view the configured block, see [`Chain::external_query_block`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = Chain::builder()
+    ///     .external_node_connection(Endpoint::from_static(
+    ///         "http://node.testnet.concordium.com:20000",
+    ///     ))
+    ///     .external_query_block(
+    ///         "95ff82f26892a2327c3e7ac582224a54d75c367341fbff209bce552d81349eb0"
+    ///             .parse()
+    ///             .unwrap(),
+    ///     )
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn external_query_block(mut self, query_block: BlockHash) -> Self {
+        self.external_query_block = Some(query_block);
+        self
+    }
+
+    /// Configure the 'microCCD per euro' exchange rate.
+    ///
+    /// By default the rate is `50000 / 1`.
+    ///
+    /// This cannot be used together with
+    /// [`ChainBuilder::micro_ccd_per_euro_from_external`].
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = ChainBuilder::new()
+    ///     .micro_ccd_per_euro(ExchangeRate::new_unchecked(50000, 1))
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn micro_ccd_per_euro(mut self, exchange_rate: ExchangeRate) -> Self {
+        self.micro_ccd_per_euro = Some(exchange_rate);
+        self
+    }
+
+    /// Configure the 'euro per energy' exchange rate.
+    ///
+    /// By default the rate is `1 / 50000`.
+    ///
+    /// This cannot be used together with
+    /// [`ChainBuilder::euro_per_energy_from_external`].
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = ChainBuilder::new()
+    ///     .euro_per_energy(ExchangeRate::new_unchecked(1, 50000))
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn euro_per_energy(mut self, exchange_rate: ExchangeRate) -> Self {
+        self.euro_per_energy = Some(exchange_rate);
+        self
+    }
+
+    /// Configure the exchange rate between microCCD and euro using the external
+    /// node connection.
+    ///
+    /// This can only be used in combination with
+    /// [`external_node_connection`][Self::external_node_connection], and it
+    /// cannot be used together with
+    /// [`micro_ccd_per_euro`][Self::micro_ccd_per_euro].
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = ChainBuilder::new()
+    ///     .external_node_connection(Endpoint::from_static(
+    ///         "http://node.testnet.concordium.com:20000",
+    ///     ))
+    ///     .micro_ccd_per_euro_from_external()
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn micro_ccd_per_euro_from_external(mut self) -> Self {
+        self.micro_ccd_per_euro_from_external = true;
+        self
+    }
+
+    /// Configure the exchange rate between euro and energy using the external
+    /// node connection.
+    ///
+    /// This can only be used in combination with
+    /// [`external_node_connection`][Self::external_node_connection], and it
+    /// cannot be used together with
+    /// [`euro_per_energy`][Self::euro_per_energy].
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = ChainBuilder::new()
+    ///     .external_node_connection(Endpoint::from_static(
+    ///         "http://node.testnet.concordium.com:20000",
+    ///     ))
+    ///     .euro_per_energy_from_external()
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn euro_per_energy_from_external(mut self) -> Self {
+        self.euro_per_energy_from_external = true;
+        self
+    }
+
+    /// Configure the block time.
+    ///
+    /// By default the block time is `0`.
+    ///
+    /// This cannot be used in combination with
+    /// [`ChainBuilder::block_time_from_external`].
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = ChainBuilder::new()
+    ///     .block_time(Timestamp::from_timestamp_millis(1687440701000))
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn block_time(mut self, block_time: Timestamp) -> Self {
+        self.block_time = Some(block_time);
+        self
+    }
+
+    /// Configure the block time using the external node connection.
+    ///
+    /// This can only be used in combination with
+    /// [`external_node_connection`][Self::external_node_connection], and it
+    /// cannot be used together with
+    /// [`block_time`][Self::block_time].
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    /// let chain = ChainBuilder::new()
+    ///     .external_node_connection(Endpoint::from_static(
+    ///         "http://node.testnet.concordium.com:20000",
+    ///     ))
+    ///     .block_time_from_external()
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn block_time_from_external(mut self) -> Self {
+        self.block_time_from_external = true;
+        self
+    }
+
+    /// Build the [`Chain`] with the configured options.
+    ///
+    /// # Example
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    ///
+    /// let chain = Chain::builder()
+    ///             // Use zero or more builder methods, for example:
+    ///             .euro_per_energy(ExchangeRate::new_unchecked(1, 50000))
+    ///             .micro_ccd_per_euro(ExchangeRate::new_unchecked(50000, 1))
+    ///             // Then build:
+    ///             .build()
+    ///             .unwrap();
+    /// ```
+    pub fn build(self) -> Result<Chain, ChainBuilderError> {
+        // Create the chain with default parameters.
+        let mut chain = Chain::new();
+
+        // Setup the external node connection if provided. This also forwards and sets
+        // the external query block.
+        if let Some(endpoint) = self.external_node_endpoint {
+            chain.setup_external_node_connection(endpoint, self.external_query_block)?;
+        }
+
+        // Check for conflicting exchange rate configurations.
+        if self.micro_ccd_per_euro.is_some() && self.micro_ccd_per_euro_from_external {
+            return Err(ChainBuilderError::ConflictingMicroCCDPerEuro);
+        }
+        if self.euro_per_energy.is_some() && self.euro_per_energy_from_external {
+            return Err(ChainBuilderError::ConflictingEuroPerEnergy);
+        }
+
+        // Set the exchange rates via an external query.
+        if self.micro_ccd_per_euro_from_external || self.euro_per_energy_from_external {
+            let exchange_rates = chain.get_exchange_rates_via_external_node()?;
+            if self.micro_ccd_per_euro_from_external {
+                chain.parameters.micro_ccd_per_euro = exchange_rates.micro_ccd_per_euro;
+            }
+            if self.euro_per_energy_from_external {
+                chain.parameters.euro_per_energy = exchange_rates.euro_per_energy;
+            }
+        }
+
+        // Set the exchange rates directly.
+        if let Some(micro_ccd_per_euro) = self.micro_ccd_per_euro {
+            chain.parameters.micro_ccd_per_euro = micro_ccd_per_euro;
+        }
+        if let Some(euro_per_energy) = self.euro_per_energy {
+            chain.parameters.euro_per_energy = euro_per_energy;
+        }
+
+        // Check the exchange rates and return early if they are invalid.
+        check_exchange_rates(
+            chain.parameters.euro_per_energy,
+            chain.parameters.micro_ccd_per_euro,
+        )?;
+
+        match (self.block_time, self.block_time_from_external) {
+            (Some(_), true) => return Err(ChainBuilderError::ConflictingBlockTime),
+            (Some(block_time), false) => {
+                chain.parameters.block_time = block_time;
+            }
+            (None, true) => {
+                chain.set_block_time_via_external_node()?;
+            }
+            (None, false) => (),
+        }
+
+        // Replace the default block time if provided.
+        if let Some(block_time) = self.block_time {
+            chain.parameters.block_time = block_time;
+        }
+
+        Ok(chain)
+    }
+}
+
+impl Default for ChainBuilder {
+    fn default() -> Self { Self::new() }
+}
+
 impl Chain {
+    /// Get a [`ChainBuilder`] for constructing a new [`Chain`] with a builder
+    /// pattern.
+    ///
+    /// See the [`ChainBuilder`] for more details.
+    pub fn builder() -> ChainBuilder { ChainBuilder::new() }
+
     /// Create a new [`Chain`](Self) where all the configurable parameters are
     /// provided.
     ///
     /// Returns an error if the exchange rates provided makes one energy cost
-    /// more than `u64::MAX / ` [`MAX_ALLOWED_INVOKE_ENERGY`].
+    /// more than `u64::MAX / 100_000_000_000`.
+    ///
+    /// *For more configuration options and flexibility, use the builder
+    /// pattern. See [`Chain::builder`].*
     pub fn new_with_time_and_rates(
         block_time: SlotTime,
         micro_ccd_per_euro: ExchangeRate,
         euro_per_energy: ExchangeRate,
     ) -> Result<Self, ExchangeRateError> {
         Ok(Self {
-            parameters:          ChainParameters::new_with_time_and_rates(
+            parameters:               ChainParameters::new_with_time_and_rates(
                 block_time,
                 micro_ccd_per_euro,
                 euro_per_energy,
             )?,
-            accounts:            BTreeMap::new(),
-            modules:             BTreeMap::new(),
-            contracts:           BTreeMap::new(),
-            next_contract_index: 0,
+            accounts:                 BTreeMap::new(),
+            modules:                  BTreeMap::new(),
+            contracts:                BTreeMap::new(),
+            next_contract_index:      0,
+            external_node_connection: None,
         })
     }
 
     /// Create a new [`Chain`](Self) with a specified `block_time` where
     ///  - `micro_ccd_per_euro` defaults to `50000 / 1`
     ///  - `euro_per_energy` defaults to `1 / 50000`.
+    ///
+    /// *For more configuration options and flexibility, use the builder
+    /// pattern. See [`Chain::builder`].*
     pub fn new_with_time(block_time: SlotTime) -> Self {
         Self {
             parameters: ChainParameters::new_with_time(block_time),
@@ -124,6 +443,9 @@ impl Chain {
     ///  - `euro_per_energy` defaults to `1 / 50000`.
     ///
     /// With these exchange rates, one energy costs one microCCD.
+    ///
+    /// *For more configuration options and flexibility, use the builder
+    /// pattern. See [`Chain::builder`].*
     pub fn new() -> Self {
         Self::new_with_time_and_rates(
             Timestamp::from_timestamp_millis(0),
@@ -1052,7 +1374,7 @@ impl Chain {
     /// Try to set the exchange rates on the chain.
     ///
     /// Will fail if they result in the cost of one energy being larger than
-    /// `u64::MAX / MAX_ALLOWED_INVOKE_ENERGY`.
+    /// `u64::MAX / 100_000_000_000`.
     pub fn set_exchange_rates(
         &mut self,
         micro_ccd_per_euro: ExchangeRate,
@@ -1065,11 +1387,247 @@ impl Chain {
         Ok(())
     }
 
+    /// Get the microCCD per euro and euro per energy exchange rates by querying
+    /// an external node using the external query block.
+    fn get_exchange_rates_via_external_node(&self) -> Result<ExchangeRates, ExternalNodeError> {
+        let connection = self.external_node_connection()?;
+
+        // Get the values from the external node.
+        connection.with_client(None, |block_identifier, mut client| async move {
+            let (euro_per_energy, micro_ccd_per_euro) = match client
+                .get_block_chain_parameters(block_identifier)
+                .await?
+                .response
+            {
+                sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+            };
+            Ok(ExchangeRates {
+                euro_per_energy,
+                micro_ccd_per_euro,
+            })
+        })
+    }
+
+    /// Tick the block time on the [`Chain`] by a [`Duration`].
+    ///
+    /// Returns an error if ticking causes the block time to overflow.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use concordium_smart_contract_testing::*;
+    ///
+    /// // Block time defaults to 0.
+    /// let mut chain = Chain::new();
+    ///
+    /// // Increase block time by 123 milliseconds.
+    /// chain.tick_block_time(Duration::from_millis(123)).unwrap();
+    ///
+    /// // Block time has now increased.
+    /// assert_eq!(chain.block_time(), Timestamp::from_timestamp_millis(123));
+    /// ```
+    pub fn tick_block_time(&mut self, duration: Duration) -> Result<(), BlockTimeOverflow> {
+        self.parameters.block_time = self
+            .parameters
+            .block_time
+            .checked_add(duration)
+            .ok_or(BlockTimeOverflow)?;
+        Ok(())
+    }
+
+    /// Set the block time by querying the external node.
+    ///
+    /// The default query block is always used.
+    ///
+    /// The external node must be setup prior to this call via the method
+    /// [`Chain::setup_external_node_connection`], otherwise an error is
+    /// returned.
+    fn set_block_time_via_external_node(&mut self) -> Result<(), ExternalNodeError> {
+        let connection = self.external_node_connection_mut()?;
+
+        // Get the timestamp in milliseconds.
+        let timestamp =
+            connection.with_client(None, |block_identifier, mut client| async move {
+                Ok(client
+                    .get_block_info(block_identifier)
+                    .await?
+                    .response
+                    .block_slot_time
+                    .timestamp_millis() as u64) // The node never returns
+                                                // timestamps < 0, so it is safe
+                                                // to cast it to `u64`.
+            })?;
+        // Update the block time.
+        self.parameters.block_time = Timestamp::from_timestamp_millis(timestamp);
+
+        Ok(())
+    }
+
+    /// Set up a connection to an external Concordium node.
+    ///
+    /// This method also queries the block info for one of two reasons:
+    /// 1) If `query_block` is provided, its existence is checked.
+    /// 2) Otherwise, the last final block is queried to get its blockhash which
+    /// will be saved in [`ExternalNodeConnection`].
+    fn setup_external_node_connection(
+        &mut self,
+        endpoint: Endpoint,
+        query_block: Option<BlockHash>,
+    ) -> Result<(), SetupExternalNodeError> {
+        // Create the Tokio runtime. This should never fail, unless nested runtimes are
+        // created.
+        let runtime = runtime::Builder::new_multi_thread()
+            // Enable time, so timeouts can be used.
+            .enable_time()
+            // Enable I/O, so networking and other types of calls are possible.
+            .enable_io()
+            .build()
+            .expect("Internal error: Could not create Tokio runtime.");
+
+        // A future for getting the client. Executed below.
+        let get_client = async {
+            // Try to create the client, which also checks that the connection is valid.
+            let client = sdk::v2::Client::new(endpoint).await?;
+            Ok::<sdk::v2::Client, SetupExternalNodeError>(client)
+        };
+
+        // A future for checking the block.
+        let get_block_info = |mut client: sdk::v2::Client| async move {
+            let block_identifier = if let Some(query_block) = query_block {
+                sdk::v2::BlockIdentifier::Given(query_block)
+            } else {
+                sdk::v2::BlockIdentifier::LastFinal
+            };
+
+            let block_hash = match client.get_block_info(block_identifier).await {
+                Ok(res) => res.block_hash,
+                Err(sdk::v2::QueryError::NotFound) => {
+                    return Err(SetupExternalNodeError::QueryBlockDoesNotExist {
+                        // It should never be possible to get `NotFound` when querying `LastFinal`,
+                        // and so, the `query_block` must be `Some`.
+                        query_block: query_block.expect(
+                            "Internal error: Got `QueryError::NotFound` for when querying last \
+                             final block.",
+                        ),
+                    });
+                }
+                Err(sdk::v2::QueryError::RPCError(error)) => {
+                    return Err(SetupExternalNodeError::CannotCheckQueryBlockExistence { error })
+                }
+            };
+            Ok(block_hash)
+        };
+
+        // Get the client synchronously by blocking until the async returns.
+        let (client, checked_query_block) = runtime.block_on(async {
+            let client = timeout(EXTERNAL_NODE_CONNECT_TIMEOUT, get_client)
+                .await
+                .map_err(|_| SetupExternalNodeError::ConnectTimeout)??;
+            let checked_query_block =
+                timeout(EXTERNAL_NODE_QUERY_TIMEOUT, get_block_info(client.clone()))
+                    .await
+                    .map_err(|_| SetupExternalNodeError::CheckQueryBlockTimeout)??;
+            Ok::<_, SetupExternalNodeError>((client, checked_query_block))
+        })?;
+
+        // Set or replace the node connection.
+        self.external_node_connection = Some(ExternalNodeConnection {
+            client,
+            runtime,
+            query_block: checked_query_block,
+        });
+
+        Ok(())
+    }
+
+    /// Try to get a mutable reference to [`ExternalNodeConnection`] or return
+    /// an error.
+    ///
+    /// The connection is only available, if the [`Chain`] has been set up with
+    /// an external node connection via
+    /// [`ChainBuilder::external_node_connection`] in the [`ChainBuilder`].
+    fn external_node_connection_mut(
+        &mut self,
+    ) -> Result<&mut ExternalNodeConnection, ExternalNodeNotConfigured> {
+        match &mut self.external_node_connection {
+            None => Err(ExternalNodeNotConfigured),
+            Some(data) => Ok(data),
+        }
+    }
+
+    /// Try to get an immutable reference to [`ExternalNodeConnection`] or
+    /// return an error.
+    ///
+    /// The connection is only available, if the [`Chain`] has been set up with
+    /// an external node connection via
+    /// [`ChainBuilder::external_node_connection`] in the [`ChainBuilder`].
+    fn external_node_connection(
+        &self,
+    ) -> Result<&ExternalNodeConnection, ExternalNodeNotConfigured> {
+        match &self.external_node_connection {
+            None => Err(ExternalNodeNotConfigured),
+            Some(data) => Ok(data),
+        }
+    }
+
     /// Return the current microCCD per euro exchange rate.
     pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.parameters.micro_ccd_per_euro }
 
     /// Return the current euro per energy exchange rate.
     pub fn euro_per_energy(&self) -> ExchangeRate { self.parameters.euro_per_energy }
+
+    /// Return the current block time.
+    pub fn block_time(&self) -> Timestamp { self.parameters.block_time }
+
+    /// Return the block used for external queries by default.
+    ///
+    /// The block can be set with [`ChainBuilder::external_query_block`] when
+    /// building the [`Chain`].
+    ///
+    /// This method returns an error if the external node has not been
+    /// configured.
+    pub fn external_query_block(&self) -> Result<BlockHash, ExternalNodeNotConfigured> {
+        self.external_node_connection().map(|conn| conn.query_block)
+    }
+}
+
+impl ExternalNodeConnection {
+    /// Execute an async task with the [`sdk::v2::Client`].
+    ///
+    /// If a block is provided, it will be used for the query. Otherwise, it
+    /// will use the default query block.
+    ///
+    /// If the task takes longer than [`EXTERNAL_NODE_TIMEOUT_DURATION`] then
+    /// the connection times out and an [`Err(ExternalNodeError::Timeout)`] is
+    /// returned.
+    ///
+    /// *This method cannot be nested, as that will cause a panic.*
+    fn with_client<T, F, Fut>(
+        &self,
+        block: Option<BlockHash>,
+        f: F,
+    ) -> Result<T, ExternalNodeError>
+    where
+        F: FnOnce(sdk::v2::BlockIdentifier, sdk::v2::Client) -> Fut,
+        Fut: Future<Output = Result<T, ExternalNodeError>>, {
+        // Get the block identifier, either using the provided block or the default
+        // query block.
+        let block_identifier = if let Some(block) = block {
+            sdk::v2::BlockIdentifier::Given(block)
+        } else {
+            sdk::v2::BlockIdentifier::Given(self.query_block)
+        };
+        // Clone the client so it can be moved to the async block.
+        let client = self.client.clone();
+        // Run the future and timeout if it takes too long.
+        self.runtime.block_on(async move {
+            timeout(EXTERNAL_NODE_QUERY_TIMEOUT, f(block_identifier, client))
+                .await
+                .map_err(|_| ExternalNodeError::QueryTimeout)?
+        })
+    }
 }
 
 impl Account {
@@ -1296,8 +1854,9 @@ pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
 /// ```
 ///
 /// To convert the `energy` parameter to mCCD (the vertical lines represent
-/// ceiling): ```markdown
-/// ⌈       mCCD  ⌉    ⌈ NRG * mCCD ⌉
+/// ceiling):
+/// ```markdown
+/// ⌈       mCCD  ⌉   ⌈ NRG * mCCD ⌉
 /// | NRG * ----  | = | ---------- | = mCCD
 /// |       NRG   |   |    NRG     |
 /// ```
@@ -1344,6 +1903,14 @@ fn check_exchange_rates(
 /// A helper function for converting `[v0::Logs]` into [`Vec<ContractEvent>`].
 pub(crate) fn contract_events_from_logs(logs: v0::Logs) -> Vec<ContractEvent> {
     logs.logs.into_iter().map(ContractEvent::from).collect()
+}
+
+impl From<ExternalNodeNotConfigured> for ExternalNodeError {
+    fn from(_: ExternalNodeNotConfigured) -> Self { Self::NotConfigured }
+}
+
+impl From<ExchangeRateError> for ChainBuilderError {
+    fn from(_: ExchangeRateError) -> Self { Self::ExchangeRateError }
 }
 
 #[cfg(test)]
@@ -1422,5 +1989,105 @@ mod tests {
             chain.account_balance_available(acc_other),
             Some(expected_amount_other)
         );
+    }
+
+    /// Test that building a chain with valid parameters succeeds.
+    ///
+    /// This test does *not* include external node endpoint, see
+    /// [`test_chain_builder_with_valid_parameters_and_with_io`] for the reason.
+    #[test]
+    fn test_chain_builder_with_valid_parameters() {
+        let micro_ccd_per_euro = ExchangeRate::new_unchecked(123, 1);
+        let euro_per_energy = ExchangeRate::new_unchecked(1, 1234);
+        let block_time = Timestamp::from_timestamp_millis(12345);
+        let chain = Chain::builder()
+            .micro_ccd_per_euro(micro_ccd_per_euro)
+            .euro_per_energy(euro_per_energy)
+            .block_time(block_time)
+            .build()
+            .unwrap();
+
+        assert_eq!(chain.micro_ccd_per_euro(), micro_ccd_per_euro);
+        assert_eq!(chain.euro_per_energy(), euro_per_energy);
+        assert_eq!(chain.block_time(), block_time);
+    }
+
+    /// Test that building a chain with exchange rates that are out of bounds
+    /// fails with the right error.
+    #[test]
+    fn test_chain_builder_with_invalid_exchange_rates() {
+        let micro_ccd_per_euro = ExchangeRate::new_unchecked(1000000, 1);
+        let euro_per_energy = ExchangeRate::new_unchecked(100000000, 1);
+        let error = Chain::builder()
+            .micro_ccd_per_euro(micro_ccd_per_euro)
+            .euro_per_energy(euro_per_energy)
+            .build()
+            .unwrap_err();
+
+        assert!(matches!(error, ChainBuilderError::ExchangeRateError));
+    }
+}
+
+/// Tests that use I/O (network) and should therefore *not* be run in the CI.
+///
+/// To skip the tests use `cargo test -- --skip io_tests`
+#[cfg(test)]
+mod io_tests {
+    use super::*;
+
+    /// Test that building a chain using the external node parameters works.
+    #[test]
+    fn test_chain_builder_with_valid_parameters_and_external_node() {
+        let chain = Chain::builder()
+            .micro_ccd_per_euro_from_external()
+            .euro_per_energy_from_external()
+            .external_query_block(
+                "45c53a19cd782a8de981941feb5e0f875cefaba8d2cda958e76f471a4710a797" // A block from testnet.
+                    .parse()
+                    .unwrap(),
+            )
+            .external_node_connection(Endpoint::from_static(
+                "http://node.testnet.concordium.com:20000",
+            ))
+            .block_time_from_external()
+            .build()
+            .unwrap();
+
+        // These values are queried manually from the node.
+        assert_eq!(
+            chain.micro_ccd_per_euro(),
+            ExchangeRate::new_unchecked(10338559485590134784, 79218205097)
+        );
+        assert_eq!(
+            chain.euro_per_energy(),
+            ExchangeRate::new_unchecked(1, 50000)
+        );
+        assert_eq!(
+            chain.block_time(),
+            Timestamp::from_timestamp_millis(1687865059500)
+        );
+    }
+
+    /// Test that the correct error is returned when an unknown query block is
+    /// given.
+    ///
+    /// The block used is one from mainnet, which is extremely unlikely to also
+    /// appear on testnet.
+    #[test]
+    fn test_block_time_from_unknown_block() {
+        let err = Chain::builder()
+            .external_node_connection(Endpoint::from_static(
+                "http://node.testnet.concordium.com:20000",
+            ))
+            .external_query_block(
+                "4f38c7e63645c59e9bf32f7ca837a029810b21c439f7492c3cebe229a2e3ea07"
+                    .parse()
+                    .unwrap(), // A block from mainnet.
+            )
+            .build()
+            .unwrap_err();
+        assert!(matches!(err, ChainBuilderError::SetupExternalNodeError {
+            error: SetupExternalNodeError::CannotCheckQueryBlockExistence { .. },
+        }));
     }
 }

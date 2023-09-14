@@ -12,24 +12,22 @@
 //!     - Of size <= 1kb: base cost + 1NRG / 1 *kilobyte* (same as before P5)
 //!     - Of size > 1 kb: base cost + 1NRG / 1 *byte*
 use concordium_smart_contract_testing::*;
-
-const WASM_TEST_FOLDER: &str = "../concordium-base/smart-contracts/testdata/contracts/v1";
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
+mod helpers;
 
 /// Test the new parameter size limit on both init and update.
 #[test]
 fn test_new_parameter_limit() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let parameter = mk_parameter(65535, 65535);
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("relaxed-restrictions.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -37,7 +35,7 @@ fn test_new_parameter_limit() {
     let res_init = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(80000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,
@@ -51,8 +49,8 @@ fn test_new_parameter_limit() {
     chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(700000),
             UpdateContractPayload {
                 address:      res_init.contract_address,
@@ -72,8 +70,8 @@ fn test_new_return_value_limit() {
     chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      contract_address,
@@ -94,8 +92,8 @@ fn test_new_log_limit() {
     chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_0,
-            Address::Account(ACC_0),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
                 address:      contract_address,
@@ -113,13 +111,13 @@ fn test_new_log_limit() {
 fn deploy_and_init() -> (Chain, ContractAddress) {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(10000);
-    chain.create_account(Account::new(ACC_0, initial_balance));
+    chain.create_account(Account::new(helpers::ACC_0, initial_balance));
 
     let res_deploy = chain
         .module_deploy_v1(
             Signer::with_one_key(),
-            ACC_0,
-            module_load_v1_raw(format!("{}/relaxed-restrictions.wasm", WASM_TEST_FOLDER))
+            helpers::ACC_0,
+            module_load_v1_raw(helpers::wasm_test_file("relaxed-restrictions.wasm"))
                 .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
@@ -127,7 +125,7 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
     let res_init = chain
         .contract_init(
             Signer::with_one_key(),
-            ACC_0,
+            helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
                 mod_ref:   res_deploy.module_reference,

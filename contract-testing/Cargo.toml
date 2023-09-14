@@ -2,20 +2,22 @@
 name = "concordium-smart-contract-testing"
 version = "3.0.0"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.66"
 license = "MPL-2.0"
 readme = "README.md"
 description = "A companion crate to `concordium-std` that supports off-chain end-to-end testing of smart contracts."
 homepage = "https://github.com/Concordium/concordium-smart-contract-tools"
-reposity = "https://github.com/Concordium/concordium-smart-contract-tools"
+repository = "https://github.com/Concordium/concordium-smart-contract-tools"
 exclude = ["tests"] # Do not publish tests.
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-concordium_base = {version = "3.0", path = "../concordium-base/rust-src/concordium_base"}
-concordium-smart-contract-engine = {version = "3.0", path = "../concordium-base/smart-contracts/wasm-chain-integration"}
-concordium-wasm = {version = "3.0", path = "../concordium-base/smart-contracts/wasm-transform"}
+concordium_base = {version = "3.0", path = "../concordium-rust-sdk/concordium-base/rust-src/concordium_base"}
+concordium-smart-contract-engine = {version = "3.0", path = "../concordium-rust-sdk/concordium-base/smart-contracts/wasm-chain-integration"}
+concordium-wasm = {version = "3.0", path = "../concordium-rust-sdk/concordium-base/smart-contracts/wasm-transform"}
+concordium-rust-sdk = {version = "3.0", path = "../concordium-rust-sdk"}
+tokio = { version = "1.28", features = ["rt-multi-thread", "time"] }
 sha2 = "0.10"
 anyhow = "1"
 thiserror = "1.0"

@@ -4,12 +4,14 @@ use concordium_base::{
     constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
-        ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime,
+        ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime, Timestamp,
     },
+    hashes::BlockHash,
     id::types::SchemeId,
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::AccountAccessStructure,
 };
+use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
 use concordium_wasm::artifact;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
@@ -24,11 +26,12 @@ pub struct ContractModule {
     pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
+/// The chain parameters.
 #[derive(Debug)]
 pub(crate) struct ChainParameters {
     /// The block time viewable inside the smart contracts.
     /// Defaults to `0`.
-    pub block_time:                SlotTime,
+    pub(crate) block_time:         SlotTime,
     /// MicroCCD per Euro ratio.
     // This is not public because we ensure a reasonable value during the construction of the
     // [`Chain`].
@@ -39,22 +42,60 @@ pub(crate) struct ChainParameters {
     pub(crate) euro_per_energy: ExchangeRate,
 }
 
+/// The connection and runtime needed for communicating with an external node.
+#[derive(Debug)]
+pub(crate) struct ExternalNodeConnection {
+    /// An instantiated v2 Client from the Rust SDK. Used for communicating with
+    /// a node.
+    pub(crate) client:      concordium_rust_sdk::v2::Client,
+    /// A Tokio runtime used to execute the async methods of the `client`.
+    pub(crate) runtime:     tokio::runtime::Runtime,
+    /// The block used for queries.
+    pub(crate) query_block: BlockHash,
+}
+
 /// Represents the blockchain and supports a number of operations, including
 /// creating accounts, deploying modules, initializing contract, updating
 /// contracts and invoking contracts.
 #[derive(Debug)]
 pub struct Chain {
-    pub(crate) parameters:          ChainParameters,
+    pub(crate) parameters:               ChainParameters,
     /// Accounts and info about them.
     /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
     /// as one account.
-    pub(crate) accounts:            BTreeMap<AccountAddressEq, Account>,
+    pub(crate) accounts:                 BTreeMap<AccountAddressEq, Account>,
     /// Smart contract modules.
-    pub(crate) modules:             BTreeMap<ModuleReference, ContractModule>,
+    pub(crate) modules:                  BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
-    pub(crate) contracts:           BTreeMap<ContractAddress, Contract>,
+    pub(crate) contracts:                BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
-    pub(crate) next_contract_index: u64,
+    pub(crate) next_contract_index:      u64,
+    /// An optional connection to an external node.
+    pub(crate) external_node_connection: Option<ExternalNodeConnection>,
+}
+
+/// A builder for the [`Chain`].
+#[derive(Debug)]
+pub struct ChainBuilder {
+    /// The configured endpoint for an external node connection.
+    pub(crate) external_node_endpoint: Option<sdk::v2::Endpoint>,
+    /// The block hash to be used for external queries. If this is not set, then
+    /// the last final block hash is used instead.
+    pub(crate) external_query_block: Option<BlockHash>,
+    /// The configured exchange rate between microCCD and euro.
+    pub(crate) micro_ccd_per_euro: Option<ExchangeRate>,
+    /// Whether the microCCD/euro exchange rate should be set via the external
+    /// node.
+    pub(crate) micro_ccd_per_euro_from_external: bool,
+    /// The configured exchange rate between euro and energy.
+    pub(crate) euro_per_energy: Option<ExchangeRate>,
+    /// Whether the euro/energy exchange rate should be set via the external
+    /// node.
+    pub(crate) euro_per_energy_from_external: bool,
+    /// The configured block time.
+    pub(crate) block_time: Option<Timestamp>,
+    /// Whether the block time should be set via the external node.
+    pub(crate) block_time_from_external: bool,
 }
 
 /// A smart contract instance.
@@ -682,7 +723,7 @@ pub struct AccountDoesNotExist {
 
 /// The provided exchange rates are not valid.
 /// Meaning that they do not correspond to one energy costing less than
-/// `u64::MAX / ` [`concordium_base::constants::MAX_ALLOWED_INVOKE_ENERGY`]`.
+/// `u64::MAX / 100_000_000_000`.
 #[derive(Debug, Error)]
 #[error("An exchange rate was too high.")]
 pub struct ExchangeRateError;
@@ -691,3 +732,118 @@ pub struct ExchangeRateError;
 #[derive(Debug, Error)]
 #[error("Any signer must have at least one key.")]
 pub struct ZeroKeysError;
+
+/// Errors that occur while setting up the connection to an external node.
+#[derive(Debug, thiserror::Error)]
+pub enum SetupExternalNodeError {
+    /// It was not possible to connect to a node on the provided endpoint.
+    #[error("Could not connect to the provided endpoint due to: {error}")]
+    CannotConnect {
+        /// The inner error.
+        #[from]
+        error: sdk::endpoints::Error,
+    },
+    /// The attempt to connect to an external node timed out.
+    #[error("The attempt to connect to an external node timed out.")]
+    ConnectTimeout,
+    /// The query to check the `external_query_block` timed out.
+    #[error("The query to check the `external_query_block` timed out.")]
+    CheckQueryBlockTimeout,
+    /// The specified external query block does not exist.
+    #[error("The specified external query block {query_block} does not exist.")]
+    QueryBlockDoesNotExist { query_block: BlockHash },
+    /// Could not check the existence of the specified query block or the last
+    /// final block.
+    #[error(
+        "Could not check the existence of the specified query block or the last final block due \
+         to: {error}"
+    )]
+    CannotCheckQueryBlockExistence {
+        /// The inner error.
+        error: sdk::v2::RPCError,
+    },
+}
+
+/// Errors that occur while trying to communicate with an external node.
+#[derive(Debug, Error)]
+pub enum ExternalNodeError {
+    /// An external node has not been configured.
+    #[error("An external node has not been configured.")]
+    NotConfigured,
+    /// The query could not be performed.
+    #[error("Could not perform the query: {error}")]
+    QueryError {
+        #[from]
+        error: sdk::endpoints::QueryError,
+    },
+    /// The query timed out.
+    #[error("The query timed out.")]
+    QueryTimeout,
+}
+
+/// The error returned when an external node has not been configured prior to
+/// using it.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[error("An external node has not been configured.")]
+pub struct ExternalNodeNotConfigured;
+
+#[derive(Debug, Error)]
+pub enum ChainBuilderError {
+    /// The provided exchange rates are not valid.
+    /// Meaning that they do not correspond to one energy costing less than
+    /// `u64::MAX / 100_000_000_000`.
+    #[error("An exchange rate was too high.")]
+    ExchangeRateError,
+    /// An error occurred while setting up the connection to an external node.
+    #[error("Error occurred while setting up the connection to an external node: {error}")]
+    SetupExternalNodeError {
+        #[from]
+        error: SetupExternalNodeError,
+    },
+    /// Error occurred while using the external node for querying chain
+    /// parameters such as the block time or exchange rates.
+    #[error("Error occurred while using the external node for querying chain parameters: {error}")]
+    ExternalNodeError {
+        #[from]
+        error: ExternalNodeError,
+    },
+    /// Could not configure the block time because both the
+    /// [`ChainBuilder::block_time`] and
+    /// [`ChainBuilder::block_time_from_external`] were provided, which is not
+    /// allowed.
+    #[error(
+        "Conflicting block time configuration: `block_time` and `block_time_from_external` cannot \
+         both be used."
+    )]
+    ConflictingBlockTime,
+    /// Could not configure the microCCD/euro exchange rate because both the
+    /// [`ChainBuilder::micro_ccd_per_euro`] and
+    /// [`ChainBuilder::micro_ccd_per_euro_from_external`] were provided, which
+    /// is not allowed.
+    #[error(
+        "Conflicting microCCD per euro configuration: `micro_ccd_per_euro` and \
+         `micro_ccd_per_euro_from_external` cannot both be used."
+    )]
+    ConflictingMicroCCDPerEuro,
+    /// Could not configure the euro/energy exchange rate because both the
+    /// [`ChainBuilder::euro_per_energy`] and
+    /// [`ChainBuilder::euro_per_energy_from_external`] were provided, which is
+    /// not allowed.
+    #[error(
+        "Conflicting euro per energy configuration: `euro_per_energy` and \
+         `euro_per_energy_from_external` cannot both be used."
+    )]
+    ConflictingEuroPerEnergy,
+    /// A configuration option that requires an external node connection was
+    /// used without [`ChainBuilder::external_node_connection`].
+    #[error(
+        "A configuration method that requires an external node connection was called without \
+         `ChainBuilder::external_node_connection`."
+    )]
+    MissingExternalConnection,
+}
+
+/// The block time overflowed during a call to `Chain::tick_block_time`.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[error("The block time overflowed during a call to `Chain::tick_block_time`.")]
+pub struct BlockTimeOverflow;
