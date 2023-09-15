@@ -998,7 +998,7 @@ impl Chain {
     ///    `invoker`. Here we provide extra freedom for testing invocations
     ///    where the sender differs.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
-    ///  - `payload`: The data detailing which contract contract and receive
+    ///  - `payload`: The data detailing which contract and receive
     ///    method to call etc.
     pub fn contract_update(
         &mut self,
@@ -1123,9 +1123,9 @@ impl Chain {
     /// **Parameters:**
     ///  - `invoker`: the account used as invoker. Since this isn't a
     ///    transaction, it won't be charged.
-    ///  - `sender`: the sender, can also be a contract.
+    ///  - `sender`: the sender. Can be either a contract address or an account address.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
-    ///  - `payload`: The data detailing which contract contract and receive
+    ///  - `payload`: The data detailing which contract and receive
     ///    method to call etc.
     pub fn contract_invoke(
         &self,
@@ -1207,15 +1207,15 @@ impl Chain {
     /// Invoke an external contract entrypoint.
     ///
     /// Similar to [`Chain::contract_invoke`](Self::contract_invoke) except that
-    /// it invokes a contract on the external node.
+    /// it invokes/dry runs a contract on the external node.
     ///
     /// **Parameters:**
     ///  - `invoker`: the account used as invoker.
     ///     - The account must exist on the connected node.
     ///  - `sender`: the sender, can also be a contract.
-    ///     - The sender exist on the connected node.
+    ///     - The sender must exist on the connected node.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
-    ///  - `payload`: The data detailing which contract contract and receive
+    ///  - `payload`: The data detailing which contract and receive
     ///    method to call etc.
     ///  - `block`: The block in which the invocation will be simulated, as if
     ///    it was at the end of the block. If `None` is provided, the
