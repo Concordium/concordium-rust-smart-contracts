@@ -107,5 +107,5 @@ pub use concordium_base::{
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
 };
-pub use concordium_rust_sdk::v2::Endpoint;
+pub use concordium_rust_sdk::{types::RejectReason, v2::Endpoint};
 pub use concordium_smart_contract_engine::v1::InvokeFailure;

@@ -13,6 +13,8 @@
   - `Timestamp` which `SlotTime` is an alias of.
   - `Duration`
   - `Endpoint`
+- Add methods to the `Chain` for adding external accounts and contracts and for invoking contracts on an external node.
+  - See the `Chain` method `contract_invoke_external` for more details.
 - Bump minimum supported Rust version to `1.66`.
 
 ## 3.0.0

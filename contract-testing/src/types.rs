@@ -8,13 +8,20 @@ use concordium_base::{
     },
     hashes::BlockHash,
     id::types::SchemeId,
-    smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
+    smart_contracts::{
+        ContractEvent, ContractTraceElement, InstanceUpdatedEvent, OwnedParameter,
+        OwnedReceiveName, WasmVersion,
+    },
     transactions::AccountAccessStructure,
 };
 use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
 use concordium_wasm::artifact;
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    sync::Arc,
+};
 use thiserror::Error;
 
 /// A smart contract module.
@@ -33,13 +40,9 @@ pub(crate) struct ChainParameters {
     /// Defaults to `0`.
     pub(crate) block_time:         SlotTime,
     /// MicroCCD per Euro ratio.
-    // This is not public because we ensure a reasonable value during the construction of the
-    // [`Chain`].
     pub(crate) micro_ccd_per_euro: ExchangeRate,
     /// Euro per Energy ratio.
-    // This is not public because we ensure a reasonable value during the construction of the
-    // [`Chain`].
-    pub(crate) euro_per_energy: ExchangeRate,
+    pub(crate) euro_per_energy:    ExchangeRate,
 }
 
 /// The connection and runtime needed for communicating with an external node.
@@ -52,6 +55,10 @@ pub(crate) struct ExternalNodeConnection {
     pub(crate) runtime:     tokio::runtime::Runtime,
     /// The block used for queries.
     pub(crate) query_block: BlockHash,
+    /// External accounts that are verified to exist in the `query_block`.
+    pub(crate) accounts:    BTreeSet<ExternalAccountAddress>,
+    /// External contracts that are verified to exist in the `query_block`.
+    pub(crate) contracts:   BTreeSet<ExternalContractAddress>,
 }
 
 /// Represents the blockchain and supports a number of operations, including
@@ -420,6 +427,18 @@ pub struct ContractInvokeSuccess {
     pub new_balance:     Amount,
 }
 
+/// Represents a successful external contract invocation.
+#[derive(Debug)]
+pub struct ContractInvokeExternalSuccess {
+    /// Host events that occurred. This includes interrupts, resumes, and
+    /// upgrades.
+    pub trace_elements: Vec<ContractTraceElement>,
+    /// The energy used.
+    pub energy_used:    Energy,
+    /// The returned value.
+    pub return_value:   ReturnValue,
+}
+
 impl ContractInvokeSuccess {
     /// Extract all the events logged by all the contracts in the invocation.
     /// The events are returned in the order that they are emitted, and are
@@ -658,6 +677,32 @@ pub enum ContractInvokeErrorKind {
     ParameterTooLarge,
 }
 
+/// The error returned when external contract invocations fail.
+#[derive(Debug, Error)]
+pub enum ContractInvokeExternalError {
+    /// The external contract invocation was executed, but resulted in a
+    /// failure.
+    #[error(
+        "External contract invocation was executed, but failed after using {energy_used}NRG with \
+         error {reason:?}."
+    )]
+    Failure {
+        /// The reason why the invoke failed.
+        reason:       sdk::types::RejectReason,
+        /// The energy used before failure.
+        energy_used:  Energy,
+        /// The value returned.
+        return_value: ReturnValue,
+    },
+    /// The external contract invocation failed due to an external node error.
+    #[error("External contract invocation failed due to an external node error: {error}")]
+    ExternalNodeError {
+        #[from]
+        /// The external node error.
+        error: ExternalNodeError,
+    },
+}
+
 /// A balance error which can occur when transferring [`Amount`]s.
 #[derive(Debug, PartialEq, Eq, Error)]
 pub(crate) enum BalanceError {
@@ -847,3 +892,68 @@ pub enum ChainBuilderError {
 #[derive(Debug, Error, PartialEq, Eq)]
 #[error("The block time overflowed during a call to `Chain::tick_block_time`.")]
 pub struct BlockTimeOverflow;
+
+/// The contract address of an contract on an external node.
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExternalContractAddress {
+    /// The contract address.
+    pub(crate) address: ContractAddress,
+}
+
+/// The address of an account on an external node.
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExternalAccountAddress {
+    /// The account address.
+    pub(crate) address: AccountAddress,
+}
+
+/// Either an external contract address or an external account address.
+///
+/// External means that it is an entity that exists on an external node.
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ExternalAddress {
+    Account(ExternalAccountAddress),
+    Contract(ExternalContractAddress),
+}
+
+impl ExternalAddress {
+    /// Convert to an [`Address`].
+    ///
+    /// This is an internal method instead of a [`From`] implementation, as it
+    /// should be difficult to conflate external and regular addresses.
+    pub(crate) fn to_address(self) -> Address {
+        match self {
+            ExternalAddress::Account(ExternalAccountAddress { address }) => {
+                Address::Account(address)
+            }
+            ExternalAddress::Contract(ExternalContractAddress { address }) => {
+                Address::Contract(address)
+            }
+        }
+    }
+}
+
+/// Data needed to invoke an external smart contract instance.
+///
+/// This is nearly identical to [`UpdateContractPayload`] except that it uses an
+/// [`ExternalContractAddress`] instead of an [`ContractAddress`].
+#[derive(Debug, Clone)]
+pub struct InvokeExternalContractPayload {
+    /// Send the given amount of CCD together with the message to the
+    /// contract instance.
+    pub amount:       Amount,
+    /// Address of the external contract instance to invoke.
+    pub address:      ExternalContractAddress,
+    /// Name of the method to invoke on the contract.
+    pub receive_name: OwnedReceiveName,
+    /// Message to send to the contract instance.
+    pub message:      OwnedParameter,
+}
+
+impl From<ExternalAccountAddress> for ExternalAddress {
+    fn from(addr: ExternalAccountAddress) -> Self { Self::Account(addr) }
+}
+
+impl From<ExternalContractAddress> for ExternalAddress {
+    fn from(addr: ExternalContractAddress) -> Self { Self::Contract(addr) }
+}
