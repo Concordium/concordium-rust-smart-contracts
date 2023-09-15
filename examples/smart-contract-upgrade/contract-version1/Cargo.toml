@@ -25,8 +25,8 @@ crate-type=["cdylib", "rlib"]
 #`concordium-smart-contract-testing` uses the below libraries as well. We overwrite them with the ones used 
 #in this repository so we can test the newest version of the libraries with the Ci pipelines.
 [patch.crates-io]
-concordium-contracts-common = {path = "../../../concordium-contracts-common/concordium-contracts-common"}
-concordium-contracts-common-derive = {path = "../../../concordium-contracts-common/concordium-contracts-common-derive"}
+concordium-contracts-common = {path = "../../../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common"}
+concordium-contracts-common-derive = {path = "../../../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common-derive"}
 
 [profile.release]
 opt-level = "s"
