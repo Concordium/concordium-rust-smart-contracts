@@ -998,8 +998,8 @@ impl Chain {
     ///    `invoker`. Here we provide extra freedom for testing invocations
     ///    where the sender differs.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
-    ///  - `payload`: The data detailing which contract and receive
-    ///    method to call etc.
+    ///  - `payload`: The data detailing which contract and receive method to
+    ///    call etc.
     pub fn contract_update(
         &mut self,
         signer: Signer,
@@ -1123,10 +1123,11 @@ impl Chain {
     /// **Parameters:**
     ///  - `invoker`: the account used as invoker. Since this isn't a
     ///    transaction, it won't be charged.
-    ///  - `sender`: the sender. Can be either a contract address or an account address.
+    ///  - `sender`: the sender. Can be either a contract address or an account
+    ///    address.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
-    ///  - `payload`: The data detailing which contract and receive
-    ///    method to call etc.
+    ///  - `payload`: The data detailing which contract and receive method to
+    ///    call etc.
     pub fn contract_invoke(
         &self,
         invoker: AccountAddress,
@@ -1215,8 +1216,8 @@ impl Chain {
     ///  - `sender`: the sender, can also be a contract.
     ///     - The sender must exist on the connected node.
     ///  - `energy_reserved`: the maximum energy that can be used in the update.
-    ///  - `payload`: The data detailing which contract and receive
-    ///    method to call etc.
+    ///  - `payload`: The data detailing which contract and receive method to
+    ///    call etc.
     ///  - `block`: The block in which the invocation will be simulated, as if
     ///    it was at the end of the block. If `None` is provided, the
     ///    `external_query_block` is used instead.
