@@ -1,3 +1,3 @@
 [submodule "concordium-rust-sdk"]
 	path = concordium-rust-sdk
-	url = git@github.com:Concordium/concordium-rust-sdk.git
+	url = ../concordium-rust-sdk.git
