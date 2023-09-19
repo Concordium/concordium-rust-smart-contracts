@@ -1012,6 +1012,17 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
+// TODO: Document these.
+pub type InitContext = ExternContext<ExternInitContext>;
+pub type ReceiveContext = ExternContext<ExternReceiveContext>;
+pub type Host<State> = ExternHost<State>;
+pub type StateApi = ExternStateApi;
+pub type CryptoPrimitives = ExternCryptoPrimitives;
+pub type LowLevelHost = ExternLowLevelHost;
+pub type ChainMeta = ExternChainMeta;
+pub type StateIter = ExternStateIter;
+pub type ReturnValue = ExternReturnValue;
+
 /// Operations backed by host functions for the high-level interface.
 #[doc(hidden)]
 pub struct ExternHost<State> {
@@ -1028,7 +1039,7 @@ pub struct ExternHost<State> {
 /// state, abstracting over the exact **keys** (keys in the sense of key-value
 /// store, which is the low-level semantics of contract state) that are used
 /// when storing specific values.
-pub struct StateBuilder<S> {
+pub struct StateBuilder<S = StateApi> {
     pub(crate) state_api: S,
 }
 
