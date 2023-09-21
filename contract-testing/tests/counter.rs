@@ -94,9 +94,7 @@ fn test_counter() {
 /// `expected`.
 fn assert_counter_state(chain: &mut Chain, contract_address: ContractAddress, expected: u64) {
     assert_eq!(
-        chain
-            .contract_state_lookup(contract_address, &[0, 0, 0, 0, 0, 0, 0, 0])
-            .unwrap(),
+        chain.contract_state_lookup(contract_address, &[0, 0, 0, 0, 0, 0, 0, 0]).unwrap(),
         u64::to_le_bytes(expected)
     );
 }

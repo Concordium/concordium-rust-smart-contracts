@@ -142,9 +142,7 @@ impl ChainBuilder {
     /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = Chain::builder()
-    ///     .external_node_connection(Endpoint::from_static(
-    ///         "http://node.testnet.concordium.com:20000",
-    ///     ))
+    ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
     ///     .build()
     ///     .unwrap();
     /// ```
@@ -168,13 +166,9 @@ impl ChainBuilder {
     /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = Chain::builder()
-    ///     .external_node_connection(Endpoint::from_static(
-    ///         "http://node.testnet.concordium.com:20000",
-    ///     ))
+    ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
     ///     .external_query_block(
-    ///         "95ff82f26892a2327c3e7ac582224a54d75c367341fbff209bce552d81349eb0"
-    ///             .parse()
-    ///             .unwrap(),
+    ///         "95ff82f26892a2327c3e7ac582224a54d75c367341fbff209bce552d81349eb0".parse().unwrap(),
     ///     )
     ///     .build()
     ///     .unwrap();
@@ -214,10 +208,8 @@ impl ChainBuilder {
     /// # Example
     /// ```
     /// # use concordium_smart_contract_testing::*;
-    /// let chain = ChainBuilder::new()
-    ///     .euro_per_energy(ExchangeRate::new_unchecked(1, 50000))
-    ///     .build()
-    ///     .unwrap();
+    /// let chain =
+    ///     ChainBuilder::new().euro_per_energy(ExchangeRate::new_unchecked(1, 50000)).build().unwrap();
     /// ```
     pub fn euro_per_energy(mut self, exchange_rate: ExchangeRate) -> Self {
         self.euro_per_energy = Some(exchange_rate);
@@ -236,9 +228,7 @@ impl ChainBuilder {
     /// ```
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
-    ///     .external_node_connection(Endpoint::from_static(
-    ///         "http://node.testnet.concordium.com:20000",
-    ///     ))
+    ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
     ///     .micro_ccd_per_euro_from_external()
     ///     .build()
     ///     .unwrap();
@@ -260,9 +250,7 @@ impl ChainBuilder {
     /// ```
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
-    ///     .external_node_connection(Endpoint::from_static(
-    ///         "http://node.testnet.concordium.com:20000",
-    ///     ))
+    ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
     ///     .euro_per_energy_from_external()
     ///     .build()
     ///     .unwrap();
@@ -303,9 +291,7 @@ impl ChainBuilder {
     /// ```
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
-    ///     .external_node_connection(Endpoint::from_static(
-    ///         "http://node.testnet.concordium.com:20000",
-    ///     ))
+    ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
     ///     .block_time_from_external()
     ///     .build()
     ///     .unwrap();
@@ -598,10 +584,7 @@ impl Chain {
         self.modules.insert(module_reference, ContractModule {
             // we follow protocol 6 semantics, and don't count the custom section size towards
             // module size.
-            size:     wasm_module
-                .source
-                .size()
-                .saturating_sub(artifact.custom_sections_size),
+            size:     wasm_module.source.size().saturating_sub(artifact.custom_sections_size),
             artifact: Arc::new(artifact.artifact),
         });
         Ok(ModuleDeploySuccess {
@@ -636,7 +619,9 @@ impl Chain {
         let mut remaining_energy = energy_reserved;
         if !self.account_exists(sender) {
             return Err(self.convert_to_init_error(
-                ContractInitErrorKind::SenderDoesNotExist(AccountDoesNotExist { address: sender }),
+                ContractInitErrorKind::SenderDoesNotExist(AccountDoesNotExist {
+                    address: sender,
+                }),
                 energy_reserved,
                 remaining_energy,
             ));
@@ -663,10 +648,8 @@ impl Chain {
         };
 
         // Charge the account.
-        self.account_mut(sender)
-            .expect("existence already checked")
-            .balance
-            .total -= transaction_fee;
+        self.account_mut(sender).expect("existence already checked").balance.total -=
+            transaction_fee;
         res
     }
 
@@ -815,10 +798,8 @@ impl Chain {
                 self.contracts.insert(contract_address, contract);
 
                 // Subtract the amount from the invoker.
-                self.account_mut(sender)
-                    .expect("Account known to exist")
-                    .balance
-                    .total -= payload.amount;
+                self.account_mut(sender).expect("Account known to exist").balance.total -=
+                    payload.amount;
 
                 let energy_used = energy_reserved - *remaining_energy;
                 let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
@@ -963,7 +944,10 @@ impl Chain {
         state_changed: bool,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         match result {
-            v1::InvokeResponse::Success { new_balance, data } => {
+            v1::InvokeResponse::Success {
+                new_balance,
+                data,
+            } => {
                 let energy_used = energy_reserved - remaining_energy;
                 let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
                 Ok(ContractInvokeSuccess {
@@ -975,8 +959,12 @@ impl Chain {
                     new_balance,
                 })
             }
-            v1::InvokeResponse::Failure { kind } => Err(self.convert_to_invoke_error(
-                ContractInvokeErrorKind::ExecutionError { failure_kind: kind },
+            v1::InvokeResponse::Failure {
+                kind,
+            } => Err(self.convert_to_invoke_error(
+                ContractInvokeErrorKind::ExecutionError {
+                    failure_kind: kind,
+                },
                 trace_elements,
                 energy_reserved,
                 remaining_energy,
@@ -1043,14 +1031,12 @@ impl Chain {
 
         // Charge the header cost.
         let mut remaining_energy =
-            energy_reserved
-                .checked_sub(check_header_cost)
-                .ok_or(ContractInvokeError {
-                    energy_used:     Energy::from(0),
-                    transaction_fee: Amount::zero(),
-                    trace_elements:  Vec::new(),
-                    kind:            ContractInvokeErrorKind::OutOfEnergy,
-                })?;
+            energy_reserved.checked_sub(check_header_cost).ok_or(ContractInvokeError {
+                energy_used:     Energy::from(0),
+                transaction_fee: Amount::zero(),
+                trace_elements:  Vec::new(),
+                kind:            ContractInvokeErrorKind::OutOfEnergy,
+            })?;
 
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
@@ -1107,10 +1093,8 @@ impl Chain {
             Err(e) => e.transaction_fee,
         };
         // Charge for execution.
-        self.account_mut(invoker)
-            .expect("existence already checked")
-            .balance
-            .total -= transaction_fee;
+        self.account_mut(invoker).expect("existence already checked").balance.total -=
+            transaction_fee;
         res
     }
 
@@ -1362,7 +1346,9 @@ impl Chain {
                         block_identifier,
                     )
                     .await?;
-                Ok::<_, ExternalNodeError>(ExternalAccountAddress { address })
+                Ok::<_, ExternalNodeError>(ExternalAccountAddress {
+                    address,
+                })
             })?;
 
         connection.accounts.insert(external_addr);
@@ -1390,7 +1376,9 @@ impl Chain {
                 // Try to get the contract instance info to verify the existence of the
                 // contract, but discard the result.
                 client.get_instance_info(address, block_identifier).await?;
-                Ok::<_, ExternalNodeError>(ExternalContractAddress { address })
+                Ok::<_, ExternalNodeError>(ExternalContractAddress {
+                    address,
+                })
             })?;
 
         connection.contracts.insert(external_addr);
@@ -1413,9 +1401,7 @@ impl Chain {
 
     /// Returns the available balance of an account if it exists.
     pub fn account_balance_available(&self, address: AccountAddress) -> Option<Amount> {
-        self.accounts
-            .get(&address.into())
-            .map(|ai| ai.balance.available())
+        self.accounts.get(&address.into()).map(|ai| ai.balance.available())
     }
 
     /// Returns the balance of an contract if it exists.
@@ -1444,9 +1430,9 @@ impl Chain {
 
     /// Returns an immutable reference to an [`Account`].
     pub fn account(&self, address: AccountAddress) -> Result<&Account, AccountDoesNotExist> {
-        self.accounts
-            .get(&address.into())
-            .ok_or(AccountDoesNotExist { address })
+        self.accounts.get(&address.into()).ok_or(AccountDoesNotExist {
+            address,
+        })
     }
 
     /// Returns a mutable reference to [`Account`].
@@ -1454,9 +1440,9 @@ impl Chain {
         &mut self,
         address: AccountAddress,
     ) -> Result<&mut Account, AccountDoesNotExist> {
-        self.accounts
-            .get_mut(&address.into())
-            .ok_or(AccountDoesNotExist { address })
+        self.accounts.get_mut(&address.into()).ok_or(AccountDoesNotExist {
+            address,
+        })
     }
 
     /// Check whether an [`Account`] exists.
@@ -1562,15 +1548,12 @@ impl Chain {
 
         // Get the values from the external node.
         connection.with_client(None, |block_identifier, mut client| async move {
-            let (euro_per_energy, micro_ccd_per_euro) = match client
-                .get_block_chain_parameters(block_identifier)
-                .await?
-                .response
-            {
-                sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-            };
+            let (euro_per_energy, micro_ccd_per_euro) =
+                match client.get_block_chain_parameters(block_identifier).await?.response {
+                    sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                    sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                    sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                };
             Ok(ExchangeRates {
                 euro_per_energy,
                 micro_ccd_per_euro,
@@ -1597,11 +1580,8 @@ impl Chain {
     /// assert_eq!(chain.block_time(), Timestamp::from_timestamp_millis(123));
     /// ```
     pub fn tick_block_time(&mut self, duration: Duration) -> Result<(), BlockTimeOverflow> {
-        self.parameters.block_time = self
-            .parameters
-            .block_time
-            .checked_add(duration)
-            .ok_or(BlockTimeOverflow)?;
+        self.parameters.block_time =
+            self.parameters.block_time.checked_add(duration).ok_or(BlockTimeOverflow)?;
         Ok(())
     }
 
@@ -1682,7 +1662,9 @@ impl Chain {
                     });
                 }
                 Err(sdk::v2::QueryError::RPCError(error)) => {
-                    return Err(SetupExternalNodeError::CannotCheckQueryBlockExistence { error })
+                    return Err(SetupExternalNodeError::CannotCheckQueryBlockExistence {
+                        error,
+                    })
                 }
             };
             Ok(block_hash)
@@ -1956,14 +1938,20 @@ pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, Modul
 
 impl Signer {
     /// Create a signer which always signs with one key.
-    pub const fn with_one_key() -> Self { Self { num_keys: 1 } }
+    pub const fn with_one_key() -> Self {
+        Self {
+            num_keys: 1,
+        }
+    }
 
     /// Create a signer with a non-zero number of keys.
     pub const fn with_keys(num_keys: u32) -> Result<Self, ZeroKeysError> {
         if num_keys == 0 {
             return Err(ZeroKeysError);
         }
-        Ok(Self { num_keys })
+        Ok(Self {
+            num_keys,
+        })
     }
 }
 
@@ -1976,7 +1964,11 @@ impl ContractInvokeError {
     pub fn return_value(&self) -> Option<&[u8]> {
         match &self.kind {
             ContractInvokeErrorKind::ExecutionError {
-                failure_kind: v1::InvokeFailure::ContractReject { data, .. },
+                failure_kind:
+                    v1::InvokeFailure::ContractReject {
+                        data,
+                        ..
+                    },
             } => Some(data),
             _ => None,
         }
@@ -2151,14 +2143,8 @@ mod tests {
         assert_eq!(acc_eq.cmp(&acc_alias_eq), std::cmp::Ordering::Equal);
         assert_eq!(acc_eq.cmp(&acc_other_eq), std::cmp::Ordering::Less);
 
-        assert_eq!(
-            chain.account_balance_available(acc_alias),
-            Some(expected_amount)
-        );
-        assert_eq!(
-            chain.account_balance_available(acc_other),
-            Some(expected_amount_other)
-        );
+        assert_eq!(chain.account_balance_available(acc_alias), Some(expected_amount));
+        assert_eq!(chain.account_balance_available(acc_other), Some(expected_amount_other));
     }
 
     /// Test that building a chain with valid parameters succeeds.
@@ -2229,14 +2215,8 @@ mod io_tests {
             chain.micro_ccd_per_euro(),
             ExchangeRate::new_unchecked(10338559485590134784, 79218205097)
         );
-        assert_eq!(
-            chain.euro_per_energy(),
-            ExchangeRate::new_unchecked(1, 50000)
-        );
-        assert_eq!(
-            chain.block_time(),
-            Timestamp::from_timestamp_millis(1687865059500)
-        );
+        assert_eq!(chain.euro_per_energy(), ExchangeRate::new_unchecked(1, 50000));
+        assert_eq!(chain.block_time(), Timestamp::from_timestamp_millis(1687865059500));
     }
 
     /// Test that the correct error is returned when an unknown query block is
@@ -2246,17 +2226,18 @@ mod io_tests {
     /// appear on testnet.
     #[test]
     fn test_block_time_from_unknown_block() {
-        let err = Chain::builder()
-            .external_node_connection(Endpoint::from_static(
-                "http://node.testnet.concordium.com:20000",
-            ))
-            .external_query_block(
-                "4f38c7e63645c59e9bf32f7ca837a029810b21c439f7492c3cebe229a2e3ea07"
-                    .parse()
-                    .unwrap(), // A block from mainnet.
-            )
-            .build()
-            .unwrap_err();
+        let err =
+            Chain::builder()
+                .external_node_connection(Endpoint::from_static(
+                    "http://node.testnet.concordium.com:20000",
+                ))
+                .external_query_block(
+                    "4f38c7e63645c59e9bf32f7ca837a029810b21c439f7492c3cebe229a2e3ea07"
+                        .parse()
+                        .unwrap(), // A block from mainnet.
+                )
+                .build()
+                .unwrap_err();
         assert!(matches!(err, ChainBuilderError::SetupExternalNodeError {
             error: SetupExternalNodeError::CannotCheckQueryBlockExistence { .. },
         }));
@@ -2274,15 +2255,11 @@ mod io_tests {
             .unwrap();
 
         // A CIS-2 contract.
-        let external_contr = chain
-            .add_external_contract(ContractAddress::new(5089, 0))
-            .unwrap();
+        let external_contr = chain.add_external_contract(ContractAddress::new(5089, 0)).unwrap();
 
         let external_acc = chain
             .add_external_account(
-                "3U4sfVSqGG6XK8g6eho2qRYtnHc4MWJBG1dfxdtPGbfHwFxini"
-                    .parse()
-                    .unwrap(),
+                "3U4sfVSqGG6XK8g6eho2qRYtnHc4MWJBG1dfxdtPGbfHwFxini".parse().unwrap(),
             )
             .unwrap();
 

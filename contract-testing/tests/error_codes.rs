@@ -64,10 +64,7 @@ fn test_error_codes() {
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(
-        res_update_0.return_value,
-        u64::to_le_bytes(0x0100_ffff_ffef)
-    );
+    assert_eq!(res_update_0.return_value, u64::to_le_bytes(0x0100_ffff_ffef));
 
     // Invoke an entrypoint that tries to transfer an amount that it does not have
     // via contract invoke. The expected return code is
@@ -98,10 +95,7 @@ fn test_error_codes() {
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(
-        res_update_1.return_value,
-        u64::to_le_bytes(0x0001_0000_0000)
-    );
+    assert_eq!(res_update_1.return_value, u64::to_le_bytes(0x0001_0000_0000));
 
     // Invoke an entrypoint that traps
     // The expected return code is
@@ -130,10 +124,7 @@ fn test_error_codes() {
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(
-        res_update_2.return_value,
-        u64::to_le_bytes(0x0002_0000_0000)
-    );
+    assert_eq!(res_update_2.return_value, u64::to_le_bytes(0x0002_0000_0000));
 
     // Invoke an entrypoint that tries to invoke a non-existing contract.
     // The expected return code is
@@ -164,10 +155,7 @@ fn test_error_codes() {
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(
-        res_update_3.return_value,
-        u64::to_le_bytes(0x0003_0000_0000)
-    );
+    assert_eq!(res_update_3.return_value, u64::to_le_bytes(0x0003_0000_0000));
 
     // Invoke an entrypoint that tries to invoke a non-existing entrypoint.
     // The expected return code is
@@ -198,10 +186,7 @@ fn test_error_codes() {
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(
-        res_update_4.return_value,
-        u64::to_le_bytes(0x0004_0000_0000)
-    );
+    assert_eq!(res_update_4.return_value, u64::to_le_bytes(0x0004_0000_0000));
 
     // Test 5 is omitted as it uses a v0 contract which is not supported in this
     // library.
@@ -235,8 +220,5 @@ fn test_error_codes() {
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(
-        res_update_6.return_value,
-        u64::to_le_bytes(0x0006_0000_0000)
-    );
+    assert_eq!(res_update_6.return_value, u64::to_le_bytes(0x0006_0000_0000));
 }

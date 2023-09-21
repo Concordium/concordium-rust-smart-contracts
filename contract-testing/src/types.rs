@@ -148,7 +148,9 @@ impl From<AccountSignatures> for BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Si
 
 impl From<BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>> for AccountSignatures {
     fn from(sigs: BTreeMap<CredentialIndex, BTreeMap<KeyIndex, Signature>>) -> Self {
-        Self { sigs }
+        Self {
+            sigs,
+        }
     }
 }
 
@@ -198,7 +200,9 @@ impl contracts_common::Deserial for AccountSignatures {
                     SchemeId::Ed25519 => {
                         let mut sig = vec![0u8; ED25519_SIGNATURE_LENGTH];
                         source.read_exact(&mut sig)?;
-                        Signature { sig }
+                        Signature {
+                            sig,
+                        }
                     }
                 };
 
@@ -215,7 +219,9 @@ impl contracts_common::Deserial for AccountSignatures {
             }
             sigs.insert(idx, inner_map);
         }
-        Ok(Self { sigs })
+        Ok(Self {
+            sigs,
+        })
     }
 }
 
@@ -399,7 +405,9 @@ pub enum InitExecutionError {
         return_value: ReturnValue,
     },
     /// The contract trapped.
-    Trap { error: ExecutionError },
+    Trap {
+        error: ExecutionError,
+    },
     /// The contract ran out of energy.
     OutOfEnergy,
 }
@@ -448,7 +456,10 @@ impl ContractInvokeSuccess {
     /// [`Self::effective_trace_elements`] for more details.
     pub fn events(&self) -> impl Iterator<Item = (ContractAddress, &[ContractEvent])> {
         self.effective_trace_elements().flat_map(|cte| {
-            if let ContractTraceElement::Updated { data } = cte {
+            if let ContractTraceElement::Updated {
+                data,
+            } = cte
+            {
                 Some((data.address, data.events.as_slice()))
             } else {
                 None
@@ -467,7 +478,12 @@ impl ContractInvokeSuccess {
         &self,
     ) -> impl Iterator<Item = (ContractAddress, Amount, AccountAddress)> + '_ {
         self.effective_trace_elements().flat_map(|cte| {
-            if let ContractTraceElement::Transferred { from, amount, to } = cte {
+            if let ContractTraceElement::Transferred {
+                from,
+                amount,
+                to,
+            } = cte
+            {
                 Some((*from, *amount, *to))
             } else {
                 None
@@ -485,8 +501,13 @@ impl ContractInvokeSuccess {
     /// clones.
     pub fn effective_trace_elements(&self) -> impl Iterator<Item = &ContractTraceElement> {
         self.trace_elements.iter().filter_map(|cte| match cte {
-            DebugTraceElement::Regular { trace_element, .. } => Some(trace_element),
-            DebugTraceElement::WithFailures { .. } => None,
+            DebugTraceElement::Regular {
+                trace_element,
+                ..
+            } => Some(trace_element),
+            DebugTraceElement::WithFailures {
+                ..
+            } => None,
         })
     }
 
@@ -502,8 +523,13 @@ impl ContractInvokeSuccess {
         self.trace_elements
             .iter()
             .filter_map(|cte| match cte {
-                DebugTraceElement::Regular { trace_element, .. } => Some(trace_element.clone()),
-                DebugTraceElement::WithFailures { .. } => None,
+                DebugTraceElement::Regular {
+                    trace_element,
+                    ..
+                } => Some(trace_element.clone()),
+                DebugTraceElement::WithFailures {
+                    ..
+                } => None,
             })
             .collect()
     }
@@ -525,13 +551,29 @@ impl ContractInvokeSuccess {
     /// where it returns the `from`.
     fn extract_contract_address(element: &ContractTraceElement) -> ContractAddress {
         match element {
-            ContractTraceElement::Interrupted { address, .. } => *address,
-            ContractTraceElement::Resumed { address, .. } => *address,
-            ContractTraceElement::Upgraded { address, .. } => *address,
-            ContractTraceElement::Updated {
-                data: InstanceUpdatedEvent { address, .. },
+            ContractTraceElement::Interrupted {
+                address,
+                ..
             } => *address,
-            ContractTraceElement::Transferred { from, .. } => *from,
+            ContractTraceElement::Resumed {
+                address,
+                ..
+            } => *address,
+            ContractTraceElement::Upgraded {
+                address,
+                ..
+            } => *address,
+            ContractTraceElement::Updated {
+                data:
+                    InstanceUpdatedEvent {
+                        address,
+                        ..
+                    },
+            } => *address,
+            ContractTraceElement::Transferred {
+                from,
+                ..
+            } => *from,
         }
     }
 
@@ -541,7 +583,10 @@ impl ContractInvokeSuccess {
     /// followed by "A updated", assuming the invocation of both succeeded.
     pub fn updates(&self) -> impl Iterator<Item = &InstanceUpdatedEvent> {
         self.effective_trace_elements().filter_map(|e| {
-            if let ContractTraceElement::Updated { data } = e {
+            if let ContractTraceElement::Updated {
+                data,
+            } = e
+            {
                 Some(data)
             } else {
                 None
@@ -613,7 +658,9 @@ pub enum InvokeExecutionError {
         return_value: ReturnValue,
     },
     /// The contract trapped.
-    Trap { error: ExecutionError },
+    Trap {
+        error: ExecutionError,
+    },
 }
 
 /// An error that occurred during a [`Chain::contract_update`] or
@@ -641,7 +688,9 @@ pub struct ContractInvokeError {
 pub enum ContractInvokeErrorKind {
     /// Invocation failed during execution.
     #[error("Failed during execution: {failure_kind:?}")]
-    ExecutionError { failure_kind: v1::InvokeFailure },
+    ExecutionError {
+        failure_kind: v1::InvokeFailure,
+    },
     /// Ran out of energy.
     #[error("Ran out of energy")]
     OutOfEnergy,
@@ -796,7 +845,9 @@ pub enum SetupExternalNodeError {
     CheckQueryBlockTimeout,
     /// The specified external query block does not exist.
     #[error("The specified external query block {query_block} does not exist.")]
-    QueryBlockDoesNotExist { query_block: BlockHash },
+    QueryBlockDoesNotExist {
+        query_block: BlockHash,
+    },
     /// Could not check the existence of the specified query block or the last
     /// final block.
     #[error(
@@ -923,12 +974,12 @@ impl ExternalAddress {
     /// should be difficult to conflate external and regular addresses.
     pub(crate) fn to_address(self) -> Address {
         match self {
-            ExternalAddress::Account(ExternalAccountAddress { address }) => {
-                Address::Account(address)
-            }
-            ExternalAddress::Contract(ExternalContractAddress { address }) => {
-                Address::Contract(address)
-            }
+            ExternalAddress::Account(ExternalAccountAddress {
+                address,
+            }) => Address::Account(address),
+            ExternalAddress::Contract(ExternalContractAddress {
+                address,
+            }) => Address::Contract(address),
         }
     }
 }

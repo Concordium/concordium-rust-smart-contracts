@@ -94,10 +94,7 @@ fn basics() {
     assert_eq!(view.energy_used, 316.into());
 
     // Check that the amounts charged matches the node.
-    assert_eq!(
-        deployment.transaction_fee,
-        Amount::from_micro_ccd(2_685_078)
-    );
+    assert_eq!(deployment.transaction_fee, Amount::from_micro_ccd(2_685_078));
     assert_eq!(init.transaction_fee, Amount::from_micro_ccd(1_940_202));
     assert_eq!(update.transaction_fee, Amount::from_micro_ccd(20_630_050));
 }

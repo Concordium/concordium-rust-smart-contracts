@@ -17,26 +17,10 @@ fn test() {
     let acc_keys = AccountKeys::generate(
         AccountThreshold::TWO,
         &[
-            (3.into(), SignatureThreshold::TWO, &[
-                7.into(),
-                8.into(),
-                17.into(),
-            ]),
-            (7.into(), SignatureThreshold::ONE, &[
-                3.into(),
-                8.into(),
-                33.into(),
-            ]),
-            (37.into(), SignatureThreshold::ONE, &[
-                2.into(),
-                8.into(),
-                255.into(),
-            ]),
-            (254.into(), SignatureThreshold::TWO, &[
-                1.into(),
-                2.into(),
-                3.into(),
-            ]),
+            (3.into(), SignatureThreshold::TWO, &[7.into(), 8.into(), 17.into()]),
+            (7.into(), SignatureThreshold::ONE, &[3.into(), 8.into(), 33.into()]),
+            (37.into(), SignatureThreshold::ONE, &[2.into(), 8.into(), 255.into()]),
+            (254.into(), SignatureThreshold::TWO, &[1.into(), 2.into(), 3.into()]),
         ],
         &mut csprng,
     );
@@ -92,10 +76,7 @@ fn test() {
     let rv =
         contracts_common::from_bytes::<AccountAccessStructure>(&res_invoke_get_keys.return_value)
             .expect("Return value should be deserializable.");
-    assert_eq!(
-        rv, acc_structure,
-        "Retrieved account structure does not match the expected one."
-    );
+    assert_eq!(rv, acc_structure, "Retrieved account structure does not match the expected one.");
 
     // Data is a serialization of a 30-element byte array with 4 byte length prefix
     // (in little endian).
@@ -121,8 +102,5 @@ fn test() {
         .expect("Querying contract should work");
     let rv = contracts_common::from_bytes::<u64>(&res_invoke_check_signature.return_value)
         .expect("Return value should be deserializable.");
-    assert_eq!(
-        rv, 0,
-        "Signature check should succeed, the return value should be 0."
-    );
+    assert_eq!(rv, 0, "Signature check should succeed, the return value should be 0.");
 }
