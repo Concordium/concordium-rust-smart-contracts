@@ -84,8 +84,7 @@ jobs:
   "cargo_test":
     name: ${{ matrix.build-dir }} cargo:test
     runs-on: ubuntu-latest
-    needs:
-      - cargo-concordium_cargo_build-bench
+    needs: "lint_fmt"
     strategy:
       matrix:
         build-dir:
