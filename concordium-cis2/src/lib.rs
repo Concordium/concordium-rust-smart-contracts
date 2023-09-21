@@ -558,6 +558,7 @@ mod u256_token {
     use primitive_types::U256;
     #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
     #[repr(transparent)]
+    #[cfg_attr(docsrs, cfg(feature = "u256_amount"))]
     pub struct TokenAmountU256(pub U256);
 
     impl ops::Add<Self> for TokenAmountU256 {

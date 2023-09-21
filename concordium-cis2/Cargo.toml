@@ -36,3 +36,4 @@ opt-level = "s"
 targets = ["wasm32-unknown-unknown"]
 # Default features to build documentation for.
 features = ["std", "u256_amount"]
+rustc-args = ["--cfg", "docsrs"]
