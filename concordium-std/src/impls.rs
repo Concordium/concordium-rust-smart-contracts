@@ -908,7 +908,8 @@ where
 
     /// Lookup a mutable reference to the value with the given key. Return
     /// [None] if there is no value with the given key.
-    pub fn get_mut(&self, key: &K) -> Option<StateRefMut<V, S>> {
+
+    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, S>> {
         let k = self.key_with_map_prefix(key);
         let entry = self.state_api.lookup_entry(&k)?;
         Some(StateRefMut::new(entry, self.state_api.clone()))
@@ -2990,5 +2991,23 @@ impl Deserial for MetadataUrl {
             url:  String::from_utf8(bytes).map_err(|_| ParseError::default())?,
             hash: Deserial::deserial(source)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    /// Check that you cannot have multiple active entries from a statemap at
+    /// the same time. See the test file for details.
+    #[test]
+    fn statemap_multiple_entries_not_allowed() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/state/map-multiple-entries.rs");
+    }
+
+    #[test]
+    fn statemap_multiple_state_ref_mut_not_allowed() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/state/map-multiple-state-ref-mut.rs");
     }
 }

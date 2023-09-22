@@ -2432,17 +2432,6 @@ mod test {
     }
 
     #[test]
-    fn multiple_entries_not_allowed() {
-        let mut state_builder = TestStateBuilder::new();
-        let mut map = state_builder.new_map();
-        map.insert(0u8, 1u8);
-        let e1 = map.entry(0u8);
-        // Uncommenting this line should give a borrow-check error.
-        // let e2 = map.entry(1u8);
-        e1.and_modify(|v| *v += 1);
-    }
-
-    #[test]
     fn occupied_entry_truncates_leftover_data() {
         let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
