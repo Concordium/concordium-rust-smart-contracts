@@ -67,16 +67,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: ${{ env.RUST_CLIPPY }}
           override: true
-      - name: Format
+      - name: Docs
         working-directory: ${{ matrix.build-dir }}
         run: |
-          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
 
   "lint_clippy":
     name: ${{ matrix.build-dir }} lint:clippy

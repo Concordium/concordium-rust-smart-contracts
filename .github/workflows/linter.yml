@@ -95,7 +95,7 @@ jobs:
       - name: Run cargo doc
         working-directory: ${{ matrix.crates }}
         run: |
-          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
 
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
   # can be executed without errors on the generated smart contracts.
