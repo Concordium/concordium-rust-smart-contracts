@@ -986,8 +986,10 @@ impl ExternalAddress {
 
 /// Data needed to invoke an external smart contract instance.
 ///
-/// This is nearly identical to [`UpdateContractPayload`] except that it uses an
-/// [`ExternalContractAddress`] instead of an [`ContractAddress`].
+/// This is nearly identical to
+/// [`UpdateContractPayload`](concordium_base::transactions::UpdateContractPayload)
+/// except that it uses an [`ExternalContractAddress`] instead of an
+/// [`ContractAddress`].
 #[derive(Debug, Clone)]
 pub struct InvokeExternalContractPayload {
     /// Send the given amount of CCD together with the message to the

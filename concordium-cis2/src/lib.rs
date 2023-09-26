@@ -24,12 +24,13 @@
 //!     // ...
 //!     Ok(A::accept())
 //! }
+//! ```
 //!
 //! # Features
 //!
 //! This crate has features `std` and `u256_amount`. The former one is default.
-//! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is defined
-//! and implements the [`IsTokenAmount`] interface.
+//! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is
+//! defined and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod cis2_client;
@@ -69,13 +70,14 @@ pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
 pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
 
 /// Trait for marking types as CIS2 token IDs.
-/// For a type to be a valid CIS2 token ID it must implement SchemaType and
-/// Serialize, such that the first byte indicates how many bytes is used to
-/// represent the token ID, followed by this many bytes for the token ID.
+/// For a type to be a valid CIS2 token ID it must implement
+/// `SchemaType` and `Serialize`, such that the first
+/// byte indicates how many bytes is used to represent the token ID, followed by
+/// this many bytes for the token ID.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
-/// token ID using Vec<u8> is to allow smart contracts to use specialized token
-/// ID implementations avoiding allocations.
+/// token ID using `Vec<u8>` is to allow smart contracts to use specialized
+/// token ID implementations avoiding allocations.
 pub trait IsTokenId: Serialize + schema::SchemaType {}
 
 /// Trait for marking types as CIS2 token amounts.
@@ -84,7 +86,7 @@ pub trait IsTokenId: Serialize + schema::SchemaType {}
 /// 37 bytes.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
-/// token amount using [u8; 37] is to allow smart contracts to use specialized
+/// token amount using `[u8; 37]` is to allow smart contracts to use specialized
 /// token amount implementations avoiding doing arithmetics of large integers.
 pub trait IsTokenAmount: Serialize + schema::SchemaType {}
 

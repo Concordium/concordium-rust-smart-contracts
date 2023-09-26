@@ -1324,7 +1324,7 @@ impl Chain {
     /// Add an external account from a connected external node.
     ///
     /// If the account exists on the external node at the time of the
-    /// `external_query_block`, then an [`ExernalAccountAddress`] is returned.
+    /// `external_query_block`, then an [`ExternalAccountAddress`] is returned.
     /// The address can be used with [`Chain::contract_invoke_external`].
     /// Otherwise, an error is returned.
     ///
@@ -1359,7 +1359,7 @@ impl Chain {
     /// Add an external contract from a connected external node.
     ///
     /// If the contract exists on the external node at the time of the
-    /// `external_query_block`, then an [`ExernalContractAddress`] is returned.
+    /// `external_query_block`, then an [`ExternalContractAddress`] is returned.
     /// The address can be used with [`Chain::contract_invoke_external`].
     /// Otherwise, an error is returned.
     ///

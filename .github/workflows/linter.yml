@@ -14,7 +14,6 @@ env:
   RUST_FMT: nightly-2023-04-01
   RUST_VERSION: "1.66"
 
-
 jobs:
   rustfmt:
     name: Format
@@ -68,6 +67,35 @@ jobs:
         with:
           command: fmt
           args: --manifest-path=${{ matrix.crates }} -- --check
+
+  rustdoc:
+    name: Lint docs
+    # Don't run on draft pull requests
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crates:
+          - concordium-std
+          - concordium-cis2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_VERSION }}
+          override: true
+
+      - name: Run cargo doc
+        working-directory: ${{ matrix.crates }}
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
   # can be executed without errors on the generated smart contracts.
@@ -468,7 +496,6 @@ jobs:
           command: clippy
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
-
   clippy-wasm32-only:
     name: Clippy Wasm32
     runs-on: ubuntu-latest
@@ -749,7 +776,6 @@ jobs:
           command: test
           # Run all tests, including doc tests.
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }}
-
 
   test-examples:
     name: Test examples

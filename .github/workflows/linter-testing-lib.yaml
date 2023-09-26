@@ -2,6 +2,7 @@ name: "Testing library: Format, lint, build, and test"
 
 # This job runs:
 # - rustfmt
+# - rustdoc
 # - clippy linting
 # - tests
 # for the smart contract testing library.
@@ -18,10 +19,10 @@ on:
       - synchronize
       - ready_for_review
     paths:
-      - 'contract-testing/**/*.rs'
-      - 'contract-testing/**/*.toml'
-      - 'rustfmt.toml'
-      - 'concordium-rust-sdk'
+      - "contract-testing/**/*.rs"
+      - "contract-testing/**/*.toml"
+      - "rustfmt.toml"
+      - "concordium-rust-sdk"
 
   workflow_dispatch: # allows manual trigger
 
@@ -38,7 +39,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - 'contract-testing'
+          - "contract-testing"
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -54,6 +55,29 @@ jobs:
         run: |
           cargo fmt -- --color=always --check
 
+  "lint_doc":
+    name: ${{ matrix.build-dir }} lint:doc
+    # Don't run on draft pull requests
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build-dir:
+          - "contract-testing"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_CLIPPY }}
+          override: true
+      - name: Format
+        working-directory: ${{ matrix.build-dir }}
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+
   "lint_clippy":
     name: ${{ matrix.build-dir }} lint:clippy
     # Don't run on draft pull requests
@@ -62,7 +86,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - 'contract-testing'
+          - "contract-testing"
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -88,7 +112,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - 'contract-testing'
+          - "contract-testing"
     steps:
       - name: Checkout
         uses: actions/checkout@v3
