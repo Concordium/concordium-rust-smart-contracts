@@ -373,8 +373,9 @@ pub trait HasHost<State>: Sized {
 
     /// Get the current public balance of an account. Here public means
     /// unencrypted or unshielded. See
-    /// [`AccountBalance`](crate::types::AccountBalance) for more.
-    /// This query will fail if the provided address does not exist on chain.
+    /// [`AccountBalance`](concordium_contracts_common::AccountBalance) for
+    /// more. This query will fail if the provided address does not exist on
+    /// chain.
     ///
     /// Any amount received by transfers during the transaction
     /// until the point of querying are reflected in this balance.

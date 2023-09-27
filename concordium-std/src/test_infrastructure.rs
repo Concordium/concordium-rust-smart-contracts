@@ -780,7 +780,7 @@ type MockFnHash<T> = Box<dyn FnMut(&[u8]) -> T>;
 /// two different ways:
 ///
 /// 1. By setting up mock responses for the functions you need, for example with
-/// the [`setup_hash_sha_256_mock`](Self::setup_hash_sha2_256_mock) method.
+/// the `setup_hash_sha_256_mock` method.
 /// 2. Or, by using the actual implementations. For this, you need to enable the
 /// "crypto-primitives" feature.
 pub struct TestCryptoPrimitives {
