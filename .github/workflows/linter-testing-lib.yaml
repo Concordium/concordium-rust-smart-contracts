@@ -19,10 +19,10 @@ on:
       - synchronize
       - ready_for_review
     paths:
-      - "contract-testing/**/*.rs"
-      - "contract-testing/**/*.toml"
-      - "rustfmt.toml"
-      - "concordium-rust-sdk"
+      - 'contract-testing/**/*.rs'
+      - 'contract-testing/**/*.toml'
+      - 'rustfmt.toml'
+      - 'concordium-rust-sdk'
 
   workflow_dispatch: # allows manual trigger
 
@@ -39,7 +39,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - "contract-testing"
+          - 'contract-testing'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -63,7 +63,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - "contract-testing"
+          - 'contract-testing'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -88,7 +88,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - "contract-testing"
+          - 'contract-testing'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -114,7 +114,7 @@ jobs:
     strategy:
       matrix:
         build-dir:
-          - "contract-testing"
+          - 'contract-testing'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
