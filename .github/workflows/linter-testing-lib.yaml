@@ -2,6 +2,7 @@ name: "Testing library: Format, lint, build, and test"
 
 # This job runs:
 # - rustfmt
+# - rustdoc
 # - clippy linting
 # - tests
 # for the smart contract testing library.
@@ -53,6 +54,31 @@ jobs:
         working-directory: ${{ matrix.build-dir }}
         run: |
           cargo fmt -- --color=always --check
+
+  "lint_doc":
+    name: ${{ matrix.build-dir }} lint:doc
+    # Don't run on draft pull requests
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build-dir:
+          - 'contract-testing'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_CLIPPY }}
+          override: true
+      - name: Docs
+        working-directory: ${{ matrix.build-dir }}
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
 
   "lint_clippy":
     name: ${{ matrix.build-dir }} lint:clippy
