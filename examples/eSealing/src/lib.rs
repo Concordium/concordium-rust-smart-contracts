@@ -55,7 +55,7 @@ struct FileState {
 }
 
 /// The contract state.
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     files: StateMap<HashSha2256, FileState, S>,

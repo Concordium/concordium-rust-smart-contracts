@@ -908,7 +908,8 @@ where
 
     /// Lookup a mutable reference to the value with the given key. Return
     /// [None] if there is no value with the given key.
-    pub fn get_mut(&self, key: &K) -> Option<StateRefMut<V, S>> {
+
+    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, S>> {
         let k = self.key_with_map_prefix(key);
         let entry = self.state_api.lookup_entry(&k)?;
         Some(StateRefMut::new(entry, self.state_api.clone()))
@@ -2132,7 +2133,7 @@ fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPubl
         prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr() as *const u8, 32)
     };
     let mut return_value = parse_query_account_public_keys_response_code(response)?;
-    Ok(AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
+    Ok(crate::AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
 }
 
 fn check_account_signature_worker(
@@ -2918,62 +2919,6 @@ where
     fn delete(mut self) { self.clear(); }
 }
 
-impl Serial for PublicKeyEd25519 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
-}
-
-impl Deserial for PublicKeyEd25519 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        Ok(PublicKeyEd25519(Deserial::deserial(source)?))
-    }
-}
-
-impl schema::SchemaType for PublicKeyEd25519 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
-}
-
-impl Serial for PublicKeyEcdsaSecp256k1 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
-}
-
-impl Deserial for PublicKeyEcdsaSecp256k1 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        Ok(PublicKeyEcdsaSecp256k1(Deserial::deserial(source)?))
-    }
-}
-
-impl schema::SchemaType for PublicKeyEcdsaSecp256k1 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(33) }
-}
-
-impl Serial for SignatureEd25519 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
-}
-
-impl Deserial for SignatureEd25519 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        Ok(SignatureEd25519(Deserial::deserial(source)?))
-    }
-}
-
-impl schema::SchemaType for SignatureEd25519 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(64) }
-}
-
-impl Serial for SignatureEcdsaSecp256k1 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
-}
-
-impl Deserial for SignatureEcdsaSecp256k1 {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        Ok(SignatureEcdsaSecp256k1(Deserial::deserial(source)?))
-    }
-}
-
-impl schema::SchemaType for SignatureEcdsaSecp256k1 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(64) }
-}
-
 impl Serial for HashSha2256 {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
 }
@@ -3016,70 +2961,6 @@ impl schema::SchemaType for HashKeccak256 {
     fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
 }
 
-unsafe impl<T, S: HasStateApi> StateClone<S> for StateSet<T, S> {
-    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
-        Self {
-            _marker:   self._marker,
-            prefix:    self.prefix,
-            state_api: cloned_state_api.clone(),
-        }
-    }
-}
-
-unsafe impl<T, V, S: HasStateApi> StateClone<S> for StateMap<T, V, S> {
-    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
-        Self {
-            _marker_key:   self._marker_key,
-            _marker_value: self._marker_value,
-            prefix:        self.prefix,
-            state_api:     cloned_state_api.clone(),
-        }
-    }
-}
-
-unsafe impl<T: DeserialWithState<S> + Serial, S: HasStateApi> StateClone<S> for StateBox<T, S> {
-    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self {
-        let inner_value = match &*self.inner.get() {
-            StateBoxInner::Loaded {
-                entry,
-                modified,
-                value: _,
-            } => {
-                // Get a new entry from the cloned state.
-                let mut new_entry = cloned_state_api.lookup_entry(entry.get_key()).unwrap_abort();
-                let new_value =
-                    T::deserial_with_state(cloned_state_api, &mut new_entry).unwrap_abort();
-
-                // Set position of new entry to match the old entry.
-                let old_entry_position = entry.cursor_position();
-                new_entry.seek(SeekFrom::Start(old_entry_position)).unwrap_abort();
-
-                StateBoxInner::Loaded {
-                    entry:    new_entry,
-                    modified: *modified,
-                    value:    new_value,
-                }
-            }
-            StateBoxInner::Reference {
-                prefix,
-            } => StateBoxInner::Reference {
-                prefix: *prefix,
-            },
-        };
-
-        Self {
-            state_api: cloned_state_api.clone(),
-            inner:     UnsafeCell::new(inner_value),
-        }
-    }
-}
-
-/// Blanket implementation for all cloneable, flat types that don't have
-/// references to items in the state.
-unsafe impl<T: Clone, S> StateClone<S> for T {
-    unsafe fn clone_state(&self, _cloned_state_api: &S) -> Self { self.clone() }
-}
-
 impl schema::SchemaType for MetadataUrl {
     fn get_type() -> schema::Type {
         schema::Type::Struct(schema::Fields::Named(crate::vec![
@@ -3110,5 +2991,23 @@ impl Deserial for MetadataUrl {
             url:  String::from_utf8(bytes).map_err(|_| ParseError::default())?,
             hash: Deserial::deserial(source)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    /// Check that you cannot have multiple active entries from a statemap at
+    /// the same time. See the test file for details.
+    #[test]
+    fn statemap_multiple_entries_not_allowed() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/state/map-multiple-entries.rs");
+    }
+
+    #[test]
+    fn statemap_multiple_state_ref_mut_not_allowed() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/state/map-multiple-state-ref-mut.rs");
     }
 }

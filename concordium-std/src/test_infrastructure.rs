@@ -780,7 +780,7 @@ type MockFnHash<T> = Box<dyn FnMut(&[u8]) -> T>;
 /// two different ways:
 ///
 /// 1. By setting up mock responses for the functions you need, for example with
-/// the [`setup_hash_sha_256_mock`](Self::setup_hash_sha2_256_mock) method.
+/// the `setup_hash_sha_256_mock` method.
 /// 2. Or, by using the actual implementations. For this, you need to enable the
 /// "crypto-primitives" feature.
 pub struct TestCryptoPrimitives {
@@ -1316,9 +1316,7 @@ pub struct TestHost<State> {
     missing_contracts:       BTreeSet<ContractAddress>,
 }
 
-impl<State: Serial + DeserialWithState<TestStateApi> + StateClone<TestStateApi>> HasHost<State>
-    for TestHost<State>
-{
+impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
     type ReturnValueType = Cursor<Vec<u8>>;
     type StateApiType = TestStateApi;
 
@@ -1800,27 +1798,30 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-impl<State: StateClone<TestStateApi>> TestHost<State> {
+impl<State: DeserialWithState<TestStateApi>> TestHost<State> {
     /// Make a deep clone of the host, including the whole state and all
     /// references to the state. Used for rolling back the host and state,
     /// fx when using [`with_rollback`].
     fn checkpoint(&self) -> Self {
         let cloned_state_api = self.state_builder.state_api.clone_deep();
+        let state: State = cloned_state_api
+            .read_root()
+            .expect_report("Could not deserialize root entry from state clone");
         Self {
-            mocking_fns:             self.mocking_fns.clone(),
-            transfers:               self.transfers.clone(),
-            contract_balance:        self.contract_balance.clone(),
-            contract_address:        self.contract_address,
-            mocking_upgrades:        self.mocking_upgrades.clone(),
-            state_builder:           StateBuilder {
-                state_api: cloned_state_api.clone(),
+            mocking_fns: self.mocking_fns.clone(),
+            transfers: self.transfers.clone(),
+            contract_balance: self.contract_balance.clone(),
+            contract_address: self.contract_address,
+            mocking_upgrades: self.mocking_upgrades.clone(),
+            state_builder: StateBuilder {
+                state_api: cloned_state_api,
             },
-            state:                   unsafe { self.state.clone_state(&cloned_state_api) },
-            missing_accounts:        self.missing_accounts.clone(),
-            missing_contracts:       self.missing_contracts.clone(),
-            query_account_balances:  self.query_account_balances.clone(),
+            state,
+            missing_accounts: self.missing_accounts.clone(),
+            missing_contracts: self.missing_contracts.clone(),
+            query_account_balances: self.query_account_balances.clone(),
             query_contract_balances: self.query_contract_balances.clone(),
-            query_exchange_rates:    self.query_exchange_rates,
+            query_exchange_rates: self.query_exchange_rates,
         }
     }
 
@@ -1914,10 +1915,10 @@ mod test {
         cell::RefCell,
         rc::Rc,
         test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry, StateBox, StateClone,
-        StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateMap, StateSet,
+        INITIAL_NEXT_ITEM_PREFIX,
     };
-    use concordium_contracts_common::{to_bytes, Cursor, Deserial, Read, Seek, SeekFrom, Write};
+    use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
 
     #[test]
     fn test_testhost_balance_queries_reflect_transfers() {
@@ -2431,17 +2432,6 @@ mod test {
     }
 
     #[test]
-    fn multiple_entries_not_allowed() {
-        let mut state_builder = TestStateBuilder::new();
-        let mut map = state_builder.new_map();
-        map.insert(0u8, 1u8);
-        let e1 = map.entry(0u8);
-        // Uncommenting this line should give a borrow-check error.
-        // let e2 = map.entry(1u8);
-        e1.and_modify(|v| *v += 1);
-    }
-
-    #[test]
     fn occupied_entry_truncates_leftover_data() {
         let mut state_builder = TestStateBuilder::new();
         let mut map = state_builder.new_map();
@@ -2476,60 +2466,5 @@ mod test {
         let actual_size =
             state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
         assert_eq!(expected_size as u32, actual_size);
-    }
-
-    #[test]
-    /// Test that deep cloning a statebox, in both of its internal forms, work
-    /// as expected.
-    fn deep_cloning_state_box() {
-        let state = TestStateApi::new();
-        let mut state_builder = TestStateBuilder::open(state.clone());
-
-        // Helper function.
-        fn get_loaded_entry_cursor_pos<T: concordium_contracts_common::Serial>(
-            b: &StateBox<T, TestStateApi>,
-        ) -> u32 {
-            match unsafe { &*b.inner.get() } {
-                crate::StateBoxInner::Loaded {
-                    entry,
-                    modified: _,
-                    value: _,
-                } => entry.cursor_position(),
-                crate::StateBoxInner::Reference {
-                    prefix: _,
-                } => panic!("Cannot be called on StateBoxInner::Reference"),
-            }
-        }
-
-        // These boxes have InnerBox::Loaded
-        let b1_loaded = state_builder.new_box(101010);
-        let mut b2_loaded = state_builder.new_box(b1_loaded);
-
-        let b2_bytes = to_bytes(&b2_loaded);
-
-        let b2_loaded_cursor_pos = get_loaded_entry_cursor_pos(&b2_loaded);
-
-        // Deserial to get boxes with InnerBox::Reference
-        let mut b2_ref = StateBox::<StateBox<i32, _>, _>::deserial_with_state(
-            &state,
-            &mut Cursor::new(b2_bytes),
-        )
-        .unwrap();
-
-        // Make clones
-        let state_clone = state.clone_deep();
-        let b2_loaded_clone = unsafe { b2_loaded.clone_state(&state_clone) };
-        let b2_ref_clone = unsafe { b2_ref.clone_state(&state_clone) };
-
-        // Modify originals
-        b2_loaded.update(|b| b.update(|x| *x += 1)); // 101011
-        b2_ref.update(|b| b.update(|x| *x += 1)); // 101012
-
-        // Check that clones are unchanged
-        let b2_loaded_clone_cursor_pos = get_loaded_entry_cursor_pos(&b2_loaded_clone);
-
-        assert_eq!(*b2_loaded_clone.get().get(), 101010);
-        assert_eq!(*b2_ref_clone.get().get(), 101010);
-        assert_eq!(b2_loaded_clone_cursor_pos, b2_loaded_cursor_pos);
     }
 }

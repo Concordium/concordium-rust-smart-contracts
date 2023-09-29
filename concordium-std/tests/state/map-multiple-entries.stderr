@@ -1,0 +1,10 @@
+error[E0499]: cannot borrow `map` as mutable more than once at a time
+  --> tests/state/map-multiple-entries.rs:12:14
+   |
+11 |     let e1 = map.entry(0u8);
+   |              -------------- first mutable borrow occurs here
+12 |     let e2 = map.entry(1u8);
+   |              ^^^^^^^^^^^^^^ second mutable borrow occurs here
+13 |     // Use them, so we are certain that their lifetimes overlap.
+14 |     e1.or_insert(1);
+   |     -- first borrow later used here

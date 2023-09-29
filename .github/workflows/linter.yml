@@ -12,8 +12,7 @@ name: Clippy & fmt
 
 env:
   RUST_FMT: nightly-2023-04-01
-  RUST_VERSION: "1.65"
-
+  RUST_VERSION: "1.66"
 
 jobs:
   rustfmt:
@@ -47,14 +46,13 @@ jobs:
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install nightly toolchain with rustfmt available
         uses: actions-rs/toolchain@v1
@@ -69,6 +67,35 @@ jobs:
         with:
           command: fmt
           args: --manifest-path=${{ matrix.crates }} -- --check
+
+  rustdoc:
+    name: Lint docs
+    # Don't run on draft pull requests
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crates:
+          - concordium-std
+          - concordium-cis2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_VERSION }}
+          override: true
+
+      - name: Run cargo doc
+        working-directory: ${{ matrix.crates }}
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
 
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
   # can be executed without errors on the generated smart contracts.
@@ -85,12 +112,14 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
@@ -99,7 +128,51 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
+
+      # we need to move the generated project to a temp folder, away from the template project
+      # otherwise `cargo` runs would fail
+      # see https://github.com/rust-lang/cargo/issues/9922
+      # Run all tests, including doc tests.
+      - name: Run cargo test
+        run: |
+          # TEMPLATE_DIR=`pwd`
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          cd ${{ runner.temp }}/$PROJECT_NAME
+          cargo test
+
+  # The credential registry template is used to generate code for all combinations of parameters
+  # with the `cargo-generate` and it is checked that the 'cargo test' command can be executed
+  # without errors on the generated smart contracts.
+  cargo-generate-credential-registry-template:
+    name: Credential registry template tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        restorable: ["true", "false"]
+        revocable_by_others: ["true", "false"]
+    env:
+      PROJECT_NAME: my-project
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
+        uses: cargo-generate/cargo-generate-action@v0.17.5
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: templates/credential-registry
+          other: "-d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
@@ -125,22 +198,77 @@ jobs:
         crates:
           - templates/default
           - templates/cis2-nft
+          - templates/credential-registry
 
     env:
-      PROJECT_NAME: cis2-nft
+      PROJECT_NAME: my-project
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=cis2-nft-project -d tokenMetadataBaseURL=https://some.example/token/"
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=full"
+
+      - name: Install toolchain with clippy available
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_VERSION }}
+          target: ${{ matrix.target }}
+          override: true
+          components: clippy
+
+      # we need to move the generated project to a temp folder, away from the template project
+      # otherwise `cargo` runs would fail
+      # see https://github.com/rust-lang/cargo/issues/9922
+      - name: Run clippy with build-schema
+        run: |
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          cd ${{ runner.temp }}/$PROJECT_NAME
+          rustup target add wasm32-unknown-unknown
+          cargo clippy --manifest-path ./Cargo.toml --target=${{ matrix.target }} --features concordium-std/build-schema -- -D warnings
+
+  # The credential registry template is used to generate code for all combinations of parameters
+  # with the `cargo-generate` command and it is checked that the schemas can be built as part
+  # of the 'clippy' command.
+  clippy-credential-registry-template:
+    name: Clippy on credential registry template
+    runs-on: ubuntu-latest
+    needs: rustfmt
+    strategy:
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+
+        restorable: ["true", "false"]
+        revocable_by_others: ["true", "false"]
+
+    env:
+      PROJECT_NAME: my-project
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Run cargo-generate
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
+        uses: cargo-generate/cargo-generate-action@v0.17.5
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: templates/credential-registry
+          other: "-d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -163,8 +291,8 @@ jobs:
 
   # The cis2-nft template is generated with the `cargo-generate` command
   # and it is checked that the code is equivalent to the cis2-nft smart contract in the example folder.
-  cargo-generate-templates-comparison:
-    name: Smart contract template comparison
+  cargo-generate-cis2-nft-template-comparison:
+    name: Cis2-nft smart contract template comparison
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -175,12 +303,14 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Run cargo-generate
-        uses: cargo-generate/cargo-generate-action@v0.16.0
+        # we use v0.17.5 here because the minimal supported version is 0.17.0 and the closest
+        # available version of `cargo-generate-action` is 0.17.5
+        uses: cargo-generate/cargo-generate-action@v0.17.5
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
@@ -189,7 +319,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
 
       # Run diff to check if there are any differences between the generated smart contracts
       # and the example smart contracts. The templates have hardcoded versions of `concordium-std`
@@ -200,10 +330,57 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"7.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"4.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"8.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"5.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
+
+  # The credential-registry template is generated with the `cargo-generate` command
+  # and it is checked that the code is equivalent to the credential-registry smart contract in the example folder.
+  cargo-generate-credential-registry-template-comparison:
+    name: Credential registry smart contract template comparison
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crates:
+          - templates/credential-registry
+    env:
+      PROJECT_NAME: credential-registry
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Run cargo-generate
+        # at least version 0.17.0 is required for the rhai pre-script to work correctly;
+        # the closest available version of `cargo-generate-action` is 0.17.5
+        uses: cargo-generate/cargo-generate-action@v0.17.5
+        with:
+          name: ${{ env.PROJECT_NAME }}
+          template: ${{ matrix.crates }}
+          other: "-d description=Example-credential-registry -d template_type=full"
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      # Run diff to check if there are any differences between the generated smart contract
+      # and the example smart contract. The template have hardcoded versions of `concordium-std`
+      # which needs to be replaced with the path used in the smart contract example folder.
+      # This CI pipeline uses `root` as the author which needs to be replaced with the author
+      # `Concordium <developers@concordium.com>` of the smart contract examples.
+      - name: Run diff
+        run: |
+          mv $PROJECT_NAME ${{ runner.temp }}/
+          sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"8.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"5.0\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
+          diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/README.md examples/credential-registry/README.md
 
   clippy-cis2:
     name: Clippy
@@ -226,7 +403,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -265,7 +442,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -302,7 +479,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -318,7 +495,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
-
 
   clippy-wasm32-only:
     name: Clippy Wasm32
@@ -341,7 +517,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -375,7 +551,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install nightly toolchain with check available
         uses: actions-rs/toolchain@v1
@@ -407,7 +583,6 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-multi-royalties/Cargo.toml
           - examples/nametoken/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
         features:
@@ -418,7 +593,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install nightly toolchain with check available
         uses: actions-rs/toolchain@v1
@@ -457,7 +632,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
@@ -506,14 +681,13 @@ jobs:
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain with clippy available
         uses: actions-rs/toolchain@v1
@@ -550,7 +724,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
@@ -586,7 +760,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
@@ -602,7 +776,6 @@ jobs:
           command: test
           # Run all tests, including doc tests.
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }}
-
 
   test-examples:
     name: Test examples
@@ -637,14 +810,13 @@ jobs:
           - examples/smart-contract-upgrade/contract-version1/Cargo.toml
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
-          - examples/credential-registry-storage-contract/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
 
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1

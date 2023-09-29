@@ -24,13 +24,18 @@
 //!     // ...
 //!     Ok(A::accept())
 //! }
+//! ```
 //!
 //! # Features
 //!
 //! This crate has features `std` and `u256_amount`. The former one is default.
-//! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is defined
-//! and implements the [`IsTokenAmount`] interface.
+//! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is
+//! defined and implements the [`IsTokenAmount`] interface.
 #![cfg_attr(not(feature = "std"), no_std)]
+
+mod cis2_client;
+pub use cis2_client::{Cis2Client, Cis2ClientError};
+
 use concordium_std::{collections::BTreeMap, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;
@@ -65,13 +70,14 @@ pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
 pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
 
 /// Trait for marking types as CIS2 token IDs.
-/// For a type to be a valid CIS2 token ID it must implement SchemaType and
-/// Serialize, such that the first byte indicates how many bytes is used to
-/// represent the token ID, followed by this many bytes for the token ID.
+/// For a type to be a valid CIS2 token ID it must implement
+/// `SchemaType` and `Serialize`, such that the first
+/// byte indicates how many bytes is used to represent the token ID, followed by
+/// this many bytes for the token ID.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
-/// token ID using Vec<u8> is to allow smart contracts to use specialized token
-/// ID implementations avoiding allocations.
+/// token ID using `Vec<u8>` is to allow smart contracts to use specialized
+/// token ID implementations avoiding allocations.
 pub trait IsTokenId: Serialize + schema::SchemaType {}
 
 /// Trait for marking types as CIS2 token amounts.
@@ -80,7 +86,7 @@ pub trait IsTokenId: Serialize + schema::SchemaType {}
 /// 37 bytes.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
-/// token amount using [u8; 37] is to allow smart contracts to use specialized
+/// token amount using `[u8; 37]` is to allow smart contracts to use specialized
 /// token amount implementations avoiding doing arithmetics of large integers.
 pub trait IsTokenAmount: Serialize + schema::SchemaType {}
 
@@ -554,6 +560,7 @@ mod u256_token {
     use primitive_types::U256;
     #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
     #[repr(transparent)]
+    #[cfg_attr(docsrs, cfg(feature = "u256_amount"))]
     pub struct TokenAmountU256(pub U256);
 
     impl ops::Add<Self> for TokenAmountU256 {
@@ -708,7 +715,7 @@ pub use u256_token::*;
 /// another. For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -725,7 +732,7 @@ pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: T,
@@ -739,7 +746,7 @@ pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token where an amount is being burned.
     pub token_id: T,
@@ -753,7 +760,7 @@ pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct UpdateOperatorEvent {
     /// The update to the operator.
     pub update:   OperatorUpdate,
@@ -767,7 +774,7 @@ pub struct UpdateOperatorEvent {
 /// For a tagged version, use `Cis2Event`.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct TokenMetadataEvent<T: IsTokenId> {
     /// The ID of the token.
     pub token_id:     T,
@@ -862,7 +869,7 @@ impl<T: IsTokenId, A: IsTokenAmount> schema::SchemaType for Cis2Event<T, A> {
 }
 
 /// The different errors the contract can produce.
-#[derive(Debug, PartialEq, Eq, SchemaType, Serial)]
+#[derive(Debug, PartialEq, Eq, SchemaType, Serial, Deserial)]
 pub enum Cis2Error<R> {
     /// Invalid token id (Error code: -42000001).
     InvalidTokenId,
@@ -974,6 +981,24 @@ where
     fn from(err: NewReceiveNameError) -> Self { Cis2Error::Custom(X::from(err)) }
 }
 
+impl<X> From<CheckAccountSignatureError> for Cis2Error<X>
+where
+    X: From<CheckAccountSignatureError>,
+{
+    #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
+    fn from(err: CheckAccountSignatureError) -> Self { Cis2Error::Custom(X::from(err)) }
+}
+
+impl<X> From<QueryAccountPublicKeysError> for Cis2Error<X>
+where
+    X: From<QueryAccountPublicKeysError>,
+{
+    #[inline]
+    /// Converts the error by wrapping it in [Self::Custom].
+    fn from(err: QueryAccountPublicKeysError) -> Self { Cis2Error::Custom(X::from(err)) }
+}
+
 impl<X> From<NewContractNameError> for Cis2Error<X>
 where
     X: From<NewContractNameError>,
@@ -1080,7 +1105,7 @@ impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<
 /// The update to an the operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
-#[derive(Debug, Serialize, Clone, Copy, SchemaType)]
+#[derive(Debug, Serialize, Clone, Copy, SchemaType, PartialEq, Eq)]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -1091,7 +1116,7 @@ pub enum OperatorUpdate {
 /// A single update of an operator.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, Clone, SchemaType)]
+#[derive(Debug, Serialize, Clone, SchemaType, PartialEq, Eq)]
 pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,

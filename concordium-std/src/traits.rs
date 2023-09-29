@@ -373,8 +373,9 @@ pub trait HasHost<State>: Sized {
 
     /// Get the current public balance of an account. Here public means
     /// unencrypted or unshielded. See
-    /// [`AccountBalance`](crate::types::AccountBalance) for more.
-    /// This query will fail if the provided address does not exist on chain.
+    /// [`AccountBalance`](concordium_contracts_common::AccountBalance) for
+    /// more. This query will fail if the provided address does not exist on
+    /// chain.
     ///
     /// Any amount received by transfers during the transaction
     /// until the point of querying are reflected in this balance.
@@ -612,31 +613,4 @@ where
         state: &S,
         source: &mut R,
     ) -> ParseResult<Self>;
-}
-
-/// Types that can be cloned along with the state.
-///
-/// Used for rolling back the test state when errors occur in a receive
-/// function. See [`TestHost::with_rollback`][iwr] and
-/// [`TestHost::invoke_contract_raw`][icr].
-///
-/// # Safety
-///
-/// Marked unsafe because special care should be taken when
-/// implementing this trait. In particular, one should only use the supplied
-/// `cloned_state_api`, or (shallow) clones thereof. Creating a new
-/// [`HasStateApi`] or using a `deep_clone` will lead to an inconsistent state
-/// and undefined behaviour.
-///
-/// [icr]: crate::test_infrastructure::TestHost::invoke_contract_raw
-/// [iwr]: crate::test_infrastructure::TestHost::with_rollback
-pub unsafe trait StateClone<S> {
-    /// Make a clone of the type while using the `cloned_state_api`.
-    ///
-    /// # Safety
-    ///
-    /// Marked unsafe because this function *should not* be called
-    /// directly. It is only used within generated code and in the test
-    /// infrastructure.
-    unsafe fn clone_state(&self, cloned_state_api: &S) -> Self;
 }

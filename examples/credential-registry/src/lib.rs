@@ -1,48 +1,14 @@
-//! This smart contract implements an example on-chain registry for the public
-//! part of verifiable credentials (VCs).
-//!
-//! # Description
-//!
-//! The contract keeps track of credentials' public data, allows managing the
-//! VC life cycle. and querying VCs data and status. The intended users are
-//! issuers of VCs, holders of VCs, revocation authorities, and verifiers.
-//!
-//! When initializing a contract, the issuer provides a type and a schema
-//! reference for the credentials in the registry. The schema reference points
-//! to a JSON document describing the structure of verifiable credentials in the
-//! registry (attributes and their types). If the issuer wants to issue
-//! verifiable credentials of several types, they can deploy several instances
-//! of this contract with different credential types.
-//!
-//! ## Issuer's  functionality
-//!
-//! - register a new credential;
-//! - revoke a credential;
-//! - restore (cancel revocation of) a revoked credential;
-//! - register/remove revocation authority keys;
-//! - update the issuer's metadata;
-//! - update the credential metadata;
-//! - update credential schema reference.
-//!
-//! ## Holder's functionality
-//!
-//! - revoke a credential by signing a revocation message.
-//!
-//! ## Revocation authority's functionality
-//!
-//! Revocation authorities are some entities chosen by the issuer that have
-//! revocation capabilities. Their public keys are registered by the issuer and
-//! a revocation authority signs a revocation message with the corresponding
-//! private key.
-//!
-//! - revoke a credential by signing a revocation message.
-//!
-//! ## Verifier's functionality
-//!
-//! - view credential status to verify VC validity;
-//! - view credential data to verify proofs (verifiable presentations) requested
-//!   from holders.
+#![doc = include_str!("../README.md")]
+use concordium_cis2::*;
 use concordium_std::*;
+
+/// The standard identifier for the CIS-4: Credential Registry Standard
+pub const CIS4_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-4");
+
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+    [CIS0_STANDARD_IDENTIFIER, CIS4_STANDARD_IDENTIFIER];
 
 /// Credential type is a string that corresponds to the value of the "name"
 /// attribute of the JSON credential schema.
@@ -130,7 +96,7 @@ impl<S: HasStateApi> CredentialEntry<S> {
 }
 
 /// The registry state.
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 pub struct State<S: HasStateApi> {
     /// An account address of the issuer. It is used for authorization in
@@ -153,6 +119,9 @@ pub struct State<S: HasStateApi> {
     /// A reference to a JSON document containing the credential schema for the
     /// given credential type.
     credential_schema:   SchemaRef,
+    /// Map with contract addresses providing implementations of additional
+    /// standards.
+    implementors:        StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
 }
 
 /// Contract Errors.
@@ -163,9 +132,12 @@ enum ContractError {
     CredentialNotFound,
     CredentialAlreadyExists,
     IncorrectStatusBeforeRevocation,
+
     IncorrectStatusBeforeRestoring,
+
     KeyAlreadyExists,
     KeyDoesNotExist,
+
     NotAuthorized,
     NonceMismatch,
     WrongContract,
@@ -175,6 +147,11 @@ enum ContractError {
     SerializationError,
     LogFull,
     LogMalformed,
+
+    ContractInvocationError,
+    FailedUpgradeMissingModule,
+    FailedUpgradeMissingContract,
+    FailedUpgradeUnsupportedModuleVersion,
 }
 
 /// Mapping errors related to logging to ContractError.
@@ -208,10 +185,11 @@ impl<S: HasStateApi> State<S> {
             issuer_key,
             issuer_metadata,
             revocation_keys: state_builder.new_map(),
-            credentials: state_builder.new_map(),
             all_revocation_keys: state_builder.new_set(),
+            credentials: state_builder.new_map(),
             credential_type,
             credential_schema,
+            implementors: state_builder.new_map(),
         }
     }
 
@@ -321,6 +299,22 @@ impl<S: HasStateApi> State<S> {
             self.revocation_keys.remove(&pk);
             Ok(())
         }
+    }
+
+    fn has_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
+        if let Some(addresses) = self.implementors.get(std_id) {
+            SupportResult::SupportBy(addresses.to_vec())
+        } else {
+            SupportResult::NoSupport
+        }
+    }
+
+    fn set_implementors(
+        &mut self,
+        std_id: StandardIdentifierOwned,
+        implementors: Vec<ContractAddress>,
+    ) {
+        self.implementors.insert(std_id, implementors);
     }
 }
 
@@ -618,6 +612,7 @@ fn init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let parameter: InitParams = ctx.parameter_cursor().get()?;
     logger.log(&CredentialEvent::IssuerMetadata(parameter.issuer_metadata.clone()))?;
+
     let mut state = State::new(
         state_builder,
         parameter.issuer_account.unwrap_or_else(|| ctx.init_origin()),
@@ -626,6 +621,7 @@ fn init<S: HasStateApi>(
         parameter.credential_type.clone(),
         parameter.schema.clone(),
     );
+
     for pk in parameter.revocation_keys {
         state.register_revocation_key(pk)?;
         logger.log(&CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -633,6 +629,7 @@ fn init<S: HasStateApi>(
             action: RevocationKeyAction::Register,
         }))?;
     }
+
     logger.log(&CredentialEvent::Schema(CredentialSchemaRefEvent {
         credential_type: parameter.credential_type,
         schema_ref:      parameter.schema,
@@ -925,9 +922,9 @@ fn authorize_with_signature(
 /// entrypoint with the holder's public key. The public key is used as the
 /// credential identifier.
 ///
-/// Note that nonce is used as a general way to prevent replay attacks. In this
-/// particular case, the revocation can be reversed by the issuer by restoring
-/// the revoked credential.
+/// Note that nonce is used as a general way to prevent replay attacks. The
+/// issuer can choose to implement a function that restores the revoked
+/// credential.
 ///
 /// Logs `CredentialEvent::Revoke` with `Holder` as the revoker.
 ///
@@ -1065,9 +1062,9 @@ fn contract_revoke_credential_issuer<S: HasStateApi>(
 /// input to the entrypoint with the authority's public key.
 /// The public key is stored in `revocation_keys`.
 ///
-/// Note that a nonce is used as a general way to prevent replay attacks. In
-/// this particular case, the revocation is done once, however, the issuer could
-/// choose to implement an update method that restores the revoked credential.
+/// Note that a nonce is used as a general way to prevent replay attacks. The
+/// issuer can choose to implement a function that restores the revoked
+/// credential.
 ///
 ///  Logs `CredentialEvent::Revoke` with `Other` as the revoker.
 ///
@@ -1492,6 +1489,152 @@ fn contract_restore_credential<S: HasStateApi>(
     Ok(())
 }
 
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "credential_registry",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
+)]
+fn contract_supports<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().has_implementors(&std_id));
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
+/// Set the addresses for an implementation given a standard identifier and a
+/// list of contract addresses.
+///
+/// It rejects if:
+/// - Sender is not the issuer.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "credential_registry",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    error = "ContractError",
+    mutable
+)]
+fn contract_set_implementor<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Check that only the issuer is authorized to set implementors.
+    ensure!(sender_is_issuer(ctx, host.state()), ContractError::NotAuthorized);
+    // Parse the parameter.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+    // Update the implementors in the state
+    host.state_mut().set_implementors(params.id, params.implementors);
+    Ok(())
+}
+
+/// The parameter type for the contract function `upgrade`.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
+#[derive(Debug, Serialize, SchemaType)]
+struct UpgradeParams {
+    /// The new module reference.
+    module:  ModuleReference,
+    /// Optional entrypoint to call in the new module after upgrade.
+    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
+/// Mapping errors related to contract invocations to ContractError.
+impl<T> From<CallContractError<T>> for ContractError {
+    fn from(_cce: CallContractError<T>) -> Self { Self::ContractInvocationError }
+}
+
+/// Mapping errors related to contract upgrades to ContractError.
+impl From<UpgradeError> for ContractError {
+    #[inline(always)]
+    fn from(ue: UpgradeError) -> Self {
+        match ue {
+            UpgradeError::MissingModule => Self::FailedUpgradeMissingModule,
+            UpgradeError::MissingContract => Self::FailedUpgradeMissingContract,
+            UpgradeError::UnsupportedModuleVersion => Self::FailedUpgradeUnsupportedModuleVersion,
+        }
+    }
+}
+
+/// Upgrade this smart contract instance to a new module and call optionally a
+/// migration function after the upgrade.
+///
+/// It rejects if:
+/// - Sender is not the issuer.
+/// - It fails to parse the parameter.
+/// - If the upgrade fails.
+/// - If the migration invoke fails.
+///
+/// This function is marked as `low_level`. This is **necessary** since the
+/// high-level mutable functions store the state of the contract at the end of
+/// execution. This conflicts with migration since the shape of the state
+/// **might** be changed by the migration function. If the state is then written
+/// by this function it would overwrite the state stored by the migration
+/// function.
+#[receive(
+    contract = "credential_registry",
+    name = "upgrade",
+    parameter = "UpgradeParams",
+    error = "ContractError",
+    low_level
+)]
+fn contract_upgrade<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<S>,
+) -> ContractResult<()> {
+    // Read the top-level contract state.
+    let state: State<S> = host.state().read_root()?;
+
+    // Check that only the issuer is authorized to upgrade the smart contract.
+    ensure!(sender_is_issuer(ctx, &state), ContractError::NotAuthorized);
+    // Parse the parameter.
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
+    // Trigger the upgrade.
+    host.upgrade(params.module)?;
+    // Call the migration function if provided.
+    if let Some((func, parameters)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameters.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
+    Ok(())
+}
+
 #[concordium_cfg_test]
 mod tests {
 
@@ -1553,7 +1696,12 @@ mod tests {
     }
 
     const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
-    const ISSUER_URL: &str = "https://example-university.com/diplomas/university-vc-metadata.json";
+    const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
+    const CREDANIAL_METADATA_URL: &str =
+        "https://example-university.com/diplomas/university-vc-metadata.json";
+    const CREDENTIAL_TYPE: &str = "UniversityDegreeCredential";
+    const CREDENTIAL_SCHEMA_URL: &str =
+        "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
     const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
@@ -1574,7 +1722,7 @@ mod tests {
     fn credential_entry<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> CredentialEntry<S> {
         CredentialEntry {
             metadata_url:     state_builder.new_box(MetadataUrl {
-                url:  "".into(),
+                url:  CREDANIAL_METADATA_URL.into(),
                 hash: None,
             }),
             valid_from:       Timestamp::from_timestamp_millis(0),
@@ -1587,7 +1735,7 @@ mod tests {
 
     fn issuer_metadata() -> MetadataUrl {
         MetadataUrl {
-            url:  ISSUER_URL.to_string(),
+            url:  ISSUER_METADATA_URL.to_string(),
             hash: None,
         }
     }
@@ -1595,11 +1743,11 @@ mod tests {
     fn get_credential_schema() -> (CredentialType, SchemaRef) {
         (
             CredentialType {
-                credential_type: "ExampleSchema".to_string(),
+                credential_type: CREDENTIAL_TYPE.to_string(),
             },
             SchemaRef {
                 schema_ref: MetadataUrl {
-                    url:  "https://example.com/schema.json".to_string(),
+                    url:  CREDENTIAL_SCHEMA_URL.to_string(),
                     hash: None,
                 },
             },
@@ -1648,6 +1796,7 @@ mod tests {
             to_bytes(&CredentialEvent::IssuerMetadata(issuer_metadata())),
             "Incorrect issuer metadata event logged"
         );
+
         claim_eq!(
             logger.logs[1],
             to_bytes(&CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -1656,6 +1805,7 @@ mod tests {
             })),
             "Incorrect revocation key event logged"
         );
+
         claim_eq!(
             logger.logs[2],
             to_bytes(&CredentialEvent::Schema(CredentialSchemaRefEvent {
@@ -1715,14 +1865,11 @@ mod tests {
 
     /// Property: once the `revoked` flag is set to `true`, the status is
     /// always `Revoked` regardless of the valid_from and valid_until values
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
         let mut state_builder = TestStateBuilder::new();
         let entry = CredentialEntry {
-            metadata_url:     state_builder.new_box(MetadataUrl {
-                url:  "123456".into(),
-                hash: None,
-            }),
+            metadata_url:     state_builder.new_box(data.metadata_url),
             revocation_nonce: nonce,
             holder_revocable: data.holder_revocable,
             valid_from:       data.valid_from,
@@ -1734,7 +1881,7 @@ mod tests {
 
     /// Property: registering a credential and then querying it results in the
     /// same credential data, which is not revoked and has nonce = `0`
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_register_credential(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1768,7 +1915,7 @@ mod tests {
     /// Property: if a credential is revoked successfully, the status changes to
     /// `Revoked`. The test is designed in such a way that the revocation is
     /// expeced to succeed.
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_revocation(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1798,7 +1945,7 @@ mod tests {
 
     /// Property: revoking and then restoring a credential gives the same status
     /// as before revocation. In this case, restoring always succeeds.
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_revoke_restore(
         credential_type: CredentialType,
         schema_ref: SchemaRef,
@@ -1838,7 +1985,7 @@ mod tests {
 
     /// Property: registering a revocation key in fresh state and querying it
     /// results in the same value
-    #[concordium_quickcheck]
+    #[concordium_quickcheck(num_tests = 500)]
     fn prop_register_revocation_key(
         pk: PublicKeyEd25519,
         credential_type: CredentialType,
@@ -1933,7 +2080,7 @@ mod tests {
                 schema_ref,
                 credential_type,
                 metadata_url: MetadataUrl {
-                    url:  "".into(),
+                    url:  CREDANIAL_METADATA_URL.into(),
                     hash: None,
                 },
             })),

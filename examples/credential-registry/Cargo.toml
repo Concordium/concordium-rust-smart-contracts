@@ -6,16 +6,17 @@ version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
 authors = [ "Concordium <developers@concordium.com>" ]
-description = "An example credential registry smart contract"
+description = "Example-credential-registry"
 
 [features]
 default = ["std", "crypto-primitives", "wee_alloc"]
-std = ["concordium-std/std"]
+std = ["concordium-std/std", "concordium-cis2/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
-concordium-std = {path = "../../concordium-std", version="7.0", features = ["concordium-quickcheck"], default-features = false}
+concordium-std = {path = "../../concordium-std", version = "8.0", default-features = false, features = ["concordium-quickcheck"]}
+concordium-cis2 = {path = "../../concordium-cis2", version = "5.0", default-features = false}
 quickcheck = {version = "1"}
 
 [lib]

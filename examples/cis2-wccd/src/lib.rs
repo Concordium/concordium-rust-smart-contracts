@@ -63,7 +63,7 @@ type ContractTokenId = TokenIdUnit;
 type ContractTokenAmount = TokenAmountU64;
 
 /// The state tracked for each address.
-#[derive(Serial, DeserialWithState, Deletable, StateClone)]
+#[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The number of tokens owned by this address.
@@ -74,7 +74,7 @@ struct AddressState<S> {
 }
 
 /// The contract state,
-#[derive(Serial, DeserialWithState, StateClone)]
+#[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S: HasStateApi> {
     /// The admin address can upgrade the contract, pause and unpause the
