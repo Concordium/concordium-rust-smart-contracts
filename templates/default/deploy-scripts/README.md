@@ -1,80 +1,99 @@
-# Deploy smart contract instances for Bridge Manager
+# Deploy, Initialize, and Update Script Template
 
-# Setup:
+This project has boilerplate code to write deployment, initilization, and update scripts for Concordium smart contract protocols. 
 
-Make sure to initialize and update the submodules of this repository
+# Purpose
+
+Automatic scripts are useful to speed up the development and testing of your protocol on chain. 
+In addition, scripts help to set up identical protocols on different chains easily. E.g. you can deploy your protocol to testnet or mainnet by just specifiying a corresponding node connection when running the script.
+
+# Setup
+
+Option 1:
 
 ```
-git submodule update --init --recursive
+cargo concordium init 
 ```
 
-Build and run the scripts using
+Option 2 (alternative command):
+
+```
+cargo generate --git https://github.com/Concordium/concordium-rust-smart-contracts.git
+```
+
+Any of the two commands will work and will give you several templates to choose from. 
+
+- Choose the `templates/default` and answer the questions to complete the setup process.
+
+At the end, you will have a Rust project setup with this boilerplate code included.
+
+# Running The Script
+
+Build and run the script from the root folder using
 ```
 cargo run
 ```
 
-The following options are necessary
+The following options are necessary when running the script
 
 ```
       --node <CONCORDIUM_URL>
-          V2 API of the concordium node. [default: http://localhost:20001]
-      --wallet <CONCORDIUM_WALLET>
-          Location of the Concordium wallet.
-      --tokens <TOKENS>
-          JSON file with a list of tokens.
-      --manager-source <MANAGER_SOURCE>
-          Location of the compiled BridgeManager contract.
-      --cis2-bridgeable <CIS2_SOURCE>
-          Source of the CIS2 token contract.
+          V2 API of the concordium node. [default: http://node.testnet.concordium.com:20000]
+      --account <CONCORDIUM_ACCOUNT>
+          Path to the Concordium account (with account keys).
+      --modules <modules[]>
+          A list of wasm modules. [default: [./default.wasm.v1]]
 ```
 
-The `tokens` file should be a valid JSON file with a list of objects of the form
-```
-{
-    name: "USDC.eth",
-    token_metadata_url:  "http://domain/path",
-    token_metadata_hash: "6a6ca3243935653bf3b271aa1257a3f9351663757c66a498750d4622f81c08f5"
-}
-```
-
-The `wallet` parameter should be a Concordium wallet either exported from the
-Browser wallet or the new mobile wallets, or in the format emitted by the
+The `account` parameter should be a Concordium wallet account either exported from the
+Browser wallet or the mobile wallets, or in the format emitted by the
 genesis tool.
 
-# Deploy contracts:
+Example:
+```
+cargo run -- --node http://node.testnet.concordium.com:20000 --account ./3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export --modules ["./default.wasm.v1"]
+```
+
+# Functionalities
+
+The boilerplate code has support for the following functionalities:
+
+Read functions:
+- `estimate_energy`: To estmiate the energy needed to execute one of the three write functions below.
+- `module_exists`: To check if a module has already been deployed on chain.
+- `get_nonce`: To get the current nonce of the provided wallet account.
+
+Write functions:
+- `deploy_wasm_module`: To deploy a new smart contract module on chain.
+- `init_contract`: To initilization a smart contract instance on chain.
+- `update_contract`: To updating a smart conract instance on chain.
+
+Event parsing helper functions:
+- `parse_deploy_module_event`: To parse the chain events after deploying a modules.
+- `parse_contract_init_event`: To parse the chain events after initilization a smart contract instance.
+- `parse_contract_update_event`: To parse the chain events after updating a smart conract instance.
+
+The `main.rs` file has a section (marked with `// Write your own deployment/initialization script below. An example is given here.`) that you should replace with your custom logic to deploy, initilize, and update your smart contract protocol.
+
+# Running the Example
+
+The `main.rs` file has a section (marked with `// Write your own deployment/initialization script below. An example is given here.`) which provides an example that you can run.
+
+Navigate into the root folder and compile the `default` smart contract with the command:
+```
+cargo concordium build --out ./deploy-scripts/default.wasm.v1
+```
+
+Then, deploy the `default` smart contract on chain (replace your wallet account in the below command):
+
+```
+cargo run -- --node http://node.testnet.concordium.com:20000 --account ./3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export --modules ["./default.wasm.v1"]
+```
+
+The output should be:
 
 ```
 $ cargo run
 
-Deploying CIS2-Bridgeable....
-Module with reference 56a6ca3243935653bf3b271aa1257a3f9351663757c66a498750d4622f81c08f already exists.
-Deployed CIS2-Bridgeable, module_ref: 56a6ca3243935653bf3b271aa1257a3f9351663757c66a498750d4622f81c08f
-
-Deploying Bridge-Manager....
-Module with reference 4dae844ef592e011b67d4c44da9604232976857fcf8ad8d14438afe6125d6c24 already exists.
-Deployed Bridge-Manager, module_ref: 4dae844ef592e011b67d4c44da9604232976857fcf8ad8d14438afe6125d6c24
-
-Initializing BridgeManager....
-Sent tx: ea5376d2a58a268fd06188840fea46e1f9b09ce2eaa0d929eebd771f6c622588
-Transaction finalized, tx_hash=ea5376d2a58a268fd06188840fea46e1f9b09ce2eaa0d929eebd771f6c622588 contract=(605, 0)
-Initialized BridgeManager, address: (605, 0)
-Granting Manager address Manager role on BridgeManager....
-Sent tx: 8e7883a2a9e49cdc5f9181df851f0ba6cf8ab8051ba559713233703b505b4d83
-Granted Manager address Manager role on BridgeManager
-
-Initializing CIS2-Bridgeable MOCK.et....
-Sent tx: 9dcaac74c42e0cc23b4b02be7c688e8c7f8e48779b69d52690ab76aa3c939fef
-Transaction finalized, tx_hash=9dcaac74c42e0cc23b4b02be7c688e8c7f8e48779b69d52690ab76aa3c939fef contract=(606, 0)
-Initialized CIS2-Bridgeable MOCK.et at address: (606, 0)
-Granting BridgeManager Manager role on MOCK.et token....
-Sent tx: 8707603fc0dd1e2733c9e6b77ff341e576f12dd0076620aaec6e28f15f77357b
-Granted BridgeManager Manager role on MOCK.et token
-
-Initializing CIS2-Bridgeable USDC.et....
-Sent tx: 5dc31a314dc1c512c1ba355d05224e308de9cb31334ad8412a0914a2b1796000
-Transaction finalized, tx_hash=5dc31a314dc1c512c1ba355d05224e308de9cb31334ad8412a0914a2b1796000 contract=(607, 0)
-Initialized CIS2-Bridgeable USDC.et at address: (607, 0)
-Granting BridgeManager Manager role on USDC.et token....
-Sent tx: e1db48b78699cbfb6bc2585745fcb1378de115e23e833999bc0c2589d8ede154
-Granted BridgeManager Manager role on USDC.et token
+...
 ```
