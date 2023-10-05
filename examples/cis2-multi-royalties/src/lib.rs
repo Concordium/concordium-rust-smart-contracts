@@ -98,7 +98,7 @@ struct CheckRoyaltyParams {
     sale_price: u64,
 }
 
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, Copy, Clone)]
 struct CheckRoyaltyResult {
     /// The Address of the payee.
     royalty_receiver: Address,
@@ -183,6 +183,10 @@ enum CustomContractError {
     InvalidRoyaltyAddress,
     /// Overflow in royalty calculation.
     Overflow,
+    /// Royalty payment failed.
+    RoyaltyPaymentFailed,
+    /// Royalty payment failed.
+    InsufficientFunds,
 }
 
 type ContractError = Cis2Error<CustomContractError>;
@@ -278,11 +282,10 @@ impl<S: HasStateApi> State<S> {
     fn transfer(
         &mut self,
         token_id: &ContractTokenId,
-        mut amount: ContractTokenAmount,
+        amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
         state_builder: &mut StateBuilder<S>,
-        royalties: &Option<CheckRoyaltyResult>,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
@@ -301,19 +304,6 @@ impl<S: HasStateApi> State<S> {
                 .occupied_or(ContractError::InsufficientFunds)?;
             ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
             *from_balance -= amount;
-        }
-
-        if let Some(royalties) = royalties {
-            let mut royalties_state = self
-                .state
-                .entry(royalties.royalty_receiver)
-                .occupied_or(CustomContractError::InvalidRoyaltyAddress)?;
-
-            let mut minter_balance =
-                royalties_state.balances.entry(*token_id).or_insert(TokenAmountU64(0));
-
-            *minter_balance += concordium_cis2::TokenAmountU64(royalties.payment);
-            amount -= concordium_cis2::TokenAmountU64(royalties.payment);
         }
 
         let mut to_address_state =
@@ -545,17 +535,22 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
     parameter = "TransferParameter",
     error = "ContractError",
     enable_logger,
-    mutable
+    mutable,
+    payable
 )]
 fn contract_transfer<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
+    ccd_amount: Amount,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
+
+    let balance = host.self_balance().micro_ccd;
+
     for Transfer {
         token_id,
         amount,
@@ -565,39 +560,31 @@ fn contract_transfer<S: HasStateApi>(
     } in transfers
     {
         let (state, builder) = host.state_and_builder();
+        let pay_royalty = state.pay_royalty;
+        let royalty_parameters = CheckRoyaltyParams {
+            id:         token_id,
+            sale_price: ccd_amount.micro_ccd,
+        };
+        let mut royal_result = None;
+        if pay_royalty {
+            royal_result = Some(state.calculate_royalty_payments(royalty_parameters)?);
+            ensure!(
+                royal_result.unwrap().payment <= balance,
+                CustomContractError::InsufficientFunds.into()
+            );
+        }
+
         // Authenticate the sender for this transfer
         ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
         let to_address = to.address();
-        let mut royalties: Option<CheckRoyaltyResult> = None;
-
-        if state.pay_royalty {
-            let royalty_parameters = CheckRoyaltyParams {
-                id:         token_id,
-                sale_price: amount.into(),
-            };
-
-            let royal_result = state.calculate_royalty_payments(royalty_parameters)?;
-            royalties = Some(royal_result);
-        }
 
         // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address, builder, &royalties)?;
+        state.transfer(&token_id, amount, &from, &to_address, builder)?;
 
-        let mut receivers_amount = amount;
-        if let Some(royalties) = royalties {
-            // Log transfer event
-            logger.log(&Cis2Event::Transfer(TransferEvent {
-                token_id,
-                amount: concordium_cis2::TokenAmountU64(royalties.payment),
-                from,
-                to: royalties.royalty_receiver,
-            }))?;
-            receivers_amount -= concordium_cis2::TokenAmountU64(royalties.payment);
-        }
         // Log transfer event
         logger.log(&Cis2Event::Transfer(TransferEvent {
             token_id,
-            amount: receivers_amount,
+            amount,
             from,
             to: to_address,
         }))?;
@@ -608,7 +595,7 @@ fn contract_transfer<S: HasStateApi>(
         if let Receiver::Contract(address, entrypoint_name) = to {
             let parameter = OnReceivingCis2Params {
                 token_id,
-                amount: receivers_amount,
+                amount,
                 from,
                 data,
             };
@@ -618,6 +605,19 @@ fn contract_transfer<S: HasStateApi>(
                 entrypoint_name.as_entrypoint_name(),
                 Amount::zero(),
             )?;
+        }
+
+        if let Some(royal_result) = royal_result {
+            let royalty_amount = Amount::from_micro_ccd(royal_result.payment);
+
+            if let Address::Account(val) = royal_result.royalty_receiver {
+                match host.invoke_transfer(&val, royalty_amount) {
+                    Ok(_) => (),
+                    Err(_) => {
+                        bail!(CustomContractError::RoyaltyPaymentFailed.into())
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -942,8 +942,6 @@ mod tests {
     const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
     const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
     const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const ACCOUNT_2: AccountAddress = AccountAddress([2u8; 32]);
-    const ADDRESS_2: Address = Address::Account(ACCOUNT_2);
     const TOKEN_0: ContractTokenId = TokenIdU8(2);
     const TOKEN_1: ContractTokenId = TokenIdU8(42);
 
@@ -1098,7 +1096,8 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> =
+            contract_transfer(&ctx, &mut host, Amount::from_micro_ccd(0), &mut logger);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
@@ -1158,7 +1157,8 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> =
+            contract_transfer(&ctx, &mut host, Amount::from_micro_ccd(0), &mut logger);
         // Check the result.
         let err = result.expect_err_report("Expected to fail");
         claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
@@ -1191,7 +1191,8 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> =
+            contract_transfer(&ctx, &mut host, Amount::from_micro_ccd(100), &mut logger);
 
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
@@ -1339,9 +1340,12 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let state = initial_state_with_royalties(&mut state_builder);
         let mut host = TestHost::new(state, state_builder);
+        let amount = 100;
+        host.set_self_balance(Amount::from_micro_ccd(amount));
 
         // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
+        let result: ContractResult<()> =
+            contract_transfer(&ctx, &mut host, Amount::from_micro_ccd(amount), &mut logger);
         // Check the result.
         claim!(result.is_ok(), "Results in rejection");
 
@@ -1352,108 +1356,67 @@ mod tests {
             host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
         claim_eq!(
             balance0,
-            350.into(),
+            300.into(),
             "Token owner balance should be decreased by the transferred amount."
         );
         claim_eq!(
             balance1,
-            50.into(),
+            100.into(),
             "Token receiver balance should be increased by the transferred amount"
         );
 
         // Check the logs.
-        claim_eq!(logger.logs.len(), 2, "Only two events should be logged");
+        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
+
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
                 from:     ADDRESS_0,
-                to:       ADDRESS_0,
-                token_id: TOKEN_0,
-                amount:   ContractTokenAmount::from(50),
-            })),
-            "Incorrect event emitted 1"
-        );
-        claim_eq!(
-            logger.logs[1],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
                 to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount:   ContractTokenAmount::from(50),
+                amount:   ContractTokenAmount::from(100),
             })),
-            "Incorrect event emitted 2"
+            "Incorrect event emitted"
         );
+    }
 
-        // second transfer
-        let mut second_ctx = TestReceiveContext::empty();
-        second_ctx.set_sender(ADDRESS_1);
+    // test royalties are not paid when there are not enough funds
+    #[concordium_test]
+    fn test_royalties_fail_insufficient_funds() {
+        // Setup the context
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(ADDRESS_0);
 
-        let second_transfer = Transfer {
+        // and parameter.
+        let transfer = Transfer {
             token_id: TOKEN_0,
-            amount:   ContractTokenAmount::from(10),
-            from:     ADDRESS_1,
-            to:       Receiver::from_account(ACCOUNT_2),
+            amount:   ContractTokenAmount::from(100),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
             data:     AdditionalData::empty(),
         };
-        let second_parameter = TransferParams::from(vec![second_transfer]);
-        let second_parameter_bytes = to_bytes(&second_parameter);
-        second_ctx.set_parameter(&second_parameter_bytes);
+        let parameter = TransferParams::from(vec![transfer]);
+        let parameter_bytes = to_bytes(&parameter);
+        ctx.set_parameter(&parameter_bytes);
 
-        let mut second_logger = TestLogger::init();
+        let mut logger = TestLogger::init();
+        let mut state_builder = TestStateBuilder::new();
+        let state = initial_state_with_royalties(&mut state_builder);
+        let mut host = TestHost::new(state, state_builder);
+        let amount = 100;
+        host.set_self_balance(Amount::from_micro_ccd(1));
 
         // Call the contract function.
-        let second_result: ContractResult<()> =
-            contract_transfer(&second_ctx, &mut host, &mut second_logger);
+        let result: ContractResult<()> =
+            contract_transfer(&ctx, &mut host, Amount::from_micro_ccd(amount), &mut logger);
         // Check the result.
-        claim!(second_result.is_ok(), "Results in rejection");
+        claim!(result.is_err(), "Should fail due to lack of funds");
 
         // Check the state.
-        let second_balance0 =
+        let balance0 =
             host.state().balance(&TOKEN_0, &ADDRESS_0).expect_report("Token is expected to exist");
-        let second_balance1 =
-            host.state().balance(&TOKEN_0, &ADDRESS_1).expect_report("Token is expected to exist");
-        let second_balance2 =
-            host.state().balance(&TOKEN_0, &ADDRESS_2).expect_report("Token is expected to exist");
-        claim_eq!(
-            second_balance0,
-            355.into(),
-            "Token owner balance should be increase by the royalty payment."
-        );
-        claim_eq!(
-            second_balance1,
-            40.into(),
-            "Token receiver balance should be decreased by the transferred amount"
-        );
 
-        claim_eq!(
-            second_balance2,
-            5.into(),
-            "Token receiver balance should be increased by the transferred amount - the royalty \
-             payment"
-        );
-
-        // Check the logs.
-        claim_eq!(second_logger.logs.len(), 2, "Only two events should be logged");
-        claim_eq!(
-            second_logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_1,
-                to:       ADDRESS_0,
-                token_id: TOKEN_0,
-                amount:   ContractTokenAmount::from(5),
-            })),
-            "Incorrect event emitted 3"
-        );
-        claim_eq!(
-            second_logger.logs[1],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_1,
-                to:       ADDRESS_2,
-                token_id: TOKEN_0,
-                amount:   ContractTokenAmount::from(5),
-            })),
-            "Incorrect event emitted 4"
-        );
+        claim_eq!(balance0, 400.into(), "Token owner balance should not have changed.");
     }
 
     // test code sends correct error when price is 0
