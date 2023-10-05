@@ -1,12 +1,10 @@
 pub mod deployer;
-
 use concordium_rust_sdk::smart_contracts::types::OwnedReceiveName;
 use concordium_rust_sdk::types::transactions;
 use concordium_rust_sdk::{
     common::types::Amount,
     smart_contracts::common::{self as contracts_common},
 };
-
 use anyhow::Context;
 use clap::Parser;
 use concordium_rust_sdk::smart_contracts::types::OwnedContractName;
@@ -128,9 +126,13 @@ struct App {
         help = "Location of the Concordium account key file."
     )]
     key_file: PathBuf,
+    #[clap(
+        long = "modules",
+        help = "Location paths and names of Concordium smart contract modules. Use this flag several times \
+        if you have several smart contract modules to be deployed (e.g. --modules ./default.wasm.v1 --modules ./default2.wasm.v1)"
+    )]
+    modules: Vec<PathBuf>,
 }
-
-const CONTRACTS: &[&str] = &["./default.wasm.v1"];
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), DeployError> {
@@ -142,7 +144,7 @@ async fn main() -> Result<(), DeployError> {
 
     let mut modules_deployed: Vec<ModuleDeployed> = Vec::new();
 
-    for contract in CONTRACTS {
+    for contract in app.modules {
         let wasm_module = get_wasm_module(PathBuf::from(contract).as_path())?;
 
         let module = deployer.deploy_wasm_module(wasm_module).await?;
