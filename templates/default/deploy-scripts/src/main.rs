@@ -1,8 +1,14 @@
 pub mod deployer;
 
+use concordium_rust_sdk::smart_contracts::types::OwnedReceiveName;
+use concordium_rust_sdk::types::transactions;
+use concordium_rust_sdk::{
+    common::types::Amount,
+    smart_contracts::common::{self as contracts_common},
+};
+
 use anyhow::Context;
 use clap::Parser;
-use concordium_rust_sdk::common::types::Amount;
 use concordium_rust_sdk::smart_contracts::types::OwnedContractName;
 use concordium_rust_sdk::smart_contracts::types::OwnedParameter;
 use concordium_rust_sdk::{
@@ -15,6 +21,7 @@ use concordium_rust_sdk::{
     },
     v2,
 };
+use concordium_rust_sdk::types::transactions::send::GivenEnergy;
 
 use concordium_rust_sdk::types::transactions::InitContractPayload;
 use deployer::{Deployer, ModuleDeployed};
@@ -123,7 +130,7 @@ struct App {
     key_file: PathBuf,
 }
 
-const CONTRACTS: &[&str] = &["./cis2_nft.wasm.v1"];
+const CONTRACTS: &[&str] = &["./default.wasm.v1"];
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), DeployError> {
@@ -143,11 +150,11 @@ async fn main() -> Result<(), DeployError> {
         modules_deployed.push(module);
     }
 
-    // Write your own deployment/initialization script below. Here is an example given.
+    // Write your own deployment/initialization script below. An example is given here.
 
     let param: OwnedParameter = OwnedParameter::default();
 
-    let init_method_name: &str = "init_cis2_nft";
+    let init_method_name: &str = "init_default";
 
     let payload = InitContractPayload {
         init_name: OwnedContractName::new(init_method_name.into())?,
@@ -156,7 +163,27 @@ async fn main() -> Result<(), DeployError> {
         param,
     };
 
-    let _contract = deployer.init_contract(payload).await?;
+    let contract = deployer.init_contract(payload).await?;
+
+    let bytes = contracts_common::to_bytes(&false);
+
+    let update_payload = transactions::UpdateContractPayload {
+        amount: Amount::from_ccd(0),
+        address: contract,
+        receive_name: OwnedReceiveName::new_unchecked("default.receive".to_string()),
+        message: bytes.try_into()?,
+    };
+
+    let energy = deployer.estimate_energy(update_payload.clone()).await?;
+
+    let _update_contract = deployer
+        .update_contract(
+            update_payload,
+            GivenEnergy::Add(energy),
+        )
+        .await?;
+
+    // Write your own deployment/initialization script above. An example is given here.
 
     Ok(())
 }
