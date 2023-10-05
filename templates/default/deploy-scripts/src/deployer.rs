@@ -7,7 +7,7 @@ use concordium_rust_sdk::{
         smart_contracts::{ContractContext, InvokeContractResult, WasmModule},
         transactions::{
             self,
-            send::{deploy_module, init_contract},
+            send::{deploy_module, init_contract, GivenEnergy},
             InitContractPayload, UpdateContractPayload,
         },
         AccountTransactionEffects, BlockItemSummary, BlockItemSummaryDetails, ContractAddress,
@@ -16,6 +16,7 @@ use concordium_rust_sdk::{
     v2,
 };
 use std::path::Path;
+use crate::v2::BlockIdentifier::Best;
 
 use crate::DeployError;
 
@@ -46,18 +47,19 @@ impl Deployer {
     }
 
     pub async fn module_exists(&self, wasm_module: WasmModule) -> Result<bool, DeployError> {
-        let consensus_info = self.client.clone().get_consensus_info().await?;
 
-        let latest_block = consensus_info.last_finalized_block;
+        let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
+ 
+        let best_block_hash = best_block.block_hash;
 
         let module_ref = wasm_module.get_module_ref();
 
         let module_ref = self
             .client
             .clone()
-            .get_module_source(&module_ref, &latest_block)
+            .get_module_source(&module_ref, &best_block_hash)
             .await;
-        
+
         match module_ref {
             Ok(_) => Ok(true),
             Err(e) if e.is_not_found() => Ok(false),
@@ -74,6 +76,7 @@ impl Deployer {
         println!("Deploying contract....");
 
         let exists = self.module_exists(wasm_module.clone()).await?;
+
         if exists {
             println!(
                 "Module with reference {} already exists on chain.",
@@ -169,8 +172,52 @@ impl Deployer {
         Ok(contract_init.contract)
     }
 
-    async fn estimate_energy(&self, payload: UpdateContractPayload) -> Result<Energy, DeployError> {
-        let consensus_info = self.client.clone().get_consensus_info().await?;
+    pub async fn update_contract(
+        &self,
+        update_payload: UpdateContractPayload,
+        energy: GivenEnergy,
+    ) -> Result<(), DeployError> {
+        let nonce = self.get_nonce(self.key.address).await?;
+
+        if !nonce.all_final {
+            return Err(DeployError::NonceNotFinal);
+        }
+
+        let payload = transactions::Payload::Update {
+            payload: update_payload,
+        };
+
+        let expiry = TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64);
+
+        let tx = transactions::send::make_and_sign_transaction(
+            &self.key,
+            self.key.address,
+            nonce.nonce,
+            expiry,
+            energy,
+            payload,
+        );
+        let bi = transactions::BlockItem::AccountTransaction(tx);
+
+        let tx_hash = self
+            .client
+            .clone()
+            .send_block_item(&bi)
+            .await
+            .map_err(DeployError::TransactionRejected)?;
+        println!("Sent tx: {tx_hash}");
+
+        let (_, block_item) = self.client.clone().wait_until_finalized(&tx_hash).await?;
+
+        self.parse_contract_update_event(block_item)?;
+
+        Ok(())
+    }
+
+    pub async fn estimate_energy(&self, payload: UpdateContractPayload) -> Result<Energy, DeployError> {
+        let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
+
+        let best_block_hash = best_block.block_hash;
 
         let context = ContractContext {
             invoker: Some(Address::Account(self.key.address)),
@@ -184,7 +231,7 @@ impl Deployer {
         let result = self
             .client
             .clone()
-            .invoke_instance(&consensus_info.best_block, &context)
+            .invoke_instance(&best_block_hash, &context)
             .await?;
 
         match result.response {
