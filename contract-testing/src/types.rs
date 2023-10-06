@@ -447,12 +447,15 @@ impl ContractInvokeSuccess {
     /// Only events from effective trace elements are included. See
     /// [`Self::effective_trace_elements`] for more details.
     pub fn events(&self) -> impl Iterator<Item = (ContractAddress, &[ContractEvent])> {
-        self.effective_trace_elements().flat_map(|cte| {
-            if let ContractTraceElement::Updated { data } = cte {
-                Some((data.address, data.events.as_slice()))
-            } else {
-                None
-            }
+        self.effective_trace_elements().flat_map(|cte| match cte {
+            ContractTraceElement::Updated {
+                data,
+            } => Some((data.address, data.events.as_slice())),
+            ContractTraceElement::Interrupted {
+                address,
+                events,
+            } => Some((*address, events.as_slice())),
+            _ => None,
         })
     }
 
