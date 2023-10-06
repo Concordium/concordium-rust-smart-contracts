@@ -1,3 +1,13 @@
+//! An example of reentrancy attacks.
+//!
+//! Consists of two contracts:
+//!  - `counter-notify`
+//!    - A counter contract that also notifies some contract about increments.
+//!    - After the notification call it checks to see that its counter hasn't
+//!      been altered.
+//!  - `reentrancy-attacker`
+//!    - A contract that tries to make an reentrancy attack on the
+//!      `counter-notify` contract.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_std::*;
 
@@ -5,27 +15,23 @@ type State = u64;
 
 #[init(contract = "counter-notify")]
 #[inline(always)]
-fn contract_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
+fn contract_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(0u64)
 }
 
 #[receive(contract = "counter-notify", name = "just-increment", mutable)]
-fn just_increment<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<()> {
+fn just_increment(_ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     *host.state_mut() += 1;
     Ok(())
 }
 
-#[receive(contract = "counter-notify", name = "increment-and-notify", mutable)]
-fn increment_and_notify<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<bool> {
+#[receive(
+    contract = "counter-notify",
+    name = "increment-and-notify",
+    mutable,
+    parameter = "(ContractAddress, OwnedEntrypointName)"
+)]
+fn increment_and_notify(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<bool> {
     let (contract, entrypoint): (ContractAddress, OwnedEntrypointName) =
         ctx.parameter_cursor().get()?;
 
@@ -46,39 +52,29 @@ fn increment_and_notify<S: HasStateApi>(
     Ok(preinvoke_count == *host.state())
 }
 
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use concordium_std::claim_eq;
-    use test_infrastructure::*;
+////////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[concordium_test]
-    fn state_can_change_due_to_reentrancy() {
-        let mut ctx = TestReceiveContext::empty();
-        let self_address = ContractAddress {
-            index:    0,
-            subindex: 0,
-        };
-        let entrypoint_just_increment = OwnedEntrypointName::new_unchecked("just-increment".into());
-        let parameter_bytes = to_bytes(&(self_address, entrypoint_just_increment.clone()));
-        ctx.set_parameter(&parameter_bytes);
-        ctx.set_self_address(self_address);
+#[init(contract = "reentrancy-attacker")]
+fn reentrancy_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> {
+    Ok(())
+}
 
-        let mut host = TestHost::new(0u64, TestStateBuilder::new());
-
-        // We are simulating reentrancy with this mock because we mutate the state.
-        host.setup_mock_entrypoint(
-            self_address,
-            entrypoint_just_increment,
-            MockFn::new_v1(|_parameter, _amount, _balance, state: &mut State| {
-                *state += 1;
-                Ok((true, ()))
-            }),
-        );
-
-        let res = increment_and_notify(&ctx, &mut host).expect_report("Calling receive failed.");
-
-        // The count
-        claim_eq!(res, false);
+/// Tries to call the entrypoint `just-increment` on the sender iff it is a
+/// contract. Fails if the sender is an account or the `just-increment` call
+/// fails.
+#[receive(contract = "reentrancy-attacker", name = "call-just-increment", mutable)]
+fn reentrancy_receive(ctx: &ReceiveContext, host: &mut Host<()>) -> ReceiveResult<()> {
+    match ctx.sender() {
+        Address::Account(_) => fail!(),
+        Address::Contract(contract) => {
+            host.invoke_contract(
+                &contract,
+                &(),
+                EntrypointName::new_unchecked("just-increment"),
+                Amount::zero(),
+            )
+            .unwrap();
+            Ok(())
+        }
     }
 }

@@ -15,6 +15,9 @@ wee_alloc = ["concordium-std/wee_alloc"]
 concordium-std = {path = "../../concordium-std", default-features = false}
 concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
 
+[dev-dependencies]
+concordium-smart-contract-testing = { path = "../../contract-testing"}
+
 [lib]
 crate-type=["cdylib", "rlib"]
 

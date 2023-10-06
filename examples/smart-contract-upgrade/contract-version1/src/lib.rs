@@ -86,10 +86,7 @@ type ContractResult<A> = Result<A, CustomContractError>;
 
 /// Init function that creates a new smart contract.
 #[init(contract = "smart_contract_upgrade")]
-fn contract_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
+fn contract_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State {
         admin:                    ctx.init_origin(),
         not_to_be_migrated_state: "This state should NOT be migrated as part of the smart \
@@ -104,8 +101,8 @@ fn contract_init<S: HasStateApi>(
 /// View function that returns the content of the state.
 #[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
 fn contract_view<'b, S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &'b impl HasHost<State, StateApiType = S>,
+    _ctx: &ReceiveContext,
+    host: &'b Host<State>,
 ) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
@@ -132,10 +129,7 @@ fn contract_view<'b, S: HasStateApi>(
     error = "CustomContractError",
     low_level
 )]
-fn contract_upgrade<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<S>,
-) -> ContractResult<()> {
+fn contract_upgrade(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Read the top-level contract state.
     let state: State = host.state().read_root()?;
 

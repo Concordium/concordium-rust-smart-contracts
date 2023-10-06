@@ -23,7 +23,7 @@ path = "../../../concordium-std"
 default-features = false
 
 [dev-dependencies]
-concordium-smart-contract-testing = "2.0"
+concordium-smart-contract-testing = { path = "../../../contract-testing" }
 
 [profile.release]
 opt-level = 3

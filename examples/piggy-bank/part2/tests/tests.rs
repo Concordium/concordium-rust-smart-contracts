@@ -18,7 +18,8 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
     chain.create_account(Account::new(ACC_ADDR_OWNER, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(ACC_ADDR_OTHER, ACC_INITIAL_BALANCE));
 
-    let module = module_load_v1("piggy_bank_part2.wasm.v1").expect("Module exists and is valid");
+    let module =
+        module_load_v1("./concordium-out/module.wasm.v1").expect("Module exists and is valid");
     let deployment = chain
         .module_deploy_v1(Signer::with_one_key(), ACC_ADDR_OWNER, module)
         .expect("Deploying valid module should succeed");

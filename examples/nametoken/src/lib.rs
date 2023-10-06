@@ -47,68 +47,68 @@ use concordium_std::*;
 
 /// The baseurl for the token metadata, gets appended with the token ID as hex
 /// encoding before emitted in the TokenMetadata event.
-const TOKEN_METADATA_BASE_URL: &str = "https://some.example/nametoken/";
+pub const TOKEN_METADATA_BASE_URL: &str = "https://some.example/nametoken/";
 
 /// List of supported standards by this contract address.
-const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+pub const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
 
 // Fees
 
 /// Registration fee in CCD
-const REGISTRACTION_FEE: Amount = Amount::from_ccd(70);
+pub const REGISTRATION_FEE: Amount = Amount::from_ccd(70);
 
 /// Data update fee in CCD
-const UPDATE_FEE: Amount = Amount::from_ccd(7);
+pub const UPDATE_FEE: Amount = Amount::from_ccd(7);
 
 /// Renewal fee in CCD
-const RENEWAL_FEE: Amount = Amount::from_ccd(7);
+pub const RENEWAL_FEE: Amount = Amount::from_ccd(7);
 
 /// How long the registered name is owned before it needs to be renewed
-const REGISTRATION_PERIOD_DAYS: u64 = 365;
+pub const REGISTRATION_PERIOD_DAYS: u64 = 365;
 
 // Types
 
 /// Contract token ID type.
 /// We pick `TokenIdFixed`, since we hash names with sha256, that gives a
 /// fixed-length 32 byte array.
-type ContractTokenId = TokenIdFixed<32>;
+pub type ContractTokenId = TokenIdFixed<32>;
 
 /// Contract token amount. Since the tokens are non-fungible the total supply
 /// of any token will be at most 1 and it is fine to use a small type for
 /// representing token amounts.
-type ContractTokenAmount = TokenAmountU8;
+pub type ContractTokenAmount = TokenAmountU8;
 
 /// The parameter for the contract function `register` which registers a name
 /// for a given address.
 #[derive(Serial, Deserial, SchemaType)]
-struct RegisterNameParams {
+pub struct RegisterNameParams {
     /// Owner of the newly registered name
-    owner: AccountAddress,
+    pub owner: AccountAddress,
     /// Name
-    name:  String,
+    pub name:  String,
 }
 
 /// Data for each name.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
-struct NameInfo<S: HasStateApi> {
+pub struct NameInfo<S: HasStateApi = StateApi> {
     /// Name owner
-    owner:        AccountAddress,
+    pub owner:        AccountAddress,
     /// Expiration date
-    name_expires: Timestamp,
+    pub name_expires: Timestamp,
     /// Associated data
     // `StateBox` allows for lazy loading data; this is helpful
     // in the situations when one wants to do a partial update not touching
     // this field, which can be large.
-    data: StateBox<Vec<u8>, S>,
+    pub data: StateBox<Vec<u8>, S>,
 }
 
-impl<S: HasStateApi> NameInfo<S> {
+impl NameInfo {
     fn fresh(
         owner: AccountAddress,
         name_expires: Timestamp,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> Self {
         NameInfo {
             owner,
@@ -121,15 +121,15 @@ impl<S: HasStateApi> NameInfo<S> {
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
-struct AddressState<S> {
+pub struct AddressState<S = StateApi> {
     /// The tokens owned by this address.
-    owned_names: StateSet<ContractTokenId, S>,
+    pub owned_names: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
-    operators:   StateSet<Address, S>,
+    pub operators:   StateSet<Address, S>,
 }
 
-impl<S: HasStateApi> AddressState<S> {
-    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+impl AddressState {
+    fn empty(state_builder: &mut StateBuilder) -> Self {
         AddressState {
             owned_names: state_builder.new_set(),
             operators:   state_builder.new_set(),
@@ -141,7 +141,7 @@ impl<S: HasStateApi> AddressState<S> {
 
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State<S: HasStateApi> {
+struct State<S: HasStateApi = StateApi> {
     /// The address of the administrating account.
     /// Admin can withdraw the accumulated fees and update the admin account.
     admin:        AccountAddress,
@@ -158,22 +158,22 @@ struct State<S: HasStateApi> {
 /// standard identifier and list of contract addresses providing
 /// implementations of this standard.
 #[derive(Debug, Serialize, SchemaType)]
-struct SetImplementorsParams {
+pub struct SetImplementorsParams {
     /// The identifier for the standard.
-    id:           StandardIdentifierOwned,
+    pub id:           StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
-    implementors: Vec<ContractAddress>,
+    pub implementors: Vec<ContractAddress>,
 }
 
 #[derive(Debug, Serialize, SchemaType)]
-struct UpdateDataParams {
-    name: String,
-    data: Vec<u8>,
+pub struct UpdateDataParams {
+    pub name: String,
+    pub data: Vec<u8>,
 }
 
 /// The custom errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
-enum CustomContractError {
+pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
@@ -205,9 +205,9 @@ enum CustomContractError {
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
-type ContractError = Cis2Error<CustomContractError>;
+pub type ContractError = Cis2Error<CustomContractError>;
 
-type ContractResult<A> = Result<A, ContractError>;
+pub type ContractResult<A> = Result<A, ContractError>;
 
 /// Mapping the logging errors to CustomContractError.
 impl From<LogError> for CustomContractError {
@@ -240,9 +240,9 @@ impl From<CustomContractError> for ContractError {
 }
 
 // Functions for creating, updating and querying the contract state.
-impl<S: HasStateApi> State<S> {
+impl State {
     /// Creates a new state with no tokens.
-    fn empty(admin: AccountAddress, state_builder: &mut StateBuilder<S>) -> Self {
+    fn empty(admin: AccountAddress, state_builder: &mut StateBuilder) -> Self {
         State {
             admin,
             state: state_builder.new_map(),
@@ -257,7 +257,7 @@ impl<S: HasStateApi> State<S> {
         name: ContractTokenId,
         owner: AccountAddress,
         expires: Timestamp,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         let name_info = NameInfo::fresh(owner, expires, state_builder);
         // make sure that the name is not taken
@@ -277,7 +277,7 @@ impl<S: HasStateApi> State<S> {
         now: Timestamp,
         name: ContractTokenId,
         owner: AccountAddress,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<AccountAddress> {
         let mut name_info = self
             .all_names
@@ -395,7 +395,7 @@ impl<S: HasStateApi> State<S> {
         amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
 
@@ -445,7 +445,7 @@ impl<S: HasStateApi> State<S> {
         &mut self,
         owner: &Address,
         operator: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         match owner {
             Address::Account(addr) => {
@@ -493,7 +493,7 @@ impl<S: HasStateApi> State<S> {
 
 /// Build a string from TOKEN_METADATA_BASE_URL appended with the token ID
 /// encoded as hex.
-fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
+pub fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
     let mut token_metadata_url = String::from(TOKEN_METADATA_BASE_URL);
     token_metadata_url.push_str(&token_id.to_string());
     token_metadata_url
@@ -504,34 +504,31 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 /// Initialize contract instance with no token types initially.
 /// Set the account that initialised the contract to be admin
 #[init(contract = "NameToken")]
-fn contract_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
-) -> InitResult<State<S>> {
+fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Construct the initial contract state.
     Ok(State::empty(ctx.init_origin(), state_builder))
 }
 
-#[derive(Serialize, SchemaType)]
-struct ViewNameInfo {
-    owner:        AccountAddress,
-    name_expires: Timestamp,
-    data:         Vec<u8>,
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
+pub struct ViewNameInfo {
+    pub owner:        AccountAddress,
+    pub name_expires: Timestamp,
+    pub data:         Vec<u8>,
 }
 
-#[derive(Serialize, SchemaType)]
-struct ViewAddressState {
-    owned_names: Vec<ContractTokenId>,
-    operators:   Vec<Address>,
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
+pub struct ViewAddressState {
+    pub owned_names: Vec<ContractTokenId>,
+    pub operators:   Vec<Address>,
 }
 
-#[derive(Serialize, SchemaType)]
-struct ViewState {
-    state:     Vec<(AccountAddress, ViewAddressState)>,
-    all_names: Vec<(ContractTokenId, ViewNameInfo)>,
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
+pub struct ViewState {
+    pub state:     Vec<(AccountAddress, ViewAddressState)>,
+    pub all_names: Vec<(ContractTokenId, ViewNameInfo)>,
 }
 
-fn into_view_name_info<S: HasStateApi>(name_info: &NameInfo<S>) -> ViewNameInfo {
+fn into_view_name_info(name_info: &NameInfo) -> ViewNameInfo {
     ViewNameInfo {
         owner:        name_info.owner,
         name_expires: name_info.name_expires,
@@ -539,8 +536,8 @@ fn into_view_name_info<S: HasStateApi>(name_info: &NameInfo<S>) -> ViewNameInfo 
     }
 }
 
-fn view_nameinfo<S: HasStateApi>(
-    name: (StateRef<TokenIdFixed<32>>, StateRef<NameInfo<S>>),
+fn view_nameinfo(
+    name: (StateRef<TokenIdFixed<32>>, StateRef<NameInfo>),
 ) -> (TokenIdFixed<32>, ViewNameInfo) {
     let (a_token_id, a_name_info) = name;
     let name_info = into_view_name_info(&a_name_info);
@@ -550,10 +547,7 @@ fn view_nameinfo<S: HasStateApi>(
 /// View function that returns the entire contents of the state. Meant for
 /// testing.
 #[receive(contract = "NameToken", name = "view", return_value = "ViewState")]
-fn contract_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ReceiveResult<ViewState> {
+fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
     let mut inner_state = Vec::new();
@@ -587,9 +581,9 @@ fn contract_view<S: HasStateApi>(
     return_value = "ViewNameInfo",
     error = "ContractError"
 )]
-fn contract_nameinfo_view<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_nameinfo_view(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<ViewNameInfo> {
     let params: String = ctx.parameter_cursor().get()?;
@@ -641,15 +635,15 @@ fn contract_nameinfo_view<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_register<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_register(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     amount: Amount,
     logger: &mut impl HasLogger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
     // Validate the amount
-    ensure_eq!(amount, REGISTRACTION_FEE, CustomContractError::IncorrectFee.into());
+    ensure_eq!(amount, REGISTRATION_FEE, CustomContractError::IncorrectFee.into());
     // Parse the parameter.
     let params: RegisterNameParams = ctx.parameter_cursor().get()?;
     // Hash the name
@@ -695,7 +689,7 @@ fn contract_register<S: HasStateApi>(
     }
 }
 
-type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Execute a list of token transfers, in the order of the list.
 ///
@@ -719,9 +713,9 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
     enable_logger,
     mutable
 )]
-fn contract_transfer<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_transfer(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -791,9 +785,9 @@ fn contract_transfer<S: HasStateApi>(
     payable,
     mutable
 )]
-fn contract_renew<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_renew(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     amount: Amount,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
@@ -830,10 +824,7 @@ fn contract_renew<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_withdraw<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_withdraw(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Get the contract admin
     let admin = host.state().admin;
     // Get the sender of the transaction
@@ -854,10 +845,7 @@ fn contract_withdraw<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_update_admin<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_update_admin(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Get the contract admin
     let admin = host.state().admin;
 
@@ -893,9 +881,9 @@ fn contract_update_admin<S: HasStateApi>(
     payable,
     mutable
 )]
-fn contract_update_data<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_update_data(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     amount: Amount,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
@@ -938,9 +926,9 @@ fn contract_update_data<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_update_operator(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -980,9 +968,9 @@ fn contract_update_operator<S: HasStateApi>(
     return_value = "OperatorOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_operator_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_operator_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -1003,10 +991,10 @@ fn contract_operator_of<S: HasStateApi>(
 
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
-type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 /// Response type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenAmounts used by this contract.
-type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 /// The balance is considered 0 if the name has expired.
@@ -1021,9 +1009,9 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
     return_value = "ContractBalanceOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_balance_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_balance_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -1041,7 +1029,7 @@ fn contract_balance_of<S: HasStateApi>(
 
 /// Parameter type for the CIS-2 function `tokenMetadata` specialized to the
 /// subset of TokenIDs used by this contract.
-type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
+pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
 
 /// Get the token metadata URLs and checksums given a list of token IDs.
 ///
@@ -1055,9 +1043,9 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
     return_value = "TokenMetadataQueryResponse",
     error = "ContractError"
 )]
-fn contract_token_metadata<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_token_metadata(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -1089,9 +1077,9 @@ fn contract_token_metadata<S: HasStateApi>(
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_supports(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<SupportsQueryResponse> {
     // Parse the parameter.
     let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
@@ -1122,10 +1110,7 @@ fn contract_supports<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_set_implementor<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
     ensure!(ctx.sender().matches_account(&host.state().admin), ContractError::Unauthorized);
     // Parse the parameter.
@@ -1133,755 +1118,4 @@ fn contract_set_implementor<S: HasStateApi>(
     // Update the implementors in the state
     host.state_mut().set_implementors(params.id, params.implementors);
     Ok(())
-}
-
-// Tests
-
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use concordium_std::test_infrastructure::*;
-
-    const CURRENT_TIME: u64 = 1;
-    const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
-    const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
-    const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const ADMIN_ACCOUNT_0: AccountAddress = AccountAddress([2u8; 32]);
-    const ADMIN_ACCOUNT_1: AccountAddress = AccountAddress([3u8; 32]);
-    const NAME_0: &str = "MyCoolName";
-    const NAME_1: &str = "EvenCoolerName";
-    const SAMPLE_DATA: &str = "GitHub: my-github-name";
-
-    /// Test helper function which creates a contract state with two tokens with
-    /// id `NAME_0` and id `NAME_1` owned by `ACCOUNT_0` and `ACCOUNT_1`
-    /// `NAME_1` has some non-empty associated data
-    fn initial_state<S: HasStateApi>(
-        expires: Timestamp,
-        state_builder: &mut StateBuilder<S>,
-    ) -> State<S> {
-        let mut state = State::empty(ADMIN_ACCOUNT_0, state_builder);
-        let crypto_primitives = TestCryptoPrimitives::new();
-        let token_0 = crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0;
-        let token_1 = crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0;
-        state
-            .register_fresh(TokenIdFixed(token_0), ACCOUNT_0, expires, state_builder)
-            .expect_report("Failed to register NAME_0");
-        state
-            .register_fresh(TokenIdFixed(token_1), ACCOUNT_1, expires, state_builder)
-            .expect_report("Failed to register NAME_1");
-        let data = SAMPLE_DATA.to_string();
-        state
-            .update_data(&TokenIdFixed(token_1), data.as_bytes())
-            .expect_report("Failed to update data for NAME_1");
-        state
-    }
-
-    /// Test registering a fresh name, ensuring the the name is owned by the
-    /// given address and the appropriate events are logged.
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_register_fresh() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(CURRENT_TIME));
-        ctx.set_sender(ADDRESS_0);
-        ctx.set_owner(ACCOUNT_0);
-
-        // and parameter.
-        let parameter = RegisterNameParams {
-            name:  NAME_0.to_string(),
-            owner: ACCOUNT_0,
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(ADMIN_ACCOUNT_0, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_register(&ctx, &mut host, REGISTRACTION_FEE, &mut logger, &crypto_primitives);
-
-        // Check the result
-        claim!(result.is_ok(), "Results in rejection");
-        let name_hash = crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0;
-        let token_0 = TokenIdFixed(name_hash);
-
-        // Check the state
-        // Note. This is rather expensive as an iterator is created and then traversed -
-        // should be avoided when writing smart contracts.
-        claim_eq!(host.state().all_names.iter().count(), 1, "Expected one name in all names.");
-        claim_eq!(host.state().state.iter().count(), 1, "Expected one name in the state.");
-
-        let name_info =
-            host.state().all_names.get(&token_0).expect_report("Token is expected to exist");
-        claim_eq!(name_info.owner, ACCOUNT_0, "The name must be owned by ACCOUNT_0");
-
-        let addr_state =
-            host.state().state.get(&ACCOUNT_0).expect_report("ACCOUNT_0 must own a name");
-        claim!(addr_state.owned_names.contains(&token_0), "ACCOUNT_0 must own token 0");
-
-        let now = ctx.metadata().slot_time();
-        let balance0 = host
-            .state()
-            .balance(now, &token_0, &ACCOUNT_0.into())
-            .expect_report("Token is expected to exist");
-        claim_eq!(balance0, 1.into(), "Token balance should be non-zero");
-
-        // Check the logs
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner:    ADDRESS_0,
-                token_id: token_0,
-                amount:   ContractTokenAmount::from(1),
-            }))),
-            "Expected an event for minting NAME_0"
-        );
-
-        let mut base_url = TOKEN_METADATA_BASE_URL.to_string();
-        base_url.push_str(&token_0.to_string());
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
-                TokenMetadataEvent {
-                    token_id:     token_0,
-                    metadata_url: MetadataUrl {
-                        url:  base_url.to_string(),
-                        hash: None,
-                    },
-                }
-            ))),
-            "Expected an event for token metadata for TOKEN_1"
-        );
-    }
-
-    /// Test registering an expired name, ensuring the the name is owned by the
-    /// new given address and that the data is reset to empty
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_register_expired() {
-        // The time of expiry in the past
-        let old_expiry = Timestamp::from_timestamp_millis(1);
-        // ensure that the current date is beyond the expiry date,
-        // so we can register the expired name
-        let now = old_expiry
-            .checked_add(Duration::from_days(10))
-            .expect_report("Failed to calculate the date");
-
-        let old_owner = ACCOUNT_0;
-        let new_owner = ACCOUNT_1;
-
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(now);
-        ctx.set_sender(ADDRESS_0);
-        ctx.set_owner(old_owner);
-
-        // and parameter.
-        let parameter = RegisterNameParams {
-            name:  NAME_0.to_string(),
-            owner: new_owner,
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-
-        // create initial state where NAME_0 was owned by ACCOUNT_1
-        let state = initial_state(old_expiry, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_register(&ctx, &mut host, REGISTRACTION_FEE, &mut logger, &crypto_primitives);
-
-        // Check the result
-        claim!(result.is_ok(), "Results in rejection");
-
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-
-        let name_info =
-            host.state().all_names.get(&token_0).expect_report("Token is expected to exist");
-        claim_eq!(name_info.owner, new_owner, "The name must be owned by the new owner");
-
-        let addr_state =
-            host.state().state.get(&new_owner).expect_report("The new owner must own a name");
-        claim!(addr_state.owned_names.contains(&token_0), "The new owner must own the name");
-
-        let balance_new = host
-            .state()
-            .balance(now, &token_0, &new_owner.into())
-            .expect_report("Token is expected to exist");
-        claim_eq!(balance_new, 1.into(), "Token balance should be non-zero");
-
-        let balance_old = host
-            .state()
-            .balance(now, &token_0, &old_owner.into())
-            .expect_report("Token is expected to exist");
-        claim_eq!(balance_old, 0.into(), "Token balance should be zero");
-
-        claim_eq!(name_info.data.get().as_slice(), [], "Data should be empty");
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: token_0,
-                amount:   ContractTokenAmount::from(1),
-            })),
-            "Incorrect event emitted"
-        )
-    }
-
-    // Register fails if the fee in incorrect
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_register_fails_incorrect_fee() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(CURRENT_TIME));
-        ctx.set_sender(ADDRESS_0);
-        ctx.set_owner(ACCOUNT_0);
-
-        // and parameter.
-        let parameter = RegisterNameParams {
-            name:  NAME_0.to_string(),
-            owner: ACCOUNT_0,
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(ADMIN_ACCOUNT_0, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        // Call the contract function wiht zero cdd
-        let result: ContractResult<()> = contract_register(
-            &ctx,
-            &mut host,
-            Amount::from_ccd(0),
-            &mut logger,
-            &crypto_primitives,
-        );
-
-        // Check the result
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(
-            err,
-            ContractError::Custom(CustomContractError::IncorrectFee),
-            "Error is expected to be IncorrectFee"
-        );
-    }
-
-    /// Test transfer succeeds, when `from` is the sender.
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_transfer_account() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
-        ctx.set_metadata_slot_time(now);
-        let crypto_primitives = TestCryptoPrimitives::new();
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-        let token_1 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0);
-
-        // and parameter.
-        let transfer = Transfer {
-            token_id: token_0,
-            amount:   ContractTokenAmount::from(1),
-            from:     ACCOUNT_0.into(),
-            to:       Receiver::from_account(ACCOUNT_1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(now, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let balance0 = host
-            .state()
-            .balance(now, &token_0, &ACCOUNT_0.into())
-            .expect_report("Token is expected to exist");
-        let balance1 = host
-            .state()
-            .balance(now, &token_0, &ACCOUNT_1.into())
-            .expect_report("Token is expected to exist");
-        let balance2 = host
-            .state()
-            .balance(now, &token_1, &ACCOUNT_1.into())
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            0.into(),
-            "Token owner balance should be decreased by the transferred amount"
-        );
-        claim_eq!(
-            balance1,
-            1.into(),
-            "Token receiver balance should be increased by the transferred amount"
-        );
-        claim_eq!(
-            balance2,
-            1.into(),
-            "Token receiver balance for token 1 should be the same as before"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ACCOUNT_0.into(),
-                to:       ACCOUNT_1.into(),
-                token_id: token_0,
-                amount:   ContractTokenAmount::from(1),
-            })),
-            "Incorrect event emitted"
-        )
-    }
-
-    // Test transfer succeeds, when `from` is the sender.
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_transfer_failed_expired_name() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let now = Timestamp::from_timestamp_millis(1000);
-        let expired = Timestamp::from_timestamp_millis(0);
-        ctx.set_metadata_slot_time(now);
-        let crypto_primitives = TestCryptoPrimitives::new();
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-
-        // and parameter.
-        let transfer = Transfer {
-            token_id: token_0,
-            amount:   ContractTokenAmount::from(1),
-            from:     ACCOUNT_0.into(),
-            to:       Receiver::from_account(ACCOUNT_1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(expired, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-        // Check the result
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(
-            err,
-            CustomContractError::NameExpired.into(),
-            "Error is expected to be NameExpired"
-        );
-    }
-
-    // Test transfer succeeds when sender is not the owner, but is an operator
-    /// of the owner.
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_operator_transfer() {
-        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-        ctx.set_metadata_slot_time(now);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-
-        // and parameter.
-        let transfer = Transfer {
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            token_id: token_0,
-            amount:   ContractTokenAmount::from(1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-
-        let mut state_builder = TestStateBuilder::new();
-        let mut state = initial_state(now, &mut state_builder);
-        state
-            .add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder)
-            .expect_report("Failed to add operator");
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let balance0 = host
-            .state()
-            .balance(now, &token_0, &ADDRESS_0)
-            .expect_report("Token is expected to exist");
-        let balance1 = host
-            .state_mut()
-            .balance(now, &token_0, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            0.into(),
-            "Token owner balance should be decreased by the transferred amount"
-        );
-        claim_eq!(
-            balance1,
-            1.into(),
-            "Token receiver balance should be increased by the transferred amount"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: token_0,
-                amount:   ContractTokenAmount::from(1),
-            })),
-            "Incorrect event emitted"
-        )
-    }
-
-    // Test renewing an existing name
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_renew_name() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
-        ctx.set_metadata_slot_time(now);
-
-        // and parameter
-        let param: String = NAME_0.to_string();
-        let parameter_bytes = to_bytes(&param);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(now, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_renew(&ctx, &mut host, RENEWAL_FEE, &crypto_primitives);
-
-        claim!(result.is_ok(), "Results in rejection");
-
-        let old_expires = now;
-        let name_info =
-            host.state().all_names.get(&token_0).expect_report("Token expected to exist");
-        let new_expires = name_info.name_expires;
-        let expected = old_expires
-            .checked_add(Duration::from_days(REGISTRATION_PERIOD_DAYS))
-            .expect_report("Overflow");
-        claim_eq!(expected, new_expires);
-    }
-
-    // Test renewing fails if the name is expired
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_renew_name_fails_expired() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let expired = Timestamp::from_timestamp_millis(0);
-        let now = Timestamp::from_timestamp_millis(1000);
-        ctx.set_metadata_slot_time(now);
-
-        // and parameter
-        let param: String = NAME_0.to_string();
-        let parameter_bytes = to_bytes(&param);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(expired, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_renew(&ctx, &mut host, RENEWAL_FEE, &crypto_primitives);
-
-        // Check the result
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(
-            err,
-            CustomContractError::NameExpired.into(),
-            "Error is expected to be NameExpired"
-        );
-    }
-
-    // Test updating data for an existing name
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_update_data() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
-        ctx.set_metadata_slot_time(now);
-
-        // and parameter
-        let data = SAMPLE_DATA.to_string();
-        let parameter = UpdateDataParams {
-            name: NAME_0.to_string(),
-            data: data.as_bytes().to_vec(),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(now, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_update_data(&ctx, &mut host, UPDATE_FEE, &crypto_primitives);
-
-        claim!(result.is_ok(), "Results in rejection");
-
-        let name_info =
-            host.state().all_names.get(&token_0).expect_report("Token expected to exist");
-        let saved_data = name_info.data.get();
-        claim_eq!(*saved_data.as_slice(), *parameter.data.as_slice());
-    }
-
-    // Test updating data fails if the name is expired
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_update_data_fails_expired() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let expired = Timestamp::from_timestamp_millis(0);
-        let now = Timestamp::from_timestamp_millis(1000);
-        ctx.set_metadata_slot_time(now);
-
-        // and parameter
-        let data = SAMPLE_DATA.to_string();
-        let parameter = UpdateDataParams {
-            name: NAME_0.to_string(),
-            data: data.as_bytes().to_vec(),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(expired, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        // Call the contract function.
-        let result: ContractResult<()> =
-            contract_update_data(&ctx, &mut host, UPDATE_FEE, &crypto_primitives);
-
-        // Check the result
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(
-            err,
-            CustomContractError::NameExpired.into(),
-            "Error is expected to be NameExpired"
-        );
-    }
-
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_nameinfo_view() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-        let now = Timestamp::from_timestamp_millis(CURRENT_TIME);
-        ctx.set_metadata_slot_time(now);
-
-        // and parameter
-        let parameter: String = NAME_1.to_string();
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(now, &mut state_builder);
-        let host = TestHost::new(state, state_builder);
-
-        let crypto_primitives = TestCryptoPrimitives::new();
-
-        // Call the contract function.
-        let result: ContractResult<ViewNameInfo> =
-            contract_nameinfo_view(&ctx, &host, &crypto_primitives);
-
-        let token_1 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0);
-        let original_name_info =
-            host.state().all_names.get(&token_1).expect_report("Token expected to exist");
-        if let Ok(name_info) = result {
-            claim_eq!(
-                name_info.data.as_slice(),
-                original_name_info.data.as_slice(),
-                "Queried data is different"
-            );
-            claim_eq!(name_info.owner, original_name_info.owner, "Queried owner is different");
-        } else {
-            fail!("Resutls in rejection")
-        }
-    }
-
-    // Test querying balances for expired and not expired names
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_balance_of_expired_not_expired() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        let expired = Timestamp::from_timestamp_millis(0);
-        let now = Timestamp::from_timestamp_millis(1000);
-        let future = Timestamp::from_timestamp_millis(10000);
-        ctx.set_metadata_slot_time(now);
-
-        let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(ADMIN_ACCOUNT_0, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // and parameter
-        let crypto_primitives = TestCryptoPrimitives::new();
-        let token_0 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_0.as_bytes()).0);
-        let token_1 = TokenIdFixed(crypto_primitives.hash_sha2_256(NAME_1.as_bytes()).0);
-        let mut parameter_vec: Vec<BalanceOfQuery<ContractTokenId>> = Vec::new();
-        let q1 = BalanceOfQuery {
-            token_id: token_0,
-            address:  ADDRESS_0,
-        };
-        let q2 = BalanceOfQuery {
-            token_id: token_1,
-            address:  ADDRESS_1,
-        };
-        parameter_vec.push(q1);
-        parameter_vec.push(q2);
-        let parameter = BalanceOfQueryParams {
-            queries: parameter_vec,
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let (st, sb) = host.state_and_builder();
-
-        // `token_0` has expired
-        st.register_fresh(token_0, ACCOUNT_0, expired, sb)
-            .expect_report("Failed to register NAME_0");
-        // `token_1` hasn't expired yet
-        st.register_fresh(token_1, ACCOUNT_1, future, sb)
-            .expect_report("Failed to register NAME_1");
-
-        // Call the contract function.
-        let result: ContractResult<ContractBalanceOfQueryResponse> =
-            contract_balance_of(&ctx, &host);
-
-        if let Ok(BalanceOfQueryResponse(balances)) = result {
-            claim_eq!(balances.as_slice(), vec![0.into(), 1.into()], "Queried data is different");
-        } else {
-            fail!("Resutls in rejection")
-        }
-    }
-
-    // Test updating admin
-    #[concordium_test]
-    fn test_update_admin() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ACCOUNT_0.into());
-
-        // and parameter
-        let parameter = ADMIN_ACCOUNT_1;
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        // Initial state uses ADMIN_ACCOUNT_0 as the admin address
-        let state =
-            initial_state(Timestamp::from_timestamp_millis(CURRENT_TIME), &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host);
-
-        claim!(result.is_ok(), "Results in rejection");
-
-        let st = host.state();
-
-        claim_eq!(st.admin, ADMIN_ACCOUNT_1);
-    }
-
-    // Test updating admin failsfor an existing name
-    #[concordium_test]
-    fn test_update_admin_fails_unauthorized() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        // ACCOUNT_0 is not admin
-        ctx.set_sender(ACCOUNT_0.into());
-
-        // and parameter
-        let parameter = ADMIN_ACCOUNT_1;
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        // Initial state uses ADMIN_ACCOUNT_0 as the admin address
-        let state =
-            initial_state(Timestamp::from_timestamp_millis(CURRENT_TIME), &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host);
-
-        // We expect that that ACCOUNT_0 is not authorized to change the admin address
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unathorized");
-    }
 }

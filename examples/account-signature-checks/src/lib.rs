@@ -37,12 +37,7 @@ struct State {}
 
 /// Init function that creates a new smart contract.
 #[init(contract = "account_signature_checks")]
-fn init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
-    Ok(State {})
-}
+fn init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> { Ok(State {}) }
 
 #[derive(Deserial, SchemaType)]
 struct CheckParam {
@@ -61,10 +56,7 @@ struct CheckParam {
     error = "Error",
     return_value = "bool"
 )]
-fn check<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State, StateApiType = S>,
-) -> Result<bool, Error> {
+fn check(ctx: &ReceiveContext, host: &Host<State>) -> Result<bool, Error> {
     let param: CheckParam = ctx.parameter_cursor().get()?;
     let r = host.check_account_signature(param.address, &param.sigs, &param.data)?;
     Ok(r)
@@ -72,15 +64,12 @@ fn check<S: HasStateApi>(
 
 /// View function that returns the account's public keys.
 #[receive(
-    contract = "account_signature_checks",
-    name = "view_keys",
+    contract = "account_signature_checks"dbg!(,
+    name) = "view_keys",
     parameter = "AccountAddress",
     return_value = "AccountPublicKeys"
 )]
-fn view_keys<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State, StateApiType = S>,
-) -> Result<AccountPublicKeys, Error> {
+fn view_keys(ctx: &ReceiveContext, host: &Host<State>) -> Result<AccountPublicKeys, Error> {
     let param: AccountAddress = ctx.parameter_cursor().get()?;
     let pk = host.account_public_keys(param)?;
     Ok(pk)
