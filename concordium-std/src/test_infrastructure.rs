@@ -780,7 +780,7 @@ type MockFnHash<T> = Box<dyn FnMut(&[u8]) -> T>;
 /// two different ways:
 ///
 /// 1. By setting up mock responses for the functions you need, for example with
-/// the [`setup_hash_sha_256_mock`](Self::setup_hash_sha2_256_mock) method.
+/// the `setup_hash_sha_256_mock` method.
 /// 2. Or, by using the actual implementations. For this, you need to enable the
 /// "crypto-primitives" feature.
 pub struct TestCryptoPrimitives {
@@ -2429,17 +2429,6 @@ mod test {
         let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
         assert!(iter.nth(1).is_none());
-    }
-
-    #[test]
-    fn multiple_entries_not_allowed() {
-        let mut state_builder = TestStateBuilder::new();
-        let mut map = state_builder.new_map();
-        map.insert(0u8, 1u8);
-        let e1 = map.entry(0u8);
-        // Uncommenting this line should give a borrow-check error.
-        // let e2 = map.entry(1u8);
-        e1.and_modify(|v| *v += 1);
     }
 
     #[test]

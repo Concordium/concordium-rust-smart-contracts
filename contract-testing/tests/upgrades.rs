@@ -81,18 +81,15 @@ fn test() {
         )
         .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
-    assert!(
-        matches!(res_update_upgrade.effective_trace_elements_cloned()[..], [
+    assert!(matches!(res_update_upgrade.effective_trace_elements_cloned()[..], [
                 ContractTraceElement::Interrupted { .. },
                 ContractTraceElement::Upgraded { from, to, .. },
                 ContractTraceElement::Resumed { .. },
                 ContractTraceElement::Updated { .. },
-            ] if from == res_deploy_0.module_reference && to == res_deploy_1.module_reference)
-    );
-    assert!(matches!(
-        res_update_new.effective_trace_elements_cloned()[..],
-        [ContractTraceElement::Updated { .. }]
-    ));
+            ] if from == res_deploy_0.module_reference && to == res_deploy_1.module_reference));
+    assert!(matches!(res_update_new.effective_trace_elements_cloned()[..], [
+        ContractTraceElement::Updated { .. }
+    ]));
 }
 
 /// The contract in this test, triggers an upgrade and then in the same
@@ -151,25 +148,22 @@ fn test_self_invoke() {
         )
         .expect("Updating valid contract should work");
 
-    assert!(matches!(
-        res_update.effective_trace_elements_cloned()[..],
-        [
-            // Invoking `contract.name`
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Updated { .. },
-            ContractTraceElement::Resumed { .. },
-            // Making the upgrade
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Upgraded { .. },
-            ContractTraceElement::Resumed { .. },
-            // Invoking contract.name again
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Updated { .. },
-            ContractTraceElement::Resumed { .. },
-            // The successful update
-            ContractTraceElement::Updated { .. },
-        ]
-    ));
+    assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
+        // Invoking `contract.name`
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Updated { .. },
+        ContractTraceElement::Resumed { .. },
+        // Making the upgrade
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Upgraded { .. },
+        ContractTraceElement::Resumed { .. },
+        // Invoking contract.name again
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Updated { .. },
+        ContractTraceElement::Resumed { .. },
+        // The successful update
+        ContractTraceElement::Updated { .. },
+    ]));
 }
 
 /// Test upgrading to a module that doesn't exist (it uses module
@@ -526,8 +520,14 @@ fn test_reject() {
 
     // Check the return value manually returned by the contract.
     match res_update_upgrade.kind {
-        ContractInvokeErrorKind::ExecutionError { failure_kind, .. } => match failure_kind {
-            InvokeFailure::ContractReject { code, .. } if code == -1 => (),
+        ContractInvokeErrorKind::ExecutionError {
+            failure_kind,
+            ..
+        } => match failure_kind {
+            InvokeFailure::ContractReject {
+                code,
+                ..
+            } if code == -1 => (),
             _ => panic!("Expected ContractReject with code == -1"),
         },
         _ => panic!("Expected Err(ContractUpdateError::ExecutionError)"),
@@ -535,12 +535,9 @@ fn test_reject() {
 
     // Assert that the new_feature entrypoint doesn't exist since the upgrade
     // failed.
-    assert!(matches!(
-        res_update_new_feature.kind,
-        ContractInvokeErrorKind::ExecutionError {
-            failure_kind: InvokeFailure::NonExistentEntrypoint,
-        }
-    ));
+    assert!(matches!(res_update_new_feature.kind, ContractInvokeErrorKind::ExecutionError {
+        failure_kind: InvokeFailure::NonExistentEntrypoint,
+    }));
 }
 
 /// Tests calling an entrypoint introduced by an upgrade of the module
@@ -556,10 +553,8 @@ fn test_changing_entrypoint() {
         .module_deploy_v1(
             Signer::with_one_key(),
             helpers::ACC_0,
-            module_load_v1_raw(helpers::wasm_test_file(
-                "upgrading-changing-entrypoints0.wasm",
-            ))
-            .expect("module should exist"),
+            module_load_v1_raw(helpers::wasm_test_file("upgrading-changing-entrypoints0.wasm"))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -567,10 +562,8 @@ fn test_changing_entrypoint() {
         .module_deploy_v1(
             Signer::with_one_key(),
             helpers::ACC_0,
-            module_load_v1_raw(helpers::wasm_test_file(
-                "upgrading-changing-entrypoints1.wasm",
-            ))
-            .expect("module should exist"),
+            module_load_v1_raw(helpers::wasm_test_file("upgrading-changing-entrypoints1.wasm"))
+                .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -665,33 +658,22 @@ fn test_changing_entrypoint() {
         )
         .expect("Updating new_feature on _new_ module should work");
 
-    assert!(matches!(
-        res_update_old_feature_0.effective_trace_elements_cloned()[..],
-        [ContractTraceElement::Updated { .. }]
-    ));
-    assert!(matches!(
-        res_update_new_feature_0.kind,
-        ContractInvokeErrorKind::ExecutionError {
-            failure_kind: InvokeFailure::NonExistentEntrypoint,
-        }
-    ));
-    assert!(matches!(
-        res_update_upgrade.effective_trace_elements_cloned()[..],
-        [
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Upgraded { .. },
-            ContractTraceElement::Resumed { .. },
-            ContractTraceElement::Updated { .. },
-        ]
-    ));
-    assert!(matches!(
-        res_update_old_feature_1.kind,
-        ContractInvokeErrorKind::ExecutionError {
-            failure_kind: InvokeFailure::NonExistentEntrypoint,
-        }
-    ));
-    assert!(matches!(
-        res_update_new_feature_1.effective_trace_elements_cloned()[..],
-        [ContractTraceElement::Updated { .. }]
-    ));
+    assert!(matches!(res_update_old_feature_0.effective_trace_elements_cloned()[..], [
+        ContractTraceElement::Updated { .. }
+    ]));
+    assert!(matches!(res_update_new_feature_0.kind, ContractInvokeErrorKind::ExecutionError {
+        failure_kind: InvokeFailure::NonExistentEntrypoint,
+    }));
+    assert!(matches!(res_update_upgrade.effective_trace_elements_cloned()[..], [
+        ContractTraceElement::Interrupted { .. },
+        ContractTraceElement::Upgraded { .. },
+        ContractTraceElement::Resumed { .. },
+        ContractTraceElement::Updated { .. },
+    ]));
+    assert!(matches!(res_update_old_feature_1.kind, ContractInvokeErrorKind::ExecutionError {
+        failure_kind: InvokeFailure::NonExistentEntrypoint,
+    }));
+    assert!(matches!(res_update_new_feature_1.effective_trace_elements_cloned()[..], [
+        ContractTraceElement::Updated { .. }
+    ]));
 }

@@ -3,6 +3,8 @@
 ## Unreleased changes
 
 - Set minimum Rust version to 1.66.
+- Fix bug in `StateMap::get_mut`, which allowed multiple mutable references to the state to coexist.
+  - The signature has changed using `&self` to using `&mut self`.
 
 ## concordium-std 8.0.0 (2023-08-21)
 

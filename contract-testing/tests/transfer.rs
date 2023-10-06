@@ -50,10 +50,7 @@ fn test_transfer() {
         )
         .expect("Updating contract should succeed");
     // Contract should have forwarded the amount and thus have balance == 0.
-    assert_eq!(
-        Amount::zero(),
-        chain.get_contract(contract_address).unwrap().self_balance
-    );
+    assert_eq!(Amount::zero(), chain.get_contract(contract_address).unwrap().self_balance);
 
     // Deposit 1000 micro CCD.
     chain

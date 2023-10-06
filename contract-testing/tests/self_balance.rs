@@ -120,11 +120,7 @@ fn deploy_and_init(
             },
         )
         .expect("Initializing valid contract should work");
-    (
-        chain,
-        res_init.contract_address,
-        res_deploy.module_reference,
-    )
+    (chain, res_init.contract_address, res_deploy.module_reference)
 }
 
 /// Helper for asserting the success.
@@ -135,10 +131,7 @@ fn assert_success(
     error_message: &str,
 ) {
     if let Ok(success) = result {
-        assert_eq!(
-            success.return_value,
-            to_bytes(&(expected_before, expected_after))
-        )
+        assert_eq!(success.return_value, to_bytes(&(expected_before, expected_after)))
     } else {
         panic!("Test failed ( {} )", error_message)
     }

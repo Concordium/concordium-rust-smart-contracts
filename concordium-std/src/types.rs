@@ -692,7 +692,8 @@ pub type QueryAccountBalanceResult = Result<AccountBalance, QueryAccountBalanceE
 pub type QueryContractBalanceResult = Result<Amount, QueryContractBalanceError>;
 
 /// A wrapper around [`Result`] that fixes the error variant to
-/// [`QueryAccountPublicKeysError`] and result to [`AccountPublicKeys`].
+/// [`QueryAccountPublicKeysError`] and result to
+/// [`AccountPublicKeys`](crate::AccountPublicKeys).
 pub type QueryAccountPublicKeysResult =
     Result<crate::AccountPublicKeys, QueryAccountPublicKeysError>;
 

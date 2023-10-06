@@ -70,13 +70,14 @@ pub const UPDATE_OPERATOR_EVENT_TAG: u8 = u8::MAX - 3;
 pub const TOKEN_METADATA_EVENT_TAG: u8 = u8::MAX - 4;
 
 /// Trait for marking types as CIS2 token IDs.
-/// For a type to be a valid CIS2 token ID it must implement SchemaType and
-/// Serialize, such that the first byte indicates how many bytes is used to
-/// represent the token ID, followed by this many bytes for the token ID.
+/// For a type to be a valid CIS2 token ID it must implement
+/// `SchemaType` and `Serialize`, such that the first
+/// byte indicates how many bytes is used to represent the token ID, followed by
+/// this many bytes for the token ID.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
-/// token ID using Vec<u8> is to allow smart contracts to use specialized token
-/// ID implementations avoiding allocations.
+/// token ID using `Vec<u8>` is to allow smart contracts to use specialized
+/// token ID implementations avoiding allocations.
 pub trait IsTokenId: Serialize + schema::SchemaType {}
 
 /// Trait for marking types as CIS2 token amounts.
@@ -85,7 +86,7 @@ pub trait IsTokenId: Serialize + schema::SchemaType {}
 /// 37 bytes.
 ///
 /// Note: The reason for introducing such a trait instead of representing every
-/// token amount using [u8; 37] is to allow smart contracts to use specialized
+/// token amount using `[u8; 37]` is to allow smart contracts to use specialized
 /// token amount implementations avoiding doing arithmetics of large integers.
 pub trait IsTokenAmount: Serialize + schema::SchemaType {}
 
@@ -559,6 +560,7 @@ mod u256_token {
     use primitive_types::U256;
     #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
     #[repr(transparent)]
+    #[cfg_attr(docsrs, cfg(feature = "u256_amount"))]
     pub struct TokenAmountU256(pub U256);
 
     impl ops::Add<Self> for TokenAmountU256 {
