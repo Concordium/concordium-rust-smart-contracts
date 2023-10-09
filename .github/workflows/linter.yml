@@ -826,8 +826,8 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
-      - name: Install Cargo Concordium
-        run: cargo install --locked cargo-concordium
+      - name: Install wasm target and Cargo Concordium
+        run: rustup target install wasm32-unknown-unknown && cargo install --locked cargo-concordium
 
       - name: Run cargo concordium test
         run: cargo concordium test --out "${{ matrix.crates }}/concordium-out/module.wasm.v1" -- --manifest-path "${{ matrix.crates }}/Cargo.toml"
