@@ -64,8 +64,8 @@ fn check(ctx: &ReceiveContext, host: &Host<State>) -> Result<bool, Error> {
 
 /// View function that returns the account's public keys.
 #[receive(
-    contract = "account_signature_checks"dbg!(,
-    name) = "view_keys",
+    contract = "account_signature_checks",
+    name = "view_keys",
     parameter = "AccountAddress",
     return_value = "AccountPublicKeys"
 )]

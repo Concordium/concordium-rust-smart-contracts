@@ -100,10 +100,7 @@ fn contract_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitRe
 
 /// View function that returns the content of the state.
 #[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
-fn contract_view<'b, S: HasStateApi>(
-    _ctx: &ReceiveContext,
-    host: &'b Host<State>,
-) -> ReceiveResult<&'b State> {
+fn contract_view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
 
@@ -129,7 +126,7 @@ fn contract_view<'b, S: HasStateApi>(
     error = "CustomContractError",
     low_level
 )]
-fn contract_upgrade(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
+fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractResult<()> {
     // Read the top-level contract state.
     let state: State = host.state().read_root()?;
 

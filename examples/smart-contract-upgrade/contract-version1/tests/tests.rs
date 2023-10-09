@@ -22,7 +22,7 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
-            module_load_v1("./smart_contract_upgrade.wasm.v1")
+            module_load_v1("./concordium-out/module.wasm.v1")
                 .expect("`Contract version1` module should be loaded"),
         )
         .expect("`Contract version1` deployment should always succeed");
@@ -65,7 +65,7 @@ fn test_upgrade_without_migration_function() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
-            module_load_v1("../contract-version2/smart_contract_upgrade.wasm.v1")
+            module_load_v1("../contract-version2/concordium-out/module.wasm.v1")
                 .expect("`Contract version2` module should be loaded"),
         )
         .expect("`Contract version2` deployment should always succeed");
@@ -132,7 +132,7 @@ fn test_upgrade_with_migration_function() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
-            module_load_v1("../contract-version2/smart_contract_upgrade.wasm.v1")
+            module_load_v1("../contract-version2/concordium-out/module.wasm.v1")
                 .expect("UpgradeParams should be a valid inut parameter"),
         )
         .expect("`Contract version2` deployment should always succeed");
