@@ -18,6 +18,8 @@
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some address is allowed to transfer
 //! any tokens owned by this address.
+//!
+//! Tests are located in `./tests/tests.rs`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -26,10 +28,10 @@ use concordium_std::*;
 
 /// The baseurl for the token metadata, gets appended with the token ID as hex
 /// encoding before emitted in the TokenMetadata event.
-const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
+pub const TOKEN_METADATA_BASE_URL: &str = "https://some.example/token/";
 
 /// List of supported standards by this contract address.
-const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+pub const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
 
 // Types

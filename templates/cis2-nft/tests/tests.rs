@@ -1,5 +1,5 @@
-//! Tests for the `cis2_nft` contract.
-use cis2_nft::*;
+//! Tests for the `{{crate_name}}` contract.
+use {{crate_name}}::*;
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::collections::BTreeSet;
@@ -30,7 +30,7 @@ fn test_minting() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.view".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.view".to_string()),
             address:      contract_address,
             message:      OwnedParameter::empty(),
         })
@@ -100,7 +100,7 @@ fn test_account_transfer() {
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.transfer".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.transfer".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -110,7 +110,7 @@ fn test_account_transfer() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.view".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.view".to_string()),
             address:      contract_address,
             message:      OwnedParameter::empty(),
         })
@@ -163,7 +163,7 @@ fn test_add_operator() {
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.updateOperator".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.updateOperator".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
         })
@@ -199,7 +199,7 @@ fn test_add_operator() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.operatorOf".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.operatorOf".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
         })
@@ -231,7 +231,7 @@ fn test_unauthorized_sender() {
     let update = chain
         .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.transfer".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.transfer".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -257,7 +257,7 @@ fn test_operator_can_transfer() {
     chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.updateOperator".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.updateOperator".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
         })
@@ -275,7 +275,7 @@ fn test_operator_can_transfer() {
     chain
         .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.transfer".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.transfer".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -285,7 +285,7 @@ fn test_operator_can_transfer() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.view".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.view".to_string()),
             address:      contract_address,
             message:      OwnedParameter::empty(),
         })
@@ -317,7 +317,7 @@ fn initialize_contract_with_alice_tokens() -> (Chain, ContractAddress, ContractI
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_nft.mint".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.mint".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
         })
@@ -347,7 +347,7 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
         .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_cis2_nft".to_string()),
+            init_name: OwnedContractName::new_unchecked("init_{{crate_name}}".to_string()),
             param:     OwnedParameter::empty(),
         })
         .expect("Initialize contract");
