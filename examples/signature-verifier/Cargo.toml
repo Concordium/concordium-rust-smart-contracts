@@ -16,7 +16,6 @@ concordium-smart-contract-testing = { path = "../../contract-testing" }
 [features]
 default = ["std", "wee_alloc"]
 std = ["concordium-std/std"]
-crypto-primitives = ["concordium-std/crypto-primitives"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [lib]
