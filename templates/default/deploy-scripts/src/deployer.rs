@@ -1,11 +1,10 @@
 use crate::v2::BlockIdentifier::Best;
-use concordium_rust_sdk::types::hashes::TransactionMarker;
 use concordium_rust_sdk::{
     common::types::TransactionTime,
     id::types::AccountAddress,
     smart_contracts::common::{Address, ModuleReference},
     types::{
-        hashes::HashBytes,
+        hashes::{HashBytes, TransactionMarker},
         queries::AccountNonceResponse,
         smart_contracts::{ContractContext, InvokeContractResult, WasmModule},
         transactions::{
@@ -42,7 +41,7 @@ pub struct Deployer {
     /// The client to establish a connection to a Concordium node (V2 API).
     pub client: v2::Client,
     /// The account keys to be used for sending transactions.
-    pub key: WalletAccount,
+    pub key:    WalletAccount,
 }
 
 impl Deployer {
@@ -58,21 +57,13 @@ impl Deployer {
 
     /// A function to check if a module exists on chain.
     pub async fn module_exists(&self, wasm_module: WasmModule) -> Result<bool, DeployError> {
-        let best_block = self
-            .client
-            .clone()
-            .get_block_finalization_summary(Best)
-            .await?;
+        let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
 
         let best_block_hash = best_block.block_hash;
 
         let module_ref = wasm_module.get_module_ref();
 
-        let module_ref = self
-            .client
-            .clone()
-            .get_module_source(&module_ref, &best_block_hash)
-            .await;
+        let module_ref = self.client.clone().get_module_source(&module_ref, &best_block_hash).await;
 
         match module_ref {
             Ok(_) => Ok(true),
@@ -81,9 +72,12 @@ impl Deployer {
         }
     }
 
-    /// A function to deploy a wasm module on chain. The transaction hash and the module reference is returned.
-    /// If the module already exists on chain, this function returns the module reference of the already deployed module instead.
-    /// An optional expiry time for the transaction can be given. If `None` is provided, the local time + 300 seconds is used as a default expiry time.
+    /// A function to deploy a wasm module on chain. The transaction hash and
+    /// the module reference is returned. If the module already exists on
+    /// chain, this function returns the module reference of the already
+    /// deployed module instead. An optional expiry time for the transaction
+    /// can be given. If `None` is provided, the local time + 300 seconds is
+    /// used as a default expiry time.
     pub async fn deploy_wasm_module(
         &self,
         wasm_module: WasmModule,
@@ -100,12 +94,9 @@ impl Deployer {
                 "Module with reference {} already exists on chain.",
                 wasm_module.get_module_ref()
             );
-            return Ok((
-                None,
-                ModuleDeployed {
-                    module_ref: wasm_module.get_module_ref(),
-                },
-            ));
+            return Ok((None, ModuleDeployed {
+                module_ref: wasm_module.get_module_ref(),
+            }));
         }
 
         let nonce = self.get_nonce(self.key.address).await?;
@@ -119,13 +110,7 @@ impl Deployer {
             None => TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64),
         };
 
-        let tx = deploy_module(
-            &self.key,
-            self.key.address,
-            nonce.nonce,
-            expiry,
-            wasm_module,
-        );
+        let tx = deploy_module(&self.key, self.key.address, nonce.nonce, expiry, wasm_module);
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
         let tx_hash = self
@@ -149,9 +134,12 @@ impl Deployer {
         Ok((Some(tx_hash), module_deployed))
     }
 
-    /// A function to initialize a smart contract instance on chain. The transaction hash and the contract address is returned.
-    /// An optional energy for the transaction can be given. If `None` is provided, 5000 energy is used as a default energy value.
-    /// An optional expiry time for the transaction can be given. If `None` is provided, the local time + 300 seconds is used as a default expiry time.
+    /// A function to initialize a smart contract instance on chain. The
+    /// transaction hash and the contract address is returned. An optional
+    /// energy for the transaction can be given. If `None` is provided, 5000
+    /// energy is used as a default energy value. An optional expiry time
+    /// for the transaction can be given. If `None` is provided, the local time
+    /// + 300 seconds is used as a default expiry time.
     pub async fn init_contract(
         &self,
         payload: InitContractPayload,
@@ -170,7 +158,9 @@ impl Deployer {
 
         let energy = match energy {
             Some(energy) => energy,
-            None => Energy { energy: 5000 },
+            None => Energy {
+                energy: 5000,
+            },
         };
 
         let expiry = match expiry {
@@ -178,14 +168,7 @@ impl Deployer {
             None => TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64),
         };
 
-        let tx = init_contract(
-            &self.key,
-            self.key.address,
-            nonce.nonce,
-            expiry,
-            payload,
-            energy,
-        );
+        let tx = init_contract(&self.key, self.key.address, nonce.nonce, expiry, payload, energy);
 
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
@@ -210,9 +193,12 @@ impl Deployer {
         Ok((tx_hash, contract_init.contract))
     }
 
-    /// A function to update a smart contract instance on chain. The transaction hash is returned.
-    /// An optional energy for the transaction can be given. If `None` is provided, 50000 energy is used as a default energy value.
-    /// An optional expiry time for the transaction can be given. If `None` is provided, the local time + 300 seconds is used as a default expiry time.
+    /// A function to update a smart contract instance on chain. The transaction
+    /// hash is returned. An optional energy for the transaction can be
+    /// given. If `None` is provided, 50000 energy is used as a default energy
+    /// value. An optional expiry time for the transaction can be given. If
+    /// `None` is provided, the local time + 300 seconds is used as a default
+    /// expiry time.
     pub async fn update_contract(
         &self,
         update_payload: UpdateContractPayload,
@@ -240,7 +226,9 @@ impl Deployer {
 
         let energy = match energy {
             Some(energy) => energy,
-            None => GivenEnergy::Absolute(Energy { energy: 50000 }),
+            None => GivenEnergy::Absolute(Energy {
+                energy: 50000,
+            }),
         };
 
         let tx = transactions::send::make_and_sign_transaction(
@@ -271,9 +259,11 @@ impl Deployer {
         Ok(tx_hash)
     }
 
-    /// A function to estimate the energy needed to send a transaction on chain. This function can be used to dry-run a transaction.
-    /// The transaction energy is returned.
-    /// An optional max energy for the transaction can be given. If `None` is provided, 50000 energy is used as a default max_energy value.
+    /// A function to estimate the energy needed to send a transaction on chain.
+    /// This function can be used to dry-run a transaction. The transaction
+    /// energy is returned. An optional max energy for the transaction can
+    /// be given. If `None` is provided, 50000 energy is used as a default
+    /// max_energy value.
     pub async fn estimate_energy(
         &self,
         payload: UpdateContractPayload,
@@ -283,33 +273,27 @@ impl Deployer {
 
         println!("Estimating energy....");
 
-        let best_block = self
-            .client
-            .clone()
-            .get_block_finalization_summary(Best)
-            .await?;
+        let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
 
         let best_block_hash = best_block.block_hash;
 
         let max_energy = match max_energy {
             Some(energy) => energy,
-            None => Energy { energy: 50000 },
+            None => Energy {
+                energy: 50000,
+            },
         };
 
         let context = ContractContext {
-            invoker: Some(Address::Account(self.key.address)),
-            contract: payload.address,
-            amount: payload.amount,
-            method: payload.receive_name,
+            invoker:   Some(Address::Account(self.key.address)),
+            contract:  payload.address,
+            amount:    payload.amount,
+            method:    payload.receive_name,
             parameter: payload.message,
-            energy: max_energy,
+            energy:    max_energy,
         };
 
-        let result = self
-            .client
-            .clone()
-            .invoke_instance(&best_block_hash, &context)
-            .await?;
+        let result = self.client.clone().invoke_instance(&best_block_hash, &context).await?;
 
         match result.response {
             InvokeContractResult::Failure {
@@ -327,7 +311,9 @@ impl Deployer {
             } => {
                 let e = used_energy.energy;
                 println!("Contract invoke success: estimated_energy={e}");
-                Ok(Energy { energy: e })
+                Ok(Energy {
+                    energy: e,
+                })
             }
         }
     }
@@ -337,11 +323,7 @@ impl Deployer {
         &self,
         address: AccountAddress,
     ) -> Result<AccountNonceResponse, DeployError> {
-        let nonce = self
-            .client
-            .clone()
-            .get_next_account_sequence_number(&address)
-            .await?;
+        let nonce = self.client.clone().get_next_account_sequence_number(&address).await?;
         Ok(nonce)
     }
 
@@ -363,7 +345,9 @@ impl Deployer {
                     }
 
                     match reject_reason {
-                        RejectReason::ModuleHashAlreadyExists { contents } => Ok(ModuleDeployed {
+                        RejectReason::ModuleHashAlreadyExists {
+                            contents,
+                        } => Ok(ModuleDeployed {
                             module_ref: contents,
                         }),
                         _ => Err(DeployError::TransactionRejectedR(format!(
@@ -371,16 +355,14 @@ impl Deployer {
                         ))),
                     }
                 }
-                AccountTransactionEffects::ModuleDeployed { module_ref } => {
-                    Ok(ModuleDeployed { module_ref })
-                }
-                _ => Err(DeployError::InvalidBlockItem(
-                    "Invalid transaction effects".into(),
-                )),
+                AccountTransactionEffects::ModuleDeployed {
+                    module_ref,
+                } => Ok(ModuleDeployed {
+                    module_ref,
+                }),
+                _ => Err(DeployError::InvalidBlockItem("Invalid transaction effects".into())),
             },
-            _ => Err(DeployError::InvalidBlockItem(
-                "Expected Account transaction".into(),
-            )),
+            _ => Err(DeployError::InvalidBlockItem("Expected Account transaction".into())),
         }
     }
 
@@ -405,18 +387,14 @@ impl Deployer {
                         "Contract init rejected with reason: {reject_reason:?}"
                     )))
                 }
-                AccountTransactionEffects::ContractInitialized { data } => {
-                    Ok(ContractInitialized {
-                        contract: data.address,
-                    })
-                }
-                _ => Err(DeployError::InvalidBlockItem(
-                    "Invalid transaction effects".into(),
-                )),
+                AccountTransactionEffects::ContractInitialized {
+                    data,
+                } => Ok(ContractInitialized {
+                    contract: data.address,
+                }),
+                _ => Err(DeployError::InvalidBlockItem("Invalid transaction effects".into())),
             },
-            _ => Err(DeployError::InvalidBlockItem(
-                "Expected Account transaction".into(),
-            )),
+            _ => Err(DeployError::InvalidBlockItem("Expected Account transaction".into())),
         }
     }
 
@@ -438,14 +416,12 @@ impl Deployer {
                         "Contract update rejected with reason: {reject_reason:?}"
                     )))
                 }
-                AccountTransactionEffects::ContractUpdateIssued { effects: _ } => Ok(()),
-                _ => Err(DeployError::InvalidBlockItem(
-                    "Invalid transaction effects".into(),
-                )),
+                AccountTransactionEffects::ContractUpdateIssued {
+                    effects: _,
+                } => Ok(()),
+                _ => Err(DeployError::InvalidBlockItem("Invalid transaction effects".into())),
             },
-            _ => Err(DeployError::InvalidBlockItem(
-                "Expected Account transaction".into(),
-            )),
+            _ => Err(DeployError::InvalidBlockItem("Expected Account transaction".into())),
         }
     }
 }
