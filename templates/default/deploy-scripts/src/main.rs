@@ -1,19 +1,18 @@
 pub mod deployer;
 use anyhow::Context;
 use clap::Parser;
-use concordium_rust_sdk::smart_contracts::types::OwnedContractName;
-use concordium_rust_sdk::smart_contracts::types::OwnedParameter;
-use concordium_rust_sdk::smart_contracts::types::OwnedReceiveName;
-use concordium_rust_sdk::types::transactions;
-use concordium_rust_sdk::types::transactions::send::GivenEnergy;
 use concordium_rust_sdk::{
     common::types::Amount,
-    smart_contracts::common::{self as contracts_common},
-};
-use concordium_rust_sdk::{
     endpoints::{self, RPCError},
-    smart_contracts::common::{NewContractNameError, NewReceiveNameError},
-    types::smart_contracts::{ExceedsParameterSize, WasmModule},
+    smart_contracts::{
+        common::{self as contracts_common, NewContractNameError, NewReceiveNameError},
+        types::{OwnedContractName, OwnedParameter, OwnedReceiveName},
+    },
+    types::{
+        smart_contracts::{ExceedsParameterSize, WasmModule},
+        transactions,
+        transactions::send::GivenEnergy,
+    },
     v2,
 };
 
@@ -85,23 +84,26 @@ struct App {
         default_value = "http://node.testnet.concordium.com:20000",
         help = "V2 API of the Concordium node."
     )]
-    url: v2::Endpoint,
+    url:      v2::Endpoint,
     #[clap(
         long = "account",
-        help = "Location path and file name of the Concordium account key file (e.g. ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export)."
+        help = "Location path and file name of the Concordium account key file (e.g. \
+                ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export)."
     )]
     key_file: PathBuf,
     #[clap(
         long = "modules",
-        help = "Location paths and names of Concordium smart contract modules. Use this flag several times \
-        if you have several smart contract modules to be deployed (e.g. --modules ./myPath/default.wasm.v1 --modules ./default2.wasm.v1)."
+        help = "Location paths and names of Concordium smart contract modules. Use this flag \
+                several times if you have several smart contract modules to be deployed (e.g. \
+                --modules ./myPath/default.wasm.v1 --modules ./default2.wasm.v1)."
     )]
-    modules: Vec<PathBuf>,
+    modules:  Vec<PathBuf>,
 }
 
-/// Main function: It deploys to chain all wasm modules from the command line `--modules` flags.
-/// Write your own custom deployment/initialization script in this function.
-/// An deployment/initialization script example is given in this function for the `default` smart contract.
+/// Main function: It deploys to chain all wasm modules from the command line
+/// `--modules` flags. Write your own custom deployment/initialization script in
+/// this function. An deployment/initialization script example is given in this
+/// function for the `default` smart contract.
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), DeployError> {
     let app: App = App::parse();
@@ -113,14 +115,15 @@ async fn main() -> Result<(), DeployError> {
     let mut modules_deployed: Vec<ModuleDeployed> = Vec::new();
 
     for contract in app.modules {
-        let wasm_module = get_wasm_module(PathBuf::from(contract).as_path())?;
+        let wasm_module = get_wasm_module(contract.as_path())?;
 
         let (_, module) = deployer.deploy_wasm_module(wasm_module, None).await?;
 
         modules_deployed.push(module);
     }
 
-    // Write your own deployment/initialization script below. An example is given here.
+    // Write your own deployment/initialization script below. An example is given
+    // here.
 
     let param: OwnedParameter = OwnedParameter::default(); // Example
 
@@ -138,24 +141,22 @@ async fn main() -> Result<(), DeployError> {
     let bytes = contracts_common::to_bytes(&false); // Example
 
     let update_payload = transactions::UpdateContractPayload {
-        amount: Amount::from_ccd(0),
-        address: contract,
+        amount:       Amount::from_ccd(0),
+        address:      contract,
         receive_name: OwnedReceiveName::new_unchecked("default.receive".to_string()),
-        message: bytes.try_into()?,
+        message:      bytes.try_into()?,
     }; // Example
 
-    let mut energy = deployer
-        .estimate_energy(update_payload.clone(), None)
-        .await?; // Example
+    let mut energy = deployer.estimate_energy(update_payload.clone(), None).await?; // Example
 
     // We add 100 energy to be save.
-    energy.energy = energy.energy + 100; // Example
+    energy.energy += 100; // Example
 
-    let _update_contract = deployer
-        .update_contract(update_payload, Some(GivenEnergy::Add(energy)), None)
-        .await?; // Example
+    let _update_contract =
+        deployer.update_contract(update_payload, Some(GivenEnergy::Add(energy)), None).await?; // Example
 
-    // Write your own deployment/initialization script above. An example is given here.
+    // Write your own deployment/initialization script above. An example is given
+    // here.
 
     Ok(())
 }

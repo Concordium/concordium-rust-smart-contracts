@@ -40,7 +40,7 @@ The following options are necessary when running the script
       --node <CONCORDIUM_URL>
           V2 API of the concordium node. [default: http://node.testnet.concordium.com:20000]
       --account <CONCORDIUM_ACCOUNT>
-          Location path and file name of the Concordium account key file (e.g. ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export).
+          Location path and file name of the Concordium account key file (e.g. ./myPath/4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export).
       --modules <MODULES>
           Location paths and names of Concordium smart contract modules. Use this flag several times \
           if you have several smart contract modules to be deployed (e.g. --modules ./myPath/default.wasm.v1 --modules ./default2.wasm.v1).
@@ -52,7 +52,7 @@ genesis tool.
 
 Example:
 ```
-cargo run -- --node http://node.testnet.concordium.com:20000 --account ./3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export --modules ./default.wasm.v1 --modules ./default2.wasm.v1
+cargo run -- --node http://node.testnet.concordium.com:20000 --account ./myPath/4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export --modules ./myPath/default.wasm.v1 --modules ./default2.wasm.v1
 ```
 
 # Functionalities
@@ -87,10 +87,10 @@ Navigate into the root folder and compile the `default` smart contract with the 
 cargo concordium build --out ./deploy-scripts/default.wasm.v1
 ```
 
-Then, deploy, initialize, and update the `default` smart contract on chain (replace your wallet account in the below command):
+Navigate into the deploy-scripts folder and run the example with the `default` smart contract (replace your wallet account in the below command):
 
 ```
-cargo run -- --node http://node.testnet.concordium.com:20000 --account ./3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export --modules ./default.wasm.v1
+cargo run -- --node http://node.testnet.concordium.com:20000 --account ./4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export --modules ./default.wasm.v1
 ```
 
 The output should be:
