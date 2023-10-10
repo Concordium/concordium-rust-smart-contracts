@@ -18,6 +18,8 @@
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators. An operator of some address is allowed to transfer
 //! any tokens owned by this address.
+//!
+//! Tests are located in `./tests/tests.rs`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
