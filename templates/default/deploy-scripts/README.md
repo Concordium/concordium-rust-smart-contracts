@@ -40,9 +40,10 @@ The following options are necessary when running the script
       --node <CONCORDIUM_URL>
           V2 API of the concordium node. [default: http://node.testnet.concordium.com:20000]
       --account <CONCORDIUM_ACCOUNT>
-          Path to the Concordium account (with account keys).
+          Location path and file name of the Concordium account key file (e.g. ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export).
       --modules <MODULES>
-          A list of wasm modules.
+          Location paths and names of Concordium smart contract modules. Use this flag several times \
+          if you have several smart contract modules to be deployed (e.g. --modules ./myPath/default.wasm.v1 --modules ./default2.wasm.v1).
 ```
 
 The `account` parameter should be a Concordium wallet account either exported from the
@@ -86,7 +87,7 @@ Navigate into the root folder and compile the `default` smart contract with the 
 cargo concordium build --out ./deploy-scripts/default.wasm.v1
 ```
 
-Then, deploy the `default` smart contract on chain (replace your wallet account in the below command):
+Then, deploy, initialize, and update the `default` smart contract on chain (replace your wallet account in the below command):
 
 ```
 cargo run -- --node http://node.testnet.concordium.com:20000 --account ./3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export --modules ./default.wasm.v1
@@ -95,7 +96,17 @@ cargo run -- --node http://node.testnet.concordium.com:20000 --account ./3PXwJYY
 The output should be:
 
 ```
-$ cargo run
+Deploying module....
+Module with reference 15c936d9f60dc99c543282a8f16823d2ec5c6faae689772ae06a9b2de45a39d0 already exists on chain.
 
-...
+Initializing contract....
+Sent tx: 09ecaa6a66e4fe2a756dd9ad8c91f5fc2099a6dd30ebd4532cb8c5aad1bab440
+Transaction finalized, tx_hash=09ecaa6a66e4fe2a756dd9ad8c91f5fc2099a6dd30ebd4532cb8c5aad1bab440 contract=(6941, 0)
+
+Estimating energy....
+Contract invoke success: estimated_energy=731
+
+Updating contract....
+Sent tx: c61b40a09e422835c70b07369bc5f4bba8292499be80cd735af21941c9798dd2
+Transaction finalized, tx_hash=c61b40a09e422835c70b07369bc5f4bba8292499be80cd735af21941c9798dd2
 ```
