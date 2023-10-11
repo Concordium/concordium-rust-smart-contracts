@@ -17,6 +17,12 @@
 //! Also note that `concordium-std` version 4 only works with `cargo-concordium`
 //! version 2.1+.
 //!
+//! Version 9 deprecates the module [test_infrastructure] in favour of the
+//! library [concordium_smart_contract_testing], which should be used instead.
+//! For more details including how to migrate your contract, see the
+//! [Deprecating the
+//! `test_infrastructure`](#deprecating-the-test_infrastructure) section.
+//!
 //! # Panic handler
 //! When compiled without the `std` feature this crate sets the panic handler
 //! so that it terminates the process immediately, without any unwinding or
@@ -92,6 +98,9 @@
 //! testing and for most cases this feature should not be set manually.
 //!
 //! ## `crypto-primitives`: For testing crypto with actual implementations
+//! This features is only relevant when using the **deprecated**
+//! [test_infrastructure].
+//!
 //! Build with this feature if you want to run smart contract tests with actual
 //! (i.e., not mock) implementations of the cryptographic primitives from
 //! [`HasCryptoPrimitives`].
@@ -130,29 +139,38 @@
 //! documentation, however note that there can only be one allocator set.
 //! See Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute) documentation for more context and details.
 //!
-//! # Traits
-//! To support testing of smart contracts most of the functionality is
-//! accessible via traits. This library generally provides two implementations
-//! of most traits. The first one is supported by **host** functions, and this
-//! is the implementation that is used when contracts are executed by nodes. The
-//! second set of implementations supports testing of contracts and it is
-//! defined in the [test_infrastructure](./test_infrastructure/index.html)
-//! module.
+//! # Essential types
+//! This crate has a number of essential types that are used when writing smart
+//! contracts. The structure of these are, at present, a bit odd without the
+//! historic context, which is explained below.
 //!
-//! - [HasParameter] for accessing the contract parameter
-//! - [HasCommonData] for accessing the data that is common to both init and
-//!   receive methods
-//! - [HasInitContext] for all the context data available to the init functions
-//!   (note that this includes all the common data)
-//! - [HasReceiveContext] for accessing all the context data available to the
-//!   receive functions (note that this includes all the common data)
-//! - [HasLogger] for logging data during smart contract execution
-//! - [HasPolicy] for accessing the policy of the sender, either of the init or
+//! Prior to version 9, a number of traits and generics were used when writing
+//! smart contracts, e.g. [`HasHost`], to support the usage of
+//! [`crate::test_infrastructure`] for testing, where two primary
+//! implementations of each trait existed. The first one is supported by
+//! **host** functions, and this is the implementation that is used when
+//! contracts are executed by notes. The second set of implementations supports
+//! testing contracts with [`crate::test_infrastructure`], but since the
+//! deprecation of this module, the preferred way of writing contracts is to use
+//! the concrete types.
+//!
+//! The essential concrete types are:
+//! - [`StateApi`] for operations possible on the contract state
+//! - [`Host`] for invoking operations on the host and accessing the state
+//! - [`InitContext`] for all the context data available to the init functions
+//! - [`ReceiveContext`] for accessing all the context data available to the
+//!   receive functions
+//! - [`ExternParameter`] for accessing the contract parameter
+//! - [`Logger`] for logging data during smart contract execution
+//! - [`Policy`] for accessing the policy of the sender, either of the init or
 //!   receive method
-//! - [HasStateApi] for operations possible on the contract state
-//! - [HasHost] for invoking operations on the host and accessing the state
-//! - [HasCryptoPrimitives] for using cryptographic primitives such as hashing
+//! - [`CryptoPrimitives`] for using cryptographic primitives such as hashing
 //!   and signature verification.
+//!
+//! Most of these are type aliases for similarly named structs prefixed with
+//! `Extern`. The extern prefix made sense when two different implementations of
+//! the traits were in play. Since that is no longer the case, we decided to
+//! simplify the names with aliases.
 //!
 //! # Signalling errors
 //! On the Wasm level contracts can signal errors by returning a negative i32
@@ -207,9 +225,89 @@
 //! | [QueryAccountBalanceError] | `-2147483623` |
 //! | [QueryContractBalanceError] | `-2147483622` |
 //!
-//! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
+//!
+//! # Deprecating the `test_infrastructure`
+//! Version 9 deprecates the [test_infrastructure] in favour of the library
+//! [concordium_smart_contract_testing]. A number of traits are also
+//! deprecated at the same time since they only exist to support the
+//! [test_infrastructure] and are not needed in the new testing library.
+//! The primary of these traits are [`HasHost`], [`HasStateApi`],
+//! [`HasInitContext`], and [`HasReceiveContext`].
+//!
+//! ## Migration guide
+//! To migrate your contract and its tests to the new testing library, you need
+//! to do the following two steps:
+//!
+//! 1. Replace the usage of deprecated traits with their concrete alternatives
+//! and remove generics.
+//!
+//!    For init methods:
+//!    ```no_run
+//!    # use concordium_std::*;
+//!    #
+//!    # type State = ();
+//!    #
+//!    /// Before
+//!    #[init(contract = "contract_before")]
+//!    fn init_before<S: HasStateApi>(
+//!        ctx: &impl HasInitContext,
+//!        state_builder: &mut StateBuilder<S>,
+//!    ) -> InitResult<State> { todo!() }
+//!
+//!    /// After
+//!    #[init(contract = "contract_after")]
+//!    fn init_after(                        // `<S: HasStateApi>` removed
+//!        ctx: &InitContext,                // `impl` and `Has` removed
+//!        state_builder: &mut StateBuilder, // `<S>` removed
+//!    ) -> InitResult<State> { todo!() }
+//!    ```
+//!    For receive methods:
+//!    ```no_run
+//!    # use concordium_std::*;
+//!    #
+//!    # type State = ();
+//!    # type MyReturnValue = ();
+//!    #
+//!    # #[init(contract = "my_contract")]
+//!    # fn contract_init(                    // `<S: HasStateApi>` removed
+//!    #    ctx: &InitContext,                // `impl` and `Has` removed
+//!    #    state_builder: &mut StateBuilder, // `<S>` removed
+//!    # ) -> InitResult<State> { todo!() }
+//!    /// Before
+//!    #[receive(contract = "my_contract", name = "my_receive")]
+//!    fn receive_before<S: HasStateApi>(
+//!        ctx: &impl HasReceiveContext,
+//!        host: &impl HasHost<State, StateApiType = S>,
+//!    ) -> ReceiveResult<MyReturnValue> { todo!() }
+//!    
+//!    /// After
+//!    #[receive(contract = "my_contract", name = "my_receive")]
+//!    fn receive_after(           // `<S: HasStateApi>` removed
+//!        ctx: &ReceiveContext,   // `impl` and `Has` removed
+//!        host: &Host<State>,     // `impl Has` and `, StateApiType = S removed
+//!    ) -> ReceiveResult<MyReturnValue> { todo!() }
+//!    ```
+//!
+//!    If you use logging, crypto-primitives, or similar, you must also also
+//! replace those uses of traits with concrete types. E.g. replacing `&mut impl
+//! HasLogger` with `&mut Logger`.
+//!
+//! 2. Migrate your tests to use the new testing library.
+//!
+//!    For an introduction to the library, see our [guide](https://developer.concordium.software/en/mainnet/smart-contracts/guides/integration-test-contract.html).
+//!
+//!    If you follow our [recommended structure](https://developer.concordium.software/en/mainnet/smart-contracts/best-practices/development.html#recommended-structure) in your contract,
+//!    then you can easily keep unit tests that only call methods directly on
+//!    your state struct.
+//!    Unit tests that call init or receive methods must, on the other hand, be
+//! migrated.
+//!
+//!
+//! [1]: https://doc.rust-lang.org/std/primitive.unit.html
+//! [test_infrastructure]: ./test_infrastructure/index.html
+//! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 #![cfg_attr(not(feature = "std"), no_std, feature(core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
