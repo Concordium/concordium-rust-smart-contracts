@@ -4,7 +4,7 @@ This project has boilerplate code to write deployment, initialization, and updat
 
 # Purpose
 
-Automatic scripts are useful to speed up the development and testing of your protocol on chain. 
+Automatic scripts are useful to speed up the development and testing of your protocol on the chain. 
 In addition, scripts help to set up identical protocols on different chains easily. E.g. you can deploy your protocol to testnet or mainnet by just specifying a corresponding node connection when running the script.
 
 # Setup
@@ -29,7 +29,7 @@ At the end, you will have a Rust project setup with this boilerplate code includ
 
 # Running The Script
 
-Build and run the script from the root folder using
+Build and run the script from the deploy-scripts folder using
 ```
 cargo run
 ```
@@ -61,20 +61,20 @@ The boilerplate code has support for the following functionalities:
 
 Read functions:
 - `estimate_energy`: To estimate the energy needed to execute one of the three write functions below.
-- `module_exists`: To check if a module has already been deployed on chain.
+- `module_exists`: To check if a module has already been deployed on the chain.
 - `get_nonce`: To get the current nonce of the provided wallet account.
 
 Write functions:
-- `deploy_wasm_module`: To deploy a new smart contract module on chain.
-- `init_contract`: To initialize a smart contract instance on chain.
-- `update_contract`: To update a smart contract instance on chain.
+- `deploy_wasm_module`: To deploy a new smart contract module on the chain.
+- `init_contract`: To initialize a smart contract instance on the chain.
+- `update_contract`: To update a smart contract instance on the chain.
 
 Event parsing helper functions:
 - `parse_deploy_module_event`: To parse the chain events after deploying a module.
 - `parse_contract_init_event`: To parse the chain events after initialization of a smart contract instance.
 - `parse_contract_update_event`: To parse the chain events after updating a smart contract instance.
 
-The `main.rs` file has a section (marked with `// Write your own deployment/initialization script below. An example is given here.`) that you should replace with your custom logic to deploy, initialize, and update your smart contract protocol.
+The `main.rs` file has a section (marked with `// Write your own deployment/initialization script below. An example is given here.`) that you should replace with your custom logic. You can write your script using `deploy`, `initialize`, and contract `update` transactions.
 
 # Running the Example
 
@@ -97,7 +97,7 @@ The output should be:
 
 ```
 Deploying module....
-Module with reference 15c936d9f60dc99c543282a8f16823d2ec5c6faae689772ae06a9b2de45a39d0 already exists on chain.
+Module with reference 15c936d9f60dc99c543282a8f16823d2ec5c6faae689772ae06a9b2de45a39d0 already exists on the chain.
 
 Initializing contract....
 Sent tx: 09ecaa6a66e4fe2a756dd9ad8c91f5fc2099a6dd30ebd4532cb8c5aad1bab440

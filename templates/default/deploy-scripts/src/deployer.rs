@@ -21,17 +21,17 @@ use std::path::Path;
 
 use crate::DeployError;
 
-/// A struct representing the deployed module on chain.
+/// A struct representing the deployed module on the chain.
 #[derive(Clone, Debug)]
 pub struct ModuleDeployed {
-    /// Module reference on chain.
+    /// Module reference on the chain.
     pub module_ref: ModuleReference,
 }
 
-/// A struct representing a smart contract instance on chain.
+/// A struct representing a smart contract instance on the chain.
 #[derive(Clone, Debug)]
 pub struct ContractInitialized {
-    /// Smart contract address on chain.
+    /// Smart contract address on the chain.
     pub contract: ContractAddress,
 }
 
@@ -55,7 +55,7 @@ impl Deployer {
         })
     }
 
-    /// A function to check if a module exists on chain.
+    /// A function to check if a module exists on the chain.
     pub async fn module_exists(&self, wasm_module: WasmModule) -> Result<bool, DeployError> {
         let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
 
@@ -63,19 +63,24 @@ impl Deployer {
 
         let module_ref = wasm_module.get_module_ref();
 
-        let module_ref = self.client.clone().get_module_source(&module_ref, &best_block_hash).await;
+        let module_src = self.client.clone().get_module_source(&module_ref, &best_block_hash).await;
 
-        match module_ref {
+        match module_src {
             Ok(_) => Ok(true),
             Err(e) if e.is_not_found() => Ok(false),
             Err(e) => Err(e.into()),
         }
     }
 
-    /// A function to deploy a wasm module on chain. The transaction hash and
-    /// the module reference is returned. If the module already exists on
+    /// A function to deploy a wasm module on the chain.
+    ///
+    /// If successful, the transaction hash and
+    /// the module reference is returned.
+    /// If the module already exists on
     /// chain, this function returns the module reference of the already
-    /// deployed module instead. An optional expiry time for the transaction
+    /// deployed module instead.
+    ///
+    /// An optional expiry time for the transaction
     /// can be given. If `None` is provided, the local time + 300 seconds is
     /// used as a default expiry time.
     pub async fn deploy_wasm_module(
@@ -83,15 +88,13 @@ impl Deployer {
         wasm_module: WasmModule,
         expiry: Option<TransactionTime>,
     ) -> Result<(Option<HashBytes<TransactionMarker>>, ModuleDeployed), DeployError> {
-        println!();
-
-        println!("Deploying module....");
+        println!("\nDeploying module....");
 
         let exists = self.module_exists(wasm_module.clone()).await?;
 
         if exists {
             println!(
-                "Module with reference {} already exists on chain.",
+                "Module with reference {} already exists on the chain.",
                 wasm_module.get_module_ref()
             );
             return Ok((None, ModuleDeployed {
@@ -134,21 +137,22 @@ impl Deployer {
         Ok((Some(tx_hash), module_deployed))
     }
 
-    /// A function to initialize a smart contract instance on chain. The
-    /// transaction hash and the contract address is returned. An optional
-    /// energy for the transaction can be given. If `None` is provided, 5000
-    /// energy is used as a default energy value. An optional expiry time
-    /// for the transaction can be given. If `None` is provided, the local time
-    /// + 300 seconds is used as a default expiry time.
+    /// A function to initialize a smart contract instance on the chain.
+    ///
+    /// If successful, the transaction hash and the contract address is
+    /// returned.
+    ///
+    /// An optional energy for the transaction can be given. If `None` is
+    /// provided, 5000 energy is used as a default energy value. An optional
+    /// expiry time for the transaction can be given. If `None` is provided,
+    /// the local time + 300 seconds is used as a default expiry time.
     pub async fn init_contract(
         &self,
         payload: InitContractPayload,
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
     ) -> Result<(HashBytes<TransactionMarker>, ContractAddress), DeployError> {
-        println!();
-
-        println!("Initializing contract....");
+        println!("\nInitializing contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
 
@@ -193,8 +197,12 @@ impl Deployer {
         Ok((tx_hash, contract_init.contract))
     }
 
-    /// A function to update a smart contract instance on chain. The transaction
-    /// hash is returned. An optional energy for the transaction can be
+    /// A function to update a smart contract instance on the chain.
+    ///
+    /// If successful, the transaction
+    /// hash is returned.
+    ///
+    /// An optional energy for the transaction can be
     /// given. If `None` is provided, 50000 energy is used as a default energy
     /// value. An optional expiry time for the transaction can be given. If
     /// `None` is provided, the local time + 300 seconds is used as a default
@@ -205,9 +213,7 @@ impl Deployer {
         energy: Option<GivenEnergy>,
         expiry: Option<TransactionTime>,
     ) -> Result<HashBytes<TransactionMarker>, DeployError> {
-        println!();
-
-        println!("Updating contract....");
+        println!("\nUpdating contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
 
@@ -259,9 +265,13 @@ impl Deployer {
         Ok(tx_hash)
     }
 
-    /// A function to estimate the energy needed to send a transaction on chain.
-    /// This function can be used to dry-run a transaction. The transaction
-    /// energy is returned. An optional max energy for the transaction can
+    /// A function to estimate the energy needed to send a transaction on the
+    /// chain.
+    ///
+    /// If successful, the transaction energy is returned by this function.
+    /// This function can be used to dry-run a transaction.
+    ///
+    /// An optional max_energy value for the transaction can
     /// be given. If `None` is provided, 50000 energy is used as a default
     /// max_energy value.
     pub async fn estimate_energy(
@@ -269,9 +279,7 @@ impl Deployer {
         payload: UpdateContractPayload,
         max_energy: Option<Energy>,
     ) -> Result<Energy, DeployError> {
-        println!();
-
-        println!("Estimating energy....");
+        println!("\nEstimating energy....");
 
         let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
 
@@ -360,9 +368,17 @@ impl Deployer {
                 } => Ok(ModuleDeployed {
                     module_ref,
                 }),
-                _ => Err(DeployError::InvalidBlockItem("Invalid transaction effects".into())),
+                _ => Err(DeployError::InvalidBlockItem(
+                    "The parsed account transaction effect should be of type `ModuleDeployed` or \
+                     `None` (in case the transaction reverted)"
+                        .into(),
+                )),
             },
-            _ => Err(DeployError::InvalidBlockItem("Expected Account transaction".into())),
+            _ => Err(DeployError::InvalidBlockItem(
+                "Can only parse an account transaction (no account creation transaction or chain \
+                 update transaction)"
+                    .into(),
+            )),
         }
     }
 
@@ -392,9 +408,17 @@ impl Deployer {
                 } => Ok(ContractInitialized {
                     contract: data.address,
                 }),
-                _ => Err(DeployError::InvalidBlockItem("Invalid transaction effects".into())),
+                _ => Err(DeployError::InvalidBlockItem(
+                    "The parsed account transaction effect should be of type \
+                     `ContractInitialized` or `None` (in case the transaction reverted)"
+                        .into(),
+                )),
             },
-            _ => Err(DeployError::InvalidBlockItem("Expected Account transaction".into())),
+            _ => Err(DeployError::InvalidBlockItem(
+                "Can only parse an account transaction (no account creation transaction or chain \
+                 update transaction)"
+                    .into(),
+            )),
         }
     }
 
@@ -419,9 +443,17 @@ impl Deployer {
                 AccountTransactionEffects::ContractUpdateIssued {
                     effects: _,
                 } => Ok(()),
-                _ => Err(DeployError::InvalidBlockItem("Invalid transaction effects".into())),
+                _ => Err(DeployError::InvalidBlockItem(
+                    "The parsed account transaction effect should be of type \
+                     `ContractUpdateIssued` or `None` (in case the transaction reverted)"
+                        .into(),
+                )),
             },
-            _ => Err(DeployError::InvalidBlockItem("Expected Account transaction".into())),
+            _ => Err(DeployError::InvalidBlockItem(
+                "Can only parse an account transaction (no account creation transaction or chain \
+                 update transaction)"
+                    .into(),
+            )),
         }
     }
 }
