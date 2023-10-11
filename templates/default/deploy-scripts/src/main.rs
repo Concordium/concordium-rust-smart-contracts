@@ -15,6 +15,7 @@ use concordium_rust_sdk::{
     },
     v2,
 };
+use itertools::Itertools;
 
 use concordium_rust_sdk::types::transactions::InitContractPayload;
 use deployer::{Deployer, ModuleDeployed};
@@ -114,7 +115,7 @@ async fn main() -> Result<(), DeployError> {
 
     let mut modules_deployed: Vec<ModuleDeployed> = Vec::new();
 
-    for contract in app.modules {
+    for contract in app.modules.iter().unique() {
         let wasm_module = get_wasm_module(contract.as_path())?;
 
         let (_, module) = deployer.deploy_wasm_module(wasm_module, None).await?;
@@ -149,7 +150,7 @@ async fn main() -> Result<(), DeployError> {
 
     let mut energy = deployer.estimate_energy(update_payload.clone(), None).await?; // Example
 
-    // We add 100 energy to be save.
+    // We add 100 energy to be safe.
     energy.energy += 100; // Example
 
     let _update_contract =
