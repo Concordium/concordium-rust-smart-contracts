@@ -313,7 +313,7 @@ fn initialize_contract_with_alice_tokens() -> (Chain, ContractAddress, ContractI
         tokens: BTreeSet::from_iter(vec![TOKEN_0, TOKEN_1]),
     };
 
-    // Mint two tokens for which Alice is the owner.
+    // Mint two tokens to Alice.
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),

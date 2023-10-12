@@ -251,7 +251,7 @@ fn test_multiple_scenarios() {
 ///
 /// CAROL is the owner of the auction, which ends at `1000` milliseconds after
 /// the unix epoch. The 'microCCD per euro' exchange rate is set to `1_000_000`,
-/// so 1CCD = 1 euro.
+/// so 1 CCD = 1 euro.
 fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
     let mut chain = Chain::builder()
         .micro_ccd_per_euro(

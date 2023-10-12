@@ -292,7 +292,7 @@ fn test_operator_can_transfer() {
     ]);
 }
 
-/// Helper function that sets up the contract with twp tokens minted to
+/// Helper function that sets up the contract with two tokens minted to
 /// Alice, `TOKEN_0` and `TOKEN_1`.
 ///
 /// Only one token can be minted per update, so two updates are made.

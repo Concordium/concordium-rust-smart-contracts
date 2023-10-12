@@ -478,10 +478,8 @@ fn test_royalty_payment() {
     ]);
 }
 
-// Helper function that sets up the contract with two types of tokens minted to
-// Alice. She has 400 of `TOKEN_0` and 1 of `TOKEN_1`.
-//
-// The royalty percentage is set to 10%.
+/// Helper function that sets up the contract with two types of tokens minted to
+/// Alice. She has 400 of `TOKEN_0` and 1 of `TOKEN_1`.
 fn initialize_contract_with_alice_tokens(
     royalty_percentage: u8,
 ) -> (Chain, ContractAddress, ContractInvokeSuccess) {
@@ -493,7 +491,7 @@ fn initialize_contract_with_alice_tokens(
         royalty_percentage,
     };
 
-    // Mint two tokens for which Alice is the owner.
+    // Mint two tokens to Alice.
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -515,7 +513,7 @@ fn initialize_contract_with_alice_tokens(
 fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
     let mut chain = Chain::new();
 
-    // Create some accounts accounts on the chain.
+    // Create some accounts on the chain.
     chain.create_account(Account::new(ALICE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(CHARLIE, ACC_INITIAL_BALANCE));

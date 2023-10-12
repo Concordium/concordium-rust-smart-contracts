@@ -65,7 +65,7 @@ fn test_set_metadata_url() {
         hash: None,
     };
 
-    // Try to set the metadata URL as Bob, who is not the admin.
+    // Try to set the metadata URL from Bob's account, who is not the admin.
     let update = chain
         .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -81,7 +81,7 @@ fn test_set_metadata_url() {
             .expect("Parsing ContractError");
     assert_eq!(rv, ContractError::Unauthorized);
 
-    // Set the metadata URL as Alice, who is the admin.
+    // Set the metadata URL from Alice's account, who is the admin.
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -141,7 +141,7 @@ fn test_account_transfer() {
 }
 
 /// Test that you can add an operator.
-/// Initialize the contract with two tokens owned by Alice.
+/// Initialize the contract with one token owned by Alice.
 /// Then add Bob as an operator for Alice.
 #[test]
 fn test_add_operator() {
