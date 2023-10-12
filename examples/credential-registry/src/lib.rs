@@ -1636,6 +1636,7 @@ fn contract_upgrade<S: HasStateApi>(
 }
 
 #[concordium_cfg_test]
+#[allow(deprecated)]
 mod tests {
 
     use super::*;

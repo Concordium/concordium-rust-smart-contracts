@@ -373,7 +373,9 @@ pub mod constants;
 mod impls;
 pub mod prims;
 mod traits;
-mod types;
+// TODO: For reviewers: I made this pub to avoid a never used warning for
+// `ChainMetadata`. I am not sure why `pub use types::*;` isn't sufficient.
+pub mod types;
 pub use concordium_contracts_common::*;
 pub use impls::*;
 pub use traits::*;
@@ -384,4 +386,8 @@ pub use types::*;
 #[cfg_attr(feature = "wee_alloc", global_allocator)]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[deprecated(
+    since = "9.0.0",
+    note = "Deprecated in favour of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
+)]
 pub mod test_infrastructure;

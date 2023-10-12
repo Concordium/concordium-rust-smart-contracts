@@ -846,6 +846,7 @@ macro_rules! ensure_ne {
 macro_rules! fail {
     () => {
         {
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error("", file!(), line!(), column!());
             panic!()
         }
@@ -853,6 +854,7 @@ macro_rules! fail {
     ($($arg:tt),+) => {
         {
             let msg = format!($($arg),+);
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
         }
@@ -867,6 +869,7 @@ macro_rules! fail {
 macro_rules! fail {
     () => {
         {
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error("", file!(), line!(), column!());
             panic!()
         }
@@ -874,6 +877,7 @@ macro_rules! fail {
     ($($arg:tt),+) => {
         {
             let msg = &$crate::alloc::format!($($arg),+);
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
         }
