@@ -31,13 +31,15 @@ fn init<S: HasStateApi>(
     Ok(State {})
 }
 
+pub type MyInputType = bool;
+
 /// Receive function. The input parameter is the boolean variable `throw_error`.
 ///  If `throw_error == true`, the receive function will throw a custom error.
 ///  If `throw_error == false`, the receive function executes successfully.
 #[receive(
     contract = "{{crate_name}}",
     name = "receive",
-    parameter = "bool",
+    parameter = "MyInputType",
     error = "Error",
     mutable
 )]
