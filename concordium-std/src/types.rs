@@ -406,6 +406,8 @@ impl<'a, V: Serial, S: HasStateApi> StateRefMut<'a, V, S> {
 #[repr(transparent)]
 /// An iterator over a part of the state. Its implementation is supported by
 /// host calls.
+///
+/// **Typically referred to via the alias [`StateIter`].**
 pub struct ExternStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
@@ -544,6 +546,8 @@ pub struct ExternParameter {
 ///
 /// This type is designed to be used via its [Read](crate::Read) and
 /// [HasCallResponse](crate::HasCallResponse) traits.
+///
+/// **Typically referred to via the alias [`CallResponse`].**
 #[derive(Debug)]
 pub struct ExternCallResponse {
     /// The index of the call response.
@@ -567,6 +571,8 @@ impl ExternCallResponse {
 /// The intention is that this type is manipulated using methods of the
 /// [Write](crate::Write) trait. In particular it can be used as a sink to
 /// serialize values into.
+///
+/// **Typically referred to via the alias [`ReturnValue`].**
 pub struct ExternReturnValue {
     pub(crate) current_position: u32,
 }
@@ -1075,6 +1081,8 @@ pub type ReturnValue = ExternReturnValue;
 pub type CallResponse = ExternCallResponse;
 
 /// Operations backed by host functions for the high-level interface.
+///
+/// **Typically referred to via the alias [`Host`].**
 pub struct ExternHost<State> {
     pub state:         State,
     pub state_builder: StateBuilder<ExternStateApi>,
@@ -1105,6 +1113,8 @@ impl<S> StateBuilder<S> {
 
 /// A struct for which HasCryptoPrimitives is implemented via the crypto host
 /// functions.
+///
+/// **Typically referred to via the alias [`CryptoPrimitives`].**
 pub struct ExternCryptoPrimitives;
 
 /// Sha2 digest with 256 bits (32 bytes).
@@ -1149,6 +1159,7 @@ pub struct HashSha3256(pub [u8; 32]);
 pub struct HashKeccak256(pub [u8; 32]);
 
 #[derive(Debug, Clone, Default)]
+/// Typicall referred to via the alias [`StateApi`].
 pub struct ExternStateApi;
 
 impl ExternStateApi {
@@ -1158,6 +1169,8 @@ impl ExternStateApi {
 }
 
 /// Operations backed by host functions for the low-level interface.
+///
+/// **Typically referred to via the alias [`LowLevelHost`].**
 #[derive(Default)]
 pub struct ExternLowLevelHost {
     pub(crate) state_api:     ExternStateApi,
@@ -1165,11 +1178,14 @@ pub struct ExternLowLevelHost {
 }
 
 /// Context backed by host functions.
+///
+/// Usuaully referred to via aliases [`InitContext`] or [`ReceiveContext`].
 #[derive(Default)]
 pub struct ExternContext<T: sealed::ContextType> {
     marker: crate::marker::PhantomData<T>,
 }
 
+/// **Typically referred to via the alias [`ChainMetadata`].**
 pub struct ExternChainMeta {}
 
 #[derive(Default)]
