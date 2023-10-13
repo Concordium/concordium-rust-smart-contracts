@@ -49,18 +49,16 @@ Write functions:
 - `init_contract`: To initialize a smart contract instance on the chain.
 - `update_contract`: To update a smart contract instance on the chain.
 
-Event parsing helper functions:
-- `parse_deploy_module_event`: To parse the chain events after deploying a module.
-- `parse_contract_init_event`: To parse the chain events after initialization of a smart contract instance.
-- `parse_contract_update_event`: To parse the chain events after updating a smart contract instance.
+Helper functions to check the outcome of the transactions:
+- `check_outcome_of_deploy_transaction`: To check the outcome of a deploy module transaction.
+- `check_outcome_of_initialization_transaction`: To check the outcome of a smart contract instance initialization transaction.
+- `check_outcome_of_update_transaction`: To check the outcome of an update smart contract instance transaction.
 
 The `main.rs` file has a section (marked with `// Write your own deployment/initialization script below. An example is given here.`) that you should replace with your custom logic. You can write your script using `deploy`, `initialize`, and contract `update` transactions.
 
 # Running the Example
 
 The `main.rs` file has a section (marked with `// Write your own deployment/initialization script below. An example is given here.`) that provides an example that you can run.
-
-ATTENTION: You have to have created a smart contract with the name `default` to run the given example. This can be done by answering `default` to the two questions when creating the project via `cargo-generate`.
 
 Navigate into the root folder and compile the `default` smart contract with the command:
 ```

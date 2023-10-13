@@ -128,7 +128,7 @@ async fn main() -> Result<(), DeployError> {
 
     let param: OwnedParameter = OwnedParameter::default(); // Example
 
-    let init_method_name: &str = "init_default"; // Example
+    let init_method_name: &str = "init_{{crate_name}}"; // Example
 
     let payload = InitContractPayload {
         init_name: OwnedContractName::new(init_method_name.into())?,
@@ -144,7 +144,7 @@ async fn main() -> Result<(), DeployError> {
     let update_payload = transactions::UpdateContractPayload {
         amount:       Amount::from_ccd(0),
         address:      contract,
-        receive_name: OwnedReceiveName::new_unchecked("default.receive".to_string()),
+        receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.receive".to_string()),
         message:      bytes.try_into()?,
     }; // Example
 

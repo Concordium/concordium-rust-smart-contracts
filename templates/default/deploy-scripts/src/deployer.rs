@@ -13,7 +13,7 @@ use concordium_rust_sdk::{
             InitContractPayload, UpdateContractPayload,
         },
         AccountTransactionEffects, BlockItemSummary, BlockItemSummaryDetails, ContractAddress,
-        Energy, RejectReason, TransactionType, WalletAccount,
+        Energy, TransactionType, WalletAccount,
     },
     v2,
 };
@@ -59,14 +59,15 @@ impl<'a> Deployer<'a> {
     }
 
     /// A function to check if a module exists on the chain.
-    pub async fn module_exists(&mut self, wasm_module: WasmModule) -> Result<bool, DeployError> {
+    pub async fn module_exists(
+        &mut self,
+        module_reference: &ModuleReference,
+    ) -> Result<bool, DeployError> {
         let best_block = self.client.get_block_finalization_summary(Best).await?;
 
         let best_block_hash = best_block.block_hash;
 
-        let module_ref = wasm_module.get_module_ref();
-
-        let module_src = self.client.get_module_source(&module_ref, &best_block_hash).await;
+        let module_src = self.client.get_module_source(module_reference, &best_block_hash).await;
 
         match module_src {
             Ok(_) => Ok(true),
@@ -93,7 +94,7 @@ impl<'a> Deployer<'a> {
     ) -> Result<(Option<HashBytes<TransactionMarker>>, ModuleDeployed), DeployError> {
         println!("\nDeploying module....");
 
-        let exists = self.module_exists(wasm_module.clone()).await?;
+        let exists = self.module_exists(&wasm_module.get_module_ref()).await?;
 
         if exists {
             println!(
@@ -129,7 +130,7 @@ impl<'a> Deployer<'a> {
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
-        let module_deployed = self.parse_deploy_module_event(block_item)?;
+        let module_deployed = self.check_outcome_of_deploy_transaction(block_item)?;
 
         println!(
             "Transaction finalized, tx_hash={} module_ref={}",
@@ -185,7 +186,7 @@ impl<'a> Deployer<'a> {
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
-        let contract_init = self.parse_contract_init_event(block_item)?;
+        let contract_init = self.check_outcome_of_initialization_transaction(block_item)?;
 
         println!(
             "Transaction finalized, tx_hash={} contract=({}, {})",
@@ -252,7 +253,7 @@ impl<'a> Deployer<'a> {
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
-        self.parse_contract_update_event(block_item)?;
+        self.check_outcome_of_update_transaction(block_item)?;
 
         println!("Transaction finalized, tx_hash={}", tx_hash,);
 
@@ -326,8 +327,10 @@ impl<'a> Deployer<'a> {
         Ok(nonce)
     }
 
-    /// A function to parse the deploy module events.
-    fn parse_deploy_module_event(
+    /// A function that checks the outcome of the deploy transaction.
+    /// It throws if the `block_item` is not a deploy transaction.
+    /// It returns the error code if the transaction reverted.
+    fn check_outcome_of_deploy_transaction(
         &self,
         block_item: BlockItemSummary,
     ) -> Result<ModuleDeployed, DeployError> {
@@ -343,16 +346,9 @@ impl<'a> Deployer<'a> {
                         ));
                     }
 
-                    match reject_reason {
-                        RejectReason::ModuleHashAlreadyExists {
-                            contents,
-                        } => Ok(ModuleDeployed {
-                            module_ref: contents,
-                        }),
-                        _ => Err(DeployError::TransactionRejectedR(format!(
-                            "Module deploy rejected with reason: {reject_reason:?}"
-                        ))),
-                    }
+                    Err(DeployError::TransactionRejectedR(format!(
+                        "Module deploy rejected with reason: {reject_reason:?}"
+                    )))
                 }
                 AccountTransactionEffects::ModuleDeployed {
                     module_ref,
@@ -373,8 +369,10 @@ impl<'a> Deployer<'a> {
         }
     }
 
-    /// A function to parse the initialization events.
-    fn parse_contract_init_event(
+    /// A function that checks the outcome of the initialization transaction.
+    /// It throws if the `block_item` is not a initialization transaction.
+    /// It returns the error code if the transaction reverted.
+    fn check_outcome_of_initialization_transaction(
         &self,
         block_item: BlockItemSummary,
     ) -> Result<ContractInitialized, DeployError> {
@@ -413,8 +411,13 @@ impl<'a> Deployer<'a> {
         }
     }
 
-    /// A function to parse the contract update events.
-    fn parse_contract_update_event(&self, block_item: BlockItemSummary) -> Result<(), DeployError> {
+    /// A function that checks the outcome of the update transaction.
+    /// It throws if the `block_item` is not a update transaction.
+    /// It returns the error code if the transaction reverted.
+    fn check_outcome_of_update_transaction(
+        &self,
+        block_item: BlockItemSummary,
+    ) -> Result<(), DeployError> {
         match block_item.details {
             BlockItemSummaryDetails::AccountTransaction(a) => match a.effects {
                 AccountTransactionEffects::None {
