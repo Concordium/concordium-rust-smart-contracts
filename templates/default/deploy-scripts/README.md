@@ -7,26 +7,6 @@ This project has boilerplate code to write deployment, initialization, and updat
 Automatic scripts are useful to speed up the development and testing of your protocol on the chain. 
 In addition, scripts help to set up identical protocols on different chains easily. E.g. you can deploy your protocol to testnet or mainnet by just specifying a corresponding node connection when running the script.
 
-# Setup
-
-Option 1:
-
-```
-cargo concordium init 
-```
-
-Option 2 (alternative command):
-
-```
-cargo generate --git https://github.com/Concordium/concordium-rust-smart-contracts.git
-```
-
-Any of the two commands will work and will give you several templates to choose from. 
-
-- Choose the `templates/default` and answer the questions to complete the setup process (answer `default` for the two questions if you want to run the below example).
-
-At the end, you will have a Rust project setup with this boilerplate code included.
-
 # Running The Script
 
 Build and run the script from the deploy-scripts folder using
