@@ -290,7 +290,7 @@
 //!    ) -> ReceiveResult<MyReturnValue> { todo!() }
 //!    ```
 //!
-//!    If you use logging, crypto-primitives, or similar, you must also also
+//!    If you use logging, crypto-primitives, or similar, you must also
 //! replace those uses of traits with concrete types. E.g. replacing `&mut impl
 //! HasLogger` with `&mut Logger`.
 //!
@@ -299,11 +299,10 @@
 //!    For an introduction to the library, see our [guide](https://developer.concordium.software/en/mainnet/smart-contracts/guides/integration-test-contract.html).
 //!
 //!    If you follow our [recommended structure](https://developer.concordium.software/en/mainnet/smart-contracts/best-practices/development.html#recommended-structure) in your contract,
-//!    then you can easily keep unit tests that only call methods directly on
-//!    your state struct.
-//!    Unit tests that call init or receive methods must, on the other hand, be
-//! migrated.
-//!
+//!    then you have a mix of unit and integrations tests:
+//!    - Unit tests that call methods directly on your state struct (without any
+//!      init/receive calls)
+//!    - Integration tests that call the init and receive methods
 //!
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! [test_infrastructure]: ./test_infrastructure/index.html

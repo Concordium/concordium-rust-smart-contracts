@@ -1017,7 +1017,7 @@ pub type InitContext = ExternContext<ExternInitContext>;
 pub type ReceiveContext = ExternContext<ExternReceiveContext>;
 
 /// The host, which supports interactions with the chain, such as querying
-/// balance of the contract, accessing its state, and invoking operations on
+/// the balance of the contract, accessing its state, and invoking operations on
 /// other contracts and accounts.
 ///
 /// The type is parameterized by the `State` type. This is the type of the
