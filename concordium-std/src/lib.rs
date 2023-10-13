@@ -304,6 +304,10 @@
 //!      init/receive calls)
 //!    - Integration tests that call the init and receive methods
 //!
+//! If you do not want to migrate your contract and tests yet, then you can add
+//! the `#[allow(deprecated)]` attribute to your test modules to avoid the
+//! deprecation warnings.
+//!
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
