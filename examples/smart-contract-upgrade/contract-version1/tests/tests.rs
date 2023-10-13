@@ -1,3 +1,19 @@
+//! Tests for the `smart_contract_upgrade` contract.
+//!
+//! Run the tests by:
+//!
+//! 1. Open a terminal and navigate to the:
+//! `examples/smart-contract-upgrade-folder`
+//!
+//! 2. Compile the version 2 contract
+//! with:
+//!    - `cargo concordium build --out
+//!      contract-version2/concordium-out/module.wasm.v1 -- --manifest-path
+//!      contract-version2/Cargo.toml`
+//! 3. Compile the version 1 contract and run the tests with:
+//!    - `cargo concordium test --out
+//!      contract-version1/concordium-out/module.wasm.v1 -- --manifest-path
+//!      contract-version1/Cargo.toml
 use concordium_smart_contract_testing::*;
 use concordium_std::Deserial;
 use smart_contract_upgrade::UpgradeParams;

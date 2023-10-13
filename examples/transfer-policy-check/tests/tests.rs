@@ -5,7 +5,6 @@ use transfer_policy_check::*;
 
 /// Constants.
 const ALICE: AccountAddress = AccountAddress([0u8; 32]);
-const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1u8; 32]);
 const BOB_ADDR: Address = Address::Account(BOB);
 
@@ -45,8 +44,11 @@ fn test_amount_forward_on_correct_policy() {
         .expect("Contract update succeeds.");
 
     // Check that the money was forwarded.
-    // assert_eq!(update.account_transfers().collect::<Vec<_>>(),
-    // [(contract_address, amount_to_send, ALICE)]);
+    assert_eq!(update.account_transfers().collect::<Vec<_>>(), [(
+        contract_address,
+        amount_to_send,
+        ALICE
+    )]);
 }
 
 // Helpers:
