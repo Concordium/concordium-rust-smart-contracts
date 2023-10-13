@@ -37,16 +37,19 @@ pub struct ContractInitialized {
 
 /// A struct containing connection and wallet information.
 #[derive(Debug)]
-pub struct Deployer {
+pub struct Deployer<'a> {
     /// The client to establish a connection to a Concordium node (V2 API).
-    pub client: v2::Client,
+    pub client: &'a mut v2::Client,
     /// The account keys to be used for sending transactions.
     pub key:    WalletAccount,
 }
 
-impl Deployer {
+impl<'a> Deployer<'a> {
     /// A function to create a new deployer instance.
-    pub fn new(client: v2::Client, wallet_account_file: &Path) -> Result<Deployer, DeployError> {
+    pub fn new(
+        client: &'a mut v2::Client,
+        wallet_account_file: &Path,
+    ) -> Result<Deployer<'a>, DeployError> {
         let key_data = WalletAccount::from_json_file(wallet_account_file)?;
 
         Ok(Deployer {
@@ -56,14 +59,14 @@ impl Deployer {
     }
 
     /// A function to check if a module exists on the chain.
-    pub async fn module_exists(&self, wasm_module: WasmModule) -> Result<bool, DeployError> {
-        let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
+    pub async fn module_exists(&mut self, wasm_module: WasmModule) -> Result<bool, DeployError> {
+        let best_block = self.client.get_block_finalization_summary(Best).await?;
 
         let best_block_hash = best_block.block_hash;
 
         let module_ref = wasm_module.get_module_ref();
 
-        let module_src = self.client.clone().get_module_source(&module_ref, &best_block_hash).await;
+        let module_src = self.client.get_module_source(&module_ref, &best_block_hash).await;
 
         match module_src {
             Ok(_) => Ok(true),
@@ -84,7 +87,7 @@ impl Deployer {
     /// can be given. If `None` is provided, the local time + 300 seconds is
     /// used as a default expiry time.
     pub async fn deploy_wasm_module(
-        &self,
+        &mut self,
         wasm_module: WasmModule,
         expiry: Option<TransactionTime>,
     ) -> Result<(Option<HashBytes<TransactionMarker>>, ModuleDeployed), DeployError> {
@@ -108,10 +111,9 @@ impl Deployer {
             return Err(DeployError::NonceNotFinal);
         }
 
-        let expiry = match expiry {
-            Some(expiry) => expiry,
-            None => TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64),
-        };
+        let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
+            (chrono::Utc::now().timestamp() + 300) as u64,
+        ));
 
         let tx = deploy_module(&self.key, self.key.address, nonce.nonce, expiry, wasm_module);
         let bi = transactions::BlockItem::AccountTransaction(tx);
@@ -125,7 +127,7 @@ impl Deployer {
 
         println!("Sent tx: {tx_hash}");
 
-        let (_, block_item) = self.client.clone().wait_until_finalized(&tx_hash).await?;
+        let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         let module_deployed = self.parse_deploy_module_event(block_item)?;
 
@@ -147,7 +149,7 @@ impl Deployer {
     /// expiry time for the transaction can be given. If `None` is provided,
     /// the local time + 300 seconds is used as a default expiry time.
     pub async fn init_contract(
-        &self,
+        &mut self,
         payload: InitContractPayload,
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
@@ -160,17 +162,13 @@ impl Deployer {
             return Err(DeployError::NonceNotFinal);
         }
 
-        let energy = match energy {
-            Some(energy) => energy,
-            None => Energy {
-                energy: 5000,
-            },
-        };
+        let energy = energy.unwrap_or(Energy {
+            energy: 5000,
+        });
 
-        let expiry = match expiry {
-            Some(expiry) => expiry,
-            None => TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64),
-        };
+        let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
+            (chrono::Utc::now().timestamp() + 300) as u64,
+        ));
 
         let tx = init_contract(&self.key, self.key.address, nonce.nonce, expiry, payload, energy);
 
@@ -185,7 +183,7 @@ impl Deployer {
 
         println!("Sent tx: {tx_hash}");
 
-        let (_, block_item) = self.client.clone().wait_until_finalized(&tx_hash).await?;
+        let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         let contract_init = self.parse_contract_init_event(block_item)?;
 
@@ -208,7 +206,7 @@ impl Deployer {
     /// `None` is provided, the local time + 300 seconds is used as a default
     /// expiry time.
     pub async fn update_contract(
-        &self,
+        &mut self,
         update_payload: UpdateContractPayload,
         energy: Option<GivenEnergy>,
         expiry: Option<TransactionTime>,
@@ -225,17 +223,13 @@ impl Deployer {
             payload: update_payload,
         };
 
-        let expiry = match expiry {
-            Some(expiry) => expiry,
-            None => TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64),
-        };
+        let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
+            (chrono::Utc::now().timestamp() + 300) as u64,
+        ));
 
-        let energy = match energy {
-            Some(energy) => energy,
-            None => GivenEnergy::Absolute(Energy {
-                energy: 50000,
-            }),
-        };
+        let energy = energy.unwrap_or(GivenEnergy::Absolute(Energy {
+            energy: 50000,
+        }));
 
         let tx = transactions::send::make_and_sign_transaction(
             &self.key,
@@ -256,7 +250,7 @@ impl Deployer {
 
         println!("Sent tx: {tx_hash}");
 
-        let (_, block_item) = self.client.clone().wait_until_finalized(&tx_hash).await?;
+        let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         self.parse_contract_update_event(block_item)?;
 
@@ -275,22 +269,19 @@ impl Deployer {
     /// be given. If `None` is provided, 50000 energy is used as a default
     /// max_energy value.
     pub async fn estimate_energy(
-        &self,
+        &mut self,
         payload: UpdateContractPayload,
         max_energy: Option<Energy>,
     ) -> Result<Energy, DeployError> {
         println!("\nEstimating energy....");
 
-        let best_block = self.client.clone().get_block_finalization_summary(Best).await?;
+        let best_block = self.client.get_block_finalization_summary(Best).await?;
 
         let best_block_hash = best_block.block_hash;
 
-        let max_energy = match max_energy {
-            Some(energy) => energy,
-            None => Energy {
-                energy: 50000,
-            },
-        };
+        let max_energy = max_energy.unwrap_or(Energy {
+            energy: 50000,
+        });
 
         let context = ContractContext {
             invoker:   Some(Address::Account(self.key.address)),
@@ -301,7 +292,7 @@ impl Deployer {
             energy:    max_energy,
         };
 
-        let result = self.client.clone().invoke_instance(&best_block_hash, &context).await?;
+        let result = self.client.invoke_instance(&best_block_hash, &context).await?;
 
         match result.response {
             InvokeContractResult::Failure {
@@ -328,10 +319,10 @@ impl Deployer {
 
     /// A function to get the current nonce of the wallet account.
     pub async fn get_nonce(
-        &self,
+        &mut self,
         address: AccountAddress,
     ) -> Result<AccountNonceResponse, DeployError> {
-        let nonce = self.client.clone().get_next_account_sequence_number(&address).await?;
+        let nonce = self.client.get_next_account_sequence_number(&address).await?;
         Ok(nonce)
     }
 

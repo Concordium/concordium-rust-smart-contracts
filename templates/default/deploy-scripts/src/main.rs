@@ -109,9 +109,9 @@ struct App {
 async fn main() -> Result<(), DeployError> {
     let app: App = App::parse();
 
-    let concordium_client = v2::Client::new(app.url).await?;
+    let mut concordium_client = v2::Client::new(app.url).await?;
 
-    let deployer = Deployer::new(concordium_client, &app.key_file)?;
+    let mut deployer = Deployer::new(&mut concordium_client, &app.key_file)?;
 
     let mut modules_deployed: Vec<ModuleDeployed> = Vec::new();
 
