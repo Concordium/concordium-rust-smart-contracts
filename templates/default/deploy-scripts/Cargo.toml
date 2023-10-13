@@ -18,4 +18,4 @@ tokio = {version = "1.18", features = ["rt", "macros"]}
 clap = { version = "4", features = ["derive", "env"]}
 concordium-rust-sdk="2.4"
 itertools = "0.11.0"
-
+{{crate_name}} = {path = "../"}

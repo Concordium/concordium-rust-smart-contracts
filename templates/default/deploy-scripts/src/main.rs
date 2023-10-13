@@ -139,7 +139,14 @@ async fn main() -> Result<(), DeployError> {
 
     let (_, contract) = deployer.init_contract(payload, None, None).await?; // Example
 
-    let bytes = contracts_common::to_bytes(&false); // Example
+    // This is how you can use a type from your smart contract.
+    use {{crate_name}}::{MyInputType};
+
+    let input_parameter: MyInputType = false;
+
+    // Create a successful transaction.
+
+    let bytes = contracts_common::to_bytes(&input_parameter); // Example
 
     let update_payload = transactions::UpdateContractPayload {
         amount:       Amount::from_ccd(0),
