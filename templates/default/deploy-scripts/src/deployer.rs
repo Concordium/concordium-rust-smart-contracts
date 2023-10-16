@@ -30,19 +30,19 @@ pub struct ContractInitialized {
 
 /// A struct containing connection and wallet information.
 #[derive(Debug)]
-pub struct Deployer<'a> {
+pub struct Deployer {
     /// The client to establish a connection to a Concordium node (V2 API).
-    pub client: &'a mut v2::Client,
+    pub client: v2::Client,
     /// The account keys to be used for sending transactions.
     pub key: WalletAccount,
 }
 
-impl<'a> Deployer<'a> {
+impl Deployer {
     /// A function to create a new deployer instance from a network client and a path to the wallet.
     pub fn new(
-        client: &'a mut v2::Client,
+        client: v2::Client,
         wallet_account_file: &Path,
-    ) -> Result<Deployer<'a>, DeployError> {
+    ) -> Result<Deployer, DeployError> {
         let key_data = WalletAccount::from_json_file(wallet_account_file)
             .context("Unable to read wallet file.")?;
 
