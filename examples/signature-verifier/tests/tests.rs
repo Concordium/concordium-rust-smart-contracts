@@ -48,7 +48,7 @@ fn test_signature_check() {
         })
         .expect("Call signature verifier contract with an invalid signature.");
     // Check that it returns `false`.
-    let rv: bool = from_bytes(&update_invalid.return_value).expect("Deserializing bool");
+    let rv: bool = update_invalid.parse_return_value().expect("Deserializing bool");
     assert_eq!(rv, false);
 
     // Construct a parameter with a valid signature.
@@ -77,6 +77,6 @@ fn test_signature_check() {
         })
         .expect("Call signature verifier contract with a valid signature.");
     // Check that it returns `true`.
-    let rv: bool = from_bytes(&update.return_value).expect("Deserializing bool");
-    assert_eq!(rv, true);
+    let rv: bool = update.parse_return_value().expect("Deserializing bool");
+    assert!(rv, "Signature checking failed.");
 }

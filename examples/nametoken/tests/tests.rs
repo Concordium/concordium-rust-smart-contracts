@@ -158,8 +158,7 @@ fn test_register_fails_incorrect_fee() {
         .expect_err("Register NAME_0 with incorrect fee");
 
     // Check that it returns the correct error.
-    let error: ContractError =
-        from_bytes(&update.return_value().expect("Known to exist")).expect("Deserialize error");
+    let error: ContractError = update.parse_return_value().expect("Deserialize error");
     assert_eq!(error, ContractError::Custom(CustomContractError::IncorrectFee));
 }
 
@@ -239,8 +238,7 @@ fn test_transfer_expired_name_fails() {
         .expect_err("Transfer NAME_0");
 
     // Check that it returns the correct error.
-    let error: ContractError =
-        from_bytes(&update.return_value().expect("Known to exist")).expect("Deserialize error");
+    let error: ContractError = update.parse_return_value().expect("Deserialize error");
     assert_eq!(error, ContractError::Custom(CustomContractError::NameExpired));
 }
 
@@ -396,8 +394,7 @@ fn test_renew_expired_name_fails() {
         .expect_err("Renew NAME_0");
 
     // Check that it returns the correct error.
-    let error: ContractError =
-        from_bytes(&update.return_value().expect("Known to exist")).expect("Deserialize error");
+    let error: ContractError = update.parse_return_value().expect("Deserialize error");
     assert_eq!(error, ContractError::Custom(CustomContractError::NameExpired));
 }
 
@@ -438,8 +435,7 @@ fn test_update_data_on_expired_fails() {
         .expect_err("Update data on expired name");
 
     // Check that it returns the correct error.
-    let error: ContractError =
-        from_bytes(&update.return_value().expect("Known to exist")).expect("Deserialize error");
+    let error: ContractError = update.parse_return_value().expect("Deserialize error");
     assert_eq!(error, ContractError::Custom(CustomContractError::NameExpired));
 }
 
@@ -460,7 +456,7 @@ fn test_name_info_view() {
         .expect("Invoke view");
 
     // Check that the view returns the correct data.
-    let view: ViewNameInfo = from_bytes(&invoke.return_value).expect("Deserialize view");
+    let view: ViewNameInfo = invoke.parse_return_value().expect("Deserialize view");
     assert_eq!(view, ViewNameInfo {
         name_expires: YEAR_ONE,
         owner:        ALICE,
@@ -513,7 +509,7 @@ fn test_balance_of_expired_not_expired() {
     // Check that Alice now has one name 0, which is still valid, and zero of name
     // 1, which is expired.
     let response: ContractBalanceOfQueryResponse =
-        from_bytes(&invoke.return_value).expect("Deserialize view");
+        invoke.parse_return_value().expect("Deserialize view");
     assert_eq!(
         response,
         BalanceOfQueryResponse(vec![ContractTokenAmount::from(1), ContractTokenAmount::from(0)])
@@ -564,8 +560,7 @@ fn test_update_admin_fails_unauthorized() {
         .expect_err("Update admin");
 
     // Check that it returns the correct error.
-    let error: ContractError =
-        from_bytes(&update.return_value().expect("Known to exist")).expect("Deserialize error");
+    let error: ContractError = update.parse_return_value().expect("Deserialize error");
     assert_eq!(error, ContractError::Unauthorized);
 }
 
@@ -642,7 +637,7 @@ fn invoke_view(chain: &Chain, contract_address: ContractAddress) -> ViewState {
             message:      OwnedParameter::empty(),
         })
         .expect("Invoke view");
-    from_bytes(&invoke.return_value).expect("Deserialize ViewState")
+    invoke.parse_return_value().expect("Deserialize ViewState")
 }
 
 /// Deserialize the events from an update.
@@ -651,12 +646,7 @@ fn deserialize_update_events(
 ) -> Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> {
     update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| {
-                let e = from_bytes(e.as_ref()).expect("Deserialize event");
-                e
-            })
-        })
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect()
 }
 

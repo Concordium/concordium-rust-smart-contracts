@@ -16,6 +16,7 @@
 - Add methods to the `Chain` for adding external accounts and contracts and for invoking contracts on an external node.
   - See the `Chain` method `contract_invoke_external` for more details.
 - Bump minimum supported Rust version to `1.66`.
+- Add helper method `parse_return_value` to `ContractInvokeError` and `ContractInvokeSuccess`.
 
 ## 3.0.0
 

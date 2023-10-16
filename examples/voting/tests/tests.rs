@@ -32,8 +32,7 @@ fn test_vote_after_end_time() {
         .expect_err("Contract updated");
 
     // Check that the error is correct.
-    let rv: VotingError = from_bytes(&update.return_value().expect("Return value known to exist"))
-        .expect("Deserialize VotingError");
+    let rv: VotingError = update.parse_return_value().expect("Deserialize VotingError");
     assert_eq!(rv, VotingError::VotingFinished);
 }
 
@@ -57,8 +56,7 @@ fn test_vote_out_of_range() {
         .expect_err("Contract updated");
 
     // Check that the error is correct.
-    let rv: VotingError = from_bytes(&update.return_value().expect("Return value known to exist"))
-        .expect("Deserialize VotingError");
+    let rv: VotingError = update.parse_return_value().expect("Deserialize VotingError");
     assert_eq!(rv, VotingError::InvalidVoteIndex);
 }
 
@@ -164,8 +162,7 @@ fn test_contract_voter() {
         .expect_err("Contract updated");
 
     // Check that the error is correct.
-    let rv: VotingError = from_bytes(&update.return_value().expect("Return value known to exist"))
-        .expect("Deserialize VotingError");
+    let rv: VotingError = update.parse_return_value().expect("Deserialize VotingError");
     assert_eq!(rv, VotingError::ContractVoter);
 }
 
@@ -225,7 +222,7 @@ fn get_votes(chain: &Chain, contract_address: ContractAddress) -> [u32; 3] {
             .expect("Valid vote parameter"),
         })
         .expect("View invoked");
-    let vote_0: VoteCount = from_bytes(&view_0.return_value).expect("Deserialize VoteCount");
+    let vote_0: VoteCount = view_0.parse_return_value().expect("Deserialize VoteCount");
 
     let view_1 = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
@@ -238,7 +235,7 @@ fn get_votes(chain: &Chain, contract_address: ContractAddress) -> [u32; 3] {
             .expect("Valid vote parameter"),
         })
         .expect("View invoked");
-    let vote_1: VoteCount = from_bytes(&view_1.return_value).expect("Deserialize VoteCount");
+    let vote_1: VoteCount = view_1.parse_return_value().expect("Deserialize VoteCount");
 
     let view_2 = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
@@ -251,7 +248,7 @@ fn get_votes(chain: &Chain, contract_address: ContractAddress) -> [u32; 3] {
             .expect("Valid vote parameter"),
         })
         .expect("View invoked");
-    let vote_2: VoteCount = from_bytes(&view_2.return_value).expect("Deserialize VoteCount");
+    let vote_2: VoteCount = view_2.parse_return_value().expect("Deserialize VoteCount");
 
     [vote_0, vote_1, vote_2]
 }
@@ -260,12 +257,7 @@ fn get_votes(chain: &Chain, contract_address: ContractAddress) -> [u32; 3] {
 fn check_event(update: &ContractInvokeSuccess, voter: AccountAddress, vote_index: VoteIndex) {
     let events: Vec<Event> = update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| {
-                let e = from_bytes(e.as_ref()).expect("Deserialize event");
-                e
-            })
-        })
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect();
     assert_eq!(events, [Event::Vote(VoteEvent {
         voter,

@@ -28,7 +28,7 @@ fn test_init() {
     let events = init
         .events
         .iter()
-        .map(|e| from_bytes(e.as_ref()).expect("Parsing WccdEvent."))
+        .map(|e| e.parse().expect("Parsing WccdEvent."))
         .collect::<Vec<WccdEvent>>();
 
     assert_eq!(events, [
@@ -76,9 +76,7 @@ fn test_set_metadata_url() {
         .expect_err("SetMetadataUrl");
 
     // Check that the return value is correct.
-    let rv: ContractError =
-        from_bytes(&update.return_value().expect("Return value known to exist"))
-            .expect("Parsing ContractError");
+    let rv: ContractError = update.parse_return_value().expect("Parsing ContractError");
     assert_eq!(rv, ContractError::Unauthorized);
 
     // Set the metadata URL from Alice's account, who is the admin.
@@ -189,8 +187,7 @@ fn test_add_operator() {
         })
         .expect("Invoke view");
 
-    let rv: OperatorOfQueryResponse =
-        from_bytes(&invoke.return_value).expect("OperatorOf return value");
+    let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
     assert_eq!(rv, OperatorOfQueryResponse(vec![true]));
 }
 
@@ -222,9 +219,7 @@ fn test_unauthorized_sender() {
         .expect_err("Transfer tokens");
 
     // Check that the correct error is returned.
-    let rv: ContractError =
-        from_bytes(&update.return_value().expect("Return value known to exist"))
-            .expect("ContractError return value");
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
     assert_eq!(rv, ContractError::Unauthorized);
 }
 
@@ -342,9 +337,7 @@ fn test_unwrap_to_missing_account() {
         .expect_err("Unwrap wCCD");
 
     // Check that the correct error is returned.
-    let rv: ContractError =
-        from_bytes(&update_unwrap.return_value().expect("Return value known to exist"))
-            .expect("ContractError return value");
+    let rv: ContractError = update_unwrap.parse_return_value().expect("ContractError return value");
     assert_eq!(rv, ContractError::Custom(CustomContractError::InvokeTransferError));
 }
 
@@ -401,9 +394,7 @@ fn test_update_admin_unauthorized() {
         .expect_err("Update admin");
 
     // Check that the correct error is returned.
-    let rv: ContractError =
-        from_bytes(&update.return_value().expect("Return value known to exist"))
-            .expect("ContractError return value");
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
     assert_eq!(rv, ContractError::Unauthorized);
 }
 
@@ -455,9 +446,7 @@ fn test_pause_unpause_unauthorized() {
         .expect_err("Pause");
 
     // Check that the correct error is returned.
-    let rv: ContractError =
-        from_bytes(&update.return_value().expect("Return value known to exist"))
-            .expect("ContractError return value");
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
     assert_eq!(rv, ContractError::Unauthorized);
 }
 
@@ -614,7 +603,7 @@ fn invoke_view(chain: &mut Chain, contract_address: ContractAddress) -> ReturnBa
             message:      OwnedParameter::empty(),
         })
         .expect("Invoke view");
-    from_bytes(&invoke.return_value).expect("Return value")
+    invoke.parse_return_value().expect("Return value")
 }
 
 /// Get the balances for Alice and Bob.
@@ -644,7 +633,7 @@ fn get_balances(
         })
         .expect("Invoke balanceOf");
     let rv: ContractBalanceOfQueryResponse =
-        from_bytes(&invoke.return_value).expect("BalanceOf return value");
+        invoke.parse_return_value().expect("BalanceOf return value");
     rv
 }
 
@@ -652,19 +641,12 @@ fn get_balances(
 fn deserialize_update_events(update: &ContractInvokeSuccess) -> Vec<WccdEvent> {
     update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| {
-                let e = from_bytes(e.as_ref()).expect("Deserialize event");
-                e
-            })
-        })
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect()
 }
 
 /// Check that the returned error is `ContractPaused`.
 fn assert_contract_paused_error(update: &ContractInvokeError) {
-    let rv: ContractError =
-        from_bytes(&update.return_value().expect("Return value known to exist"))
-            .expect("ContractError return value");
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
     assert_eq!(rv, ContractError::Custom(CustomContractError::ContractPaused));
 }

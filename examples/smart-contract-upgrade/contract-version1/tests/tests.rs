@@ -128,7 +128,7 @@ fn test_upgrade_without_migration_function() {
         .expect("Invoking `view` should always succeed");
 
     let state: State =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        invoke.parse_return_value().expect("View should always return a valid result");
 
     assert_eq!(state, State {
         admin:     ACC_ADDR_OWNER,
@@ -199,7 +199,7 @@ fn test_upgrade_with_migration_function() {
         .expect("Invoking `view` should always succeed");
 
     let state: State =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        invoke.parse_return_value().expect("View should always return a valid result");
 
     assert_eq!(state, State {
         admin:     ACC_ADDR_OWNER,

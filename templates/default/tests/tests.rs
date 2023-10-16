@@ -46,8 +46,7 @@ fn test_throw_error() {
         .expect_err("Update fails with `true` as input.");
 
     // Check that the contract returned `YourError`.
-    let error: Error = from_bytes(&update.return_value().expect("Return value known to exist"))
-        .expect("Deserialize `Error`");
+    let error: Error = update.parse_return_value().expect("Deserialize `Error`");
     assert_eq!(error, Error::YourError);
 }
 

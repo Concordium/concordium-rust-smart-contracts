@@ -119,7 +119,7 @@ fn test_missing_weather() {
 
     // Deserialize the return value from `update` and check that it is the expected
     // error.
-    let rv: ContractError = from_bytes(&update.return_value().expect("Known to return a value."))
+    let rv: ContractError = update.parse_return_value()
         .expect("Deserialize return value");
     assert_eq!(rv, ContractError::ContractInvokeError);
 }
@@ -158,7 +158,7 @@ fn test_missing_icecream_vendor() {
 
     // Deserialize the return value from `update` and check that it is the expected
     // error.
-    let rv: ContractError = from_bytes(&update.return_value().expect("Known to return a value."))
+    let rv: ContractError = update.parse_return_value()
         .expect("Deserialize return value");
     assert_eq!(rv, ContractError::TransferError);
 }

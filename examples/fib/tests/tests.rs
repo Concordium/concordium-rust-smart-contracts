@@ -57,7 +57,7 @@ fn test() {
         )
         .expect("Calling receive");
 
-    let rv: u64 = from_bytes(&update.return_value).expect("Return value");
+    let rv: u64 = update.parse_return_value().expect("Return value");
     assert_eq!(rv, fib(7));
 
     // Check that the result is persisted by invoking the `view` entrypoint.
@@ -75,6 +75,6 @@ fn test() {
         )
         .expect("Calling receive");
 
-    let rv: u64 = from_bytes(&update.return_value).expect("Return value");
+    let rv: u64 = update.parse_return_value().expect("Return value");
     assert_eq!(rv, fib(7));
 }

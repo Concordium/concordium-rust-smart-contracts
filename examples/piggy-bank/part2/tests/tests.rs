@@ -118,7 +118,7 @@ fn test_smash_intact() {
 
     // Ensure the values returned by the view function are correct.
     let (state, balance): (PiggyBankState, Amount) =
-        from_bytes(&invoke_result.return_value).expect("View should always return a valid result");
+        invoke_result.parse_return_value().expect("View should always return a valid result");
     assert_eq!(state, PiggyBankState::Smashed);
     assert_eq!(balance, Amount::zero());
     assert_eq!(update.account_transfers().collect::<Vec<_>>(), [(
@@ -151,7 +151,7 @@ fn test_smash_intact_not_owner() {
 
     let return_value =
         update_err.return_value().expect("Contract should reject and thus return bytes");
-    let error: SmashError = from_bytes(&return_value)
+    let error: SmashError = return_value)
         .expect("Contract should return a `SmashError` in serialized form");
 
     assert_eq!(error, SmashError::NotOwner, "Contract did not fail due to a NotOwner error");
@@ -201,7 +201,7 @@ fn test_smash_smashed() {
 
     let return_value =
         update_second_smash_err.return_value().expect("Contract should reject and return bytes");
-    let error: SmashError = from_bytes(&return_value)
+    let error: SmashError = return_value)
         .expect("Contract should return a `SmashError` in serialized form");
 
     assert_eq!(error, SmashError::AlreadySmashed);
