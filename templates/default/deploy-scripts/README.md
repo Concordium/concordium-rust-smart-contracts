@@ -5,7 +5,7 @@ This project has boilerplate code to write deployment, initialization, and updat
 # Purpose
 
 Automatic scripts are useful to speed up the development and testing of your protocol on the chain. 
-In addition, scripts help to set up identical protocols on different chains easily. E.g. you can deploy your protocol to testnet or mainnet by just specifying a corresponding node connection when running the script.
+In addition, scripts help to set up identical protocols on different chains easily. E.g. you can deploy your protocol to testnet or mainnet by just specifying a corresponding node connection and account keys for the respective network when running the script.
 
 # Running The Script
 
