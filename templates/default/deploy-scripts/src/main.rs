@@ -85,24 +85,29 @@ struct App {
         default_value = "http://node.testnet.concordium.com:20000",
         help = "V2 API of the Concordium node."
     )]
-    url:      v2::Endpoint,
+    url:        v2::Endpoint,
     #[clap(
         long = "account",
-        help = "Location path and file name of the Concordium account key file (e.g. \
-                ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export)."
+        help = "Path to the file containing the Concordium account keys exported from the wallet \
+                (e.g. ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export)."
     )]
-    key_file: PathBuf,
+    key_file:   PathBuf,
     #[clap(
-        long = "modules",
-        help = "Location paths and names of Concordium smart contract modules. Use this flag \
-                several times if you have several smart contract modules to be deployed (e.g. \
-                --modules ./myPath/default.wasm.v1 --modules ./default2.wasm.v1)."
+        long = "module",
+        help = "Path of the Concordium smart contract module. Use this flag several times if you \
+                have several smart contract modules to be deployed (e.g. --module \
+                ./myPath/default.wasm.v1 --module ./default2.wasm.v1)."
     )]
-    modules:  Vec<PathBuf>,
+    module:     Vec<PathBuf>,
+    #[clap(
+        long = "no_logging",
+        help = "To specify if verbose logging should be disabled when running the script."
+    )]
+    no_logging: bool,
 }
 
 /// Main function: It deploys to chain all wasm modules from the command line
-/// `--modules` flags. Write your own custom deployment/initialization script in
+/// `--module` flags. Write your own custom deployment/initialization script in
 /// this function. An deployment/initialization script example is given in this
 /// function for the `default` smart contract.
 #[tokio::main(flavor = "current_thread")]
@@ -115,10 +120,10 @@ async fn main() -> Result<(), DeployError> {
 
     let mut modules_deployed: Vec<ModuleDeployed> = Vec::new();
 
-    for contract in app.modules.iter().unique() {
+    for contract in app.module.iter().unique() {
         let wasm_module = get_wasm_module(contract.as_path())?;
 
-        let (_, module) = deployer.deploy_wasm_module(wasm_module, None).await?;
+        let (_, module) = deployer.deploy_wasm_module(wasm_module, None, !app.no_logging).await?;
 
         modules_deployed.push(module);
     }
@@ -137,12 +142,12 @@ async fn main() -> Result<(), DeployError> {
         param,
     }; // Example
 
-    let (_, contract) = deployer.init_contract(payload, None, None).await?; // Example
+    let (_, contract) = deployer.init_contract(payload, None, None, !app.no_logging).await?; // Example
 
     // This is how you can use a type from your smart contract.
-    use {{crate_name}}::{MyInputType};
+    use {{crate_name}}::MyInputType; // Example
 
-    let input_parameter: MyInputType = false;
+    let input_parameter: MyInputType = false; // Example
 
     // Create a successful transaction.
 
@@ -160,8 +165,9 @@ async fn main() -> Result<(), DeployError> {
     // We add 100 energy to be safe.
     energy.energy += 100; // Example
 
-    let _update_contract =
-        deployer.update_contract(update_payload, Some(GivenEnergy::Add(energy)), None).await?; // Example
+    let _update_contract = deployer
+        .update_contract(update_payload, Some(GivenEnergy::Add(energy)), None, !app.no_logging)
+        .await?; // Example
 
     // Write your own deployment/initialization script above. An example is given
     // here.

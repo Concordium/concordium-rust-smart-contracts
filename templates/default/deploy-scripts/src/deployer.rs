@@ -91,16 +91,21 @@ impl<'a> Deployer<'a> {
         &mut self,
         wasm_module: WasmModule,
         expiry: Option<TransactionTime>,
+        logging: bool,
     ) -> Result<(Option<HashBytes<TransactionMarker>>, ModuleDeployed), DeployError> {
-        println!("\nDeploying module....");
+        if logging {
+            println!("\nDeploying module....");
+        }
 
         let exists = self.module_exists(&wasm_module.get_module_ref()).await?;
 
         if exists {
-            println!(
-                "Module with reference {} already exists on the chain.",
-                wasm_module.get_module_ref()
-            );
+            if logging {
+                println!(
+                    "Module with reference {} already exists on the chain.",
+                    wasm_module.get_module_ref()
+                );
+            }
             return Ok((None, ModuleDeployed {
                 module_ref: wasm_module.get_module_ref(),
             }));
@@ -126,16 +131,20 @@ impl<'a> Deployer<'a> {
             .await
             .map_err(DeployError::TransactionRejected)?;
 
-        println!("Sent tx: {tx_hash}");
+        if logging {
+            println!("Sent tx: {tx_hash}");
+        }
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         let module_deployed = self.check_outcome_of_deploy_transaction(block_item)?;
 
-        println!(
-            "Transaction finalized, tx_hash={} module_ref={}",
-            tx_hash, module_deployed.module_ref,
-        );
+        if logging {
+            println!(
+                "Transaction finalized: tx_hash={} module_ref={}",
+                tx_hash, module_deployed.module_ref,
+            );
+        }
 
         Ok((Some(tx_hash), module_deployed))
     }
@@ -154,8 +163,11 @@ impl<'a> Deployer<'a> {
         payload: InitContractPayload,
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
+        logging: bool,
     ) -> Result<(HashBytes<TransactionMarker>, ContractAddress), DeployError> {
-        println!("\nInitializing contract....");
+        if logging {
+            println!("\nInitializing contract....");
+        }
 
         let nonce = self.get_nonce(self.key.address).await?;
 
@@ -182,16 +194,20 @@ impl<'a> Deployer<'a> {
             .await
             .map_err(DeployError::TransactionRejected)?;
 
-        println!("Sent tx: {tx_hash}");
+        if logging {
+            println!("Sent tx: {tx_hash}");
+        }
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         let contract_init = self.check_outcome_of_initialization_transaction(block_item)?;
 
-        println!(
-            "Transaction finalized, tx_hash={} contract=({}, {})",
-            tx_hash, contract_init.contract.index, contract_init.contract.subindex,
-        );
+        if logging {
+            println!(
+                "Transaction finalized: tx_hash={} contract=({}, {})",
+                tx_hash, contract_init.contract.index, contract_init.contract.subindex,
+            );
+        }
 
         Ok((tx_hash, contract_init.contract))
     }
@@ -211,8 +227,11 @@ impl<'a> Deployer<'a> {
         update_payload: UpdateContractPayload,
         energy: Option<GivenEnergy>,
         expiry: Option<TransactionTime>,
+        logging: bool,
     ) -> Result<HashBytes<TransactionMarker>, DeployError> {
-        println!("\nUpdating contract....");
+        if logging {
+            println!("\nUpdating contract....");
+        }
 
         let nonce = self.get_nonce(self.key.address).await?;
 
@@ -249,13 +268,17 @@ impl<'a> Deployer<'a> {
             .await
             .map_err(DeployError::TransactionRejected)?;
 
-        println!("Sent tx: {tx_hash}");
+        if logging {
+            println!("Sent tx: {tx_hash}");
+        }
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         self.check_outcome_of_update_transaction(block_item)?;
 
-        println!("Transaction finalized, tx_hash={}", tx_hash,);
+        if logging {
+            println!("Transaction finalized: tx_hash={}", tx_hash,);
+        }
 
         Ok(tx_hash)
     }
@@ -274,8 +297,6 @@ impl<'a> Deployer<'a> {
         payload: UpdateContractPayload,
         max_energy: Option<Energy>,
     ) -> Result<Energy, DeployError> {
-        println!("\nEstimating energy....");
-
         let best_block = self.client.get_block_finalization_summary(Best).await?;
 
         let best_block_hash = best_block.block_hash;
@@ -310,7 +331,7 @@ impl<'a> Deployer<'a> {
                 used_energy,
             } => {
                 let e = used_energy.energy;
-                println!("Contract invoke success: estimated_energy={e}");
+
                 Ok(Energy {
                     energy: e,
                 })
