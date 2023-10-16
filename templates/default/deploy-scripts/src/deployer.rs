@@ -1,10 +1,12 @@
-use crate::v2::BlockIdentifier::Best;
+use crate::DeployError;
+use anyhow::Context;
+use concordium_rust_sdk::smart_contracts::types::DEFAULT_INVOKE_ENERGY;
+use concordium_rust_sdk::types::hashes::TransactionHash;
 use concordium_rust_sdk::{
     common::types::TransactionTime,
     id::types::AccountAddress,
-    smart_contracts::common::{Address, ModuleReference},
+    smart_contracts::common::ModuleReference,
     types::{
-        hashes::{HashBytes, TransactionMarker},
         queries::AccountNonceResponse,
         smart_contracts::{ContractContext, InvokeContractResult, WasmModule},
         transactions::{
@@ -15,18 +17,9 @@ use concordium_rust_sdk::{
         AccountTransactionEffects, BlockItemSummary, BlockItemSummaryDetails, ContractAddress,
         Energy, TransactionType, WalletAccount,
     },
-    v2,
+    v2::{self, BlockIdentifier},
 };
 use std::path::Path;
-
-use crate::DeployError;
-
-/// A struct representing the deployed module on the chain.
-#[derive(Clone, Debug)]
-pub struct ModuleDeployed {
-    /// Module reference on the chain.
-    pub module_ref: ModuleReference,
-}
 
 /// A struct representing a smart contract instance on the chain.
 #[derive(Clone, Debug)]
@@ -41,16 +34,17 @@ pub struct Deployer<'a> {
     /// The client to establish a connection to a Concordium node (V2 API).
     pub client: &'a mut v2::Client,
     /// The account keys to be used for sending transactions.
-    pub key:    WalletAccount,
+    pub key: WalletAccount,
 }
 
 impl<'a> Deployer<'a> {
-    /// A function to create a new deployer instance.
+    /// A function to create a new deployer instance from a network client and a path to the wallet.
     pub fn new(
         client: &'a mut v2::Client,
         wallet_account_file: &Path,
     ) -> Result<Deployer<'a>, DeployError> {
-        let key_data = WalletAccount::from_json_file(wallet_account_file)?;
+        let key_data = WalletAccount::from_json_file(wallet_account_file)
+            .context("Unable to read wallet file.")?;
 
         Ok(Deployer {
             client,
@@ -63,11 +57,10 @@ impl<'a> Deployer<'a> {
         &mut self,
         module_reference: &ModuleReference,
     ) -> Result<bool, DeployError> {
-        let best_block = self.client.get_block_finalization_summary(Best).await?;
-
-        let best_block_hash = best_block.block_hash;
-
-        let module_src = self.client.get_module_source(module_reference, &best_block_hash).await;
+        let module_src = self
+            .client
+            .get_module_source(module_reference, &BlockIdentifier::LastFinal)
+            .await;
 
         match module_src {
             Ok(_) => Ok(true),
@@ -92,23 +85,23 @@ impl<'a> Deployer<'a> {
         wasm_module: WasmModule,
         expiry: Option<TransactionTime>,
         logging: bool,
-    ) -> Result<(Option<HashBytes<TransactionMarker>>, ModuleDeployed), DeployError> {
+    ) -> Result<(Option<TransactionHash>, ModuleReference), DeployError> {
         if logging {
             println!("\nDeploying module....");
         }
 
-        let exists = self.module_exists(&wasm_module.get_module_ref()).await?;
+        let module_reference = wasm_module.get_module_ref();
+
+        let exists = self.module_exists(&module_reference).await?;
 
         if exists {
             if logging {
                 println!(
                     "Module with reference {} already exists on the chain.",
-                    wasm_module.get_module_ref()
+                    module_reference
                 );
             }
-            return Ok((None, ModuleDeployed {
-                module_ref: wasm_module.get_module_ref(),
-            }));
+            return Ok((None, module_reference));
         }
 
         let nonce = self.get_nonce(self.key.address).await?;
@@ -121,7 +114,13 @@ impl<'a> Deployer<'a> {
             (chrono::Utc::now().timestamp() + 300) as u64,
         ));
 
-        let tx = deploy_module(&self.key, self.key.address, nonce.nonce, expiry, wasm_module);
+        let tx = deploy_module(
+            &self.key,
+            self.key.address,
+            nonce.nonce,
+            expiry,
+            wasm_module,
+        );
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
         let tx_hash = self
@@ -137,16 +136,16 @@ impl<'a> Deployer<'a> {
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
-        let module_deployed = self.check_outcome_of_deploy_transaction(block_item)?;
+        let module_reference = self.check_outcome_of_deploy_transaction(block_item)?;
 
         if logging {
             println!(
                 "Transaction finalized: tx_hash={} module_ref={}",
-                tx_hash, module_deployed.module_ref,
+                tx_hash, module_reference,
             );
         }
 
-        Ok((Some(tx_hash), module_deployed))
+        Ok((Some(tx_hash), module_reference))
     }
 
     /// A function to initialize a smart contract instance on the chain.
@@ -164,7 +163,7 @@ impl<'a> Deployer<'a> {
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
         logging: bool,
-    ) -> Result<(HashBytes<TransactionMarker>, ContractAddress), DeployError> {
+    ) -> Result<(TransactionHash, ContractAddress), DeployError> {
         if logging {
             println!("\nInitializing contract....");
         }
@@ -175,15 +174,20 @@ impl<'a> Deployer<'a> {
             return Err(DeployError::NonceNotFinal);
         }
 
-        let energy = energy.unwrap_or(Energy {
-            energy: 5000,
-        });
+        let energy = energy.unwrap_or(Energy { energy: 5000 });
 
         let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
             (chrono::Utc::now().timestamp() + 300) as u64,
         ));
 
-        let tx = init_contract(&self.key, self.key.address, nonce.nonce, expiry, payload, energy);
+        let tx = init_contract(
+            &self.key,
+            self.key.address,
+            nonce.nonce,
+            expiry,
+            payload,
+            energy,
+        );
 
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
@@ -228,7 +232,7 @@ impl<'a> Deployer<'a> {
         energy: Option<GivenEnergy>,
         expiry: Option<TransactionTime>,
         logging: bool,
-    ) -> Result<HashBytes<TransactionMarker>, DeployError> {
+    ) -> Result<TransactionHash, DeployError> {
         if logging {
             println!("\nUpdating contract....");
         }
@@ -247,9 +251,7 @@ impl<'a> Deployer<'a> {
             (chrono::Utc::now().timestamp() + 300) as u64,
         ));
 
-        let energy = energy.unwrap_or(GivenEnergy::Absolute(Energy {
-            energy: 50000,
-        }));
+        let energy = energy.unwrap_or(GivenEnergy::Absolute(Energy { energy: 50000 }));
 
         let tx = transactions::send::make_and_sign_transaction(
             &self.key,
@@ -288,33 +290,17 @@ impl<'a> Deployer<'a> {
     ///
     /// If successful, the transaction energy is returned by this function.
     /// This function can be used to dry-run a transaction.
-    ///
-    /// An optional max_energy value for the transaction can
-    /// be given. If `None` is provided, 50000 energy is used as a default
-    /// max_energy value.
     pub async fn estimate_energy(
         &mut self,
         payload: UpdateContractPayload,
-        max_energy: Option<Energy>,
     ) -> Result<Energy, DeployError> {
-        let best_block = self.client.get_block_finalization_summary(Best).await?;
+        let context =
+            ContractContext::new_from_payload(self.key.address, DEFAULT_INVOKE_ENERGY, payload);
 
-        let best_block_hash = best_block.block_hash;
-
-        let max_energy = max_energy.unwrap_or(Energy {
-            energy: 50000,
-        });
-
-        let context = ContractContext {
-            invoker:   Some(Address::Account(self.key.address)),
-            contract:  payload.address,
-            amount:    payload.amount,
-            method:    payload.receive_name,
-            parameter: payload.message,
-            energy:    max_energy,
-        };
-
-        let result = self.client.invoke_instance(&best_block_hash, &context).await?;
+        let result = self
+            .client
+            .invoke_instance(&BlockIdentifier::LastFinal, &context)
+            .await?;
 
         match result.response {
             InvokeContractResult::Failure {
@@ -329,13 +315,7 @@ impl<'a> Deployer<'a> {
                 return_value: _,
                 events: _,
                 used_energy,
-            } => {
-                let e = used_energy.energy;
-
-                Ok(Energy {
-                    energy: e,
-                })
-            }
+            } => Ok(used_energy),
         }
     }
 
@@ -344,17 +324,20 @@ impl<'a> Deployer<'a> {
         &mut self,
         address: AccountAddress,
     ) -> Result<AccountNonceResponse, DeployError> {
-        let nonce = self.client.get_next_account_sequence_number(&address).await?;
+        let nonce = self
+            .client
+            .get_next_account_sequence_number(&address)
+            .await?;
         Ok(nonce)
     }
 
     /// A function that checks the outcome of the deploy transaction.
-    /// It throws if the `block_item` is not a deploy transaction.
+    /// It returns an error if the `block_item` is not a deploy transaction.
     /// It returns the error code if the transaction reverted.
     fn check_outcome_of_deploy_transaction(
         &self,
         block_item: BlockItemSummary,
-    ) -> Result<ModuleDeployed, DeployError> {
+    ) -> Result<ModuleReference, DeployError> {
         match block_item.details {
             BlockItemSummaryDetails::AccountTransaction(a) => match a.effects {
                 AccountTransactionEffects::None {
@@ -371,11 +354,9 @@ impl<'a> Deployer<'a> {
                         "Module deploy rejected with reason: {reject_reason:?}"
                     )))
                 }
-                AccountTransactionEffects::ModuleDeployed {
-                    module_ref,
-                } => Ok(ModuleDeployed {
-                    module_ref,
-                }),
+                AccountTransactionEffects::ModuleDeployed { module_ref } => {
+                    Ok( module_ref )
+                }
                 _ => Err(DeployError::InvalidBlockItem(
                     "The parsed account transaction effect should be of type `ModuleDeployed` or \
                      `None` (in case the transaction reverted)"
@@ -391,7 +372,7 @@ impl<'a> Deployer<'a> {
     }
 
     /// A function that checks the outcome of the initialization transaction.
-    /// It throws if the `block_item` is not a initialization transaction.
+    /// It returns an error if the `block_item` is not an initialization transaction.
     /// It returns the error code if the transaction reverted.
     fn check_outcome_of_initialization_transaction(
         &self,
@@ -413,11 +394,11 @@ impl<'a> Deployer<'a> {
                         "Contract init rejected with reason: {reject_reason:?}"
                     )))
                 }
-                AccountTransactionEffects::ContractInitialized {
-                    data,
-                } => Ok(ContractInitialized {
-                    contract: data.address,
-                }),
+                AccountTransactionEffects::ContractInitialized { data } => {
+                    Ok(ContractInitialized {
+                        contract: data.address,
+                    })
+                }
                 _ => Err(DeployError::InvalidBlockItem(
                     "The parsed account transaction effect should be of type \
                      `ContractInitialized` or `None` (in case the transaction reverted)"
@@ -433,7 +414,7 @@ impl<'a> Deployer<'a> {
     }
 
     /// A function that checks the outcome of the update transaction.
-    /// It throws if the `block_item` is not a update transaction.
+    /// It returns an error if the `block_item` is not an update transaction.
     /// It returns the error code if the transaction reverted.
     fn check_outcome_of_update_transaction(
         &self,
@@ -455,9 +436,7 @@ impl<'a> Deployer<'a> {
                         "Contract update rejected with reason: {reject_reason:?}"
                     )))
                 }
-                AccountTransactionEffects::ContractUpdateIssued {
-                    effects: _,
-                } => Ok(()),
+                AccountTransactionEffects::ContractUpdateIssued { effects: _ } => Ok(()),
                 _ => Err(DeployError::InvalidBlockItem(
                     "The parsed account transaction effect should be of type \
                      `ContractUpdateIssued` or `None` (in case the transaction reverted)"

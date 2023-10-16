@@ -9,7 +9,7 @@ use concordium_rust_sdk::{
         types::{OwnedContractName, OwnedParameter, OwnedReceiveName},
     },
     types::{
-        smart_contracts::{ExceedsParameterSize, WasmModule},
+        smart_contracts::{ExceedsParameterSize, WasmModule, ModuleReference},
         transactions,
         transactions::send::GivenEnergy,
     },
@@ -18,7 +18,7 @@ use concordium_rust_sdk::{
 use itertools::Itertools;
 
 use concordium_rust_sdk::types::transactions::InitContractPayload;
-use deployer::{Deployer, ModuleDeployed};
+use deployer::Deployer;
 use hex::FromHexError;
 use std::{
     io::Cursor,
@@ -110,7 +110,7 @@ struct App {
 /// `--module` flags. Write your own custom deployment/initialization script in
 /// this function. An deployment/initialization script example is given in this
 /// function for the `default` smart contract.
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), DeployError> {
     let app: App = App::parse();
 
@@ -118,7 +118,7 @@ async fn main() -> Result<(), DeployError> {
 
     let mut deployer = Deployer::new(&mut concordium_client, &app.key_file)?;
 
-    let mut modules_deployed: Vec<ModuleDeployed> = Vec::new();
+    let mut modules_deployed: Vec<ModuleReference> = Vec::new();
 
     for contract in app.module.iter().unique() {
         let wasm_module = get_wasm_module(contract.as_path())?;
@@ -131,14 +131,14 @@ async fn main() -> Result<(), DeployError> {
     // Write your own deployment/initialization script below. An example is given
     // here.
 
-    let param: OwnedParameter = OwnedParameter::default(); // Example
+    let param: OwnedParameter = OwnedParameter::empty(); // Example
 
     let init_method_name: &str = "init_{{crate_name}}"; // Example
 
     let payload = InitContractPayload {
         init_name: OwnedContractName::new(init_method_name.into())?,
         amount: Amount::from_micro_ccd(0),
-        mod_ref: modules_deployed[0].module_ref,
+        mod_ref: modules_deployed[0],
         param,
     }; // Example
 
@@ -160,7 +160,7 @@ async fn main() -> Result<(), DeployError> {
         message:      bytes.try_into()?,
     }; // Example
 
-    let mut energy = deployer.estimate_energy(update_payload.clone(), None).await?; // Example
+    let mut energy = deployer.estimate_energy(update_payload.clone()).await?; // Example
 
     // We add 100 energy to be safe.
     energy.energy += 100; // Example
