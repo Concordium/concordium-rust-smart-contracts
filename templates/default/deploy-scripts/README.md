@@ -24,8 +24,6 @@ The following options are necessary when running the script
     --module <MODULE_PATH>
         Path of the Concordium smart contract module. Use this flag several times \
         if you have several smart contract modules to be deployed (e.g. --module ./myPath/default.wasm.v1 --module ./default2.wasm.v1).
-    --no-logging <BOOL>
-        To specify if verbose logging should be disabled when running the script.
 ```
 
 The `account` parameter should be a Concordium wallet account either exported from the
