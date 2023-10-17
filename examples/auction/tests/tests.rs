@@ -113,8 +113,7 @@ fn test_multiple_scenarios() {
         )
         .expect_err("Alice tries to bid 3 CCD");
     // Check that the correct error is returned.
-    let rv: BidError = from_bytes(&update_4.return_value().expect("Return value known to exist"))
-        .expect("Return value is valid");
+    let rv: BidError = update_4.parse_return_value().expect("Return value is valid");
     assert_eq!(rv, BidError::BidBelowCurrentBid);
 
     // 5. Alice tries to bid 3.5 CCD, which is below the minimum raise threshold of
@@ -134,8 +133,7 @@ fn test_multiple_scenarios() {
         )
         .expect_err("Alice tries to bid 3.5 CCD");
     // Check that the correct error is returned.
-    let rv: BidError = from_bytes(&update_5.return_value().expect("Return value known to exist"))
-        .expect("Return value is valid");
+    let rv: BidError = update_5.parse_return_value().expect("Return value is valid");
     assert_eq!(rv, BidError::BidBelowMinimumRaise);
 
     // 6. Someone tries to finalize the auction before
@@ -155,9 +153,7 @@ fn test_multiple_scenarios() {
         )
         .expect_err("Attempt to finalize auction before end time");
     // Check that the correct error is returned.
-    let rv: FinalizeError =
-        from_bytes(&update_6.return_value().expect("Return value known to exist"))
-            .expect("Return value is valid");
+    let rv: FinalizeError = update_6.parse_return_value().expect("Return value is valid");
     assert_eq!(rv, FinalizeError::AuctionStillActive);
 
     // Increment the chain time by 1001 milliseconds.
@@ -180,8 +176,7 @@ fn test_multiple_scenarios() {
         )
         .expect_err("Attempt to bid after auction has reached the endtime");
     // Check that the return value is `BidTooLate`.
-    let rv: BidError = from_bytes(&update_7.return_value().expect("Return value known to exist"))
-        .expect("Return value is valid");
+    let rv: BidError = update_7.parse_return_value().expect("Return value is valid");
     assert_eq!(rv, BidError::BidTooLate);
 
     // 8. Dave successfully finalizes the auction after its end time.
@@ -223,8 +218,7 @@ fn test_multiple_scenarios() {
         )
         .expect_err("Attempt to bid after auction has been finalized");
     // Check that the return value is `AuctionAlreadyFinalized`.
-    let rv: BidError = from_bytes(&update_9.return_value().expect("Return value known to exist"))
-        .expect("Return value is valid");
+    let rv: BidError = update_9.parse_return_value().expect("Return value is valid");
     assert_eq!(rv, BidError::AuctionAlreadyFinalized);
 
     let update_10 = chain
@@ -241,17 +235,15 @@ fn test_multiple_scenarios() {
             },
         )
         .expect_err("Attempt to finalize auction after it has been finalized");
-    let rv: FinalizeError =
-        from_bytes(&update_10.return_value().expect("Return value known to exist"))
-            .expect("Return value is valid");
+    let rv: FinalizeError = update_10.parse_return_value().expect("Return value is valid");
     assert_eq!(rv, FinalizeError::AuctionAlreadyFinalized);
 }
 
 /// Setup auction and chain.
 ///
-/// CAROL is the owner of the auction, which ends at `1000` milliseconds after
+/// Carol is the owner of the auction, which ends at `1000` milliseconds after
 /// the unix epoch. The 'microCCD per euro' exchange rate is set to `1_000_000`,
-/// so 1CCD = 1 euro.
+/// so 1 CCD = 1 euro.
 fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
     let mut chain = Chain::builder()
         .micro_ccd_per_euro(

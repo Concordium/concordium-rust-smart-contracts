@@ -2,6 +2,7 @@
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519};
 use signature_verifier::*;
+use std::str::FromStr;
 
 const ALICE: AccountAddress = AccountAddress([0u8; 32]);
 const ALICE_ADDR: Address = Address::Account(ALICE);
@@ -48,21 +49,13 @@ fn test_signature_check() {
         })
         .expect("Call signature verifier contract with an invalid signature.");
     // Check that it returns `false`.
-    let rv: bool = from_bytes(&update_invalid.return_value).expect("Deserializing bool");
+    let rv: bool = update_invalid.parse_return_value().expect("Deserializing bool");
     assert_eq!(rv, false);
 
     // Construct a parameter with a valid signature.
     let parameter_valid = VerificationParameter {
-        public_key: PublicKeyEd25519([
-            53, 162, 168, 229, 46, 250, 217, 117, 219, 246, 88, 14, 119, 52, 228, 242, 73, 234,
-            165, 234, 138, 118, 62, 147, 74, 134, 113, 205, 126, 68, 100, 153,
-        ]),
-        signature:  SignatureEd25519([
-            170, 242, 191, 224, 247, 247, 70, 49, 133, 3, 112, 66, 33, 24, 243, 14, 135, 135, 197,
-            113, 122, 74, 21, 82, 122, 94, 29, 15, 252, 121, 27, 102, 59, 21, 9, 177, 33, 2, 46,
-            242, 96, 134, 179, 120, 89, 0, 29, 9, 100, 38, 116, 250, 59, 226, 1, 247, 217, 220, 39,
-            8, 245, 230, 236, 2,
-        ]),
+        public_key: PublicKeyEd25519::from_str("35a2a8e52efad975dbf6580e7734e4f249eaa5ea8a763e934a8671cd7e446499").expect("Valid public key"),
+        signature:  SignatureEd25519::from_str("aaf2bfe0f7f74631850370422118f30e8787c5717a4a15527a5e1d0ffc791b663b1509b121022ef26086b37859001d09642674fa3be201f7d9dc2708f5e6ec02").expect("Valid signature"),
         message:    b"Concordium".to_vec(),
     };
 
@@ -77,6 +70,6 @@ fn test_signature_check() {
         })
         .expect("Call signature verifier contract with a valid signature.");
     // Check that it returns `true`.
-    let rv: bool = from_bytes(&update.return_value).expect("Deserializing bool");
-    assert_eq!(rv, true);
+    let rv: bool = update.parse_return_value().expect("Deserializing bool");
+    assert!(rv, "Signature checking failed.");
 }

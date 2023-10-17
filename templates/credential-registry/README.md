@@ -5,7 +5,7 @@ part of verifiable credentials (VCs). The contract follows CIS-4: Credential
 Registry Standard.
 
 The contract keeps track of credentials' public data, allows managing the
-VC life cycle. and querying VCs data and status. The intended users are
+VC life cycle, and querying VCs data and status. The intended users are
 issuers of VCs, holders of VCs, revocation authorities, and verifiers.
 
 When initializing a contract, the issuer provides a type and a schema
@@ -44,4 +44,3 @@ private key.
 - view credential status to verify VC validity;
 - view credential data to verify proofs (verifiable presentations) requested
   from holders.
-  

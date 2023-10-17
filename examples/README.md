@@ -1,3 +1,5 @@
+# Example contracts
+
 Example smart contracts illustrating the use of the tools for developing smart
 contracts in Rust.
 
@@ -7,7 +9,10 @@ the logic of the contract is reasonable, or safe.
 
 **Do not use these contracts as-is for anything other then experimenting.**
 
-The list of contracts is as follows
+## The examples
+
+The list of contracts is as follows:
+
 - [account-signature-checks](./account-signature-checks) A simple contract that
   demonstrates how account signature checks can be performed in smart contracts.
 - [two-step-transfer](./two-step-transfer) A contract that acts like an account (can send, store and accept CCD),
@@ -39,4 +44,15 @@ The list of contracts is as follows
 - [credential-registry](./credential-registry/) A contract for storing and managing public data of verifiable credentials.
 - [sponsoredTransactions](./cis3-nft-sponsored-txs) A contract implementing the sponsored transaction mechanism (CIS3 standard).
 - [smartContractUpgrade](./smart-contract-upgrade) An example of how to upgrade a smart contract. The state is migrated during the upgrade.
+
+
+## Running the tests
+
+To run the tests for an example contract in the folder `EXAMPLE` open a terminal an run the following commands:
+1. `cd EXAMPLE`
+2. `cargo concordium test --out concordium-out/module.wasm.v1`
+
+The smart contract upgrade example has specific instructions for running the tests. See the module documentation in `./smart-contract-upgrade/contract-version1/tests/tests.rs`.
+
+To learn more about testing contracts, please refer to [our integration testing documentation](https://developer.concordium.software/en/mainnet/smart-contracts/guides/integration-test-contract.html).
 

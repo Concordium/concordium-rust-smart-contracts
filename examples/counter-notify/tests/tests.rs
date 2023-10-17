@@ -110,6 +110,6 @@ fn tests() {
     ] if rcv_name_1 == "counter-notify.just-increment" && rcv_name_2 == "reentrancy-attacker.call-just-increment" && rcv_name_3 == "counter-notify.increment-and-notify"));
 
     // Check that the contract observed the reentrancy attack.
-    let rv: bool = from_bytes(&update.return_value).unwrap();
-    assert_eq!(rv, false);
+    let rv: bool = update.parse_return_value().unwrap();
+    assert!(rv, "Re-entrancy attack not observed.");
 }

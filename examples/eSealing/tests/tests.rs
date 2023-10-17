@@ -66,8 +66,7 @@ fn test_can_not_register_file_twice() {
         .expect_err("Register file");
 
     // Check the error message returned.
-    let rv: ContractError = from_bytes(&update.return_value().expect("Known to exist"))
-        .expect("Deserialize ContractError.");
+    let rv: ContractError = update.parse_return_value().expect("Deserialize ContractError.");
     assert_eq!(rv, ContractError::AlreadyRegistered);
 }
 
@@ -104,7 +103,7 @@ fn test_get_file() {
 
     // Check that get_file returns the filestate.
     let file_state: Option<FileState> =
-        from_bytes(&invoke.return_value).expect("Deserialize FileState.");
+        invoke.parse_return_value().expect("Deserialize FileState.");
     assert_eq!(
         file_state,
         Some(FileState {
@@ -120,12 +119,7 @@ fn test_get_file() {
 fn deserialize_update_events(update: &ContractInvokeSuccess) -> Vec<Event> {
     update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| {
-                let e = from_bytes(e.as_ref()).expect("Deserialize event");
-                e
-            })
-        })
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect()
 }
 

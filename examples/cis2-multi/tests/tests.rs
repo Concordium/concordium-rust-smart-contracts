@@ -37,7 +37,7 @@ fn test_minting() {
         .expect("Invoke view");
 
     // Check that the tokens are owned by Alice.
-    let rv: ViewState = from_bytes(&invoke.return_value).expect("ViewState return value");
+    let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.tokens[..], [TOKEN_0, TOKEN_1]);
     assert_eq!(rv.state, vec![(ALICE_ADDR, ViewAddressState {
         balances:  vec![(TOKEN_0, 400.into()), (TOKEN_1, 1.into())],
@@ -47,13 +47,8 @@ fn test_minting() {
     // Check that the events are logged.
     let events = update.events().flat_map(|(_addr, events)| events);
 
-    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> = events
-        .map(|e| {
-            let e: Cis2Event<ContractTokenId, ContractTokenAmount> =
-                from_bytes(e.as_ref()).expect("Deserialize event");
-            e
-        })
-        .collect();
+    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
+        events.map(|e| e.parse().expect("Deserialize event")).collect();
 
     assert_eq!(events, [
         Cis2Event::Mint(MintEvent {
@@ -116,7 +111,7 @@ fn test_account_transfer() {
             message:      OwnedParameter::empty(),
         })
         .expect("Invoke view");
-    let rv: ViewState = from_bytes(&invoke.return_value).expect("ViewState return value");
+    let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.state, vec![
         (ALICE_ADDR, ViewAddressState {
             balances:  vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
@@ -131,14 +126,8 @@ fn test_account_transfer() {
     // Check that the events are logged.
     let events = update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| {
-                let e: Cis2Event<ContractTokenId, ContractTokenAmount> =
-                    from_bytes(e.as_ref()).expect("Deserialize event");
-                e
-            })
-        })
-        .collect::<Vec<_>>();
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Cis2Event<_, _>>>();
 
     assert_eq!(events, [Cis2Event::Transfer(TransferEvent {
         token_id: TOKEN_0,
@@ -173,14 +162,8 @@ fn test_add_operator() {
     // Check that an operator event occurred.
     let events = update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| {
-                let e: Cis2Event<ContractTokenId, ContractTokenAmount> =
-                    from_bytes(e.as_ref()).expect("Deserialize event");
-                e
-            })
-        })
-        .collect::<Vec<_>>();
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Cis2Event<ContractTokenId, ContractTokenAmount>>>();
     assert_eq!(events, [Cis2Event::UpdateOperator(UpdateOperatorEvent {
         operator: BOB_ADDR,
         owner:    ALICE_ADDR,
@@ -206,8 +189,7 @@ fn test_add_operator() {
         })
         .expect("Invoke view");
 
-    let rv: OperatorOfQueryResponse =
-        from_bytes(&invoke.return_value).expect("OperatorOf return value");
+    let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
     assert_eq!(rv, OperatorOfQueryResponse(vec![true]));
 }
 
@@ -239,9 +221,7 @@ fn test_unauthorized_sender() {
         .expect_err("Transfer tokens");
 
     // Check that the correct error is returned.
-    let rv: ContractError =
-        from_bytes(&update.return_value().expect("Return value known to exist"))
-            .expect("ContractError return value");
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
     assert_eq!(rv, ContractError::Unauthorized);
 }
 
@@ -292,7 +272,7 @@ fn test_operator_can_transfer() {
             message:      OwnedParameter::empty(),
         })
         .expect("Invoke view");
-    let rv: ViewState = from_bytes(&invoke.return_value).expect("ViewState return value");
+    let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.state, vec![
         (ALICE_ADDR, ViewAddressState {
             balances:  vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],

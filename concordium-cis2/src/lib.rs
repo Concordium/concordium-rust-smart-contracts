@@ -1052,9 +1052,14 @@ impl From<AccountAddress> for Receiver {
 }
 
 /// Additional information to include with a transfer.
-#[derive(Debug, Serialize, Clone, SchemaType)]
+#[derive(Debug, Serialize, Clone)]
 #[concordium(transparent)]
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
+
+// Implemented manually to display the AdditionalData as a hex string.
+impl schema::SchemaType for AdditionalData {
+    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U16) }
+}
 
 impl AdditionalData {
     /// Construct an AdditionalData containing no data.

@@ -77,7 +77,7 @@ fn tests() {
         )
         .expect("Viewing list with two elements");
     let returned_list_1: Vec<AccountAddress> =
-        from_bytes(&view_list_1.return_value).expect("Decoding return value");
+        view_list_1.parse_return_value().expect("Decoding return value");
     assert_eq!(returned_list_1[..], [ACC_0, ACC_1]);
 
     // Make the transfers to all accounts.
@@ -97,8 +97,7 @@ fn tests() {
         .expect("Recording`ACC_1`");
 
     // Check that the contract returns `2` for the number of transfers made.
-    let transfers_made: u64 =
-        from_bytes(&update_transfer.return_value).expect("Decoding return value.");
+    let transfers_made: u64 = update_transfer.parse_return_value().expect("Decoding return value.");
     assert_eq!(transfers_made, 2);
     assert_eq!(update_transfer.account_transfers().collect::<Vec<_>>()[..], [
         (contract_address, Amount::zero(), ACC_0),
@@ -120,6 +119,6 @@ fn tests() {
         )
         .expect("Viewing list with two elements");
     let returned_list_2: Vec<AccountAddress> =
-        from_bytes(&view_list_2.return_value).expect("Decoding return value");
+        view_list_2.parse_return_value().expect("Decoding return value");
     assert!(returned_list_2.is_empty());
 }

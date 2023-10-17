@@ -59,6 +59,6 @@ fn test_forwards_and_returns_data_unaltered() {
     // in that it *doesn't* include the option tag and length values in the return
     // value. If they were included, the string would have some extra bytes at
     // the beginning.
-    let return_value: String = from_bytes(&update.return_value).expect("Deserialize return value");
+    let return_value: String = update.parse_return_value().expect("Deserialize return value");
     assert_eq!(return_value, "hello, world");
 }
