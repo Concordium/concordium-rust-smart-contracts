@@ -1047,7 +1047,7 @@ pub type LowLevelHost = ExternLowLevelHost;
 ///
 /// See [`ExternChainMeta`] for the methods implemented via the
 /// `HasChainMetadata` trait.
-pub type ChainMetadata = ExternChainMeta;
+pub type ChainMeta = ExternChainMeta;
 
 /// A host-backed iterator over part of the state.
 ///
@@ -1070,12 +1070,12 @@ pub type ReturnValue = ExternReturnValue;
 /// following cases
 /// - an entrypoint of a V1 contract was invoked and the invocation succeeded
 /// - an entrypoint of a V1 contract was invoked and the invocation failed due
-///   to a [CallContractError::LogicReject]
+///   to a [`CallContractError::LogicReject`]
 ///
 /// In all other cases there is no response.
 ///
 /// This type is designed to be used via its [Read](crate::Read) and
-/// [HasCallResponse](crate::HasCallResponse) traits.
+/// [`HasCallResponse`](crate::HasCallResponse) traits.
 ///
 /// See [`ExternCallResponse`] for more details.
 pub type CallResponse = ExternCallResponse;

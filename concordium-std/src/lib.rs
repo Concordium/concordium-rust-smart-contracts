@@ -17,7 +17,7 @@
 //! Also note that `concordium-std` version 4 only works with `cargo-concordium`
 //! version 2.1+.
 //!
-//! Version 9 deprecates the module [test_infrastructure] in favour of the
+//! Version 8.1 deprecates the module [`test_infrastructure`] in favor of the
 //! library [concordium_smart_contract_testing], which should be used instead.
 //! For more details including how to migrate your contract, see the
 //! [Deprecating the
@@ -144,7 +144,7 @@
 //! contracts. The structure of these are, at present, a bit odd without the
 //! historic context, which is explained below.
 //!
-//! Prior to version 9, a number of traits and generics were used when writing
+//! Prior to version 8.1, a number of traits and generics were used when writing
 //! smart contracts, e.g. [`HasHost`], to support the usage of
 //! [`crate::test_infrastructure`] for testing, where two primary
 //! implementations of each trait existed. The first one is supported by
@@ -229,7 +229,7 @@
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
 //!
 //! # Deprecating the `test_infrastructure`
-//! Version 9 deprecates the [test_infrastructure] in favour of the library
+//! Version 8.1 deprecates the [test_infrastructure] in favor of the library
 //! [concordium_smart_contract_testing]. A number of traits are also
 //! deprecated at the same time since they only exist to support the
 //! [test_infrastructure] and are not needed in the new testing library.
@@ -376,9 +376,7 @@ pub mod constants;
 mod impls;
 pub mod prims;
 mod traits;
-// TODO: For reviewers: I made this pub to avoid a never used warning for
-// `ChainMetadata`. I am not sure why `pub use types::*;` isn't sufficient.
-pub mod types;
+mod types;
 pub use concordium_contracts_common::*;
 pub use impls::*;
 pub use traits::*;
@@ -390,7 +388,7 @@ pub use types::*;
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[deprecated(
-    since = "9.0.0",
-    note = "Deprecated in favour of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
+    since = "8.1.0",
+    note = "Deprecated in favor of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
 )]
 pub mod test_infrastructure;
