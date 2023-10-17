@@ -1,15 +1,14 @@
 pub mod deployer;
-use anyhow::Context;
+use anyhow::{Error,Context};
 use clap::Parser;
 use concordium_rust_sdk::{
     common::types::Amount,
-    endpoints::{self, RPCError},
     smart_contracts::{
-        common::{self as contracts_common, NewContractNameError, NewReceiveNameError},
+        common::{self as contracts_common},
         types::{OwnedContractName, OwnedParameter, OwnedReceiveName},
     },
     types::{
-        smart_contracts::{ExceedsParameterSize, ModuleReference, WasmModule},
+        smart_contracts::{ ModuleReference, WasmModule},
         transactions,
         transactions::send::GivenEnergy,
     },
@@ -19,64 +18,18 @@ use itertools::Itertools;
 
 use concordium_rust_sdk::types::transactions::InitContractPayload;
 use deployer::Deployer;
-use hex::FromHexError;
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
 };
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum DeployError {
-    #[error("concordium error: {0}")]
-    RPCError(#[from] RPCError),
-    #[error("transport error: {0}")]
-    TransportError(#[from] v2::Error),
-    #[error("query error: {0}")]
-    QueryError(#[from] endpoints::QueryError),
-    #[error("anyhow error: {0}")]
-    AnyhowError(#[from] anyhow::Error),
-    #[error("There are unfinalized transactions. Transaction nonce is not reliable enough.")]
-    NonceNotFinal,
-    #[error("Transaction rejected: {0}")]
-    TransactionRejected(RPCError),
-    #[error("Transaction rejected: {0:?}")]
-    TransactionRejectedR(String),
-    #[error("Invalid block item: {0}")]
-    InvalidBlockItem(String),
-    #[error("Invalid contract name: {0}")]
-    InvalidContractName(String),
-    #[error("hex decoding error: {0}")]
-    HexDecodingError(#[from] FromHexError),
-    #[error("failed to parse receive name: {0}")]
-    FailedToParseReceiveName(String),
-    #[error("Json error: {0}")]
-    JSONError(#[from] serde_json::Error),
-    #[error("Parameter size error: {0}")]
-    ParameterSizeError(#[from] ExceedsParameterSize),
-    #[error("Receive name error: {0}")]
-    ReceiveNameError(#[from] NewReceiveNameError),
-    #[error("Contract name error: {0}")]
-    ContractNameError(#[from] NewContractNameError),
-    #[error("Reqwest error: {0}")]
-    ReqwestError(#[from] reqwest::Error),
-    #[error("Invalid metadata hash: {0}")]
-    InvalidHash(String),
-    #[error("IO error: {0}")]
-    IOError(#[from] std::io::Error),
-    #[error("Invoke contract failed: {0}")]
-    InvokeContractFailed(String),
-}
 
 /// Reads the wasm module from a given file path and file name.
-fn get_wasm_module(file: &Path) -> Result<WasmModule, DeployError> {
+fn get_wasm_module(file: &Path) -> Result<WasmModule, Error> {
     let wasm_module = std::fs::read(file).context("Could not read the WASM file")?;
     let mut cursor = Cursor::new(wasm_module);
     let wasm_module: WasmModule = concordium_rust_sdk::common::from_bytes(&mut cursor)?;
     Ok(wasm_module)
 }
-
-//wasm_module.get_module_ref();
 
 /// Command line flags.
 #[derive(clap::Parser, Debug)]
@@ -108,7 +61,7 @@ struct App {
 /// this function. An deployment/initialization script example is given in this
 /// function for the `default` smart contract.
 #[tokio::main]
-async fn main() -> Result<(), DeployError> {
+async fn main() -> Result<(), Error> {
     let app: App = App::parse();
 
     let concordium_client = v2::Client::new(app.url).await?;
