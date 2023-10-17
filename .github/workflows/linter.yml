@@ -836,7 +836,7 @@ jobs:
           CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
           wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
           chmod +x $CARGO_CCD
-          mv $CARGO_CCD /usr/bin/cargo-concordium
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
 
         # The 'smart-contract-upgrade' example has a v1 and v2 contract and the tests in v1 needs the wasm module from v2 for upgrading.
       - name: Build contract-upgrade version 2 module if needed
