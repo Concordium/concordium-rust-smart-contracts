@@ -1,5 +1,5 @@
 pub mod deployer;
-use anyhow::{Error,Context};
+use anyhow::{Context, Error};
 use clap::Parser;
 use concordium_rust_sdk::{
     common::types::Amount,
@@ -8,7 +8,7 @@ use concordium_rust_sdk::{
         types::{OwnedContractName, OwnedParameter, OwnedReceiveName},
     },
     types::{
-        smart_contracts::{ ModuleReference, WasmModule},
+        smart_contracts::{ModuleReference, WasmModule},
         transactions,
         transactions::send::GivenEnergy,
     },
