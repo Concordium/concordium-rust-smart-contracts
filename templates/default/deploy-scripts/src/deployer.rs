@@ -1,5 +1,4 @@
-use crate::DeployError;
-use anyhow::Context;
+use anyhow::{bail, Context, Error};
 use concordium_rust_sdk::smart_contracts::types::DEFAULT_INVOKE_ENERGY;
 use concordium_rust_sdk::types::hashes::TransactionHash;
 use concordium_rust_sdk::{
@@ -33,7 +32,7 @@ pub struct Deployer {
 
 impl Deployer {
     /// A function to create a new deployer instance from a network client and a path to the wallet.
-    pub fn new(client: v2::Client, wallet_account_file: &Path) -> Result<Deployer, DeployError> {
+    pub fn new(client: v2::Client, wallet_account_file: &Path) -> Result<Deployer, Error> {
         let key_data = WalletAccount::from_json_file(wallet_account_file)
             .context("Unable to read wallet file.")?;
 
@@ -47,7 +46,7 @@ impl Deployer {
     pub async fn module_exists(
         &mut self,
         module_reference: &ModuleReference,
-    ) -> Result<bool, DeployError> {
+    ) -> Result<bool, Error> {
         let module_src = self
             .client
             .get_module_source(module_reference, &BlockIdentifier::LastFinal)
@@ -81,7 +80,7 @@ impl Deployer {
             Option<BlockItemSummary>,
             ModuleReference,
         ),
-        DeployError,
+        Error,
     > {
         println!("\nDeploying module....");
 
@@ -100,7 +99,7 @@ impl Deployer {
         let nonce = self.get_nonce(self.key.address).await?;
 
         if !nonce.all_final {
-            return Err(DeployError::NonceNotFinal);
+            anyhow::bail!("Nonce not final")
         }
 
         let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
@@ -116,12 +115,7 @@ impl Deployer {
         );
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
-        let tx_hash = self
-            .client
-            .clone()
-            .send_block_item(&bi)
-            .await
-            .map_err(DeployError::TransactionRejected)?;
+        let tx_hash = self.client.clone().send_block_item(&bi).await?;
 
         println!("Sent tx: {tx_hash}");
 
@@ -151,13 +145,13 @@ impl Deployer {
         payload: InitContractPayload,
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
-    ) -> Result<(TransactionHash, BlockItemSummary, ContractAddress), DeployError> {
+    ) -> Result<(TransactionHash, BlockItemSummary, ContractAddress), Error> {
         println!("\nInitializing contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
 
         if !nonce.all_final {
-            return Err(DeployError::NonceNotFinal);
+            bail!("Nonce not final")
         }
 
         let energy = energy.unwrap_or(Energy { energy: 5000 });
@@ -177,12 +171,7 @@ impl Deployer {
 
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
-        let tx_hash = self
-            .client
-            .clone()
-            .send_block_item(&bi)
-            .await
-            .map_err(DeployError::TransactionRejected)?;
+        let tx_hash = self.client.clone().send_block_item(&bi).await?;
 
         println!("Sent tx: {tx_hash}");
 
@@ -213,13 +202,13 @@ impl Deployer {
         update_payload: UpdateContractPayload,
         energy: Option<GivenEnergy>,
         expiry: Option<TransactionTime>,
-    ) -> Result<(TransactionHash, BlockItemSummary), DeployError> {
+    ) -> Result<(TransactionHash, BlockItemSummary), Error> {
         println!("\nUpdating contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
 
         if !nonce.all_final {
-            return Err(DeployError::NonceNotFinal);
+            bail!("Nonce not final")
         }
 
         let payload = transactions::Payload::Update {
@@ -242,12 +231,7 @@ impl Deployer {
         );
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
-        let tx_hash = self
-            .client
-            .clone()
-            .send_block_item(&bi)
-            .await
-            .map_err(DeployError::TransactionRejected)?;
+        let tx_hash = self.client.clone().send_block_item(&bi).await?;
 
         println!("Sent tx: {tx_hash}");
 
@@ -268,7 +252,7 @@ impl Deployer {
     pub async fn estimate_energy(
         &mut self,
         payload: UpdateContractPayload,
-    ) -> Result<Energy, DeployError> {
+    ) -> Result<Energy, Error> {
         let context =
             ContractContext::new_from_payload(self.key.address, DEFAULT_INVOKE_ENERGY, payload);
 
@@ -282,10 +266,10 @@ impl Deployer {
                 return_value,
                 reason,
                 used_energy,
-            } => Err(DeployError::InvokeContractFailed(format!(
+            } => bail!(format!(
                 "Contract invoke failed: {reason:?}, used_energy={used_energy}, return \
                  value={return_value:?}"
-            ))),
+            )),
             InvokeContractResult::Success {
                 return_value: _,
                 events: _,
@@ -298,7 +282,7 @@ impl Deployer {
     pub async fn get_nonce(
         &mut self,
         address: AccountAddress,
-    ) -> Result<AccountNonceResponse, DeployError> {
+    ) -> Result<AccountNonceResponse, Error> {
         let nonce = self
             .client
             .get_next_account_sequence_number(&address)
@@ -312,7 +296,7 @@ impl Deployer {
     fn check_outcome_of_deploy_transaction(
         &self,
         block_item: &BlockItemSummary,
-    ) -> Result<(), DeployError> {
+    ) -> Result<(), Error> {
         match &block_item.details {
             BlockItemSummaryDetails::AccountTransaction(a) => match &a.effects {
                 AccountTransactionEffects::None {
@@ -320,27 +304,23 @@ impl Deployer {
                     reject_reason,
                 } => {
                     if *transaction_type != Some(TransactionType::DeployModule) {
-                        return Err(DeployError::InvalidBlockItem(
-                            "Expected transaction type to be DeployModule".into(),
-                        ));
+                        bail!("Expected transaction type to be DeployModule",);
                     }
 
-                    Err(DeployError::TransactionRejectedR(format!(
+                    bail!(format!(
                         "Module deploy rejected with reason: {reject_reason:?}"
-                    )))
+                    ))
                 }
                 AccountTransactionEffects::ModuleDeployed { module_ref: _ } => Ok(()),
-                _ => Err(DeployError::InvalidBlockItem(
+                _ => bail!(
                     "The parsed account transaction effect should be of type `ModuleDeployed` or \
                      `None` (in case the transaction reverted)"
-                        .into(),
-                )),
+                ),
             },
-            _ => Err(DeployError::InvalidBlockItem(
+            _ => bail!(
                 "Can only parse an account transaction (no account creation transaction or chain \
                  update transaction)"
-                    .into(),
-            )),
+            ),
         }
     }
 
@@ -350,7 +330,7 @@ impl Deployer {
     fn check_outcome_of_initialization_transaction(
         &self,
         block_item: &BlockItemSummary,
-    ) -> Result<ContractAddress, DeployError> {
+    ) -> Result<ContractAddress, Error> {
         match &block_item.details {
             BlockItemSummaryDetails::AccountTransaction(a) => match &a.effects {
                 AccountTransactionEffects::None {
@@ -358,27 +338,23 @@ impl Deployer {
                     reject_reason,
                 } => {
                     if *transaction_type != Some(TransactionType::InitContract) {
-                        return Err(DeployError::InvalidBlockItem(
-                            "Expected transaction type to be InitContract".into(),
-                        ));
+                        bail!("Expected transaction type to be InitContract");
                     }
 
-                    Err(DeployError::TransactionRejectedR(format!(
+                    bail!(format!(
                         "Contract init rejected with reason: {reject_reason:?}"
-                    )))
+                    ))
                 }
                 AccountTransactionEffects::ContractInitialized { data } => Ok(data.address),
-                _ => Err(DeployError::InvalidBlockItem(
+                _ => bail!(
                     "The parsed account transaction effect should be of type \
                      `ContractInitialized` or `None` (in case the transaction reverted)"
-                        .into(),
-                )),
+                ),
             },
-            _ => Err(DeployError::InvalidBlockItem(
+            _ => bail!(
                 "Can only parse an account transaction (no account creation transaction or chain \
                  update transaction)"
-                    .into(),
-            )),
+            ),
         }
     }
 
@@ -388,7 +364,7 @@ impl Deployer {
     fn check_outcome_of_update_transaction(
         &self,
         block_item: &BlockItemSummary,
-    ) -> Result<(), DeployError> {
+    ) -> Result<(), Error> {
         match &block_item.details {
             BlockItemSummaryDetails::AccountTransaction(a) => match &a.effects {
                 AccountTransactionEffects::None {
@@ -396,27 +372,23 @@ impl Deployer {
                     reject_reason,
                 } => {
                     if *transaction_type != Some(TransactionType::Update) {
-                        return Err(DeployError::InvalidBlockItem(
-                            "Expected transaction type to be Update".into(),
-                        ));
+                        bail!("Expected transaction type to be Update");
                     }
 
-                    Err(DeployError::TransactionRejectedR(format!(
+                    bail!(format!(
                         "Contract update rejected with reason: {reject_reason:?}"
-                    )))
+                    ))
                 }
                 AccountTransactionEffects::ContractUpdateIssued { effects: _ } => Ok(()),
-                _ => Err(DeployError::InvalidBlockItem(
+                _ => bail!(
                     "The parsed account transaction effect should be of type \
                      `ContractUpdateIssued` or `None` (in case the transaction reverted)"
-                        .into(),
-                )),
+                ),
             },
-            _ => Err(DeployError::InvalidBlockItem(
+            _ => bail!(
                 "Can only parse an account transaction (no account creation transaction or chain \
                  update transaction)"
-                    .into(),
-            )),
+            ),
         }
     }
 }
