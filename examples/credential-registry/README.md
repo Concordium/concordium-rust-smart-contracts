@@ -44,4 +44,3 @@ private key.
 - view credential status to verify VC validity;
 - view credential data to verify proofs (verifiable presentations) requested
   from holders.
-  
