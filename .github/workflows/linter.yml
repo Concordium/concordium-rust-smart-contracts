@@ -336,6 +336,7 @@ jobs:
           sed -i "s/concordium-smart-contract-testing = \"3.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/cis2-nft/tests/tests.rs
 
   # The credential-registry template is generated with the `cargo-generate` command
   # and it is checked that the code is equivalent to the credential-registry smart contract in the example folder.
@@ -380,8 +381,10 @@ jobs:
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/version = \"8.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/version = \"5.0\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-smart-contract-testing = \"3.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/cis2-nft/tests/tests.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/README.md examples/credential-registry/README.md
 
   clippy-cis2:
