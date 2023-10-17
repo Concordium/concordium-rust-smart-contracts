@@ -101,11 +101,6 @@ struct App {
                 ./myPath/default.wasm.v1 --module ./default2.wasm.v1)."
     )]
     module: Vec<PathBuf>,
-    #[clap(
-        long = "no_logging",
-        help = "To specify if verbose logging should be disabled when running the script."
-    )]
-    no_logging: bool,
 }
 
 /// Main function: It deploys to chain all wasm modules from the command line
@@ -125,9 +120,7 @@ async fn main() -> Result<(), DeployError> {
     for contract in app.module.iter().unique() {
         let wasm_module = get_wasm_module(contract.as_path())?;
 
-        let (_, _, module) = deployer
-            .deploy_wasm_module(wasm_module, None, !app.no_logging)
-            .await?;
+        let (_, _, module) = deployer.deploy_wasm_module(wasm_module, None).await?;
 
         modules_deployed.push(module);
     }
@@ -146,9 +139,7 @@ async fn main() -> Result<(), DeployError> {
         param,
     }; // Example
 
-    let (_, _, contract) = deployer
-        .init_contract(payload, None, None, !app.no_logging)
-        .await?; // Example
+    let (_, _, contract) = deployer.init_contract(payload, None, None).await?; // Example
 
     // This is how you can use a type from your smart contract.
     use {{crate_name}}::MyInputType; // Example
@@ -172,12 +163,7 @@ async fn main() -> Result<(), DeployError> {
     energy.energy += 100; // Example
 
     let _update_contract = deployer
-        .update_contract(
-            update_payload,
-            Some(GivenEnergy::Add(energy)),
-            None,
-            !app.no_logging,
-        )
+        .update_contract(update_payload, Some(GivenEnergy::Add(energy)), None)
         .await?; // Example
 
     // Write your own deployment/initialization script above. An example is given

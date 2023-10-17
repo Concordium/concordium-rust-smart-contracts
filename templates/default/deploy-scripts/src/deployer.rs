@@ -20,6 +20,7 @@ use concordium_rust_sdk::{
     v2::{self, BlockIdentifier},
 };
 use std::path::Path;
+use std::sync::Arc;
 
 /// A struct containing connection and wallet information.
 #[derive(Debug)]
@@ -27,7 +28,7 @@ pub struct Deployer {
     /// The client to establish a connection to a Concordium node (V2 API).
     pub client: v2::Client,
     /// The account keys to be used for sending transactions.
-    pub key: WalletAccount,
+    pub key: Arc<WalletAccount>,
 }
 
 impl Deployer {
@@ -38,7 +39,7 @@ impl Deployer {
 
         Ok(Deployer {
             client,
-            key: key_data,
+            key: key_data.into(),
         })
     }
 
@@ -74,7 +75,6 @@ impl Deployer {
         &mut self,
         wasm_module: WasmModule,
         expiry: Option<TransactionTime>,
-        logging: bool,
     ) -> Result<
         (
             Option<TransactionHash>,
@@ -83,21 +83,17 @@ impl Deployer {
         ),
         DeployError,
     > {
-        if logging {
-            println!("\nDeploying module....");
-        }
+        println!("\nDeploying module....");
 
         let module_reference = wasm_module.get_module_ref();
 
         let exists = self.module_exists(&module_reference).await?;
 
         if exists {
-            if logging {
-                println!(
-                    "Module with reference {} already exists on the chain.",
-                    module_reference
-                );
-            }
+            println!(
+                "Module with reference {} already exists on the chain.",
+                module_reference
+            );
             return Ok((None, None, module_reference));
         }
 
@@ -112,7 +108,7 @@ impl Deployer {
         ));
 
         let tx = deploy_module(
-            &self.key,
+            &*self.key,
             self.key.address,
             nonce.nonce,
             expiry,
@@ -127,20 +123,16 @@ impl Deployer {
             .await
             .map_err(DeployError::TransactionRejected)?;
 
-        if logging {
-            println!("Sent tx: {tx_hash}");
-        }
+        println!("Sent tx: {tx_hash}");
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         self.check_outcome_of_deploy_transaction(&block_item)?;
 
-        if logging {
-            println!(
-                "Transaction finalized: tx_hash={} module_ref={}",
-                tx_hash, module_reference,
-            );
-        }
+        println!(
+            "Transaction finalized: tx_hash={} module_ref={}",
+            tx_hash, module_reference,
+        );
 
         Ok((Some(tx_hash), Some(block_item), module_reference))
     }
@@ -159,11 +151,8 @@ impl Deployer {
         payload: InitContractPayload,
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
-        logging: bool,
     ) -> Result<(TransactionHash, BlockItemSummary, ContractAddress), DeployError> {
-        if logging {
-            println!("\nInitializing contract....");
-        }
+        println!("\nInitializing contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
 
@@ -178,7 +167,7 @@ impl Deployer {
         ));
 
         let tx = init_contract(
-            &self.key,
+            &*self.key,
             self.key.address,
             nonce.nonce,
             expiry,
@@ -195,20 +184,16 @@ impl Deployer {
             .await
             .map_err(DeployError::TransactionRejected)?;
 
-        if logging {
-            println!("Sent tx: {tx_hash}");
-        }
+        println!("Sent tx: {tx_hash}");
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         let contract_address = self.check_outcome_of_initialization_transaction(&block_item)?;
 
-        if logging {
-            println!(
-                "Transaction finalized: tx_hash={} contract=({}, {})",
-                tx_hash, contract_address.index, contract_address.subindex,
-            );
-        }
+        println!(
+            "Transaction finalized: tx_hash={} contract=({}, {})",
+            tx_hash, contract_address.index, contract_address.subindex,
+        );
 
         Ok((tx_hash, block_item, contract_address))
     }
@@ -228,11 +213,8 @@ impl Deployer {
         update_payload: UpdateContractPayload,
         energy: Option<GivenEnergy>,
         expiry: Option<TransactionTime>,
-        logging: bool,
     ) -> Result<(TransactionHash, BlockItemSummary), DeployError> {
-        if logging {
-            println!("\nUpdating contract....");
-        }
+        println!("\nUpdating contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
 
@@ -251,7 +233,7 @@ impl Deployer {
         let energy = energy.unwrap_or(GivenEnergy::Absolute(Energy { energy: 50000 }));
 
         let tx = transactions::send::make_and_sign_transaction(
-            &self.key,
+            &*self.key,
             self.key.address,
             nonce.nonce,
             expiry,
@@ -267,17 +249,13 @@ impl Deployer {
             .await
             .map_err(DeployError::TransactionRejected)?;
 
-        if logging {
-            println!("Sent tx: {tx_hash}");
-        }
+        println!("Sent tx: {tx_hash}");
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
         self.check_outcome_of_update_transaction(&block_item)?;
 
-        if logging {
-            println!("Transaction finalized: tx_hash={}", tx_hash,);
-        }
+        println!("Transaction finalized: tx_hash={}", tx_hash,);
 
         Ok((tx_hash, block_item))
     }
