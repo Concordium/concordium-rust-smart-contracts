@@ -1,7 +1,7 @@
 //! Tests for the credential registry contract.
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
-use concordium_std::{PublicKeyEd25519, SignatureEd25519};
+use concordium_std::{PublicKeyEd25519, SignatureEd25519, Timestamp};
 use {{crate_name}}::*;
 
 /// Constants for tests
@@ -39,17 +39,12 @@ fn test_init() {
         .map(|e| e.parse().expect("Parse event"))
         .collect::<Vec<CredentialEvent>>();
 
-    {% if revocable_by_others %}
-        assert_eq!(events.len(), 3);
-    {% else %}
-        assert_eq!(events.len(), 2);
-    {% endif %}
+    {% if revocable_by_others %}assert_eq!(events.len(), 3);{% else %}assert_eq!(events.len(), 2);{% endif %}
     assert_eq!(
         events[0],
         CredentialEvent::IssuerMetadata(issuer_metadata()),
         "Incorrect issuer metadata event logged"
-    );
-    {% if revocable_by_others %}
+    );{% if revocable_by_others %}
     assert_eq!(
         events[1],
         CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -57,8 +52,7 @@ fn test_init() {
             action: RevocationKeyAction::Register,
         }),
         "Incorrect revocation key event logged"
-    );
-    {% endif %}
+    );{% endif %}
     assert_eq!(
         {% if revocable_by_others %}events[2],{% else %}events[1],{% endif %}
         CredentialEvent::Schema(CredentialSchemaRefEvent {

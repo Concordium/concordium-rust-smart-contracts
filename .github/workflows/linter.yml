@@ -384,7 +384,7 @@ jobs:
           sed -i "s/concordium-smart-contract-testing = \"3.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
-          diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/cis2-nft/tests/tests.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/credential-registry/tests/tests.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/README.md examples/credential-registry/README.md
 
   clippy-cis2:
