@@ -1,8 +1,8 @@
 //! Tests for the credential registry contract.
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
-use concordium_std::{PublicKeyEd25519, SignatureEd25519, Timestamp};
-use credential_registry::*;
+use concordium_std::{PublicKeyEd25519, SignatureEd25519};
+use {{crate_name}}::*;
 
 /// Constants for tests
 const SIGNER: Signer = Signer::with_one_key();
@@ -39,12 +39,17 @@ fn test_init() {
         .map(|e| e.parse().expect("Parse event"))
         .collect::<Vec<CredentialEvent>>();
 
-    assert_eq!(events.len(), 3);
+    {% if revocable_by_others %}
+        assert_eq!(events.len(), 3);
+    {% else %}
+        assert_eq!(events.len(), 2);
+    {% endif %}
     assert_eq!(
         events[0],
         CredentialEvent::IssuerMetadata(issuer_metadata()),
         "Incorrect issuer metadata event logged"
     );
+    {% if revocable_by_others %}
     assert_eq!(
         events[1],
         CredentialEvent::RevocationKey(RevocationKeyEvent {
@@ -53,8 +58,9 @@ fn test_init() {
         }),
         "Incorrect revocation key event logged"
     );
+    {% endif %}
     assert_eq!(
-        events[2],
+        {% if revocable_by_others %}events[2],{% else %}events[1],{% endif %}
         CredentialEvent::Schema(CredentialSchemaRefEvent {
             credential_type: schema.0,
             schema_ref:      schema.1,
@@ -123,7 +129,7 @@ fn test_revoke_by_holder() {
         revoker:   Revoker::Holder,
         reason:    Some(revocation_reason),
     })]);
-}
+}{% if restorable %}
 
 /// Test the restore credential entrypoint.
 #[test]
@@ -157,7 +163,7 @@ fn test_contract_restore_credential() {
                 amount:       Amount::zero(),
                 address:      init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "credential_registry.restoreCredential".to_string(),
+                    "{{crate_name}}.restoreCredential".to_string(),
                 ),
                 message:      OwnedParameter::from_serial(&parameter)
                     .expect("Parameter has valid size."),
@@ -178,7 +184,7 @@ fn test_contract_restore_credential() {
         holder_id: PUBLIC_KEY,
         reason:    None,
     })]);
-}
+}{% endif %}
 
 // Helpers:
 
@@ -232,7 +238,7 @@ fn register_credential(
                 amount:       Amount::zero(),
                 address:      contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "credential_registry.registerCredential".to_string(),
+                    "{{crate_name}}.registerCredential".to_string(),
                 ),
                 message:      OwnedParameter::from_serial(&parameter)
                     .expect("Parameter has valid size."),
@@ -274,7 +280,7 @@ fn revoke_credential(
                 amount:       Amount::zero(),
                 address:      contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "credential_registry.revokeCredentialHolder".to_string(),
+                    "{{crate_name}}.revokeCredentialHolder".to_string(),
                 ),
                 message:      OwnedParameter::from_serial(&revoke_param)
                     .expect("Parameter has valid size."),
@@ -299,7 +305,7 @@ fn get_credential_status(
                 amount:       Amount::zero(),
                 address:      contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "credential_registry.credentialStatus".to_string(),
+                    "{{crate_name}}.credentialStatus".to_string(),
                 ),
                 message:      OwnedParameter::from_serial(&key).expect("Parameter has valid size."),
             },
@@ -324,8 +330,8 @@ fn setup() -> (Chain, ContractInitSuccess) {
     let init_params = InitParams {
         issuer_metadata: issuer_metadata(),
         issuer_account:  ISSUER_ACCOUNT.into(),
-        issuer_key:      PUBLIC_KEY,
-        revocation_keys: vec![PUBLIC_KEY],
+        issuer_key:      PUBLIC_KEY,{% if revocable_by_others %}
+        revocation_keys: vec![PUBLIC_KEY],{% endif %}
         credential_type: schema.0.clone(),
         schema:          schema.1.clone(),
     };
@@ -334,7 +340,7 @@ fn setup() -> (Chain, ContractInitSuccess) {
         .contract_init(SIGNER, ISSUER_ACCOUNT, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_credential_registry".to_string()),
+            init_name: OwnedContractName::new_unchecked("init_{{crate_name}}".to_string()),
             param:     OwnedParameter::from_serial(&init_params)
                 .expect("Parameter has valid size."),
         })

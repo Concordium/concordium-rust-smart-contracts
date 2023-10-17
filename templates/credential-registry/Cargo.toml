@@ -19,6 +19,9 @@ concordium-std = {version = "8.0", default-features = false, features = ["concor
 concordium-cis2 = {version = "5.0", default-features = false}
 quickcheck = {version = "1"}
 
+[dev-dependencies]
+concordium-smart-contract-testing = "3.0"
+
 [lib]
 crate-type=["cdylib", "rlib"]
 
