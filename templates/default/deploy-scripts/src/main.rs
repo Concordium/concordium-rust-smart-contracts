@@ -9,7 +9,7 @@ use concordium_rust_sdk::{
         types::{OwnedContractName, OwnedParameter, OwnedReceiveName},
     },
     types::{
-        smart_contracts::{ExceedsParameterSize, WasmModule, ModuleReference},
+        smart_contracts::{ExceedsParameterSize, ModuleReference, WasmModule},
         transactions,
         transactions::send::GivenEnergy,
     },
@@ -76,6 +76,8 @@ fn get_wasm_module(file: &Path) -> Result<WasmModule, DeployError> {
     Ok(wasm_module)
 }
 
+//wasm_module.get_module_ref();
+
 /// Command line flags.
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about)]
@@ -85,20 +87,20 @@ struct App {
         default_value = "http://node.testnet.concordium.com:20000",
         help = "V2 API of the Concordium node."
     )]
-    url:        v2::Endpoint,
+    url: v2::Endpoint,
     #[clap(
         long = "account",
         help = "Path to the file containing the Concordium account keys exported from the wallet \
                 (e.g. ./myPath/3PXwJYYPf6fyVb4GJquxSZU8puxrHfzc4XogdMVot8MUQK53tW.export)."
     )]
-    key_file:   PathBuf,
+    key_file: PathBuf,
     #[clap(
         long = "module",
         help = "Path of the Concordium smart contract module. Use this flag several times if you \
                 have several smart contract modules to be deployed (e.g. --module \
                 ./myPath/default.wasm.v1 --module ./default2.wasm.v1)."
     )]
-    module:     Vec<PathBuf>,
+    module: Vec<PathBuf>,
     #[clap(
         long = "no_logging",
         help = "To specify if verbose logging should be disabled when running the script."
@@ -116,14 +118,16 @@ async fn main() -> Result<(), DeployError> {
 
     let concordium_client = v2::Client::new(app.url).await?;
 
-    let mut deployer = Deployer::new( concordium_client, &app.key_file)?;
+    let mut deployer = Deployer::new(concordium_client, &app.key_file)?;
 
     let mut modules_deployed: Vec<ModuleReference> = Vec::new();
 
     for contract in app.module.iter().unique() {
         let wasm_module = get_wasm_module(contract.as_path())?;
 
-        let (_, module) = deployer.deploy_wasm_module(wasm_module, None, !app.no_logging).await?;
+        let (_, _, module) = deployer
+            .deploy_wasm_module(wasm_module, None, !app.no_logging)
+            .await?;
 
         modules_deployed.push(module);
     }
@@ -142,7 +146,9 @@ async fn main() -> Result<(), DeployError> {
         param,
     }; // Example
 
-    let (_, contract) = deployer.init_contract(payload, None, None, !app.no_logging).await?; // Example
+    let (_, _, contract) = deployer
+        .init_contract(payload, None, None, !app.no_logging)
+        .await?; // Example
 
     // This is how you can use a type from your smart contract.
     use {{crate_name}}::MyInputType; // Example
@@ -154,10 +160,10 @@ async fn main() -> Result<(), DeployError> {
     let bytes = contracts_common::to_bytes(&input_parameter); // Example
 
     let update_payload = transactions::UpdateContractPayload {
-        amount:       Amount::from_ccd(0),
-        address:      contract,
+        amount: Amount::from_ccd(0),
+        address: contract,
         receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.receive".to_string()),
-        message:      bytes.try_into()?,
+        message: bytes.try_into()?,
     }; // Example
 
     let mut energy = deployer.estimate_energy(update_payload.clone()).await?; // Example
@@ -166,7 +172,12 @@ async fn main() -> Result<(), DeployError> {
     energy.energy += 100; // Example
 
     let _update_contract = deployer
-        .update_contract(update_payload, Some(GivenEnergy::Add(energy)), None, !app.no_logging)
+        .update_contract(
+            update_payload,
+            Some(GivenEnergy::Add(energy)),
+            None,
+            !app.no_logging,
+        )
         .await?; // Example
 
     // Write your own deployment/initialization script above. An example is given
