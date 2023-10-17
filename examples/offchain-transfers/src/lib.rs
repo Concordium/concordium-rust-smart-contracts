@@ -582,6 +582,7 @@ pub fn contract_get_settlement<S: HasStateApi>(
 // Tests //
 
 #[concordium_cfg_test]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use concordium_std::test_infrastructure::*;

@@ -64,38 +64,36 @@ pub use concordium_contracts_common::ExchangeRates;
 /// The type parameter `S` is extra compared to usual Rust collections. As
 /// mentioned above it specifies the [low-level state
 /// implementation](crate::HasStateApi). This library provides two such
-/// implementations. The "external" one, which is the implementation supported
-/// by external host functions provided by the chain, and a
-/// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
-/// useful for testing since it provides an implementation that is easier to
-/// construct, execute, and inspect during unit testing.
+/// implementations. The "external" one ([`StateApi`]), which is the
+/// implementation supported by external host functions provided by the chain,
+/// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
+/// is only useful for testing with the deprecated
+/// [`concordium_std::test_infrastructure`] module.
 ///
 /// In user code this type parameter should generally be treated as boilerplate,
 /// and contract entrypoints should always be stated in terms of a generic type
-/// `S` that implements [HasStateApi](crate::HasStateApi)
+/// `S` that implements [HasStateApi](crate::HasStateApi) and defaults to
+/// `StateApi`, unless you intend to use the deprecated testing library.
 ///
 /// #### Example
 /// ```rust
 /// # use concordium_std::*;
 /// #[derive(Serial, DeserialWithState)]
 /// #[concordium(state_parameter = "S")]
-/// struct MyState<S: HasStateApi> {
+/// struct MyState<S: HasStateApi = StateApi> {
 ///     inner: StateMap<u64, u64, S>,
 /// }
 /// #[init(contract = "mycontract")]
-/// fn contract_init<S: HasStateApi>(
-///     _ctx: &impl HasInitContext,
-///     state_builder: &mut StateBuilder<S>,
-/// ) -> InitResult<MyState<S>> {
+/// fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<MyState> {
 ///     Ok(MyState {
 ///         inner: state_builder.new_map(),
 ///     })
 /// }
 ///
 /// #[receive(contract = "mycontract", name = "receive", return_value = "Option<u64>")]
-/// fn contract_receive<S: HasStateApi>(
-///     _ctx: &impl HasReceiveContext,
-///     host: &impl HasHost<MyState<S>, StateApiType = S>, // the same low-level state must be propagated throughout
+/// fn contract_receive(
+///     _ctx: &ReceiveContext,
+///     host: &Host<MyState>, // the same low-level state must be propagated throughout
 /// ) -> ReceiveResult<Option<u64>> {
 ///     let state = host.state();
 ///     Ok(state.inner.get(&0).map(|v| *v))
@@ -109,13 +107,10 @@ pub use concordium_contracts_common::ExchangeRates;
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// struct MyState<S: HasStateApi> {
+/// struct MyState<S: HasStateApi = StateApi> {
 ///     inner: StateMap<u64, u64, S>,
 /// }
-/// fn incorrect_replace<S: HasStateApi>(
-///     state_builder: &mut StateBuilder<S>,
-///     state: &mut MyState<S>,
-/// ) {
+/// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     // The following is incorrect. The old value of `inner` is not properly deleted.
 ///     // from the state.
 ///     state.inner = state_builder.new_map(); // ⚠️
@@ -126,26 +121,20 @@ pub use concordium_contracts_common::ExchangeRates;
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi> {
+/// # struct MyState<S: HasStateApi = StateApi> {
 /// #    inner: StateMap<u64, u64, S>
 /// # }
-/// fn correct_replace<S: HasStateApi>(
-///     state_builder: &mut StateBuilder<S>,
-///     state: &mut MyState<S>,
-/// ) {
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     state.inner.clear_flat();
 /// }
 /// ```
 /// Or alternatively
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi> {
+/// # struct MyState<S: HasStateApi = StateApi> {
 /// #    inner: StateMap<u64, u64, S>
 /// # }
-/// fn correct_replace<S: HasStateApi>(
-///     state_builder: &mut StateBuilder<S>,
-///     state: &mut MyState<S>,
-/// ) {
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     let old_map = mem::replace(&mut state.inner, state_builder.new_map());
 ///     old_map.delete()
 /// }
@@ -203,6 +192,20 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// New sets can be constructed using the
 /// [`new_set`][StateBuilder::new_set] method on the [`StateBuilder`].
 ///
+/// ```
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
+/// # let mut state_builder = TestStateBuilder::new();
+/// /// In an init method:
+/// let mut set1 = state_builder.new_set();
+/// # set1.insert(0u8); // Specifies type of set.
+///
+/// # let mut host = TestHost::new((), state_builder);
+/// /// In a receive method:
+/// let mut set2 = host.state_builder().new_set();
+/// # set2.insert(0u16);
+/// ```
+///
 /// ## Type parameters
 ///
 /// The set `StateSet<T, S>` is parametrized by the type of _values_ `T`, and
@@ -222,39 +225,34 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// The type parameter `S` is extra compared to usual Rust collections. As
 /// mentioned above it specifies the [low-level state
 /// implementation](crate::HasStateApi). This library provides two such
-/// implementations. The "external" one, which is the implementation supported
-/// by external host functions provided by the chain, and a
-/// [test](crate::test_infrastructure::TestStateApi) one. The latter one is
-/// useful for testing since it provides an implementation that is easier to
-/// construct, execute, and inspect during unit testing.
+/// implementations. The "external" one ([`StateApi`]), which is the
+/// implementation supported by external host functions provided by the chain,
+/// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
+/// is only useful for testing with the deprecated
+/// [`concordium_std::test_infrastructure`] module.
 ///
 /// In user code this type parameter should generally be treated as boilerplate,
 /// and contract entrypoints should always be stated in terms of a generic type
-/// `S` that implements [HasStateApi](crate::HasStateApi)
+/// `S` that implements [HasStateApi](crate::HasStateApi) and defaults to
+/// `StateApi`, unless you intend to use the deprecated testing library.
 ///
 /// #### Example
 /// ```rust
 /// # use concordium_std::*;
 /// #[derive(Serial, DeserialWithState)]
 /// #[concordium(state_parameter = "S")]
-/// struct MyState<S: HasStateApi> {
+/// struct MyState<S: HasStateApi = StateApi> {
 ///     inner: StateSet<u64, S>,
 /// }
 /// #[init(contract = "mycontract")]
-/// fn contract_init<S: HasStateApi>(
-///     _ctx: &impl HasInitContext,
-///     state_builder: &mut StateBuilder<S>,
-/// ) -> InitResult<MyState<S>> {
+/// fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<MyState> {
 ///     Ok(MyState {
 ///         inner: state_builder.new_set(),
 ///     })
 /// }
 ///
 /// #[receive(contract = "mycontract", name = "receive", return_value = "bool")]
-/// fn contract_receive<S: HasStateApi>(
-///     _ctx: &impl HasReceiveContext,
-///     host: &impl HasHost<MyState<S>, StateApiType = S>, // the same low-level state must be propagated throughout
-/// ) -> ReceiveResult<bool> {
+/// fn contract_receive(_ctx: &ReceiveContext, host: &Host<MyState>) -> ReceiveResult<bool> {
 ///     let state = host.state();
 ///     Ok(state.inner.contains(&0))
 /// }
@@ -267,13 +265,10 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// struct MyState<S: HasStateApi> {
+/// struct MyState<S: HasStateApi = StateApi> {
 ///     inner: StateSet<u64, S>,
 /// }
-/// fn incorrect_replace<S: HasStateApi>(
-///     state_builder: &mut StateBuilder<S>,
-///     state: &mut MyState<S>,
-/// ) {
+/// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     // The following is incorrect. The old value of `inner` is not properly deleted.
 ///     // from the state.
 ///     state.inner = state_builder.new_set(); // ⚠️
@@ -284,26 +279,20 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi> {
+/// # struct MyState<S: HasStateApi = StateApi> {
 /// #    inner: StateSet<u64, S>
 /// # }
-/// fn correct_replace<S: HasStateApi>(
-///     state_builder: &mut StateBuilder<S>,
-///     state: &mut MyState<S>,
-/// ) {
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     state.inner.clear();
 /// }
 /// ```
 /// Or alternatively
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi> {
+/// # struct MyState<S: HasStateApi = StateApi> {
 /// #    inner: StateSet<u64, S>
 /// # }
-/// fn correct_replace<S: HasStateApi>(
-///     state_builder: &mut StateBuilder<S>,
-///     state: &mut MyState<S>,
-/// ) {
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     let old_set = mem::replace(&mut state.inner, state_builder.new_set());
 ///     old_set.delete()
 /// }
@@ -417,7 +406,8 @@ impl<'a, V: Serial, S: HasStateApi> StateRefMut<'a, V, S> {
 #[repr(transparent)]
 /// An iterator over a part of the state. Its implementation is supported by
 /// host calls.
-#[doc(hidden)]
+///
+/// **Typically referred to via the alias [`StateIter`].**
 pub struct ExternStateIter {
     pub(crate) iterator_id: StateIteratorId,
 }
@@ -541,7 +531,6 @@ pub(crate) struct ExternParameterDataPlaceholder {}
 
 /// A type representing the parameter to init and receive methods.
 /// Its trait implementations are backed by host functions.
-#[doc(hidden)]
 pub struct ExternParameter {
     pub(crate) cursor: Cursor<ExternParameterDataPlaceholder>,
 }
@@ -557,8 +546,9 @@ pub struct ExternParameter {
 ///
 /// This type is designed to be used via its [Read](crate::Read) and
 /// [HasCallResponse](crate::HasCallResponse) traits.
+///
+/// **Typically referred to via the alias [`CallResponse`].**
 #[derive(Debug)]
-#[doc(hidden)]
 pub struct ExternCallResponse {
     /// The index of the call response.
     pub(crate) i:                NonZeroU32,
@@ -581,6 +571,8 @@ impl ExternCallResponse {
 /// The intention is that this type is manipulated using methods of the
 /// [Write](crate::Write) trait. In particular it can be used as a sink to
 /// serialize values into.
+///
+/// **Typically referred to via the alias [`ReturnValue`].**
 pub struct ExternReturnValue {
     pub(crate) current_position: u32,
 }
@@ -850,16 +842,17 @@ macro_rules! ensure_ne {
     };
 }
 
-// Macros for failing a test
+// Macros for failing a test (in `concordium_std::test_infrastructure`).
 
 /// The `fail` macro is used for testing as a substitute for the panic macro.
 /// It reports back error information to the host.
-/// Used only in testing.
+/// Used only in testing with [`concordium_std::test_infrastructure`]
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! fail {
     () => {
         {
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error("", file!(), line!(), column!());
             panic!()
         }
@@ -867,6 +860,7 @@ macro_rules! fail {
     ($($arg:tt),+) => {
         {
             let msg = format!($($arg),+);
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
         }
@@ -875,12 +869,13 @@ macro_rules! fail {
 
 /// The `fail` macro is used for testing as a substitute for the panic macro.
 /// It reports back error information to the host.
-/// Used only in testing.
+/// Used only in testing with [`concordium_std::test_infrastructure`]
 #[cfg(not(feature = "std"))]
 #[macro_export]
 macro_rules! fail {
     () => {
         {
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error("", file!(), line!(), column!());
             panic!()
         }
@@ -888,6 +883,7 @@ macro_rules! fail {
     ($($arg:tt),+) => {
         {
             let msg = &$crate::alloc::format!($($arg),+);
+            #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
         }
@@ -896,7 +892,7 @@ macro_rules! fail {
 
 /// The `claim` macro is used for testing as a substitute for the assert macro.
 /// It checks the condition and if false it reports back an error.
-/// Used only in testing.
+/// Used only in testing with [`concordium_std::test_infrastructure`].
 #[macro_export]
 macro_rules! claim {
     ($cond:expr) => {
@@ -917,7 +913,8 @@ macro_rules! claim {
 }
 
 /// Ensure the first two arguments are equal, just like `assert_eq!`, otherwise
-/// reports an error. Used only in testing.
+/// reports an error.
+/// Used only in testing with [`concordium_std::test_infrastructure`]
 #[macro_export]
 macro_rules! claim_eq {
     ($left:expr, $right:expr $(,)?) => {
@@ -938,7 +935,7 @@ macro_rules! claim_eq {
 
 /// Ensure the first two arguments are *not* equal, just like `assert_ne!`,
 /// otherwise reports an error.
-/// Used only in testing.
+/// Used only in testing with [`concordium_std::test_infrastructure`]
 #[macro_export]
 macro_rules! claim_ne {
     ($left:expr, $right:expr $(,)?) => {
@@ -960,8 +957,7 @@ macro_rules! claim_ne {
 /// The expected return type of the receive method of a smart contract.
 ///
 /// Optionally, to define a custom type for error instead of using
-/// Reject, allowing to track the reason for rejection, *but only in unit
-/// tests*.
+/// Reject, allowing to track the reason for rejection.
 ///
 /// See also the documentation for [bail!](macro.bail.html) for how to use
 /// custom error types.
@@ -976,10 +972,7 @@ macro_rules! claim_ne {
 /// }
 ///
 /// #[receive(contract = "mycontract", name = "receive")]
-/// fn contract_receive<S: HasStateApi>(
-///     _ctx: &impl HasReceiveContext,
-///     _host: &impl HasHost<(), StateApiType = S>,
-/// ) -> Result<(), MyCustomError> {
+/// fn contract_receive(_ctx: &ReceiveContext, _host: &Host<()>) -> Result<(), MyCustomError> {
 ///     Err(MyCustomError::SomeError)
 /// }
 /// ```
@@ -989,7 +982,7 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// parametrized by the state type of the smart contract.
 ///
 /// Optionally, to define a custom type for error instead of using Reject,
-/// allowing the track the reason for rejection, *but only in unit tests*.
+/// allowing the track the reason for rejection.
 ///
 /// See also the documentation for [bail!](macro.bail.html) for how to use
 /// custom error types.
@@ -1004,39 +997,108 @@ pub type ReceiveResult<A> = Result<A, Reject>;
 /// }
 ///
 /// #[init(contract = "mycontract")]
-/// fn contract_init<S: HasStateApi>(
-///     _ctx: &impl HasInitContext,
-///     _state_builder: &mut StateBuilder<S>,
+/// fn contract_init(
+///     _ctx: &InitContext,
+///     _state_builder: &mut StateBuilder,
 /// ) -> Result<(), MyCustomError> {
 ///     Err(MyCustomError::SomeError)
 /// }
 /// ```
 pub type InitResult<S> = Result<S, Reject>;
 
-// TODO: Document these.
+/// Type alias for the context of init methods.
+///
+/// See [`ExternContext`] for more details.
 pub type InitContext = ExternContext<ExternInitContext>;
+
+/// Type alias for the context of receive methods.
+///
+/// See [`ExternContext`] for more details.
 pub type ReceiveContext = ExternContext<ExternReceiveContext>;
+
+/// The host, which supports interactions with the chain, such as querying
+/// the balance of the contract, accessing its state, and invoking operations on
+/// other contracts and accounts.
+///
+/// The type is parameterized by the `State` type. This is the type of the
+/// contract state that the particular contract operates on.
+///
+/// See [`ExternHost`] for more details.
 pub type Host<State> = ExternHost<State>;
+
+/// The contract state, which uses Wasm host functions to interact with the node
+/// and use the state.
+///
+/// See [`ExternStateApi`] for more details.
 pub type StateApi = ExternStateApi;
+
+/// Host-backed cryptographic primitives.
+///
+/// See [`ExternCryptoPrimitives`] for the methods implemented via
+/// [`HasCryptoPrimitives`].
 pub type CryptoPrimitives = ExternCryptoPrimitives;
+
+/// A low-level host, used by receive methods with the attribute `low_level`.
+///
+/// See [`ExternLowLevelHost`] for the methods implemented via `HasHost`.
 pub type LowLevelHost = ExternLowLevelHost;
+
+/// Host-backed access to chain metadata.
+///
+/// See [`ExternChainMeta`] for the methods implemented via the
+/// `HasChainMetadata` trait.
 pub type ChainMeta = ExternChainMeta;
+
+/// A host-backed iterator over part of the state.
+///
+/// See [`ExternStateIter`] for the methods implemented via primarily
+/// [`Iterator`].
 pub type StateIter = ExternStateIter;
+
+/// A type representing the return value of contract init or receive method.
+///
+/// The intention is that this type is manipulated using methods of the
+/// [Write](crate::Write) trait. In particular it can be used as a sink to
+/// serialize values into.
+///
+/// See [`ExternReturnValue`] for more details.
 pub type ReturnValue = ExternReturnValue;
 
+/// A type representing the return value of contract invocation.
+///
+/// A contract invocation **may** return a value. It is returned in the
+/// following cases
+/// - an entrypoint of a V1 contract was invoked and the invocation succeeded
+/// - an entrypoint of a V1 contract was invoked and the invocation failed due
+///   to a [`CallContractError::LogicReject`]
+///
+/// In all other cases there is no response.
+///
+/// This type is designed to be used via its [Read](crate::Read) and
+/// [`HasCallResponse`](crate::HasCallResponse) traits.
+///
+/// See [`ExternCallResponse`] for more details.
+pub type CallResponse = ExternCallResponse;
+
 /// Operations backed by host functions for the high-level interface.
-#[doc(hidden)]
+///
+/// **Typically referred to via the alias [`Host`].**
 pub struct ExternHost<State> {
     pub state:         State,
     pub state_builder: StateBuilder<ExternStateApi>,
 }
 
 #[derive(Default)]
-/// An state builder that allows the creation of [`StateMap`], [`StateSet`], and
-/// [`StateBox`]. It is parametrized by a parameter `S` that is assumed to
-/// implement [`HasStateApi`].
+/// A state builder that allows the creation of [`StateMap`], [`StateSet`], and
+/// [`StateBox`].
 ///
-/// The state_builder is designed to provide an abstraction over the contract
+/// It is parametrized by a parameter `S` that is assumed to
+/// implement [`HasStateApi`] to support testing with the deprecated
+/// [`concordium_std::test_infrastructure`]. The `S` defaults to `StateApi`,
+/// which is sufficient to test with the [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)
+/// library.
+///
+/// The StateBuilder is designed to provide an abstraction over the contract
 /// state, abstracting over the exact **keys** (keys in the sense of key-value
 /// store, which is the low-level semantics of contract state) that are used
 /// when storing specific values.
@@ -1051,7 +1113,8 @@ impl<S> StateBuilder<S> {
 
 /// A struct for which HasCryptoPrimitives is implemented via the crypto host
 /// functions.
-#[doc(hidden)]
+///
+/// **Typically referred to via the alias [`CryptoPrimitives`].**
 pub struct ExternCryptoPrimitives;
 
 /// Sha2 digest with 256 bits (32 bytes).
@@ -1096,7 +1159,7 @@ pub struct HashSha3256(pub [u8; 32]);
 pub struct HashKeccak256(pub [u8; 32]);
 
 #[derive(Debug, Clone, Default)]
-#[doc(hidden)]
+/// Typicall referred to via the alias [`StateApi`].
 pub struct ExternStateApi;
 
 impl ExternStateApi {
@@ -1106,7 +1169,8 @@ impl ExternStateApi {
 }
 
 /// Operations backed by host functions for the low-level interface.
-#[doc(hidden)]
+///
+/// **Typically referred to via the alias [`LowLevelHost`].**
 #[derive(Default)]
 pub struct ExternLowLevelHost {
     pub(crate) state_api:     ExternStateApi,
@@ -1114,20 +1178,19 @@ pub struct ExternLowLevelHost {
 }
 
 /// Context backed by host functions.
+///
+/// Usuaully referred to via aliases [`InitContext`] or [`ReceiveContext`].
 #[derive(Default)]
-#[doc(hidden)]
 pub struct ExternContext<T: sealed::ContextType> {
     marker: crate::marker::PhantomData<T>,
 }
 
-#[doc(hidden)]
+/// **Typically referred to via the alias [`ChainMetadata`].**
 pub struct ExternChainMeta {}
 
 #[derive(Default)]
-#[doc(hidden)]
 pub struct ExternInitContext;
 #[derive(Default)]
-#[doc(hidden)]
 pub struct ExternReceiveContext;
 
 pub(crate) mod sealed {
