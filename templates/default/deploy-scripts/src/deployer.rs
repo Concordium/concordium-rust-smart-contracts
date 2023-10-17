@@ -61,11 +61,11 @@ impl Deployer {
 
     /// A function to deploy a wasm module on the chain.
     ///
-    /// If successful, the transaction hash and
-    /// the module reference is returned.
+    /// If successful, the transaction hash, the block item, and
+    /// the module reference are returned.
     /// If the module already exists on
     /// chain, this function returns the module reference of the already
-    /// deployed module instead.
+    /// deployed module (no transaction hash or the block item returned).
     ///
     /// An optional expiry time for the transaction
     /// can be given. If `None` is provided, the local time + 300 seconds is
@@ -133,7 +133,7 @@ impl Deployer {
 
     /// A function to initialize a smart contract instance on the chain.
     ///
-    /// If successful, the transaction hash and the contract address is
+    /// If successful, the transaction hash, the block item, and the contract address are
     /// returned.
     ///
     /// An optional energy for the transaction can be given. If `None` is
@@ -190,7 +190,7 @@ impl Deployer {
     /// A function to update a smart contract instance on the chain.
     ///
     /// If successful, the transaction
-    /// hash is returned.
+    /// hash, and the block item are returned.
     ///
     /// An optional energy for the transaction can be
     /// given. If `None` is provided, 50000 energy is used as a default energy
@@ -278,7 +278,7 @@ impl Deployer {
         }
     }
 
-    /// A function to get the current nonce of the wallet account.
+    /// A function to get the next nonce of the wallet account.
     pub async fn get_nonce(
         &mut self,
         address: AccountAddress,
