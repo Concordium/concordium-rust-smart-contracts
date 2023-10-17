@@ -97,8 +97,7 @@ fn tests() {
         .expect("Recording`ACC_1`");
 
     // Check that the contract returns `2` for the number of transfers made.
-    let transfers_made: u64 =
-        update_transfer.parse_return_value().expect("Decoding return value.");
+    let transfers_made: u64 = update_transfer.parse_return_value().expect("Decoding return value.");
     assert_eq!(transfers_made, 2);
     assert_eq!(update_transfer.account_transfers().collect::<Vec<_>>()[..], [
         (contract_address, Amount::zero(), ACC_0),

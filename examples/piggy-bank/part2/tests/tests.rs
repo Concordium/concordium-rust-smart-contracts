@@ -149,9 +149,8 @@ fn test_smash_intact_not_owner() {
         )
         .expect_err("Smashing should only succeed for the owner");
 
-    let return_value =
-        update_err.return_value().expect("Contract should reject and thus return bytes");
-    let error: SmashError = return_value)
+    let error: SmashError = update_err
+        .parse_return_value()
         .expect("Contract should return a `SmashError` in serialized form");
 
     assert_eq!(error, SmashError::NotOwner, "Contract did not fail due to a NotOwner error");
@@ -159,7 +158,7 @@ fn test_smash_intact_not_owner() {
         chain.account_balance_available(ACC_ADDR_OTHER),
         Some(ACC_INITIAL_BALANCE - update_err.transaction_fee),
         "The invoker account was incorrectly charged"
-    )
+    );
 }
 
 /// Test that smashing an already smashed piggy bank is not allowed and thus
@@ -199,9 +198,8 @@ fn test_smash_smashed() {
         )
         .expect_err("The piggybank cannot be smashed more than once");
 
-    let return_value =
-        update_second_smash_err.return_value().expect("Contract should reject and return bytes");
-    let error: SmashError = return_value)
+    let error: SmashError = update_second_smash_err
+        .parse_return_value()
         .expect("Contract should return a `SmashError` in serialized form");
 
     assert_eq!(error, SmashError::AlreadySmashed);
