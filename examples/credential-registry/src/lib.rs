@@ -1697,23 +1697,13 @@ mod tests {
     }
 
     const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
-    const ISSUER_ADDRESS: Address = Address::Account(ISSUER_ACCOUNT);
     const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
     const CREDENTIAL_METADATA_URL: &str =
         "https://example-university.com/diplomas/university-vc-metadata.json";
-    const CREDENTIAL_TYPE: &str = "UniversityDegreeCredential";
-    const CREDENTIAL_SCHEMA_URL: &str =
-        "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
     // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
     const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
         172, 5, 96, 236, 139, 208, 146, 88, 124, 42, 62, 124, 86, 108, 35, 242, 32, 11, 7, 48, 193,
         61, 177, 220, 104, 169, 145, 4, 8, 1, 236, 112,
-    ]);
-    const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-        254, 138, 58, 131, 209, 45, 191, 52, 98, 228, 26, 234, 155, 245, 244, 226, 0, 153, 104,
-        111, 201, 136, 243, 167, 251, 116, 110, 206, 172, 223, 41, 180, 90, 22, 63, 43, 157, 129,
-        226, 75, 49, 33, 155, 76, 160, 133, 127, 146, 150, 80, 199, 201, 80, 98, 179, 43, 46, 46,
-        211, 222, 185, 216, 12, 4,
     ]);
 
     /// A helper that returns a credential that is not revoked, cannot expire
@@ -1738,20 +1728,6 @@ mod tests {
             url:  ISSUER_METADATA_URL.to_string(),
             hash: None,
         }
-    }
-
-    fn get_credential_schema() -> (CredentialType, SchemaRef) {
-        (
-            CredentialType {
-                credential_type: CREDENTIAL_TYPE.to_string(),
-            },
-            SchemaRef {
-                schema_ref: MetadataUrl {
-                    url:  CREDENTIAL_SCHEMA_URL.to_string(),
-                    hash: None,
-                },
-            },
-        )
     }
 
     /// Not expired and not revoked credential is `Active`

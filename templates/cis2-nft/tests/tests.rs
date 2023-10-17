@@ -47,9 +47,8 @@ fn test_minting() {
     // Check that the events are logged.
     let events = update.events().flat_map(|(_addr, events)| events);
 
-    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> = events
-        .map(|e| e.parse().expect("Deserialize event"))
-        .collect();
+    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
+        events.map(|e| e.parse().expect("Deserialize event")).collect();
 
     assert_eq!(events, [
         Cis2Event::Mint(MintEvent {
@@ -126,10 +125,8 @@ fn test_account_transfer() {
     // Check that the events are logged.
     let events = update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| e.parse().expect("Deserialize event"))
-        })
-        .collect::<Vec<Cis2Event<_,_>>>();
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Cis2Event<_, _>>>();
 
     assert_eq!(events, [Cis2Event::Transfer(TransferEvent {
         token_id: TOKEN_0,
@@ -164,9 +161,7 @@ fn test_add_operator() {
     // Check that an operator event occurred.
     let events = update
         .events()
-        .flat_map(|(_addr, events)| {
-            events.iter().map(|e| e.parse().expect("Deserialize event"))
-        })
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Cis2Event<ContractTokenId, ContractTokenAmount>>>();
     assert_eq!(events, [Cis2Event::UpdateOperator(UpdateOperatorEvent {
         operator: BOB_ADDR,
@@ -298,7 +293,7 @@ fn initialize_contract_with_alice_tokens() -> (Chain, ContractAddress, ContractI
         tokens: BTreeSet::from_iter(vec![TOKEN_0, TOKEN_1]),
     };
 
-    // Mint two tokens for which Alice is the owner.
+    // Mint two tokens to Alice.
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
