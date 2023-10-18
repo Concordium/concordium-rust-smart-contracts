@@ -331,8 +331,8 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"8.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"5.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"8.1\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"5.1\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/concordium-smart-contract-testing = \"3.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
@@ -379,9 +379,9 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"8.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"5.0\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/concordium-smart-contract-testing = \"3.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"8.1\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"5.1\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-smart-contract-testing = \"3.1\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/credential-registry/tests/tests.rs
