@@ -1986,7 +1986,7 @@ impl ContractInvokeError {
     ///    - could parse into `T`, but there were leftover bytes
     pub fn parse_return_value<T: Deserial>(&self) -> ParseResult<T> {
         use contracts_common::{Cursor, Get, ParseError};
-        let return_value = self.return_value().ok_or_else(|| ParseError::default())?;
+        let return_value = self.return_value().ok_or_else(ParseError::default)?;
         let mut cursor = Cursor::new(return_value);
         let res = cursor.get()?;
         // Check that all bytes have been read, as leftover bytes usually indicate
