@@ -14,8 +14,7 @@ use concordium_rust_sdk::{
     },
     v2,
 };
-use deployer::{DeployResult, Deployer};
-use itertools::Itertools;
+use deployer::{DeployResult, Deployer, InitResult};
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
@@ -68,15 +67,20 @@ async fn main() -> Result<(), Error> {
 
     let mut modules_deployed: Vec<ModuleReference> = Vec::new();
 
-    for contract in app.module.iter().unique() {
+    for contract in app.module {
         let wasm_module = get_wasm_module(contract.as_path())?;
 
-        let result: DeployResult = deployer
+        let deploy_result = deployer
             .deploy_wasm_module(wasm_module, None)
             .await
             .context("Failed to deploy a module.")?;
 
-        modules_deployed.push(result.module_reference);
+        match deploy_result {
+            DeployResult::ModuleDeployed(module_deploy_result) => {
+                modules_deployed.push(module_deploy_result.module_reference)
+            }
+            DeployResult::ModuleExists(module_reference) => modules_deployed.push(module_reference),
+        }
     }
 
     // Write your own deployment/initialization script below. An example is given
@@ -93,7 +97,7 @@ async fn main() -> Result<(), Error> {
         param,
     }; // Example
 
-    let (_, _, contract) = deployer
+    let init_result: InitResult = deployer
         .init_contract(payload, None, None)
         .await
         .context("Failed to initialize the contract.")?; // Example
@@ -109,11 +113,14 @@ async fn main() -> Result<(), Error> {
 
     let update_payload = transactions::UpdateContractPayload {
         amount: Amount::from_ccd(0),
-        address: contract,
+        address: init_result.contract_address,
         receive_name: OwnedReceiveName::new_unchecked("{{crate_name}}.receive".to_string()),
         message: bytes.try_into()?,
     }; // Example
 
+    // The transaction costs on Concordium have two components, one is based on the size of the
+    // transaction and the number of signatures, and then there is a
+    // transaction-specific one for executing the transaction (which is estimated with this function).
     let mut energy = deployer
         .estimate_energy(update_payload.clone())
         .await
@@ -122,13 +129,8 @@ async fn main() -> Result<(), Error> {
     // We add 100 energy to be safe.
     energy.energy += 100; // Example
 
-    // The transaction costs on Concordium have two components, one is based on the size of the
-    // transaction and the number of signatures, and then there is a
-    // transaction specific one for executing the transaction (which is estimated with this function).
-    // In your main deployment script, you want to use the `energy` value returned by this function
-    // and add the transaction cost of the first component before sending the transaction. `GivenEnergy::Add(energy)`
-    // is the recommended helper function to be used in the main deployment script to handle the fixed
-    // costs for the first component to send the correct transaction cost.
+    // `GivenEnergy::Add(energy)` is the recommended helper function to handle the transaction cost automatically for the first component
+    // (based on the size of the transaction and the number of signatures).
     // [GivenEnergy](https://docs.rs/concordium-rust-sdk/latest/concordium_rust_sdk/types/transactions/construct/enum.GivenEnergy.html)
     let _update_contract = deployer
         .update_contract(update_payload, Some(GivenEnergy::Add(energy)), None)
