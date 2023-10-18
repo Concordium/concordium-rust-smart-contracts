@@ -28,12 +28,39 @@ pub struct Deployer {
     pub key: Arc<WalletAccount>,
 }
 
-/// A struct containing the results of the deploy_wasm_module function.
+/// A struct containing the return values of the `deploy_wasm_module` function.
+/// If the module does not exist on the chain, it is deployed by the `deploy_wasm_module`
+/// function and the transaction hash, the block item, and the module reference are returned.
+/// If the module already exists on the chain, no deployment transaction is sent and only the
+/// module reference is returned.
 #[derive(Debug)]
-pub struct DeployResult {
-    pub tx_hash: Option<TransactionHash>,
-    pub block_item: Option<BlockItemSummary>,
+pub enum DeployResult {
+    /// Module is deployed with a deployment transaction.
+    ModuleDeployed(Box<ModuleDeployedResult>),
+    /// Module already exists on the chain.
+    ModuleExists(ModuleReference),
+}
+
+/// A struct containing part of the return values of the `deploy_wasm_module` function.
+#[derive(Debug)]
+pub struct ModuleDeployedResult {
+    /// The transaction hash of the deployment transaction.
+    pub tx_hash: TransactionHash,
+    /// The block_item of the deployment transaction.
+    pub block_item: BlockItemSummary,
+    /// The module reference of the wasm module.
     pub module_reference: ModuleReference,
+}
+
+/// A struct containing the return values of the `init_contract` function.
+#[derive(Debug)]
+pub struct InitResult {
+    /// The transaction hash of the initialization transaction.
+    pub tx_hash: TransactionHash,
+    /// The block_item of the initialization transaction.
+    pub block_item: BlockItemSummary,
+    /// The contract address of the smart contract instance.
+    pub contract_address: ContractAddress,
 }
 
 impl Deployer {
@@ -69,9 +96,8 @@ impl Deployer {
     ///
     /// If successful, the transaction hash, the block item, and
     /// the module reference are returned.
-    /// If the module already exists on
-    /// chain, this function returns the module reference of the already
-    /// deployed module (no transaction hash or the block item returned).
+    /// If the module already exists on chain, this function returns
+    /// the module reference of the already deployed module.
     ///
     /// An optional expiry time for the transaction
     /// can be given. If `None` is provided, the local time + 300 seconds is
@@ -92,11 +118,8 @@ impl Deployer {
                 "Module with reference {} already exists on the chain.",
                 module_reference
             );
-            return Ok(DeployResult {
-                tx_hash: None,
-                block_item: None,
-                module_reference,
-            });
+
+            return Ok(DeployResult::ModuleExists(module_reference));
         }
 
         let nonce = self.get_nonce(self.key.address).await?;
@@ -118,7 +141,7 @@ impl Deployer {
         );
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
-        let tx_hash = self.client.clone().send_block_item(&bi).await?;
+        let tx_hash = self.client.send_block_item(&bi).await?;
 
         println!("Sent transaction with hash: {tx_hash}");
 
@@ -131,11 +154,13 @@ impl Deployer {
             tx_hash, module_reference,
         );
 
-        Ok(DeployResult {
-            tx_hash: Some(tx_hash),
-            block_item: Some(block_item),
-            module_reference,
-        })
+        Ok(DeployResult::ModuleDeployed(Box::from(
+            ModuleDeployedResult {
+                tx_hash,
+                block_item,
+                module_reference,
+            },
+        )))
     }
 
     /// A function to initialize a smart contract instance on the chain.
@@ -152,7 +177,7 @@ impl Deployer {
         payload: InitContractPayload,
         energy: Option<Energy>,
         expiry: Option<TransactionTime>,
-    ) -> Result<(TransactionHash, BlockItemSummary, ContractAddress), Error> {
+    ) -> Result<InitResult, Error> {
         println!("\nInitializing contract....");
 
         let nonce = self.get_nonce(self.key.address).await?;
@@ -178,7 +203,7 @@ impl Deployer {
 
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
-        let tx_hash = self.client.clone().send_block_item(&bi).await?;
+        let tx_hash = self.client.send_block_item(&bi).await?;
 
         println!("Sent transaction with hash: {tx_hash}");
 
@@ -191,7 +216,11 @@ impl Deployer {
             tx_hash, contract_address.index, contract_address.subindex,
         );
 
-        Ok((tx_hash, block_item, contract_address))
+        Ok(InitResult {
+            tx_hash,
+            block_item,
+            contract_address,
+        })
     }
 
     /// A function to update a smart contract instance on the chain.
@@ -238,7 +267,7 @@ impl Deployer {
         );
         let bi = transactions::BlockItem::AccountTransaction(tx);
 
-        let tx_hash = self.client.clone().send_block_item(&bi).await?;
+        let tx_hash = self.client.send_block_item(&bi).await?;
 
         println!("Sent transaction with hash: {tx_hash}");
 
@@ -254,16 +283,16 @@ impl Deployer {
     /// A function to estimate the energy needed to execute a transaction on the
     /// chain.
     ///
-    /// If successful, the transaction energy is returned by this function.
+    /// If successful, the execution cost in energy is returned by this function.
     /// This function can be used to dry-run a transaction.
     ///
     /// The transaction costs on Concordium have two components, one is based on the size of the
     /// transaction and the number of signatures, and then there is a
-    /// transaction specific one for executing the transaction (which is estimated with this function).
+    /// transaction-specific one for executing the transaction (which is estimated with this function).
     /// In your main deployment script, you want to use the `energy` value returned by this function
     /// and add the transaction cost of the first component before sending the transaction. `GivenEnergy::Add(energy)`
-    /// is the recommended helper function to be used in the main deployment script to handle the fixed
-    /// costs for the first component to send the correct transaction cost.
+    /// is the recommended helper function to be used in the main deployment script to handle the
+    /// cost for the first component automatically.
     /// [GivenEnergy](https://docs.rs/concordium-rust-sdk/latest/concordium_rust_sdk/types/transactions/construct/enum.GivenEnergy.html)
     pub async fn estimate_energy(
         &mut self,

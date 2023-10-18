@@ -42,7 +42,7 @@ The boilerplate code has support for the following functionalities:
 Read functions:
 - `estimate_energy`: To estimate the energy needed to execute one of the three write functions below.
 - `module_exists`: To check if a module has already been deployed on the chain.
-- `get_nonce`: To get the current nonce of the provided wallet account.
+- `get_nonce`: To get the next nonce of the provided wallet account.
 
 Write functions:
 - `deploy_wasm_module`: To deploy a new smart contract module on the chain.
