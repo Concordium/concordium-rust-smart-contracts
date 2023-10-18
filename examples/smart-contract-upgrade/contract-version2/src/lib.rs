@@ -94,19 +94,11 @@ type ContractResult<A> = Result<A, CustomContractError>;
 
 /// Init function that creates a new smart contract.
 #[init(contract = "smart_contract_upgrade")]
-fn contract_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<()> {
-    Ok(())
-}
+fn contract_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> { Ok(()) }
 
 /// View function that returns the content of the state.
 #[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
-fn contract_view<'b, S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &'b impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<&'b State> {
+fn contract_view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
 
@@ -123,10 +115,7 @@ fn contract_view<'b, S: HasStateApi>(
     error = "CustomContractError",
     low_level
 )]
-fn contract_migration<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<S>,
-) -> ContractResult<()> {
+fn contract_migration(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractResult<()> {
     // Check that only this contract instance can call this function.
     ensure!(ctx.sender().matches_contract(&ctx.self_address()), CustomContractError::Unauthorized);
 
@@ -167,10 +156,7 @@ fn contract_migration<S: HasStateApi>(
     error = "CustomContractError",
     low_level
 )]
-fn contract_upgrade<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<S>,
-) -> ContractResult<()> {
+fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractResult<()> {
     // Read the top-level contract state.
     let state: State = host.state().read_root()?;
 

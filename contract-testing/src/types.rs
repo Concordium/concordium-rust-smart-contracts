@@ -3,8 +3,9 @@ use concordium_base::{
     common::types::{CredentialIndex, KeyIndex, Signature},
     constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
-        self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, ExchangeRate,
-        ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy, SlotTime, Timestamp,
+        self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, Deserial,
+        ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy,
+        ParseResult, SlotTime, Timestamp,
     },
     hashes::BlockHash,
     id::types::SchemeId,
@@ -455,15 +456,15 @@ impl ContractInvokeSuccess {
     /// Only events from effective trace elements are included. See
     /// [`Self::effective_trace_elements`] for more details.
     pub fn events(&self) -> impl Iterator<Item = (ContractAddress, &[ContractEvent])> {
-        self.effective_trace_elements().flat_map(|cte| {
-            if let ContractTraceElement::Updated {
+        self.effective_trace_elements().flat_map(|cte| match cte {
+            ContractTraceElement::Updated {
                 data,
-            } = cte
-            {
-                Some((data.address, data.events.as_slice()))
-            } else {
-                None
-            }
+            } => Some((data.address, data.events.as_slice())),
+            ContractTraceElement::Interrupted {
+                address,
+                events,
+            } => Some((*address, events.as_slice())),
+            _ => None,
         })
     }
 
@@ -605,6 +606,21 @@ impl ContractInvokeSuccess {
         self.trace_elements
             .iter()
             .any(|element| matches!(element, DebugTraceElement::WithFailures { .. }))
+    }
+
+    /// Try to parse the return value into a type that implements [`Deserial`].
+    ///
+    /// Ensures that all bytes of the return value are read.
+    pub fn parse_return_value<T: Deserial>(&self) -> ParseResult<T> {
+        use contracts_common::{Cursor, Get, ParseError};
+        let mut cursor = Cursor::new(&self.return_value);
+        let res = cursor.get()?;
+        // Check that all bytes have been read, as leftover bytes usually indicate
+        // errors.
+        if cursor.offset != self.return_value.len() {
+            return Err(ParseError::default());
+        }
+        Ok(res)
     }
 }
 

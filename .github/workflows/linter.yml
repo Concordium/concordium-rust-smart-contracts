@@ -13,6 +13,7 @@ name: Clippy & fmt
 env:
   RUST_FMT: nightly-2023-04-01
   RUST_VERSION: "1.66"
+  CARGO_CONCORDIUM_VERSION: "3.0.0"
 
 jobs:
   rustfmt:
@@ -130,16 +131,22 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
       # see https://github.com/rust-lang/cargo/issues/9922
       # Run all tests, including doc tests.
       - name: Run cargo test
         run: |
-          # TEMPLATE_DIR=`pwd`
+          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
+          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
+          chmod +x $CARGO_CCD
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
-          cargo test
+          cargo concordium test --out "./concordium-out/module.wasm.v1"
 
   # The credential registry template is used to generate code for all combinations of parameters
   # with the `cargo-generate` and it is checked that the 'cargo test' command can be executed
@@ -174,15 +181,22 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
       # see https://github.com/rust-lang/cargo/issues/9922
       # Run all tests, including doc tests.
       - name: Run cargo test
         run: |
+          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
+          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
+          chmod +x $CARGO_CCD
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
-          cargo test
+          cargo concordium test --out "./concordium-out/module.wasm.v1"
 
   # All templates are generated with the `cargo-generate` command
   # and it is checked that the schemas can be built as part of the 'clippy' command.
@@ -330,10 +344,12 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"8.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"5.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"8.1\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"5.1\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-smart-contract-testing = \"3.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/cis2-nft/tests/tests.rs
 
   # The credential-registry template is generated with the `cargo-generate` command
   # and it is checked that the code is equivalent to the credential-registry smart contract in the example folder.
@@ -376,10 +392,12 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"8.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"5.0\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"8.1\", default-features = false/path = \"..\/..\/concordium-std\", version = \"8.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"5.1\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"5.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-smart-contract-testing = \"3.1\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
+          diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/credential-registry/tests/tests.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/README.md examples/credential-registry/README.md
 
   clippy-cis2:
@@ -623,9 +641,6 @@ jobs:
           - crypto-primitives
 
         crates:
-          - examples/nametoken/Cargo.toml
-          - examples/signature-verifier/Cargo.toml
-          - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/credential-registry/Cargo.toml
 
     steps:
@@ -787,30 +802,30 @@ jobs:
           - x86_64-unknown-linux-gnu
 
         crates:
-          - examples/voting/Cargo.toml
-          - examples/eSealing/Cargo.toml
-          - examples/auction/Cargo.toml
-          - examples/cis2-multi/Cargo.toml
-          - examples/cis2-multi-royalties/Cargo.toml
-          - examples/cis2-nft/Cargo.toml
-          - examples/cis3-nft-sponsored-txs/Cargo.toml
-          - examples/cis2-wccd/Cargo.toml
-          - examples/credential-registry/Cargo.toml
-          - examples/fib/Cargo.toml
-          - examples/icecream/Cargo.toml
-          - examples/memo/Cargo.toml
-          - examples/nametoken/Cargo.toml
-          - examples/piggy-bank/part1/Cargo.toml
-          - examples/piggy-bank/part2/Cargo.toml
-          - examples/proxy/Cargo.toml
-          - examples/recorder/Cargo.toml
-          - examples/signature-verifier/Cargo.toml
-          - examples/transfer-policy-check/Cargo.toml
-          - examples/two-step-transfer/Cargo.toml
-          - examples/smart-contract-upgrade/contract-version1/Cargo.toml
-          - examples/smart-contract-upgrade/contract-version2/Cargo.toml
-          - examples/offchain-transfers/Cargo.toml
-          - examples/account-signature-checks/Cargo.toml
+          - examples/voting
+          - examples/eSealing
+          - examples/auction
+          - examples/cis2-multi
+          - examples/cis2-multi-royalties
+          - examples/cis2-nft
+          - examples/cis3-nft-sponsored-txs
+          - examples/cis2-wccd
+          - examples/credential-registry
+          - examples/fib
+          - examples/icecream
+          - examples/memo
+          - examples/nametoken
+          - examples/piggy-bank/part1
+          - examples/piggy-bank/part2
+          - examples/proxy
+          - examples/recorder
+          - examples/signature-verifier
+          - examples/transfer-policy-check
+          - examples/two-step-transfer
+          - examples/smart-contract-upgrade/contract-version1
+          - examples/smart-contract-upgrade/contract-version2
+          - examples/offchain-transfers
+          - examples/account-signature-checks
 
     steps:
       - name: Checkout sources
@@ -826,9 +841,20 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
-      - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          # only run the library tests, no doc tests
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --lib
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
+      - name: Download and install Cargo Concordium
+        run: |
+          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
+          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
+          chmod +x $CARGO_CCD
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
+
+        # The 'smart-contract-upgrade' example has a v1 and v2 contract and the tests in v1 needs the wasm module from v2 for upgrading.
+      - name: Build contract-upgrade version 2 module if needed
+        if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}
+        run: cargo concordium build --out "examples/smart-contract-upgrade/contract-version2/concordium-out/module.wasm.v1" -- --manifest-path "examples/smart-contract-upgrade/contract-version2/Cargo.toml"
+
+      - name: Run cargo concordium test
+        run: cargo concordium test --out "${{ matrix.crates }}/concordium-out/module.wasm.v1" -- --manifest-path "${{ matrix.crates }}/Cargo.toml"

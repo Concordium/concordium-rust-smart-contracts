@@ -10,6 +10,9 @@ license = "MPL-2.0"
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
 
+[dev-dependencies]
+concordium-smart-contract-testing = { path = "../../contract-testing" }
+
 [features]
 default = ["std", "wee_alloc"]
 std = ["concordium-std/std"]

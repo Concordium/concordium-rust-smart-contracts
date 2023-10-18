@@ -9,7 +9,8 @@ use concordium_base::{
     constants::MAX_WASM_MODULE_SIZE,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        Duration, ExchangeRate, ExchangeRates, ModuleReference, OwnedPolicy, SlotTime, Timestamp,
+        Deserial, Duration, ExchangeRate, ExchangeRates, ModuleReference, OwnedPolicy, ParseResult,
+        SlotTime, Timestamp,
     },
     hashes::BlockHash,
     smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
@@ -1972,6 +1973,28 @@ impl ContractInvokeError {
             } => Some(data),
             _ => None,
         }
+    }
+
+    /// Try to extract and parse the value returned into a type that implements
+    /// [`Deserial`].
+    ///
+    /// Returns an error if the return value:
+    ///  - isn't present
+    ///    - see [`Self::return_value`] for details about when this happens
+    ///  - is present
+    ///    - but could not be parsed into `T`
+    ///    - could parse into `T`, but there were leftover bytes
+    pub fn parse_return_value<T: Deserial>(&self) -> ParseResult<T> {
+        use contracts_common::{Cursor, Get, ParseError};
+        let return_value = self.return_value().ok_or_else(ParseError::default)?;
+        let mut cursor = Cursor::new(return_value);
+        let res = cursor.get()?;
+        // Check that all bytes have been read, as leftover bytes usually indicate
+        // errors.
+        if cursor.offset != return_value.len() {
+            return Err(ParseError::default());
+        }
+        Ok(res)
     }
 }
 

@@ -16,12 +16,7 @@ struct InitParameter;
 
 /// Init function that creates a new contract.
 #[init(contract = "memo", parameter = "InitParameter")]
-fn memo_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<()> {
-    Ok(())
-}
+fn memo_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> { Ok(()) }
 
 const EXPECTED_PARAMETER_SIZE: u32 = 32;
 
@@ -50,11 +45,7 @@ struct State;
     payable,
     error = "CustomContractError"
 )]
-fn memo_receive<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State, StateApiType = S>,
-    amount: Amount,
-) -> ReceiveResult<()> {
+fn memo_receive(ctx: &ReceiveContext, host: &Host<State>, amount: Amount) -> ReceiveResult<()> {
     ensure!(matches!(ctx.sender(), Address::Account(..)));
     ensure!(ctx.parameter_cursor().size() == EXPECTED_PARAMETER_SIZE);
     host.invoke_transfer(&ctx.owner(), amount)?;
