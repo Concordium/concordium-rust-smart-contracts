@@ -10,20 +10,18 @@ use concordium_rust_sdk::{
     types::{
         smart_contracts::{ModuleReference, WasmModule},
         transactions,
-        transactions::send::GivenEnergy,
+        transactions::{send::GivenEnergy, InitContractPayload},
     },
     v2,
 };
+use deployer::{DeployResult, Deployer};
 use itertools::Itertools;
-
-use concordium_rust_sdk::types::transactions::InitContractPayload;
-use deployer::Deployer;
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
 };
 
-/// Reads the wasm module from a given file path and file name.
+/// Reads the wasm module from a given file path.
 fn get_wasm_module(file: &Path) -> Result<WasmModule, Error> {
     let wasm_module = std::fs::read(file).context("Could not read the WASM file")?;
     let mut cursor = Cursor::new(wasm_module);
@@ -73,9 +71,12 @@ async fn main() -> Result<(), Error> {
     for contract in app.module.iter().unique() {
         let wasm_module = get_wasm_module(contract.as_path())?;
 
-        let (_, _, module) = deployer.deploy_wasm_module(wasm_module, None).await?;
+        let result: DeployResult = deployer
+            .deploy_wasm_module(wasm_module, None)
+            .await
+            .context("Failed to deploy a module.")?;
 
-        modules_deployed.push(module);
+        modules_deployed.push(result.module_reference);
     }
 
     // Write your own deployment/initialization script below. An example is given
@@ -92,7 +93,10 @@ async fn main() -> Result<(), Error> {
         param,
     }; // Example
 
-    let (_, _, contract) = deployer.init_contract(payload, None, None).await?; // Example
+    let (_, _, contract) = deployer
+        .init_contract(payload, None, None)
+        .await
+        .context("Failed to initialize the contract.")?; // Example
 
     // This is how you can use a type from your smart contract.
     use {{crate_name}}::MyInputType; // Example
@@ -110,14 +114,26 @@ async fn main() -> Result<(), Error> {
         message: bytes.try_into()?,
     }; // Example
 
-    let mut energy = deployer.estimate_energy(update_payload.clone()).await?; // Example
+    let mut energy = deployer
+        .estimate_energy(update_payload.clone())
+        .await
+        .context("Failed to estimate the energy.")?; // Example
 
     // We add 100 energy to be safe.
     energy.energy += 100; // Example
 
+    // The transaction costs on Concordium have two components, one is based on the size of the
+    // transaction and the number of signatures, and then there is a
+    // transaction specific one for executing the transaction (which is estimated with this function).
+    // In your main deployment script, you want to use the `energy` value returned by this function
+    // and add the transaction cost of the first component before sending the transaction. `GivenEnergy::Add(energy)`
+    // is the recommended helper function to be used in the main deployment script to handle the fixed
+    // costs for the first component to send the correct transaction cost.
+    // [GivenEnergy](https://docs.rs/concordium-rust-sdk/latest/concordium_rust_sdk/types/transactions/construct/enum.GivenEnergy.html)
     let _update_contract = deployer
         .update_contract(update_payload, Some(GivenEnergy::Add(energy)), None)
-        .await?; // Example
+        .await
+        .context("Failed to update the contract.")?; // Example
 
     // Write your own deployment/initialization script above. An example is given
     // here.
