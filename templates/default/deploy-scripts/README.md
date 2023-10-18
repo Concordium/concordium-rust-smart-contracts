@@ -78,10 +78,10 @@ Deploying module....
 Module with reference 3774d4b9ae86ae3c5192e13455d7515073f5163a25deabc55abdab31d1cc002e already exists on the chain.
 
 Initializing contract....
-Sent tx: bdb43d1f00a4c5ba02ec81e0e2da52b6920582a16acd21a364ec3e3734ad4f12
+Sent transaction with hash: bdb43d1f00a4c5ba02ec81e0e2da52b6920582a16acd21a364ec3e3734ad4f12
 Transaction finalized: tx_hash=bdb43d1f00a4c5ba02ec81e0e2da52b6920582a16acd21a364ec3e3734ad4f12 contract=(7000, 0)
 
 Updating contract....
-Sent tx: 4843efc3b700bce8e67f2cc3f17da3124cf0a7323652fb778412ecd768ae2fe5
+Sent transaction with hash: 4843efc3b700bce8e67f2cc3f17da3124cf0a7323652fb778412ecd768ae2fe5
 Transaction finalized: tx_hash=4843efc3b700bce8e67f2cc3f17da3124cf0a7323652fb778412ecd768ae2fe5
 ```

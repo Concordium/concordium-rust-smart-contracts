@@ -1,11 +1,10 @@
 use anyhow::{bail, Context, Error};
-use concordium_rust_sdk::smart_contracts::types::DEFAULT_INVOKE_ENERGY;
-use concordium_rust_sdk::types::hashes::TransactionHash;
 use concordium_rust_sdk::{
     common::types::TransactionTime,
     id::types::AccountAddress,
-    smart_contracts::common::ModuleReference,
+    smart_contracts::{common::ModuleReference, types::DEFAULT_INVOKE_ENERGY},
     types::{
+        hashes::TransactionHash,
         queries::AccountNonceResponse,
         smart_contracts::{ContractContext, InvokeContractResult, WasmModule},
         transactions::{
@@ -18,8 +17,7 @@ use concordium_rust_sdk::{
     },
     v2::{self, BlockIdentifier},
 };
-use std::path::Path;
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 /// A struct containing connection and wallet information.
 #[derive(Debug)]
@@ -28,6 +26,14 @@ pub struct Deployer {
     pub client: v2::Client,
     /// The account keys to be used for sending transactions.
     pub key: Arc<WalletAccount>,
+}
+
+/// A struct containing the results of the deploy_wasm_module function.
+#[derive(Debug)]
+pub struct DeployResult {
+    pub tx_hash: Option<TransactionHash>,
+    pub block_item: Option<BlockItemSummary>,
+    pub module_reference: ModuleReference,
 }
 
 impl Deployer {
@@ -74,14 +80,7 @@ impl Deployer {
         &mut self,
         wasm_module: WasmModule,
         expiry: Option<TransactionTime>,
-    ) -> Result<
-        (
-            Option<TransactionHash>,
-            Option<BlockItemSummary>,
-            ModuleReference,
-        ),
-        Error,
-    > {
+    ) -> Result<DeployResult, Error> {
         println!("\nDeploying module....");
 
         let module_reference = wasm_module.get_module_ref();
@@ -93,7 +92,11 @@ impl Deployer {
                 "Module with reference {} already exists on the chain.",
                 module_reference
             );
-            return Ok((None, None, module_reference));
+            return Ok(DeployResult {
+                tx_hash: None,
+                block_item: None,
+                module_reference,
+            });
         }
 
         let nonce = self.get_nonce(self.key.address).await?;
@@ -117,7 +120,7 @@ impl Deployer {
 
         let tx_hash = self.client.clone().send_block_item(&bi).await?;
 
-        println!("Sent tx: {tx_hash}");
+        println!("Sent transaction with hash: {tx_hash}");
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
@@ -128,7 +131,11 @@ impl Deployer {
             tx_hash, module_reference,
         );
 
-        Ok((Some(tx_hash), Some(block_item), module_reference))
+        Ok(DeployResult {
+            tx_hash: Some(tx_hash),
+            block_item: Some(block_item),
+            module_reference,
+        })
     }
 
     /// A function to initialize a smart contract instance on the chain.
@@ -173,7 +180,7 @@ impl Deployer {
 
         let tx_hash = self.client.clone().send_block_item(&bi).await?;
 
-        println!("Sent tx: {tx_hash}");
+        println!("Sent transaction with hash: {tx_hash}");
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
@@ -233,7 +240,7 @@ impl Deployer {
 
         let tx_hash = self.client.clone().send_block_item(&bi).await?;
 
-        println!("Sent tx: {tx_hash}");
+        println!("Sent transaction with hash: {tx_hash}");
 
         let (_, block_item) = self.client.wait_until_finalized(&tx_hash).await?;
 
@@ -244,11 +251,20 @@ impl Deployer {
         Ok((tx_hash, block_item))
     }
 
-    /// A function to estimate the energy needed to send a transaction on the
+    /// A function to estimate the energy needed to execute a transaction on the
     /// chain.
     ///
     /// If successful, the transaction energy is returned by this function.
     /// This function can be used to dry-run a transaction.
+    ///
+    /// The transaction costs on Concordium have two components, one is based on the size of the
+    /// transaction and the number of signatures, and then there is a
+    /// transaction specific one for executing the transaction (which is estimated with this function).
+    /// In your main deployment script, you want to use the `energy` value returned by this function
+    /// and add the transaction cost of the first component before sending the transaction. `GivenEnergy::Add(energy)`
+    /// is the recommended helper function to be used in the main deployment script to handle the fixed
+    /// costs for the first component to send the correct transaction cost.
+    /// [GivenEnergy](https://docs.rs/concordium-rust-sdk/latest/concordium_rust_sdk/types/transactions/construct/enum.GivenEnergy.html)
     pub async fn estimate_energy(
         &mut self,
         payload: UpdateContractPayload,
@@ -304,7 +320,7 @@ impl Deployer {
                     reject_reason,
                 } => {
                     if *transaction_type != Some(TransactionType::DeployModule) {
-                        bail!("Expected transaction type to be DeployModule",);
+                        bail!("Expected transaction type to be of type DeployModule but it was instead {transaction_type:?}",);
                     }
 
                     bail!(format!(
@@ -338,7 +354,7 @@ impl Deployer {
                     reject_reason,
                 } => {
                     if *transaction_type != Some(TransactionType::InitContract) {
-                        bail!("Expected transaction type to be InitContract");
+                        bail!("Expected transaction type to be of type InitContract but it was instead {transaction_type:?}");
                     }
 
                     bail!(format!(
@@ -372,7 +388,7 @@ impl Deployer {
                     reject_reason,
                 } => {
                     if *transaction_type != Some(TransactionType::Update) {
-                        bail!("Expected transaction type to be Update");
+                        bail!("Expected transaction type to be of type Update but it was instead {transaction_type:?}");
                     }
 
                     bail!(format!(
