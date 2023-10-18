@@ -68,7 +68,7 @@ pub use concordium_contracts_common::ExchangeRates;
 /// implementation supported by external host functions provided by the chain,
 /// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
 /// is only useful for testing with the deprecated
-/// [`concordium_std::test_infrastructure`] module.
+/// [`test_infrastructure`](crate::test_infrastructure) module.
 ///
 /// In user code this type parameter should generally be treated as boilerplate,
 /// and contract entrypoints should always be stated in terms of a generic type
@@ -229,7 +229,7 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// implementation supported by external host functions provided by the chain,
 /// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
 /// is only useful for testing with the deprecated
-/// [`concordium_std::test_infrastructure`] module.
+/// [`test_infrastructure`](crate::test_infrastructure) module.
 ///
 /// In user code this type parameter should generally be treated as boilerplate,
 /// and contract entrypoints should always be stated in terms of a generic type
@@ -846,7 +846,8 @@ macro_rules! ensure_ne {
 
 /// The `fail` macro is used for testing as a substitute for the panic macro.
 /// It reports back error information to the host.
-/// Used only in testing with [`concordium_std::test_infrastructure`]
+/// Used only in testing with
+/// [`test_infrastructure`](crate::test_infrastructure).
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! fail {
@@ -869,7 +870,8 @@ macro_rules! fail {
 
 /// The `fail` macro is used for testing as a substitute for the panic macro.
 /// It reports back error information to the host.
-/// Used only in testing with [`concordium_std::test_infrastructure`]
+/// Used only in testing with
+/// [`test_infrastructure`](crate::test_infrastructure).
 #[cfg(not(feature = "std"))]
 #[macro_export]
 macro_rules! fail {
@@ -892,7 +894,8 @@ macro_rules! fail {
 
 /// The `claim` macro is used for testing as a substitute for the assert macro.
 /// It checks the condition and if false it reports back an error.
-/// Used only in testing with [`concordium_std::test_infrastructure`].
+/// Used only in testing with
+/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! claim {
     ($cond:expr) => {
@@ -914,7 +917,8 @@ macro_rules! claim {
 
 /// Ensure the first two arguments are equal, just like `assert_eq!`, otherwise
 /// reports an error.
-/// Used only in testing with [`concordium_std::test_infrastructure`]
+/// Used only in testing with
+/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! claim_eq {
     ($left:expr, $right:expr $(,)?) => {
@@ -935,7 +939,8 @@ macro_rules! claim_eq {
 
 /// Ensure the first two arguments are *not* equal, just like `assert_ne!`,
 /// otherwise reports an error.
-/// Used only in testing with [`concordium_std::test_infrastructure`]
+/// Used only in testing with
+/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! claim_ne {
     ($left:expr, $right:expr $(,)?) => {
@@ -1035,7 +1040,7 @@ pub type StateApi = ExternStateApi;
 /// Host-backed cryptographic primitives.
 ///
 /// See [`ExternCryptoPrimitives`] for the methods implemented via
-/// [`HasCryptoPrimitives`].
+/// [`HasCryptoPrimitives`](crate::traits::HasCryptoPrimitives).
 pub type CryptoPrimitives = ExternCryptoPrimitives;
 
 /// A low-level host, used by receive methods with the attribute `low_level`.
@@ -1094,8 +1099,8 @@ pub struct ExternHost<State> {
 ///
 /// It is parametrized by a parameter `S` that is assumed to
 /// implement [`HasStateApi`] to support testing with the deprecated
-/// [`concordium_std::test_infrastructure`]. The `S` defaults to `StateApi`,
-/// which is sufficient to test with the [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)
+/// [`test_infrastructure`](crate::test_infrastructure). The `S` defaults to
+/// `StateApi`, which is sufficient to test with the [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)
 /// library.
 ///
 /// The StateBuilder is designed to provide an abstraction over the contract
@@ -1185,7 +1190,7 @@ pub struct ExternContext<T: sealed::ContextType> {
     marker: crate::marker::PhantomData<T>,
 }
 
-/// **Typically referred to via the alias [`ChainMetadata`].**
+/// **Typically referred to via the alias [`ChainMeta`].**
 pub struct ExternChainMeta {}
 
 #[derive(Default)]
