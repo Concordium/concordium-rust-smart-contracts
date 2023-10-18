@@ -128,9 +128,9 @@ impl Deployer {
             anyhow::bail!("Nonce not final")
         }
 
-        let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
-            (chrono::Utc::now().timestamp() + 300) as u64,
-        ));
+        let expiry = expiry.unwrap_or_else(|| {
+            TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64)
+        });
 
         let tx = deploy_module(
             &*self.key,
@@ -188,9 +188,9 @@ impl Deployer {
 
         let energy = energy.unwrap_or(Energy { energy: 5000 });
 
-        let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
-            (chrono::Utc::now().timestamp() + 300) as u64,
-        ));
+        let expiry = expiry.unwrap_or_else(|| {
+            TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64)
+        });
 
         let tx = init_contract(
             &*self.key,
@@ -251,9 +251,9 @@ impl Deployer {
             payload: update_payload,
         };
 
-        let expiry = expiry.unwrap_or(TransactionTime::from_seconds(
-            (chrono::Utc::now().timestamp() + 300) as u64,
-        ));
+        let expiry = expiry.unwrap_or_else(|| {
+            TransactionTime::from_seconds((chrono::Utc::now().timestamp() + 300) as u64)
+        });
 
         let energy = energy.unwrap_or(GivenEnergy::Absolute(Energy { energy: 50000 }));
 
