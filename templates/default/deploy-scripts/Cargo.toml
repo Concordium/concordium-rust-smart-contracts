@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "deploy_scripts"
+version = "1.0.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4.26"
+tokio = {version = "1.18", features = ["rt", "macros", "rt-multi-thread"] }
+clap = { version = "4", features = ["derive", "env"]}
+concordium-rust-sdk="3"
+{{crate_name}} = {path = "../"}
