@@ -131,16 +131,22 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
       # see https://github.com/rust-lang/cargo/issues/9922
       # Run all tests, including doc tests.
       - name: Run cargo test
         run: |
-          # TEMPLATE_DIR=`pwd`
+          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
+          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
+          chmod +x $CARGO_CCD
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
-          cargo test
+          cargo concordium test --out "./concordium-out/module.wasm.v1"
 
   # The credential registry template is used to generate code for all combinations of parameters
   # with the `cargo-generate` and it is checked that the 'cargo test' command can be executed
@@ -175,15 +181,22 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
       # we need to move the generated project to a temp folder, away from the template project
       # otherwise `cargo` runs would fail
       # see https://github.com/rust-lang/cargo/issues/9922
       # Run all tests, including doc tests.
       - name: Run cargo test
         run: |
+          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
+          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
+          chmod +x $CARGO_CCD
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
-          cargo test
+          cargo concordium test --out "./concordium-out/module.wasm.v1"
 
   # All templates are generated with the `cargo-generate` command
   # and it is checked that the schemas can be built as part of the 'clippy' command.
