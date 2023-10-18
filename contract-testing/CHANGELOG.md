@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## 3.1.0
+
 - Add functionality for setting the exchange rates and block time of the chain based on queries from an external node.
   - Configured via a builder pattern, see `Chain::builder`.
 - Add methods to `Chain`:
@@ -15,6 +17,7 @@
   - `Endpoint`
 - Add methods to the `Chain` for adding external accounts and contracts and for invoking contracts on an external node.
   - See the `Chain` method `contract_invoke_external` for more details.
+- Add helper method `parse_return_value` to `ContractInvokeError` and `ContractInvokeSuccess`.
 - Bump minimum supported Rust version to `1.66`.
 
 ## 3.0.0

@@ -43,14 +43,14 @@ struct State {
 }
 
 #[derive(Serialize, SchemaType, Clone, Copy)]
-enum Weather {
+pub enum Weather {
     Rainy,
     Sunny,
 }
 
 /// The custom errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
-enum ContractError {
+pub enum ContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
@@ -70,10 +70,7 @@ type ContractResult<A> = Result<A, ContractError>;
 
 /// Initialise the contract with the contract address of the weather service.
 #[init(contract = "icecream", parameter = "ContractAddress")]
-fn contract_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
+fn contract_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     Ok(State {
         weather_service,
@@ -89,9 +86,9 @@ fn contract_init<S: HasStateApi>(
     mutable,
     error = "ContractError"
 )]
-fn contract_buy_icecream<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+fn contract_buy_icecream(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     amount: Amount,
 ) -> ContractResult<()> {
     let weather_service = host.state().weather_service;
@@ -131,9 +128,9 @@ fn contract_buy_icecream<S: HasStateApi>(
     mutable,
     error = "ContractError"
 )]
-fn contract_replace_weather_service<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+fn contract_replace_weather_service(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
 ) -> ContractResult<()> {
     ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated);
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
@@ -145,20 +142,14 @@ fn contract_replace_weather_service<S: HasStateApi>(
 
 /// Initialse the weather service with the weather.
 #[init(contract = "weather", parameter = "Weather")]
-fn weather_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<Weather> {
+fn weather_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<Weather> {
     let weather = ctx.parameter_cursor().get()?;
     Ok(weather)
 }
 
 /// Get the current weather.
 #[receive(contract = "weather", name = "get", return_value = "Weather", error = "ContractError")]
-fn weather_get<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<Weather, StateApiType = S>,
-) -> ContractResult<Weather> {
+fn weather_get(_ctx: &ReceiveContext, host: &Host<Weather>) -> ContractResult<Weather> {
     Ok(*host.state())
 }
 
@@ -170,155 +161,8 @@ fn weather_get<S: HasStateApi>(
     mutable,
     error = "ContractError"
 )]
-fn weather_set<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<Weather, StateApiType = S>,
-) -> ContractResult<()> {
+fn weather_set(ctx: &ReceiveContext, host: &mut ExternHost<Weather>) -> ContractResult<()> {
     ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated); // Only the owner can update the weather.
     *host.state_mut() = ctx.parameter_cursor().get()?;
     Ok(())
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use test_infrastructure::*;
-
-    const INVOKER_ADDR: AccountAddress = AccountAddress([0; 32]);
-    const WEATHER_SERVICE: ContractAddress = ContractAddress {
-        index:    1,
-        subindex: 0,
-    };
-    const ICECREAM_VENDOR: AccountAddress = AccountAddress([1; 32]);
-    const ICECREAM_PRICE: Amount = Amount {
-        micro_ccd: 6000000, // 6 CCD
-    };
-
-    #[concordium_test]
-    fn test_sunny_days() {
-        // Arrange
-        let mut ctx = TestReceiveContext::empty();
-        let state = State {
-            weather_service: WEATHER_SERVICE,
-        };
-        let mut host = TestHost::new(state, TestStateBuilder::new());
-
-        // Set up context
-        let parameter = to_bytes(&ICECREAM_VENDOR);
-        ctx.set_owner(INVOKER_ADDR);
-        ctx.set_invoker(INVOKER_ADDR);
-        ctx.set_parameter(&parameter);
-        host.set_self_balance(ICECREAM_PRICE); // This should be the balance prior to the call plus the incoming amount.
-
-        // Set up a mock invocation for the weather service.
-        host.setup_mock_entrypoint(
-            WEATHER_SERVICE,
-            OwnedEntrypointName::new_unchecked("get".into()),
-            MockFn::returning_ok(Weather::Sunny),
-        );
-
-        // Act
-        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
-            .expect_report("Calling buy_icecream failed.");
-
-        // Assert
-        assert!(host.transfer_occurred(&ICECREAM_VENDOR, ICECREAM_PRICE));
-        assert!(host.get_transfers_to(INVOKER_ADDR).is_empty()); // Check that
-                                                                 // no
-                                                                 // transfers to
-                                                                 // the invoker
-                                                                 // occured.
-    }
-
-    #[concordium_test]
-    fn test_rainy_days() {
-        // Arrange
-        let mut ctx = TestReceiveContext::empty();
-        let state = State {
-            weather_service: WEATHER_SERVICE,
-        };
-        let mut host = TestHost::new(state, TestStateBuilder::new());
-
-        // Set up context
-        let parameter = to_bytes(&ICECREAM_VENDOR);
-        ctx.set_owner(INVOKER_ADDR);
-        ctx.set_invoker(INVOKER_ADDR);
-        ctx.set_parameter(&parameter);
-        host.set_self_balance(ICECREAM_PRICE);
-
-        // Set up mock invocation
-        host.setup_mock_entrypoint(
-            WEATHER_SERVICE,
-            OwnedEntrypointName::new_unchecked("get".into()),
-            MockFn::returning_ok(Weather::Rainy),
-        );
-
-        // Act
-        contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE)
-            .expect_report("Calling buy_icecream failed.");
-
-        // Assert
-        assert!(host.transfer_occurred(&INVOKER_ADDR, ICECREAM_PRICE));
-        assert_eq!(host.get_transfers(), &[(INVOKER_ADDR, ICECREAM_PRICE)]); // Check that this is the only transfer.
-    }
-
-    #[concordium_test]
-    fn test_missing_icecream_vendor() {
-        // Arrange
-        let mut ctx = TestReceiveContext::empty();
-        let state = State {
-            weather_service: WEATHER_SERVICE,
-        };
-        let mut host = TestHost::new(state, TestStateBuilder::new());
-
-        // Set up context
-        let parameter = to_bytes(&ICECREAM_VENDOR);
-        ctx.set_owner(INVOKER_ADDR);
-        ctx.set_invoker(INVOKER_ADDR);
-        ctx.set_parameter(&parameter);
-        host.set_self_balance(ICECREAM_PRICE);
-
-        // By default all transfers to accounts will work, but here we want to test what
-        // happens when the vendor account doesn't exist.
-        host.make_account_missing(ICECREAM_VENDOR);
-
-        // Set up mock invocation
-        host.setup_mock_entrypoint(
-            WEATHER_SERVICE,
-            OwnedEntrypointName::new_unchecked("get".into()),
-            MockFn::returning_ok(Weather::Sunny),
-        );
-
-        // Act + Assert
-        let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
-        claim_eq!(result, Err(ContractError::TransferError));
-    }
-
-    #[concordium_test]
-    fn test_missing_weather_service() {
-        // Arrange
-        let mut ctx = TestReceiveContext::empty();
-        let state = State {
-            weather_service: WEATHER_SERVICE,
-        };
-        let mut host = TestHost::new(state, TestStateBuilder::new());
-
-        // Set up context
-        let parameter = to_bytes(&ICECREAM_VENDOR);
-        ctx.set_owner(INVOKER_ADDR);
-        ctx.set_parameter(&parameter);
-
-        // Set up mock invocation
-        host.setup_mock_entrypoint(
-            WEATHER_SERVICE,
-            OwnedEntrypointName::new_unchecked("get".into()),
-            MockFn::returning_err::<()>(CallContractError::MissingContract),
-        );
-
-        // Act + Assert (should panic)
-        let result = contract_buy_icecream(&ctx, &mut host, ICECREAM_PRICE);
-        claim_eq!(result, Err(ContractError::ContractInvokeError));
-    }
 }

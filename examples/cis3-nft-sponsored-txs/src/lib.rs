@@ -61,7 +61,7 @@ use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
 /// The url for the token metadata. Every `token_id` in this contract has the
 /// same metadata url for simplicity.
-const TOKEN_METADATA_URL: &str = "https://gist.githubusercontent.com/abizjak/ab5b6fc0afb78acf23ee24d979eb7639/raw/7c03f174d628df1d2fd0dc8cffb319c89e770708/metadata.json";
+pub const TOKEN_METADATA_URL: &str = "https://gist.githubusercontent.com/abizjak/ab5b6fc0afb78acf23ee24d979eb7639/raw/7c03f174d628df1d2fd0dc8cffb319c89e770708/metadata.json";
 
 /// The standard identifier for the CIS-3: Concordium Token Standard 3.
 pub const CIS3_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
@@ -81,7 +81,7 @@ pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial)]
 #[concordium(repr(u8))]
-enum Event {
+pub enum Event {
     /// The event tracks the nonce used by the signer of the `PermitMessage`
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
@@ -194,15 +194,15 @@ pub struct MintParams {
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
-struct AddressState<S> {
+struct AddressState<S = StateApi> {
     /// The tokens owned by this address.
     owned_tokens: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
     operators:    StateSet<Address, S>,
 }
 
-impl<S: HasStateApi> AddressState<S> {
-    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+impl AddressState {
+    fn empty(state_builder: &mut StateBuilder) -> Self {
         AddressState {
             owned_tokens: state_builder.new_set(),
             operators:    state_builder.new_set(),
@@ -215,7 +215,7 @@ impl<S: HasStateApi> AddressState<S> {
 // and this could be structured in a more space efficient way depending on the use case.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State<S> {
+struct State<S = StateApi> {
     /// Counter to increase the `token_id` at every mint function invoke.
     token_id_counter: u32,
     /// The state for each address.
@@ -293,7 +293,7 @@ pub struct PermitParamPartial {
 
 /// The custom errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
-enum CustomContractError {
+pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
@@ -331,9 +331,9 @@ enum CustomContractError {
 }
 
 /// Wrapping the custom errors in a type with CIS2 errors.
-type ContractError = Cis2Error<CustomContractError>;
+pub type ContractError = Cis2Error<CustomContractError>;
 
-type ContractResult<A> = Result<A, ContractError>;
+pub type ContractResult<A> = Result<A, ContractError>;
 
 /// Mapping account signature error to CustomContractError
 impl From<CheckAccountSignatureError> for CustomContractError {
@@ -366,9 +366,9 @@ impl From<CustomContractError> for ContractError {
 }
 
 // Functions for creating, updating and querying the contract state.
-impl<S: HasStateApi> State<S> {
+impl State {
     /// Creates a new state with no tokens.
-    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+    fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
             token_id_counter: 0,
             state:            state_builder.new_map(),
@@ -383,7 +383,7 @@ impl<S: HasStateApi> State<S> {
         &mut self,
         token: ContractTokenId,
         owner: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
 
@@ -434,7 +434,7 @@ impl<S: HasStateApi> State<S> {
         amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
@@ -469,7 +469,7 @@ impl<S: HasStateApi> State<S> {
         &mut self,
         owner: &Address,
         operator: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) {
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
@@ -507,36 +507,30 @@ impl<S: HasStateApi> State<S> {
 
 /// Initialize contract instance with no token types initially.
 #[init(contract = "cis3_nft", event = "Event")]
-fn contract_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
-) -> InitResult<State<S>> {
+fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Construct the initial contract state.
     Ok(State::empty(state_builder))
 }
 
 /// Part of the return paramter of the `view` function.
 #[derive(Serialize, SchemaType, Debug, PartialEq)]
-struct ViewAddressState {
-    owned_tokens: Vec<ContractTokenId>,
-    operators:    Vec<Address>,
+pub struct ViewAddressState {
+    pub owned_tokens: Vec<ContractTokenId>,
+    pub operators:    Vec<Address>,
 }
 
 /// Return paramter of the `view` function.
 #[derive(Serialize, SchemaType, Debug)]
-struct ViewState {
-    state:      Vec<(Address, ViewAddressState)>,
-    all_tokens: Vec<ContractTokenId>,
-    all_nonces: Vec<(AccountAddress, u64)>,
+pub struct ViewState {
+    pub state:      Vec<(Address, ViewAddressState)>,
+    pub all_tokens: Vec<ContractTokenId>,
+    pub all_nonces: Vec<(AccountAddress, u64)>,
 }
 
 /// View function that returns the entire contents of the state. Meant for
 /// testing.
 #[receive(contract = "cis3_nft", name = "view", return_value = "ViewState")]
-fn contract_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ReceiveResult<ViewState> {
+fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
     let mut inner_state = Vec::new();
@@ -582,9 +576,9 @@ fn contract_view<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_mint<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_mint(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -625,14 +619,14 @@ fn contract_mint<S: HasStateApi>(
     Ok(())
 }
 
-type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Internal `transfer/permit` helper function. Invokes the `transfer`
 /// function of the state. Logs a `Transfer` event and invokes a receive hook
 /// function. The function assumes that the transfer is authorized.
-fn transfer<S: HasStateApi>(
+fn transfer(
     transfer: concordium_cis2::Transfer<ContractTokenId, ContractTokenAmount>,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     let (state, builder) = host.state_and_builder();
@@ -685,9 +679,9 @@ fn transfer<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_transfer<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_transfer(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -710,10 +704,7 @@ fn contract_transfer<S: HasStateApi>(
 /// Helper function that can be invoked at the front-end to serialize the
 /// `PermitMessage` before signing it in the wallet.
 #[receive(contract = "cis3_nft", name = "serializationHelper", parameter = "PermitMessage")]
-fn contract_serialization_helper<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_serialization_helper(_ctx: &ReceiveContext, _host: &Host<State>) -> ContractResult<()> {
     Ok(())
 }
 
@@ -726,9 +717,9 @@ fn contract_serialization_helper<S: HasStateApi>(
     crypto_primitives,
     mutable
 )]
-fn contract_view_message_hash<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    _host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_view_message_hash(
+    ctx: &ReceiveContext,
+    _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<[u8; 32]> {
     // Parse the parameter.
@@ -796,9 +787,9 @@ fn contract_view_message_hash<S: HasStateApi>(
     mutable,
     enable_logger
 )]
-fn contract_permit<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_permit(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<()> {
@@ -884,12 +875,12 @@ fn contract_permit<S: HasStateApi>(
 /// `add_operator/remove_operator` function of the state.
 /// Logs a `UpdateOperator` event. The function assumes that the sender is
 /// authorized to do the `updateOperator` action.
-fn update_operator<S: HasStateApi>(
+fn update_operator(
     update: OperatorUpdate,
     sender: Address,
     operator: Address,
-    state: &mut State<S>,
-    builder: &mut StateBuilder<S>,
+    state: &mut State,
+    builder: &mut StateBuilder,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Update the operator in the state.
@@ -924,9 +915,9 @@ fn update_operator<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_update_operator(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
@@ -952,9 +943,9 @@ fn contract_update_operator<S: HasStateApi>(
     return_value = "OperatorOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_operator_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_operator_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -988,9 +979,9 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
     return_value = "ContractBalanceOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_balance_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_balance_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -1039,9 +1030,9 @@ pub struct VecOfAccountAddresses {
     return_value = "PublicKeyOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_public_key_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_public_key_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<PublicKeyOfQueryResponse> {
     // Parse the parameter.
     let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
@@ -1077,9 +1068,9 @@ impl From<Vec<u64>> for NonceOfQueryResponse {
     return_value = "NonceOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_nonce_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_nonce_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<NonceOfQueryResponse> {
     // Parse the parameter.
     let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
@@ -1110,9 +1101,9 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
     return_value = "TokenMetadataQueryResponse",
     error = "ContractError"
 )]
-fn contract_token_metadata<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_token_metadata(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -1144,9 +1135,9 @@ fn contract_token_metadata<S: HasStateApi>(
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_supports(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<SupportsQueryResponse> {
     // Parse the parameter.
     let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
@@ -1176,9 +1167,9 @@ fn contract_supports<S: HasStateApi>(
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports_permit<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_supports_permit(
+    ctx: &ReceiveContext,
+    _host: &Host<State>,
 ) -> ContractResult<SupportsQueryResponse> {
     // Parse the parameter.
     let params: SupportsPermitQueryParams = ctx.parameter_cursor().get()?;
@@ -1209,10 +1200,7 @@ fn contract_supports_permit<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_set_implementor<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
     ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
     // Parse the parameter.
@@ -1220,416 +1208,4 @@ fn contract_set_implementor<S: HasStateApi>(
     // Update the implementors in the state
     host.state_mut().set_implementors(params.id, params.implementors);
     Ok(())
-}
-
-// Tests
-
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use test_infrastructure::*;
-
-    const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
-    const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
-    const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const ACCOUNT_2: AccountAddress = AccountAddress([2u8; 32]);
-    const ADDRESS_2: Address = Address::Account(ACCOUNT_2);
-    const TOKEN_1: ContractTokenId = TokenIdU32(1);
-    const TOKEN_2: ContractTokenId = TokenIdU32(2);
-
-    /// Test helper function which creates a contract state with two tokens with
-    /// id `TOKEN_1` owned by `ADDRESS_0` and id `TOKEN_2` owned by `ADDRESS_1`.
-    fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        let mut state = State::empty(state_builder);
-        state.mint(TOKEN_1, &ADDRESS_0, state_builder).expect_report("Failed to mint TOKEN_1");
-        state.mint(TOKEN_2, &ADDRESS_1, state_builder).expect_report("Failed to mint TOKEN_2");
-        state.token_id_counter = 2;
-        state
-    }
-
-    /// Test initialization succeeds.
-    #[concordium_test]
-    fn test_init() {
-        // Setup the context
-        let ctx = TestInitContext::empty();
-        let mut builder = TestStateBuilder::new();
-
-        // Call the contract function.
-        let result = contract_init(&ctx, &mut builder);
-
-        // Check the result
-        let state = result.expect_report("Contract initialization failed");
-
-        // Check the state
-        // Note. This is rather expensive as an iterator is created and then traversed -
-        // should be avoided when writing smart contracts.
-        claim_eq!(state.all_tokens.iter().count(), 0, "No token should be initialized");
-    }
-
-    /// Test minting, ensuring the new tokens are owned by the given address and
-    /// the appropriate events are logged.
-    #[concordium_test]
-    fn test_mint() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        ctx.set_owner(ACCOUNT_0);
-
-        // and parameter.
-        let parameter = MintParams {
-            owner: ADDRESS_0,
-        };
-
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = State::empty(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_mint(&ctx, &mut host, &mut logger);
-
-        // Check the result
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state
-        // Note. This is rather expensive as an iterator is created and then traversed -
-        // should be avoided when writing smart contracts.
-        claim_eq!(host.state().all_tokens.iter().count(), 1, "Expected one token in the state.");
-
-        let balance0 =
-            host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(balance0, 1.into(), "Tokens should be owned by the given address 0");
-
-        // Check the logs
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner:    ADDRESS_0,
-                token_id: TOKEN_1,
-                amount:   ContractTokenAmount::from(1),
-            }))),
-            "Expected an event for minting TOKEN_1"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
-                TokenMetadataEvent {
-                    token_id:     TOKEN_1,
-                    metadata_url: MetadataUrl {
-                        url:  TOKEN_METADATA_URL.to_string(),
-                        hash: None,
-                    },
-                }
-            ))),
-            "Expected an event for token metadata for TOKEN_1"
-        );
-    }
-
-    /// Test transfer succeeds, when `from` is the sender.
-    #[concordium_test]
-    fn test_transfer_account() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-
-        // and parameter.
-        let transfer = Transfer {
-            token_id: TOKEN_1,
-            amount:   ContractTokenAmount::from(1),
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let balance0 =
-            host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        let balance1 =
-            host.state().balance(&TOKEN_1, &ADDRESS_1).expect_report("Token is expected to exist");
-        let balance2 =
-            host.state().balance(&TOKEN_2, &ADDRESS_1).expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            0.into(),
-            "Token owner balance should be decreased by the transferred amount"
-        );
-        claim_eq!(
-            balance1,
-            1.into(),
-            "Token receiver balance should be increased by the transferred amount"
-        );
-        claim_eq!(
-            balance2,
-            1.into(),
-            "Token receiver balance for token 1 should be the same as before"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: TOKEN_1,
-                amount:   ContractTokenAmount::from(1),
-            })),
-            "Incorrect event emitted"
-        )
-    }
-
-    /// Test transfer token fails, when sender is neither the owner or an
-    /// operator of the owner.
-    #[concordium_test]
-    fn test_transfer_not_authorized() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-
-        // and parameter.
-        let transfer = Transfer {
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            token_id: TOKEN_1,
-            amount:   ContractTokenAmount::from(1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-        // Check the result.
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
-    }
-
-    /// Test transfer succeeds when sender is not the owner, but is an operator
-    /// of the owner.
-    #[concordium_test]
-    fn test_operator_transfer() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-
-        // and parameter.
-        let transfer = Transfer {
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            token_id: TOKEN_1,
-            amount:   ContractTokenAmount::from(1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-
-        let mut state_builder = TestStateBuilder::new();
-        let mut state = initial_state(&mut state_builder);
-        state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let balance0 =
-            host.state().balance(&TOKEN_1, &ADDRESS_0).expect_report("Token is expected to exist");
-        let balance1 = host
-            .state_mut()
-            .balance(&TOKEN_1, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            0.into(),
-            "Token owner balance should be decreased by the transferred amount"
-        );
-        claim_eq!(
-            balance1,
-            1.into(),
-            "Token receiver balance should be increased by the transferred amount"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: TOKEN_1,
-                amount:   ContractTokenAmount::from(1),
-            })),
-            "Incorrect event emitted"
-        )
-    }
-
-    /// Test adding an operator succeeds and the appropriate event is logged.
-    #[concordium_test]
-    fn test_add_operator() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-
-        // and parameter.
-        let update = UpdateOperator {
-            update:   OperatorUpdate::Add,
-            operator: ADDRESS_1,
-        };
-        let parameter = UpdateOperatorParams(vec![update]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let is_operator = host.state().is_operator(&ADDRESS_1, &ADDRESS_0);
-        claim!(is_operator, "Account should be an operator");
-
-        // Checking that `ADDRESS_1` is an operator in the query response of the
-        // `contract_operator_of` function as well.
-        // Setup parameter.
-        let operator_of_query = OperatorOfQuery {
-            address: ADDRESS_1,
-            owner:   ADDRESS_0,
-        };
-
-        let operator_of_query_vector = OperatorOfQueryParams {
-            queries: vec![operator_of_query],
-        };
-        let parameter_bytes = to_bytes(&operator_of_query_vector);
-
-        ctx.set_parameter(&parameter_bytes);
-
-        // Checking the return value of the `contract_operator_of` function
-        let result: ContractResult<OperatorOfQueryResponse> = contract_operator_of(&ctx, &host);
-
-        claim_eq!(
-            result.expect_report("Failed getting result value").0,
-            [true],
-            "Account should be an operator in the query response"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "One event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                UpdateOperatorEvent {
-                    owner:    ADDRESS_0,
-                    operator: ADDRESS_1,
-                    update:   OperatorUpdate::Add,
-                }
-            )),
-            "Incorrect event emitted"
-        )
-    }
-
-    /// Test `view` function.
-    #[concordium_test]
-    fn test_view() {
-        // Setup the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-        ctx.set_owner(ACCOUNT_0);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        // Create the state values
-        let mut nonces_registry = state_builder.new_map();
-        nonces_registry.insert(ACCOUNT_1, 0);
-        nonces_registry.insert(ACCOUNT_2, 1);
-
-        let mut all_tokens = state_builder.new_set();
-        all_tokens.insert(TOKEN_1);
-        all_tokens.insert(TOKEN_2);
-
-        let mut state = state_builder.new_map();
-        let mut operators = state_builder.new_set();
-        operators.insert(ADDRESS_2);
-        let mut owned_tokens = state_builder.new_set();
-        owned_tokens.insert(TOKEN_1);
-        owned_tokens.insert(TOKEN_2);
-        state.insert(ADDRESS_1, AddressState {
-            owned_tokens,
-            operators,
-        });
-
-        let state = State {
-            token_id_counter: 2,
-            state,
-            all_tokens,
-            implementors: state_builder.new_map(),
-            nonces_registry,
-        };
-
-        let host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result = contract_view(&ctx, &host);
-
-        let returned_view_state = result.expect_report("Failed getting contract_view result value");
-
-        claim_eq!(
-            returned_view_state.all_nonces,
-            [(ACCOUNT_1, 0), (ACCOUNT_2, 1)],
-            "Correct public keys should be returned by the view function"
-        );
-
-        claim_eq!(
-            returned_view_state.all_tokens,
-            vec![TOKEN_1, TOKEN_2],
-            "Correct tokens should be returned by the view function"
-        );
-
-        claim_eq!(
-            returned_view_state.state[0].0,
-            ADDRESS_1,
-            "Correct address in state should be returned by the view function"
-        );
-
-        claim_eq!(
-            returned_view_state.state[0].1,
-            ViewAddressState {
-                owned_tokens: vec![TOKEN_1, TOKEN_2],
-                operators:    vec![concordium_std::Address::Account(ACCOUNT_2)],
-            },
-            "Correct ViewAddressState should be returned by the view function"
-        );
-    }
 }

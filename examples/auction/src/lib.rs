@@ -62,18 +62,18 @@ pub struct State {
 
 /// Type of the parameter to the `init` function
 #[derive(Serialize, SchemaType)]
-struct InitParameter {
+pub struct InitParameter {
     /// The item to be sold
-    item:          String,
+    pub item:          String,
     /// Time when auction ends using the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
-    end:           Timestamp,
+    pub end:           Timestamp,
     /// The minimum accepted raise to over bid the current bidder in Euro cent.
-    minimum_raise: u64,
+    pub minimum_raise: u64,
 }
 
 /// `bid` function errors
-#[derive(Debug, PartialEq, Eq, Clone, Reject, Serial, SchemaType)]
-enum BidError {
+#[derive(Debug, PartialEq, Eq, Clone, Reject, Serialize, SchemaType)]
+pub enum BidError {
     /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
     OnlyAccount,
@@ -89,8 +89,8 @@ enum BidError {
 }
 
 /// `finalize` function errors
-#[derive(Debug, PartialEq, Eq, Clone, Reject, Serial, SchemaType)]
-enum FinalizeError {
+#[derive(Debug, PartialEq, Eq, Clone, Reject, Serialize, SchemaType)]
+pub enum FinalizeError {
     /// Raised when finalizing an auction before auction end time passed
     AuctionStillActive,
     /// Raised when finalizing an auction that is already finalized
@@ -99,10 +99,7 @@ enum FinalizeError {
 
 /// Init function that creates a new auction
 #[init(contract = "auction", parameter = "InitParameter")]
-fn auction_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    _state_builder: &mut StateBuilder<S>,
-) -> InitResult<State> {
+fn auction_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     // Getting input parameters
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
     // Creating `State`
@@ -118,9 +115,9 @@ fn auction_init<S: HasStateApi>(
 
 /// Receive function for accounts to place a bid in the auction
 #[receive(contract = "auction", name = "bid", payable, mutable, error = "BidError")]
-fn auction_bid<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
+fn auction_bid(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     amount: Amount,
 ) -> Result<(), BidError> {
     let state = host.state();
@@ -172,20 +169,14 @@ fn auction_bid<S: HasStateApi>(
 
 /// View function that returns the content of the state
 #[receive(contract = "auction", name = "view", return_value = "State")]
-fn view<'a, 'b, S: HasStateApi>(
-    _ctx: &'a impl HasReceiveContext,
-    host: &'b impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<&'b State> {
+fn view<'a, 'b>(_ctx: &'a ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
 
 /// ViewHighestBid function that returns the highest bid which is the balance of
 /// the contract
 #[receive(contract = "auction", name = "viewHighestBid", return_value = "Amount")]
-fn view_highest_bid<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State, StateApiType = S>,
-) -> ReceiveResult<Amount> {
+fn view_highest_bid(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Amount> {
     Ok(host.self_balance())
 }
 
@@ -193,10 +184,7 @@ fn view_highest_bid<S: HasStateApi>(
 /// current balance of this smart contract) to the owner of the smart contract
 /// instance.
 #[receive(contract = "auction", name = "finalize", mutable, error = "FinalizeError")]
-fn auction_finalize<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State, StateApiType = S>,
-) -> Result<(), FinalizeError> {
+fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), FinalizeError> {
     let state = host.state();
     // Ensure the auction has not been finalized yet
     ensure_eq!(
@@ -223,266 +211,4 @@ fn auction_finalize<S: HasStateApi>(
         host.invoke_transfer(&owner, balance).unwrap_abort();
     }
     Ok(())
-}
-
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use core::fmt::Debug;
-    use std::sync::atomic::{AtomicU8, Ordering};
-    use test_infrastructure::*;
-
-    // A counter for generating new accounts
-    static ADDRESS_COUNTER: AtomicU8 = AtomicU8::new(0);
-    const AUCTION_END: u64 = 1;
-    const ITEM: &str = "Starry night by Van Gogh";
-
-    fn expect_error<E, T>(expr: Result<T, E>, err: E, msg: &str)
-    where
-        E: Eq + Debug,
-        T: Debug, {
-        let actual = expr.expect_err_report(msg);
-        claim_eq!(actual, err);
-    }
-
-    fn item_end_parameter() -> InitParameter {
-        InitParameter {
-            item:          ITEM.into(),
-            end:           Timestamp::from_timestamp_millis(AUCTION_END),
-            minimum_raise: 100,
-        }
-    }
-
-    fn create_parameter_bytes(parameter: &InitParameter) -> Vec<u8> { to_bytes(parameter) }
-
-    fn parametrized_init_ctx(parameter_bytes: &[u8]) -> TestInitContext {
-        let mut ctx = TestInitContext::empty();
-        ctx.set_parameter(parameter_bytes);
-        ctx
-    }
-
-    fn new_account() -> AccountAddress {
-        let account = AccountAddress([ADDRESS_COUNTER.load(Ordering::SeqCst); 32]);
-        ADDRESS_COUNTER.fetch_add(1, Ordering::SeqCst);
-        account
-    }
-
-    fn new_account_ctx<'a>() -> (AccountAddress, TestReceiveContext<'a>) {
-        let account = new_account();
-        let ctx = new_ctx(account, account, AUCTION_END);
-        (account, ctx)
-    }
-
-    fn new_ctx<'a>(
-        owner: AccountAddress,
-        sender: AccountAddress,
-        slot_time: u64,
-    ) -> TestReceiveContext<'a> {
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(Address::Account(sender));
-        ctx.set_owner(owner);
-        ctx.set_metadata_slot_time(Timestamp::from_timestamp_millis(slot_time));
-        ctx
-    }
-
-    fn bid(
-        host: &mut TestHost<State>,
-        ctx: &TestContext<TestReceiveOnlyData>,
-        amount: Amount,
-        current_smart_contract_balance: Amount,
-    ) {
-        // Setting the contract balance.
-        // This should be the sum of the contract’s initial balance and
-        // the amount you wish to invoke it with when using the TestHost.
-        // https://docs.rs/concordium-std/latest/concordium_std/test_infrastructure/struct.TestHost.html#method.set_self_balance
-        // This is because the `self_balance` function on-chain behaves as follows:
-        // https://docs.rs/concordium-std/latest/concordium_std/trait.HasHost.html#tymethod.self_balance
-        host.set_self_balance(amount + current_smart_contract_balance);
-
-        // Invoking the bid function.
-        auction_bid(ctx, host, amount).expect_report("Bidding should pass.");
-    }
-
-    #[concordium_test]
-    /// Test that the smart-contract initialization sets the state correctly
-    /// (no bids, active state, indicated auction-end time and item name).
-    fn test_init() {
-        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
-        let ctx = parametrized_init_ctx(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        let state_result = auction_init(&ctx, &mut state_builder);
-        state_result.expect_report("Contract initialization results in error");
-    }
-
-    #[concordium_test]
-    /// Test a sequence of bids and finalizations:
-    /// 0. Auction is initialized.
-    /// 1. Alice successfully bids 0.1 CCD.
-    /// 2. Alice successfully bids 0.2 CCD, highest
-    /// bid becomes 0.2 CCD. Alice gets her 0.1 CCD refunded.
-    /// 3. Bob successfully bids 0.3 CCD, highest
-    /// bid becomes 0.3 CCD. Alice gets her 0.2 CCD refunded.
-    /// 4. Someone tries to finalize the auction before
-    /// its end time. Attempt fails.
-    /// 5. Dave successfully finalizes the auction after its end time.
-    /// Carol (the owner of the contract) collects the highest bid amount.
-    /// 6. Attempts to subsequently bid or finalize fail.
-    fn test_auction_bid_and_finalize() {
-        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
-        let ctx0 = parametrized_init_ctx(&parameter_bytes);
-
-        let amount = Amount::from_micro_ccd(100);
-        let winning_amount = Amount::from_micro_ccd(300);
-        let big_amount = Amount::from_micro_ccd(500);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        // Initializing auction
-        let initial_state =
-            auction_init(&ctx0, &mut state_builder).expect("Initialization should pass");
-
-        let mut host = TestHost::new(initial_state, state_builder);
-        host.set_exchange_rates(ExchangeRates {
-            euro_per_energy:    ExchangeRate::new_unchecked(1, 1),
-            micro_ccd_per_euro: ExchangeRate::new_unchecked(1, 1),
-        });
-
-        // 1st bid: Alice bids `amount`.
-        // The current_smart_contract_balance before the invoke is 0.
-        let (alice, alice_ctx) = new_account_ctx();
-        bid(&mut host, &alice_ctx, amount, Amount::from_micro_ccd(0));
-
-        // 2nd bid: Alice bids `amount + amount`.
-        // Alice gets her initial bid refunded.
-        // The current_smart_contract_balance before the invoke is amount.
-        bid(&mut host, &alice_ctx, amount + amount, amount);
-
-        // 3rd bid: Bob bids `winning_amount`.
-        // Alice gets refunded.
-        // The current_smart_contract_balance before the invoke is amount + amount.
-        let (bob, bob_ctx) = new_account_ctx();
-        bid(&mut host, &bob_ctx, winning_amount, amount + amount);
-
-        // Trying to finalize auction that is still active
-        // (specifically, the tx is submitted at the last moment,
-        // at the AUCTION_END time)
-        let mut ctx4 = TestReceiveContext::empty();
-        ctx4.set_metadata_slot_time(Timestamp::from_timestamp_millis(AUCTION_END));
-        let finres = auction_finalize(&ctx4, &mut host);
-        expect_error(
-            finres,
-            FinalizeError::AuctionStillActive,
-            "Finalizing the auction should fail when it's before auction end time",
-        );
-
-        // Finalizing auction
-        let carol = new_account();
-        let dave = new_account();
-        let ctx5 = new_ctx(carol, dave, AUCTION_END + 1);
-
-        let finres2 = auction_finalize(&ctx5, &mut host);
-        finres2.expect_report("Finalizing the auction should work");
-        let transfers = host.get_transfers();
-        // The input arguments of all executed `host.invoke_transfer`
-        // functions are checked here.
-        claim_eq!(
-            &transfers[..],
-            &[(alice, amount), (alice, amount + amount), (carol, winning_amount),],
-            "Transferring CCD to Alice/Carol should work"
-        );
-        claim_eq!(
-            host.state().auction_state,
-            AuctionState::Sold(bob),
-            "Finalizing the auction should change the auction state to `Sold(bob)`"
-        );
-        claim_eq!(
-            host.state().highest_bidder,
-            Some(bob),
-            "Finalizing the auction should mark bob as highest bidder"
-        );
-
-        // Attempting to finalize auction again should fail.
-        let finres3 = auction_finalize(&ctx5, &mut host);
-        expect_error(
-            finres3,
-            FinalizeError::AuctionAlreadyFinalized,
-            "Finalizing the auction a second time should fail",
-        );
-
-        // Attempting to bid again should fail.
-        let res4 = auction_bid(&bob_ctx, &mut host, big_amount);
-        expect_error(
-            res4,
-            BidError::AuctionAlreadyFinalized,
-            "Bidding should fail because the auction is finalized",
-        );
-    }
-
-    #[concordium_test]
-    /// Bids for amounts lower or equal to the highest bid should be rejected.
-    fn test_auction_bid_repeated_bid() {
-        let ctx1 = new_account_ctx().1;
-        let ctx2 = new_account_ctx().1;
-
-        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
-        let ctx0 = parametrized_init_ctx(&parameter_bytes);
-
-        let amount = Amount::from_micro_ccd(100);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        // Initializing auction
-        let initial_state =
-            auction_init(&ctx0, &mut state_builder).expect("Initialization should succeed.");
-
-        let mut host = TestHost::new(initial_state, state_builder);
-        host.set_exchange_rates(ExchangeRates {
-            euro_per_energy:    ExchangeRate::new_unchecked(1, 1),
-            micro_ccd_per_euro: ExchangeRate::new_unchecked(1, 1),
-        });
-
-        // 1st bid: Account1 bids `amount`.
-        // The current_smart_contract_balance before the invoke is 0.
-        bid(&mut host, &ctx1, amount, Amount::from_micro_ccd(0));
-
-        // Setting the contract balance.
-        // This should be the sum of the contract’s initial balance and
-        // the amount you wish to invoke it with when using the TestHost.
-        // The current_smart_contract_balance before the invoke is `amount`.
-        // The balance we wish to invoke the next function with is `amount` as well.
-        // https://docs.rs/concordium-std/latest/concordium_std/test_infrastructure/struct.TestHost.html#method.set_self_balance
-        // This is because the `self_balance` function on-chain behaves as follows:
-        // https://docs.rs/concordium-std/latest/concordium_std/trait.HasHost.html#tymethod.self_balance
-        host.set_self_balance(amount + amount);
-
-        // 2nd bid: Account2 bids `amount` (should fail
-        // because amount is equal to highest bid).
-        let res2 = auction_bid(&ctx2, &mut host, amount);
-        expect_error(
-            res2,
-            BidError::BidBelowCurrentBid,
-            "Bidding 2 should fail because bid amount must be higher than highest bid",
-        );
-    }
-
-    #[concordium_test]
-    /// Bids for 0 CCD should be rejected.
-    fn test_auction_bid_zero() {
-        let ctx1 = new_account_ctx().1;
-        let parameter_bytes = create_parameter_bytes(&item_end_parameter());
-        let ctx = parametrized_init_ctx(&parameter_bytes);
-
-        let mut state_builder = TestStateBuilder::new();
-
-        // initializing auction
-        let initial_state =
-            auction_init(&ctx, &mut state_builder).expect("Initialization should succeed.");
-
-        let mut host = TestHost::new(initial_state, state_builder);
-
-        let res = auction_bid(&ctx1, &mut host, Amount::zero());
-        expect_error(res, BidError::BidBelowCurrentBid, "Bidding zero should fail");
-    }
 }

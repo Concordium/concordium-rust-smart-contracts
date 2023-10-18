@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+## concordium-cis2 5.1.0 (2023-10-18)
+
+- Derive `PartialEq` and `Eq` for `Cis2Event`, `BalanceOfQueryResponse`, and `OperatorOfQueryResponse`.
+
 ## concordium-cis2 5.0.0 (2023-08-21)
 
 - Derive `PartialEq` and `Eq` for the `TransferEvent`, `MintEvent`, `BurnEvent`, `UpdateOperatorEvent`, `TokenMetadataEvent`, `OperatorUpdate`, and `UpdateOperator` types.

@@ -21,6 +21,16 @@ use concordium_contracts_common::*;
 ///
 /// The reuse of `Read` methods is the reason for the slightly strange choice of
 /// methods of this trait.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`ExternParameter`](crate::types::ExternParameter) instead unless you
+/// intend to use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasParameter: Read + Seek + HasSize {}
 
 /// Objects which can access call responses from contract invocations.
@@ -31,12 +41,32 @@ pub trait HasParameter: Read + Seek + HasSize {}
 ///
 /// The reuse of `Read` methods is the reason for the slightly strange choice of
 /// methods of this trait.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`CallResponse`](crate::types::CallResponse) instead unless you intend
+/// to use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasCallResponse: Read {
     /// Get the size of the call response to the contract invocation.
     fn size(&self) -> u32;
 }
 
 /// Objects which can access chain metadata.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`ChainMetadata`] instead unless you intend to use
+/// the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasChainMetadata {
     /// Get time in milliseconds at the beginning of this block.
     fn slot_time(&self) -> SlotTime;
@@ -49,6 +79,16 @@ pub trait HasChainMetadata {
 /// Since policies can be large this is deliberately written in a relatively
 /// low-level style to enable efficient traversal of all the attributes without
 /// any allocations.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`Policy<AttributeCursor>`] instead unless you intend to use the
+/// deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasPolicy: Sized {
     type Iterator: Iterator<Item = (AttributeTag, AttributeValue)>;
     /// Identity provider who signed the identity object the credential is
@@ -76,6 +116,17 @@ pub trait HasPolicy: Sized {
 }
 
 /// Common data accessible to both init and receive methods.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`InitContext`](crate::types::InitContext) or
+/// [`ReceiveContext`](crate::types::ReceiveContext) instead unless you intend
+/// to use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasCommonData {
     type PolicyType: HasPolicy;
     type MetadataType: HasChainMetadata;
@@ -96,6 +147,16 @@ pub trait HasCommonData {
 }
 
 /// Types which can act as init contexts.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`InitContext`](crate::types::InitContext) instead unless you intend to
+/// use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasInitContext<Error: Default = ()>: HasCommonData {
     /// Data needed to open the context.
     type InitData;
@@ -106,6 +167,16 @@ pub trait HasInitContext<Error: Default = ()>: HasCommonData {
 }
 
 /// Types which can act as receive contexts.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`ReceiveContext`](crate::types::ReceiveContext) instead unless you
+/// intend to use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
     type ReceiveData;
 
@@ -128,6 +199,16 @@ pub trait HasReceiveContext<Error: Default = ()>: HasCommonData {
 }
 
 /// A type that can serve as the contract state entry type.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`StateEntry`](crate::types::StateEntry) instead unless you intend to
+/// use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasStateEntry
 where
     Self: Read,
@@ -172,6 +253,16 @@ where
 }
 
 /// Types which can serve as the contract state.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`StateApi`](crate::types::StateApi) instead unless you intend to use
+/// the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasStateApi: Clone {
     type EntryType: HasStateEntry;
     type IterType: Iterator<Item = Self::EntryType>;
@@ -250,6 +341,16 @@ pub trait HasStateApi: Clone {
 ///
 /// The trait is parameterized by the `State` type. This is the type of the
 /// contract state that the particular contract operates on.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`Host`](crate::types::Host) instead unless you intend to use
+/// the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasHost<State>: Sized {
     /// The type of low-level state that is associated with the host.
     /// This provides access to low-level state operations.
@@ -477,6 +578,16 @@ pub trait Deletable {
 /// [`invoke_contract`](HasHost::invoke_contract) or
 /// [`invoke_transfer`](HasHost::invoke_transfer) calls. In each section at most
 /// `64` items may be logged.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`Logger`](crate::types::Logger) instead unless you intend to use
+/// the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasLogger {
     /// Initialize a logger.
     fn init() -> Self;
@@ -498,6 +609,16 @@ pub trait HasLogger {
 }
 
 /// Objects which provide cryptographic primitives.
+///
+/// # Deprecation notice
+/// **This trait is deprecated along with
+/// [`crate::test_infrastructure`].**
+///
+/// Use [`CryptoPrimitives`](crate::types::CryptoPrimitives) instead unless you
+/// intend to use the deprecated test infrastructure.
+///
+/// See the [crate](../concordium_std/#deprecating-the-test_infrastructure)
+/// documentation for more details.
 pub trait HasCryptoPrimitives {
     /// Verify an ed25519 signature.
     fn verify_ed25519_signature(

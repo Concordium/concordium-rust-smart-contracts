@@ -1,3 +1,19 @@
+//! Tests for the `smart_contract_upgrade` contract.
+//!
+//! Run the tests by:
+//!
+//! 1. Open a terminal and navigate to the:
+//! `examples/smart-contract-upgrade-folder`
+//!
+//! 2. Compile the version 2 contract
+//! with:
+//!    - `cargo concordium build --out
+//!      contract-version2/concordium-out/module.wasm.v1 -- --manifest-path
+//!      contract-version2/Cargo.toml`
+//! 3. Compile the version 1 contract and run the tests with:
+//!    - `cargo concordium test --out
+//!      contract-version1/concordium-out/module.wasm.v1 -- --manifest-path
+//!      contract-version1/Cargo.toml
 use concordium_smart_contract_testing::*;
 use concordium_std::Deserial;
 use smart_contract_upgrade::UpgradeParams;
@@ -22,7 +38,7 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
-            module_load_v1("./smart_contract_upgrade.wasm.v1")
+            module_load_v1("./concordium-out/module.wasm.v1")
                 .expect("`Contract version1` module should be loaded"),
         )
         .expect("`Contract version1` deployment should always succeed");
@@ -65,7 +81,7 @@ fn test_upgrade_without_migration_function() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
-            module_load_v1("../contract-version2/smart_contract_upgrade.wasm.v1")
+            module_load_v1("../contract-version2/concordium-out/module.wasm.v1")
                 .expect("`Contract version2` module should be loaded"),
         )
         .expect("`Contract version2` deployment should always succeed");
@@ -112,7 +128,7 @@ fn test_upgrade_without_migration_function() {
         .expect("Invoking `view` should always succeed");
 
     let state: State =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        invoke.parse_return_value().expect("View should always return a valid result");
 
     assert_eq!(state, State {
         admin:     ACC_ADDR_OWNER,
@@ -132,7 +148,7 @@ fn test_upgrade_with_migration_function() {
         .module_deploy_v1(
             Signer::with_one_key(),
             ACC_ADDR_OWNER,
-            module_load_v1("../contract-version2/smart_contract_upgrade.wasm.v1")
+            module_load_v1("../contract-version2/concordium-out/module.wasm.v1")
                 .expect("UpgradeParams should be a valid inut parameter"),
         )
         .expect("`Contract version2` deployment should always succeed");
@@ -183,7 +199,7 @@ fn test_upgrade_with_migration_function() {
         .expect("Invoking `view` should always succeed");
 
     let state: State =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
+        invoke.parse_return_value().expect("View should always return a valid result");
 
     assert_eq!(state, State {
         admin:     ACC_ADDR_OWNER,

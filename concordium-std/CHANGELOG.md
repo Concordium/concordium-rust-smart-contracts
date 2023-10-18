@@ -2,9 +2,16 @@
 
 ## Unreleased changes
 
+## concordium-std 8.1.0 (2023-10-18)
+
 - Set minimum Rust version to 1.66.
 - Fix bug in `StateMap::get_mut`, which allowed multiple mutable references to the state to coexist.
   - The signature has changed using `&self` to using `&mut self`.
+- Deprecate the `test_infrastructure` module in favour of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing).
+  - Several traits are also deprecated as they are only needed when using the `test_infrastructure` for testing.
+  - Among the traits are `HasHost`, `HasStateApi`, `HasInitContext`, `HasReceiveContext`.
+    - They are replaced by concrete types, e.g. `Host`, `StateApi`, etc. in the documentation and nearly all example contracts.
+  - Add a section in the library documentation about how to migrate your contracts and tests.
 
 ## concordium-std 8.0.0 (2023-08-21)
 

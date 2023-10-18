@@ -306,6 +306,7 @@ fn contract_receive_message<S: HasStateApi>(
 // Tests
 
 #[concordium_cfg_test]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use concordium_std::test_infrastructure::*;

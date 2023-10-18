@@ -783,7 +783,7 @@ pub struct TokenMetadataEvent<T: IsTokenId> {
 }
 
 /// Tagged CIS2 event to be serialized for the event log.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 #[concordium(repr(u8))]
 pub enum Cis2Event<T: IsTokenId, A: IsTokenAmount> {
     /// A transfer between two addresses of some amount of tokens.
@@ -1161,7 +1161,7 @@ pub struct BalanceOfQueryParams<T: IsTokenId> {
 /// The response which is sent back when calling the contract function
 /// `balanceOf`.
 /// It consists of the list of results corresponding to the list of queries.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
 pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
@@ -1197,7 +1197,7 @@ pub struct OperatorOfQueryParams {
 /// `operatorOf`.
 /// It consists of the list of result in the same order and length as the
 /// queries in the parameter.
-#[derive(Debug, Serialize, SchemaType)]
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
 pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] pub Vec<bool>);
 

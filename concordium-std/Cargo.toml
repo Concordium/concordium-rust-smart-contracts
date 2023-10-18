@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "8.0.0"
+version = "8.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
 rust-version = "1.66"
@@ -23,7 +23,7 @@ getrandom = { version = "0.2", features = ["custom"], optional = true }
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common"
-version = "8.0"
+version = "8.1"
 default-features = false
 features = ["smart-contract"]
 

@@ -18,7 +18,8 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
     chain.create_account(Account::new(ACC_ADDR_OWNER, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(ACC_ADDR_OTHER, ACC_INITIAL_BALANCE));
 
-    let module = module_load_v1("piggy_bank_part2.wasm.v1").expect("Module exists and is valid");
+    let module =
+        module_load_v1("./concordium-out/module.wasm.v1").expect("Module exists and is valid");
     let deployment = chain
         .module_deploy_v1(Signer::with_one_key(), ACC_ADDR_OWNER, module)
         .expect("Deploying valid module should succeed");
@@ -117,7 +118,7 @@ fn test_smash_intact() {
 
     // Ensure the values returned by the view function are correct.
     let (state, balance): (PiggyBankState, Amount) =
-        from_bytes(&invoke_result.return_value).expect("View should always return a valid result");
+        invoke_result.parse_return_value().expect("View should always return a valid result");
     assert_eq!(state, PiggyBankState::Smashed);
     assert_eq!(balance, Amount::zero());
     assert_eq!(update.account_transfers().collect::<Vec<_>>(), [(
@@ -148,9 +149,8 @@ fn test_smash_intact_not_owner() {
         )
         .expect_err("Smashing should only succeed for the owner");
 
-    let return_value =
-        update_err.return_value().expect("Contract should reject and thus return bytes");
-    let error: SmashError = from_bytes(&return_value)
+    let error: SmashError = update_err
+        .parse_return_value()
         .expect("Contract should return a `SmashError` in serialized form");
 
     assert_eq!(error, SmashError::NotOwner, "Contract did not fail due to a NotOwner error");
@@ -158,7 +158,7 @@ fn test_smash_intact_not_owner() {
         chain.account_balance_available(ACC_ADDR_OTHER),
         Some(ACC_INITIAL_BALANCE - update_err.transaction_fee),
         "The invoker account was incorrectly charged"
-    )
+    );
 }
 
 /// Test that smashing an already smashed piggy bank is not allowed and thus
@@ -198,9 +198,8 @@ fn test_smash_smashed() {
         )
         .expect_err("The piggybank cannot be smashed more than once");
 
-    let return_value =
-        update_second_smash_err.return_value().expect("Contract should reject and return bytes");
-    let error: SmashError = from_bytes(&return_value)
+    let error: SmashError = update_second_smash_err
+        .parse_return_value()
         .expect("Contract should return a `SmashError` in serialized form");
 
     assert_eq!(error, SmashError::AlreadySmashed);

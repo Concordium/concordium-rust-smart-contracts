@@ -37,13 +37,13 @@ use concordium_cis2::{Cis2Event, *};
 use concordium_std::*;
 
 /// The id of the wCCD token in this contract.
-const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
+pub const TOKEN_ID_WCCD: ContractTokenId = TokenIdUnit();
 
 /// Tag for the NewAdmin event.
 pub const NEW_ADMIN_EVENT_TAG: u8 = 0;
 
 /// List of supported standards by this contract address.
-const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+pub const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
 
 /// Sha256 digest
@@ -54,29 +54,29 @@ pub type Sha256 = [u8; 32];
 /// Contract token ID type.
 /// Since this contract will only ever contain this one token type, we use the
 /// smallest possible token ID.
-type ContractTokenId = TokenIdUnit;
+pub type ContractTokenId = TokenIdUnit;
 
 /// Contract token amount type.
 /// Since this contract is wrapping the CCD and the CCD can be represented as a
 /// u64, we can specialize the token amount to u64 reducing module size and cost
 /// of arithmetics.
-type ContractTokenAmount = TokenAmountU64;
+pub type ContractTokenAmount = TokenAmountU64;
 
 /// The state tracked for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
-struct AddressState<S> {
+pub struct AddressState<S = StateApi> {
     /// The number of tokens owned by this address.
-    balance:   ContractTokenAmount,
+    pub balance:   ContractTokenAmount,
     /// The address which are currently enabled as operators for this token and
     /// this address.
-    operators: StateSet<Address, S>,
+    pub operators: StateSet<Address, S>,
 }
 
 /// The contract state,
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State<S: HasStateApi> {
+struct State<S: HasStateApi = StateApi> {
     /// The admin address can upgrade the contract, pause and unpause the
     /// contract, transfer the admin address to a new address, set
     /// implementors, and update the metadata URL in the contract.
@@ -99,27 +99,27 @@ struct State<S: HasStateApi> {
 /// The parameter type for the contract function `unwrap`.
 /// Takes an amount of tokens and unwraps the CCD and sends it to a receiver.
 #[derive(Serialize, SchemaType)]
-struct UnwrapParams {
+pub struct UnwrapParams {
     /// The amount of tokens to unwrap.
-    amount:   ContractTokenAmount,
+    pub amount:   ContractTokenAmount,
     /// The owner of the tokens.
-    owner:    Address,
+    pub owner:    Address,
     /// The address to receive these unwrapped CCD.
-    receiver: Receiver,
+    pub receiver: Receiver,
     /// If the `Receiver` is a contract the unwrapped CCD together with these
     /// additional data bytes are sent to the function entrypoint specified in
     /// the `Receiver`.
-    data:     AdditionalData,
+    pub data:     AdditionalData,
 }
 
 /// The parameter type for the contract function `wrap`.
 /// It includes a receiver for receiving the wrapped CCD tokens.
-#[derive(Serialize, SchemaType)]
-struct WrapParams {
+#[derive(Serialize, SchemaType, Debug)]
+pub struct WrapParams {
     /// The address to receive these tokens.
     /// If the receiver is the sender of the message wrapping the tokens, it
     /// will not log a transfer event.
-    to:   Receiver,
+    pub to:   Receiver,
     /// Some additional data bytes are used in the `OnReceivingCis2` hook. Only
     /// if the `Receiver` is a contract and the `Receiver` is not
     /// the invoker of the wrap function the receive hook function is
@@ -127,18 +127,18 @@ struct WrapParams {
     /// specified in the `Receiver` with these additional data bytes as
     /// part of the input parameters. This action allows the receiving smart
     /// contract to react to the credited wCCD amount.
-    data: AdditionalData,
+    pub data: AdditionalData,
 }
 
 /// The parameter type for the contract function `setImplementors`.
 /// Takes a standard identifier and list of contract addresses providing
 /// implementations of this standard.
-#[derive(Debug, Serialize, SchemaType)]
-struct SetImplementorsParams {
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct SetImplementorsParams {
     /// The identifier for the standard.
-    id:           StandardIdentifierOwned,
+    pub id:           StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
-    implementors: Vec<ContractAddress>,
+    pub implementors: Vec<ContractAddress>,
 }
 
 /// The parameter type for the contract function `upgrade`.
@@ -146,57 +146,57 @@ struct SetImplementorsParams {
 /// after triggering the upgrade. The upgrade is reverted if the entrypoint
 /// fails. This is useful for doing migration in the same transaction triggering
 /// the upgrade.
-#[derive(Debug, Serialize, SchemaType)]
-struct UpgradeParams {
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct UpgradeParams {
     /// The new module reference.
-    module:  ModuleReference,
+    pub module:  ModuleReference,
     /// Optional entrypoint to call in the new module after upgrade.
-    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
 /// The return type for the contract function `view`.
-#[derive(Serialize, SchemaType)]
-struct ReturnBasicState {
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
+pub struct ReturnBasicState {
     /// The admin address can upgrade the contract, pause and unpause the
     /// contract, transfer the admin address to a new address, set
     /// implementors, and update the metadata URL in the contract.
-    admin:        Address,
+    pub admin:        Address,
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
-    paused:       bool,
+    pub paused:       bool,
     /// The metadata URL of the token.
-    metadata_url: MetadataUrl,
+    pub metadata_url: MetadataUrl,
 }
 
 /// The parameter type for the contract function `setMetadataUrl`.
-#[derive(Serialize, SchemaType, Clone)]
-struct SetMetadataUrlParams {
+#[derive(Serialize, SchemaType, Clone, PartialEq, Eq, Debug)]
+pub struct SetMetadataUrlParams {
     /// The URL following the specification RFC1738.
-    url:  String,
+    pub url:  String,
     /// The hash of the document stored at the above URL.
-    hash: Option<Sha256>,
+    pub hash: Option<Sha256>,
 }
 
 /// The parameter type for the contract function `setPaused`.
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 #[repr(transparent)]
-struct SetPausedParams {
+pub struct SetPausedParams {
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
-    paused: bool,
+    pub paused: bool,
 }
 
 /// A NewAdminEvent introduced by this smart contract.
-#[derive(Serial, SchemaType)]
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 #[concordium(transparent)]
-struct NewAdminEvent {
+pub struct NewAdminEvent {
     /// New admin address.
-    new_admin: Address,
+    pub new_admin: Address,
 }
 
 /// Tagged events to be serialized for the event log.
-#[derive(SchemaType, Serial)]
+#[derive(SchemaType, Serialize, PartialEq, Eq, Debug)]
 #[concordium(repr(u8))]
-enum WccdEvent {
+pub enum WccdEvent {
     NewAdmin {
         new_admin: NewAdminEvent,
     },
@@ -206,7 +206,7 @@ enum WccdEvent {
 
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
-enum CustomContractError {
+pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams,
@@ -230,9 +230,9 @@ enum CustomContractError {
     FailedUpgradeUnsupportedModuleVersion,
 }
 
-type ContractError = Cis2Error<CustomContractError>;
+pub type ContractError = Cis2Error<CustomContractError>;
 
-type ContractResult<A> = Result<A, ContractError>;
+pub type ContractResult<A> = Result<A, ContractError>;
 
 /// Mapping the logging errors to ContractError.
 impl From<LogError> for CustomContractError {
@@ -271,9 +271,9 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-impl<S: HasStateApi> State<S> {
+impl State {
     /// Creates a new state with no one owning any tokens by default.
-    fn new(state_builder: &mut StateBuilder<S>, admin: Address, metadata_url: MetadataUrl) -> Self {
+    fn new(state_builder: &mut StateBuilder, admin: Address, metadata_url: MetadataUrl) -> Self {
         State {
             admin,
             paused: false,
@@ -311,7 +311,7 @@ impl<S: HasStateApi> State<S> {
         amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         if amount == 0u64.into() {
@@ -339,7 +339,7 @@ impl<S: HasStateApi> State<S> {
         &mut self,
         owner: &Address,
         operator: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) {
         let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
             balance:   0u64.into(),
@@ -364,7 +364,7 @@ impl<S: HasStateApi> State<S> {
         token_id: &ContractTokenId,
         amount: ContractTokenAmount,
         owner: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
@@ -428,11 +428,11 @@ impl<S: HasStateApi> State<S> {
     parameter = "SetMetadataUrlParams",
     event = "WccdEvent"
 )]
-fn contract_init<S: HasStateApi>(
-    ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
+fn contract_init(
+    ctx: &InitContext,
+    state_builder: &mut StateBuilder,
     logger: &mut impl HasLogger,
-) -> InitResult<State<S>> {
+) -> InitResult<State> {
     // Parse the parameter.
     let params: SetMetadataUrlParams = ctx.parameter_cursor().get()?;
     // Get the instantiator of this contract instance to be used as the initial
@@ -483,9 +483,9 @@ fn contract_init<S: HasStateApi>(
     mutable,
     payable
 )]
-fn contract_wrap<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_wrap(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     amount: Amount,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
@@ -549,9 +549,9 @@ fn contract_wrap<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_unwrap<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_unwrap(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
@@ -611,9 +611,9 @@ fn contract_unwrap<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_admin<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_update_admin(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the current admin is authorized to update the admin address.
@@ -649,10 +649,7 @@ fn contract_update_admin<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_set_paused<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_set_paused(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Check that only the admin is authorized to pause/unpause the contract.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
 
@@ -678,9 +675,9 @@ fn contract_set_paused<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_state_set_metadata_url<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_state_set_metadata_url(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the admin is authorized to update the URL.
@@ -735,9 +732,9 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
     enable_logger,
     mutable
 )]
-fn contract_transfer<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_transfer(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
@@ -804,9 +801,9 @@ fn contract_transfer<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
+fn contract_update_operator(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
@@ -842,9 +839,9 @@ fn contract_update_operator<S: HasStateApi>(
 
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
-type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
-type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 ///
@@ -858,9 +855,9 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
     return_value = "ContractBalanceOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_balance_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_balance_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -887,9 +884,9 @@ fn contract_balance_of<S: HasStateApi>(
     return_value = "OperatorOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_operator_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_operator_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -922,9 +919,9 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
     return_value = "TokenMetadataQueryResponse",
     error = "ContractError"
 )]
-fn contract_token_metadata<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_token_metadata(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -948,10 +945,7 @@ fn contract_token_metadata<S: HasStateApi>(
     return_value = "ReturnBasicState",
     error = "ContractError"
 )]
-fn contract_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<ReturnBasicState> {
+fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ReturnBasicState> {
     let state = ReturnBasicState {
         admin:        host.state().admin,
         paused:       host.state().paused,
@@ -972,9 +966,9 @@ fn contract_view<S: HasStateApi>(
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_supports(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<SupportsQueryResponse> {
     // Parse the parameter.
     let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
@@ -1005,10 +999,7 @@ fn contract_supports<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_set_implementor<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Check that only the admin is authorized to set implementors.
     ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
     // Parse the parameter.
@@ -1041,7 +1032,7 @@ fn contract_set_implementor<S: HasStateApi>(
     low_level
 )]
 fn contract_upgrade<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
+    ctx: &ReceiveContext,
     host: &mut impl HasHost<S>,
 ) -> ContractResult<()> {
     // Read the top-level contract state.
@@ -1063,807 +1054,4 @@ fn contract_upgrade<S: HasStateApi>(
         )?;
     }
     Ok(())
-}
-
-// Tests
-
-#[concordium_cfg_test]
-mod tests {
-    use super::*;
-    use test_infrastructure::*;
-
-    const ACCOUNT_0: AccountAddress = AccountAddress([0u8; 32]);
-    const ADDRESS_0: Address = Address::Account(ACCOUNT_0);
-    const ACCOUNT_1: AccountAddress = AccountAddress([1u8; 32]);
-    const ADDRESS_1: Address = Address::Account(ACCOUNT_1);
-    const ADMIN_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
-    const ADMIN_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
-    const NEW_ADMIN_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
-    const NEW_ADMIN_ADDRESS: Address = Address::Account(NEW_ADMIN_ACCOUNT);
-
-    // The metadata url for the wCCD token.
-    const INITIAL_TOKEN_METADATA_URL: &str = "https://some.example/token/wccd";
-
-    /// Test helper function which creates a contract state where ADDRESS_0 owns
-    /// 400 tokens.
-    fn initial_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        // Set up crypto primitives to hash the document.
-        let crypto_primitives = TestCryptoPrimitives::new();
-        // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
-
-        let metadata_url = MetadataUrl {
-            url:  INITIAL_TOKEN_METADATA_URL.to_string(),
-            hash: Some(initial_metadata_hash),
-        };
-
-        let mut state = State::new(state_builder, ADMIN_ADDRESS, metadata_url);
-        state
-            .mint(&TOKEN_ID_WCCD, 400u64.into(), &ADDRESS_0, state_builder)
-            .expect_report("Failed to setup state");
-        state
-    }
-
-    /// Test initialization succeeds and the tokens are owned by the contract
-    /// instantiator and the appropriate events are logged.
-    #[concordium_test]
-    fn test_init() {
-        // Set up the context
-        let mut ctx = TestInitContext::empty();
-        ctx.set_init_origin(ACCOUNT_0);
-
-        let mut logger = TestLogger::init();
-        let mut builder = TestStateBuilder::new();
-
-        // Set up crypto primitives to hash the document.
-        let crypto_primitives = TestCryptoPrimitives::new();
-        // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
-
-        // Set up the parameter.
-        let parameter = SetMetadataUrlParams {
-            url:  String::from(INITIAL_TOKEN_METADATA_URL),
-            hash: Some(initial_metadata_hash),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Call the contract function.
-        let result = contract_init(&ctx, &mut builder, &mut logger);
-
-        // Check the result
-        let state = result.expect_report("Contract initialization failed");
-
-        // Check the state
-        claim_eq!(state.token.iter().count(), 0, "Only one token is initialized");
-        let balance0 =
-            state.balance(&TOKEN_ID_WCCD, &ADDRESS_0).expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            0u64.into(),
-            "No initial tokens are owned by the contract instantiator"
-        );
-
-        // Check the logs
-        claim_eq!(logger.logs.len(), 3, "Exactly three events should be logged");
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
-                owner:    ADDRESS_0,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(0),
-            })))),
-            "Missing event for minting the token"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<
-                _,
-                ContractTokenAmount,
-            >(
-                TokenMetadataEvent {
-                    token_id:     TOKEN_ID_WCCD,
-                    metadata_url: MetadataUrl {
-                        url:  String::from(INITIAL_TOKEN_METADATA_URL),
-                        hash: Some(initial_metadata_hash),
-                    },
-                }
-            )))),
-            "Missing event with metadata for the token"
-        );
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin {
-                new_admin: NewAdminEvent {
-                    new_admin: ADDRESS_0,
-                },
-            })),
-            "Missing event for the new admin"
-        );
-    }
-
-    /// Test only admin can setMetadataUrl
-    #[concordium_test]
-    #[cfg(feature = "crypto-primitives")]
-    fn test_set_metadata_url() {
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-
-        // Set up crypto primitives to hash the document.
-        let crypto_primitives = TestCryptoPrimitives::new();
-        // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
-
-        let metadata_url = MetadataUrl {
-            url:  INITIAL_TOKEN_METADATA_URL.to_string(),
-            hash: Some(initial_metadata_hash),
-        };
-
-        let state = State::new(&mut state_builder, ADMIN_ADDRESS, metadata_url);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        // Create a new_url and a new_hash
-        let new_url = "https://some.example/token/wccd/updated".to_string();
-        let new_hash = crypto_primitives.hash_sha2_256("document2".as_bytes()).0;
-
-        // Set up the parameter.
-        let parameter = SetMetadataUrlParams {
-            url:  new_url.clone(),
-            hash: Some(new_hash),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Call the contract function.
-        let result = contract_state_set_metadata_url(&ctx, &mut host, &mut logger);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the logs
-        claim_eq!(logger.logs.len(), 1, "Exactly one event should be logged");
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<
-                _,
-                ContractTokenAmount,
-            >(
-                TokenMetadataEvent {
-                    token_id:     TOKEN_ID_WCCD,
-                    metadata_url: MetadataUrl {
-                        url:  new_url.clone(),
-                        hash: Some(new_hash),
-                    },
-                }
-            )))),
-            "Missing event with updated metadata for the token"
-        );
-
-        // Check the state.
-        let url = host.state().metadata_url.url.clone();
-        let hash = host.state().metadata_url.hash;
-        claim_eq!(url, new_url, "Expected url being updated");
-        claim_eq!(hash, Some(new_hash), "Expected hash being updated");
-
-        // Check only the admin can update the metadata URL
-        ctx.set_sender(ADDRESS_0);
-
-        // Call the contract function.
-        let err = contract_state_set_metadata_url(&ctx, &mut host, &mut logger);
-
-        // Check that ADDRESS_0 was not successful in updating the metadata url.
-        claim_eq!(err, Err(ContractError::Unauthorized), "Error is expected to be Unauthorized")
-    }
-
-    /// Test transfer succeeds, when `from` is the sender.
-    #[concordium_test]
-    fn test_transfer_account() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-
-        // Set up the parameter.
-        let transfer = Transfer {
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(100),
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-
-        // Set up crypto primitives to hash the document.
-        let crypto_primitives = TestCryptoPrimitives::new();
-        // The hash of the document stored at the above URL.
-        let initial_metadata_hash: Sha256 =
-            crypto_primitives.hash_sha2_256("document".as_bytes()).0;
-
-        let metadata_url = MetadataUrl {
-            url:  INITIAL_TOKEN_METADATA_URL.to_string(),
-            hash: Some(initial_metadata_hash),
-        };
-
-        let mut state = State::new(&mut state_builder, ADMIN_ADDRESS, metadata_url);
-        state
-            .mint(&TOKEN_ID_WCCD, 400.into(), &ADDRESS_0, &mut state_builder)
-            .expect_report("Failed to setup state");
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let balance0 = host
-            .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
-            .expect_report("Token is expected to exist");
-        let balance1 = host
-            .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            300.into(),
-            "Token owner balance should be decreased by the transferred amount"
-        );
-        claim_eq!(
-            balance1,
-            100.into(),
-            "Token receiver balance should be increased by the transferred amount"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(100),
-            }))),
-            "Incorrect event emitted"
-        )
-    }
-
-    /// Test transfer token fails, when sender is neither the owner or an
-    /// operator of the owner.
-    #[concordium_test]
-    fn test_transfer_not_authorized() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-
-        // Set up the parameter.
-        let transfer = Transfer {
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(100),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-        // Check the result.
-        let err = result.expect_err_report("Expected to fail");
-        claim_eq!(err, ContractError::Unauthorized, "Error is expected to be Unauthorized")
-    }
-
-    /// Test transfer succeeds when sender is not the owner, but is an operator
-    /// of the owner.
-    #[concordium_test]
-    fn test_operator_transfer() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-
-        // Set up the parameter.
-        let transfer = Transfer {
-            from:     ADDRESS_0,
-            to:       Receiver::from_account(ACCOUNT_1),
-            token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(100),
-            data:     AdditionalData::empty(),
-        };
-        let parameter = TransferParams::from(vec![transfer]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let mut state = initial_state(&mut state_builder);
-        state.add_operator(&ADDRESS_0, &ADDRESS_1, &mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        let balance0 = host
-            .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_0)
-            .expect_report("Token is expected to exist");
-        let balance1 = host
-            .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            300.into(),
-            "Token owner balance should be decreased by the transferred amount"
-        );
-        claim_eq!(
-            balance1,
-            100.into(),
-            "Token receiver balance should be increased by the transferred amount"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "Only one event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
-                from:     ADDRESS_0,
-                to:       ADDRESS_1,
-                token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(100),
-            }))),
-            "Incorrect event emitted"
-        )
-    }
-
-    /// Test adding an operator succeeds and the appropriate event is logged.
-    #[concordium_test]
-    fn test_add_operator() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-
-        // Set up the parameter.
-        let update = UpdateOperator {
-            operator: ADDRESS_1,
-            update:   OperatorUpdate::Add,
-        };
-        let parameter = UpdateOperatorParams(vec![update]);
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the state.
-        claim!(host.state().is_operator(&ADDRESS_1, &ADDRESS_0), "Account should be an operator");
-
-        // Checking that `ADDRESS_1` is an operator in the query response of the
-        // `contract_operator_of` function as well.
-        // Set up the parameter.
-        let operator_of_query = OperatorOfQuery {
-            address: ADDRESS_1,
-            owner:   ADDRESS_0,
-        };
-
-        let operator_of_query_vector = OperatorOfQueryParams {
-            queries: vec![operator_of_query],
-        };
-        let parameter_bytes = to_bytes(&operator_of_query_vector);
-
-        ctx.set_parameter(&parameter_bytes);
-
-        // Checking the return value of the `contract_operator_of` function
-        let result: ContractResult<OperatorOfQueryResponse> = contract_operator_of(&ctx, &host);
-
-        claim_eq!(
-            result.expect_report("Failed getting result value").0,
-            [true],
-            "Account should be an operator in the query response"
-        );
-
-        // Check the logs.
-        claim_eq!(logger.logs.len(), 1, "One event should be logged");
-        claim_eq!(
-            logger.logs[0],
-            to_bytes(&WccdEvent::Cis2Event(
-                Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                    UpdateOperatorEvent {
-                        owner:    ADDRESS_0,
-                        operator: ADDRESS_1,
-                        update:   OperatorUpdate::Add,
-                    }
-                )
-            )),
-            "Incorrect event emitted"
-        )
-    }
-
-    /// Test wrap and unwrap functions.
-    #[concordium_test]
-    fn test_wrap_and_unwrap() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_1);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Set up the parameter.
-        let wrap_params = WrapParams {
-            to:   Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
-        };
-        let parameter_bytes = to_bytes(&wrap_params);
-        ctx.set_parameter(&parameter_bytes);
-
-        let amount = 100;
-
-        // Testing the `wrap` function
-
-        // ADDRESS_1 wraps some CCD.
-        let result: ContractResult<()> =
-            contract_wrap(&ctx, &mut host, Amount::from_micro_ccd(amount), &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the wCCD balance of ADDRESS_1.
-        let balance0 = host
-            .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-        claim_eq!(
-            balance0,
-            ContractTokenAmount::from(amount),
-            "ADDRESS_1 should have received wCCD tokens"
-        );
-
-        // Testing the `unwrap` function
-
-        // Set up the parameter.
-        let unwrap_params = UnwrapParams {
-            amount:   ContractTokenAmount::from(amount),
-            owner:    ADDRESS_1,
-            receiver: Receiver::from_account(ACCOUNT_1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter_bytes = to_bytes(&unwrap_params);
-        ctx.set_parameter(&parameter_bytes);
-
-        host.set_self_balance(Amount::from_micro_ccd(amount));
-
-        // ADDRESS_1 unwraps some wCCD.
-        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the wCCD balance of ADDRESS_1.
-        let balance0 = host
-            .state()
-            .balance(&TOKEN_ID_WCCD, &ADDRESS_1)
-            .expect_report("Token is expected to exist");
-
-        claim_eq!(
-            balance0,
-            ContractTokenAmount::from(0),
-            "ADDRESS_1 should have no WCCD tokens anymore"
-        );
-    }
-
-    /// Test unwrapping to a receiver account that doesn't exist.
-    ///
-    /// This test also showcases the use of [`TestHost::with_rollback`],
-    /// which handles rolling back the state if a receive function rejects.
-    #[concordium_test]
-    fn test_unwrap_to_missing_account() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADDRESS_0);
-
-        // Set up the parameter.
-        let parameter = UnwrapParams {
-            amount:   ContractTokenAmount::from(100),
-            owner:    ADDRESS_0,
-            receiver: Receiver::from_account(ACCOUNT_1),
-            data:     AdditionalData::empty(),
-        };
-        let parameter_bytes = to_bytes(&parameter);
-        ctx.set_parameter(&parameter_bytes);
-
-        let mut logger = TestLogger::init();
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Make ACCOUNT_1 missing such that transfers to it will fail.
-        host.make_account_missing(ACCOUNT_1);
-
-        // Call the contract function. Note the use of `with_rollback`.
-        let result: ContractResult<()> =
-            host.with_rollback(|host| contract_unwrap(&ctx, host, &mut logger));
-
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CustomContractError::InvokeTransferError)),
-            "InvokeTransferError should have occurred"
-        );
-
-        // The balance should still be 400 due to the rollback after rejecting.
-        claim_eq!(
-            host.state().balance(&TOKEN_ID_WCCD, &ADDRESS_0),
-            Ok(400u64.into()),
-            "ADDRESS_0 balance should still be 400"
-        );
-        claim!(host.get_transfers().is_empty(), "No transfers should have happened");
-    }
-
-    /// Test admin can update to a new admin address.
-    #[concordium_test]
-    fn test_update_admin() {
-        // Set up the context
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-        let mut logger = TestLogger::init();
-
-        // Set up the parameter.
-        let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up the state and host.
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host, &mut logger);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, NEW_ADMIN_ADDRESS, "Admin should be the new admin address");
-
-        // Check the logs
-        claim_eq!(logger.logs.len(), 1, "Exactly one event should be logged");
-
-        // Check the event
-        claim!(
-            logger.logs.contains(&to_bytes(&WccdEvent::NewAdmin {
-                new_admin: NewAdminEvent {
-                    new_admin: NEW_ADMIN_ADDRESS,
-                },
-            })),
-            "Missing event for the new admin"
-        );
-    }
-
-    /// Test that only the current admin can update the admin address.
-    #[concordium_test]
-    fn test_update_admin_not_authorized() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        // NEW_ADMIN is not the current admin but tries to update the admin variable to
-        // its own address.
-        ctx.set_sender(NEW_ADMIN_ADDRESS);
-        let mut logger = TestLogger::init();
-
-        // Set up the parameter.
-        let parameter_bytes = to_bytes(&[NEW_ADMIN_ADDRESS]);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up the state and host.
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be the old admin address");
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_update_admin(&ctx, &mut host, &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Unauthorized),
-            "Update admin should fail because not the current admin tries to update"
-        );
-
-        // Check the admin state.
-        claim_eq!(host.state().admin, ADMIN_ADDRESS, "Admin should be still the old admin address");
-    }
-
-    /// Test pausing the contract.
-    #[concordium_test]
-    fn test_pause() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        // Set up the parameter to pause the contract.
-        let parameter_bytes = to_bytes(&true);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up the state and host.
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_set_paused(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check contract is paused.
-        claim_eq!(host.state().paused, true, "Smart contract should be paused");
-    }
-
-    /// Test unpausing the contract.
-    #[concordium_test]
-    fn test_unpause() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        // Set up the parameter to pause the contract.
-        let parameter_bytes = to_bytes(&true);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up the state and host.
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_set_paused(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check contract is paused.
-        claim_eq!(host.state().paused, true, "Smart contract should be paused");
-
-        // Set up the parameter to unpause the contract.
-        let parameter_bytes = to_bytes(&false);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_set_paused(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check contract is unpaused.
-        claim_eq!(host.state().paused, false, "Smart contract should be unpaused");
-    }
-
-    /// Test that only the current admin can pause/unpause the contract.
-    #[concordium_test]
-    fn test_pause_not_authorized() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        // NEW_ADMIN is not the current admin but tries to pause/unpause the contract.
-        ctx.set_sender(NEW_ADMIN_ADDRESS);
-
-        // Set up the parameter to pause the contract.
-        let parameter_bytes = to_bytes(&true);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up the state and host.
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_set_paused(&ctx, &mut host);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Unauthorized),
-            "Pause should fail because not the current admin tries to invoke it"
-        );
-    }
-
-    /// Test that one can NOT call non-admin state-mutative functions (wrap,
-    /// unwrap, transfer, updateOperator) when the contract is paused.
-    #[concordium_test]
-    fn test_no_execution_of_state_mutative_functions_when_paused() {
-        // Set up the context.
-        let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(ADMIN_ADDRESS);
-
-        // Set up the parameter to pause the contract.
-        let parameter_bytes = to_bytes(&true);
-        ctx.set_parameter(&parameter_bytes);
-
-        // Set up the state and host.
-        let mut state_builder = TestStateBuilder::new();
-        let state = initial_state(&mut state_builder);
-        let mut host = TestHost::new(state, state_builder);
-
-        // Call the contract function.
-        let result: ContractResult<()> = contract_set_paused(&ctx, &mut host);
-
-        // Check the result.
-        claim!(result.is_ok(), "Results in rejection");
-
-        // Check contract is paused.
-        claim_eq!(host.state().paused, true, "Smart contract should be paused");
-
-        let mut logger = TestLogger::init();
-
-        // Call the `transfer` function.
-        let result: ContractResult<()> = contract_transfer(&ctx, &mut host, &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CustomContractError::ContractPaused)),
-            "Transfer should fail because contract is paused"
-        );
-
-        // Call the `updateOperator` function.
-        let result: ContractResult<()> = contract_update_operator(&ctx, &mut host, &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CustomContractError::ContractPaused)),
-            "Update operator should fail because contract is paused"
-        );
-
-        // Call the `wrap` function.
-        let result: ContractResult<()> =
-            contract_wrap(&ctx, &mut host, Amount::from_micro_ccd(100), &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CustomContractError::ContractPaused)),
-            "Wrap should fail because contract is paused"
-        );
-
-        // Call the`unwrap` function.
-        let result: ContractResult<()> = contract_unwrap(&ctx, &mut host, &mut logger);
-
-        // Check that invoke failed.
-        claim_eq!(
-            result,
-            Err(ContractError::Custom(CustomContractError::ContractPaused)),
-            "Unwrap should fail because contract is paused"
-        );
-    }
 }
