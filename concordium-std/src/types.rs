@@ -3,8 +3,6 @@ use crate::{
 };
 use concordium_contracts_common::{AccountBalance, Amount, ParseError};
 use core::{fmt, str::FromStr};
-// Re-export for backward compatibility.
-pub use concordium_contracts_common::ExchangeRates;
 
 #[derive(Debug)]
 /// A high-level map based on the low-level key-value store, which is the
