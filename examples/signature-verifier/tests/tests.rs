@@ -49,9 +49,9 @@ fn test_outside_signature_check() {
                 .expect("Parameter has valid size."),
         })
         .expect("Call signature verifier contract with an invalid signature.");
-    // Check that it returns `false`.
+    // Check that the signature does NOT verify.
     let rv: bool = update_invalid.parse_return_value().expect("Deserializing bool");
-    assert_eq!(rv, false);
+    assert!(!rv, "Signature verification should fail.");
 
     // Construct a parameter with a valid signature.
     let parameter_valid = VerificationParameter {
@@ -70,7 +70,7 @@ fn test_outside_signature_check() {
                 .expect("Parameter has valid size."),
         })
         .expect("Call signature verifier contract with a valid signature.");
-    // Check that it returns `true`.
+    // Check that the signature verifies.
     let rv: bool = update.parse_return_value().expect("Deserializing bool");
     assert!(rv, "Signature checking failed.");
 }
@@ -126,9 +126,9 @@ fn test_inside_signature_check() {
         })
         .expect("Call signature verifier contract with an invalid signature.");
 
-    // Check that it returns `false`.
+    // Check that the signature does NOT verify.
     let rv: bool = update_invalid.parse_return_value().expect("Deserializing bool");
-    assert_eq!(rv, false);
+    assert!(!rv, "Signature verification should fail.");
 
     // Construct a parameter with a valid signature.
     let parameter_valid = VerificationParameter {
@@ -148,7 +148,7 @@ fn test_inside_signature_check() {
         })
         .expect("Call signature verifier contract with a valid signature.");
 
-    // Check that it returns `true`.
+    // Check that the signature verifies.
     let rv: bool = update.parse_return_value().expect("Deserializing bool");
     assert!(rv, "Signature checking failed.");
 }
