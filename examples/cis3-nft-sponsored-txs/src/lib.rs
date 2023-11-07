@@ -79,13 +79,15 @@ const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 
 /// Tagged events to be serialized for the event log.
-#[derive(Debug, Serial)]
+#[derive(Debug, Serial, Deserial, PartialEq, Eq)]
 #[concordium(repr(u8))]
 pub enum Event {
     /// The event tracks the nonce used by the signer of the `PermitMessage`
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
+    #[concordium(forward = cis2_events)]
+    Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
 }
 
 /// The NonceEvent is logged when the `permit` function is invoked. The event
@@ -744,7 +746,7 @@ fn contract_view_message_hash(
     // or sign a message (in that case the prepend is `account` address and 8 zero
     // bytes). Hence, the 8 zero bytes ensure that the user does not accidentally
     // sign a transaction. The account nonce is of type u64 (8 bytes).
-    let mut msg_prepend = vec![0; 32 + 8];
+    let mut msg_prepend = [0; 32 + 8];
     // Prepend the `account` address of the signer.
     msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
     // Prepend 8 zero bytes.
@@ -962,10 +964,10 @@ fn contract_operator_of(
 
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
-type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 /// Response type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenAmounts used by this contract.
-type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 ///
