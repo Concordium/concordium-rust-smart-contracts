@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Bump minimum supported Rust version to `1.67`.
+- Re-export `AccountKeys`.
+
 ## 3.1.0
 
 - Add functionality for setting the exchange rates and block time of the chain based on queries from an external node.
