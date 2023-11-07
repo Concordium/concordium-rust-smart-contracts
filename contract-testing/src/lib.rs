@@ -103,7 +103,7 @@ pub use concordium_base::{
         ReceiveName, SignatureThreshold, SlotTime, Timestamp,
     },
     hashes::BlockHash,
-    id::types::{CredentialPublicKeys, VerifyKey},
+    id::types::{AccountKeys, CredentialPublicKeys, VerifyKey},
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
     transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
 };
