@@ -102,28 +102,9 @@ fn test_inside_signature_permit_transfer() {
     let message_hash: HashSha2256 =
         from_bytes(&invoke.return_value).expect("Should return a valid result");
 
-    let signature = keypairs
+    permit_transfer_param.signature = keypairs
         .expect("Should have a generated private key to sign")
-        .sign_data(&to_bytes(&message_hash));
-
-    let t = signature[&CredentialIndex {
-        index: 0,
-    }][&KeyIndex(0u8)]
-        .sig
-        .clone();
-    let q: [u8; 64] = t.try_into().unwrap();
-
-    let mut inner_signature_map = BTreeMap::new();
-    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(SignatureEd25519(q)));
-
-    let mut signature_map = BTreeMap::new();
-    signature_map.insert(0u8, CredentialSignatures {
-        sigs: inner_signature_map,
-    });
-
-    permit_transfer_param.signature = AccountSignatures {
-        sigs: signature_map,
-    };
+        .sign_message(&to_bytes(&message_hash));
 
     // Transfer token with the permit function.
     let update = chain
