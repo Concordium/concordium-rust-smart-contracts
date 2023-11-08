@@ -38,10 +38,204 @@ const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
     21, 68, 42, 79, 106, 106, 87, 125, 122, 77, 154, 114, 208, 145, 171, 47, 108, 96, 221, 13,
 ]);
 
+const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
+    199, 250, 51, 48, 15, 210, 20, 180, 70, 191, 98, 217, 109, 67, 115, 94, 195, 81, 16, 157, 59,
+    26, 36, 147, 91, 196, 254, 133, 149, 27, 148, 124, 130, 206, 68, 195, 139, 189, 244, 43, 253,
+    12, 58, 17, 102, 63, 203, 35, 159, 54, 94, 59, 12, 193, 48, 78, 144, 112, 245, 149, 12, 181,
+    74, 10,
+]);
+
 const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);
+
+/// Test permit update operator function. The signature is generated in the test
+/// case. ALICE adds BOB as an operator.
+#[test]
+fn test_inside_signature_permit_update_operator() {
+    let (mut chain, contract_address, _update, keypairs) =
+        initialize_contract_with_alice_tokens(true);
+
+    // Check operator in state
+    let bob_is_operator_of_alice = operator_of(&chain, contract_address);
+
+    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![false]));
+
+    // Create input parematers for the `permit` updateOperator function.
+    let update_operator = UpdateOperator {
+        update:   OperatorUpdate::Add,
+        operator: BOB_ADDR,
+    };
+    let payload = UpdateOperatorParams(vec![update_operator]);
+
+    let mut inner_signature_map = BTreeMap::new();
+    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
+
+    let mut signature_map = BTreeMap::new();
+    signature_map.insert(0u8, CredentialSignatures {
+        sigs: inner_signature_map,
+    });
+
+    let mut permit_update_operator_param = PermitParam {
+        signature: AccountSignatures {
+            sigs: signature_map,
+        },
+        signer:    ALICE,
+        message:   PermitMessage {
+            timestamp:        Timestamp::from_timestamp_millis(10000000000),
+            contract_address: ContractAddress {
+                index:    0,
+                subindex: 0,
+            },
+            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce:            0,
+            payload:          to_bytes(&payload),
+        },
+    };
+
+    let invoke = chain
+        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      contract_address,
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.viewMessageHash".to_string()),
+            message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query balanceOf");
+
+    let message_hash: HashSha2256 =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    permit_update_operator_param.signature = keypairs
+        .expect("Should have a generated private key to sign")
+        .sign_message(&to_bytes(&message_hash));
+
+    // Update operator with the permit function.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
+                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to update operator with permit");
+
+    // Check that the correct events occurred.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
+
+    assert_eq!(events, [
+        Event::Cis2Event(Cis2Event::UpdateOperator(UpdateOperatorEvent {
+            update:   OperatorUpdate::Add,
+            owner:    ALICE_ADDR,
+            operator: BOB_ADDR,
+        })),
+        Event::Nonce(NonceEvent {
+            account: ALICE,
+            nonce:   0,
+        })
+    ]);
+
+    // Check operator in state
+    let bob_is_operator_of_alice = operator_of(&chain, contract_address);
+
+    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![true]));
+}
+
+/// Test permit update operator function. The signature is generated outside
+/// this test case (e.g. with https://cyphr.me/ed25519_tool/ed.html). ALICE adds BOB as an operator.
+#[test]
+fn test_outside_signature_permit_update_operator() {
+    let (mut chain, contract_address, _update, _keypairs) =
+        initialize_contract_with_alice_tokens(false);
+
+    // Check operator in state
+    let bob_is_operator_of_alice = operator_of(&chain, contract_address);
+
+    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![false]));
+
+    // Create input parematers for the `permit` updateOperator function.
+    let update_operator = UpdateOperator {
+        update:   OperatorUpdate::Add,
+        operator: BOB_ADDR,
+    };
+    let payload = UpdateOperatorParams(vec![update_operator]);
+
+    let mut inner_signature_map = BTreeMap::new();
+    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(SIGNATURE_UPDATE_OPERATOR));
+
+    let mut signature_map = BTreeMap::new();
+    signature_map.insert(0u8, CredentialSignatures {
+        sigs: inner_signature_map,
+    });
+
+    let permit_update_operator_param = PermitParam {
+        signature: AccountSignatures {
+            sigs: signature_map,
+        },
+        signer:    ALICE,
+        message:   PermitMessage {
+            timestamp:        Timestamp::from_timestamp_millis(10000000000),
+            contract_address: ContractAddress {
+                index:    0,
+                subindex: 0,
+            },
+            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce:            0,
+            payload:          to_bytes(&payload),
+        },
+    };
+
+    // Update operator with the permit function.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ACC_ADDR_OWNER,
+            Address::Account(ACC_ADDR_OWNER),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
+                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to update operator with permit");
+
+    // Check that the correct events occurred.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
+
+    assert_eq!(events, [
+        Event::Cis2Event(Cis2Event::UpdateOperator(UpdateOperatorEvent {
+            update:   OperatorUpdate::Add,
+            owner:    ALICE_ADDR,
+            operator: BOB_ADDR,
+        })),
+        Event::Nonce(NonceEvent {
+            account: ALICE,
+            nonce:   0,
+        })
+    ]);
+
+    // Check operator in state
+    let bob_is_operator_of_alice = operator_of(&chain, contract_address);
+
+    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![true]));
+}
 
 /// Test permit transfer function. The signature is generated in the test case.
 /// TOKEN_1 is transferred from Alice to Bob.
@@ -493,6 +687,61 @@ fn test_operator_can_transfer() {
     ]);
 }
 
+/// Get the `TOKEN_1` balances for Alice and Bob.
+fn get_balances(
+    chain: &Chain,
+    contract_address: ContractAddress,
+) -> ContractBalanceOfQueryResponse {
+    let balance_of_params = ContractBalanceOfQueryParams {
+        queries: vec![
+            BalanceOfQuery {
+                token_id: TOKEN_1,
+                address:  ALICE_ADDR,
+            },
+            BalanceOfQuery {
+                token_id: TOKEN_1,
+                address:  BOB_ADDR,
+            },
+        ],
+    };
+
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&balance_of_params)
+                .expect("BalanceOf params"),
+        })
+        .expect("Invoke balanceOf");
+    let rv: ContractBalanceOfQueryResponse =
+        invoke.parse_return_value().expect("BalanceOf return value");
+    rv
+}
+
+/// Check if Bob is an operator of Alice.
+fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQueryResponse {
+    let operator_of_params = OperatorOfQueryParams {
+        queries: vec![OperatorOfQuery {
+            address: BOB_ADDR,
+            owner:   ALICE_ADDR,
+        }],
+    };
+
+    // Check operator in state
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.operatorOf".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&operator_of_params)
+                .expect("OperatorOf params"),
+        })
+        .expect("Invoke operatorOf");
+    let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
+    rv
+}
+
 /// Helper function that sets up the contract with two tokens minted to
 /// Alice, `TOKEN_0` and `TOKEN_1`.
 ///
@@ -528,38 +777,6 @@ fn initialize_contract_with_alice_tokens(
         .expect("Mint tokens");
 
     (chain, contract_address, update, keypairs)
-}
-
-/// Get the `TOKEN_1` balances for Alice and Bob.
-fn get_balances(
-    chain: &Chain,
-    contract_address: ContractAddress,
-) -> ContractBalanceOfQueryResponse {
-    let balance_of_params = ContractBalanceOfQueryParams {
-        queries: vec![
-            BalanceOfQuery {
-                token_id: TOKEN_1,
-                address:  ALICE_ADDR,
-            },
-            BalanceOfQuery {
-                token_id: TOKEN_1,
-                address:  BOB_ADDR,
-            },
-        ],
-    };
-
-    let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&balance_of_params)
-                .expect("BalanceOf params"),
-        })
-        .expect("Invoke balanceOf");
-    let rv: ContractBalanceOfQueryResponse =
-        invoke.parse_return_value().expect("BalanceOf return value");
-    rv
 }
 
 /// Setup chain and contract.
