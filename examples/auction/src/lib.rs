@@ -169,7 +169,7 @@ fn auction_bid(
 
 /// View function that returns the content of the state
 #[receive(contract = "auction", name = "view", return_value = "State")]
-fn view<'a, 'b>(_ctx: &'a ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
+fn view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
 
