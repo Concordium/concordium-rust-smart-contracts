@@ -14,7 +14,7 @@ const ALICE: AccountAddress = AccountAddress([0; 32]);
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1; 32]);
 const BOB_ADDR: Address = Address::Account(BOB);
-const ACC_ADDR_OWNER: AccountAddress = AccountAddress([2u8; 32]);
+const CHARLIE: AccountAddress = AccountAddress([2u8; 32]);
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU32(1);
@@ -62,7 +62,7 @@ fn test_inside_signature_permit_update_operator() {
 
     assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![false]));
 
-    // Create input parematers for the `permit` updateOperator function.
+    // Create input parameters for the `permit` updateOperator function.
     let update_operator = UpdateOperator {
         update:   OperatorUpdate::Add,
         operator: BOB_ADDR,
@@ -94,6 +94,7 @@ fn test_inside_signature_permit_update_operator() {
         },
     };
 
+    // Get the message hash to be signed.
     let invoke = chain
         .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -102,7 +103,7 @@ fn test_inside_signature_permit_update_operator() {
             message:      OwnedParameter::from_serial(&permit_update_operator_param)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query balanceOf");
+        .expect("Should be able to query viewMessageHash");
 
     let message_hash: HashSha2256 =
         from_bytes(&invoke.return_value).expect("Should return a valid result");
@@ -115,8 +116,8 @@ fn test_inside_signature_permit_update_operator() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_ADDR_OWNER,
-            Address::Account(ACC_ADDR_OWNER),
+            CHARLIE,
+            Address::Account(CHARLIE),
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -164,7 +165,7 @@ fn test_outside_signature_permit_update_operator() {
 
     assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![false]));
 
-    // Create input parematers for the `permit` updateOperator function.
+    // Create input parameters for the `permit` updateOperator function.
     let update_operator = UpdateOperator {
         update:   OperatorUpdate::Add,
         operator: BOB_ADDR,
@@ -200,8 +201,8 @@ fn test_outside_signature_permit_update_operator() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ACC_ADDR_OWNER,
-            Address::Account(ACC_ADDR_OWNER),
+            CHARLIE,
+            Address::Account(CHARLIE),
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -249,6 +250,7 @@ fn test_inside_signature_permit_transfer() {
 
     assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU8(1), TokenAmountU8(0)]);
 
+    // Create input parameters for the `permit` transfer function.
     let transfer = concordium_cis2::Transfer {
         from:     ALICE_ADDR,
         to:       Receiver::from_account(BOB),
@@ -283,6 +285,7 @@ fn test_inside_signature_permit_transfer() {
         },
     };
 
+    // Get the message hash to be signed.
     let invoke = chain
         .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -291,7 +294,7 @@ fn test_inside_signature_permit_transfer() {
             message:      OwnedParameter::from_serial(&permit_transfer_param)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query balanceOf");
+        .expect("Should be able to query viewMessageHash");
 
     let message_hash: HashSha2256 =
         from_bytes(&invoke.return_value).expect("Should return a valid result");
@@ -354,6 +357,7 @@ fn test_outside_signature_permit_transfer() {
 
     assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU8(1), TokenAmountU8(0)]);
 
+    // Create input parameters for the `permit` transfer function.
     let transfer = concordium_cis2::Transfer {
         from:     ALICE_ADDR,
         to:       Receiver::from_account(BOB),
@@ -781,7 +785,7 @@ fn initialize_contract_with_alice_tokens(
 
 /// Setup chain and contract.
 ///
-/// Also creates the two accounts, Alice, and Bob.
+/// Also creates the three accounts, Alice, Bob, and Charlie.
 ///
 /// Alice is the owner of the contract.
 /// Alice's account is created with keys.
@@ -846,7 +850,7 @@ fn initialize_chain_and_contract(
 
     // Create some accounts accounts on the chain.
     chain.create_account(Account::new_with_keys(ALICE, balance, account_access_structure));
-    chain.create_account(Account::new(ACC_ADDR_OWNER, ACC_INITIAL_BALANCE));
+    chain.create_account(Account::new(CHARLIE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
