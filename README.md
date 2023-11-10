@@ -50,7 +50,7 @@ Changes to any of the packages must be such that
 - ```cargo clippy --all``` produces no warnings
 - ```rustfmt``` makes no changes.
 
-Everything in this repository should build with rust version 1.66 however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
+Everything in this repository should build with rust version 1.67 however the `fmt` tool must be from a nightly release since some of the configuration options are not stable. One way to run the `fmt` tool is
 ```
 cargo +nightly-2023-04-01 fmt
 ```
