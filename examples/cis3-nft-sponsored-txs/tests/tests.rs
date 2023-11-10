@@ -309,7 +309,7 @@ fn initialize_contract_with_alice_tokens() -> (Chain, ContractAddress, ContractI
 
 /// Setup chain and contract.
 ///
-/// Also creates the two accounts, Alice and Bob.
+/// Also creates the two accounts, Alice, and Bob.
 ///
 /// Alice is the owner of the contract.
 fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
