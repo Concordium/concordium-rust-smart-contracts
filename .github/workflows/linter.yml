@@ -12,7 +12,8 @@ name: Clippy & fmt
 
 env:
   RUST_FMT: nightly-2023-04-01
-  RUST_VERSION: "1.67"
+  RUST_VERSION: "1.66"
+  RUST_VERSION_TESTING_LIBRARY: "1.67"
   CARGO_CONCORDIUM_VERSION: "3.0.0"
 
 jobs:
@@ -129,7 +130,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUST_VERSION_TESTING_LIBRARY }}
 
       - name: Install Wasm target
         run: rustup target install wasm32-unknown-unknown
@@ -179,7 +180,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUST_VERSION_TESTING_LIBRARY }}
 
       - name: Install Wasm target
         run: rustup target install wasm32-unknown-unknown
@@ -837,7 +838,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUST_VERSION_TESTING_LIBRARY }}
           target: ${{ matrix.target }}
           override: true
 
