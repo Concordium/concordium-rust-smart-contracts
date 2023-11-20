@@ -96,6 +96,7 @@ pub use types::*;
 pub use concordium_base::{
     base::Energy,
     common::types::{CredentialIndex, KeyIndex},
+    PublicKey, SecretKey, Signature,
     contracts_common::{
         from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address, Amount,
         ContractAddress, ContractName, Duration, EntrypointName, ExchangeRate, ModuleReference,

@@ -3,7 +3,7 @@ use cis3_nft_sponsored_txs::{
     ContractTokenAmount, ContractTokenId, MintParams, NonceEvent, PermitMessage, PermitParam, *,
 };
 use concordium_cis2::{TokenIdU32, *};
-use concordium_smart_contract_testing::{AccountAccessStructure, AccountKeys, *};
+use concordium_smart_contract_testing::{AccountAccessStructure, AccountKeys, PublicKey, *};
 use concordium_std::{
     AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519, Timestamp,
 };
@@ -70,6 +70,12 @@ fn test_inside_signature_permit_update_operator() {
     let payload = UpdateOperatorParams(vec![update_operator]);
 
     let mut inner_signature_map = BTreeMap::new();
+
+    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
+    // the `permit` function. The `PermitParam` type includes a `signature` and
+    // a `signer`. Becuase these two values (`signature` and `signer`) are not
+    // read in the `viewMessageHash` function, any value can be used and we choose
+    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
     inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
 
     let mut signature_map = BTreeMap::new();
@@ -83,11 +89,8 @@ fn test_inside_signature_permit_update_operator() {
         },
         signer:    ALICE,
         message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10000000000),
-            contract_address: ContractAddress {
-                index:    0,
-                subindex: 0,
-            },
+            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
             entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
             nonce:            0,
             payload:          to_bytes(&payload),
@@ -186,11 +189,8 @@ fn test_outside_signature_permit_update_operator() {
         },
         signer:    ALICE,
         message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10000000000),
-            contract_address: ContractAddress {
-                index:    0,
-                subindex: 0,
-            },
+            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
             entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
             nonce:            0,
             payload:          to_bytes(&payload),
@@ -261,6 +261,12 @@ fn test_inside_signature_permit_transfer() {
     let payload = TransferParams::from(vec![transfer]);
 
     let mut inner_signature_map = BTreeMap::new();
+
+    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
+    // the `permit` function. The `PermitParam` type includes a `signature` and
+    // a `signer`. Becuase these two values (`signature` and `signer`) are not
+    // read in the `viewMessageHash` function, any value can be used and we choose
+    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
     inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
 
     let mut signature_map = BTreeMap::new();
@@ -274,11 +280,8 @@ fn test_inside_signature_permit_transfer() {
         },
         signer:    ALICE,
         message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10000000000),
-            contract_address: ContractAddress {
-                index:    0,
-                subindex: 0,
-            },
+            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
             entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
             nonce:            0,
             payload:          to_bytes(&payload),
@@ -381,11 +384,8 @@ fn test_outside_signature_permit_transfer() {
         },
         signer:    ALICE,
         message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10000000000),
-            contract_address: ContractAddress {
-                index:    0,
-                subindex: 0,
-            },
+            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
             entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
             nonce:            0,
             payload:          to_bytes(&payload),
@@ -809,36 +809,7 @@ fn initialize_chain_and_contract(
         // Since Alice's private key is NOT available, hardcoded signatures are used in the test
         // cases. The signatures are generated outside the test cases (e.g. with https://cyphr.me/ed25519_tool/ed.html).
         false => {
-            let mut inner_key_map: BTreeMap<KeyIndex, VerifyKey> = BTreeMap::new();
-
-            inner_key_map.insert(
-                KeyIndex(0u8),
-                VerifyKey::Ed25519VerifyKey(
-                    ed25519_dalek::PublicKey::from_bytes(&PUBLIC_KEY)
-                        .expect("Should be able to create public key"),
-                ),
-            );
-
-            let credential_public_keys = CredentialPublicKeys {
-                keys:      inner_key_map,
-                threshold: SignatureThreshold::ONE,
-            };
-
-            let mut key_map: BTreeMap<CredentialIndex, CredentialPublicKeys> = BTreeMap::new();
-            key_map.insert(
-                CredentialIndex {
-                    index: 0u8,
-                },
-                credential_public_keys,
-            );
-
-            (
-                AccountAccessStructure {
-                    keys:      key_map,
-                    threshold: AccountThreshold::ONE,
-                },
-                None,
-            )
+            (AccountAccessStructure::singleton(PublicKey::from_bytes(&PUBLIC_KEY).expect("Should be able to construct public key from bytes.")), None)
         }
     };
 
