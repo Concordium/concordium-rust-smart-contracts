@@ -2,8 +2,6 @@
 
 ## Unreleased changes
 
-- Set minimum Rust version to 1.67.
-
 ## concordium-std 8.1.0 (2023-10-18)
 
 - Set minimum Rust version to 1.66.
