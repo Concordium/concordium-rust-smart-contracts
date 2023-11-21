@@ -96,13 +96,13 @@ pub use types::*;
 pub use concordium_base::{
     base::Energy,
     common::types::{CredentialIndex, KeyIndex},
-    PublicKey, SecretKey, Signature,
     contracts_common::{
         from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address, Amount,
         ContractAddress, ContractName, Duration, EntrypointName, ExchangeRate, ModuleReference,
         OwnedContractName, OwnedEntrypointName, OwnedParameter, OwnedReceiveName, Parameter,
         ReceiveName, SignatureThreshold, SlotTime, Timestamp,
     },
+    ed25519,
     hashes::BlockHash,
     id::types::{AccountKeys, CredentialPublicKeys, VerifyKey},
     smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},

@@ -3,7 +3,7 @@ use cis3_nft_sponsored_txs::{
     ContractTokenAmount, ContractTokenId, MintParams, NonceEvent, PermitMessage, PermitParam, *,
 };
 use concordium_cis2::{TokenIdU32, *};
-use concordium_smart_contract_testing::{AccountAccessStructure, AccountKeys, PublicKey, *};
+use concordium_smart_contract_testing::{AccountAccessStructure, AccountKeys, *};
 use concordium_std::{
     AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519, Timestamp,
 };
@@ -808,9 +808,13 @@ fn initialize_chain_and_contract(
         // If `generate_keys` is false, Alice's account is assigned a hardcoded public key.
         // Since Alice's private key is NOT available, hardcoded signatures are used in the test
         // cases. The signatures are generated outside the test cases (e.g. with https://cyphr.me/ed25519_tool/ed.html).
-        false => {
-            (AccountAccessStructure::singleton(PublicKey::from_bytes(&PUBLIC_KEY).expect("Should be able to construct public key from bytes.")), None)
-        }
+        false => (
+            AccountAccessStructure::singleton(
+                ed25519::PublicKey::from_bytes(&PUBLIC_KEY)
+                    .expect("Should be able to construct public key from bytes."),
+            ),
+            None,
+        ),
     };
 
     let balance = AccountBalance {
