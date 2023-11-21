@@ -5,7 +5,8 @@ use cis3_nft_sponsored_txs::{
 use concordium_cis2::{TokenIdU32, *};
 use concordium_smart_contract_testing::{AccountAccessStructure, AccountKeys, *};
 use concordium_std::{
-    AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519, Timestamp,
+    AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519,
+    Timestamp,
 };
 use std::collections::BTreeMap;
 
@@ -15,6 +16,7 @@ const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1; 32]);
 const BOB_ADDR: Address = Address::Account(BOB);
 const CHARLIE: AccountAddress = AccountAddress([2u8; 32]);
+const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU32(1);
@@ -679,6 +681,161 @@ fn test_operator_can_transfer() {
             operators:    Vec::new(),
         }),
     ]);
+}
+
+// Test `nonceOf` query. We check that the nonce of `ALICE` is 1 when
+/// the account already sent one sponsored transaction. We check that the nonce
+/// of `BOB` is 0 when the account did not send any sponsored
+/// transaction. We check that the nonce of `NON_EXISTING_ACCOUNT` is 0.
+#[test]
+fn test_nonce_of_query() {
+    let (mut chain, contract_address, _update, keypairs) =
+        initialize_contract_with_alice_tokens(true);
+
+    // To increase the nonce of `ALICE's` account, we invoke the
+    // `update_permit` function with a valid signature from ALICE account.
+
+    // Create input parameters for the `permit` updateOperator function.
+    let update_operator = UpdateOperator {
+        update:   OperatorUpdate::Add,
+        operator: BOB_ADDR,
+    };
+    let payload = UpdateOperatorParams(vec![update_operator]);
+
+    let mut inner_signature_map = BTreeMap::new();
+
+    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
+    // the `permit` function. The `PermitParam` type includes a `signature` and
+    // a `signer`. Becuase these two values (`signature` and `signer`) are not
+    // read in the `viewMessageHash` function, any value can be used and we choose
+    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
+    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
+
+    let mut signature_map = BTreeMap::new();
+    signature_map.insert(0u8, CredentialSignatures {
+        sigs: inner_signature_map,
+    });
+
+    let mut permit_update_operator_param = PermitParam {
+        signature: AccountSignatures {
+            sigs: signature_map,
+        },
+        signer:    ALICE,
+        message:   PermitMessage {
+            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
+            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce:            0,
+            payload:          to_bytes(&payload),
+        },
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      contract_address,
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.viewMessageHash".to_string()),
+            message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query viewMessageHash");
+
+    let message_hash: HashSha2256 =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    permit_update_operator_param.signature = keypairs
+        .expect("Should have a generated private key to sign")
+        .sign_message(&to_bytes(&message_hash));
+
+    // Update operator with the permit function.
+    let _update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            CHARLIE,
+            Address::Account(CHARLIE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
+                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to update operator with permit");
+
+    // Check if correct nonces are returned by the `nonceOf` function.
+    let nonce_query_vector = VecOfAccountAddresses {
+        queries: vec![ALICE, BOB, NON_EXISTING_ACCOUNT],
+    };
+
+    let invoke = chain
+        .contract_invoke(
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.nonceOf".to_string()),
+                message:      OwnedParameter::from_serial(&nonce_query_vector)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to query publicKeyOf");
+
+    let nonces: NonceOfQueryResponse =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    assert_eq!(
+        nonces.0[0], 1,
+        "Nonce of ALICE should be 1 because the account already sent one sponsored transaction"
+    );
+    assert_eq!(
+        nonces.0[1], 0,
+        "Nonce of BOB should be 0 because the account did not send any sponsored transaction"
+    );
+    assert_eq!(nonces.0[2], 0, "Nonce of non-existing account should be 0");
+}
+
+/// Test `publicKeyOf` query. `ALICE` should have its correct keys
+/// returned. `NON_EXISTING_ACCOUNT` should have `None` returned because it does
+/// not exist on chain.
+#[test]
+fn test_public_key_of_query() {
+    let (chain, contract_address, _update, keypairs) = initialize_contract_with_alice_tokens(true);
+
+    let public_key_of_query_vector = VecOfAccountAddresses {
+        queries: vec![ALICE, NON_EXISTING_ACCOUNT],
+    };
+
+    let invoke = chain
+        .contract_invoke(
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.publicKeyOf".to_string()),
+                message:      OwnedParameter::from_serial(&public_key_of_query_vector)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to query publicKeyOf");
+
+    let public_keys_of: PublicKeyOfQueryResponse =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    let account_public_keys: AccountPublicKeys = (keypairs).unwrap().into();
+
+    assert_eq!(
+        public_keys_of.0[0],
+        Some(account_public_keys),
+        "An existing account should have correct public keys returned"
+    );
+    assert!(public_keys_of.0[1].is_none(), "Non existing account should have no public keys");
 }
 
 /// Get the `TOKEN_1` balances for Alice and Bob.
