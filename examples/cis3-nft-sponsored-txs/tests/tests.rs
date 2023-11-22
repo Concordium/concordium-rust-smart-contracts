@@ -73,7 +73,7 @@ fn test_inside_signature_permit_update_operator() {
 
     // The `viewMessageHash` function uses the same input parameter `PermitParam` as
     // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Becuase these two values (`signature` and `signer`) are not
+    // a `signer`. Because these two values (`signature` and `signer`) are not
     // read in the `viewMessageHash` function, any value can be used and we choose
     // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
     let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
@@ -259,7 +259,7 @@ fn test_inside_signature_permit_transfer() {
 
     // The `viewMessageHash` function uses the same input parameter `PermitParam` as
     // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Becuase these two values (`signature` and `signer`) are not
+    // a `signer`. Because these two values (`signature` and `signer`) are not
     // read in the `viewMessageHash` function, any value can be used and we choose
     // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
     let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
@@ -706,7 +706,7 @@ fn test_nonce_of_query() {
 
     // The `viewMessageHash` function uses the same input parameter `PermitParam` as
     // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Becuase these two values (`signature` and `signer`) are not
+    // a `signer`. Because these two values (`signature` and `signer`) are not
     // read in the `viewMessageHash` function, any value can be used and we choose
     // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
     inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
