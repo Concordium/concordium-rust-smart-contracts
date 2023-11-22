@@ -69,19 +69,18 @@ fn test_inside_signature_permit_update_operator() {
     };
     let payload = UpdateOperatorParams(vec![update_operator]);
 
-    let mut inner_signature_map = BTreeMap::new();
-
     // The `viewMessageHash` function uses the same input parameter `PermitParam` as
     // the `permit` function. The `PermitParam` type includes a `signature` and
     // a `signer`. Becuase these two values (`signature` and `signer`) are not
     // read in the `viewMessageHash` function, any value can be used and we choose
     // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
-
-    let mut signature_map = BTreeMap::new();
-    signature_map.insert(0u8, CredentialSignatures {
-        sigs: inner_signature_map,
-    });
+    let signature_map = BTreeMap::from([
+        (0u8, CredentialSignatures {
+            sigs: BTreeMap::from([
+                (0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))
+            ]),
+        })
+    ]);
 
     let mut permit_update_operator_param = PermitParam {
         signature: AccountSignatures {
