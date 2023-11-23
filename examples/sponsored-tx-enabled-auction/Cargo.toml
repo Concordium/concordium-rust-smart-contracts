@@ -5,17 +5,20 @@ authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
 license = "MPL-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 default = ["std", "wee_alloc"]
-std = ["concordium-std/std"]
+std = ["concordium-std/std", "concordium-cis2/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
+concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
 
 [dev-dependencies]
 concordium-smart-contract-testing = { path = "../../contract-testing" }
+
+[dev-dependencies.cis3_nft_sponsored_txs]
+path = "../cis3-nft-sponsored-txs/"
 
 [lib]
 crate-type=["cdylib", "rlib"]

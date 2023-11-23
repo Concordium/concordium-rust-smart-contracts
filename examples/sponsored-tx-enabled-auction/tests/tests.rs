@@ -1,4 +1,7 @@
 //! Tests for the auction smart contract.
+use concordium_cis2::{
+    BalanceOfQuery, BalanceOfQueryParams, BalanceOfQueryResponse, TokenAmountU64, TokenIdU32,
+};
 use concordium_smart_contract_testing::*;
 use sponsored_tx_enabled_auction::*;
 
@@ -13,18 +16,20 @@ const SIGNER: Signer = Signer::with_one_key();
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 
 #[test]
-fn test_add_item() {
-    let (mut chain, contract_address) = initialize_chain_and_auction();
+fn test_finalizing_auction() {
+    let (mut chain, auction_contract_address, token_contract_address) =
+        initialize_chain_and_auction();
 
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
         end:         Timestamp::from_timestamp_millis(1000),
         start:       Timestamp::from_timestamp_millis(5000),
-        minimum_bid: 3,
+        token_id:    TokenIdU32(1),
+        minimum_bid: TokenAmountU64(3),
     };
 
-    let update = chain
+    let _update = chain
         .contract_update(
             SIGNER,
             ALICE,
@@ -32,7 +37,175 @@ fn test_add_item() {
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::from_ccd(0),
-                address:      contract_address,
+                address:      auction_contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "sponsored_tx_enabled_auction.addItem".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
+            },
+        )
+        .expect("Should be able to add Item");
+
+    let _update = chain
+        .contract_update(
+            SIGNER,
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::from_ccd(0),
+                address:      auction_contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "sponsored_tx_enabled_auction.bid".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+            },
+        )
+        .expect("Should be able to finalize");
+
+    let parameter = cis3_nft_sponsored_txs::MintParams {
+        owner: concordium_smart_contract_testing::Address::Contract(auction_contract_address),
+    };
+
+    let _update = chain
+        .contract_update(
+            SIGNER,
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::from_ccd(0),
+                address:      token_contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
+                message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
+            },
+        )
+        .expect("Should be able to finalize");
+
+    // Invoke the view entrypoint and check that the tokens are owned by Alice.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked(
+                "sponsored_tx_enabled_auction.viewItemState".to_string(),
+            ),
+            address:      auction_contract_address,
+            message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+        })
+        .expect("Invoke view");
+
+    // Check that the tokens are owned by Alice.
+    let rv: ItemState = invoke.parse_return_value().expect("ViewItemState return value");
+    println!("{:?}", rv);
+
+    let balance_of_params = ContractBalanceOfQueryParams {
+        queries: vec![BalanceOfQuery {
+            token_id: TokenIdU32(1),
+            address:  ALICE_ADDR,
+        }],
+    };
+
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
+            address:      token_contract_address,
+            message:      OwnedParameter::from_serial(&balance_of_params)
+                .expect("BalanceOf params"),
+        })
+        .expect("Invoke balanceOf");
+    let rv: ContractBalanceOfQueryResponse =
+        invoke.parse_return_value().expect("BalanceOf return value");
+    println!("{rv:?}");
+
+    // Increment the chain time by 100000 milliseconds.
+    chain.tick_block_time(Duration::from_millis(100000)).expect("Increment chain time");
+
+    let _update = chain
+        .contract_update(
+            SIGNER,
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::from_ccd(0),
+                address:      auction_contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "sponsored_tx_enabled_auction.finalize".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+            },
+        )
+        .expect("Should be able to finalize");
+
+    // Invoke the view entrypoint and check that the tokens are owned by Alice.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked(
+                "sponsored_tx_enabled_auction.viewItemState".to_string(),
+            ),
+            address:      auction_contract_address,
+            message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+        })
+        .expect("Invoke view");
+
+    // Check that the tokens are owned by Alice.
+    let rv: ItemState = invoke.parse_return_value().expect("ViewItemState return value");
+    println!("{rv:?}");
+    assert_eq!(rv.auction_state, AuctionState::Sold(ALICE));
+
+    /// Parameter type for the CIS-2 function `balanceOf` specialized to the
+    /// subset of TokenIDs used by this contract.
+    pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+    /// Response type for the CIS-2 function `balanceOf` specialized to the
+    /// subset of TokenAmounts used by this contract.
+    pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+
+    let balance_of_params = ContractBalanceOfQueryParams {
+        queries: vec![BalanceOfQuery {
+            token_id: TokenIdU32(1),
+            address:  ALICE_ADDR,
+        }],
+    };
+
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
+            address:      token_contract_address,
+            message:      OwnedParameter::from_serial(&balance_of_params)
+                .expect("BalanceOf params"),
+        })
+        .expect("Invoke balanceOf");
+    let rv: ContractBalanceOfQueryResponse =
+        invoke.parse_return_value().expect("BalanceOf return value");
+    println!("{rv:?}");
+}
+
+#[test]
+fn test_add_item() {
+    let (mut chain, auction_contract_address, _token_contract_address) =
+        initialize_chain_and_auction();
+
+    // Create the InitParameter.
+    let parameter = AddItemParameter {
+        name:        "MyItem".to_string(),
+        end:         Timestamp::from_timestamp_millis(1000),
+        start:       Timestamp::from_timestamp_millis(5000),
+        token_id:    TokenIdU32(1),
+        minimum_bid: TokenAmountU64(3),
+    };
+
+    let _update = chain
+        .contract_update(
+            SIGNER,
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::from_ccd(0),
+                address:      auction_contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "sponsored_tx_enabled_auction.addItem".to_string(),
                 ),
@@ -48,7 +221,7 @@ fn test_add_item() {
             receive_name: OwnedReceiveName::new_unchecked(
                 "sponsored_tx_enabled_auction.view".to_string(),
             ),
-            address:      contract_address,
+            address:      auction_contract_address,
             message:      OwnedParameter::empty(),
         })
         .expect("Invoke view");
@@ -63,7 +236,9 @@ fn test_add_item() {
             name:           "MyItem".to_string(),
             end:            Timestamp::from_timestamp_millis(1000),
             start:          Timestamp::from_timestamp_millis(5000),
-            highest_bid:    3,
+            token_id:       TokenIdU32(1),
+            creator:        ALICE,
+            highest_bid:    TokenAmountU64(3),
         })],
         cis2_contract: ContractAddress::new(0, 0),
         counter:       1,
@@ -76,7 +251,7 @@ fn test_add_item() {
             receive_name: OwnedReceiveName::new_unchecked(
                 "sponsored_tx_enabled_auction.viewItemState".to_string(),
             ),
-            address:      contract_address,
+            address:      auction_contract_address,
             message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
         })
         .expect("Invoke view");
@@ -90,7 +265,9 @@ fn test_add_item() {
         name:           "MyItem".to_string(),
         end:            Timestamp::from_timestamp_millis(1000),
         start:          Timestamp::from_timestamp_millis(5000),
-        highest_bid:    3,
+        token_id:       TokenIdU32(1),
+        creator:        ALICE,
+        highest_bid:    TokenAmountU64(3),
     });
 }
 
@@ -128,7 +305,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_ccd(1),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect("Alice successfully bids 1 CCD");
@@ -145,7 +322,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_ccd(2),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect("Alice successfully bids 2 CCD");
@@ -168,7 +345,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_ccd(3),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect("Bob successfully bids 3 CCD");
@@ -191,7 +368,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_ccd(3),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect_err("Alice tries to bid 3 CCD");
@@ -211,7 +388,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_micro_ccd(3_500_000),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect_err("Alice tries to bid 3.5 CCD");
@@ -231,7 +408,7 @@ fn test_add_item() {
 //                 amount:       Amount::zero(),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.finalize".to_string()),            
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.finalize".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect_err("Attempt to finalize auction before end time");
@@ -254,7 +431,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_ccd(10),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect_err("Attempt to bid after auction has reached the endtime");
@@ -273,7 +450,7 @@ fn test_add_item() {
 //                 amount:       Amount::zero(),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.finalize".to_string()),            
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.finalize".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect("Dave successfully finalizes the auction after its end time");
@@ -296,7 +473,7 @@ fn test_add_item() {
 //                 amount:       Amount::from_ccd(1),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),                 
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.bid".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect_err("Attempt to bid after auction has been finalized");
@@ -314,7 +491,7 @@ fn test_add_item() {
 //                 amount:       Amount::zero(),
 //                 address:      contract_address,
 //                 receive_name:
-// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.finalize".to_string()),            
+// OwnedReceiveName::new_unchecked("sponsored_tx_enabled_auction.finalize".to_string()),
 // message:      OwnedParameter::empty(),             },
 //         )
 //         .expect_err("Attempt to finalize auction after it has been finalized");
@@ -327,7 +504,7 @@ fn test_add_item() {
 /// Carol is the owner of the auction, which ends at `1000` milliseconds after
 /// the unix epoch. The 'microCCD per euro' exchange rate is set to `1_000_000`,
 /// so 1 CCD = 1 euro.
-fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
+fn initialize_chain_and_auction() -> (Chain, ContractAddress, ContractAddress) {
     let mut chain = Chain::builder()
         .micro_ccd_per_euro(
             ExchangeRate::new(1_000_000, 1).expect("Exchange rate is in valid range"),
@@ -342,14 +519,32 @@ fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
     chain.create_account(Account::new(DAVE, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
-    let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
+    let module = module_load_v1("../cis3-nft-sponsored-txs/concordium-out/module.wasm.v1")
+        .expect("Module exists");
     let deployment = chain.module_deploy_v1(SIGNER, CAROL, module).expect("Deploy valid module");
 
     // Create the InitParameter.
     let parameter = ContractAddress::new(0, 0);
 
     // Initialize the auction contract.
-    let init = chain
+    let token = chain
+        .contract_init(SIGNER, CAROL, Energy::from(10000), InitContractPayload {
+            amount:    Amount::zero(),
+            mod_ref:   deployment.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_cis3_nft".to_string()),
+            param:     OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
+        })
+        .expect("Initialize auction");
+
+    // Load and deploy the module.
+    let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
+    let deployment = chain.module_deploy_v1(SIGNER, CAROL, module).expect("Deploy valid module");
+
+    // Create the InitParameter.
+    let parameter = token.contract_address;
+
+    // Initialize the auction contract.
+    let init_auction = chain
         .contract_init(SIGNER, CAROL, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
@@ -360,5 +555,5 @@ fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
         })
         .expect("Initialize auction");
 
-    (chain, init.contract_address)
+    (chain, init_auction.contract_address, token.contract_address)
 }
