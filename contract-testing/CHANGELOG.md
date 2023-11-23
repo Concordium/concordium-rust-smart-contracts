@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## 3.2.0
+
 - Bump minimum supported Rust version to `1.67`.
 - Re-export `AccountKeys`.
 
