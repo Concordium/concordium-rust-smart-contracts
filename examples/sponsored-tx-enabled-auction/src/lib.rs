@@ -30,6 +30,17 @@
 use concordium_cis2::*;
 use concordium_std::*;
 
+/// Contract token ID type.
+/// To save bytes we use a token ID type limited to a `u32`.
+pub type ContractTokenId = TokenIdU32;
+
+/// Contract token amount.
+/// Since the tokens are non-fungible the total supply of any token will be at
+/// most 1 and it is fine to use a small type for representing token amounts.
+pub type ContractTokenAmount = TokenAmountU64;
+
+pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+
 /// The state of the auction.
 #[derive(Debug, Serialize, SchemaType, Eq, PartialEq, PartialOrd, Clone)]
 pub enum AuctionState {
@@ -100,17 +111,20 @@ pub struct AddItemParameter {
 pub enum Error {
     /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
-    OnlyAccount,
+    OnlyAccount, //-1
     /// Raised when new bid amount is lower than current highest bid.
-    BidBelowCurrentBid,
+    BidBelowCurrentBid, //-2
     /// Raised when bid is placed after auction end time passed.
-    BidTooLate,
+    BidTooLate, //-3
     /// Raised when bid is placed after auction has been finalized.
-    AuctionAlreadyFinalized,
+    AuctionAlreadyFinalized, //-4
     ///
-    NoItem,
+    NoItem, //-5
     /// Raised when finalizing an auction before auction end time passed
-    AuctionStillActive,
+    AuctionStillActive, //-6
+    ///
+    NotTokenContract, //-7
+    WrongTokenID, //-8
 }
 
 /// Init function that creates a new auction
@@ -198,33 +212,74 @@ fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<It
     Ok(item)
 }
 
+#[derive(Debug, Serialize, SchemaType)]
+pub struct TestOnReceivingCis2Params<T, A> {
+    /// The ID of the token received.
+    pub token_id: T,
+    /// The amount of tokens received.
+    pub amount:   A,
+    /// The previous owner of the tokens.
+    pub from:     Address,
+    /// Some extra information which where sent as part of the transfer.
+    pub data:     AdditionalDataItem,
+}
+
+/// Additional information to include with a transfer.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
+pub struct AdditionalDataItem(#[concordium(size_length = 2)] Vec<u8>);
+
+#[derive(Debug, Deserial, Serial, Clone, SchemaType)]
+pub struct AdditionalDataIndex {
+    pub item_index: u16,
+}
+
 /// Receive function for accounts to place a bid in the auction
 #[receive(
     contract = "sponsored_tx_enabled_auction",
     name = "bid",
     mutable,
-    parameter = "u16",
+    parameter = "TestOnReceivingCis2Params<ContractTokenId, ContractTokenAmount>",
     error = "Error"
 )]
 fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
-    // Getting input parameters
-    let item_index: u16 = ctx.parameter_cursor().get()?;
-    let mut item = host.state_mut().items.entry(item_index).occupied_or(Error::NoItem)?;
+    // Parse the parameter.
+    let params: TestOnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
+        ctx.parameter_cursor().get()?;
 
-    // TODO: change the logic
-    // Ensure that only accounts can add an item.
-    let sender_address = match ctx.sender() {
+    // Ensure the sender is the cis2_token_contract.
+    if let Address::Contract(contract) = ctx.sender() {
+        ensure_eq!(contract, host.state().cis2_contract, Error::NotTokenContract.into());
+    } else {
+        bail!(Error::NotTokenContract.into())
+    };
+
+    let additional_data_index: AdditionalDataIndex = from_bytes(&params.data.0)?;
+
+    let cis2_contract = host.state().cis2_contract;
+
+    let item =
+        host.state_mut().items.get(&additional_data_index.item_index).ok_or(Error::NoItem)?;
+
+    ensure_eq!(item.token_id, params.token_id, Error::WrongTokenID.into());
+
+    // Ensure that only accounts can bid for an item.
+    let bidder_address = match params.from {
         Address::Contract(_) => bail!(Error::OnlyAccount.into()),
         Address::Account(account_address) => account_address,
     };
 
-    // TODO: change the logic
-    item.highest_bidder = Some(sender_address);
-    item.highest_bid = TokenAmountU64(1);
+    // Ensure the auction has not been finalized yet
+    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized.into());
 
-    if let Some(_account_address) = item.highest_bidder {
-        // TODO: Refund account_address
+    let slot_time = ctx.metadata().slot_time();
+    // Ensure the auction has not ended yet
+    ensure!(slot_time <= item.end, Error::BidTooLate.into());
 
+    // Ensure that the new bid exceeds the highest bid so far
+    ensure!(params.amount > item.highest_bid, Error::BidBelowCurrentBid.into());
+
+    if let Some(account_address) = item.highest_bidder {
         // Refunding old highest bidder;
         // This transfer (given enough NRG of course) always succeeds because
         // the `account_address` exists since it was recorded when it
@@ -233,74 +288,34 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
         // Please consider using a pull-over-push pattern when expanding this
         // smart contract to allow smart contract instances to
         // participate in the auction as well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        // host.invoke_transfer(&account_address,
-        // previous_balance).unwrap_abort();
+        let parameter = TransferParameter {
+            0: vec![Transfer {
+                token_id: item.token_id,
+                amount:   item.highest_bid,
+                from:     concordium_std::Address::Contract(ctx.self_address()),
+                to:       concordium_cis2::Receiver::Account(account_address),
+                data:     AdditionalData::empty(),
+            }],
+        };
+
+        host.invoke_contract(
+            &cis2_contract,
+            &parameter,
+            EntrypointName::new_unchecked("transfer"),
+            Amount::zero(),
+        )?;
     }
+
+    let mut item = host
+        .state_mut()
+        .items
+        .entry(additional_data_index.item_index)
+        .occupied_or(Error::NoItem)?;
+    item.highest_bidder = Some(bidder_address);
+    item.highest_bid = params.amount;
 
     Ok(())
 }
-
-// /// Receive function for accounts to place a bid in the auction
-// #[receive(
-//     contract = "sponsored_tx_enabled_auction",
-//     name = "bid",
-//     payable,
-//     mutable,
-//     error = "BidError"
-// )]
-// fn auction_bid(
-//     ctx: &ReceiveContext,ItemState
-//     host: &mut Host<State>,
-//     amount: Amount,
-// ) -> Result<(), BidError> {
-//     let state = host.state();
-//     // Ensure the auction has not been finalized yet
-//     ensure_eq!(state.auction_state, AuctionState::NotSoldYet,
-// BidError::AuctionAlreadyFinalized);
-
-//     let slot_time = ctx.metadata().slot_time();
-//     // Ensure the auction has not ended yet
-//     ensure!(slot_time <= state.end, BidError::BidTooLate);
-
-//     // Ensure that only accounts can place a bid
-//     let sender_address = match ctx.sender() {
-//         Address::Contract(_) => bail!(BidError::OnlyAccount),
-//         Address::Account(account_address) => account_address,
-//     };
-
-//     // Balance of the contract
-//     let balance = host.self_balance();
-
-//     // Balance of the contract before the call
-//     let previous_balance = balance - amount;
-
-//     // Ensure that the new bid exceeds the highest bid so far
-//     ensure!(amount > previous_balance, BidError::BidBelowCurrentBid);
-
-//     // Calculate the difference between the previous bid and the new bid in
-// CCD.     let amount_difference = amount - previous_balance;
-//     // Get the current exchange rate used by the chain
-//     let exchange_rates = host.exchange_rates();
-//     // Convert the CCD difference to EUR
-//     let euro_cent_difference =
-// exchange_rates.convert_amount_to_euro_cent(amount_difference);     // Ensure
-// that the bid is at least the `minimum_raise` more than the previous     //
-// bid     ensure!(euro_cent_difference >= state.minimum_raise,
-// BidError::BidBelowMinimumRaise);
-
-//     if let Some(account_address) =
-// host.state_mut().highest_bidder.replace(sender_address) {         //
-// Refunding old highest bidder;         // This transfer (given enough NRG of
-// course) always succeeds because the         // `account_address` exists since
-// it was recorded when it placed a bid.         // If an `account_address`
-// exists, and the contract has the funds then the         // transfer will
-// always succeed.         // Please consider using a pull-over-push pattern
-// when expanding this smart         // contract to allow smart contract
-// instances to participate in the auction as         // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-//         host.invoke_transfer(&account_address,
-// previous_balance).unwrap_abort();     }
-//     Ok(())
-// }
 
 /// Receive function used to finalize the auction. It sends the highest bid (the
 /// current balance of this smart contract) to the owner of the smart contract
@@ -361,14 +376,3 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
 
     Ok(())
 }
-
-/// Contract token ID type.
-/// To save bytes we use a token ID type limited to a `u32`.
-pub type ContractTokenId = TokenIdU32;
-
-/// Contract token amount.
-/// Since the tokens are non-fungible the total supply of any token will be at
-/// most 1 and it is fine to use a small type for representing token amounts.
-pub type ContractTokenAmount = TokenAmountU64;
-
-pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
