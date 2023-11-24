@@ -161,7 +161,7 @@ struct MintParam {
 #[derive(Serial, Deserial, SchemaType)]
 struct MintParams {
     /// Owner of the newly minted tokens.
-    owner: Address,
+    owner:  Address,
     /// A collection of tokens to mint.
     tokens: collections::BTreeMap<ContractTokenId, MintParam>,
 }
@@ -172,7 +172,7 @@ struct MintParams {
 #[derive(Debug, Serialize, SchemaType)]
 struct SetImplementorsParams {
     /// The identifier for the standard.
-    id: StandardIdentifierOwned,
+    id:           StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     implementors: Vec<ContractAddress>,
 }
@@ -182,7 +182,7 @@ struct SetImplementorsParams {
 #[concordium(state_parameter = "S")]
 struct AddressState<S> {
     /// The amount of tokens owned by this address.
-    balances: StateMap<ContractTokenId, ContractTokenAmount, S>,
+    balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
     /// The address which are currently enabled as operators for this address.
     operators: StateSet<Address, S>,
 }
@@ -190,7 +190,7 @@ struct AddressState<S> {
 impl<S: HasStateApi> AddressState<S> {
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         AddressState {
-            balances: state_builder.new_map(),
+            balances:  state_builder.new_map(),
             operators: state_builder.new_set(),
         }
     }
@@ -214,7 +214,7 @@ impl<S: HasStateApi> AddressState<S> {
 #[derive(Serial, Deserial, Clone, SchemaType)]
 struct TokenMetadataState {
     token_metadata_current_state_counter: u32,
-    token_metadata_list: Vec<MetadataUrl>,
+    token_metadata_list:                  Vec<MetadataUrl>,
 }
 
 impl TokenMetadataState {
@@ -233,10 +233,10 @@ impl TokenMetadataState {
 #[concordium(state_parameter = "S")]
 struct State<S> {
     /// The state of addresses.
-    state: StateMap<Address, AddressState<S>, S>,
+    state:        StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
     /// token-metadata-state
-    tokens: StateMap<ContractTokenId, TokenMetadataState, S>,
+    tokens:       StateMap<ContractTokenId, TokenMetadataState, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -278,36 +278,28 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self {
-        Self::InvokeContractError
-    }
+    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
 }
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self {
-        Cis2Error::Custom(c)
-    }
+    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
 impl From<NewReceiveNameError> for CustomContractError {
-    fn from(_: NewReceiveNameError) -> Self {
-        Self::InvalidContractName
-    }
+    fn from(_: NewReceiveNameError) -> Self { Self::InvalidContractName }
 }
 
 impl From<NewContractNameError> for CustomContractError {
-    fn from(_: NewContractNameError) -> Self {
-        Self::InvalidContractName
-    }
+    fn from(_: NewContractNameError) -> Self { Self::InvalidContractName }
 }
 
 impl<S: HasStateApi> State<S> {
     /// Construct a state with no tokens
     fn empty(state_builder: &mut StateBuilder<S>) -> Self {
         State {
-            state: state_builder.new_map(),
-            tokens: state_builder.new_map(),
+            state:        state_builder.new_map(),
+            tokens:       state_builder.new_map(),
             implementors: state_builder.new_map(),
         }
     }
@@ -320,13 +312,10 @@ impl<S: HasStateApi> State<S> {
         owner: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.tokens.insert(
-            *token_id,
-            TokenMetadataState {
-                token_metadata_current_state_counter: 0,
-                token_metadata_list: mint_param.metadata_url.clone(),
-            },
-        );
+        self.tokens.insert(*token_id, TokenMetadataState {
+            token_metadata_current_state_counter: 0,
+            token_metadata_list:                  mint_param.metadata_url.clone(),
+        });
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
@@ -356,7 +345,7 @@ impl<S: HasStateApi> State<S> {
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         let update = MetadataUrl {
-            url: mint_param.url.clone(),
+            url:  mint_param.url.clone(),
             hash: mint_param.hash,
         };
 
@@ -512,13 +501,13 @@ fn contract_init<S: HasStateApi>(
 
 #[derive(Serialize, SchemaType)]
 struct ViewAddressState {
-    balances: Vec<(ContractTokenId, ContractTokenAmount)>,
+    balances:  Vec<(ContractTokenId, ContractTokenAmount)>,
     operators: Vec<Address>,
 }
 
 #[derive(Serialize, SchemaType)]
 struct ViewState {
-    state: Vec<(Address, ViewAddressState)>,
+    state:  Vec<(Address, ViewAddressState)>,
     tokens: Vec<ContractTokenId>,
 }
 
@@ -543,13 +532,10 @@ fn contract_view<S: HasStateApi>(
             operators.push(*o);
         }
 
-        inner_state.push((
-            *k,
-            ViewAddressState {
-                balances,
-                operators,
-            },
-        ));
+        inner_state.push((*k, ViewAddressState {
+            balances,
+            operators,
+        }));
     }
     let mut tokens = Vec::new();
     for v in state.tokens.iter() {
@@ -564,7 +550,7 @@ fn contract_view<S: HasStateApi>(
 
 type TokenUpdateParams = ContractTokenId;
 
-////
+///
 /// Only contract owner can call `upgrade` function to pint next item in the
 /// MetadataUrl list. It requires only tokenId, callable once at a time for a
 /// token.
@@ -605,9 +591,6 @@ fn contract_upgrade<S: HasStateApi>(
     }))?;
     Ok(())
 }
-
-////
-///
 
 /// The parameter for the contract function `mint` which mints a number of
 /// token types and/or amounts of tokens to a given address.
@@ -828,9 +811,9 @@ fn contract_update_operator<S: HasStateApi>(
         // Log the appropriate event
         logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
             UpdateOperatorEvent {
-                owner: sender,
+                owner:    sender,
                 operator: param.operator,
-                update: param.update,
+                update:   param.update,
             },
         ))?;
     }
@@ -1020,10 +1003,10 @@ fn contract_on_cis2_received<S: HasStateApi>(
     // Build the transfer from this contract to the contract owner.
     let transfer = Transfer {
         token_id: params.token_id,
-        amount: params.amount,
-        from: Address::Contract(ctx.self_address()),
-        to: Receiver::from_account(ctx.owner()),
-        data: AdditionalData::empty(),
+        amount:   params.amount,
+        from:     Address::Contract(ctx.self_address()),
+        to:       Receiver::from_account(ctx.owner()),
+        data:     AdditionalData::empty(),
     };
 
     let parameter = TransferParams::from(vec![transfer]);
@@ -1117,17 +1100,17 @@ mod tests {
 
         let mut test_v1 = Vec::new();
         test_v1.push(MetadataUrl {
-            url: format!("https://some.example/token/1/{TOKEN_0}"),
+            url:  format!("https://some.example/token/1/{TOKEN_0}"),
             hash: None,
         });
         test_v1.push(MetadataUrl {
-            url: format!("https://some.example/token/2/{TOKEN_0}"),
+            url:  format!("https://some.example/token/2/{TOKEN_0}"),
             hash: None,
         });
 
         let mut test_v2 = Vec::new();
         test_v2.push(MetadataUrl {
-            url: format!("https://some.example/token/1/{TOKEN_1}"),
+            url:  format!("https://some.example/token/1/{TOKEN_1}"),
             hash: None,
         });
 
@@ -1180,22 +1163,19 @@ mod tests {
 
         let mut test_v1 = Vec::new();
         test_v1.push(MetadataUrl {
-            url: format!("https://some.example/token/1/{TOKEN_0}"),
+            url:  format!("https://some.example/token/1/{TOKEN_0}"),
             hash: None,
         });
         test_v1.push(MetadataUrl {
-            url: format!("https://some.example/token/2/{TOKEN_0}"),
+            url:  format!("https://some.example/token/2/{TOKEN_0}"),
             hash: None,
         });
         // and parameter.
         let mut tokens = collections::BTreeMap::new();
-        tokens.insert(
-            TOKEN_0,
-            MintParam {
-                token_amount: 400.into(),
-                metadata_url: test_v1,
-            },
-        );
+        tokens.insert(TOKEN_0, MintParam {
+            token_amount: 400.into(),
+            metadata_url: test_v1,
+        });
         let parameter = MintParams {
             owner: ADDRESS_0,
             tokens,
@@ -1225,18 +1205,18 @@ mod tests {
 
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::Mint(MintEvent {
-                owner: ADDRESS_0,
+                owner:    ADDRESS_0,
                 token_id: TOKEN_0,
-                amount: ContractTokenAmount::from(400),
+                amount:   ContractTokenAmount::from(400),
             }))),
             "Expected an event for minting TOKEN_0"
         );
         claim!(
             logger.logs.contains(&to_bytes(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
                 TokenMetadataEvent {
-                    token_id: TOKEN_0,
+                    token_id:     TOKEN_0,
                     metadata_url: MetadataUrl {
-                        url: format!("https://some.example/token/1/{TOKEN_0}"),
+                        url:  format!("https://some.example/token/1/{TOKEN_0}"),
                         hash: None,
                     },
                 }
@@ -1255,10 +1235,10 @@ mod tests {
         // and parameter.
         let transfer = Transfer {
             token_id: TOKEN_0,
-            amount: ContractTokenAmount::from(100),
-            from: ADDRESS_0,
-            to: Receiver::from_account(ACCOUNT_1),
-            data: AdditionalData::empty(),
+            amount:   ContractTokenAmount::from(100),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
+            data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1295,10 +1275,10 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from: ADDRESS_0,
-                to: ADDRESS_1,
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount: ContractTokenAmount::from(100),
+                amount:   ContractTokenAmount::from(100),
             })),
             "Incorrect event emitted"
         )
@@ -1314,11 +1294,11 @@ mod tests {
 
         // and parameter.
         let transfer = Transfer {
-            from: ADDRESS_0,
-            to: Receiver::from_account(ACCOUNT_1),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount: ContractTokenAmount::from(100),
-            data: AdditionalData::empty(),
+            amount:   ContractTokenAmount::from(100),
+            data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1346,11 +1326,11 @@ mod tests {
 
         // and parameter.
         let transfer = Transfer {
-            from: ADDRESS_0,
-            to: Receiver::from_account(ACCOUNT_1),
+            from:     ADDRESS_0,
+            to:       Receiver::from_account(ACCOUNT_1),
             token_id: TOKEN_0,
-            amount: ContractTokenAmount::from(100),
-            data: AdditionalData::empty(),
+            amount:   ContractTokenAmount::from(100),
+            data:     AdditionalData::empty(),
         };
         let parameter = TransferParams::from(vec![transfer]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1389,10 +1369,10 @@ mod tests {
         claim_eq!(
             logger.logs[0],
             to_bytes(&Cis2Event::Transfer(TransferEvent {
-                from: ADDRESS_0,
-                to: ADDRESS_1,
+                from:     ADDRESS_0,
+                to:       ADDRESS_1,
                 token_id: TOKEN_0,
-                amount: ContractTokenAmount::from(100),
+                amount:   ContractTokenAmount::from(100),
             })),
             "Incorrect event emitted"
         )
@@ -1408,7 +1388,7 @@ mod tests {
         // and parameter.
         let update = UpdateOperator {
             operator: ADDRESS_1,
-            update: OperatorUpdate::Add,
+            update:   OperatorUpdate::Add,
         };
         let parameter = UpdateOperatorParams(vec![update]);
         let parameter_bytes = to_bytes(&parameter);
@@ -1434,7 +1414,7 @@ mod tests {
         // Setup parameter.
         let operator_of_query = OperatorOfQuery {
             address: ADDRESS_1,
-            owner: ADDRESS_0,
+            owner:   ADDRESS_0,
         };
 
         let operator_of_query_vector = OperatorOfQueryParams {
@@ -1459,9 +1439,9 @@ mod tests {
             logger.logs[0],
             to_bytes(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
                 UpdateOperatorEvent {
-                    owner: ADDRESS_0,
+                    owner:    ADDRESS_0,
                     operator: ADDRESS_1,
-                    update: OperatorUpdate::Add,
+                    update:   OperatorUpdate::Add,
                 }
             )),
             "Incorrect event emitted"
