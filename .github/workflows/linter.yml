@@ -28,6 +28,7 @@ jobs:
           - examples/voting/Cargo.toml
           - examples/eSealing/Cargo.toml
           - examples/auction/Cargo.toml
+          - examples/cis2-dynamic-nft/Cargo.toml
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-multi-royalties/Cargo.toml
           - examples/cis2-nft/Cargo.toml
