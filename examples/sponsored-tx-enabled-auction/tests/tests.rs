@@ -1,6 +1,7 @@
 //! Tests for the auction smart contract.
 use concordium_cis2::{
-    BalanceOfQuery, BalanceOfQueryParams, BalanceOfQueryResponse, TokenAmountU64, TokenIdU32,
+    AdditionalData, BalanceOfQuery, BalanceOfQueryParams, BalanceOfQueryResponse, Receiver,
+    TokenAmountU64, TokenIdU32, TransferParams,
 };
 use concordium_smart_contract_testing::*;
 use sponsored_tx_enabled_auction::*;
@@ -26,7 +27,7 @@ fn test_finalizing_auction() {
         end:         Timestamp::from_timestamp_millis(1000),
         start:       Timestamp::from_timestamp_millis(5000),
         token_id:    TokenIdU32(1),
-        minimum_bid: TokenAmountU64(3),
+        minimum_bid: TokenAmountU64(0),
     };
 
     let _update = chain
@@ -46,25 +47,8 @@ fn test_finalizing_auction() {
         )
         .expect("Should be able to add Item");
 
-    let _update = chain
-        .contract_update(
-            SIGNER,
-            ALICE,
-            Address::Account(ALICE),
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::from_ccd(0),
-                address:      auction_contract_address,
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "sponsored_tx_enabled_auction.bid".to_string(),
-                ),
-                message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
-            },
-        )
-        .expect("Should be able to finalize");
-
     let parameter = cis3_nft_sponsored_txs::MintParams {
-        owner: concordium_smart_contract_testing::Address::Contract(auction_contract_address),
+        owner: concordium_smart_contract_testing::Address::Account(ALICE),
     };
 
     let _update = chain
@@ -81,6 +65,51 @@ fn test_finalizing_auction() {
             },
         )
         .expect("Should be able to finalize");
+
+    let test = AdditionalDataIndex {
+        item_index: 0u16,
+    };
+
+    // Transfer one token from Alice to bid function in auction.
+    let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
+        from:     ALICE_ADDR,
+        to:       Receiver::Contract(
+            auction_contract_address,
+            OwnedEntrypointName::new_unchecked("bid".to_string()),
+        ),
+        token_id: TokenIdU32(1),
+        amount:   TokenAmountU64(1),
+        data:     AdditionalData::from(to_bytes(&test)),
+    }]);
+
+    let _update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
+            address:      token_contract_address,
+            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+        })
+        .expect("Transfer tokens");
+
+    let balance_of_params = ContractBalanceOfQueryParams {
+        queries: vec![BalanceOfQuery {
+            token_id: TokenIdU32(1),
+            address:  concordium_std::Address::Contract(auction_contract_address),
+        }],
+    };
+
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
+            address:      token_contract_address,
+            message:      OwnedParameter::from_serial(&balance_of_params)
+                .expect("BalanceOf params"),
+        })
+        .expect("Invoke balanceOf");
+    let rv: ContractBalanceOfQueryResponse =
+        invoke.parse_return_value().expect("BalanceOf return value");
+    println!("sssssssssssss{rv:?}");
 
     // Invoke the view entrypoint and check that the tokens are owned by Alice.
     let invoke = chain
