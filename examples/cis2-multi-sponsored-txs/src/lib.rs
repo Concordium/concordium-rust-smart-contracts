@@ -1065,11 +1065,11 @@ fn contract_update_operator(
 
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
-type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
 /// Response type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenAmounts used by this contract.
-type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 ///
