@@ -1,5 +1,5 @@
-//! Tests for the `cis2_multi_sponsored_txs` contract.
-use cis2_multi_sponsored_txs::{ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, *};
+//! Tests for the `cis2_multi` contract.
+use cis2_multi::{ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, *};
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::{
@@ -40,9 +40,7 @@ fn test_minting() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.view".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
             address:      contract_address,
             message:      OwnedParameter::empty(),
         })
@@ -95,9 +93,7 @@ fn test_account_transfer() {
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.transfer".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -108,9 +104,7 @@ fn test_account_transfer() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.view".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
             address:      contract_address,
             message:      OwnedParameter::empty(),
         })
@@ -157,9 +151,7 @@ fn test_add_operator() {
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.updateOperator".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.updateOperator".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
         })
@@ -189,9 +181,7 @@ fn test_add_operator() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.operatorOf".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.operatorOf".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
         })
@@ -222,9 +212,7 @@ fn test_unauthorized_sender() {
     let update = chain
         .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.transfer".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -248,9 +236,7 @@ fn test_operator_can_transfer() {
     chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.updateOperator".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.updateOperator".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
         })
@@ -268,9 +254,7 @@ fn test_operator_can_transfer() {
     chain
         .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.transfer".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -281,9 +265,7 @@ fn test_operator_can_transfer() {
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.view".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
             address:      contract_address,
             message:      OwnedParameter::empty(),
         })
@@ -347,9 +329,7 @@ fn test_inside_signature_permit_update_operator() {
         .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.viewMessageHash".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
             message:      OwnedParameter::from_serial(&permit_update_operator_param)
                 .expect("Should be a valid inut parameter"),
         })
@@ -370,9 +350,7 @@ fn test_inside_signature_permit_update_operator() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "cis2_multi_sponsored_txs.permit".to_string(),
-                ),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
                 message:      OwnedParameter::from_serial(&permit_update_operator_param)
                     .expect("Should be a valid inut parameter"),
             },
@@ -452,9 +430,7 @@ fn test_inside_signature_permit_transfer() {
         .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.viewMessageHash".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
             message:      OwnedParameter::from_serial(&permit_transfer_param)
                 .expect("Should be a valid inut parameter"),
         })
@@ -475,9 +451,7 @@ fn test_inside_signature_permit_transfer() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "cis2_multi_sponsored_txs.permit".to_string(),
-                ),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
                 message:      OwnedParameter::from_serial(&permit_transfer_param)
                     .expect("Should be a valid inut parameter"),
             },
@@ -560,9 +534,7 @@ fn test_nonce_of_query() {
         .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.viewMessageHash".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
             message:      OwnedParameter::from_serial(&permit_update_operator_param)
                 .expect("Should be a valid inut parameter"),
         })
@@ -583,9 +555,7 @@ fn test_nonce_of_query() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "cis2_multi_sponsored_txs.permit".to_string(),
-                ),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
                 message:      OwnedParameter::from_serial(&permit_update_operator_param)
                     .expect("Should be a valid inut parameter"),
             },
@@ -605,9 +575,7 @@ fn test_nonce_of_query() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "cis2_multi_sponsored_txs.nonceOf".to_string(),
-                ),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.nonceOf".to_string()),
                 message:      OwnedParameter::from_serial(&nonce_query_vector)
                     .expect("Should be a valid inut parameter"),
             },
@@ -647,9 +615,7 @@ fn test_public_key_of_query() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked(
-                    "cis2_multi_sponsored_txs.publicKeyOf".to_string(),
-                ),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.publicKeyOf".to_string()),
                 message:      OwnedParameter::from_serial(&public_key_of_query_vector)
                     .expect("Should be a valid inut parameter"),
             },
@@ -682,9 +648,7 @@ fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQu
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.operatorOf".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.operatorOf".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&operator_of_params)
                 .expect("OperatorOf params"),
@@ -715,9 +679,7 @@ fn get_balances(
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.balanceOf".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.balanceOf".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&balance_of_params)
                 .expect("BalanceOf params"),
@@ -749,9 +711,7 @@ fn initialize_contract_with_alice_tokens(
     let _update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.mint".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
         })
@@ -770,9 +730,7 @@ fn initialize_contract_with_alice_tokens(
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_multi_sponsored_txs.mint".to_string(),
-            ),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
             address:      contract_address,
             message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
         })
@@ -812,9 +770,7 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress) {
         .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked(
-                "init_cis2_multi_sponsored_txs".to_string(),
-            ),
+            init_name: OwnedContractName::new_unchecked("init_cis2_multi".to_string()),
             param:     OwnedParameter::empty(),
         })
         .expect("Initialize contract");

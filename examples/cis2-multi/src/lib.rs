@@ -518,10 +518,7 @@ impl State {
 // Contract functions
 
 /// Initialize contract instance with no token types.
-#[init(
-    contract = "cis2_multi_sponsored_txs",
-    event = "Cis2Event<ContractTokenId, ContractTokenAmount>"
-)]
+#[init(contract = "cis2_multi", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Construct the initial contract state.
     Ok(State::empty(state_builder))
@@ -541,7 +538,7 @@ pub struct ViewState {
 
 /// View function for testing. This reports on the entire state of the contract
 /// for testing purposes.
-#[receive(contract = "cis2_multi_sponsored_txs", name = "view", return_value = "ViewState")]
+#[receive(contract = "cis2_multi", name = "view", return_value = "ViewState")]
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
@@ -585,7 +582,7 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
 /// - Fails to log Mint event.
 /// - Fails to log TokenMetadata event.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "mint",
     parameter = "MintParams",
     error = "ContractError",
@@ -672,7 +669,7 @@ fn transfer(
 /// - Fails to log event.
 /// - Any of the receive hook function calls rejects.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "transfer",
     parameter = "TransferParameter",
     error = "ContractError",
@@ -703,18 +700,14 @@ fn contract_transfer(
 
 /// Helper function that can be invoked at the front-end to serialize the
 /// `PermitMessage` before signing it in the wallet.
-#[receive(
-    contract = "cis2_multi_sponsored_txs",
-    name = "serializationHelper",
-    parameter = "PermitMessage"
-)]
+#[receive(contract = "cis2_multi", name = "serializationHelper", parameter = "PermitMessage")]
 fn contract_serialization_helper(_ctx: &ReceiveContext, _host: &Host<State>) -> ContractResult<()> {
     Ok(())
 }
 
 /// Helper function to calculate the `message_hash`.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "viewMessageHash",
     parameter = "PermitParam",
     return_value = "[u8;32]",
@@ -784,7 +777,7 @@ fn contract_view_message_hash(
 ///     - The token is not owned by the `from` address.
 ///     - The receive hook function call rejects.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "permit",
     parameter = "PermitParam",
     crypto_primitives,
@@ -912,7 +905,7 @@ fn update_operator(
 /// - It fails to parse the parameter.
 /// - Fails to log event.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "updateOperator",
     parameter = "UpdateOperatorParams",
     error = "ContractError",
@@ -949,7 +942,7 @@ pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAm
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "balanceOf",
     parameter = "ContractBalanceOfQueryParams",
     return_value = "ContractBalanceOfQueryResponse",
@@ -978,7 +971,7 @@ fn contract_balance_of(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "operatorOf",
     parameter = "OperatorOfQueryParams",
     return_value = "OperatorOfQueryResponse",
@@ -1030,7 +1023,7 @@ pub struct VecOfAccountAddresses {
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "publicKeyOf",
     parameter = "VecOfAccountAddresses",
     return_value = "PublicKeyOfQueryResponse",
@@ -1068,7 +1061,7 @@ impl From<Vec<u64>> for NonceOfQueryResponse {
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "nonceOf",
     parameter = "VecOfAccountAddresses",
     return_value = "NonceOfQueryResponse",
@@ -1101,7 +1094,7 @@ type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "tokenMetadata",
     parameter = "ContractTokenMetadataQueryParams",
     return_value = "TokenMetadataQueryResponse",
@@ -1146,7 +1139,7 @@ fn contract_token_metadata(
 /// - It fails to parse the parameter.
 /// - Contract name part of the parameter is invalid.
 /// - Calling back `transfer` to sender contract rejects.
-#[receive(contract = "cis2_multi_sponsored_txs", name = "onReceivingCIS2", error = "ContractError")]
+#[receive(contract = "cis2_multi", name = "onReceivingCIS2", error = "ContractError")]
 fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<()> {
     // Ensure the sender is a contract.
     let sender = if let Address::Contract(contract) = ctx.sender() {
@@ -1186,7 +1179,7 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "supports",
     parameter = "SupportsQueryParams",
     return_value = "SupportsQueryResponse",
@@ -1218,7 +1211,7 @@ fn contract_supports(
 /// It rejects if:
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "supportsPermit",
     parameter = "SupportsPermitQueryParams",
     return_value = "SupportsQueryResponse",
@@ -1251,7 +1244,7 @@ fn contract_supports_permit(
 /// - Sender is not the owner of the contract instance.
 /// - It fails to parse the parameter.
 #[receive(
-    contract = "cis2_multi_sponsored_txs",
+    contract = "cis2_multi",
     name = "setImplementors",
     parameter = "SetImplementorsParams",
     error = "ContractError",
