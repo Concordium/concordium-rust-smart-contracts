@@ -51,7 +51,7 @@ fn test_minting() {
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.tokens[..], [TOKEN_0, TOKEN_1]);
     assert_eq!(rv.state, vec![(ALICE_ADDR, ViewAddressState {
-        balances:  vec![(TOKEN_0, 400.into()), (TOKEN_1, 1.into())],
+        balances:  vec![(TOKEN_0, 100.into()), (TOKEN_1, 100.into())],
         operators: Vec::new(),
     })]);
 
@@ -63,20 +63,8 @@ fn test_minting() {
 
     assert_eq!(events, [
         Cis2Event::Mint(MintEvent {
-            token_id: TokenIdU8(2),
-            amount:   TokenAmountU64(400),
-            owner:    ALICE_ADDR,
-        }),
-        Cis2Event::TokenMetadata(TokenMetadataEvent {
-            token_id:     TokenIdU8(2),
-            metadata_url: MetadataUrl {
-                url:  "https://some.example/token/02".to_string(),
-                hash: None,
-            },
-        }),
-        Cis2Event::Mint(MintEvent {
             token_id: TokenIdU8(42),
-            amount:   TokenAmountU64(1),
+            amount:   TokenAmountU64(100),
             owner:    ALICE_ADDR,
         }),
         Cis2Event::TokenMetadata(TokenMetadataEvent {
@@ -129,7 +117,7 @@ fn test_account_transfer() {
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.state, vec![
         (ALICE_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
+            balances:  vec![(TOKEN_0, 99.into()), (TOKEN_1, 100.into())],
             operators: Vec::new(),
         }),
         (BOB_ADDR, ViewAddressState {
@@ -302,7 +290,7 @@ fn test_operator_can_transfer() {
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.state, vec![
         (ALICE_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
+            balances:  vec![(TOKEN_0, 99.into()), (TOKEN_1, 100.into())],
             operators: vec![BOB_ADDR],
         }),
         (BOB_ADDR, ViewAddressState {
@@ -423,7 +411,7 @@ fn test_inside_signature_permit_transfer() {
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
 
-    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(1), TokenAmountU64(0)]);
+    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(100), TokenAmountU64(0)]);
 
     // Create input parameters for the `permit` transfer function.
     let transfer = concordium_cis2::Transfer {
@@ -517,7 +505,7 @@ fn test_inside_signature_permit_transfer() {
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
 
-    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(0), TokenAmountU64(1)]);
+    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(99), TokenAmountU64(1)]);
 }
 
 // Test `nonceOf` query. We check that the nonce of `ALICE` is 1 when
@@ -746,26 +734,36 @@ fn initialize_contract_with_alice_tokens(
     let (mut chain, keypairs, contract_address) = initialize_chain_and_contract();
 
     let mint_params = MintParams {
-        owner:  ALICE_ADDR,
-        tokens: BTreeMap::from_iter(vec![
-            (TOKEN_0, MintParam {
-                token_amount: 400.into(),
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/02".to_string(),
-                    hash: None,
-                },
-            }),
-            (TOKEN_1, MintParam {
-                token_amount: 1.into(),
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/2A".to_string(),
-                    hash: None,
-                },
-            }),
-        ]),
+        owner:        ALICE_ADDR,
+        token_id:     TOKEN_0,
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/02".to_string(),
+            hash: None,
+        },
     };
 
-    // Mint two tokens for which Alice is the owner.
+    // Mint/airdrop TOKEN_0 to Alice as the owner.
+    let _update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked(
+                "cis2_multi_sponsored_txs.mint".to_string(),
+            ),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+        })
+        .expect("Mint tokens");
+
+    let mint_params = MintParams {
+        owner:        ALICE_ADDR,
+        token_id:     TOKEN_1,
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/2A".to_string(),
+            hash: None,
+        },
+    };
+
+    // Mint/airdrop TOKEN_1 to Alice as the owner.
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
