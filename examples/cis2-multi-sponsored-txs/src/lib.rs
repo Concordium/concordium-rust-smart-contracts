@@ -7,9 +7,10 @@
 //! identified by the contract address together with the token ID.
 //!
 //! In this example the contract is initialized with no tokens, and tokens can
-//! be minted through a `mint` contract function, which will only succeed for
-//! the contract owner. No functionality to burn token is defined in this
-//! example.
+//! be minted through a `mint` contract function, which can be called by anyone.
+//! The `mint` function airdrops the `MINT_AIRDROP` amount of tokens to a
+//! specified `owner` address in the input parameter. No functionality to burn
+//! token is defined in this example.
 //!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
@@ -18,16 +19,16 @@
 //! implements the CIS3 standard which includes features for sponsored
 //! transactions.
 //!
-//! The use case for this smart contract is for third-party service providers
-//! (the owner of this contract) that deal with conventional clients/users that
-//! don't want to acquire crypto (such as CCD) from an exchange. The third-party
-//! has often traditional fiat channels open (off-chain) with the conventional
-//! clients/users and wants to offer to submit transactions on behalf of the
-//! user on-chain. The user/client has to sign its intended transaction before
-//! communicating it (off-chain) to the third-party service provider
-//! (often paying some fees in fiat money). The third-party service provider
-//! submits the transaction on behalf of the user and pays the transaction fee
-//! to execute the transaction on-chain.
+//! The use case for CIS3 in this smart contract is for third-party service
+//! providers (the owner of this contract) that deal with conventional
+//! clients/users that don't want to acquire crypto (such as CCD) from an
+//! exchange. The third-party has often traditional fiat channels open
+//! (off-chain) with the conventional clients/users and wants to offer to submit
+//! transactions on behalf of the user on-chain. The user/client has to sign its
+//! intended transaction before communicating it (off-chain) to the third-party
+//! service provider (often paying some fees in fiat money). The third-party
+//! service provider submits the transaction on behalf of the user and pays the
+//! transaction fee to execute the transaction on-chain.
 //!
 //! As follows from the CIS2 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
@@ -76,6 +77,9 @@ const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
 
 /// Tag for the CIS3 Nonce event.
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
+
+/// The amount of tokens to airdrop when the mint function is invoked.
+pub const MINT_AIRDROP: TokenAmountU64 = TokenAmountU64(100);
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
@@ -183,20 +187,17 @@ pub type ContractTokenId = TokenIdU8;
 /// Contract token amount type.
 pub type ContractTokenAmount = TokenAmountU64;
 
-#[derive(Serialize, SchemaType)]
-pub struct MintParam {
-    pub token_amount: ContractTokenAmount,
-    pub metadata_url: MetadataUrl,
-}
-
-/// The parameter for the contract function `mint` which mints a number of
-/// token types and/or amounts of tokens to a given address.
+/// The parameter for the contract function `mint` which mints/airdrops a number
+/// of tokens to the owner address.
 #[derive(Serialize, SchemaType)]
 pub struct MintParams {
     /// Owner of the newly minted tokens.
-    pub owner:  Address,
-    /// A collection of tokens to mint.
-    pub tokens: collections::BTreeMap<ContractTokenId, MintParam>,
+    pub owner:        Address,
+    /// The metadata_url of the token (needs to be present for the first time
+    /// this token_id is minted).
+    pub metadata_url: MetadataUrl,
+    /// The token_id to mint/create additional tokens.
+    pub token_id:     ContractTokenId,
 }
 
 /// The state for each address.
@@ -389,7 +390,7 @@ impl State {
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
-        mint_param: &MintParam,
+        mint_param: &MintParams,
         owner: &Address,
         state_builder: &mut StateBuilder,
     ) {
@@ -397,7 +398,7 @@ impl State {
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
-        *owner_balance += mint_param.token_amount;
+        *owner_balance += MINT_AIRDROP;
     }
 
     /// Check that the token ID currently exists in this contract.
@@ -570,21 +571,18 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
     })
 }
 
-/// Mint new tokens with a given address as the owner of these tokens.
-/// Can only be called by the contract owner.
+/// Mint/Airdrops the fixed amount of `MINT_AIRDROP` of new tokens to the
+/// `owner` address. ATTENTION: Can be called by anyone. You should add your
+/// custom access control to this function.
+///
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
 /// The url for the token metadata is the token ID encoded in hex, appended on
 /// the `TOKEN_METADATA_BASE_URL`.
 ///
 /// It rejects if:
-/// - The sender is not the contract instance owner.
 /// - Fails to parse parameter.
-/// - Any of the tokens fails to be minted, which could be if:
-///     - Fails to log Mint event.
-///     - Fails to log TokenMetadata event.
-///
-/// Note: Can at most mint 32 token types in one call due to the limit on the
-/// number of logs a smart contract can produce on each function call.
+/// - Fails to log Mint event.
+/// - Fails to log TokenMetadata event.
 #[receive(
     contract = "cis2_multi_sponsored_txs",
     name = "mint",
@@ -598,34 +596,25 @@ fn contract_mint(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Get the contract owner
-    let owner = ctx.owner();
-    // Get the sender of the transaction
-    let sender = ctx.sender();
-
-    ensure!(sender.matches_account(&owner), ContractError::Unauthorized);
-
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
     let (state, builder) = host.state_and_builder();
-    for (token_id, mint_param) in params.tokens {
-        // Mint the token in the state.
-        state.mint(&token_id, &mint_param, &params.owner, builder);
+    // Mint the token in the state.
+    state.mint(&params.token_id, &params, &params.owner, builder);
 
-        // Event for minted token.
-        logger.log(&Cis2Event::Mint(MintEvent {
-            token_id,
-            amount: mint_param.token_amount,
-            owner: params.owner,
-        }))?;
+    // Event for minted token.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: params.token_id,
+        amount:   MINT_AIRDROP,
+        owner:    params.owner,
+    }))?;
 
-        // Metadata URL for the token.
-        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-            token_id,
-            metadata_url: mint_param.metadata_url,
-        }))?;
-    }
+    // Metadata URL for the token.
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+        token_id:     params.token_id,
+        metadata_url: params.metadata_url,
+    }))?;
     Ok(())
 }
 
