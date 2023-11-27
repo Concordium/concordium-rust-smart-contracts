@@ -37,7 +37,7 @@ pub type ContractTokenId = TokenIdU32;
 /// Contract token amount.
 /// Since the tokens are non-fungible the total supply of any token will be at
 /// most 1 and it is fine to use a small type for representing token amounts.
-pub type ContractTokenAmount = TokenAmountU64;
+pub type ContractTokenAmount = TokenAmountU8;
 
 pub type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
@@ -69,7 +69,7 @@ pub struct ItemState {
     /// Time when auction ends (to be displayed by the front-end)
     pub end:            Timestamp,
     pub start:          Timestamp,
-    pub highest_bid:    TokenAmountU64,
+    pub highest_bid:    TokenAmountU8,
     pub token_id:       TokenIdU32,
     pub creator:        AccountAddress,
 }
@@ -102,7 +102,7 @@ pub struct AddItemParameter {
     /// Time when auction ends (to be displayed by the front-end)
     pub end:         Timestamp,
     pub start:       Timestamp,
-    pub minimum_bid: TokenAmountU64,
+    pub minimum_bid: TokenAmountU8,
     pub token_id:    TokenIdU32,
 }
 
