@@ -970,7 +970,7 @@ fn initialize_chain_and_contract(
         locked: Amount::zero(),
     };
 
-    // Create some accounts accounts on the chain.
+    // Create some accounts on the chain.
     chain.create_account(Account::new_with_keys(ALICE, balance, account_access_structure));
     chain.create_account(Account::new(CHARLIE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));

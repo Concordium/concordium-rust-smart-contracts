@@ -89,6 +89,7 @@ pub enum Event {
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
+    /// Cis2 token events.
     #[concordium(forward = cis2_events)]
     Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
 }
@@ -188,13 +189,13 @@ pub type ContractTokenId = TokenIdU8;
 pub type ContractTokenAmount = TokenAmountU64;
 
 /// The parameter for the contract function `mint` which mints/airdrops a number
-/// of tokens to the owner address.
+/// of tokens to the owner's address.
 #[derive(Serialize, SchemaType)]
 pub struct MintParams {
     /// Owner of the newly minted tokens.
     pub owner:        Address,
-    /// The metadata_url of the token (needs to be present for the first time
-    /// this token_id is minted).
+    /// The metadata_url of the token (is ignored except for the first time
+    /// a token_id is minted).
     pub metadata_url: MetadataUrl,
     /// The token_id to mint/create additional tokens.
     pub token_id:     ContractTokenId,
@@ -206,7 +207,7 @@ pub struct MintParams {
 struct AddressState<S = StateApi> {
     /// The amount of tokens owned by this address.
     balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
-    /// The address which are currently enabled as operators for this address.
+    /// The addresses which are currently enabled as operators for this address.
     operators: StateSet<Address, S>,
 }
 
@@ -222,13 +223,13 @@ impl AddressState {
 /// The contract state,
 ///
 /// Note: The specification does not specify how to structure the contract state
-/// and this could be structured in a more space efficient way.
+/// and this could be structured in a more space-efficient way.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
     /// The state of addresses.
     state:           StateMap<Address, AddressState<S>, S>,
-    /// All of the token IDs
+    /// All of the token IDs.
     tokens:          StateMap<ContractTokenId, MetadataUrl, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
@@ -347,7 +348,7 @@ impl From<CheckAccountSignatureError> for CustomContractError {
     }
 }
 
-/// Mapping the logging errors to ContractError.
+/// Mapping the logging errors to CustomContractError.
 impl From<LogError> for CustomContractError {
     fn from(le: LogError) -> Self {
         match le {
@@ -367,14 +368,6 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-impl From<NewReceiveNameError> for CustomContractError {
-    fn from(_: NewReceiveNameError) -> Self { Self::InvalidContractName }
-}
-
-impl From<NewContractNameError> for CustomContractError {
-    fn from(_: NewContractNameError) -> Self { Self::InvalidContractName }
-}
-
 impl State {
     /// Construct a state with no tokens
     fn empty(state_builder: &mut StateBuilder) -> Self {
@@ -387,28 +380,37 @@ impl State {
     }
 
     /// Mints an amount of tokens with a given address as the owner.
+    /// The metadataURL for the given token_id is added to the state only
+    /// if the token_id is being minted or created for the first time.
+    /// Otherwise, the metadataURL provided in the input parameter is ignored.
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
-        mint_param: &MintParams,
+        metadata_url: &MetadataUrl,
         owner: &Address,
         state_builder: &mut StateBuilder,
-    ) {
-        self.tokens.insert(*token_id, mint_param.metadata_url.to_owned());
+    ) -> MetadataUrl {
+        let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
+        if token_metadata.is_none() {
+            self.tokens.insert(*token_id, metadata_url.to_owned());
+        }
+
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
         *owner_balance += MINT_AIRDROP;
+
+        if let Some(token_metadata) = token_metadata {
+            token_metadata
+        } else {
+            metadata_url.clone()
+        }
     }
 
     /// Check that the token ID currently exists in this contract.
     #[inline(always)]
     fn contains_token(&self, token_id: &ContractTokenId) -> bool {
-        self.get_token(token_id).is_some()
-    }
-
-    fn get_token(&self, token_id: &ContractTokenId) -> Option<MetadataUrl> {
-        self.tokens.get(token_id).map(|x| x.to_owned())
+        self.tokens.get(token_id).map(|x| x.to_owned()).is_some()
     }
 
     /// Get the current balance of a given token id for a given address.
@@ -452,7 +454,7 @@ impl State {
 
         // Get the `from` state and balance, if not present it will fail since the
         // balance is interpreted as 0 and the transfer amount must be more than
-        // 0 as this point.;
+        // 0 at this point.
         {
             let mut from_address_state =
                 self.state.entry(*from).occupied_or(ContractError::InsufficientFunds)?;
@@ -515,7 +517,7 @@ impl State {
 
 // Contract functions
 
-/// Initialize contract instance with a no token types.
+/// Initialize contract instance with no token types.
 #[init(
     contract = "cis2_multi_sponsored_txs",
     event = "Cis2Event<ContractTokenId, ContractTokenAmount>"
@@ -538,8 +540,7 @@ pub struct ViewState {
 }
 
 /// View function for testing. This reports on the entire state of the contract
-/// for testing purposes. In a realistic example there `balance_of` and similar
-/// functions with a smaller response.
+/// for testing purposes.
 #[receive(contract = "cis2_multi_sponsored_txs", name = "view", return_value = "ViewState")]
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
@@ -576,8 +577,8 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
 /// custom access control to this function.
 ///
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
-/// The url for the token metadata is the token ID encoded in hex, appended on
-/// the `TOKEN_METADATA_BASE_URL`.
+/// The metadata_url in the input parameter of the token is ignored except for
+/// the first time a token_id is minted.
 ///
 /// It rejects if:
 /// - Fails to parse parameter.
@@ -601,7 +602,7 @@ fn contract_mint(
 
     let (state, builder) = host.state_and_builder();
     // Mint the token in the state.
-    state.mint(&params.token_id, &params, &params.owner, builder);
+    let token_metadata = state.mint(&params.token_id, &params.metadata_url, &params.owner, builder);
 
     // Event for minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
@@ -613,86 +614,12 @@ fn contract_mint(
     // Metadata URL for the token.
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
         token_id:     params.token_id,
-        metadata_url: params.metadata_url,
+        metadata_url: token_metadata,
     }))?;
     Ok(())
 }
 
 type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
-
-/// Execute a list of token transfers, in the order of the list.
-///
-/// Logs a `Transfer` event and invokes a receive hook function for every
-/// transfer in the list.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - Any of the transfers fail to be executed, which could be if:
-///     - The `token_id` does not exist.
-///     - The sender is not the owner of the token, or an operator for this
-///       specific `token_id` and `from` address.
-///     - The token is not owned by the `from`.
-/// - Fails to log event.
-/// - Any of the receive hook function calls rejects.
-// #[receive(
-//     contract = "cis2_multi_sponsored_txs",
-//     name = "transfer",
-//     parameter = "TransferParameter",
-//     error = "ContractError",
-//     enable_logger,
-//     mutable
-// )]
-// fn contract_transfer(
-//     ctx: &ReceiveContext,
-//     host: &mut Host<State>,
-//     logger: &mut impl HasLogger,
-// ) -> ContractResult<()> {
-//     // Parse the parameter.
-//     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
-//     // Get the sender who invoked this contract function.
-//     let sender = ctx.sender();
-
-//     for Transfer {
-//         token_id,
-//         amount,
-//         from,
-//         to,
-//         data,
-//     } in transfers
-//     {
-//         let (state, builder) = host.state_and_builder();
-//         // Authenticate the sender for this transfer
-//         ensure!(from == sender || state.is_operator(&sender, &from),
-// ContractError::Unauthorized);         let to_address = to.address();
-//         // Update the contract state
-//         state.transfer(&token_id, amount, &from, &to_address, builder)?;
-
-//         // Log transfer event
-//         logger.log(&Cis2Event::Transfer(TransferEvent {
-//             token_id,
-//             amount,
-//             from,
-//             to: to_address,
-//         }))?;
-
-//         // If the receiver is a contract we invoke it.
-//         if let Receiver::Contract(address, entrypoint_name) = to {
-//             let parameter = OnReceivingCis2Params {
-//                 token_id,
-//                 amount,
-//                 from,
-//                 data,
-//             };
-//             host.invoke_contract(
-//                 &address,
-//                 &parameter,
-//                 entrypoint_name.as_entrypoint_name(),
-//                 Amount::zero(),
-//             )?;
-//         }
-//     }
-//     Ok(())
-// }
 
 /// Internal `transfer/permit` helper function. Invokes the `transfer`
 /// function of the state. Logs a `Transfer` event and invokes a receive hook
@@ -1008,50 +935,6 @@ fn contract_update_operator(
     Ok(())
 }
 
-/// Enable or disable addresses as operators of the sender address.
-/// Logs an `UpdateOperator` event.
-///
-/// It rejects if:
-/// - It fails to parse the parameter.
-/// - Fails to log event.
-// #[receive(
-//     contract = "cis2_multi_sponsored_txs",
-//     name = "updateOperator",
-//     parameter = "UpdateOperatorParams",
-//     error = "ContractError",
-//     enable_logger,
-//     mutable
-// )]
-// fn contract_update_operator(
-//     ctx: &ReceiveContext,
-//     host: &mut Host<State>,
-//     logger: &mut impl HasLogger,
-// ) -> ContractResult<()> {
-//     // Parse the parameter.
-//     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
-//     // Get the sender who invoked this contract function.
-//     let sender = ctx.sender();
-
-//     let (state, builder) = host.state_and_builder();
-//     for param in params {
-//         // Update the operator in the state.
-//         match param.update {
-//             OperatorUpdate::Add => state.add_operator(&sender, &param.operator, builder),
-//             OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
-//         }
-
-//         // Log the appropriate event
-//         logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-//             UpdateOperatorEvent {
-//                 owner: sender,
-//                 operator: param.operator,
-//                 update: param.update,
-//             },
-//         ))?;
-//     }
-//     Ok(())
-// }
-
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
 pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
@@ -1255,8 +1138,8 @@ fn contract_token_metadata(
 /// it, and define the function to forward any transfers to the owner of the
 /// contract instance.
 ///
-/// Note: The name of this function is not part the CIS2, and a contract can
-/// have multiple functions for receiving tokens.
+/// Note: The name of this function is not part the CIS2 standard, and a
+/// contract can have multiple functions for receiving tokens.
 ///
 /// It rejects if:
 /// - Sender is not a contract.
@@ -1291,7 +1174,7 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
     host.invoke_contract_read_only(
         &sender,
         &parameter,
-        EntrypointName::new("transfer")?,
+        EntrypointName::new_unchecked("transfer"),
         Amount::zero(),
     )?;
     Ok(())
