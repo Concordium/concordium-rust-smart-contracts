@@ -1,4 +1,4 @@
-//! Tests for the `cis2_multi` contract.
+//! Tests for the `cis2_multi_sponsored_txs` contract.
 use cis2_multi_sponsored_txs::{ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, *};
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
@@ -21,9 +21,10 @@ const TOKEN_1: ContractTokenId = TokenIdU8(42);
 /// Initial balance of the accounts.
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 
-/// A signer for all the transactions.
+/// A signer with one key.
 const SIGNER: Signer = Signer::with_one_key();
 
+/// Dummy signature used as placeholder.
 const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -102,8 +103,8 @@ fn test_account_transfer() {
         })
         .expect("Transfer tokens");
 
-    // Check that Bob has 1 `TOKEN_0` and Alice has 399. Also check that Alice still
-    // has 1 `TOKEN_1`.
+    // Check that Bob has 1 `TOKEN_0` and Alice has 99. Also check that Alice still
+    // has 100 `TOKEN_1`.
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -275,8 +276,8 @@ fn test_operator_can_transfer() {
         })
         .expect("Transfer tokens");
 
-    // Check that Bob now has 1 of `TOKEN_0` and Alice has 399. Also check that
-    // Alice still has 1 `TOKEN_1`.
+    // Check that Bob now has 1 of `TOKEN_0` and Alice has 99. Also check that
+    // Alice still has 100 `TOKEN_1`.
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -728,7 +729,9 @@ fn get_balances(
 }
 
 /// Helper function that sets up the contract with two types of tokens minted to
-/// Alice. She has 400 of `TOKEN_0` and 1 of `TOKEN_1`.
+/// Alice. She has 100 of `TOKEN_0` and 100 of `TOKEN_1`.
+/// Alice's account is created with keys.
+/// Hence, Alice's account signature can be checked in the test cases.
 fn initialize_contract_with_alice_tokens(
 ) -> (Chain, AccountKeys, ContractAddress, ContractInvokeSuccess) {
     let (mut chain, keypairs, contract_address) = initialize_chain_and_contract();
@@ -796,7 +799,7 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress) {
         locked: Amount::zero(),
     };
 
-    // Create some accounts accounts on the chain.
+    // Create some accounts on the chain.
     chain.create_account(Account::new_with_keys(ALICE, balance, (&keypairs).into()));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
 

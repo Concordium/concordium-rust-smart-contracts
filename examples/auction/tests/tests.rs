@@ -252,7 +252,7 @@ fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
         .build()
         .expect("Exchange rate is in valid range");
 
-    // Create some accounts accounts on the chain.
+    // Create some accounts on the chain.
     chain.create_account(Account::new(ALICE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(CAROL, ACC_INITIAL_BALANCE));

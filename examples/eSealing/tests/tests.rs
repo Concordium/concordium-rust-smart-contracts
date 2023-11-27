@@ -127,7 +127,7 @@ fn deserialize_update_events(update: &ContractInvokeSuccess) -> Vec<Event> {
 fn init() -> (Chain, ContractAddress) {
     let mut chain = Chain::new();
 
-    // Create some accounts accounts on the chain.
+    // Create some accounts on the chain.
     chain.create_account(Account::new(ALICE, Amount::from_ccd(1000)));
 
     // Load and deploy the module.
