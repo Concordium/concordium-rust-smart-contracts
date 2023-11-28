@@ -78,9 +78,6 @@ const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
 /// Tag for the CIS3 Nonce event.
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 
-/// The amount of tokens to airdrop when the mint function is invoked.
-pub const MINT_AIRDROP: TokenAmountU64 = TokenAmountU64(100);
-
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
 #[concordium(repr(u8))]
@@ -104,8 +101,11 @@ pub struct NonceEvent {
     pub nonce:   u64,
 }
 
-// Implementing a custom schemaType to the `Event` combining all CIS2/CIS3
-// events.
+// Implementing a custom schemaType for the `Event` struct containing all
+// CIS2/CIS3 events. This custom implementation flattens the fields to avoid one
+// level of nesting. Deriving the schemaType would result in e.g.: {"Nonce":
+// [{...fields}] }. In contrast, this custom schemaType implementation results
+// in e.g.: {"Nonce": {...fields} }
 impl schema::SchemaType for Event {
     fn get_type() -> schema::Type {
         let mut event_map = BTreeMap::new();
@@ -194,8 +194,7 @@ pub type ContractTokenAmount = TokenAmountU64;
 pub struct MintParams {
     /// Owner of the newly minted tokens.
     pub owner:        Address,
-    /// The metadata_url of the token (is ignored except for the first time
-    /// a token_id is minted).
+    /// The metadata_url of the token.
     pub metadata_url: MetadataUrl,
     /// The token_id to mint/create additional tokens.
     pub token_id:     ContractTokenId,
@@ -241,6 +240,8 @@ struct State<S = StateApi> {
     /// mapping keeps track of the next nonce that needs to be used by the
     /// account to generate a signature.
     nonces_registry: StateMap<AccountAddress, u64, S>,
+    /// The amount of tokens airdropped when the mint function is invoked.
+    mint_airdrop:    TokenAmountU64,
 }
 /// The parameter type for the contract function `supportsPermit`.
 #[derive(Debug, Serialize, SchemaType)]
@@ -370,12 +371,13 @@ impl From<CustomContractError> for ContractError {
 
 impl State {
     /// Construct a state with no tokens
-    fn empty(state_builder: &mut StateBuilder) -> Self {
+    fn empty(state_builder: &mut StateBuilder, mint_airdrop: TokenAmountU64) -> Self {
         State {
-            state:           state_builder.new_map(),
-            tokens:          state_builder.new_map(),
-            implementors:    state_builder.new_map(),
+            state: state_builder.new_map(),
+            tokens: state_builder.new_map(),
+            implementors: state_builder.new_map(),
             nonces_registry: state_builder.new_map(),
+            mint_airdrop,
         }
     }
 
@@ -388,6 +390,7 @@ impl State {
         token_id: &ContractTokenId,
         metadata_url: &MetadataUrl,
         owner: &Address,
+        mint_airdrop: TokenAmountU64,
         state_builder: &mut StateBuilder,
     ) -> MetadataUrl {
         let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
@@ -398,7 +401,7 @@ impl State {
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
-        *owner_balance += MINT_AIRDROP;
+        *owner_balance += mint_airdrop;
 
         if let Some(token_metadata) = token_metadata {
             token_metadata
@@ -518,10 +521,17 @@ impl State {
 // Contract functions
 
 /// Initialize contract instance with no token types.
-#[init(contract = "cis2_multi", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
-fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
+#[init(
+    contract = "cis2_multi",
+    event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
+    parameter = "TokenAmountU64"
+)]
+fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
+    // Parse the parameter.
+    let mint_airdrop: TokenAmountU64 = ctx.parameter_cursor().get()?;
+
     // Construct the initial contract state.
-    Ok(State::empty(state_builder))
+    Ok(State::empty(state_builder, mint_airdrop))
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
@@ -599,12 +609,18 @@ fn contract_mint(
 
     let (state, builder) = host.state_and_builder();
     // Mint the token in the state.
-    let token_metadata = state.mint(&params.token_id, &params.metadata_url, &params.owner, builder);
+    let token_metadata = state.mint(
+        &params.token_id,
+        &params.metadata_url,
+        &params.owner,
+        state.mint_airdrop,
+        builder,
+    );
 
     // Event for minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
         token_id: params.token_id,
-        amount:   MINT_AIRDROP,
+        amount:   state.mint_airdrop,
         owner:    params.owner,
     }))?;
 
@@ -686,14 +702,15 @@ fn contract_transfer(
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    for transer in transfers {
+    for transfer_entry in transfers {
         // Authenticate the sender for this transfer
         ensure!(
-            transer.from == sender || host.state().is_operator(&sender, &transer.from),
+            transfer_entry.from == sender
+                || host.state().is_operator(&sender, &transfer_entry.from),
             ContractError::Unauthorized
         );
 
-        transfer(transer, host, logger)?;
+        transfer(transfer_entry, host, logger)?;
     }
     Ok(())
 }

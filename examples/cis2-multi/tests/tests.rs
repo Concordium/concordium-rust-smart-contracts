@@ -771,7 +771,8 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress) {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
             init_name: OwnedContractName::new_unchecked("init_cis2_multi".to_string()),
-            param:     OwnedParameter::empty(),
+            param:     OwnedParameter::from_serial(&TokenAmountU64(100))
+                .expect("UpdateOperator params"),
         })
         .expect("Initialize contract");
 
