@@ -691,14 +691,15 @@ fn contract_transfer(
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    for transer in transfers {
+    for transfer_entry in transfers {
         // Authenticate the sender for this transfer
         ensure!(
-            transer.from == sender || host.state().is_operator(&sender, &transer.from),
+            transfer_entry.from == sender
+                || host.state().is_operator(&sender, &transfer_entry.from),
             ContractError::Unauthorized
         );
 
-        transfer(transer, host, logger)?;
+        transfer(transfer_entry, host, logger)?;
     }
     Ok(())
 }
