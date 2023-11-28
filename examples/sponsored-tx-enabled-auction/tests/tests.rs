@@ -38,8 +38,8 @@ fn test_add_item() {
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
-        end:         Timestamp::from_timestamp_millis(1000),
-        start:       Timestamp::from_timestamp_millis(5000),
+        start:       Timestamp::from_timestamp_millis(1_000),
+        end:         Timestamp::from_timestamp_millis(5000),
         token_id:    TokenIdU8(1),
         minimum_bid: TokenAmountU64(3),
     };
@@ -81,8 +81,8 @@ fn test_add_item() {
             auction_state:  AuctionState::NotSoldYet,
             highest_bidder: None,
             name:           "MyItem".to_string(),
-            end:            Timestamp::from_timestamp_millis(1000),
-            start:          Timestamp::from_timestamp_millis(5000),
+            start:          Timestamp::from_timestamp_millis(1000),
+            end:            Timestamp::from_timestamp_millis(5000),
             token_id:       TokenIdU8(1),
             creator:        ALICE,
             highest_bid:    TokenAmountU64(3),
@@ -110,8 +110,8 @@ fn test_add_item() {
         auction_state:  AuctionState::NotSoldYet,
         highest_bidder: None,
         name:           "MyItem".to_string(),
-        end:            Timestamp::from_timestamp_millis(1000),
-        start:          Timestamp::from_timestamp_millis(5000),
+        start:          Timestamp::from_timestamp_millis(1000),
+        end:            Timestamp::from_timestamp_millis(5000),
         token_id:       TokenIdU8(1),
         creator:        ALICE,
         highest_bid:    TokenAmountU64(3),
@@ -126,8 +126,8 @@ fn full_auction_flow_with_cis3_permit_function() {
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
-        end:         Timestamp::from_timestamp_millis(1000),
-        start:       Timestamp::from_timestamp_millis(5000),
+        start:       Timestamp::from_timestamp_millis(1000),
+        end:         Timestamp::from_timestamp_millis(5000),
         token_id:    TokenIdU8(1),
         minimum_bid: TokenAmountU64(0),
     };
@@ -298,8 +298,8 @@ fn full_auction_flow_with_several_bids() {
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
-        end:         Timestamp::from_timestamp_millis(1000),
-        start:       Timestamp::from_timestamp_millis(5000),
+        start:       Timestamp::from_timestamp_millis(1000),
+        end:         Timestamp::from_timestamp_millis(5000),
         token_id:    TokenIdU8(1),
         minimum_bid: TokenAmountU64(0),
     };
@@ -522,8 +522,8 @@ fn full_auction_flow_with_cis3_transfer_function() {
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
-        end:         Timestamp::from_timestamp_millis(1000),
-        start:       Timestamp::from_timestamp_millis(5000),
+        start:       Timestamp::from_timestamp_millis(1000),
+        end:         Timestamp::from_timestamp_millis(5000),
         token_id:    TokenIdU8(1),
         minimum_bid: TokenAmountU64(0),
     };
