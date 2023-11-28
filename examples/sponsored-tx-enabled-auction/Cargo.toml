@@ -18,8 +18,8 @@ concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
 concordium-smart-contract-testing = { path = "../../contract-testing" }
 rand = "0.7.0"
 
-[dev-dependencies.cis3_nft_sponsored_txs]
-path = "../cis3-nft-sponsored-txs/"
+[dev-dependencies.cis2-multi]
+path = "../cis2-multi/"
 
 [lib]
 crate-type=["cdylib", "rlib"]

@@ -1,15 +1,17 @@
 //! Tests for the auction smart contract.
 use std::collections::BTreeMap;
 
-use cis3_nft_sponsored_txs::{
+use cis2_multi::{
     ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, PermitMessage, PermitParam,
 };
 use concordium_cis2::{
-    AdditionalData, BalanceOfQuery, BalanceOfQueryParams, Receiver, TokenAmountU8, TokenIdU32,
+    AdditionalData, BalanceOfQuery, BalanceOfQueryParams, Receiver, TokenAmountU64, TokenIdU8,
     TransferParams,
 };
 use concordium_smart_contract_testing::*;
-use concordium_std::{AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519};
+use concordium_std::{
+    AccountSignatures, CredentialSignatures, HashSha2256, MetadataUrl, SignatureEd25519,
+};
 use sponsored_tx_enabled_auction::*;
 
 /// The tests accounts.
@@ -30,16 +32,21 @@ const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
 
 #[test]
 fn test_add_item() {
-    let (mut chain, _keypairs, auction_contract_address, _token_contract_address) =
-        initialize_chain_and_auction();
+    let (
+        mut chain,
+        _keypairs_alice,
+        _keypairs_bob,
+        auction_contract_address,
+        _token_contract_address,
+    ) = initialize_chain_and_auction();
 
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
         end:         Timestamp::from_timestamp_millis(1000),
         start:       Timestamp::from_timestamp_millis(5000),
-        token_id:    TokenIdU32(1),
-        minimum_bid: TokenAmountU8(3),
+        token_id:    TokenIdU8(1),
+        minimum_bid: TokenAmountU64(3),
     };
 
     let _update = chain
@@ -81,9 +88,9 @@ fn test_add_item() {
             name:           "MyItem".to_string(),
             end:            Timestamp::from_timestamp_millis(1000),
             start:          Timestamp::from_timestamp_millis(5000),
-            token_id:       TokenIdU32(1),
+            token_id:       TokenIdU8(1),
             creator:        ALICE,
-            highest_bid:    TokenAmountU8(3),
+            highest_bid:    TokenAmountU64(3),
         })],
         cis2_contract: ContractAddress::new(0, 0),
         counter:       1,
@@ -110,24 +117,29 @@ fn test_add_item() {
         name:           "MyItem".to_string(),
         end:            Timestamp::from_timestamp_millis(1000),
         start:          Timestamp::from_timestamp_millis(5000),
-        token_id:       TokenIdU32(1),
+        token_id:       TokenIdU8(1),
         creator:        ALICE,
-        highest_bid:    TokenAmountU8(3),
+        highest_bid:    TokenAmountU64(3),
     });
 }
 
 #[test]
 fn full_auction_flow_with_cis3_permit_function() {
-    let (mut chain, keypairs, auction_contract_address, token_contract_address) =
-        initialize_chain_and_auction();
+    let (
+        mut chain,
+        keypairs_alice,
+        _keypairs_bob,
+        auction_contract_address,
+        token_contract_address,
+    ) = initialize_chain_and_auction();
 
     // Create the InitParameter.
     let parameter = AddItemParameter {
         name:        "MyItem".to_string(),
         end:         Timestamp::from_timestamp_millis(1000),
         start:       Timestamp::from_timestamp_millis(5000),
-        token_id:    TokenIdU32(1),
-        minimum_bid: TokenAmountU8(0),
+        token_id:    TokenIdU8(1),
+        minimum_bid: TokenAmountU64(0),
     };
 
     let _update = chain
@@ -147,8 +159,13 @@ fn full_auction_flow_with_cis3_permit_function() {
         )
         .expect("Should be able to add Item");
 
-    let parameter = cis3_nft_sponsored_txs::MintParams {
-        owner: concordium_smart_contract_testing::Address::Account(ALICE),
+    let parameter = cis2_multi::MintParams {
+        owner:        concordium_smart_contract_testing::Address::Account(ALICE),
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/0".to_string(),
+            hash: None,
+        },
+        token_id:     concordium_cis2::TokenIdU8(1u8),
     };
 
     let _update = chain
@@ -160,7 +177,7 @@ fn full_auction_flow_with_cis3_permit_function() {
             UpdateContractPayload {
                 amount:       Amount::from_ccd(0),
                 address:      token_contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
                 message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
             },
         )
@@ -174,7 +191,7 @@ fn full_auction_flow_with_cis3_permit_function() {
     let balance_of_alice_and_auction_contract =
         get_balances(&chain, auction_contract_address, token_contract_address);
 
-    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU8(1), TokenAmountU8(0)]);
+    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU64(100), TokenAmountU64(0)]);
 
     // Create input parameters for the `permit` transfer function.
     let transfer = concordium_cis2::Transfer {
@@ -183,8 +200,8 @@ fn full_auction_flow_with_cis3_permit_function() {
             auction_contract_address,
             OwnedEntrypointName::new_unchecked("bid".to_string()),
         ),
-        token_id: TokenIdU32(1),
-        amount:   ContractTokenAmount::from(1),
+        token_id: TokenIdU8(1),
+        amount:   TokenAmountU64(1),
         data:     AdditionalData::from(to_bytes(&additional_data)),
     };
     let payload = TransferParams::from(vec![transfer]);
@@ -217,7 +234,7 @@ fn full_auction_flow_with_cis3_permit_function() {
         .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      token_contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.viewMessageHash".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
             message:      OwnedParameter::from_serial(&permit_transfer_param)
                 .expect("Should be a valid inut parameter"),
         })
@@ -226,7 +243,7 @@ fn full_auction_flow_with_cis3_permit_function() {
     let message_hash: HashSha2256 =
         from_bytes(&invoke.return_value).expect("Should return a valid result");
 
-    permit_transfer_param.signature = keypairs.sign_message(&to_bytes(&message_hash));
+    permit_transfer_param.signature = keypairs_alice.sign_message(&to_bytes(&message_hash));
 
     // Transfer token with the permit function.
     let _update = chain
@@ -238,7 +255,7 @@ fn full_auction_flow_with_cis3_permit_function() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 address:      token_contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
                 message:      OwnedParameter::from_serial(&permit_transfer_param)
                     .expect("Should be a valid inut parameter"),
             },
@@ -249,7 +266,7 @@ fn full_auction_flow_with_cis3_permit_function() {
     let balance_of_alice_and_auction_contract =
         get_balances(&chain, auction_contract_address, token_contract_address);
 
-    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU8(0), TokenAmountU8(1)]);
+    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU64(99), TokenAmountU64(1)]);
 
     // Invoke the view entrypoint and check that the tokens are owned by Alice.
     let item_state = view_item_state(&chain, auction_contract_address);
@@ -285,7 +302,7 @@ fn full_auction_flow_with_cis3_permit_function() {
 
 #[test]
 fn full_auction_flow_with_cis3_transfer_function() {
-    let (mut chain, _keypair, auction_contract_address, token_contract_address) =
+    let (mut chain, _keypair_alice, _keypair_bob, auction_contract_address, token_contract_address) =
         initialize_chain_and_auction();
 
     // Create the InitParameter.
@@ -293,8 +310,8 @@ fn full_auction_flow_with_cis3_transfer_function() {
         name:        "MyItem".to_string(),
         end:         Timestamp::from_timestamp_millis(1000),
         start:       Timestamp::from_timestamp_millis(5000),
-        token_id:    TokenIdU32(1),
-        minimum_bid: TokenAmountU8(0),
+        token_id:    TokenIdU8(1),
+        minimum_bid: TokenAmountU64(0),
     };
 
     let _update = chain
@@ -314,8 +331,13 @@ fn full_auction_flow_with_cis3_transfer_function() {
         )
         .expect("Should be able to add Item");
 
-    let parameter = cis3_nft_sponsored_txs::MintParams {
-        owner: concordium_smart_contract_testing::Address::Account(ALICE),
+    let parameter = cis2_multi::MintParams {
+        owner:        concordium_smart_contract_testing::Address::Account(ALICE),
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/0".to_string(),
+            hash: None,
+        },
+        token_id:     concordium_cis2::TokenIdU8(1u8),
     };
 
     let _update = chain
@@ -327,7 +349,7 @@ fn full_auction_flow_with_cis3_transfer_function() {
             UpdateContractPayload {
                 amount:       Amount::from_ccd(0),
                 address:      token_contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
                 message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
             },
         )
@@ -337,7 +359,7 @@ fn full_auction_flow_with_cis3_transfer_function() {
     let balance_of_alice_and_auction_contract =
         get_balances(&chain, auction_contract_address, token_contract_address);
 
-    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU8(1), TokenAmountU8(0)]);
+    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU64(100), TokenAmountU64(0)]);
 
     let additional_data = AdditionalDataIndex {
         item_index: 0u16,
@@ -350,15 +372,15 @@ fn full_auction_flow_with_cis3_transfer_function() {
             auction_contract_address,
             OwnedEntrypointName::new_unchecked("bid".to_string()),
         ),
-        token_id: TokenIdU32(1),
-        amount:   TokenAmountU8(1),
+        token_id: TokenIdU8(1),
+        amount:   TokenAmountU64(1),
         data:     AdditionalData::from(to_bytes(&additional_data)),
     }]);
 
     let _update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
             address:      token_contract_address,
             message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
         })
@@ -374,7 +396,7 @@ fn full_auction_flow_with_cis3_transfer_function() {
     let balance_of_alice_and_auction_contract =
         get_balances(&chain, auction_contract_address, token_contract_address);
 
-    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU8(0), TokenAmountU8(1)]);
+    assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU64(99), TokenAmountU64(1)]);
 
     // Increment the chain time by 100000 milliseconds.
     chain.tick_block_time(Duration::from_millis(100000)).expect("Increment chain time");
@@ -657,11 +679,11 @@ fn get_balances(
     let balance_of_params: ContractBalanceOfQueryParams = BalanceOfQueryParams {
         queries: vec![
             BalanceOfQuery {
-                token_id: TokenIdU32(1),
+                token_id: TokenIdU8(1),
                 address:  ALICE_ADDR,
             },
             BalanceOfQuery {
-                token_id: TokenIdU32(1),
+                token_id: TokenIdU8(1),
                 address:  Address::from(auction_contract_address),
             },
         ],
@@ -670,7 +692,7 @@ fn get_balances(
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.balanceOf".to_string()),
             address:      token_contract_address,
             message:      OwnedParameter::from_serial(&balance_of_params)
                 .expect("BalanceOf params"),
@@ -685,7 +707,8 @@ fn get_balances(
 /// Carol is the owner of the auction, which ends at `1000` milliseconds after
 /// the unix epoch. The 'microCCD per euro' exchange rate is set to `1_000_000`,
 /// so 1 CCD = 1 euro.
-fn initialize_chain_and_auction() -> (Chain, AccountKeys, ContractAddress, ContractAddress) {
+fn initialize_chain_and_auction(
+) -> (Chain, AccountKeys, AccountKeys, ContractAddress, ContractAddress) {
     let mut chain = Chain::builder()
         .micro_ccd_per_euro(
             ExchangeRate::new(1_000_000, 1).expect("Exchange rate is in valid range"),
@@ -695,7 +718,8 @@ fn initialize_chain_and_auction() -> (Chain, AccountKeys, ContractAddress, Contr
 
     let rng = &mut rand::thread_rng();
 
-    let keypairs = AccountKeys::singleton(rng);
+    let keypairs_alice = AccountKeys::singleton(rng);
+    let keypairs_bob = AccountKeys::singleton(rng);
 
     let balance = AccountBalance {
         total:  ACC_INITIAL_BALANCE,
@@ -704,14 +728,15 @@ fn initialize_chain_and_auction() -> (Chain, AccountKeys, ContractAddress, Contr
     };
 
     // Create some accounts accounts on the chain.
-    chain.create_account(Account::new_with_keys(ALICE, balance, (&keypairs).into()));
+    chain.create_account(Account::new_with_keys(ALICE, balance, (&keypairs_alice).into()));
+    chain.create_account(Account::new_with_keys(BOB, balance, (&keypairs_bob).into()));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(CAROL, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(DAVE, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
-    let module = module_load_v1("../cis3-nft-sponsored-txs/concordium-out/module.wasm.v1")
-        .expect("Module exists");
+    let module =
+        module_load_v1("../cis2-multi/concordium-out/module.wasm.v1").expect("Module exists");
     let deployment = chain.module_deploy_v1(SIGNER, CAROL, module).expect("Deploy valid module");
 
     // Create the InitParameter.
@@ -722,7 +747,7 @@ fn initialize_chain_and_auction() -> (Chain, AccountKeys, ContractAddress, Contr
         .contract_init(SIGNER, CAROL, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_cis3_nft".to_string()),
+            init_name: OwnedContractName::new_unchecked("init_cis2_multi".to_string()),
             param:     OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
         })
         .expect("Initialize auction");
@@ -746,5 +771,5 @@ fn initialize_chain_and_auction() -> (Chain, AccountKeys, ContractAddress, Contr
         })
         .expect("Initialize auction");
 
-    (chain, keypairs, init_auction.contract_address, token.contract_address)
+    (chain, keypairs_alice, keypairs_bob, init_auction.contract_address, token.contract_address)
 }
