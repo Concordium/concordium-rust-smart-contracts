@@ -212,24 +212,8 @@ fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<It
     Ok(item)
 }
 
-#[derive(Debug, Serialize, SchemaType)]
-pub struct TestOnReceivingCis2Params<T, A> {
-    /// The ID of the token received.
-    pub token_id: T,
-    /// The amount of tokens received.
-    pub amount:   A,
-    /// The previous owner of the tokens.
-    pub from:     Address,
-    /// Some extra information which where sent as part of the transfer.
-    pub data:     AdditionalDataItem,
-}
-
-/// Additional information to include with a transfer.
-#[derive(Debug, Serialize, Clone, SchemaType)]
-#[concordium(transparent)]
-pub struct AdditionalDataItem(#[concordium(size_length = 2)] Vec<u8>);
-
 #[derive(Debug, Deserial, Serial, Clone, SchemaType)]
+#[concordium(transparent)]
 pub struct AdditionalDataIndex {
     pub item_index: u16,
 }
@@ -239,12 +223,12 @@ pub struct AdditionalDataIndex {
     contract = "sponsored_tx_enabled_auction",
     name = "bid",
     mutable,
-    parameter = "TestOnReceivingCis2Params<ContractTokenId, ContractTokenAmount>",
+    parameter = "OnReceivingCis2Params<ContractTokenId, ContractTokenAmount>",
     error = "Error"
 )]
 fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     // Parse the parameter.
-    let params: TestOnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
+    let params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
         ctx.parameter_cursor().get()?;
 
     // Ensure the sender is the cis2_token_contract.
@@ -254,7 +238,7 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
         bail!(Error::NotTokenContract.into())
     };
 
-    let additional_data_index: AdditionalDataIndex = from_bytes(&params.data.0)?;
+    let additional_data_index: AdditionalDataIndex = from_bytes(params.data.as_ref())?;
 
     let cis2_contract = host.state().cis2_contract;
 
