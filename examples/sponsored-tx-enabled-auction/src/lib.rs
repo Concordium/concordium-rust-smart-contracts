@@ -30,7 +30,7 @@
 //! contract, the smart contract refunds the old highest bidder.
 //!
 //! Bids have to be placed before the auction ends. The participant with the
-//! highest bid (the last bidder) wins the auction.
+//! highest bid (the last accepted bidder) wins the auction.
 //!
 //! After the auction ends for a specific item, any account can finalize the
 //! auction. The creator of that auction receives the highest bid when the
@@ -71,10 +71,10 @@ pub enum AuctionState {
     Sold(AccountAddress),
 }
 
-/// The state of the smart contract.
+/// The state of an item up for auction.
 /// This state can be viewed by querying the node with the command
-/// `concordium-client contract invoke` using the `view` function as entry
-/// point.
+/// `concordium-client contract invoke` using the `view_item_state` function as
+/// entry point.
 #[derive(Debug, Serialize, SchemaType, Clone, PartialEq, Eq)]
 pub struct ItemState {
     /// State of the auction.
@@ -118,7 +118,6 @@ pub struct State<S = StateApi> {
 /// The return_value for the entry point `view` which returns the contract
 /// state.
 #[derive(Serialize, SchemaType, Debug, Eq, PartialEq)]
-
 pub struct ReturnParamView {
     /// A vector including all items that have been added to this contract.
     pub item_states:   Vec<(u16, ItemState)>,
@@ -210,6 +209,12 @@ fn auction_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResu
     mutable
 )]
 fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+    // Ensure that only accounts can add an item.
+    let sender_address = match ctx.sender() {
+        Address::Contract(_) => bail!(Error::OnlyAccount.into()),
+        Address::Account(account_address) => account_address,
+    };
+
     // Getting input parameters.
     let item: AddItemParameter = ctx.parameter_cursor().get()?;
 
@@ -219,12 +224,6 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction can run.
     ensure!(slot_time <= item.end, Error::EndTimeError.into());
-
-    // Ensure that only accounts can add an item.
-    let sender_address = match ctx.sender() {
-        Address::Contract(_) => bail!(Error::OnlyAccount.into()),
-        Address::Account(account_address) => account_address,
-    };
 
     // Assign an index to the item/auction.
     let counter = host.state_mut().counter;
@@ -264,15 +263,19 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     error = "Error"
 )]
 fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+    // Ensure the sender is the cis2 token contract.
+    if !ctx.sender().matches_contract(&host.state().cis2_contract) {
+        bail!(Error::NotTokenContract.into());
+    }
+
     // Getting input parameters.
     let params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
         ctx.parameter_cursor().get()?;
 
-    // Ensure the sender is the cis2 token contract.
-    if let Address::Contract(contract) = ctx.sender() {
-        ensure_eq!(contract, host.state().cis2_contract, Error::NotTokenContract.into());
-    } else {
-        bail!(Error::NotTokenContract.into())
+    // Ensure that only accounts can bid for an item.
+    let bidder_address = match params.from {
+        Address::Contract(_) => bail!(Error::OnlyAccount.into()),
+        Address::Account(account_address) => account_address,
     };
 
     // Get the item_index from the additionalData.
@@ -284,13 +287,8 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
         .entry(additional_data_index.item_index)
         .occupied_or(Error::NoItem)?;
 
+    // Ensure the token_id matches.
     ensure_eq!(item.token_id, params.token_id, Error::WrongTokenID.into());
-
-    // Ensure that only accounts can bid for an item.
-    let bidder_address = match params.from {
-        Address::Contract(_) => bail!(Error::OnlyAccount.into()),
-        Address::Account(account_address) => account_address,
-    };
 
     // Ensure the auction has not been finalized yet.
     ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized.into());
@@ -363,7 +361,8 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
     ensure!(slot_time > item.end, Error::AuctionStillActive.into());
 
     if let Some(account_address) = item.highest_bidder {
-        // Marking the highest bidder (the last bidder) as winner of the auction.
+        // Marking the highest bidder (the last accepted bidder) as winner of the
+        // auction.
         item.auction_state = AuctionState::Sold(account_address);
 
         // Sending the highest bid in tokens to the creator of the auction.
