@@ -43,7 +43,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use concordium_cis2::*;
+use concordium_cis2::{Cis2Client, *};
 use concordium_std::*;
 
 /// Contract token ID type. It has to be the `ContractTokenId` from the cis2
@@ -180,7 +180,51 @@ pub enum Error {
     /// Raised when payment is attempted with a different `token_id` than
     /// specified for an item.
     WrongTokenID, //-10
+    InvokeContractError, //-11
+    ParseResult,  //-12
+    InvalidResponse, //-13
 }
+
+/// Mapping Cis2ClientError<Error> to Error
+impl From<Cis2ClientError<Error>> for Error {
+    fn from(e: Cis2ClientError<Error>) -> Self {
+        match e {
+            Cis2ClientError::InvokeContractError(_) => Self::InvokeContractError,
+            Cis2ClientError::ParseResult => Self::ParseResult,
+            Cis2ClientError::InvalidResponse => Self::InvalidResponse,
+        }
+    }
+}
+
+// impl From<Error> for Reject {
+//     fn from(error:Error) -> Self {
+//         match error {
+//             Error::StartEndTimeError => Self::default(),
+//             Error::EndTimeError =>Self::default(),
+//             Error::OnlyAccount =>Self::default(),
+//             Error::BidNotGreaterCurrentBid => Self::default(),
+//             Error::BidTooLate =>Self::default(),
+//             Error::AuctionAlreadyFinalized => Self::default(),
+//             Error::NoItem => Self::default(),
+//             Error::AuctionStillActive => Self::default(),
+//             Error::NotTokenContract =>Self::default(),
+//             Error::WrongTokenID => Self::default(),
+//             Error::InvokeContractError => Self::default(),
+//             Error::ParseResult =>Self::default(),
+//             Error::InvalidResponse =>Self::default(),
+//         }
+//     }
+// }
+
+// impl From<Cis2ClientError<Error>> for Reject {
+//     fn from(error: Cis2ClientError<Error>) -> Self {
+//         match error {
+//             Cis2ClientError::InvokeContractError(_) =>Self::default(),
+//             Cis2ClientError::ParseResult => Self::default(),
+//             Cis2ClientError::InvalidResponse => Self::default(),
+//         }
+//     }
+// }
 
 /// Init entry point that creates a new auction contract.
 #[init(contract = "sponsored_tx_enabled_auction", parameter = "ContractAddress")]
@@ -348,6 +392,8 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
     // Getting input parameter.
     let item_index: u16 = ctx.parameter_cursor().get()?;
 
+    let contract = host.state().cis2_contract;
+
     // Get the item from state.
     let mut item = host.state_mut().items.entry(item_index).occupied_or(Error::NoItem)?;
 
@@ -371,24 +417,41 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
         // Please consider using a pull-over-push pattern when expanding this
         // smart contract to allow smart contract instances to
         // participate in the auction as well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        let parameter = TransferParameter {
-            0: vec![Transfer {
-                token_id: item.token_id,
-                amount:   item.highest_bid,
-                from:     concordium_std::Address::Contract(ctx.self_address()),
-                to:       concordium_cis2::Receiver::Account(item.creator),
-                data:     AdditionalData::empty(),
-            }],
-        };
+        // let parameter = TransferParameter {
+        //     0: vec![Transfer {
+        //         token_id: item.token_id,
+        //         amount: item.highest_bid,
+        //         from: concordium_std::Address::Contract(ctx.self_address()),
+        //         to: concordium_cis2::Receiver::Account(item.creator),
+        //         data: AdditionalData::empty(),
+        //     }],
+        // };
+
+        // drop(item);
+
+        let client = Cis2Client::new(contract);
+
+        let read_item = item.clone();
 
         drop(item);
 
-        host.invoke_contract(
-            &host.state().cis2_contract.clone(),
-            &parameter,
-            EntrypointName::new_unchecked("transfer"),
-            Amount::zero(),
+        let test = client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(
+            host,
+            Transfer {
+                amount:   read_item.highest_bid,
+                from:     concordium_std::Address::Contract(ctx.self_address()),
+                to:       concordium_cis2::Receiver::Account(read_item.creator),
+                token_id: read_item.token_id,
+                data:     AdditionalData::empty(),
+            },
         )?;
+
+        // host.invoke_contract(
+        //     &host.state().cis2_contract.clone(),
+        //     &parameter,
+        //     EntrypointName::new_unchecked("transfer"),
+        //     Amount::zero(),
+        // )?;
     }
 
     Ok(())
@@ -403,10 +466,7 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
 fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ReturnParamView> {
     let state = host.state();
 
-    let mut inner_state = Vec::new();
-    for (index, item_state) in state.items.iter() {
-        inner_state.push((*index, item_state.to_owned()));
-    }
+    let inner_state = state.items.iter().map(|x| (*x.0, x.1.clone())).collect();
 
     Ok(ReturnParamView {
         item_states:   inner_state,
