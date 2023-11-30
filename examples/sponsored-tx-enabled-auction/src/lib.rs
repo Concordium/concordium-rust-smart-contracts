@@ -156,33 +156,64 @@ pub struct AdditionalDataIndex {
 /// Errors of this contract.
 #[derive(Debug, PartialEq, Eq, Clone, Reject, Serialize, SchemaType)]
 pub enum Error {
+    /// Failed parsing the parameter.
+    #[from(ParseError)]
+    ParseParams, //-1
     // Raised when adding an item; The start time needs to be strictly smaller than the end time.
-    StartEndTimeError, //-1
+    StartEndTimeError, //-2
     // Raised when adding an item; The end time needs to be in the future.
-    EndTimeError, //-2
+    EndTimeError, //-3
     /// Raised when a contract tries to bid; Only accounts
     /// are allowed to bid.
-    OnlyAccount, //-3
+    OnlyAccount, //-4
     /// Raised when the new bid amount is not greater than the current highest
     /// bid.
-    BidNotGreaterCurrentBid, //-4
+    BidNotGreaterCurrentBid, //-5
     /// Raised when the bid is placed after the auction end time passed.
-    BidTooLate, //-5
+    BidTooLate, //-6
     /// Raised when the bid is placed after the auction has been finalized.
-    AuctionAlreadyFinalized, //-6
+    AuctionAlreadyFinalized, //-7
     /// Raised when the item index cannot be found in the contract.
-    NoItem, //-7
+    NoItem, //-8
     /// Raised when finalizing an auction before the auction end time passed.
-    AuctionStillActive, //-8
+    AuctionStillActive, //-9
     /// Raised when someone else than the cis2 token contract invokes the `bid`
     /// entry point.
-    NotTokenContract, //-9
+    NotTokenContract, //-10
     /// Raised when payment is attempted with a different `token_id` than
     /// specified for an item.
-    WrongTokenID, //-10
-    InvokeContractError, //-11
-    ParseResult,  //-12
-    InvalidResponse, //-13
+    WrongTokenID, //-11
+    InvokeContractError, //-12
+    ParseResult,  //-13
+    InvalidResponse, //-14
+    AmountTooLarge, //-15
+    MissingAccount, //-16
+    MissingContract, //-17
+    MissingEntrypoint, //-18
+    MessageFailed, //-19
+    LogicReject,  //-20
+    Trap,         //-21
+    TransferFailed, //-22
+}
+
+pub type ContractResult<A> = Result<A, Error>;
+
+/// Mapping Cis2ClientError<Error> to Error
+impl From<CallContractError<ExternCallResponse>> for Error {
+    fn from(e: CallContractError<ExternCallResponse>) -> Self {
+        match e {
+            CallContractError::AmountTooLarge => Self::AmountTooLarge,
+            CallContractError::MissingAccount => Self::MissingAccount,
+            CallContractError::MissingContract => Self::MissingContract,
+            CallContractError::MissingEntrypoint => Self::MissingEntrypoint,
+            CallContractError::MessageFailed => Self::MessageFailed,
+            CallContractError::LogicReject {
+                reason: _,
+                return_value: _,
+            } => Self::LogicReject,
+            CallContractError::Trap => Self::Trap,
+        }
+    }
 }
 
 /// Mapping Cis2ClientError<Error> to Error
@@ -195,36 +226,6 @@ impl From<Cis2ClientError<Error>> for Error {
         }
     }
 }
-
-// impl From<Error> for Reject {
-//     fn from(error:Error) -> Self {
-//         match error {
-//             Error::StartEndTimeError => Self::default(),
-//             Error::EndTimeError =>Self::default(),
-//             Error::OnlyAccount =>Self::default(),
-//             Error::BidNotGreaterCurrentBid => Self::default(),
-//             Error::BidTooLate =>Self::default(),
-//             Error::AuctionAlreadyFinalized => Self::default(),
-//             Error::NoItem => Self::default(),
-//             Error::AuctionStillActive => Self::default(),
-//             Error::NotTokenContract =>Self::default(),
-//             Error::WrongTokenID => Self::default(),
-//             Error::InvokeContractError => Self::default(),
-//             Error::ParseResult =>Self::default(),
-//             Error::InvalidResponse =>Self::default(),
-//         }
-//     }
-// }
-
-// impl From<Cis2ClientError<Error>> for Reject {
-//     fn from(error: Cis2ClientError<Error>) -> Self {
-//         match error {
-//             Cis2ClientError::InvokeContractError(_) =>Self::default(),
-//             Cis2ClientError::ParseResult => Self::default(),
-//             Cis2ClientError::InvalidResponse => Self::default(),
-//         }
-//     }
-// }
 
 /// Init entry point that creates a new auction contract.
 #[init(contract = "sponsored_tx_enabled_auction", parameter = "ContractAddress")]
@@ -252,10 +253,10 @@ fn auction_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResu
     parameter = "AddItemParameter",
     mutable
 )]
-fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Ensure that only accounts can add an item.
     let sender_address = match ctx.sender() {
-        Address::Contract(_) => bail!(Error::OnlyAccount.into()),
+        Address::Contract(_) => bail!(Error::OnlyAccount),
         Address::Account(account_address) => account_address,
     };
 
@@ -263,11 +264,11 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     let item: AddItemParameter = ctx.parameter_cursor().get()?;
 
     // Ensure start < end.
-    ensure!(item.start < item.end, Error::StartEndTimeError.into());
+    ensure!(item.start < item.end, Error::StartEndTimeError);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction can run.
-    ensure!(slot_time <= item.end, Error::EndTimeError.into());
+    ensure!(slot_time <= item.end, Error::EndTimeError);
 
     // Assign an index to the item/auction.
     let counter = host.state_mut().counter;
@@ -307,10 +308,10 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
                  AdditionalDataIndex>",
     error = "Error"
 )]
-fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Ensure the sender is the cis2 token contract.
     if !ctx.sender().matches_contract(&host.state().cis2_contract) {
-        bail!(Error::NotTokenContract.into());
+        bail!(Error::NotTokenContract);
     }
 
     // Getting input parameters.
@@ -322,7 +323,7 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
 
     // Ensure that only accounts can bid for an item.
     let bidder_address = match params.from {
-        Address::Contract(_) => bail!(Error::OnlyAccount.into()),
+        Address::Contract(_) => bail!(Error::OnlyAccount),
         Address::Account(account_address) => account_address,
     };
 
@@ -330,18 +331,18 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
         host.state_mut().items.entry(params.data.item_index).occupied_or(Error::NoItem)?;
 
     // Ensure the token_id matches.
-    ensure_eq!(item.token_id, params.token_id, Error::WrongTokenID.into());
+    ensure_eq!(item.token_id, params.token_id, Error::WrongTokenID);
 
     // Ensure the auction has not been finalized yet.
-    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized.into());
+    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet.
-    ensure!(slot_time <= item.end, Error::BidTooLate.into());
+    ensure!(slot_time <= item.end, Error::BidTooLate);
 
     // Ensure that the new bid exceeds the highest bid so far.
     let old_highest_bid = item.highest_bid;
-    ensure!(params.amount > old_highest_bid, Error::BidNotGreaterCurrentBid.into());
+    ensure!(params.amount > old_highest_bid, Error::BidNotGreaterCurrentBid);
 
     // Set the new highest_bid.
     item.highest_bid = params.amount;
@@ -388,7 +389,7 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
     mutable,
     error = "Error"
 )]
-fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Getting input parameter.
     let item_index: u16 = ctx.parameter_cursor().get()?;
 
@@ -398,11 +399,11 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
     let mut item = host.state_mut().items.entry(item_index).occupied_or(Error::NoItem)?;
 
     // Ensure the auction has not been finalized yet.
-    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized.into());
+    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized);
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has ended already.
-    ensure!(slot_time > item.end, Error::AuctionStillActive.into());
+    ensure!(slot_time > item.end, Error::AuctionStillActive);
 
     if let Some(account_address) = item.highest_bidder {
         // Marking the highest bidder (the last accepted bidder) as winner of the
@@ -435,7 +436,7 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
 
         drop(item);
 
-        let test = client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(
+        let success = client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(
             host,
             Transfer {
                 amount:   read_item.highest_bid,
@@ -445,6 +446,9 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
                 data:     AdditionalData::empty(),
             },
         )?;
+
+        // Ensure the transfer was successful ??? Shouldn't this return `true`
+        ensure!(!success, Error::TransferFailed);
 
         // host.invoke_contract(
         //     &host.state().cis2_contract.clone(),
@@ -463,7 +467,7 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResu
     name = "view",
     return_value = "ReturnParamView"
 )]
-fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ReturnParamView> {
+fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ReturnParamView> {
     let state = host.state();
 
     let inner_state = state.items.iter().map(|x| (*x.0, x.1.clone())).collect();
@@ -482,7 +486,7 @@ fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ReturnParamV
     return_value = "ItemState",
     parameter = "u16"
 )]
-fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ItemState> {
+fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ItemState> {
     // Getting input parameter.
     let item_index: u16 = ctx.parameter_cursor().get()?;
     let item = host.state().items.get(&item_index).map(|x| x.to_owned()).ok_or(Error::NoItem)?;
