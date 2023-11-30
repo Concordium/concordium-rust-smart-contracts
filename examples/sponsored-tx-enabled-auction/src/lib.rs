@@ -36,11 +36,6 @@
 //! auction. The creator of that auction receives the highest bid when the
 //! auction is finalized and the item is marked as sold to the highest bidder.
 //! This can be done only once.
-//!
-//! Terminology: `Accounts` are derived from a public/private key pair.
-//! `Contract` instances are created by deploying a smart contract
-//! module and initializing it.
-
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::{Cis2Client, *};
@@ -183,22 +178,37 @@ pub enum Error {
     /// Raised when payment is attempted with a different `token_id` than
     /// specified for an item.
     WrongTokenID, //-11
+    /// Raised when the invocation of the cis2 token contract fails.
     InvokeContractError, //-12
-    ParseResult,  //-13
+    /// Raised when the parsing of the result from the cis2 token contract
+    /// fails.
+    ParseResult, //-13
+    /// Raised when the response of the cis2 token contract is invalid.
     InvalidResponse, //-14
+    /// Raised when the amount of cis2 tokens that was to be transferred is not
+    /// available to the sender.
     AmountTooLarge, //-15
+    /// Raised when the owner account of the cis 2 token contract that is being
+    /// invoked does not exist. This variant should in principle not happen,
+    /// but is here for completeness.
     MissingAccount, //-16
+    /// Raised when the cis2 token contract that is to be invoked does not
+    /// exist.
     MissingContract, //-17
+    /// Raised when the cis2 token contract to be invoked exists, but the entry
+    /// point that was named does not.
     MissingEntrypoint, //-18
+    // Raised when the sending of a message to the V0 contract failed.
     MessageFailed, //-19
-    LogicReject,  //-20
-    Trap,         //-21
-    TransferFailed, //-22
+    // Raised when the cis2 token contract called rejected with the given reason.
+    LogicReject, //-20
+    // Raised when the cis2 token contract execution triggered a runtime error.
+    Trap, //-21
 }
 
 pub type ContractResult<A> = Result<A, Error>;
 
-/// Mapping Cis2ClientError<Error> to Error
+/// Mapping CallContractError<ExternCallResponse> to Error
 impl From<CallContractError<ExternCallResponse>> for Error {
     fn from(e: CallContractError<ExternCallResponse>) -> Self {
         match e {
@@ -266,9 +276,9 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> 
     // Ensure start < end.
     ensure!(item.start < item.end, Error::StartEndTimeError);
 
-    let slot_time = ctx.metadata().slot_time();
+    let block_time = ctx.metadata().block_time();
     // Ensure the auction can run.
-    ensure!(slot_time <= item.end, Error::EndTimeError);
+    ensure!(block_time <= item.end, Error::EndTimeError);
 
     // Assign an index to the item/auction.
     let counter = host.state_mut().counter;
@@ -314,6 +324,8 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
         bail!(Error::NotTokenContract);
     }
 
+    let contract = host.state().cis2_contract;
+
     // Getting input parameters.
     let params: OnReceivingCis2DataParams<
         ContractTokenId,
@@ -336,9 +348,9 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
     // Ensure the auction has not been finalized yet.
     ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized);
 
-    let slot_time = ctx.metadata().slot_time();
+    let block_time = ctx.metadata().block_time();
     // Ensure the auction has not ended yet.
-    ensure!(slot_time <= item.end, Error::BidTooLate);
+    ensure!(block_time <= item.end, Error::BidTooLate);
 
     // Ensure that the new bid exceeds the highest bid so far.
     let old_highest_bid = item.highest_bid;
@@ -348,6 +360,12 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
     item.highest_bid = params.amount;
 
     if let Some(account_address) = item.highest_bidder.replace(bidder_address) {
+        let client = Cis2Client::new(contract);
+
+        let read_item = item.clone();
+
+        drop(item);
+
         // Refunding old highest bidder.
         // This transfer (given enough NRG of course) always succeeds because
         // the `account_address` exists since it was recorded when it
@@ -356,24 +374,13 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
         // Please consider using a pull-over-push pattern when expanding this
         // smart contract to allow smart contract instances to
         // participate in the auction as well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        let parameter = TransferParameter {
-            0: vec![Transfer {
-                token_id: item.token_id,
-                amount:   old_highest_bid,
-                from:     concordium_std::Address::Contract(ctx.self_address()),
-                to:       concordium_cis2::Receiver::Account(account_address),
-                data:     AdditionalData::empty(),
-            }],
-        };
-
-        drop(item);
-
-        host.invoke_contract(
-            &host.state().cis2_contract.clone(),
-            &parameter,
-            EntrypointName::new_unchecked("transfer"),
-            Amount::zero(),
-        )?;
+        client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(host, Transfer {
+            amount:   old_highest_bid,
+            from:     concordium_std::Address::Contract(ctx.self_address()),
+            to:       concordium_cis2::Receiver::Account(account_address),
+            token_id: read_item.token_id,
+            data:     AdditionalData::empty(),
+        })?;
     }
 
     Ok(())
@@ -401,14 +408,20 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractRes
     // Ensure the auction has not been finalized yet.
     ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized);
 
-    let slot_time = ctx.metadata().slot_time();
+    let block_time = ctx.metadata().block_time();
     // Ensure the auction has ended already.
-    ensure!(slot_time > item.end, Error::AuctionStillActive);
+    ensure!(block_time > item.end, Error::AuctionStillActive);
 
     if let Some(account_address) = item.highest_bidder {
         // Marking the highest bidder (the last accepted bidder) as winner of the
         // auction.
         item.auction_state = AuctionState::Sold(account_address);
+
+        let client = Cis2Client::new(contract);
+
+        let read_item = item.clone();
+
+        drop(item);
 
         // Sending the highest bid in tokens to the creator of the auction.
         // This transfer (given enough NRG of course) always succeeds because
@@ -418,44 +431,13 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractRes
         // Please consider using a pull-over-push pattern when expanding this
         // smart contract to allow smart contract instances to
         // participate in the auction as well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        // let parameter = TransferParameter {
-        //     0: vec![Transfer {
-        //         token_id: item.token_id,
-        //         amount: item.highest_bid,
-        //         from: concordium_std::Address::Contract(ctx.self_address()),
-        //         to: concordium_cis2::Receiver::Account(item.creator),
-        //         data: AdditionalData::empty(),
-        //     }],
-        // };
-
-        // drop(item);
-
-        let client = Cis2Client::new(contract);
-
-        let read_item = item.clone();
-
-        drop(item);
-
-        let success = client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(
-            host,
-            Transfer {
-                amount:   read_item.highest_bid,
-                from:     concordium_std::Address::Contract(ctx.self_address()),
-                to:       concordium_cis2::Receiver::Account(read_item.creator),
-                token_id: read_item.token_id,
-                data:     AdditionalData::empty(),
-            },
-        )?;
-
-        // Ensure the transfer was successful ??? Shouldn't this return `true`
-        ensure!(!success, Error::TransferFailed);
-
-        // host.invoke_contract(
-        //     &host.state().cis2_contract.clone(),
-        //     &parameter,
-        //     EntrypointName::new_unchecked("transfer"),
-        //     Amount::zero(),
-        // )?;
+        client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(host, Transfer {
+            amount:   read_item.highest_bid,
+            from:     concordium_std::Address::Contract(ctx.self_address()),
+            to:       concordium_cis2::Receiver::Account(read_item.creator),
+            token_id: read_item.token_id,
+            data:     AdditionalData::empty(),
+        })?;
     }
 
     Ok(())

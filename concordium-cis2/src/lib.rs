@@ -1267,8 +1267,6 @@ pub struct OnReceivingCis2DataParams<T, A, D> {
 }
 
 /// Deserial trait for OnReceivingCis2DataParams<T, A, D>.
-/// The specific type D is constructed from the general `AdditionalData` type
-/// first before the `OnReceivingCis2DataParams` object is deserialized.
 impl<T: Deserial, A: Deserial, D: Deserial> Deserial for OnReceivingCis2DataParams<T, A, D> {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let params: OnReceivingCis2Params<T, A> = source.get()?;
@@ -1283,21 +1281,13 @@ impl<T: Deserial, A: Deserial, D: Deserial> Deserial for OnReceivingCis2DataPara
 }
 
 /// Serial trait for OnReceivingCis2DataParams<T, A, D>.
-/// The specific type D is converted into the general `AdditionalData` type
-/// first before the `OnReceivingCis2Params<T, A>` object is serialized.
-impl<T: Serial + Clone, A: Serial + Clone, D: Serial> Serial
-    for OnReceivingCis2DataParams<T, A, D>
-{
+impl<T: Serial, A: Serial, D: Serial> Serial for OnReceivingCis2DataParams<T, A, D> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-        let additional_data = AdditionalData::from(to_bytes(&self.data));
-        let object: OnReceivingCis2Params<T, A> = OnReceivingCis2Params {
-            token_id: self.token_id.clone(),
-            amount:   self.amount.clone(),
-            from:     self.from,
-            data:     additional_data,
-        };
-
-        object.serial(out)?;
+        self.token_id.serial(out)?;
+        self.amount.serial(out)?;
+        self.from.serial(out)?;
+        (to_bytes(&self.data).len() as u16).serial(out)?;
+        out.write_all(&to_bytes(&self.data))?;
         Ok(())
     }
 }
