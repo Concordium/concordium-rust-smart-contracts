@@ -17,7 +17,7 @@ concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
 [dev-dependencies]
 concordium-smart-contract-testing = { path = "../../contract-testing" }
 cis2-multi = { path = "../cis2-multi/" }
-rand = "0.7.0"
+rand = "0.7"
 
 [lib]
 crate-type=["cdylib", "rlib"]

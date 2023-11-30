@@ -658,7 +658,7 @@ fn view_item_state(chain: &Chain, auction_contract_address: ContractAddress) -> 
     invoke.parse_return_value().expect("ViewItemState return value")
 }
 
-/// Get the `TOKEN_1` balances for Alice and the auction contract.
+/// Get the `TokenIdU8(1)` balances for Alice and the auction contract.
 fn get_balances(
     chain: &Chain,
     auction_contract_address: ContractAddress,
