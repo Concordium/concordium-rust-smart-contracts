@@ -1235,7 +1235,7 @@ impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
     fn as_ref(&self) -> &[MetadataUrl] { &self.0 }
 }
 
-/// The parameter type for a contract function which receives CIS2 tokens.
+/// Generic parameter type for a contract function which receives CIS2 tokens.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
@@ -1248,6 +1248,58 @@ pub struct OnReceivingCis2Params<T, A> {
     pub from:     Address,
     /// Some extra information which where sent as part of the transfer.
     pub data:     AdditionalData,
+}
+
+/// Specific parameter type for a contract function which receives CIS2 tokens
+/// with a specific type D for the AdditionalData.
+// Note: For the serialization to be derived according to the CIS2
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, SchemaType)]
+pub struct OnReceivingCis2DataParams<T, A, D> {
+    /// The ID of the token received.
+    pub token_id: T,
+    /// The amount of tokens received.
+    pub amount:   A,
+    /// The previous owner of the tokens.
+    pub from:     Address,
+    /// Some extra information which where sent as part of the transfer.
+    pub data:     D,
+}
+
+/// Deserial trait for OnReceivingCis2DataParams<T, A, D>.
+/// The specific type D is constructed from the general `AdditionalData` type
+/// first before the `OnReceivingCis2DataParams` object is deserialized.
+impl<T: Deserial, A: Deserial, D: Deserial> Deserial for OnReceivingCis2DataParams<T, A, D> {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let params: OnReceivingCis2Params<T, A> = source.get()?;
+        let additional_data_type: D = from_bytes(params.data.as_ref())?;
+        Ok(OnReceivingCis2DataParams {
+            token_id: params.token_id,
+            amount:   params.amount,
+            from:     params.from,
+            data:     additional_data_type,
+        })
+    }
+}
+
+/// Serial trait for OnReceivingCis2DataParams<T, A, D>.
+/// The specific type D is converted into the general `AdditionalData` type
+/// first before the `OnReceivingCis2Params<T, A>` object is serialized.
+impl<T: Serial + Clone, A: Serial + Clone, D: Serial> Serial
+    for OnReceivingCis2DataParams<T, A, D>
+{
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        let additional_data = AdditionalData::from(to_bytes(&self.data));
+        let object: OnReceivingCis2Params<T, A> = OnReceivingCis2Params {
+            token_id: self.token_id.clone(),
+            amount:   self.amount.clone(),
+            from:     self.from,
+            data:     additional_data,
+        };
+
+        object.serial(out)?;
+        Ok(())
+    }
 }
 
 /// Identifier for a smart contract standard.
