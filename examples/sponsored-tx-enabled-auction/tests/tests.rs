@@ -715,16 +715,14 @@ fn initialize_chain_and_auction() -> (Chain, AccountKeys, ContractAddress, Contr
         module_load_v1("../cis2-multi/concordium-out/module.wasm.v1").expect("Module exists");
     let deployment = chain.module_deploy_v1(SIGNER, CAROL, module).expect("Deploy valid module");
 
-    // Create the InitParameter.
-    let parameter = ContractAddress::new(0, 0);
-
     // Initialize the cis2 token contract.
     let token = chain
         .contract_init(SIGNER, CAROL, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
             mod_ref:   deployment.module_reference,
             init_name: OwnedContractName::new_unchecked("init_cis2_multi".to_string()),
-            param:     OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
+            param:     OwnedParameter::from_serial(&TokenAmountU64(100u64))
+                .expect("Serialize parameter"),
         })
         .expect("Initialize cis2 token contract");
 

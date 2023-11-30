@@ -259,7 +259,8 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     contract = "sponsored_tx_enabled_auction",
     name = "bid",
     mutable,
-    parameter = "OnReceivingCis2Params<ContractTokenId, ContractTokenAmount>",
+    parameter = "OnReceivingCis2DataParams<ContractTokenId, ContractTokenAmount, \
+                 AdditionalDataIndex>",
     error = "Error"
 )]
 fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
@@ -269,8 +270,11 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
     }
 
     // Getting input parameters.
-    let params: OnReceivingCis2Params<ContractTokenId, ContractTokenAmount> =
-        ctx.parameter_cursor().get()?;
+    let params: OnReceivingCis2DataParams<
+        ContractTokenId,
+        ContractTokenAmount,
+        AdditionalDataIndex,
+    > = ctx.parameter_cursor().get()?;
 
     // Ensure that only accounts can bid for an item.
     let bidder_address = match params.from {
@@ -278,14 +282,8 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()
         Address::Account(account_address) => account_address,
     };
 
-    // Get the item_index from the additionalData.
-    let additional_data_index: AdditionalDataIndex = from_bytes(params.data.as_ref())?;
-
-    let mut item = host
-        .state_mut()
-        .items
-        .entry(additional_data_index.item_index)
-        .occupied_or(Error::NoItem)?;
+    let mut item =
+        host.state_mut().items.entry(params.data.item_index).occupied_or(Error::NoItem)?;
 
     // Ensure the token_id matches.
     ensure_eq!(item.token_id, params.token_id, Error::WrongTokenID.into());
