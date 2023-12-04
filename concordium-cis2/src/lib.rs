@@ -1246,7 +1246,7 @@ pub struct OnReceivingCis2Params<T, A> {
     pub amount:   A,
     /// The previous owner of the tokens.
     pub from:     Address,
-    /// Some extra information which where sent as part of the transfer.
+    /// Some extra information which was sent as part of the transfer.
     pub data:     AdditionalData,
 }
 
@@ -1262,7 +1262,7 @@ pub struct OnReceivingCis2DataParams<T, A, D> {
     pub amount:   A,
     /// The previous owner of the tokens.
     pub from:     Address,
-    /// Some extra information which where sent as part of the transfer.
+    /// Some extra information which was sent as part of the transfer.
     pub data:     D,
 }
 
@@ -1286,8 +1286,8 @@ impl<T: Serial, A: Serial, D: Serial> Serial for OnReceivingCis2DataParams<T, A,
         self.token_id.serial(out)?;
         self.amount.serial(out)?;
         self.from.serial(out)?;
-        (to_bytes(&self.data).len() as u16).serial(out)?;
-        out.write_all(&to_bytes(&self.data))?;
+        let add = AdditionalData(to_bytes(&self.data));
+        add.serial(out)?;
         Ok(())
     }
 }
