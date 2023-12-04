@@ -474,3 +474,15 @@ fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<I
     let item = host.state().items.get(&item_index).map(|x| x.to_owned()).ok_or(Error::NoItem)?;
     Ok(item)
 }
+
+/// Helper function that can be invoked at the front-end to serialize the
+/// `AdditionalDataIndex` before generating the message to be signed in the
+/// wallet.
+#[receive(
+    contract = "sponsored_tx_enabled_auction",
+    name = "serializationHelper",
+    parameter = "AdditionalDataIndex"
+)]
+fn contract_serialization_helper(_ctx: &ReceiveContext, _host: &Host<State>) -> ContractResult<()> {
+    Ok(())
+}
