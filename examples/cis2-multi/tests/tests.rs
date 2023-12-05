@@ -28,21 +28,32 @@ fn test_minting() {
 
     // Invoke the view entrypoint and check that the tokens are owned by Alice.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
 
     // Check that the tokens are owned by Alice.
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.tokens[..], [TOKEN_0, TOKEN_1]);
-    assert_eq!(rv.state, vec![(ALICE_ADDR, ViewAddressState {
-        balances:  vec![(TOKEN_0, 400.into()), (TOKEN_1, 1.into())],
-        operators: Vec::new(),
-    })]);
+    assert_eq!(
+        rv.state,
+        vec![(
+            ALICE_ADDR,
+            ViewAddressState {
+                balances: vec![(TOKEN_0, 400.into()), (TOKEN_1, 1.into())],
+                operators: Vec::new(),
+            }
+        )]
+    );
 
     // Check that the events are logged.
     let events = update.events().flat_map(|(_addr, events)| events);
@@ -50,32 +61,35 @@ fn test_minting() {
     let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
         events.map(|e| e.parse().expect("Deserialize event")).collect();
 
-    assert_eq!(events, [
-        Cis2Event::Mint(MintEvent {
-            token_id: TokenIdU8(2),
-            amount:   TokenAmountU64(400),
-            owner:    ALICE_ADDR,
-        }),
-        Cis2Event::TokenMetadata(TokenMetadataEvent {
-            token_id:     TokenIdU8(2),
-            metadata_url: MetadataUrl {
-                url:  "https://some.example/token/02".to_string(),
-                hash: None,
-            },
-        }),
-        Cis2Event::Mint(MintEvent {
-            token_id: TokenIdU8(42),
-            amount:   TokenAmountU64(1),
-            owner:    ALICE_ADDR,
-        }),
-        Cis2Event::TokenMetadata(TokenMetadataEvent {
-            token_id:     TokenIdU8(42),
-            metadata_url: MetadataUrl {
-                url:  "https://some.example/token/2A".to_string(),
-                hash: None,
-            },
-        }),
-    ]);
+    assert_eq!(
+        events,
+        [
+            Cis2Event::Mint(MintEvent {
+                token_id: TokenIdU8(2),
+                amount: TokenAmountU64(400),
+                owner: ALICE_ADDR,
+            }),
+            Cis2Event::TokenMetadata(TokenMetadataEvent {
+                token_id: TokenIdU8(2),
+                metadata_url: MetadataUrl {
+                    url: "https://some.example/token/02".to_string(),
+                    hash: None,
+                },
+            }),
+            Cis2Event::Mint(MintEvent {
+                token_id: TokenIdU8(42),
+                amount: TokenAmountU64(1),
+                owner: ALICE_ADDR,
+            }),
+            Cis2Event::TokenMetadata(TokenMetadataEvent {
+                token_id: TokenIdU8(42),
+                metadata_url: MetadataUrl {
+                    url: "https://some.example/token/2A".to_string(),
+                    hash: None,
+                },
+            }),
+        ]
+    );
 }
 
 /// Test regular transfer where sender is the owner.
@@ -85,43 +99,63 @@ fn test_account_transfer() {
 
     // Transfer one token from Alice to Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU64(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU64(1),
+        data: AdditionalData::empty(),
     }]);
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect("Transfer tokens");
 
     // Check that Bob has 1 `TOKEN_0` and Alice has 399. Also check that Alice still
     // has 1 `TOKEN_1`.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
-    assert_eq!(rv.state, vec![
-        (ALICE_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
-            operators: Vec::new(),
-        }),
-        (BOB_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 1.into())],
-            operators: Vec::new(),
-        }),
-    ]);
+    assert_eq!(
+        rv.state,
+        vec![
+            (
+                ALICE_ADDR,
+                ViewAddressState {
+                    balances: vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
+                    operators: Vec::new(),
+                }
+            ),
+            (
+                BOB_ADDR,
+                ViewAddressState {
+                    balances: vec![(TOKEN_0, 1.into())],
+                    operators: Vec::new(),
+                }
+            ),
+        ]
+    );
 
     // Check that the events are logged.
     let events = update
@@ -129,12 +163,15 @@ fn test_account_transfer() {
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Cis2Event<_, _>>>();
 
-    assert_eq!(events, [Cis2Event::Transfer(TransferEvent {
-        token_id: TOKEN_0,
-        amount:   TokenAmountU64(1),
-        from:     ALICE_ADDR,
-        to:       BOB_ADDR,
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::Transfer(TransferEvent {
+            token_id: TOKEN_0,
+            amount: TokenAmountU64(1),
+            from: ALICE_ADDR,
+            to: BOB_ADDR,
+        }),]
+    );
 }
 
 /// Test that you can add an operator.
@@ -146,17 +183,25 @@ fn test_add_operator() {
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     }]);
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.updateOperator".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_multi.updateOperator".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
+            },
+        )
         .expect("Update operator");
 
     // Check that an operator event occurred.
@@ -164,16 +209,19 @@ fn test_add_operator() {
         .events()
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Cis2Event<ContractTokenId, ContractTokenAmount>>>();
-    assert_eq!(events, [Cis2Event::UpdateOperator(UpdateOperatorEvent {
-        operator: BOB_ADDR,
-        owner:    ALICE_ADDR,
-        update:   OperatorUpdate::Add,
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::UpdateOperator(UpdateOperatorEvent {
+            operator: BOB_ADDR,
+            owner: ALICE_ADDR,
+            update: OperatorUpdate::Add,
+        }),]
+    );
 
     // Construct a query parameter to check whether Bob is an operator for Alice.
     let query_params = OperatorOfQueryParams {
         queries: vec![OperatorOfQuery {
-            owner:   ALICE_ADDR,
+            owner: ALICE_ADDR,
             address: BOB_ADDR,
         }],
     };
@@ -181,12 +229,17 @@ fn test_add_operator() {
     // Invoke the operatorOf view entrypoint and check that Bob is an operator for
     // Alice.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.operatorOf".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.operatorOf".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
+            },
+        )
         .expect("Invoke view");
 
     let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
@@ -203,21 +256,27 @@ fn test_unauthorized_sender() {
     // Construct a transfer of `TOKEN_0` from Alice to Bob, which will be submitted
     // by Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU64(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU64(1),
+        data: AdditionalData::empty(),
     }]);
 
     // Notice that Bob is the sender/invoker.
     let update = chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect_err("Transfer tokens");
 
     // Check that the correct error is returned.
@@ -232,57 +291,85 @@ fn test_operator_can_transfer() {
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     }]);
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.updateOperator".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_multi.updateOperator".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
+            },
+        )
         .expect("Update operator");
 
     // Let Bob make a transfer to himself on behalf of Alice.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU64(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU64(1),
+        data: AdditionalData::empty(),
     }]);
 
     chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect("Transfer tokens");
 
     // Check that Bob now has 1 of `TOKEN_0` and Alice has 399. Also check that
     // Alice still has 1 `TOKEN_1`.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
-    assert_eq!(rv.state, vec![
-        (ALICE_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
-            operators: vec![BOB_ADDR],
-        }),
-        (BOB_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 1.into())],
-            operators: Vec::new(),
-        }),
-    ]);
+    assert_eq!(
+        rv.state,
+        vec![
+            (
+                ALICE_ADDR,
+                ViewAddressState {
+                    balances: vec![(TOKEN_0, 399.into()), (TOKEN_1, 1.into())],
+                    operators: vec![BOB_ADDR],
+                }
+            ),
+            (
+                BOB_ADDR,
+                ViewAddressState {
+                    balances: vec![(TOKEN_0, 1.into())],
+                    operators: Vec::new(),
+                }
+            ),
+        ]
+    );
 }
 
 /// Helper function that sets up the contract with two types of tokens minted to
@@ -291,33 +378,45 @@ fn initialize_contract_with_alice_tokens() -> (Chain, ContractAddress, ContractI
     let (mut chain, contract_address) = initialize_chain_and_contract();
 
     let mint_params = MintParams {
-        owner:  ALICE_ADDR,
+        owner: ALICE_ADDR,
         tokens: BTreeMap::from_iter(vec![
-            (TOKEN_0, MintParam {
-                token_amount: 400.into(),
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/02".to_string(),
-                    hash: None,
+            (
+                TOKEN_0,
+                MintParam {
+                    token_amount: 400.into(),
+                    metadata_url: MetadataUrl {
+                        url: "https://some.example/token/02".to_string(),
+                        hash: None,
+                    },
                 },
-            }),
-            (TOKEN_1, MintParam {
-                token_amount: 1.into(),
-                metadata_url: MetadataUrl {
-                    url:  "https://some.example/token/2A".to_string(),
-                    hash: None,
+            ),
+            (
+                TOKEN_1,
+                MintParam {
+                    token_amount: 1.into(),
+                    metadata_url: MetadataUrl {
+                        url: "https://some.example/token/2A".to_string(),
+                        hash: None,
+                    },
                 },
-            }),
+            ),
         ]),
     };
 
     // Mint two tokens for which Alice is the owner.
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+            },
+        )
         .expect("Mint tokens");
 
     (chain, contract_address, update)
@@ -341,12 +440,17 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
 
     // Initialize the auction contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_cis2_multi".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_cis2_multi".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize contract");
 
     (chain, init.contract_address)
