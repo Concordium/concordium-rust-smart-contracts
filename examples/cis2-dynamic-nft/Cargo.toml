@@ -1,10 +1,10 @@
 [package]
 name = "cis2_dynamic_nft"
 version = "0.1.0"
-authors = [ "bogachanyigitbasi" ]
+authors = [ "Concordium <developers@concordium.com>" ]
 edition = "2021"
 license = "MPL-2.0"
-description = " "
+description = "An example implementation of the CIS-2 Concordium Token Standard containing a dynamic NFTs"
 
 [features]
 default = ["std"]
@@ -12,8 +12,11 @@ std = ["concordium-std/std", "concordium-cis2/std"]
 wee_alloc = ["concordium-std/wee_alloc"]
 
 [dependencies]
-concordium-std = {version = "7.0", default-features = false}
-concordium-cis2 = {version = "4.0", default-features = false}
+concordium-std = {version = "8.1.0", default-features = false}
+concordium-cis2 = {version = "5.1.0", default-features = false}
+
+[dev-dependencies]
+concordium-smart-contract-testing = "3.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
