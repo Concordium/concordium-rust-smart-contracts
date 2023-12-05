@@ -39,7 +39,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use concordium_cis2::{Cis2Client, *};
-use concordium_std::*;
+use concordium_std::{collections::BTreeMap, *};
 
 /// Contract token ID type. It has to be the `ContractTokenId` from the cis2
 /// token contract.
@@ -204,11 +204,25 @@ pub enum Error {
     LogicReject, //-20
     // Raised when the cis2 token contract execution triggered a runtime error.
     Trap, //-21
+    /// Failed logging: Log is full.
+    LogFull, // -22
+    /// Failed logging: Log is malformed.
+    LogMalformed, // -23
 }
 
 pub type ContractResult<A> = Result<A, Error>;
 
-/// Mapping CallContractError<ExternCallResponse> to Error
+/// Mapping the logging errors to Error.
+impl From<LogError> for Error {
+    fn from(le: LogError) -> Self {
+        match le {
+            LogError::Full => Self::LogFull,
+            LogError::Malformed => Self::LogMalformed,
+        }
+    }
+}
+
+/// Mapping CallContractError<ExternCallResponse> to Error.
 impl From<CallContractError<ExternCallResponse>> for Error {
     fn from(e: CallContractError<ExternCallResponse>) -> Self {
         match e {
@@ -226,7 +240,7 @@ impl From<CallContractError<ExternCallResponse>> for Error {
     }
 }
 
-/// Mapping Cis2ClientError<Error> to Error
+/// Mapping Cis2ClientError<Error> to Error.
 impl From<Cis2ClientError<Error>> for Error {
     fn from(e: Cis2ClientError<Error>) -> Self {
         match e {
@@ -237,8 +251,40 @@ impl From<Cis2ClientError<Error>> for Error {
     }
 }
 
+/// Tagged event to be serialized for the event log.
+#[derive(Serialize)]
+pub enum Event {
+    AddItem(AddItemEvent),
+}
+
+/// The AddItemEvent is logged when an item is added to the auction.
+#[derive(Serialize)]
+pub struct AddItemEvent {
+    /// The index of the item added.
+    pub item_index: u16,
+}
+
+// Implementing a custom schemaType for the `Event` struct.
+// This custom implementation flattens the fields to avoid one
+// level of nesting. Deriving the schemaType would result in e.g.:
+// {"AddItemEvent": [{...fields}] }. In contrast, this custom schemaType
+// implementation results in e.g.: {"AddItemEvent": {...fields} }
+impl schema::SchemaType for Event {
+    fn get_type() -> schema::Type {
+        let mut event_map = BTreeMap::new();
+        event_map.insert(
+            0u8,
+            (
+                "AddItemEvent".to_string(),
+                schema::Fields::Named(vec![(String::from("item_index"), u16::get_type())]),
+            ),
+        );
+        schema::Type::TaggedEnum(event_map)
+    }
+}
+
 /// Init entry point that creates a new auction contract.
-#[init(contract = "sponsored_tx_enabled_auction", parameter = "ContractAddress")]
+#[init(contract = "sponsored_tx_enabled_auction", parameter = "ContractAddress", event = "Event")]
 fn auction_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Getting input parameters.
     let contract: ContractAddress = ctx.parameter_cursor().get()?;
@@ -261,9 +307,14 @@ fn auction_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResu
     contract = "sponsored_tx_enabled_auction",
     name = "addItem",
     parameter = "AddItemParameter",
+    enable_logger,
     mutable
 )]
-fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
+fn add_item(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
     // Ensure that only accounts can add an item.
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(Error::OnlyAccount),
@@ -281,11 +332,11 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> 
     ensure!(block_time <= item.end, Error::EndTimeError);
 
     // Assign an index to the item/auction.
-    let counter = host.state_mut().counter;
-    host.state_mut().counter = counter + 1;
+    let item_index = host.state_mut().counter + 1;
+    host.state_mut().counter = item_index;
 
     // Insert the item into the state.
-    host.state_mut().items.insert(counter, ItemState {
+    host.state_mut().items.insert(item_index, ItemState {
         auction_state:  AuctionState::NotSoldYet,
         highest_bidder: None,
         name:           item.name,
@@ -295,6 +346,11 @@ fn add_item(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> 
         creator:        sender_address,
         token_id:       item.token_id,
     });
+
+    // Event for added item.
+    logger.log(&Event::AddItem(AddItemEvent {
+        item_index,
+    }))?;
 
     Ok(())
 }
