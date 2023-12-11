@@ -305,34 +305,34 @@ pub struct PermitParamPartial {
 pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
-    ParseParams,
+    ParseParams, // -1
     /// Failed logging: Log is full.
-    LogFull,
+    LogFull, // -2
     /// Failed logging: Log is malformed.
-    LogMalformed,
+    LogMalformed, // -3
     /// Invalid contract name.
-    InvalidContractName,
+    InvalidContractName, // -4
     /// Only a smart contract can call this function.
-    ContractOnly,
+    ContractOnly, // -5
     /// Failed to invoke a contract.
-    InvokeContractError,
+    InvokeContractError, // -6
     /// Failed to verify signature because signer account does not exist on
     /// chain.
-    MissingAccount,
+    MissingAccount, // -7
     /// Failed to verify signature because data was malformed.
-    MalformedData,
+    MalformedData, // -8
     /// Failed signature verification: Invalid signature.
-    WrongSignature,
+    WrongSignature, // -9
     /// Failed signature verification: A different nonce is expected.
-    NonceMismatch,
+    NonceMismatch, // -10
     /// Failed signature verification: Signature was intended for a different
     /// contract.
-    WrongContract,
+    WrongContract, // -11
     /// Failed signature verification: Signature was intended for a different
     /// entry_point.
-    WrongEntryPoint,
+    WrongEntryPoint, // -12
     /// Failed signature verification: Signature is expired.
-    Expired,
+    Expired, // -13
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
