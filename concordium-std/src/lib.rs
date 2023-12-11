@@ -392,3 +392,51 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
     note = "Deprecated in favor of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
 )]
 pub mod test_infrastructure;
+
+#[cfg(all(feature = "debug", not(feature = "std")))]
+pub use alloc::format;
+#[cfg(all(feature = "debug", feature = "std"))]
+pub use std::format;
+
+#[macro_export]
+#[cfg(feature = "debug")]
+macro_rules! concordium_dbg {
+    () => {
+        {
+            $crate::debug_print("", file!(), line!(), column!());
+        }
+    };
+    ($($arg:tt),+) => {
+        {
+            let msg = $crate::format!($($arg),+);
+            $crate::debug_print(&msg, file!(), line!(), column!());
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(not(feature = "debug"))]
+macro_rules! concordium_dbg {
+    () => {{}};
+    ($($arg:tt),+) => {{}};
+}
+
+/// Emit a message in debug mode.
+/// Used internally, not meant to be called directly by contract writers,
+/// and a contract with this debug print cannot be deployed to the chain.
+#[doc(hidden)]
+#[cfg(feature = "debug")]
+pub fn debug_print(message: &str, filename: &str, line: u32, column: u32) {
+    let msg_bytes = message.as_bytes();
+    let filename_bytes = filename.as_bytes();
+    unsafe {
+        crate::prims::debug_print(
+            msg_bytes.as_ptr(),
+            msg_bytes.len() as u32,
+            filename_bytes.as_ptr(),
+            filename_bytes.len() as u32,
+            line,
+            column,
+        )
+    };
+}

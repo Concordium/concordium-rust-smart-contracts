@@ -22,13 +22,25 @@ use concordium_base::{
 };
 use concordium_smart_contract_engine::{
     v0,
-    v1::{self, trie, InvokeResponse},
-    ExecResult, InterpreterEnergy,
+    v1::{self, trie, DebugTracker, InvokeResponse},
+    DebugInfo, InterpreterEnergy,
 };
 use concordium_wasm::artifact::{self, CompiledFunction};
 use std::collections::{btree_map, BTreeMap};
 
+// Exit early with an out of energy error.
+macro_rules! exit_ooe {
+    ($charge:expr, $trace:expr) => {
+        if let Err(InsufficientEnergy) = $charge {
+            return Err(TestConfigurationError::OutOfEnergy {
+                debug_trace: $trace,
+            });
+        }
+    };
+}
+
 impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
+    // TODO: Clone
     /// Used for handling the *initial* part of invoking an entrypoint.
     ///
     /// **Preconditions:**
@@ -44,11 +56,14 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         payload: UpdateContractPayload,
         trace_elements_checkpoint: usize,
     ) -> Result<
-        Result<(v1::ReceiveResult<CompiledFunction>, InvocationData), InvokeResponse>,
+        Result<(v1::ReceiveResult<CompiledFunction, DebugTracker>, InvocationData), InvokeResponse>,
         TestConfigurationError,
     > {
         // Charge the base cost for updating a contract.
-        self.remaining_energy.tick_energy(constants::UPDATE_CONTRACT_INSTANCE_BASE_COST)?;
+        exit_ooe!(
+            self.remaining_energy.tick_energy(constants::UPDATE_CONTRACT_INSTANCE_BASE_COST),
+            DebugTracker::empty_trace()
+        );
 
         // Move the amount from the sender to the contract, if any.
         // And get the new self_balance.
@@ -134,7 +149,10 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         };
 
         // Subtract the cost of looking up the module
-        self.remaining_energy.tick_energy(lookup_module_cost(&module))?;
+        exit_ooe!(
+            self.remaining_energy.tick_energy(lookup_module_cost(&module)),
+            DebugTracker::empty_trace()
+        );
 
         // Sender policies have a very bespoke serialization in
         // order to allow skipping portions of them in smart contracts.
@@ -308,6 +326,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 &mut trace_elements,
                                 resume_event,
                                 data.entrypoint.clone(),
+                                DebugTracker::empty_trace(), /* Resume events do not have any
+                                                              * debug trace. */
                             );
                             let receive_result = self.run_interpreter(|energy| {
                                 v1::resume_receive(
@@ -353,6 +373,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     state_changed,
                     return_value,
                     remaining_energy,
+                    trace,
                 } => {
                     // Update the remaining_energy field.
                     self.update_energy(remaining_energy);
@@ -376,6 +397,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         &mut trace_elements,
                         update_event,
                         invocation_data.entrypoint.clone(),
+                        trace,
                     );
 
                     // Save changes to changeset.
@@ -397,6 +419,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     logs,
                     config,
                     interrupt,
+                    trace,
                 } => {
                     // Update the remaining_energy field.
                     self.update_energy(remaining_energy);
@@ -425,6 +448,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 &mut trace_elements,
                                 interrupt_event,
                                 invocation_data.entrypoint.clone(),
+                                trace,
                             );
 
                             let response = match self.transfer_from_contract_to_account(
@@ -472,6 +496,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     &mut trace_elements,
                                     transfer_event,
                                     invocation_data.entrypoint.clone(),
+                                    DebugTracker::empty_trace(), // No trace for transfer events.
                                 );
                             }
                             // Add resume event
@@ -483,11 +508,16 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 &mut trace_elements,
                                 resume_event,
                                 invocation_data.entrypoint.clone(),
+                                DebugTracker::empty_trace(), /* Resume events don't have a new
+                                                              * trace on their own. */
                             );
 
-                            self.remaining_energy.tick_energy(
-                                concordium_base::transactions::cost::SIMPLE_TRANSFER,
-                            )?;
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    concordium_base::transactions::cost::SIMPLE_TRANSFER
+                                ),
+                                DebugTracker::empty_trace()
+                            );
 
                             stack.push(Next::Resume {
                                 data: invocation_data,
@@ -507,6 +537,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 &mut trace_elements,
                                 interrupt_event,
                                 invocation_data.entrypoint.clone(),
+                                trace,
                             );
 
                             match self
@@ -529,6 +560,9 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                         &mut trace_elements,
                                         resume_event,
                                         invocation_data.entrypoint.clone(),
+                                        DebugTracker::empty_trace(), /* Nothing happened since
+                                                                      * the contract does not
+                                                                      * exist. */
                                     );
                                     stack.push(Next::Resume {
                                         data: invocation_data,
@@ -578,63 +612,74 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 &mut trace_elements,
                                 interrupt_event,
                                 invocation_data.entrypoint.clone(),
+                                trace,
                             );
 
                             // Charge a base cost.
-                            self.remaining_energy
-                                .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
+                            exit_ooe!(
+                                self.remaining_energy
+                                    .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST),
+                                DebugTracker::empty_trace()
+                            );
 
-                            let response = match self.chain.modules.get(&module_ref) {
-                                None => v1::InvokeResponse::Failure {
-                                    kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
-                                },
-                                Some(module) => {
-                                    // Charge for the module lookup.
-                                    self.remaining_energy
-                                        .tick_energy(lookup_module_cost(module))?;
-
-                                    if module.artifact.export.contains_key(
-                                        invocation_data
-                                            .contract_name
-                                            .as_contract_name()
-                                            .get_chain_name(),
-                                    ) {
-                                        // Update module reference in the changeset.
-                                        let old_module_ref = self.save_module_upgrade(
-                                            invocation_data.address,
-                                            module_ref,
+                            let response =
+                                match self.chain.modules.get(&module_ref) {
+                                    None => v1::InvokeResponse::Failure {
+                                        kind: v1::InvokeFailure::UpgradeInvalidModuleRef,
+                                    },
+                                    Some(module) => {
+                                        // Charge for the module lookup.
+                                        exit_ooe!(
+                                            self.remaining_energy
+                                                .tick_energy(lookup_module_cost(module)),
+                                            DebugTracker::empty_trace()
                                         );
 
-                                        // Charge for the initialization cost.
-                                        self.remaining_energy.tick_energy(
-                                            constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
-                                        )?;
-
-                                        let upgrade_event = ContractTraceElement::Upgraded {
-                                            address: invocation_data.address,
-                                            from:    old_module_ref,
-                                            to:      module_ref,
-                                        };
-
-                                        self.push_regular_trace_element(
-                                            &mut trace_elements,
-                                            upgrade_event,
-                                            invocation_data.entrypoint.clone(),
-                                        );
-
-                                        v1::InvokeResponse::Success {
-                                            new_balance: self.contract_balance_unchecked(
+                                        if module.artifact.export.contains_key(
+                                            invocation_data
+                                                .contract_name
+                                                .as_contract_name()
+                                                .get_chain_name(),
+                                        ) {
+                                            // Update module reference in the changeset.
+                                            let old_module_ref = self.save_module_upgrade(
                                                 invocation_data.address,
-                                            ),
-                                            data:        None,
-                                        }
-                                    } else {
-                                        v1::InvokeResponse::Failure {
-                                            kind: v1::InvokeFailure::UpgradeInvalidContractName,
+                                                module_ref,
+                                            );
+
+                                            // Charge for the initialization cost.
+                                            exit_ooe!(self.remaining_energy.tick_energy(
+                                                constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST,
+                                            ), DebugTracker::empty_trace());
+
+                                            let upgrade_event = ContractTraceElement::Upgraded {
+                                                address: invocation_data.address,
+                                                from:    old_module_ref,
+                                                to:      module_ref,
+                                            };
+
+                                            self.push_regular_trace_element(
+                                                &mut trace_elements,
+                                                upgrade_event,
+                                                invocation_data.entrypoint.clone(),
+                                                DebugTracker::empty_trace(), /* Nothing happened
+                                                                              * in
+                                                                              * between. */
+                                            );
+
+                                            v1::InvokeResponse::Success {
+                                                new_balance: self.contract_balance_unchecked(
+                                                    invocation_data.address,
+                                                ),
+                                                data:        None,
+                                            }
+                                        } else {
+                                            v1::InvokeResponse::Failure {
+                                                kind: v1::InvokeFailure::UpgradeInvalidContractName,
+                                            }
                                         }
                                     }
-                                }
-                            };
+                                };
 
                             let success = matches!(response, v1::InvokeResponse::Success { .. });
                             let resumed_event = ContractTraceElement::Resumed {
@@ -645,6 +690,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 &mut trace_elements,
                                 resumed_event,
                                 invocation_data.entrypoint.clone(),
+                                DebugTracker::empty_trace(),
                             );
                             stack.push(Next::Resume {
                                 data: invocation_data,
@@ -666,9 +712,12 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 },
                             };
 
-                            self.remaining_energy.tick_energy(
-                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
-                            )?;
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
+                                ),
+                                trace
+                            );
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -691,9 +740,12 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 },
                             };
 
-                            self.remaining_energy.tick_energy(
-                                constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
-                            )?;
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
+                                ),
+                                trace
+                            );
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -712,9 +764,12 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 data:        Some(to_bytes(&exchange_rates)),
                             };
 
-                            self.remaining_energy.tick_energy(
-                                constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
-                            )?;
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_EXCHANGE_RATE_COST,
+                                ),
+                                trace
+                            );
 
                             stack.push(Next::Resume {
                                 data: invocation_data,
@@ -726,24 +781,32 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             address,
                             payload,
                         } => {
-                            self.remaining_energy.tick_energy(
-                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
-                            )?;
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
+                                ),
+                                trace
+                            );
                             // Due to borrow checker limitations we don't use self.account_keys here
                             // since it leads to clashes with the mutable borrow of
                             // self.remaining_energy below.
-                            let response =
-                                match self.chain.accounts.get(&address.into()).map(|a| &a.keys) {
-                                    Some(keys) => {
-                                        // attempt to deserialize the payload after
-                                        // looking up the account.
-                                        // This is the order in the scheduler as
-                                        // well, and the order matters
-                                        // since the response to the contract is
-                                        // different depending on failure kind.
-                                        match deserial_signature_and_data_from_contract(&payload) {
-                                            Ok((sigs, data)) => {
-                                                let num_sigs = sigs.num_signatures();
+                            let response = match self
+                                .chain
+                                .accounts
+                                .get(&address.into())
+                                .map(|a| &a.keys)
+                            {
+                                Some(keys) => {
+                                    // attempt to deserialize the payload after
+                                    // looking up the account.
+                                    // This is the order in the scheduler as
+                                    // well, and the order matters
+                                    // since the response to the contract is
+                                    // different depending on failure kind.
+                                    match deserial_signature_and_data_from_contract(&payload) {
+                                        Ok((sigs, data)) => {
+                                            let num_sigs = sigs.num_signatures();
+                                            exit_ooe!(
                                                 self.remaining_energy.tick_energy(
                                                     // This cannot overflow on any data that can be
                                                     // supplied.
@@ -754,31 +817,31 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                                         num_sigs,
                                                         data.len() as u32,
                                                     ),
-                                                )?;
-                                                if verify_data_signature(keys, data, &sigs.into()) {
-                                                    v1::InvokeResponse::Success {
-                                                        new_balance: self
-                                                            .contract_balance_unchecked(
-                                                                invocation_data.address,
-                                                            ),
-                                                        data:        None,
-                                                    }
-                                                } else {
-                                                    v1::InvokeResponse::Failure {
-                                                        kind:
-                                                            v1::InvokeFailure::SignatureCheckFailed,
-                                                    }
+                                                ),
+                                                trace
+                                            );
+                                            if verify_data_signature(keys, data, &sigs.into()) {
+                                                v1::InvokeResponse::Success {
+                                                    new_balance: self.contract_balance_unchecked(
+                                                        invocation_data.address,
+                                                    ),
+                                                    data:        None,
+                                                }
+                                            } else {
+                                                v1::InvokeResponse::Failure {
+                                                    kind: v1::InvokeFailure::SignatureCheckFailed,
                                                 }
                                             }
-                                            Err(_) => v1::InvokeResponse::Failure {
-                                                kind: v1::InvokeFailure::SignatureDataMalformed,
-                                            },
                                         }
+                                        Err(_) => v1::InvokeResponse::Failure {
+                                            kind: v1::InvokeFailure::SignatureDataMalformed,
+                                        },
                                     }
-                                    None => v1::InvokeResponse::Failure {
-                                        kind: v1::InvokeFailure::NonExistentAccount,
-                                    },
-                                };
+                                }
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentAccount,
+                                },
+                            };
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -788,18 +851,21 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         v1::Interrupt::QueryAccountKeys {
                             address,
                         } => {
-                            self.remaining_energy.tick_energy(
-                                constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
-                            )?;
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_KEYS_BASE_COST,
+                                ),
+                                trace
+                            );
                             let response = match self.account_keys(address) {
                                 Some(keys) => {
                                     let response_data = common::to_bytes(&keys);
                                     let num_keys = keys.num_keys();
-                                    self.remaining_energy.tick_energy(
+                                    exit_ooe!(self.remaining_energy.tick_energy(
                                         constants::contract_instance_query_account_keys_return_cost(
                                             num_keys,
                                         ),
-                                    )?;
+                                    ), trace);
                                     v1::InvokeResponse::Success {
                                         // Balance of contract querying. Does not change for this
                                         // request.
@@ -824,6 +890,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     reason,
                     return_value,
                     remaining_energy,
+                    trace,
                 } => {
                     self.update_energy(remaining_energy);
                     // Remove the failure stack traces from the list and include them in a failure
@@ -842,6 +909,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         },
                         trace_elements:   failure_traces,
                         energy_used:      self.energy_used(),
+                        debug_trace:      trace,
                     };
                     trace_elements.push(with_failure);
 
@@ -857,6 +925,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 v1::ReceiveResult::Trap {
                     error,
                     remaining_energy,
+                    trace,
                 } => {
                     self.update_energy(remaining_energy);
                     // Remove the failure stack traces from the list and include them in a failure
@@ -874,6 +943,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         },
                         trace_elements:   failure_traces,
                         energy_used:      self.energy_used(),
+                        debug_trace:      trace,
                     };
                     trace_elements.push(with_failure);
 
@@ -884,7 +954,13 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     });
                 }
                 // Convert this to an error here, so that we will short circuit processing.
-                v1::ReceiveResult::OutOfEnergy => return Err(TestConfigurationError::OutOfEnergy),
+                v1::ReceiveResult::OutOfEnergy {
+                    trace,
+                } => {
+                    return Err(TestConfigurationError::OutOfEnergy {
+                        debug_trace: trace,
+                    })
+                }
             }
         }
         Ok((invoke_response.expect("Response should have been set."), trace_elements))
@@ -1269,8 +1345,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 
     /// Update the `remaining_energy` field by converting the input to
     /// [`InterpreterEnergy`] and then [`Energy`].
-    fn update_energy(&mut self, remaining_energy: u64) {
-        *self.remaining_energy = from_interpreter_energy(InterpreterEnergy::from(remaining_energy));
+    fn update_energy(&mut self, remaining_energy: InterpreterEnergy) {
+        *self.remaining_energy = from_interpreter_energy(&remaining_energy);
     }
 
     /// Run the interpreter with the provided function and the
@@ -1278,49 +1354,61 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     ///
     /// This function ensures that the energy calculations is handled as in the
     /// node.
-    fn run_interpreter<F>(
+    fn run_interpreter<F, Err>(
         &mut self,
         f: F,
-    ) -> Result<v1::ReceiveResult<artifact::CompiledFunction>, InsufficientEnergy>
+    ) -> Result<
+        v1::ReceiveResult<artifact::CompiledFunction, DebugTracker>,
+        (InsufficientEnergy, DebugTracker),
+    >
     where
-        F: FnOnce(InterpreterEnergy) -> ExecResult<v1::ReceiveResult<artifact::CompiledFunction>>,
-    {
+        F: FnOnce(
+            InterpreterEnergy,
+        )
+            -> Result<v1::ReceiveResult<artifact::CompiledFunction, DebugTracker>, Err>,
+        Err: Into<v1::ReceiveResult<artifact::CompiledFunction, DebugTracker>>, {
         let available_interpreter_energy = to_interpreter_energy(*self.remaining_energy);
-        let res = match f(available_interpreter_energy) {
+        let res = match f(InterpreterEnergy::new(available_interpreter_energy)) {
             Ok(res) => res,
             Err(err) => {
                 // An error occurred in the interpreter and it doesn't return the remaining
-                // energy. We convert this to a trap and set the energy to the
-                // last known amount.
-                return Ok(v1::ReceiveResult::Trap {
-                    error:            err,
-                    remaining_energy: available_interpreter_energy.energy,
-                });
+                // energy. We convert this to a trap and set the energy to 0 since this matches
+                // the node behaviour.
+                return Ok(err.into());
             }
         };
-        let mut subtract_then_convert = |remaining_energy| -> Result<u64, InsufficientEnergy> {
-            let remaining_energy = InterpreterEnergy::from(remaining_energy);
-            // Using `saturating_sub` here should be ok since we should never be able to use
-            // more energy than what is available.
-            let used_energy = from_interpreter_energy(
-                available_interpreter_energy.saturating_sub(remaining_energy),
-            );
-            self.remaining_energy.tick_energy(used_energy)?;
-            Ok(to_interpreter_energy(*self.remaining_energy).energy)
-        };
+        let mut subtract_then_convert =
+            |mut remaining_energy| -> Result<InterpreterEnergy, InsufficientEnergy> {
+                // Using `saturating_sub` here should be ok since we should never be able to use
+                // more energy than what is available.
+                let used_energy = from_interpreter_energy(
+                    &InterpreterEnergy::new(available_interpreter_energy)
+                        .saturating_sub(&remaining_energy), /* TODO: This is stupid. Revise
+                                                             * abstractions. */
+                );
+                if let Err(e) = self.remaining_energy.tick_energy(used_energy) {
+                    return Err(e);
+                }
+                remaining_energy.energy = to_interpreter_energy(*self.remaining_energy);
+                Ok(remaining_energy)
+            };
         match res {
             v1::ReceiveResult::Success {
                 logs,
                 state_changed,
                 return_value,
                 remaining_energy,
+                trace,
             } => {
-                let remaining_energy = subtract_then_convert(remaining_energy)?;
+                let Ok(remaining_energy) = subtract_then_convert(remaining_energy) else {
+                    return Err((InsufficientEnergy, trace));
+                };
                 Ok(v1::ReceiveResult::Success {
                     logs,
                     state_changed,
                     return_value,
                     remaining_energy,
+                    trace,
                 })
             }
 
@@ -1330,8 +1418,11 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 logs,
                 config,
                 interrupt,
+                trace,
             } => {
-                let remaining_energy = subtract_then_convert(remaining_energy)?;
+                let Ok(remaining_energy) = subtract_then_convert(remaining_energy) else {
+                    return Err((InsufficientEnergy, trace));
+                };
 
                 Ok(v1::ReceiveResult::Interrupt {
                     remaining_energy,
@@ -1339,26 +1430,43 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     logs,
                     config,
                     interrupt,
+                    trace,
                 })
             }
             v1::ReceiveResult::Reject {
                 reason,
                 return_value,
                 remaining_energy,
-            } => Ok(v1::ReceiveResult::Reject {
-                reason,
-                return_value,
-                remaining_energy: subtract_then_convert(remaining_energy)?,
-            }),
+                trace,
+            } => {
+                let Ok(remaining_energy) = subtract_then_convert(remaining_energy) else {
+                    return Err((InsufficientEnergy, trace));
+                };
+                Ok(v1::ReceiveResult::Reject {
+                    reason,
+                    return_value,
+                    remaining_energy,
+                    trace,
+                })
+            }
             v1::ReceiveResult::Trap {
                 error,
                 remaining_energy,
-            } => Ok(v1::ReceiveResult::Trap {
-                error,
-                remaining_energy: subtract_then_convert(remaining_energy)?,
-            }),
+                trace,
+            } => {
+                let Ok(remaining_energy) = subtract_then_convert(remaining_energy) else {
+                    return Err((InsufficientEnergy, trace));
+                };
+                Ok(v1::ReceiveResult::Trap {
+                    error,
+                    remaining_energy,
+                    trace,
+                })
+            }
             // Convert this to an error so that we will short-circuit the processing.
-            v1::ReceiveResult::OutOfEnergy => Err(InsufficientEnergy),
+            v1::ReceiveResult::OutOfEnergy {
+                trace,
+            } => Err((InsufficientEnergy, trace)),
         }
     }
 
@@ -1372,12 +1480,14 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         trace_elements: &mut Vec<DebugTraceElement>,
         trace_element: ContractTraceElement,
         entrypoint: OwnedEntrypointName,
+        debug_trace: DebugTracker,
     ) {
         let energy_used = self.energy_used();
         let new = DebugTraceElement::Regular {
             entrypoint,
             trace_element,
             energy_used,
+            debug_trace,
         };
         trace_elements.push(new);
     }
@@ -1474,7 +1584,6 @@ impl ChangeSet {
 
         // One energy per extra byte of state.
         let energy_for_state_increase = Energy::from(collector.collect());
-
         // Return an error if out of energy.
         remaining_energy.tick_energy(energy_for_state_increase)?;
 
@@ -1657,8 +1766,12 @@ impl AccountChanges {
     }
 }
 
-impl From<InsufficientEnergy> for TestConfigurationError {
-    fn from(_: InsufficientEnergy) -> Self { Self::OutOfEnergy }
+impl From<(InsufficientEnergy, DebugTracker)> for TestConfigurationError {
+    fn from((_, debug_trace): (InsufficientEnergy, DebugTracker)) -> Self {
+        Self::OutOfEnergy {
+            debug_trace,
+        }
+    }
 }
 
 #[cfg(test)]

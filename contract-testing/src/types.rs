@@ -16,7 +16,10 @@ use concordium_base::{
     transactions::AccountAccessStructure,
 };
 use concordium_rust_sdk as sdk;
-use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
+use concordium_smart_contract_engine::{
+    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostFunctionV1, ReturnValue},
+    InterpreterEnergy,
+};
 use concordium_wasm::artifact;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -29,9 +32,9 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub struct ContractModule {
     /// Size of the module in bytes. Used for cost accounting.
-    pub(crate) size:     u64,
+    pub size:     u64,
     /// The runnable module.
-    pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
+    pub artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
 /// The chain parameters.
@@ -67,17 +70,17 @@ pub(crate) struct ExternalNodeConnection {
 /// contracts and invoking contracts.
 #[derive(Debug)]
 pub struct Chain {
-    pub(crate) parameters:               ChainParameters,
+    pub(crate) parameters: ChainParameters,
     /// Accounts and info about them.
     /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
     /// as one account.
-    pub(crate) accounts:                 BTreeMap<AccountAddressEq, Account>,
+    pub accounts: BTreeMap<AccountAddressEq, Account>,
     /// Smart contract modules.
-    pub(crate) modules:                  BTreeMap<ModuleReference, ContractModule>,
+    pub modules: BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
-    pub(crate) contracts:                BTreeMap<ContractAddress, Contract>,
+    pub contracts: BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
-    pub(crate) next_contract_index:      u64,
+    pub(crate) next_contract_index: u64,
     /// An optional connection to an external node.
     pub(crate) external_node_connection: Option<ExternalNodeConnection>,
 }
@@ -340,6 +343,8 @@ pub struct ContractInitSuccess {
     pub energy_used:      Energy,
     /// Cost of transaction.
     pub transaction_fee:  Amount,
+    /// Debug information emitted by the initialization method.
+    pub debug_trace:      DebugTracker,
 }
 
 /// An error that occurred in [`Chain::contract_init`].
@@ -365,11 +370,15 @@ pub enum ContractInitErrorKind {
     #[error("Failed with an execution error: {error:?}")]
     ExecutionError {
         /// The reason for why the contract initialization failed.
-        error: InitExecutionError,
+        error:       InitExecutionError,
+        /// Trace of the execution until the error.
+        debug_trace: DebugTracker,
     },
     /// Ran out of energy.
-    #[error("Ran out of energy")]
-    OutOfEnergy,
+    #[error("Ran out of energy: {debug_trace:?}")]
+    OutOfEnergy {
+        debug_trace: DebugTracker,
+    },
     /// Module has not been deployed in the test environment.
     #[error("{0}")]
     ModuleDoesNotExist(#[from] ModuleDoesNotExist),
@@ -535,47 +544,87 @@ impl ContractInvokeSuccess {
             .collect()
     }
 
+    /// Get an iterator over references to all emitted debug events
+    /// that have occurred in the part of execution that has *not* been rolled
+    /// back.
+    pub fn effective_debug_events(&self) -> impl Iterator<Item = &EmittedDebugStatement> {
+        self.trace_elements
+            .iter()
+            .filter_map(|cte| match cte {
+                DebugTraceElement::Regular {
+                    debug_trace,
+                    ..
+                } => Some(debug_trace.emitted_events.iter().map(|(_, e)| e)),
+                DebugTraceElement::WithFailures {
+                    ..
+                } => None,
+            })
+            .flatten()
+    }
+
+    /// Get an iterator over all host calls that have occurred in the part of
+    /// execution that has *not* been rolled back.
+    pub fn effective_host_calls(
+        &self,
+    ) -> impl Iterator<Item = (contracts_common::EntrypointName<'_>, HostFunctionV1, InterpreterEnergy)>
+    {
+        self.trace_elements
+            .iter()
+            .filter_map(|cte| match cte {
+                DebugTraceElement::Regular {
+                    debug_trace,
+                    entrypoint,
+                    ..
+                } => Some(
+                    debug_trace
+                        .host_call_trace
+                        .iter()
+                        .copied()
+                        .map(|(_, hf, cur_nrg)| (entrypoint.as_entrypoint_name(), hf, cur_nrg)),
+                ),
+                DebugTraceElement::WithFailures {
+                    ..
+                } => None,
+            })
+            .flatten()
+    }
+
+    /// Get effective host function calls grouped by contract address that
+    /// generated them.
+    pub fn effective_host_calls_summary(
+        &self,
+    ) -> BTreeMap<ContractAddress, BTreeMap<HostFunctionV1, InterpreterEnergy>> {
+        let mut out = BTreeMap::new();
+        let iter = self.trace_elements.iter().filter_map(|cte| match cte {
+            DebugTraceElement::Regular {
+                debug_trace,
+                trace_element,
+                ..
+            } => Some((trace_element, debug_trace)),
+            DebugTraceElement::WithFailures {
+                ..
+            } => None,
+        });
+        for (te, debug) in iter {
+            let at_addr: &mut BTreeMap<HostFunctionV1, InterpreterEnergy> =
+                out.entry(te.affected_address()).or_default();
+            for (_, hf, energy) in &debug.host_call_trace {
+                at_addr.entry(*hf).or_insert(InterpreterEnergy::new(0)).energy += energy.energy;
+            }
+        }
+        out
+    }
+
     /// Get the successful trace elements grouped by which contract they
     /// originated from.
     pub fn trace_elements(&self) -> BTreeMap<ContractAddress, Vec<ContractTraceElement>> {
         let mut map: BTreeMap<ContractAddress, Vec<ContractTraceElement>> = BTreeMap::new();
         for event in self.effective_trace_elements() {
-            map.entry(Self::extract_contract_address(event))
+            map.entry(event.affected_address())
                 .and_modify(|v| v.push(event.clone()))
                 .or_insert_with(|| vec![event.clone()]);
         }
         map
-    }
-
-    /// Get the contract address that this event relates to.
-    /// This means the `address` field for all variant except `Transferred`,
-    /// where it returns the `from`.
-    fn extract_contract_address(element: &ContractTraceElement) -> ContractAddress {
-        match element {
-            ContractTraceElement::Interrupted {
-                address,
-                ..
-            } => *address,
-            ContractTraceElement::Resumed {
-                address,
-                ..
-            } => *address,
-            ContractTraceElement::Upgraded {
-                address,
-                ..
-            } => *address,
-            ContractTraceElement::Updated {
-                data:
-                    InstanceUpdatedEvent {
-                        address,
-                        ..
-                    },
-            } => *address,
-            ContractTraceElement::Transferred {
-                from,
-                ..
-            } => *from,
-        }
     }
 
     /// Get the successful contract updates that happened in the transaction.
@@ -631,7 +680,7 @@ impl ContractInvokeSuccess {
 pub enum DebugTraceElement {
     /// A regular trace element with some additional data, e.g., energy usage
     /// and the entrypoint.
-    /// This variant may be included included in the `WithFailures` list of
+    /// This variant may be included in the `WithFailures` list of
     /// trace elements.
     Regular {
         /// The entrypoint.
@@ -640,6 +689,7 @@ pub enum DebugTraceElement {
         trace_element: ContractTraceElement,
         /// The energy used so far.
         energy_used:   Energy,
+        debug_trace:   DebugTracker,
     },
     /// One or multiple trace elements that fail. Useful for debugging.
     /// This variant also contains additional information, such as the error,
@@ -660,6 +710,8 @@ pub enum DebugTraceElement {
         trace_elements:   Vec<DebugTraceElement>,
         /// The energy used so far.
         energy_used:      Energy,
+        /// Detailed breakdown of debug output and host calls produced so far.
+        debug_trace:      DebugTracker,
     },
 }
 
@@ -709,7 +761,9 @@ pub enum ContractInvokeErrorKind {
     },
     /// Ran out of energy.
     #[error("Ran out of energy")]
-    OutOfEnergy,
+    OutOfEnergy {
+        debug_trace: DebugTracker,
+    },
     /// The balance of an account or contract overflowed.
     /// If you are seeing this error, lower the [`Amount`]s used in your tests.
     #[error("The balance of an account or contract overflowed")]

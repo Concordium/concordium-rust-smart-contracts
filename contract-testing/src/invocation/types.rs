@@ -9,7 +9,7 @@ use concordium_base::{
     transactions::UpdateContractPayload,
 };
 use concordium_smart_contract_engine::v1::{
-    trie::MutableState, InvokeResponse, ReceiveContext, ReceiveInterruptedState,
+    trie::MutableState, DebugTracker, InvokeResponse, ReceiveContext, ReceiveInterruptedState,
 };
 use concordium_wasm::artifact::CompiledFunction;
 use std::collections::BTreeMap;
@@ -169,7 +169,9 @@ pub(super) enum AmountDelta {
 #[derive(Debug)]
 pub(crate) enum TestConfigurationError {
     /// The method ran out of energy.
-    OutOfEnergy,
+    OutOfEnergy {
+        debug_trace: DebugTracker,
+    },
     /// The balance of an account or contract oveflowed while adding a new
     /// [`Amount`]. On the chain there is roughly 10 billion CCD, which
     /// means that overflows of amounts cannot occur.
