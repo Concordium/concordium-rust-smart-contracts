@@ -1178,7 +1178,7 @@ impl<A: IsTokenAmount> AsRef<[A]> for BalanceOfQueryResponse<A> {
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct OperatorOfQuery {
-    /// The ID of the token for which to query the balance of.
+    /// The owner address to inspect.
     pub owner:   Address,
     /// The address for which to check for being an operator of the owner.
     pub address: Address,
