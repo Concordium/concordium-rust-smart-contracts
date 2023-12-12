@@ -39,8 +39,19 @@ macro_rules! exit_ooe {
     };
 }
 
+/// Ok response from the `invoke_entrypoint_initial` method. This is the
+/// execution up to either success, failure, or the first interrupt.
+///
+/// The response is rather complex. In case we could not even run the contract
+/// because the preconditions failed (such as not enough balance on some account
+/// or contract) the response is the `Err` variant.
+///
+/// If we managed to get to running the contract entrypoint then the response is
+/// the `Ok` variant, with more detailed information inside.
+type InitialInvokeResponse =
+    Result<(v1::ReceiveResult<CompiledFunction, DebugTracker>, InvocationData), InvokeResponse>;
+
 impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
-    // TODO: Clone
     /// Used for handling the *initial* part of invoking an entrypoint.
     ///
     /// **Preconditions:**
@@ -55,10 +66,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         sender: Address,
         payload: UpdateContractPayload,
         trace_elements_checkpoint: usize,
-    ) -> Result<
-        Result<(v1::ReceiveResult<CompiledFunction, DebugTracker>, InvocationData), InvokeResponse>,
-        TestConfigurationError,
-    > {
+    ) -> Result<InitialInvokeResponse, TestConfigurationError> {
         // Charge the base cost for updating a contract.
         exit_ooe!(
             self.remaining_energy.tick_energy(constants::UPDATE_CONTRACT_INSTANCE_BASE_COST),
@@ -1386,9 +1394,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                         .saturating_sub(&remaining_energy), /* TODO: This is stupid. Revise
                                                              * abstractions. */
                 );
-                if let Err(e) = self.remaining_energy.tick_energy(used_energy) {
-                    return Err(e);
-                }
+                self.remaining_energy.tick_energy(used_energy)?;
                 remaining_energy.energy = to_interpreter_energy(*self.remaining_energy);
                 Ok(remaining_energy)
             };

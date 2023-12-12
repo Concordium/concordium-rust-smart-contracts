@@ -26,3 +26,7 @@ num-integer = "0.1"
 
 [dev-dependencies]
 rand = "0.7"
+clap = { version = "4", features = ["derive", "env"] }
+tokio = {version = "1", features = ["rt-multi-thread", "macros"]}
+futures = "0.3"
+
