@@ -17,7 +17,7 @@ use concordium_base::{
 };
 use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::{
-    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostFunctionV1, ReturnValue},
+    v1::{self, trie, DebugTracker, HostFunctionV1, ReturnValue},
     InterpreterEnergy,
 };
 use concordium_wasm::artifact;
