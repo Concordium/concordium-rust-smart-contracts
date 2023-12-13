@@ -4,8 +4,8 @@ use concordium_base::{
     constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, Deserial,
-        ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy,
-        ParseResult, SlotTime, Timestamp,
+        EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
+        OwnedPolicy, ParseResult, SlotTime, Timestamp,
     },
     hashes::BlockHash,
     id::types::SchemeId,
@@ -521,6 +521,88 @@ impl ContractInvokeSuccess {
         })
     }
 
+    /// Get an iterator over references of all the [`DebugTracker`]s
+    /// paired with the entrypoint that emitted them.
+    pub fn debug_events(
+        &self,
+    ) -> impl Iterator<
+        Item = (ContractAddress, EntrypointName<'_>, &DebugTracker, Option<&InvokeExecutionError>),
+    > {
+        enum Next<'a> {
+            Remaining(&'a [DebugTraceElement]),
+            Emit(
+                (
+                    ContractAddress,
+                    EntrypointName<'a>,
+                    &'a DebugTracker,
+                    Option<&'a InvokeExecutionError>,
+                ),
+            ),
+        }
+        struct DebugTraceElementsIter<'a> {
+            stack: Vec<Next<'a>>,
+        }
+
+        impl<'a> Iterator for DebugTraceElementsIter<'a> {
+            type Item = (
+                ContractAddress,
+                EntrypointName<'a>,
+                &'a DebugTracker,
+                Option<&'a InvokeExecutionError>,
+            );
+
+            fn next(&mut self) -> Option<Self::Item> {
+                loop {
+                    let top = self.stack.pop()?;
+                    let top = match top {
+                        Next::Remaining(top) => top,
+                        Next::Emit(v) => return Some(v),
+                    };
+                    let (first, rest) = top.split_first()?;
+                    if !rest.is_empty() {
+                        self.stack.push(Next::Remaining(rest));
+                    }
+                    match first {
+                        DebugTraceElement::Regular {
+                            entrypoint,
+                            trace_element,
+                            energy_used: _,
+                            debug_trace,
+                        } => {
+                            return Some((
+                                trace_element.affected_address(),
+                                entrypoint.as_entrypoint_name(),
+                                debug_trace,
+                                None,
+                            ))
+                        }
+                        DebugTraceElement::WithFailures {
+                            contract_address,
+                            entrypoint,
+                            error,
+                            trace_elements,
+                            energy_used: _,
+                            debug_trace,
+                        } => {
+                            self.stack.push(Next::Emit((
+                                *contract_address,
+                                entrypoint.as_entrypoint_name(),
+                                debug_trace,
+                                Some(error),
+                            )));
+                            if !trace_elements.is_empty() {
+                                self.stack.push(Next::Remaining(&trace_elements));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        DebugTraceElementsIter {
+            stack: vec![Next::Remaining(&self.trace_elements)],
+        }
+    }
+
     /// Get an iterator over clones of all the [`ContractTraceElement`]s that
     /// have *not* been rolled back.
     ///
@@ -542,24 +624,6 @@ impl ContractInvokeSuccess {
                 } => None,
             })
             .collect()
-    }
-
-    /// Get an iterator over references to all emitted debug events
-    /// that have occurred in the part of execution that has *not* been rolled
-    /// back.
-    pub fn effective_debug_events(&self) -> impl Iterator<Item = &EmittedDebugStatement> {
-        self.trace_elements
-            .iter()
-            .filter_map(|cte| match cte {
-                DebugTraceElement::Regular {
-                    debug_trace,
-                    ..
-                } => Some(debug_trace.emitted_events.iter().map(|(_, e)| e)),
-                DebugTraceElement::WithFailures {
-                    ..
-                } => None,
-            })
-            .flatten()
     }
 
     /// Get an iterator over all host calls that have occurred in the part of
@@ -590,10 +654,12 @@ impl ContractInvokeSuccess {
     }
 
     /// Get effective host function calls grouped by contract address that
-    /// generated them.
+    /// generated them. The value at each address and host function is the
+    /// pair of the number of times the host function was called, and the total
+    /// amount of interpreter energy that was used by all the calls.
     pub fn effective_host_calls_summary(
         &self,
-    ) -> BTreeMap<ContractAddress, BTreeMap<HostFunctionV1, InterpreterEnergy>> {
+    ) -> BTreeMap<ContractAddress, BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)>> {
         let mut out = BTreeMap::new();
         let iter = self.trace_elements.iter().filter_map(|cte| match cte {
             DebugTraceElement::Regular {
@@ -606,10 +672,12 @@ impl ContractInvokeSuccess {
             } => None,
         });
         for (te, debug) in iter {
-            let at_addr: &mut BTreeMap<HostFunctionV1, InterpreterEnergy> =
+            let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
                 out.entry(te.affected_address()).or_default();
             for (_, hf, energy) in &debug.host_call_trace {
-                at_addr.entry(*hf).or_insert(InterpreterEnergy::new(0)).energy += energy.energy;
+                let entry = at_addr.entry(*hf).or_insert((0, InterpreterEnergy::new(0)));
+                entry.1.energy += energy.energy;
+                entry.0 += 1;
             }
         }
         out

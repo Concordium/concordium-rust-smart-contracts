@@ -400,6 +400,12 @@ pub use std::format;
 
 #[macro_export]
 #[cfg(feature = "debug")]
+/// When the `debug` feature of `concordium-std` is enabled this will use the
+/// `debug_print` host function to emit the provided information. The syntax is
+/// the same as that of `println!` macro.
+///
+/// If the `debug` feature is not enabled the macro generates an empty
+/// expression.
 macro_rules! concordium_dbg {
     () => {
         {
@@ -416,6 +422,12 @@ macro_rules! concordium_dbg {
 
 #[macro_export]
 #[cfg(not(feature = "debug"))]
+/// When the `debug` feature of `concordium-std` is enabled this will use the
+/// `debug_print` host function to emit the provided information. The syntax is
+/// the same as that of `println!` macro.
+///
+/// If the `debug` feature is not enabled the macro generates an empty
+/// expression.
 macro_rules! concordium_dbg {
     () => {{}};
     ($($arg:tt),+) => {{}};
