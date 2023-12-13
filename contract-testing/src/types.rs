@@ -591,7 +591,7 @@ impl ContractInvokeSuccess {
                                 Some(error),
                             )));
                             if !trace_elements.is_empty() {
-                                self.stack.push(Next::Remaining(&trace_elements));
+                                self.stack.push(Next::Remaining(trace_elements));
                             }
                         }
                     }
