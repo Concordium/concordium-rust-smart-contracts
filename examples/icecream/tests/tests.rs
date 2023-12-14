@@ -213,8 +213,9 @@ fn initialize_chain() -> (Chain, ModuleReference) {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment =
-        chain.module_deploy_v1_debug(SIGNER, ACC_0, module, is_debug_enabled()).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1_debug(SIGNER, ACC_0, module, is_debug_enabled())
+        .expect("Deploy valid module");
 
     (chain, deployment.module_reference)
 }

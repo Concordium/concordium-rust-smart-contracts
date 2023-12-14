@@ -646,6 +646,15 @@ pub enum DebugOutputKind {
     HostCallsSummary,
 }
 
+/// A trait implemented by types which can extract debug information from
+/// contract receive entrypoint executions.
+//
+// Note for maintainers. The return types of many methods here are Box<dyn
+// Iterator ...> where they would ideally be `impl Iterator` to both be simpler,
+// and to avoid a needless memory allocation. The reason for this is that `impl
+// Trait` is only supported in trait methods since Rust 1.74 and at the time of
+// writing that is the latest version, and we wish to support older versions for
+// the time being.
 pub trait DebugInfoExt: Sized {
     /// Print the desired level of debug information that was recorded.
     /// This function is meant to be used in a method-chaining style.
@@ -716,12 +725,12 @@ pub trait DebugInfoExt: Sized {
     fn print_emitted_events(self) -> Self { self.print_debug(DebugOutputKind::EmittedEvents) }
 
     /// Get an iterator over all the debug traces emitted by the execution.
-    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>>;
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_>;
 
     /// Get an iterator over all host calls that have occurred, both in the
     /// remaining trace and in the rolled back part.
-    fn host_calls(&self) -> impl Iterator<Item = HostCallInfo<'_>> {
-        self.debug_events().flat_map(|de| {
+    fn host_calls(&self) -> Box<dyn Iterator<Item = HostCallInfo<'_>> + '_> {
+        Box::new(self.debug_events().flat_map(|de| {
             de.debug_trace.host_call_trace.iter().map(move |(_, host_function, energy_used)| {
                 HostCallInfo {
                     address:       de.address,
@@ -731,16 +740,16 @@ pub trait DebugInfoExt: Sized {
                     rolled_back:   de.rolled_back,
                 }
             })
-        })
+        }))
     }
 
     /// Get an iterator over all the emitted `concordium_dbg!` events.
     fn emitted_debug_prints(
         &self,
-    ) -> impl Iterator<Item = (ContractAddress, &EmittedDebugStatement)> {
-        self.debug_events().flat_map(|de| {
+    ) -> Box<dyn Iterator<Item = (ContractAddress, &EmittedDebugStatement)> + '_> {
+        Box::new(self.debug_events().flat_map(|de| {
             de.debug_trace.emitted_events.iter().map(move |(_, statement)| (de.address, statement))
-        })
+        }))
     }
 
     /// Get  host function calls grouped by contract address that
@@ -769,22 +778,22 @@ pub trait DebugInfoExt: Sized {
 }
 
 impl DebugInfoExt for ContractInvokeSuccess {
-    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>> {
-        debug_events_worker(false, &self.trace_elements)
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_> {
+        Box::new(debug_events_worker(false, &self.trace_elements))
     }
 }
 
 impl DebugInfoExt for ContractInvokeError {
-    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>> {
-        debug_events_worker(true, &self.trace_elements)
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_> {
+        Box::new(debug_events_worker(true, &self.trace_elements))
     }
 }
 
 impl DebugInfoExt for Result<ContractInvokeSuccess, ContractInvokeError> {
-    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>> {
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_> {
         match self {
-            Ok(v) => debug_events_worker(true, &v.trace_elements),
-            Err(v) => debug_events_worker(false, &v.trace_elements),
+            Ok(v) => v.debug_events(),
+            Err(v) => v.debug_events(),
         }
     }
 }
