@@ -642,8 +642,11 @@ pub enum DebugOutputKind {
     EmittedEvents,
     /// Output all host calls in the order they were emitted.
     HostCalls,
-    /// Output host call summary per instance that was affected.
+    /// Output host call summary grouped per instance that was affected.
     HostCallsSummary,
+    /// Output host call summary grouped per instance that was affected and
+    /// entrypoint.
+    HostCallsSummaryPerEntrypoint,
 }
 
 /// A trait implemented by types which can extract debug information from
@@ -716,6 +719,17 @@ pub trait DebugInfoExt: Sized {
                     }
                 }
             }
+            DebugOutputKind::HostCallsSummaryPerEntrypoint => {
+                for ((addr, ep), addr_summary) in self.host_calls_summary_per_entrypoint() {
+                    eprintln!("Entrypoint {ep} of instance at {addr} host call summary.");
+                    for (host_fn, (times, total_nrg)) in addr_summary {
+                        eprintln!(
+                            "- {host_fn} called {times} times totalling {total_nrg} interpreter \
+                             energy spent."
+                        )
+                    }
+                }
+            }
         }
         self
     }
@@ -769,6 +783,34 @@ pub trait DebugInfoExt: Sized {
         {
             let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
                 out.entry(address).or_default();
+            let entry = at_addr.entry(host_function).or_insert((0, InterpreterEnergy::new(0)));
+            entry.1.energy += energy_used.energy;
+            entry.0 += 1;
+        }
+        out
+    }
+
+    /// Get  host function calls grouped by contract address and entrypoint that
+    /// generated them. The value at each address and host function is the
+    /// pair of the number of times the host function was called, and the total
+    /// amount of interpreter energy that was used by all the calls.
+    fn host_calls_summary_per_entrypoint(
+        &self,
+    ) -> BTreeMap<
+        (ContractAddress, EntrypointName<'_>),
+        BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)>,
+    > {
+        let mut out = BTreeMap::new();
+        for HostCallInfo {
+            address,
+            host_function,
+            energy_used,
+            entrypoint,
+            ..
+        } in self.host_calls()
+        {
+            let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
+                out.entry((address, entrypoint)).or_default();
             let entry = at_addr.entry(host_function).or_insert((0, InterpreterEnergy::new(0)));
             entry.1.energy += energy_used.energy;
             entry.0 += 1;
