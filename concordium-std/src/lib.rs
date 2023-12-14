@@ -39,6 +39,7 @@
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
 //! [`crypto-primitives`][crypto-feature], and
 //! [`wee_alloc`](#use-a-custom-allocator)
+//! [`debug`](#emit-debug-information)
 //!
 //! [crypto-feature]:
 //! #crypto-primitives-for-testing-crypto-with-actual-implementations
@@ -138,6 +139,21 @@
 //! Configuration of other allocators should follow their respective
 //! documentation, however note that there can only be one allocator set.
 //! See Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute) documentation for more context and details.
+//!
+//! Emit debug information
+//!
+//! During testing and debugging it is often useful to emit debug information to
+//! narrow down the source of the problem. `concordium-std` supports this using
+//! the [`concordium_dbg`] macro which will emit its arguments using a special
+//! host function `debug_print` which is only available when the `debug` feature
+//! is enabled. The output of this function is used by `cargo concordium run`
+//! and `cargo concordium test` to display any output that was emitted.
+//!
+//! The `debug` feature should typically not be enabled manually. It is used
+//! implicitly by `cargo concordium` when debug output is requested. It is also
+//! **crucial** that the `debug` feature is **not** enabled when building the
+//! contract for deployment. The `concordium_dbg!` macro will ignore its
+//! arguments when the `debug` feature is not enabled.
 //!
 //! # Essential types
 //! This crate has a number of essential types that are used when writing smart

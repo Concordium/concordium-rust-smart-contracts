@@ -481,7 +481,8 @@ impl Chain {
         self.accounts.get(&address.into())
     }
 
-    /// Deploy a smart contract module.
+    /// Deploy a smart contract module using the same validation rules as
+    /// enforced by the node.
     ///
     /// The `WasmModule` can be loaded from disk with either
     /// [`module_load_v1`] or [`module_load_v1_raw`].
@@ -496,21 +497,12 @@ impl Chain {
         sender: AccountAddress,
         wasm_module: WasmModule,
     ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
-        self.module_deploy_v1_worker(signer, sender, wasm_module, false)
+        self.module_deploy_v1_debug(signer, sender, wasm_module, false)
     }
 
     /// Like [`module_deploy_v1`](Self::module_deploy_v1)
-    /// except that the use of debug tools is allowed.
+    /// except that optionally debugging output may be allowed in the module.
     pub fn module_deploy_v1_debug(
-        &mut self,
-        signer: Signer,
-        sender: AccountAddress,
-        wasm_module: WasmModule,
-    ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
-        self.module_deploy_v1_worker(signer, sender, wasm_module, true)
-    }
-
-    fn module_deploy_v1_worker(
         &mut self,
         signer: Signer,
         sender: AccountAddress,
@@ -2284,6 +2276,15 @@ mod tests {
 
         assert!(matches!(error, ChainBuilderError::ExchangeRateError));
     }
+}
+
+/// Return whether execution is running under `cargo concordium test` with
+/// debugging enabled.
+pub fn is_debug_enabled() -> bool {
+    let Some(value) = option_env!("CARGO_CONCORDIUM_TEST_ALLOW_DEBUG") else {
+        return false;
+    };
+    value != "0" && value != "false"
 }
 
 /// Tests that use I/O (network) and should therefore *not* be run in the CI.

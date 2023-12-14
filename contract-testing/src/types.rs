@@ -17,7 +17,7 @@ use concordium_base::{
 };
 use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::{
-    v1::{self, trie, DebugTracker, HostFunctionV1, ReturnValue},
+    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostFunctionV1, ReturnValue},
     InterpreterEnergy,
 };
 use concordium_wasm::artifact;
@@ -457,6 +457,37 @@ pub struct ContractInvokeExternalSuccess {
     pub return_value:   ReturnValue,
 }
 
+/// Information about the collected debug output. This is the item returned
+/// by the `debug_events` iterator. It corresponds to a section of execution
+/// between interrupts.
+pub struct DebugItem<'a> {
+    /// The address of the instance that generated the event.
+    pub address:     ContractAddress,
+    /// The name of the entrypoint that generated the event.
+    pub entrypoint:  EntrypointName<'a>,
+    /// The debug trace generated since the previous debug item.
+    pub debug_trace: &'a DebugTracker,
+    /// `true` if this output is in the part of execution that has been rolled
+    /// back.
+    pub rolled_back: bool,
+}
+
+/// Information about an emitted host function call. This is the item returned
+/// by the `host_calls` iterator.
+pub struct HostCallInfo<'a> {
+    /// The address of the instance that generated the event.
+    pub address:       ContractAddress,
+    /// The name of the entrypoint that generated the event.
+    pub entrypoint:    contracts_common::EntrypointName<'a>,
+    /// The host function that was called.
+    pub host_function: HostFunctionV1,
+    /// Energy used by the call.
+    pub energy_used:   InterpreterEnergy,
+    /// `true` if this host call occurred in the part of execution that is
+    /// rolled back.
+    pub rolled_back:   bool,
+}
+
 impl ContractInvokeSuccess {
     /// Extract all the events logged by all the contracts in the invocation.
     /// The events are returned in the order that they are emitted, and are
@@ -521,88 +552,6 @@ impl ContractInvokeSuccess {
         })
     }
 
-    /// Get an iterator over references of all the [`DebugTracker`]s
-    /// paired with the entrypoint that emitted them.
-    pub fn debug_events(
-        &self,
-    ) -> impl Iterator<
-        Item = (ContractAddress, EntrypointName<'_>, &DebugTracker, Option<&InvokeExecutionError>),
-    > {
-        enum Next<'a> {
-            Remaining(&'a [DebugTraceElement]),
-            Emit(
-                (
-                    ContractAddress,
-                    EntrypointName<'a>,
-                    &'a DebugTracker,
-                    Option<&'a InvokeExecutionError>,
-                ),
-            ),
-        }
-        struct DebugTraceElementsIter<'a> {
-            stack: Vec<Next<'a>>,
-        }
-
-        impl<'a> Iterator for DebugTraceElementsIter<'a> {
-            type Item = (
-                ContractAddress,
-                EntrypointName<'a>,
-                &'a DebugTracker,
-                Option<&'a InvokeExecutionError>,
-            );
-
-            fn next(&mut self) -> Option<Self::Item> {
-                loop {
-                    let top = self.stack.pop()?;
-                    let top = match top {
-                        Next::Remaining(top) => top,
-                        Next::Emit(v) => return Some(v),
-                    };
-                    let (first, rest) = top.split_first()?;
-                    if !rest.is_empty() {
-                        self.stack.push(Next::Remaining(rest));
-                    }
-                    match first {
-                        DebugTraceElement::Regular {
-                            entrypoint,
-                            trace_element,
-                            energy_used: _,
-                            debug_trace,
-                        } => {
-                            return Some((
-                                trace_element.affected_address(),
-                                entrypoint.as_entrypoint_name(),
-                                debug_trace,
-                                None,
-                            ))
-                        }
-                        DebugTraceElement::WithFailures {
-                            contract_address,
-                            entrypoint,
-                            error,
-                            trace_elements,
-                            energy_used: _,
-                            debug_trace,
-                        } => {
-                            self.stack.push(Next::Emit((
-                                *contract_address,
-                                entrypoint.as_entrypoint_name(),
-                                debug_trace,
-                                Some(error),
-                            )));
-                            if !trace_elements.is_empty() {
-                                self.stack.push(Next::Remaining(trace_elements));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        DebugTraceElementsIter {
-            stack: vec![Next::Remaining(&self.trace_elements)],
-        }
-    }
-
     /// Get an iterator over clones of all the [`ContractTraceElement`]s that
     /// have *not* been rolled back.
     ///
@@ -624,63 +573,6 @@ impl ContractInvokeSuccess {
                 } => None,
             })
             .collect()
-    }
-
-    /// Get an iterator over all host calls that have occurred in the part of
-    /// execution that has *not* been rolled back.
-    pub fn effective_host_calls(
-        &self,
-    ) -> impl Iterator<Item = (contracts_common::EntrypointName<'_>, HostFunctionV1, InterpreterEnergy)>
-    {
-        self.trace_elements
-            .iter()
-            .filter_map(|cte| match cte {
-                DebugTraceElement::Regular {
-                    debug_trace,
-                    entrypoint,
-                    ..
-                } => Some(
-                    debug_trace
-                        .host_call_trace
-                        .iter()
-                        .copied()
-                        .map(|(_, hf, cur_nrg)| (entrypoint.as_entrypoint_name(), hf, cur_nrg)),
-                ),
-                DebugTraceElement::WithFailures {
-                    ..
-                } => None,
-            })
-            .flatten()
-    }
-
-    /// Get effective host function calls grouped by contract address that
-    /// generated them. The value at each address and host function is the
-    /// pair of the number of times the host function was called, and the total
-    /// amount of interpreter energy that was used by all the calls.
-    pub fn effective_host_calls_summary(
-        &self,
-    ) -> BTreeMap<ContractAddress, BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)>> {
-        let mut out = BTreeMap::new();
-        let iter = self.trace_elements.iter().filter_map(|cte| match cte {
-            DebugTraceElement::Regular {
-                debug_trace,
-                trace_element,
-                ..
-            } => Some((trace_element, debug_trace)),
-            DebugTraceElement::WithFailures {
-                ..
-            } => None,
-        });
-        for (te, debug) in iter {
-            let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
-                out.entry(te.affected_address()).or_default();
-            for (_, hf, energy) in &debug.host_call_trace {
-                let entry = at_addr.entry(*hf).or_insert((0, InterpreterEnergy::new(0)));
-                entry.1.energy += energy.energy;
-                entry.0 += 1;
-            }
-        }
-        out
     }
 
     /// Get the successful trace elements grouped by which contract they
@@ -738,6 +630,230 @@ impl ContractInvokeSuccess {
             return Err(ParseError::default());
         }
         Ok(res)
+    }
+}
+
+/// The different types of debug output that can be printed by the
+/// [`print_debug`](DebugInfoExt::print_debug) method.
+pub enum DebugOutputKind {
+    /// Output everything, all host calls and emitted events.
+    Full,
+    /// Only output emitted events.
+    EmittedEvents,
+    /// Output all host calls in the order they were emitted.
+    HostCalls,
+    /// Output host call summary per instance that was affected.
+    HostCallsSummary,
+}
+
+pub trait DebugInfoExt: Sized {
+    /// Print the desired level of debug information that was recorded.
+    /// This function is meant to be used in a method-chaining style.
+    fn print_debug(self, level: DebugOutputKind) -> Self {
+        match level {
+            DebugOutputKind::Full => {
+                for DebugItem {
+                    address,
+                    entrypoint,
+                    debug_trace,
+                    rolled_back,
+                } in self.debug_events()
+                {
+                    eprintln!(
+                        "{entrypoint} of instance at {address}{}",
+                        if rolled_back {
+                            " (rolled back)"
+                        } else {
+                            ""
+                        }
+                    );
+                    eprintln!("{debug_trace}");
+                }
+            }
+            DebugOutputKind::EmittedEvents => {
+                for DebugItem {
+                    address,
+                    entrypoint,
+                    debug_trace,
+                    rolled_back,
+                } in self.debug_events()
+                {
+                    eprintln!(
+                        "{entrypoint} of instance at {address}{}",
+                        if rolled_back {
+                            " (rolled back)"
+                        } else {
+                            ""
+                        }
+                    );
+                    for (_, event) in debug_trace.emitted_events.iter() {
+                        eprintln!("{event}");
+                    }
+                }
+            }
+            DebugOutputKind::HostCalls => {
+                for (addr, emitted_event) in self.emitted_debug_prints() {
+                    eprintln!("{addr}:{emitted_event}");
+                }
+            }
+            DebugOutputKind::HostCallsSummary => {
+                for (addr, addr_summary) in self.host_calls_summary() {
+                    eprintln!("Instance at {addr} host call summary.");
+                    for (host_fn, (times, total_nrg)) in addr_summary {
+                        eprintln!(
+                            "- {host_fn} called {times} times totalling {total_nrg} interpreter \
+                             energy spent."
+                        )
+                    }
+                }
+            }
+        }
+        self
+    }
+
+    /// Print (to stderr) all the events generated by `concordium_dbg!`
+    /// statements.
+    fn print_emitted_events(self) -> Self { self.print_debug(DebugOutputKind::EmittedEvents) }
+
+    /// Get an iterator over all the debug traces emitted by the execution.
+    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>>;
+
+    /// Get an iterator over all host calls that have occurred, both in the
+    /// remaining trace and in the rolled back part.
+    fn host_calls(&self) -> impl Iterator<Item = HostCallInfo<'_>> {
+        self.debug_events().flat_map(|de| {
+            de.debug_trace.host_call_trace.iter().map(move |(_, host_function, energy_used)| {
+                HostCallInfo {
+                    address:       de.address,
+                    entrypoint:    de.entrypoint,
+                    host_function: *host_function,
+                    energy_used:   *energy_used,
+                    rolled_back:   de.rolled_back,
+                }
+            })
+        })
+    }
+
+    /// Get an iterator over all the emitted `concordium_dbg!` events.
+    fn emitted_debug_prints(
+        &self,
+    ) -> impl Iterator<Item = (ContractAddress, &EmittedDebugStatement)> {
+        self.debug_events().flat_map(|de| {
+            de.debug_trace.emitted_events.iter().map(move |(_, statement)| (de.address, statement))
+        })
+    }
+
+    /// Get  host function calls grouped by contract address that
+    /// generated them. The value at each address and host function is the
+    /// pair of the number of times the host function was called, and the total
+    /// amount of interpreter energy that was used by all the calls.
+    fn host_calls_summary(
+        &self,
+    ) -> BTreeMap<ContractAddress, BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)>> {
+        let mut out = BTreeMap::new();
+        for HostCallInfo {
+            address,
+            host_function,
+            energy_used,
+            ..
+        } in self.host_calls()
+        {
+            let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
+                out.entry(address).or_default();
+            let entry = at_addr.entry(host_function).or_insert((0, InterpreterEnergy::new(0)));
+            entry.1.energy += energy_used.energy;
+            entry.0 += 1;
+        }
+        out
+    }
+}
+
+impl DebugInfoExt for ContractInvokeSuccess {
+    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>> {
+        debug_events_worker(false, &self.trace_elements)
+    }
+}
+
+impl DebugInfoExt for ContractInvokeError {
+    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>> {
+        debug_events_worker(true, &self.trace_elements)
+    }
+}
+
+impl DebugInfoExt for Result<ContractInvokeSuccess, ContractInvokeError> {
+    fn debug_events(&self) -> impl Iterator<Item = DebugItem<'_>> {
+        match self {
+            Ok(v) => debug_events_worker(true, &v.trace_elements),
+            Err(v) => debug_events_worker(false, &v.trace_elements),
+        }
+    }
+}
+
+/// Get an iterator over all the debug traces emitted by the execution.
+fn debug_events_worker(
+    rolled_back: bool,
+    initial_events: &[DebugTraceElement],
+) -> impl Iterator<Item = DebugItem<'_>> {
+    enum Next<'a> {
+        Remaining((bool, &'a [DebugTraceElement])),
+        Emit(DebugItem<'a>),
+    }
+    struct DebugTraceElementsIter<'a> {
+        stack: Vec<Next<'a>>,
+    }
+
+    impl<'a> Iterator for DebugTraceElementsIter<'a> {
+        type Item = DebugItem<'a>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            loop {
+                let top = self.stack.pop()?;
+                let top = match top {
+                    Next::Remaining(top) => top,
+                    Next::Emit(v) => return Some(v),
+                };
+                let (first, rest) = top.1.split_first()?;
+                if !rest.is_empty() {
+                    self.stack.push(Next::Remaining((top.0, rest)));
+                }
+                match first {
+                    DebugTraceElement::Regular {
+                        entrypoint,
+                        trace_element,
+                        energy_used: _,
+                        debug_trace,
+                    } => {
+                        return Some(DebugItem {
+                            address: trace_element.affected_address(),
+                            entrypoint: entrypoint.as_entrypoint_name(),
+                            debug_trace,
+                            rolled_back: false,
+                        });
+                    }
+                    DebugTraceElement::WithFailures {
+                        contract_address,
+                        entrypoint,
+                        error: _,
+                        trace_elements,
+                        energy_used: _,
+                        debug_trace,
+                    } => {
+                        self.stack.push(Next::Emit(DebugItem {
+                            address: *contract_address,
+                            entrypoint: entrypoint.as_entrypoint_name(),
+                            debug_trace,
+                            rolled_back: true,
+                        }));
+                        if !trace_elements.is_empty() {
+                            self.stack.push(Next::Remaining((true, trace_elements)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    DebugTraceElementsIter {
+        stack: vec![Next::Remaining((rolled_back, initial_events))],
     }
 }
 

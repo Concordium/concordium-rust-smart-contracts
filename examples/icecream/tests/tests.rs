@@ -38,6 +38,7 @@ fn test_sunny_day() {
                     .expect("Serialize account address."),
             },
         )
+        .print_emitted_events()
         .expect("Call icecream contract");
 
     // Check that the icecream vendor received the correct amount of money.
@@ -77,6 +78,7 @@ fn test_rainy_days() {
                 message:      OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
             },
         )
+        .print_debug(DebugOutputKind::HostCalls)
         .expect("Call icecream contract");
 
     // Check that the icecream vendor still has the original balance.
@@ -115,6 +117,7 @@ fn test_missing_weather() {
                 message:      OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
             },
         )
+        .print_debug(DebugOutputKind::Full)
         .expect_err("Call icecream contract");
 
     // Deserialize the return value from `update` and check that it is the expected
@@ -153,6 +156,7 @@ fn test_missing_icecream_vendor() {
                     .expect("Serialize address"),
             },
         )
+        .print_debug(DebugOutputKind::HostCallsSummary)
         .expect_err("Call icecream contract");
 
     // Deserialize the return value from `update` and check that it is the expected
@@ -209,7 +213,8 @@ fn initialize_chain() -> (Chain, ModuleReference) {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ACC_0, module).expect("Deploy valid module");
+    let deployment =
+        chain.module_deploy_v1_debug(SIGNER, ACC_0, module, is_debug_enabled()).expect("Deploy valid module");
 
     (chain, deployment.module_reference)
 }
