@@ -17,7 +17,7 @@ use concordium_base::{
 };
 use concordium_rust_sdk as sdk;
 use concordium_smart_contract_engine::{
-    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostFunctionV1, ReturnValue},
+    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostCall, HostFunctionV1, ReturnValue},
     InterpreterEnergy,
 };
 use concordium_wasm::artifact;
@@ -745,15 +745,23 @@ pub trait DebugInfoExt: Sized {
     /// remaining trace and in the rolled back part.
     fn host_calls(&self) -> Box<dyn Iterator<Item = HostCallInfo<'_>> + '_> {
         Box::new(self.debug_events().flat_map(|de| {
-            de.debug_trace.host_call_trace.iter().map(move |(_, host_function, energy_used)| {
-                HostCallInfo {
-                    address:       de.address,
-                    entrypoint:    de.entrypoint,
-                    host_function: *host_function,
-                    energy_used:   *energy_used,
-                    rolled_back:   de.rolled_back,
-                }
-            })
+            de.debug_trace.host_call_trace.iter().map(
+                move |(
+                    _,
+                    HostCall {
+                        host_function,
+                        energy_used,
+                    },
+                )| {
+                    HostCallInfo {
+                        address:       de.address,
+                        entrypoint:    de.entrypoint,
+                        host_function: *host_function,
+                        energy_used:   *energy_used,
+                        rolled_back:   de.rolled_back,
+                    }
+                },
+            )
         }))
     }
 
