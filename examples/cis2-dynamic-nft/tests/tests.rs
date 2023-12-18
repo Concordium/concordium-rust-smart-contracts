@@ -165,14 +165,12 @@ fn test_minting() {
 
 /// Test upgrading the Metadata token as the contract owner. Once a token is
 /// upgraded, the TokenMetadata event will be emitted and it should contain
-/// next MetadataUrl in the Metadata URLs vector and similarly `tokenMetadata`
-/// function should return the last MetadataUrl.
+/// the next MetadataUrl in the Metadata URLs vector and similarly
+/// `tokenMetadata` function should return the last MetadataUrl.
 
 #[test]
 fn test_upgrade() {
     let (mut chain, contract_address, _update) = initialize_contract_with_alice_tokens();
-
-    // Mint/airdrop TOKEN_0 to Alice as the owner.
     let _update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -194,11 +192,9 @@ fn test_upgrade() {
             hash: None,
         },
     }),]);
-    let query = Vec::new();
-    let mut token_param: ContractTokenMetadataQueryParams = ContractTokenMetadataQueryParams {
-        queries: query,
+    let mut token_param = ContractTokenMetadataQueryParams {
+        queries: vec![TOKEN_0],
     };
-    // token_param.queries = Vec::new();
     token_param.queries.insert(0, TOKEN_0);
     // Invoke the tokenMetadata entrypoint and check what MetadataUrl returns
     let invoke = chain
@@ -222,9 +218,7 @@ fn test_upgrade() {
 }
 
 /// Helper function that sets up the contract with two types of tokens minted to
-/// Alice. She has 100 of `TOKEN_0` and 100 of `TOKEN_2`.
-/// Alice's account is created with keys.
-/// Hence, Alice's account signature can be checked in the test cases.
+/// Alice. She has 400 of `TOKEN_0` and 400 of `TOKEN_2`.
 fn initialize_contract_with_alice_tokens(
 ) -> (concordium_smart_contract_testing::Chain, ContractAddress, ContractInvokeSuccess) {
     let (mut chain, contract_address) = initialize_chain_and_contract();
@@ -257,7 +251,6 @@ fn initialize_contract_with_alice_tokens(
         tokens: tok,
     };
 
-    // Mint/airdrop TOKEN_0 to Alice as the owner.
     let _update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -278,7 +271,7 @@ fn initialize_contract_with_alice_tokens(
         owner:  ALICE_ADDR,
         tokens: tok2,
     };
-    // Mint/airdrop TOKEN_2 to Alice as the owner.
+
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -304,7 +297,7 @@ fn initialize_chain_and_contract() -> (concordium_smart_contract_testing::Chain,
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
-    let module = module_load_v1("concordium-out/cis2_dynmaic_nft.wasm.v1").expect("Module exists");
+    let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
     let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
 
     // Initialize the auction contract.

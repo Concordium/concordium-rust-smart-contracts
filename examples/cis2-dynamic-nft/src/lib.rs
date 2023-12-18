@@ -17,8 +17,8 @@
 //! metadata entry as the last entry of the list of metadata entries associated
 //! with a token. Removing metadata entries is not implemented.
 //!
-//! The `tokenMetadataList` function shows complete metadata history.
-//! The `addMetadata`function adds a new metadata entry at the end of the list.
+//! The `tokenMetadataList` function shows the complete metadata history.
+//! The `addMetadata` function adds a new metadata entry at the end of the list.
 //!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
@@ -100,10 +100,12 @@ impl<S: HasStateApi> AddressState<S> {
     }
 }
 
-/// Current token state keeps an index variable in a list of MetadataUrls.
-/// as counter that points current metadata index, when its
-/// upgraded once, index will be incremented by the owner of the contract.
-/// current index is the response for the `TokenMetadata` function
+/// Current token state keeps a counter variable (as an index),
+/// and a list of MetadataUrls. The counter points the nth index
+/// of the list of MetadataUrl when its queried using the `TokenMetadata`
+/// function when its upgraded once, index will be incremented by the owner
+/// of the contract and the response MetadataUrl will always be the latest
+/// one.
 #[derive(Serial, Deserial, Clone, SchemaType)]
 pub struct TokenMetadataState {
     pub token_metadata_current_state_counter: u32,
@@ -122,8 +124,8 @@ impl TokenMetadataState {
 struct State<S> {
     /// The state of addresses.
     state:        StateMap<Address, AddressState<S>, S>,
-    /// All of the token IDs
-    /// token-metadata-state
+    /// Token IDs and the MetadataStates which holds the counter and the list of
+    /// MetadataURls
     tokens:       StateMap<ContractTokenId, TokenMetadataState, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
@@ -138,10 +140,6 @@ pub enum CustomContractError {
     ParseParams,
     /// Failed logging: Log is full.
     LogFull,
-    /// Failed logging: Log is malformed.
-    LogMalformed,
-    /// Invalid contract name.
-    InvalidContractName,
     /// Only a smart contract can call this function.
     ContractOnly,
     /// Failed to invoke a contract.
@@ -172,14 +170,6 @@ impl<T> From<CallContractError<T>> for CustomContractError {
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
-}
-
-impl From<NewReceiveNameError> for CustomContractError {
-    fn from(_: NewReceiveNameError) -> Self { Self::InvalidContractName }
-}
-
-impl From<NewContractNameError> for CustomContractError {
-    fn from(_: NewContractNameError) -> Self { Self::InvalidContractName }
 }
 
 impl<S: HasStateApi> State<S> {
@@ -268,6 +258,7 @@ impl<S: HasStateApi> State<S> {
         Ok(tk.token_metadata_list[tk.token_metadata_current_state_counter as usize].clone())
     }
 
+    /// Gets token of given token id
     fn get_token(&self, token_id: &ContractTokenId) -> Option<MetadataUrl> {
         self.tokens.get(token_id).map(|x| {
             x.to_owned().token_metadata_list[self.get_token_state_medata_counter(token_id)].clone()
@@ -388,12 +379,15 @@ fn contract_init<S: HasStateApi>(
     Ok(State::empty(state_builder))
 }
 
+/// The `balances` holds the amount of each token
+/// The `operators` holds the list of the addresses that can operate
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 pub struct ViewAddressState {
     pub balances:  Vec<(ContractTokenId, ContractTokenAmount)>,
     pub operators: Vec<Address>,
 }
-
+/// The `state` holds the inner state of the contract
+/// The `tokens` has the list of tokens in the contract.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 pub struct ViewState {
     pub state:  Vec<(Address, ViewAddressState)>,
@@ -471,11 +465,11 @@ fn contract_upgrade<S: HasStateApi>(
     let state = host.state_mut();
 
     // Upgrades the given token in the state
-    state.upgrade_token(&token_id).ok();
+    state.upgrade_token(&token_id)?;
 
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
         token_id,
-        metadata_url: state.get_metadata(&token_id).unwrap(),
+        metadata_url: state.get_metadata(&token_id)?,
     }))?;
     Ok(())
 }
@@ -484,12 +478,11 @@ fn contract_upgrade<S: HasStateApi>(
 /// URL to the list of Metadata URLs
 #[derive(Serial, Deserial, SchemaType)]
 pub struct AddParams {
-    /// A collection of tokens to mint.
     tokens: collections::BTreeMap<ContractTokenId, MetadataUrl>,
 }
 
-///
-/// the `addMetadata` adds new MetadataUrl to the state for particular token_id
+/// The `addMetadata` function adds new MetadataUrls to the state of different
+/// token_ids.
 #[receive(
     contract = "cis2_dynamic_nft",
     name = "addMetadata",
@@ -514,14 +507,14 @@ fn contract_add_metadata<S: HasStateApi>(
     let params: AddParams = ctx.parameter_cursor().get()?;
 
     let state = host.state_mut();
-    for (token_id, mint_param) in params.tokens {
-        // Mint the token in the state.
-        state.add_metadata(&token_id, &mint_param).ok();
+    for (token_id, metadata) in params.tokens {
+        // Add metadata
+        state.add_metadata(&token_id, &metadata)?;
 
         // Metadata URL for the token.
         logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
             token_id,
-            metadata_url: mint_param,
+            metadata_url: metadata,
         }))?;
     }
     Ok(())
@@ -530,8 +523,6 @@ fn contract_add_metadata<S: HasStateApi>(
 /// Mint new tokens with a given address as the owner of these tokens.
 /// Can only be called by the contract owner.
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
-/// The url for the token metadata is the token ID encoded in hex, appended on
-/// the `TOKEN_METADATA_BASE_URL`.
 ///
 /// It rejects if:
 /// - The sender is not the contract instance owner.
