@@ -38,7 +38,7 @@ fn test_sunny_day() {
                     .expect("Serialize account address."),
             },
         )
-        .print_emitted_events()
+        .print_emitted_events() // log all `concordium_dbg` emitted events.
         .expect("Call icecream contract");
 
     // Check that the icecream vendor received the correct amount of money.
@@ -78,7 +78,7 @@ fn test_rainy_days() {
                 message:      OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
             },
         )
-        .print_debug(DebugOutputKind::HostCalls)
+        .print_debug(DebugOutputKind::HostCalls) // print all host calls that occurred during execution.
         .expect("Call icecream contract");
 
     // Check that the icecream vendor still has the original balance.

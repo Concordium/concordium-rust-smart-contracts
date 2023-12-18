@@ -285,7 +285,7 @@ extern "C" {
     #[cfg(feature = "debug")]
     /// Emit text together with the source location.
     /// This is used as the equivalent of the `dbg!` macro when the
-    /// `enable-debug` feature is enabled.
+    /// `debug` feature is enabled.
     ///
     /// Note that this function is not allowed on the chain, it is only there to
     /// ease local testing.

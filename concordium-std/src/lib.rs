@@ -152,8 +152,9 @@
 //! The `debug` feature should typically not be enabled manually. It is used
 //! implicitly by `cargo concordium` when debug output is requested. It is also
 //! **crucial** that the `debug` feature is **not** enabled when building the
-//! contract for deployment. The `concordium_dbg!` macro will ignore its
-//! arguments when the `debug` feature is not enabled.
+//! contract for deployment. If it is the contract is most likely to be rejected
+//! when it is being deployed to the chain. The `concordium_dbg!` macro will
+//! ignore its arguments when the `debug` feature is not enabled.
 //!
 //! # Essential types
 //! This crate has a number of essential types that are used when writing smart

@@ -1391,8 +1391,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                 // more energy than what is available.
                 let used_energy = from_interpreter_energy(
                     &InterpreterEnergy::new(available_interpreter_energy)
-                        .saturating_sub(&remaining_energy), /* TODO: This is stupid. Revise
-                                                             * abstractions. */
+                        .saturating_sub(&remaining_energy),
                 );
                 self.remaining_energy.tick_energy(used_energy)?;
                 remaining_energy.energy = to_interpreter_energy(*self.remaining_energy);
