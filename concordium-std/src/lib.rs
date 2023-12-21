@@ -39,6 +39,7 @@
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
 //! [`crypto-primitives`][crypto-feature], and
 //! [`wee_alloc`](#use-a-custom-allocator)
+//! [`debug`](#emit-debug-information)
 //!
 //! [crypto-feature]:
 //! #crypto-primitives-for-testing-crypto-with-actual-implementations
@@ -138,6 +139,22 @@
 //! Configuration of other allocators should follow their respective
 //! documentation, however note that there can only be one allocator set.
 //! See Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute) documentation for more context and details.
+//!
+//! Emit debug information
+//!
+//! During testing and debugging it is often useful to emit debug information to
+//! narrow down the source of the problem. `concordium-std` supports this using
+//! the [`concordium_dbg`] macro which will emit its arguments using a special
+//! host function `debug_print` which is only available when the `debug` feature
+//! is enabled. The output of this function is used by `cargo concordium run`
+//! and `cargo concordium test` to display any output that was emitted.
+//!
+//! The `debug` feature should typically not be enabled manually. It is used
+//! implicitly by `cargo concordium` when debug output is requested. It is also
+//! **crucial** that the `debug` feature is **not** enabled when building the
+//! contract for deployment. If it is the contract is most likely to be rejected
+//! when it is being deployed to the chain. The `concordium_dbg!` macro will
+//! ignore its arguments when the `debug` feature is not enabled.
 //!
 //! # Essential types
 //! This crate has a number of essential types that are used when writing smart
@@ -392,3 +409,63 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
     note = "Deprecated in favor of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
 )]
 pub mod test_infrastructure;
+
+#[cfg(all(feature = "debug", not(feature = "std")))]
+pub use alloc::format;
+#[cfg(all(feature = "debug", feature = "std"))]
+pub use std::format;
+
+#[macro_export]
+#[cfg(feature = "debug")]
+/// When the `debug` feature of `concordium-std` is enabled this will use the
+/// `debug_print` host function to emit the provided information. The syntax is
+/// the same as that of `println!` macro.
+///
+/// If the `debug` feature is not enabled the macro generates an empty
+/// expression.
+macro_rules! concordium_dbg {
+    () => {
+        {
+            $crate::debug_print("", file!(), line!(), column!());
+        }
+    };
+    ($($arg:tt),+) => {
+        {
+            let msg = $crate::format!($($arg),+);
+            $crate::debug_print(&msg, file!(), line!(), column!());
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(not(feature = "debug"))]
+/// When the `debug` feature of `concordium-std` is enabled this will use the
+/// `debug_print` host function to emit the provided information. The syntax is
+/// the same as that of `println!` macro.
+///
+/// If the `debug` feature is not enabled the macro generates an empty
+/// expression.
+macro_rules! concordium_dbg {
+    () => {{}};
+    ($($arg:tt),+) => {{}};
+}
+
+/// Emit a message in debug mode.
+/// Used internally, not meant to be called directly by contract writers,
+/// and a contract with this debug print cannot be deployed to the chain.
+#[doc(hidden)]
+#[cfg(feature = "debug")]
+pub fn debug_print(message: &str, filename: &str, line: u32, column: u32) {
+    let msg_bytes = message.as_bytes();
+    let filename_bytes = filename.as_bytes();
+    unsafe {
+        crate::prims::debug_print(
+            msg_bytes.as_ptr(),
+            msg_bytes.len() as u32,
+            filename_bytes.as_ptr(),
+            filename_bytes.len() as u32,
+            line,
+            column,
+        )
+    };
+}

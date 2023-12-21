@@ -21,8 +21,8 @@ use concordium_base::{
 use concordium_rust_sdk::{self as sdk, v2::Endpoint};
 use concordium_smart_contract_engine::{
     v0,
-    v1::{self, InvokeResponse},
-    InterpreterEnergy,
+    v1::{self, DebugTracker, InvalidReturnCodeError, InvokeResponse},
+    DebugInfo, InterpreterEnergy,
 };
 use concordium_wasm::validate::ValidationConfig;
 use num_bigint::BigUint;
@@ -383,6 +383,17 @@ impl Default for ChainBuilder {
     fn default() -> Self { Self::new() }
 }
 
+// Exit early with an out of energy error.
+macro_rules! exit_ooe {
+    ($charge:expr, $trace:expr) => {
+        if let Err(InsufficientEnergy) = $charge {
+            return Err(ContractInitErrorKind::OutOfEnergy {
+                debug_trace: $trace,
+            });
+        }
+    };
+}
+
 impl Chain {
     /// Get a [`ChainBuilder`] for constructing a new [`Chain`] with a builder
     /// pattern.
@@ -470,7 +481,8 @@ impl Chain {
         self.accounts.get(&address.into())
     }
 
-    /// Deploy a smart contract module.
+    /// Deploy a smart contract module using the same validation rules as
+    /// enforced by the node.
     ///
     /// The `WasmModule` can be loaded from disk with either
     /// [`module_load_v1`] or [`module_load_v1_raw`].
@@ -484,6 +496,18 @@ impl Chain {
         signer: Signer,
         sender: AccountAddress,
         wasm_module: WasmModule,
+    ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
+        self.module_deploy_v1_debug(signer, sender, wasm_module, false)
+    }
+
+    /// Like [`module_deploy_v1`](Self::module_deploy_v1)
+    /// except that optionally debugging output may be allowed in the module.
+    pub fn module_deploy_v1_debug(
+        &mut self,
+        signer: Signer,
+        sender: AccountAddress,
+        wasm_module: WasmModule,
+        enable_debug: bool,
     ) -> Result<ModuleDeploySuccess, ModuleDeployError> {
         // For maintainers:
         //
@@ -559,6 +583,7 @@ impl Chain {
                 ValidationConfig::V1,
                 &v1::ConcordiumAllowedImports {
                     support_upgrade: true,
+                    enable_debug,
                 },
                 wasm_module.source.as_ref(),
             ) {
@@ -688,7 +713,7 @@ impl Chain {
         };
 
         // Charge the header cost.
-        remaining_energy.tick_energy(check_header_cost)?;
+        exit_ooe!(remaining_energy.tick_energy(check_header_cost), DebugTracker::empty_trace());
 
         // Ensure that the parameter has a valid size.
         if payload.param.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
@@ -696,7 +721,10 @@ impl Chain {
         }
 
         // Charge the base cost for initializing a contract.
-        remaining_energy.tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST)?;
+        exit_ooe!(
+            remaining_energy.tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_BASE_COST),
+            DebugTracker::empty_trace()
+        );
 
         // Check that the account also has enough funds to pay for the amount (in
         // addition to the reserved energy).
@@ -709,7 +737,7 @@ impl Chain {
         let lookup_cost = lookup_module_cost(&module);
 
         // Charge the cost for looking up the module.
-        remaining_energy.tick_energy(lookup_cost)?;
+        exit_ooe!(remaining_energy.tick_energy(lookup_cost), DebugTracker::empty_trace());
 
         // Ensure the module contains the provided init name.
         let init_name = payload.init_name.as_contract_name().get_chain_name();
@@ -743,8 +771,9 @@ impl Chain {
         // presently, so the loader is not used.
         let mut loader = v1::trie::Loader::new(&[][..]);
 
-        let energy_given_to_interpreter = to_interpreter_energy(*remaining_energy);
-        let res = v1::invoke_init(
+        let energy_given_to_interpreter =
+            InterpreterEnergy::new(to_interpreter_energy(*remaining_energy));
+        let res = v1::invoke_init::<_, _, DebugTracker>(
             module.artifact,
             init_ctx,
             v1::InitInvocation {
@@ -764,6 +793,7 @@ impl Chain {
                                   * it for inits, currently. */
                 remaining_energy: remaining_interpreter_energy,
                 mut state,
+                trace,
             }) => {
                 let contract_address = self.create_contract_address();
                 let mut collector = v1::trie::SizeCollector::default();
@@ -774,17 +804,20 @@ impl Chain {
                 // and *then* convert to `Energy`. This is how it is done in the node, and if we
                 // swap the operations, it can result in a small discrepancy due to rounding.
                 let energy_used_in_interpreter = from_interpreter_energy(
-                    energy_given_to_interpreter.saturating_sub(remaining_interpreter_energy),
+                    &energy_given_to_interpreter.saturating_sub(&remaining_interpreter_energy),
                 );
-                remaining_energy.tick_energy(energy_used_in_interpreter)?;
+                exit_ooe!(remaining_energy.tick_energy(energy_used_in_interpreter), trace);
 
                 // Charge one energy per stored state byte.
                 let energy_for_state_storage = Energy::from(collector.collect());
-                remaining_energy.tick_energy(energy_for_state_storage)?;
+                exit_ooe!(remaining_energy.tick_energy(energy_for_state_storage), trace);
 
                 // Charge the constant cost for initializing a contract.
-                remaining_energy
-                    .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST)?;
+                exit_ooe!(
+                    remaining_energy
+                        .tick_energy(constants::INITIALIZE_CONTRACT_INSTANCE_CREATE_COST),
+                    trace
+                );
 
                 let contract = Contract {
                     module_reference: payload.mod_ref,
@@ -810,48 +843,60 @@ impl Chain {
                     events: contract_events_from_logs(logs),
                     energy_used,
                     transaction_fee,
+                    debug_trace: trace,
                 })
             }
             Ok(v1::InitResult::Reject {
                 reason,
                 return_value,
                 remaining_energy: remaining_interpreter_energy,
+                trace,
             }) => {
                 let energy_used_in_interpreter = from_interpreter_energy(
-                    energy_given_to_interpreter.saturating_sub(remaining_interpreter_energy),
+                    &energy_given_to_interpreter.saturating_sub(&remaining_interpreter_energy),
                 );
-                remaining_energy.tick_energy(energy_used_in_interpreter)?;
+                exit_ooe!(remaining_energy.tick_energy(energy_used_in_interpreter), trace);
                 Err(ContractInitErrorKind::ExecutionError {
-                    error: InitExecutionError::Reject {
+                    error:       InitExecutionError::Reject {
                         reason,
                         return_value,
                     },
+                    debug_trace: trace,
                 })
             }
             Ok(v1::InitResult::Trap {
                 error,
                 remaining_energy: remaining_interpreter_energy,
+                trace,
             }) => {
                 let energy_used_in_interpreter = from_interpreter_energy(
-                    energy_given_to_interpreter.saturating_sub(remaining_interpreter_energy),
+                    &energy_given_to_interpreter.saturating_sub(&remaining_interpreter_energy),
                 );
-                remaining_energy.tick_energy(energy_used_in_interpreter)?;
+                exit_ooe!(remaining_energy.tick_energy(energy_used_in_interpreter), trace);
                 Err(ContractInitErrorKind::ExecutionError {
-                    error: InitExecutionError::Trap {
+                    error:       InitExecutionError::Trap {
                         error: error.into(),
                     },
+                    debug_trace: trace,
                 })
             }
-            Ok(v1::InitResult::OutOfEnergy) => {
+            Ok(v1::InitResult::OutOfEnergy {
+                trace,
+            }) => {
                 *remaining_energy = Energy::from(0);
                 Err(ContractInitErrorKind::ExecutionError {
-                    error: InitExecutionError::OutOfEnergy,
+                    error:       InitExecutionError::OutOfEnergy,
+                    debug_trace: trace,
                 })
             }
-            Err(error) => Err(ContractInitErrorKind::ExecutionError {
+            Err(InvalidReturnCodeError {
+                value,
+                debug_trace,
+            }) => Err(ContractInitErrorKind::ExecutionError {
                 error: InitExecutionError::Trap {
-                    error: error.into(),
+                    error: anyhow::anyhow!("Invalid return value received: {value:?}").into(),
                 },
+                debug_trace,
             }),
         }
     }
@@ -923,7 +968,8 @@ impl Chain {
             next_contract_modification_index: 1,
         };
 
-        match contract_invocation.invoke_entrypoint(invoker, sender, payload) {
+        let res = contract_invocation.invoke_entrypoint(invoker, sender, payload);
+        match res {
             Ok((result, trace_elements)) => {
                 Ok((result, contract_invocation.changeset, trace_elements))
             }
@@ -1036,7 +1082,9 @@ impl Chain {
                 energy_used:     Energy::from(0),
                 transaction_fee: Amount::zero(),
                 trace_elements:  Vec::new(),
-                kind:            ContractInvokeErrorKind::OutOfEnergy,
+                kind:            ContractInvokeErrorKind::OutOfEnergy {
+                    debug_trace: DebugTracker::empty_trace(), // we haven't done anything yet.
+                },
             })?;
 
         let invoker_amount_reserved_for_nrg =
@@ -1073,7 +1121,17 @@ impl Chain {
                         &mut self.accounts,
                         &mut self.contracts,
                     );
-                    res.map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?
+                    if let Ok(res) = res {
+                        res
+                    } else {
+                        // the error happens when storing the state, so there are no trace elements
+                        // associated with it. The trace is already in the
+                        // "debug trace" vector.
+                        return Err(self.invocation_out_of_energy_error(
+                            energy_reserved,
+                            DebugTracker::empty_trace(),
+                        ));
+                    }
                 } else {
                     // An error occurred, so state hasn't changed.
                     false
@@ -1171,9 +1229,19 @@ impl Chain {
                 // Charge energy for contract storage. Or return an error if out
                 // of energy.
                 let state_changed = if matches!(result, v1::InvokeResponse::Success { .. }) {
-                    changeset
-                        .collect_energy_for_state(&mut remaining_energy, contract_address)
-                        .map_err(|_| self.invocation_out_of_energy_error(energy_reserved))?
+                    if let Ok(state_changed) =
+                        changeset.collect_energy_for_state(&mut remaining_energy, contract_address)
+                    {
+                        state_changed
+                    } else {
+                        // the error happens when storing the state, so there are no trace elements
+                        // associated with it. The trace is already in the
+                        // "debug trace" vector.
+                        return Err(self.invocation_out_of_energy_error(
+                            energy_reserved,
+                            DebugTracker::empty_trace(),
+                        ));
+                    }
                 } else {
                     // An error occurred, so state hasn't changed.
                     false
@@ -1481,7 +1549,7 @@ impl Chain {
         energy_reserved: Energy,
         remaining_energy: Energy,
     ) -> ContractInvokeError {
-        let remaining_energy = if matches!(kind, ContractInvokeErrorKind::OutOfEnergy) {
+        let remaining_energy = if matches!(kind, ContractInvokeErrorKind::OutOfEnergy { .. }) {
             0.into()
         } else {
             remaining_energy
@@ -1499,9 +1567,15 @@ impl Chain {
     /// Construct a [`ContractInvokeErrorKind`] of the `OutOfEnergy` kind with
     /// the energy and transaction fee fields based on the `energy_reserved`
     /// parameter.
-    fn invocation_out_of_energy_error(&self, energy_reserved: Energy) -> ContractInvokeError {
+    fn invocation_out_of_energy_error(
+        &self,
+        energy_reserved: Energy,
+        debug_trace: DebugTracker,
+    ) -> ContractInvokeError {
         self.convert_to_invoke_error(
-            ContractInvokeErrorKind::OutOfEnergy,
+            ContractInvokeErrorKind::OutOfEnergy {
+                debug_trace,
+            },
             Vec::new(),
             energy_reserved,
             Energy::from(0),
@@ -1998,27 +2072,24 @@ impl ContractInvokeError {
     }
 }
 
-impl From<InsufficientEnergy> for ContractInitErrorKind {
-    #[inline(always)]
-    fn from(_: InsufficientEnergy) -> Self { Self::OutOfEnergy }
-}
-
 impl From<TestConfigurationError> for ContractInvokeErrorKind {
     fn from(err: TestConfigurationError) -> Self {
         match err {
-            TestConfigurationError::OutOfEnergy => Self::OutOfEnergy,
+            TestConfigurationError::OutOfEnergy {
+                debug_trace,
+            } => Self::OutOfEnergy {
+                debug_trace,
+            },
             TestConfigurationError::BalanceOverflow => Self::BalanceOverflow,
         }
     }
 }
 
 /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.
-pub(crate) fn to_interpreter_energy(energy: Energy) -> InterpreterEnergy {
-    InterpreterEnergy::from(energy.energy * 1000)
-}
+pub(crate) fn to_interpreter_energy(energy: Energy) -> u64 { energy.energy * 1000 }
 
 /// Convert [`InterpreterEnergy`] to [`Energy`] by dividing by `1000`.
-pub(crate) fn from_interpreter_energy(interpreter_energy: InterpreterEnergy) -> Energy {
+pub(crate) fn from_interpreter_energy(interpreter_energy: &InterpreterEnergy) -> Energy {
     Energy::from(interpreter_energy.energy / 1000)
 }
 
@@ -2205,6 +2276,15 @@ mod tests {
 
         assert!(matches!(error, ChainBuilderError::ExchangeRateError));
     }
+}
+
+/// Return whether execution is running under `cargo concordium test` with
+/// debugging enabled.
+pub fn is_debug_enabled() -> bool {
+    let Some(value) = option_env!("CARGO_CONCORDIUM_TEST_ALLOW_DEBUG") else {
+        return false;
+    };
+    value != "0" && value != "false"
 }
 
 /// Tests that use I/O (network) and should therefore *not* be run in the CI.

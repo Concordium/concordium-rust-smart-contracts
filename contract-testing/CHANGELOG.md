@@ -2,6 +2,19 @@
 
 ## Unreleased changes
 
+- Add support for debug output when running smart contracts. This adds a new
+  `module_deploy_v1_debug` method to the `Chain` that allows debug symbols
+  in the deployed module.
+- Add `DebugInfoExt` trait that has convenience methods for printing debug
+  information.
+- Add `debug_trace` field to `DebugTraceElement` variants. This records both any
+  information emitted by the `concordium_dbg!` macro of `concordium-std` as well
+  as the trace of all the host function calls that occurred.
+- Add `is_debug_enabled` function to detect whether tests are being run in debug
+  mode or not. This function uses the `CARGO_CONCORDIUM_TEST_ALLOW_DEBUG`
+  environment variable that is set by `cargo-concordium` when running in debug
+  mode.
+
 ## 3.2.0
 
 - Bump minimum supported Rust version to `1.67`.

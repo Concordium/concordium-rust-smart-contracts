@@ -1,3 +1,4 @@
+edition = "2021"
 combine_control_expr = false
 wrap_comments = true
 brace_style = "PreferSameLine"

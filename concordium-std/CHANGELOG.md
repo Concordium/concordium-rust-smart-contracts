@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+- Add a `concordium_dbg!` macro and the associated `debug` feature to enable,
+  together with `cargo concordium`, to emit debug information during contract
+  execution.
+
 ## concordium-std 8.1.0 (2023-10-18)
 
 - Set minimum Rust version to 1.66.

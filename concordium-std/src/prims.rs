@@ -282,6 +282,22 @@ extern "C" {
         column: u32,
     );
 
+    #[cfg(feature = "debug")]
+    /// Emit text together with the source location.
+    /// This is used as the equivalent of the `dbg!` macro when the
+    /// `debug` feature is enabled.
+    ///
+    /// Note that this function is not allowed on the chain, it is only there to
+    /// ease local testing.
+    pub fn debug_print(
+        msg_start: *const u8,
+        msg_length: u32,
+        filename_start: *const u8,
+        filename_length: u32,
+        line: u32,
+        column: u32,
+    );
+
     #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
     /// Generating random numbers for randomised testing.
     /// Not available for contracts deployed on the chain.
