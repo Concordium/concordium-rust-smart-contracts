@@ -56,7 +56,9 @@ pub type ContractTokenAmount = TokenAmountU64;
 /// and a vector of MetadataUrl
 #[derive(Serial, Deserial, SchemaType)]
 pub struct MintParam {
+    /// Number of tokens
     pub token_amount: ContractTokenAmount,
+    /// MetadataURLs for a token
     pub metadata_url: Vec<MetadataUrl>,
 }
 
@@ -100,15 +102,19 @@ impl<S: HasStateApi> AddressState<S> {
     }
 }
 
-/// Current token state keeps a counter variable (as an index),
+/// Token state keeps a counter variable (as an index)
 /// and a list of MetadataUrls. The counter points the nth index
-/// of the list of MetadataUrl when its queried using the `TokenMetadata`
-/// function when its upgraded once, index will be incremented by the owner
-/// of the contract and the response MetadataUrl will always be the latest
-/// one.
+/// of the list of MetadataUrls. The idea is returning the value at that index
+/// when its queried by the `TokenMetadata`function.
+/// When its upgraded once, counter will be incremented by the owner
+/// of the contract and the response MetadataUrl will always be the incremented
+/// element index i.e list[i]
 #[derive(Serial, Deserial, Clone, SchemaType)]
 pub struct TokenMetadataState {
+    /// when its upgraded, counter will be incremented by the owner
+    /// and its initially 0.
     pub token_metadata_current_state_counter: u32,
+    ///list of MetadataUrls for different stages of the token
     pub token_metadata_list:                  Vec<MetadataUrl>,
 }
 impl TokenMetadataState {
@@ -142,6 +148,8 @@ pub enum CustomContractError {
     LogFull,
     /// Only a smart contract can call this function.
     ContractOnly,
+
+    LogMalformed,
     /// Failed to invoke a contract.
     InvokeContractError,
     /// Token upgrade failed, because of max metadata counter is reached.
@@ -183,7 +191,8 @@ impl<S: HasStateApi> State<S> {
     }
 
     /// Mints an amount of tokens with a given address as the owner.
-    /// Sets the token index counter as 0 and the metadata
+    /// Sets the token's metadata list and the current metadata counter to 0.
+
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
@@ -383,14 +392,18 @@ fn contract_init<S: HasStateApi>(
 /// The `operators` holds the list of the addresses that can operate
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 pub struct ViewAddressState {
+    /// state balance the amounts for each token
     pub balances:  Vec<(ContractTokenId, ContractTokenAmount)>,
+    /// state operators
     pub operators: Vec<Address>,
 }
 /// The `state` holds the inner state of the contract
 /// The `tokens` has the list of tokens in the contract.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 pub struct ViewState {
+    /// accounts and (balances, operators) in the state
     pub state:  Vec<(Address, ViewAddressState)>,
+    /// tokens in the state
     pub tokens: Vec<ContractTokenId>,
 }
 
@@ -433,7 +446,6 @@ fn contract_view<S: HasStateApi>(
 
 pub type TokenUpdateParams = ContractTokenId;
 
-///
 /// Only the contract owner can call the `upgrade` function to pint next item in
 /// the MetadataUrl list. It requires only tokenId, callable once at a time for
 /// a token.
@@ -888,7 +900,7 @@ fn contract_on_cis2_received<S: HasStateApi>(
     host.invoke_contract_read_only(
         &sender,
         &parameter,
-        EntrypointName::new("transfer")?,
+        EntrypointName::new_unchecked("transfer"),
         Amount::zero(),
     )?;
     Ok(())

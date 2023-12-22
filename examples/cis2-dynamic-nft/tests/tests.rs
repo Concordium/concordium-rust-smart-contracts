@@ -167,7 +167,6 @@ fn test_minting() {
 /// upgraded, the TokenMetadata event will be emitted and it should contain
 /// the next MetadataUrl in the Metadata URLs vector and similarly
 /// `tokenMetadata` function should return the last MetadataUrl.
-
 #[test]
 fn test_upgrade() {
     let (mut chain, contract_address, _update) = initialize_contract_with_alice_tokens();
