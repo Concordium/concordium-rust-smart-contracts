@@ -1,4 +1,5 @@
-//! A multi token example implementation of the Concordium Token Standard CIS2.
+//! A multi token example implementation of the Concordium Token Standard CIS2
+//! and the Concordium Sponsored Transaction Standard CIS3.
 //!
 //! # Description
 //! An instance of this smart contract can contain a number of different token
@@ -6,32 +7,176 @@
 //! identified by the contract address together with the token ID.
 //!
 //! In this example the contract is initialized with no tokens, and tokens can
-//! be minted through a `mint` contract function, which will only succeed for
-//! the contract owner. No functionality to burn token is defined in this
-//! example.
+//! be minted through a `mint` contract function, which can be called by anyone.
+//! The `mint` function airdrops the `MINT_AIRDROP` amount of tokens to a
+//! specified `owner` address in the input parameter. No functionality to burn
+//! token is defined in this example.
 //!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
+//! This contract implements the Concordium Token Standard CIS2. In addition, it
+//! implements the CIS3 standard which includes features for sponsored
+//! transactions.
+//!
+//! The use case for CIS3 in this smart contract is for third-party service
+//! providers (the owner of this contract) that deal with conventional
+//! clients/users that don't want to acquire crypto (such as CCD) from an
+//! exchange. The third-party has often traditional fiat channels open
+//! (off-chain) with the conventional clients/users and wants to offer to submit
+//! transactions on behalf of the user on-chain. The user/client has to sign its
+//! intended transaction before communicating it (off-chain) to the third-party
+//! service provider (often paying some fees in fiat money). The third-party
+//! service provider submits the transaction on behalf of the user and pays the
+//! transaction fee to execute the transaction on-chain.
+//!
 //! As follows from the CIS2 specification, the contract has a `transfer`
 //! function for transferring an amount of a specific token type from one
 //! address to another address. An address can enable and disable one or more
-//! addresses as operators. An operator of some address is allowed to transfer
-//! any tokens owned by this address.
+//! addresses as operators with the `updateOperator` function. An operator of
+//! an address is allowed to transfer any tokens owned by this address.
+//! As follows from the CIS3 specification, the contract has a `permit`
+//! function. It is the sponsored counterpart to the `transfer/updateOperator`
+//! function and can be executed by anyone on behalf of an account given a
+//! signed message.
 //!
 //! This contract also contains an example of a function to be called when
 //! receiving tokens. In which case the contract will forward the tokens to
 //! the contract owner.
 //! This function is not very useful and is only there to showcase a simple
 //! implementation of a token receive hook.
+//!
+//! Concordium supports natively multi-sig accounts. Each account address on
+//! Concordium is controlled by one or several credential(s) (real-world
+//! identities) and each credential has one or several public-private key
+//! pair(s). Both the key and signature structures of an account are represented
+//! as two-level maps (e.g. BTreeMap<CredentialIndexU8,
+//! BTreeMap<PublicKeyIndexU8, PublicKey>> or BTreeMap<CredentialIndexU8,
+//! BTreeMap<SignatureIndexU8, Signature>>). The outer map of
+//! `BTreeMap<CredentialIndexU8, BTreeMap<PublicKeyIndexU8, PublicKey>>` has an
+//! `AccountThreshold` (number of credentials needed to sign the transaction
+//! initiated by that account) and the inner map has a `SignatureThreshold`
+//! (number of Signatures needed for a specific credential so that this
+//! credential is considered to have signed the transaction initiated by that
+//! account). The CIS3 standard supports multi-sig accounts. For basic accounts
+//! (that have exactly one credential and exactly one public key for that
+//! credential), the signaturesMaps/publicKeyMaps in this contract, will have
+//! only one value at key 0 in the inner and outer maps.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis2::*;
-use concordium_std::*;
+use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
 /// List of supported standards by this contract address.
 const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
     [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
+
+/// List of supported entrypoints by the `permit` function (CIS3 standard).
+const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
+    [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
+
+/// Tag for the CIS3 Nonce event.
+pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
+
+/// Tagged events to be serialized for the event log.
+#[derive(Debug, Serial, Deserial, PartialEq, Eq)]
+#[concordium(repr(u8))]
+pub enum Event {
+    /// The event tracks the nonce used by the signer of the `PermitMessage`
+    /// whenever the `permit` function is invoked.
+    #[concordium(tag = 250)]
+    Nonce(NonceEvent),
+    /// Cis2 token events.
+    #[concordium(forward = cis2_events)]
+    Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
+}
+
+/// The NonceEvent is logged when the `permit` function is invoked. The event
+/// tracks the nonce used by the signer of the `PermitMessage`.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct NonceEvent {
+    /// Account that signed the `PermitMessage`.
+    pub account: AccountAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    pub nonce:   u64,
+}
+
+// Implementing a custom schemaType for the `Event` struct containing all
+// CIS2/CIS3 events. This custom implementation flattens the fields to avoid one
+// level of nesting. Deriving the schemaType would result in e.g.: {"Nonce":
+// [{...fields}] }. In contrast, this custom schemaType implementation results
+// in e.g.: {"Nonce": {...fields} }
+impl schema::SchemaType for Event {
+    fn get_type() -> schema::Type {
+        let mut event_map = BTreeMap::new();
+        event_map.insert(
+            NONCE_EVENT_TAG,
+            (
+                "Nonce".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("account"), AccountAddress::get_type()),
+                    (String::from("nonce"), u64::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            TRANSFER_EVENT_TAG,
+            (
+                "Transfer".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
+                    (String::from("from"), Address::get_type()),
+                    (String::from("to"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            MINT_EVENT_TAG,
+            (
+                "Mint".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            BURN_EVENT_TAG,
+            (
+                "Burn".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("amount"), ContractTokenAmount::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            UPDATE_OPERATOR_EVENT_TAG,
+            (
+                "UpdateOperator".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("update"), OperatorUpdate::get_type()),
+                    (String::from("owner"), Address::get_type()),
+                    (String::from("operator"), Address::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            TOKEN_METADATA_EVENT_TAG,
+            (
+                "TokenMetadata".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("token_id"), ContractTokenId::get_type()),
+                    (String::from("metadata_url"), MetadataUrl::get_type()),
+                ]),
+            ),
+        );
+        schema::Type::TaggedEnum(event_map)
+    }
+}
 
 // Types
 
@@ -43,31 +188,16 @@ pub type ContractTokenId = TokenIdU8;
 /// Contract token amount type.
 pub type ContractTokenAmount = TokenAmountU64;
 
-#[derive(Serialize, SchemaType)]
-pub struct MintParam {
-    pub token_amount: ContractTokenAmount,
-    pub metadata_url: MetadataUrl,
-}
-
-/// The parameter for the contract function `mint` which mints a number of
-/// token types and/or amounts of tokens to a given address.
+/// The parameter for the contract function `mint` which mints/airdrops a number
+/// of tokens to the owner's address.
 #[derive(Serialize, SchemaType)]
 pub struct MintParams {
     /// Owner of the newly minted tokens.
-    pub owner:  Address,
-    /// A collection of tokens to mint.
-    pub tokens: collections::BTreeMap<ContractTokenId, MintParam>,
-}
-
-/// The parameter type for the contract function `setImplementors`.
-/// Takes a standard identifier and a list of contract addresses providing
-/// implementations of this standard.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct SetImplementorsParams {
-    /// The identifier for the standard.
-    id:           StandardIdentifierOwned,
-    /// The addresses of the implementors of the standard.
-    implementors: Vec<ContractAddress>,
+    pub owner:        Address,
+    /// The metadata_url of the token.
+    pub metadata_url: MetadataUrl,
+    /// The token_id to mint/create additional tokens.
+    pub token_id:     ContractTokenId,
 }
 
 /// The state for each address.
@@ -76,7 +206,7 @@ pub struct SetImplementorsParams {
 struct AddressState<S = StateApi> {
     /// The amount of tokens owned by this address.
     balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
-    /// The address which are currently enabled as operators for this address.
+    /// The addresses which are currently enabled as operators for this address.
     operators: StateSet<Address, S>,
 }
 
@@ -92,17 +222,82 @@ impl AddressState {
 /// The contract state,
 ///
 /// Note: The specification does not specify how to structure the contract state
-/// and this could be structured in a more space efficient way.
+/// and this could be structured in a more space-efficient way.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
     /// The state of addresses.
-    state:        StateMap<Address, AddressState<S>, S>,
-    /// All of the token IDs
-    tokens:       StateMap<ContractTokenId, MetadataUrl, S>,
+    state:           StateMap<Address, AddressState<S>, S>,
+    /// All of the token IDs.
+    tokens:          StateMap<ContractTokenId, MetadataUrl, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    /// A registry to link an account to its next nonce. The nonce is used to
+    /// prevent replay attacks of the signed message. The nonce is increased
+    /// sequentially every time a signed message (corresponding to the
+    /// account) is successfully executed in the `permit` function. This
+    /// mapping keeps track of the next nonce that needs to be used by the
+    /// account to generate a signature.
+    nonces_registry: StateMap<AccountAddress, u64, S>,
+    /// The amount of tokens airdropped when the mint function is invoked.
+    mint_airdrop:    TokenAmountU64,
+}
+/// The parameter type for the contract function `supportsPermit`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct SupportsPermitQueryParams {
+    /// The list of supportPermit queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<OwnedEntrypointName>,
+}
+
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
+/// Part of the parameter type for the contract function `permit`.
+/// Specifies the message that is signed.
+#[derive(SchemaType, Serialize)]
+pub struct PermitMessage {
+    /// The contract_address that the signature is intended for.
+    pub contract_address: ContractAddress,
+    /// A nonce to prevent replay attacks.
+    pub nonce:            u64,
+    /// A timestamp to make signatures expire.
+    pub timestamp:        Timestamp,
+    /// The entry_point that the signature is intended for.
+    pub entry_point:      OwnedEntrypointName,
+    /// The serialized payload that should be forwarded to either the `transfer`
+    /// or the `updateOperator` function.
+    #[concordium(size_length = 2)]
+    pub payload:          Vec<u8>,
+}
+
+/// The parameter type for the contract function `permit`.
+/// Takes a signature, the signer, and the message that was signed.
+#[derive(Serialize, SchemaType)]
+pub struct PermitParam {
+    /// Signature/s. The CIS3 standard supports multi-sig accounts.
+    pub signature: AccountSignatures,
+    /// Account that created the above signature.
+    pub signer:    AccountAddress,
+    /// Message that was signed.
+    pub message:   PermitMessage,
+}
+
+#[derive(Serialize)]
+pub struct PermitParamPartial {
+    /// Signature/s. The CIS3 standard supports multi-sig accounts.
+    signature: AccountSignatures,
+    /// Account that created the above signature.
+    signer:    AccountAddress,
 }
 
 /// The different errors the contract can produce.
@@ -110,24 +305,51 @@ struct State<S = StateApi> {
 pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
-    ParseParams,
+    ParseParams, // -1
     /// Failed logging: Log is full.
-    LogFull,
+    LogFull, // -2
     /// Failed logging: Log is malformed.
-    LogMalformed,
+    LogMalformed, // -3
     /// Invalid contract name.
-    InvalidContractName,
+    InvalidContractName, // -4
     /// Only a smart contract can call this function.
-    ContractOnly,
+    ContractOnly, // -5
     /// Failed to invoke a contract.
-    InvokeContractError,
+    InvokeContractError, // -6
+    /// Failed to verify signature because signer account does not exist on
+    /// chain.
+    MissingAccount, // -7
+    /// Failed to verify signature because data was malformed.
+    MalformedData, // -8
+    /// Failed signature verification: Invalid signature.
+    WrongSignature, // -9
+    /// Failed signature verification: A different nonce is expected.
+    NonceMismatch, // -10
+    /// Failed signature verification: Signature was intended for a different
+    /// contract.
+    WrongContract, // -11
+    /// Failed signature verification: Signature was intended for a different
+    /// entry_point.
+    WrongEntryPoint, // -12
+    /// Failed signature verification: Signature is expired.
+    Expired, // -13
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
 
 pub type ContractResult<A> = Result<A, ContractError>;
 
-/// Mapping the logging errors to ContractError.
+/// Mapping account signature error to CustomContractError
+impl From<CheckAccountSignatureError> for CustomContractError {
+    fn from(e: CheckAccountSignatureError) -> Self {
+        match e {
+            CheckAccountSignatureError::MissingAccount => Self::MissingAccount,
+            CheckAccountSignatureError::MalformedData => Self::MalformedData,
+        }
+    }
+}
+
+/// Mapping the logging errors to CustomContractError.
 impl From<LogError> for CustomContractError {
     fn from(le: LogError) -> Self {
         match le {
@@ -147,47 +369,51 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-impl From<NewReceiveNameError> for CustomContractError {
-    fn from(_: NewReceiveNameError) -> Self { Self::InvalidContractName }
-}
-
-impl From<NewContractNameError> for CustomContractError {
-    fn from(_: NewContractNameError) -> Self { Self::InvalidContractName }
-}
-
 impl State {
     /// Construct a state with no tokens
-    fn empty(state_builder: &mut StateBuilder) -> Self {
+    fn empty(state_builder: &mut StateBuilder, mint_airdrop: TokenAmountU64) -> Self {
         State {
-            state:        state_builder.new_map(),
-            tokens:       state_builder.new_map(),
+            state: state_builder.new_map(),
+            tokens: state_builder.new_map(),
             implementors: state_builder.new_map(),
+            nonces_registry: state_builder.new_map(),
+            mint_airdrop,
         }
     }
 
     /// Mints an amount of tokens with a given address as the owner.
+    /// The metadataURL for the given token_id is added to the state only
+    /// if the token_id is being minted or created for the first time.
+    /// Otherwise, the metadataURL provided in the input parameter is ignored.
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
-        mint_param: &MintParam,
+        metadata_url: &MetadataUrl,
         owner: &Address,
+        mint_airdrop: TokenAmountU64,
         state_builder: &mut StateBuilder,
-    ) {
-        self.tokens.insert(*token_id, mint_param.metadata_url.to_owned());
+    ) -> MetadataUrl {
+        let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
+        if token_metadata.is_none() {
+            self.tokens.insert(*token_id, metadata_url.to_owned());
+        }
+
         let mut owner_state =
             self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
         let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
-        *owner_balance += mint_param.token_amount;
+        *owner_balance += mint_airdrop;
+
+        if let Some(token_metadata) = token_metadata {
+            token_metadata
+        } else {
+            metadata_url.clone()
+        }
     }
 
     /// Check that the token ID currently exists in this contract.
     #[inline(always)]
     fn contains_token(&self, token_id: &ContractTokenId) -> bool {
-        self.get_token(token_id).is_some()
-    }
-
-    fn get_token(&self, token_id: &ContractTokenId) -> Option<MetadataUrl> {
-        self.tokens.get(token_id).map(|x| x.to_owned())
+        self.tokens.get(token_id).map(|x| x.to_owned()).is_some()
     }
 
     /// Get the current balance of a given token id for a given address.
@@ -231,7 +457,7 @@ impl State {
 
         // Get the `from` state and balance, if not present it will fail since the
         // balance is interpreted as 0 and the transfer amount must be more than
-        // 0 as this point.;
+        // 0 at this point.
         {
             let mut from_address_state =
                 self.state.entry(*from).occupied_or(ContractError::InsufficientFunds)?;
@@ -294,11 +520,18 @@ impl State {
 
 // Contract functions
 
-/// Initialize contract instance with a no token types.
-#[init(contract = "cis2_multi", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
-fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
+/// Initialize contract instance with no token types.
+#[init(
+    contract = "cis2_multi",
+    event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
+    parameter = "TokenAmountU64"
+)]
+fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
+    // Parse the parameter.
+    let mint_airdrop: TokenAmountU64 = ctx.parameter_cursor().get()?;
+
     // Construct the initial contract state.
-    Ok(State::empty(state_builder))
+    Ok(State::empty(state_builder, mint_airdrop))
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
@@ -314,8 +547,7 @@ pub struct ViewState {
 }
 
 /// View function for testing. This reports on the entire state of the contract
-/// for testing purposes. In a realistic example there `balance_of` and similar
-/// functions with a smaller response.
+/// for testing purposes.
 #[receive(contract = "cis2_multi", name = "view", return_value = "ViewState")]
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
@@ -347,21 +579,18 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
     })
 }
 
-/// Mint new tokens with a given address as the owner of these tokens.
-/// Can only be called by the contract owner.
+/// Mint/Airdrops the fixed amount of `MINT_AIRDROP` of new tokens to the
+/// `owner` address. ATTENTION: Can be called by anyone. You should add your
+/// custom access control to this function.
+///
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
-/// The url for the token metadata is the token ID encoded in hex, appended on
-/// the `TOKEN_METADATA_BASE_URL`.
+/// The metadata_url in the input parameter of the token is ignored except for
+/// the first time a token_id is minted.
 ///
 /// It rejects if:
-/// - The sender is not the contract instance owner.
 /// - Fails to parse parameter.
-/// - Any of the tokens fails to be minted, which could be if:
-///     - Fails to log Mint event.
-///     - Fails to log TokenMetadata event.
-///
-/// Note: Can at most mint 32 token types in one call due to the limit on the
-/// number of logs a smart contract can produce on each function call.
+/// - Fails to log Mint event.
+/// - Fails to log TokenMetadata event.
 #[receive(
     contract = "cis2_multi",
     name = "mint",
@@ -375,38 +604,71 @@ fn contract_mint(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Get the contract owner
-    let owner = ctx.owner();
-    // Get the sender of the transaction
-    let sender = ctx.sender();
-
-    ensure!(sender.matches_account(&owner), ContractError::Unauthorized);
-
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
     let (state, builder) = host.state_and_builder();
-    for (token_id, mint_param) in params.tokens {
-        // Mint the token in the state.
-        state.mint(&token_id, &mint_param, &params.owner, builder);
+    // Mint the token in the state.
+    let token_metadata = state.mint(
+        &params.token_id,
+        &params.metadata_url,
+        &params.owner,
+        state.mint_airdrop,
+        builder,
+    );
 
-        // Event for minted token.
-        logger.log(&Cis2Event::Mint(MintEvent {
-            token_id,
-            amount: mint_param.token_amount,
-            owner: params.owner,
-        }))?;
+    // Event for minted token.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: params.token_id,
+        amount:   state.mint_airdrop,
+        owner:    params.owner,
+    }))?;
 
-        // Metadata URL for the token.
-        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-            token_id,
-            metadata_url: mint_param.metadata_url,
-        }))?;
-    }
+    // Metadata URL for the token.
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+        token_id:     params.token_id,
+        metadata_url: token_metadata,
+    }))?;
     Ok(())
 }
 
 type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+
+/// Internal `transfer/permit` helper function. Invokes the `transfer`
+/// function of the state. Logs a `Transfer` event and invokes a receive hook
+/// function. The function assumes that the transfer is authorized.
+fn transfer(
+    transfer: concordium_cis2::Transfer<ContractTokenId, ContractTokenAmount>,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    let (state, builder) = host.state_and_builder();
+
+    let to_address = transfer.to.address();
+    // Update the contract state
+    state.transfer(&transfer.token_id, transfer.amount, &transfer.from, &to_address, builder)?;
+
+    // Log transfer event
+    logger.log(&Cis2Event::Transfer(TransferEvent {
+        token_id: transfer.token_id,
+        amount:   transfer.amount,
+        from:     transfer.from,
+        to:       to_address,
+    }))?;
+
+    // If the receiver is a contract: invoke the receive hook function.
+    if let Receiver::Contract(address, function) = transfer.to {
+        let parameter = OnReceivingCis2Params {
+            token_id: transfer.token_id,
+            amount:   transfer.amount,
+            from:     transfer.from,
+            data:     transfer.data,
+        };
+        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;
+    }
+
+    Ok(())
+}
 
 /// Execute a list of token transfers, in the order of the list.
 ///
@@ -440,45 +702,218 @@ fn contract_transfer(
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    for Transfer {
-        token_id,
-        amount,
-        from,
-        to,
-        data,
-    } in transfers
-    {
-        let (state, builder) = host.state_and_builder();
+    for transfer_entry in transfers {
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
-        let to_address = to.address();
-        // Update the contract state
-        state.transfer(&token_id, amount, &from, &to_address, builder)?;
+        ensure!(
+            transfer_entry.from == sender
+                || host.state().is_operator(&sender, &transfer_entry.from),
+            ContractError::Unauthorized
+        );
 
-        // Log transfer event
-        logger.log(&Cis2Event::Transfer(TransferEvent {
-            token_id,
-            amount,
-            from,
-            to: to_address,
-        }))?;
+        transfer(transfer_entry, host, logger)?;
+    }
+    Ok(())
+}
 
-        // If the receiver is a contract we invoke it.
-        if let Receiver::Contract(address, entrypoint_name) = to {
-            let parameter = OnReceivingCis2Params {
-                token_id,
-                amount,
-                from,
-                data,
-            };
-            host.invoke_contract(
-                &address,
-                &parameter,
-                entrypoint_name.as_entrypoint_name(),
-                Amount::zero(),
+/// Helper function that can be invoked at the front-end to serialize the
+/// `PermitMessage` before signing it in the wallet.
+#[receive(contract = "cis2_multi", name = "serializationHelper", parameter = "PermitMessage")]
+fn contract_serialization_helper(_ctx: &ReceiveContext, _host: &Host<State>) -> ContractResult<()> {
+    Ok(())
+}
+
+/// Helper function to calculate the `message_hash`.
+#[receive(
+    contract = "cis2_multi",
+    name = "viewMessageHash",
+    parameter = "PermitParam",
+    return_value = "[u8;32]",
+    crypto_primitives,
+    mutable
+)]
+fn contract_view_message_hash(
+    ctx: &ReceiveContext,
+    _host: &mut Host<State>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<[u8; 32]> {
+    // Parse the parameter.
+    let mut cursor = ctx.parameter_cursor();
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial`. I.e. we read the `signature` and the
+    // `signer`, but not the `message` here.
+    let param: PermitParamPartial = cursor.get()?;
+
+    // The input parameter is `PermitParam` but we have only read the initial part
+    // of it with `PermitParamPartial` so far. We read in the `message` now.
+    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
+    // bytes.
+    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
+
+    cursor.read_exact(&mut message_bytes)?;
+
+    // The message signed in the Concordium browser wallet is prepended with the
+    // `account` address and 8 zero bytes. Accounts in the Concordium browser wallet
+    // can either sign a regular transaction (in that case the prepend is
+    // `account` address and the nonce of the account which is by design >= 1)
+    // or sign a message (in that case the prepend is `account` address and 8 zero
+    // bytes). Hence, the 8 zero bytes ensure that the user does not accidentally
+    // sign a transaction. The account nonce is of type u64 (8 bytes).
+    let mut msg_prepend = [0; 32 + 8];
+    // Prepend the `account` address of the signer.
+    msg_prepend[0..32].copy_from_slice(param.signer.as_ref());
+    // Prepend 8 zero bytes.
+    msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
+    // Calculate the message hash.
+    let message_hash =
+        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+
+    Ok(message_hash)
+}
+
+/// Verify an ed25519 signature and allow the transfer of tokens or update of an
+/// operator.
+///
+/// In case of a `transfer` action:
+/// Logs a `Transfer` event and invokes a receive hook function for the
+/// transfer.
+///
+/// In case of a `updateOperator` action:
+/// Logs an `UpdateOperator` event.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - A different nonce is expected.
+/// - The signature was intended for a different contract.
+/// - The signature was intended for a different `entry_point`.
+/// - The signature is expired.
+/// - The signature can not be validated.
+/// - Fails to log event.
+/// - In case of a `transfer` action: it fails to be executed, which could be
+///   if:
+///     - The `token_id` does not exist.
+///     - The token is not owned by the `from` address.
+///     - The receive hook function call rejects.
+#[receive(
+    contract = "cis2_multi",
+    name = "permit",
+    parameter = "PermitParam",
+    crypto_primitives,
+    mutable,
+    enable_logger
+)]
+fn contract_permit(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let param: PermitParam = ctx.parameter_cursor().get()?;
+
+    // Update the nonce.
+    let mut entry = host.state_mut().nonces_registry.entry(param.signer).or_insert_with(|| 0);
+
+    // Get the current nonce.
+    let nonce = *entry;
+    // Bump nonce.
+    *entry += 1;
+    drop(entry);
+
+    let message = param.message;
+
+    // Check the nonce to prevent replay attacks.
+    ensure_eq!(message.nonce, nonce, CustomContractError::NonceMismatch.into());
+
+    // Check that the signature was intended for this contract.
+    ensure_eq!(
+        message.contract_address,
+        ctx.self_address(),
+        CustomContractError::WrongContract.into()
+    );
+
+    // Check signature is not expired.
+    ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
+
+    let message_hash = contract_view_message_hash(ctx, host, crypto_primitives)?;
+
+    // Check signature.
+    let valid_signature =
+        host.check_account_signature(param.signer, &param.signature, &message_hash)?;
+    ensure!(valid_signature, CustomContractError::WrongSignature.into());
+
+    if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
+        // Transfer the tokens.
+
+        let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
+
+        for transfer_entry in transfers {
+            // Authenticate the signer for this transfer
+            ensure!(
+                transfer_entry.from.matches_account(&param.signer)
+                    || host.state().is_operator(&Address::from(param.signer), &transfer_entry.from),
+                ContractError::Unauthorized
+            );
+
+            transfer(transfer_entry, host, logger)?
+        }
+    } else if message.entry_point.as_entrypoint_name()
+        == EntrypointName::new_unchecked("updateOperator")
+    {
+        // Update the operator.
+        let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
+
+        let (state, builder) = host.state_and_builder();
+
+        for update in updates {
+            update_operator(
+                update.update,
+                concordium_std::Address::Account(param.signer),
+                update.operator,
+                state,
+                builder,
+                logger,
             )?;
         }
+    } else {
+        bail!(CustomContractError::WrongEntryPoint.into())
     }
+
+    // Log the nonce event.
+    logger.log(&Event::Nonce(NonceEvent {
+        account: param.signer,
+        nonce,
+    }))?;
+
+    Ok(())
+}
+
+/// Internal `updateOperator/permit` helper function. Invokes the
+/// `add_operator/remove_operator` function of the state.
+/// Logs a `UpdateOperator` event. The function assumes that the sender is
+/// authorized to do the `updateOperator` action.
+fn update_operator(
+    update: OperatorUpdate,
+    sender: Address,
+    operator: Address,
+    state: &mut State,
+    builder: &mut StateBuilder,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Update the operator in the state.
+    match update {
+        OperatorUpdate::Add => state.add_operator(&sender, &operator, builder),
+        OperatorUpdate::Remove => state.remove_operator(&sender, &operator),
+    }
+
+    // Log the appropriate event
+    logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+        UpdateOperatorEvent {
+            owner: sender,
+            operator,
+            update,
+        },
+    ))?;
+
     Ok(())
 }
 
@@ -505,34 +940,20 @@ fn contract_update_operator(
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
-
     let (state, builder) = host.state_and_builder();
     for param in params {
-        // Update the operator in the state.
-        match param.update {
-            OperatorUpdate::Add => state.add_operator(&sender, &param.operator, builder),
-            OperatorUpdate::Remove => state.remove_operator(&sender, &param.operator),
-        }
-
-        // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
-        ))?;
+        update_operator(param.update, sender, param.operator, state, builder, logger)?;
     }
     Ok(())
 }
 
 /// Parameter type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenIDs used by this contract.
-type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
+pub type ContractBalanceOfQueryParams = BalanceOfQueryParams<ContractTokenId>;
 
 /// Response type for the CIS-2 function `balanceOf` specialized to the subset
 /// of TokenAmounts used by this contract.
-type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
+pub type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount>;
 
 /// Get the balance of given token IDs and addresses.
 ///
@@ -592,6 +1013,96 @@ fn contract_operator_of(
     Ok(result)
 }
 
+/// Response type for the function `publicKeyOf`.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct PublicKeyOfQueryResponse(
+    #[concordium(size_length = 2)] pub Vec<Option<AccountPublicKeys>>,
+);
+
+impl From<Vec<Option<AccountPublicKeys>>> for PublicKeyOfQueryResponse {
+    fn from(results: concordium_std::Vec<Option<AccountPublicKeys>>) -> Self {
+        PublicKeyOfQueryResponse(results)
+    }
+}
+
+/// The parameter type for the contract functions `publicKeyOf/noneOf`. A query
+/// for the public key/nonce of a given account.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct VecOfAccountAddresses {
+    /// List of queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<AccountAddress>,
+}
+
+/// Get the public keys of accounts. `None` is returned if the account does not
+/// exist on chain.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "publicKeyOf",
+    parameter = "VecOfAccountAddresses",
+    return_value = "PublicKeyOfQueryResponse",
+    error = "ContractError"
+)]
+fn contract_public_key_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
+) -> ContractResult<PublicKeyOfQueryResponse> {
+    // Parse the parameter.
+    let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response: Vec<Option<AccountPublicKeys>> = Vec::with_capacity(params.queries.len());
+    for account in params.queries {
+        // Query the public_key.
+        let public_keys = host.account_public_keys(account).ok();
+
+        response.push(public_keys);
+    }
+    let result = PublicKeyOfQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Response type for the function `nonceOf`.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct NonceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<u64>);
+
+impl From<Vec<u64>> for NonceOfQueryResponse {
+    fn from(results: concordium_std::Vec<u64>) -> Self { NonceOfQueryResponse(results) }
+}
+
+/// Get the nonces of accounts.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "nonceOf",
+    parameter = "VecOfAccountAddresses",
+    return_value = "NonceOfQueryResponse",
+    error = "ContractError"
+)]
+fn contract_nonce_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
+) -> ContractResult<NonceOfQueryResponse> {
+    // Parse the parameter.
+    let params: VecOfAccountAddresses = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response: Vec<u64> = Vec::with_capacity(params.queries.len());
+    for account in params.queries {
+        // Query the next nonce.
+        let nonce = host.state().nonces_registry.get(&account).map(|nonce| *nonce).unwrap_or(0);
+
+        response.push(nonce);
+    }
+    Ok(NonceOfQueryResponse::from(response))
+}
+
 /// Parameter type for the CIS-2 function `tokenMetadata` specialized to the
 /// subset of TokenIDs used by this contract.
 type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTokenId>;
@@ -639,8 +1150,8 @@ fn contract_token_metadata(
 /// it, and define the function to forward any transfers to the owner of the
 /// contract instance.
 ///
-/// Note: The name of this function is not part the CIS2, and a contract can
-/// have multiple functions for receiving tokens.
+/// Note: The name of this function is not part the CIS2 standard, and a
+/// contract can have multiple functions for receiving tokens.
 ///
 /// It rejects if:
 /// - Sender is not a contract.
@@ -675,7 +1186,7 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
     host.invoke_contract_read_only(
         &sender,
         &parameter,
-        EntrypointName::new("transfer")?,
+        EntrypointName::new_unchecked("transfer"),
         Amount::zero(),
     )?;
     Ok(())
@@ -707,6 +1218,38 @@ fn contract_supports(
             response.push(SupportResult::Support);
         } else {
             response.push(host.state().have_implementors(&std_id));
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
+}
+
+/// Get the entrypoints supported by the `permit` function given a
+/// list of entrypoints.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "supportsPermit",
+    parameter = "SupportsPermitQueryParams",
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
+)]
+fn contract_supports_permit(
+    ctx: &ReceiveContext,
+    _host: &Host<State>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsPermitQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for entrypoint in params.queries {
+        if SUPPORTS_PERMIT_ENTRYPOINTS.contains(&entrypoint.as_entrypoint_name()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(SupportResult::NoSupport);
         }
     }
     let result = SupportsQueryResponse::from(response);

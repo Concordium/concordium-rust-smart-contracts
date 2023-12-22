@@ -165,8 +165,6 @@ pub enum CustomContractError {
     LogFull,
     /// Failed logging: Log is malformed.
     LogMalformed,
-    /// Invalid contract name.
-    InvalidContractName,
     /// Only a smart contract can call this function.
     ContractOnly,
     /// Failed to invoke a contract.
@@ -207,10 +205,6 @@ impl<T> From<CallContractError<T>> for CustomContractError {
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
-}
-
-impl From<NewReceiveNameError> for CustomContractError {
-    fn from(_: NewReceiveNameError) -> Self { Self::InvalidContractName }
 }
 
 impl State {
@@ -291,7 +285,7 @@ impl State {
         }
         // Get the `from` state and balance, if not present it will fail since the
         // balance is interpreted as 0 and the transfer amount must be more than
-        // 0 as this point.;
+        // 0 at this point.
         {
             let mut from_address_state =
                 self.state.entry(*from).occupied_or(ContractError::InsufficientFunds)?;
@@ -813,7 +807,7 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
     host.invoke_contract_read_only(
         &sender,
         &parameter,
-        EntrypointName::new("transfer")?,
+        EntrypointName::new_unchecked("transfer"),
         Amount::zero(),
     )?;
     Ok(())

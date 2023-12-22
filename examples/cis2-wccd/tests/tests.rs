@@ -566,7 +566,7 @@ fn initialize_contract_with_alice_tokens() -> (Chain, ContractAddress, ContractI
 fn initialize_chain_and_contract() -> (Chain, ContractInitSuccess) {
     let mut chain = Chain::new();
 
-    // Create some accounts accounts on the chain.
+    // Create some accounts on the chain.
     chain.create_account(Account::new(ALICE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
 

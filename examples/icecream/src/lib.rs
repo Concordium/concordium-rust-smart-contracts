@@ -42,7 +42,7 @@ struct State {
     weather_service: ContractAddress,
 }
 
-#[derive(Serialize, SchemaType, Clone, Copy)]
+#[derive(Serialize, SchemaType, Clone, Copy, Debug)]
 pub enum Weather {
     Rainy,
     Sunny,
@@ -93,6 +93,7 @@ fn contract_buy_icecream(
 ) -> ContractResult<()> {
     let weather_service = host.state().weather_service;
     let icecream_vendor: AccountAddress = ctx.parameter_cursor().get()?;
+    concordium_dbg!("vendor = {icecream_vendor:?}");
 
     let weather = host
         .invoke_contract_raw(
@@ -107,6 +108,7 @@ fn contract_buy_icecream(
     } else {
         return Err(ContractError::ContractInvokeError);
     };
+    concordium_dbg!("Got weather = {weather:?}");
 
     match weather {
         Weather::Rainy => {
@@ -140,7 +142,7 @@ fn contract_replace_weather_service(
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Initialse the weather service with the weather.
+/// Initialise the weather service with the weather.
 #[init(contract = "weather", parameter = "Weather")]
 fn weather_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<Weather> {
     let weather = ctx.parameter_cursor().get()?;

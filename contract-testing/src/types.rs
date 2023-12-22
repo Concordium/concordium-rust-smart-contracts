@@ -4,8 +4,8 @@ use concordium_base::{
     constants::ED25519_SIGNATURE_LENGTH,
     contracts_common::{
         self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, Deserial,
-        ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedPolicy,
-        ParseResult, SlotTime, Timestamp,
+        EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
+        OwnedPolicy, ParseResult, SlotTime, Timestamp,
     },
     hashes::BlockHash,
     id::types::SchemeId,
@@ -16,7 +16,10 @@ use concordium_base::{
     transactions::AccountAccessStructure,
 };
 use concordium_rust_sdk as sdk;
-use concordium_smart_contract_engine::v1::{self, trie, ReturnValue};
+use concordium_smart_contract_engine::{
+    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostCall, HostFunctionV1, ReturnValue},
+    InterpreterEnergy,
+};
 use concordium_wasm::artifact;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -29,9 +32,9 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub struct ContractModule {
     /// Size of the module in bytes. Used for cost accounting.
-    pub(crate) size:     u64,
+    pub size:     u64,
     /// The runnable module.
-    pub(crate) artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
+    pub artifact: Arc<artifact::Artifact<v1::ProcessedImports, artifact::CompiledFunction>>,
 }
 
 /// The chain parameters.
@@ -67,17 +70,17 @@ pub(crate) struct ExternalNodeConnection {
 /// contracts and invoking contracts.
 #[derive(Debug)]
 pub struct Chain {
-    pub(crate) parameters:               ChainParameters,
+    pub(crate) parameters: ChainParameters,
     /// Accounts and info about them.
     /// This uses [`AccountAddressEq`] to ensure that account aliases are seen
     /// as one account.
-    pub(crate) accounts:                 BTreeMap<AccountAddressEq, Account>,
+    pub accounts: BTreeMap<AccountAddressEq, Account>,
     /// Smart contract modules.
-    pub(crate) modules:                  BTreeMap<ModuleReference, ContractModule>,
+    pub modules: BTreeMap<ModuleReference, ContractModule>,
     /// Smart contract instances.
-    pub(crate) contracts:                BTreeMap<ContractAddress, Contract>,
+    pub contracts: BTreeMap<ContractAddress, Contract>,
     /// Next contract index to use when creating a new instance.
-    pub(crate) next_contract_index:      u64,
+    pub(crate) next_contract_index: u64,
     /// An optional connection to an external node.
     pub(crate) external_node_connection: Option<ExternalNodeConnection>,
 }
@@ -340,6 +343,8 @@ pub struct ContractInitSuccess {
     pub energy_used:      Energy,
     /// Cost of transaction.
     pub transaction_fee:  Amount,
+    /// Debug information emitted by the initialization method.
+    pub debug_trace:      DebugTracker,
 }
 
 /// An error that occurred in [`Chain::contract_init`].
@@ -365,11 +370,15 @@ pub enum ContractInitErrorKind {
     #[error("Failed with an execution error: {error:?}")]
     ExecutionError {
         /// The reason for why the contract initialization failed.
-        error: InitExecutionError,
+        error:       InitExecutionError,
+        /// Trace of the execution until the error.
+        debug_trace: DebugTracker,
     },
     /// Ran out of energy.
-    #[error("Ran out of energy")]
-    OutOfEnergy,
+    #[error("Ran out of energy: {debug_trace:?}")]
+    OutOfEnergy {
+        debug_trace: DebugTracker,
+    },
     /// Module has not been deployed in the test environment.
     #[error("{0}")]
     ModuleDoesNotExist(#[from] ModuleDoesNotExist),
@@ -446,6 +455,37 @@ pub struct ContractInvokeExternalSuccess {
     pub energy_used:    Energy,
     /// The returned value.
     pub return_value:   ReturnValue,
+}
+
+/// Information about the collected debug output. This is the item returned
+/// by the `debug_events` iterator. It corresponds to a section of execution
+/// between interrupts.
+pub struct DebugItem<'a> {
+    /// The address of the instance that generated the event.
+    pub address:     ContractAddress,
+    /// The name of the entrypoint that generated the event.
+    pub entrypoint:  EntrypointName<'a>,
+    /// The debug trace generated since the previous debug item.
+    pub debug_trace: &'a DebugTracker,
+    /// `true` if this output is in the part of execution that has been rolled
+    /// back.
+    pub rolled_back: bool,
+}
+
+/// Information about an emitted host function call. This is the item returned
+/// by the `host_calls` iterator.
+pub struct HostCallInfo<'a> {
+    /// The address of the instance that generated the event.
+    pub address:       ContractAddress,
+    /// The name of the entrypoint that generated the event.
+    pub entrypoint:    contracts_common::EntrypointName<'a>,
+    /// The host function that was called.
+    pub host_function: HostFunctionV1,
+    /// Energy used by the call.
+    pub energy_used:   InterpreterEnergy,
+    /// `true` if this host call occurred in the part of execution that is
+    /// rolled back.
+    pub rolled_back:   bool,
 }
 
 impl ContractInvokeSuccess {
@@ -540,42 +580,11 @@ impl ContractInvokeSuccess {
     pub fn trace_elements(&self) -> BTreeMap<ContractAddress, Vec<ContractTraceElement>> {
         let mut map: BTreeMap<ContractAddress, Vec<ContractTraceElement>> = BTreeMap::new();
         for event in self.effective_trace_elements() {
-            map.entry(Self::extract_contract_address(event))
+            map.entry(event.affected_address())
                 .and_modify(|v| v.push(event.clone()))
                 .or_insert_with(|| vec![event.clone()]);
         }
         map
-    }
-
-    /// Get the contract address that this event relates to.
-    /// This means the `address` field for all variant except `Transferred`,
-    /// where it returns the `from`.
-    fn extract_contract_address(element: &ContractTraceElement) -> ContractAddress {
-        match element {
-            ContractTraceElement::Interrupted {
-                address,
-                ..
-            } => *address,
-            ContractTraceElement::Resumed {
-                address,
-                ..
-            } => *address,
-            ContractTraceElement::Upgraded {
-                address,
-                ..
-            } => *address,
-            ContractTraceElement::Updated {
-                data:
-                    InstanceUpdatedEvent {
-                        address,
-                        ..
-                    },
-            } => *address,
-            ContractTraceElement::Transferred {
-                from,
-                ..
-            } => *from,
-        }
     }
 
     /// Get the successful contract updates that happened in the transaction.
@@ -624,6 +633,289 @@ impl ContractInvokeSuccess {
     }
 }
 
+/// The different types of debug output that can be printed by the
+/// [`print_debug`](DebugInfoExt::print_debug) method.
+pub enum DebugOutputKind {
+    /// Output everything, all host calls and emitted events.
+    Full,
+    /// Only output emitted events.
+    EmittedEvents,
+    /// Output all host calls in the order they were emitted.
+    HostCalls,
+    /// Output host call summary grouped per instance that was affected.
+    HostCallsSummary,
+    /// Output host call summary grouped per instance that was affected and
+    /// entrypoint.
+    HostCallsSummaryPerEntrypoint,
+}
+
+/// A trait implemented by types which can extract debug information from
+/// contract receive entrypoint executions.
+//
+// Note for maintainers. The return types of many methods here are Box<dyn
+// Iterator ...> where they would ideally be `impl Iterator` to both be simpler,
+// and to avoid a needless memory allocation. The reason for this is that `impl
+// Trait` is only supported in trait methods since Rust 1.74 and at the time of
+// writing that is the latest version, and we wish to support older versions for
+// the time being.
+pub trait DebugInfoExt: Sized {
+    /// Print the desired level of debug information that was recorded.
+    /// This function is meant to be used in a method-chaining style.
+    fn print_debug(self, level: DebugOutputKind) -> Self {
+        match level {
+            DebugOutputKind::Full => {
+                for DebugItem {
+                    address,
+                    entrypoint,
+                    debug_trace,
+                    rolled_back,
+                } in self.debug_events()
+                {
+                    eprintln!(
+                        "{entrypoint} of instance at {address}{}",
+                        if rolled_back {
+                            " (rolled back)"
+                        } else {
+                            ""
+                        }
+                    );
+                    eprintln!("{debug_trace}");
+                }
+            }
+            DebugOutputKind::EmittedEvents => {
+                for DebugItem {
+                    address,
+                    entrypoint,
+                    debug_trace,
+                    rolled_back,
+                } in self.debug_events()
+                {
+                    eprintln!(
+                        "{entrypoint} of instance at {address}{}",
+                        if rolled_back {
+                            " (rolled back)"
+                        } else {
+                            ""
+                        }
+                    );
+                    for (_, event) in debug_trace.emitted_events.iter() {
+                        eprintln!("{event}");
+                    }
+                }
+            }
+            DebugOutputKind::HostCalls => {
+                for (addr, emitted_event) in self.emitted_debug_prints() {
+                    eprintln!("{addr}:{emitted_event}");
+                }
+            }
+            DebugOutputKind::HostCallsSummary => {
+                for (addr, addr_summary) in self.host_calls_summary() {
+                    eprintln!("Instance at {addr} host call summary.");
+                    for (host_fn, (times, total_nrg)) in addr_summary {
+                        eprintln!(
+                            "- {host_fn} called {times} times totalling {total_nrg} interpreter \
+                             energy spent."
+                        )
+                    }
+                }
+            }
+            DebugOutputKind::HostCallsSummaryPerEntrypoint => {
+                for ((addr, ep), addr_summary) in self.host_calls_summary_per_entrypoint() {
+                    eprintln!("Entrypoint {ep} of instance at {addr} host call summary.");
+                    for (host_fn, (times, total_nrg)) in addr_summary {
+                        eprintln!(
+                            "- {host_fn} called {times} times totalling {total_nrg} interpreter \
+                             energy spent."
+                        )
+                    }
+                }
+            }
+        }
+        self
+    }
+
+    /// Print (to stderr) all the events generated by `concordium_dbg!`
+    /// statements.
+    fn print_emitted_events(self) -> Self { self.print_debug(DebugOutputKind::EmittedEvents) }
+
+    /// Get an iterator over all the debug traces emitted by the execution.
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_>;
+
+    /// Get an iterator over all host calls that have occurred, both in the
+    /// remaining trace and in the rolled back part.
+    fn host_calls(&self) -> Box<dyn Iterator<Item = HostCallInfo<'_>> + '_> {
+        Box::new(self.debug_events().flat_map(|de| {
+            de.debug_trace.host_call_trace.iter().map(
+                move |(
+                    _,
+                    HostCall {
+                        host_function,
+                        energy_used,
+                    },
+                )| {
+                    HostCallInfo {
+                        address:       de.address,
+                        entrypoint:    de.entrypoint,
+                        host_function: *host_function,
+                        energy_used:   *energy_used,
+                        rolled_back:   de.rolled_back,
+                    }
+                },
+            )
+        }))
+    }
+
+    /// Get an iterator over all the emitted `concordium_dbg!` events.
+    fn emitted_debug_prints(
+        &self,
+    ) -> Box<dyn Iterator<Item = (ContractAddress, &EmittedDebugStatement)> + '_> {
+        Box::new(self.debug_events().flat_map(|de| {
+            de.debug_trace.emitted_events.iter().map(move |(_, statement)| (de.address, statement))
+        }))
+    }
+
+    /// Get  host function calls grouped by contract address that
+    /// generated them. The value at each address and host function is the
+    /// pair of the number of times the host function was called, and the total
+    /// amount of interpreter energy that was used by all the calls.
+    fn host_calls_summary(
+        &self,
+    ) -> BTreeMap<ContractAddress, BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)>> {
+        let mut out = BTreeMap::new();
+        for HostCallInfo {
+            address,
+            host_function,
+            energy_used,
+            ..
+        } in self.host_calls()
+        {
+            let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
+                out.entry(address).or_default();
+            let entry = at_addr.entry(host_function).or_insert((0, InterpreterEnergy::new(0)));
+            entry.1.energy += energy_used.energy;
+            entry.0 += 1;
+        }
+        out
+    }
+
+    /// Get  host function calls grouped by contract address and entrypoint that
+    /// generated them. The value at each address and host function is the
+    /// pair of the number of times the host function was called, and the total
+    /// amount of interpreter energy that was used by all the calls.
+    fn host_calls_summary_per_entrypoint(
+        &self,
+    ) -> BTreeMap<
+        (ContractAddress, EntrypointName<'_>),
+        BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)>,
+    > {
+        let mut out = BTreeMap::new();
+        for HostCallInfo {
+            address,
+            host_function,
+            energy_used,
+            entrypoint,
+            ..
+        } in self.host_calls()
+        {
+            let at_addr: &mut BTreeMap<HostFunctionV1, (usize, InterpreterEnergy)> =
+                out.entry((address, entrypoint)).or_default();
+            let entry = at_addr.entry(host_function).or_insert((0, InterpreterEnergy::new(0)));
+            entry.1.energy += energy_used.energy;
+            entry.0 += 1;
+        }
+        out
+    }
+}
+
+impl DebugInfoExt for ContractInvokeSuccess {
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_> {
+        Box::new(debug_events_worker(false, &self.trace_elements))
+    }
+}
+
+impl DebugInfoExt for ContractInvokeError {
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_> {
+        Box::new(debug_events_worker(true, &self.trace_elements))
+    }
+}
+
+impl DebugInfoExt for Result<ContractInvokeSuccess, ContractInvokeError> {
+    fn debug_events(&self) -> Box<dyn Iterator<Item = DebugItem<'_>> + '_> {
+        match self {
+            Ok(v) => v.debug_events(),
+            Err(v) => v.debug_events(),
+        }
+    }
+}
+
+/// Get an iterator over all the debug traces emitted by the execution.
+fn debug_events_worker(
+    rolled_back: bool,
+    initial_events: &[DebugTraceElement],
+) -> impl Iterator<Item = DebugItem<'_>> {
+    enum Next<'a> {
+        Remaining((bool, &'a [DebugTraceElement])),
+        Emit(DebugItem<'a>),
+    }
+    struct DebugTraceElementsIter<'a> {
+        stack: Vec<Next<'a>>,
+    }
+
+    impl<'a> Iterator for DebugTraceElementsIter<'a> {
+        type Item = DebugItem<'a>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            loop {
+                let top = self.stack.pop()?;
+                let top = match top {
+                    Next::Remaining(top) => top,
+                    Next::Emit(v) => return Some(v),
+                };
+                let (first, rest) = top.1.split_first()?;
+                if !rest.is_empty() {
+                    self.stack.push(Next::Remaining((top.0, rest)));
+                }
+                match first {
+                    DebugTraceElement::Regular {
+                        entrypoint,
+                        trace_element,
+                        energy_used: _,
+                        debug_trace,
+                    } => {
+                        return Some(DebugItem {
+                            address: trace_element.affected_address(),
+                            entrypoint: entrypoint.as_entrypoint_name(),
+                            debug_trace,
+                            rolled_back: false,
+                        });
+                    }
+                    DebugTraceElement::WithFailures {
+                        contract_address,
+                        entrypoint,
+                        error: _,
+                        trace_elements,
+                        energy_used: _,
+                        debug_trace,
+                    } => {
+                        self.stack.push(Next::Emit(DebugItem {
+                            address: *contract_address,
+                            entrypoint: entrypoint.as_entrypoint_name(),
+                            debug_trace,
+                            rolled_back: true,
+                        }));
+                        if !trace_elements.is_empty() {
+                            self.stack.push(Next::Remaining((true, trace_elements)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    DebugTraceElementsIter {
+        stack: vec![Next::Remaining((rolled_back, initial_events))],
+    }
+}
+
 /// A wrapper for [`ContractTraceElement`], which provides additional
 /// information for testing and debugging. Most notably, it contains trace
 /// elements for failures, which are normally discarded by the node.
@@ -631,7 +923,7 @@ impl ContractInvokeSuccess {
 pub enum DebugTraceElement {
     /// A regular trace element with some additional data, e.g., energy usage
     /// and the entrypoint.
-    /// This variant may be included included in the `WithFailures` list of
+    /// This variant may be included in the `WithFailures` list of
     /// trace elements.
     Regular {
         /// The entrypoint.
@@ -640,6 +932,7 @@ pub enum DebugTraceElement {
         trace_element: ContractTraceElement,
         /// The energy used so far.
         energy_used:   Energy,
+        debug_trace:   DebugTracker,
     },
     /// One or multiple trace elements that fail. Useful for debugging.
     /// This variant also contains additional information, such as the error,
@@ -660,6 +953,8 @@ pub enum DebugTraceElement {
         trace_elements:   Vec<DebugTraceElement>,
         /// The energy used so far.
         energy_used:      Energy,
+        /// Detailed breakdown of debug output and host calls produced so far.
+        debug_trace:      DebugTracker,
     },
 }
 
@@ -709,7 +1004,9 @@ pub enum ContractInvokeErrorKind {
     },
     /// Ran out of energy.
     #[error("Ran out of energy")]
-    OutOfEnergy,
+    OutOfEnergy {
+        debug_trace: DebugTracker,
+    },
     /// The balance of an account or contract overflowed.
     /// If you are seeing this error, lower the [`Amount`]s used in your tests.
     #[error("The balance of an account or contract overflowed")]

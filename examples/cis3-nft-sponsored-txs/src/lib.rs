@@ -691,14 +691,15 @@ fn contract_transfer(
     // Get the sender who invoked this contract function.
     let sender = ctx.sender();
 
-    for transer in transfers {
+    for transfer_entry in transfers {
         // Authenticate the sender for this transfer
         ensure!(
-            transer.from == sender || host.state().is_operator(&sender, &transer.from),
+            transfer_entry.from == sender
+                || host.state().is_operator(&sender, &transfer_entry.from),
             ContractError::Unauthorized
         );
 
-        transfer(transer, host, logger)?;
+        transfer(transfer_entry, host, logger)?;
     }
     Ok(())
 }
@@ -834,13 +835,15 @@ fn contract_permit(
 
         let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
 
-        for transfer_struct in transfers {
+        for transfer_entry in transfers {
+            // Authenticate the signer for this transfer
             ensure!(
-                transfer_struct.from.matches_account(&param.signer),
+                transfer_entry.from.matches_account(&param.signer)
+                    || host.state().is_operator(&Address::from(param.signer), &transfer_entry.from),
                 ContractError::Unauthorized
             );
 
-            transfer(transfer_struct, host, logger)?
+            transfer(transfer_entry, host, logger)?
         }
     } else if message.entry_point.as_entrypoint_name()
         == EntrypointName::new_unchecked("updateOperator")
