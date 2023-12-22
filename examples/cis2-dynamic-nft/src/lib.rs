@@ -89,7 +89,7 @@ pub struct SetImplementorsParams {
 struct AddressState<S> {
     /// The amount of tokens owned by this address.
     balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
-    /// The address which are currently enabled as operators for this address.
+    /// The addresses which are currently enabled as operators for this address.
     operators: StateSet<Address, S>,
 }
 
@@ -102,19 +102,18 @@ impl<S: HasStateApi> AddressState<S> {
     }
 }
 
-/// Token state keeps a counter variable (as an index)
-/// and a list of MetadataUrls. The counter points the nth index
-/// of the list of MetadataUrls. The idea is returning the value at that index
-/// when its queried by the `TokenMetadata`function.
-/// When its upgraded once, counter will be incremented by the owner
-/// of the contract and the response MetadataUrl will always be the incremented
-/// element index i.e list[i]
+/// The token state keeps a counter variable (as an index)
+/// and a list of MetadataUrls. The counter points to the nth index
+/// of the list of MetadataUrls. The idea is to return the value at that index
+/// when it's queried by the `TokenMetadata` function.
+/// When the owner of the contract upgrades this token, the counter will be
+/// incremented by 1 so that the next MetadataUrl from the list becomes active.
 #[derive(Serial, Deserial, Clone, SchemaType)]
 pub struct TokenMetadataState {
-    /// when its upgraded, counter will be incremented by the owner
-    /// and its initially 0.
+    /// The counter is initially 0. When the owner of the contract
+    /// upgrades this token, the counter will be incremented by 1.
     pub token_metadata_current_state_counter: u32,
-    ///list of MetadataUrls for different stages of the token
+    /// List of MetadataUrls for different stages of the token
     pub token_metadata_list:                  Vec<MetadataUrl>,
 }
 impl TokenMetadataState {
@@ -148,7 +147,7 @@ pub enum CustomContractError {
     LogFull,
     /// Only a smart contract can call this function.
     ContractOnly,
-
+    /// Failed logging: Log is malformed.
     LogMalformed,
     /// Failed to invoke a contract.
     InvokeContractError,
@@ -192,7 +191,6 @@ impl<S: HasStateApi> State<S> {
 
     /// Mints an amount of tokens with a given address as the owner.
     /// Sets the token's metadata list and the current metadata counter to 0.
-
     fn mint(
         &mut self,
         token_id: &ContractTokenId,
@@ -388,22 +386,23 @@ fn contract_init<S: HasStateApi>(
     Ok(State::empty(state_builder))
 }
 
-/// The `balances` holds the amount of each token
-/// The `operators` holds the list of the addresses that can operate
+/// The partial return value of the `view` function.
+///  It contains the state for each address.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 pub struct ViewAddressState {
-    /// state balance the amounts for each token
+    /// The amount of tokens owned by this address.
     pub balances:  Vec<(ContractTokenId, ContractTokenAmount)>,
-    /// state operators
+    /// The addresses which are currently enabled as operators for this address.
     pub operators: Vec<Address>,
 }
-/// The `state` holds the inner state of the contract
-/// The `tokens` has the list of tokens in the contract.
+
+/// The return value of the view function. It contains the state of the
+/// contract.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 pub struct ViewState {
-    /// accounts and (balances, operators) in the state
+    /// Addresses with their corresponding balances and operators.
     pub state:  Vec<(Address, ViewAddressState)>,
-    /// tokens in the state
+    /// Tokens in the state/
     pub tokens: Vec<ContractTokenId>,
 }
 
