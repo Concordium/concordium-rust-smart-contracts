@@ -117,9 +117,7 @@ pub struct TokenMetadataState {
     pub token_metadata_list:                  Vec<MetadataUrl>,
 }
 impl TokenMetadataState {
-    fn add_metadata(&mut self, metadata: MetadataUrl) {
-        self.token_metadata_list.push(metadata.clone());
-    }
+    fn add_metadata(&mut self, metadata: MetadataUrl) { self.token_metadata_list.push(metadata); }
 }
 /// The contract state,
 /// Note: The specification does not specify how to structure the contract state
