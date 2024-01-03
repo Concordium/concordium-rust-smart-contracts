@@ -717,6 +717,7 @@ fn contract_serialization_helper(_ctx: &ReceiveContext, _host: &Host<State>) -> 
     name = "viewMessageHash",
     parameter = "PermitParam",
     return_value = "[u8;32]",
+    error = "ContractError",
     crypto_primitives,
     mutable
 )]
@@ -786,6 +787,7 @@ fn contract_view_message_hash(
     contract = "cis3_nft",
     name = "permit",
     parameter = "PermitParam",
+    error = "ContractError",
     crypto_primitives,
     mutable,
     enable_logger
