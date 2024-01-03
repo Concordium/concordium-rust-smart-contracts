@@ -307,6 +307,7 @@ fn auction_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResu
     contract = "sponsored_tx_enabled_auction",
     name = "addItem",
     parameter = "AddItemParameter",
+    error = "Error",
     enable_logger,
     mutable
 )]
@@ -449,8 +450,8 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
     contract = "sponsored_tx_enabled_auction",
     name = "finalize",
     parameter = "u16",
-    mutable,
-    error = "Error"
+    error = "Error",
+    mutable
 )]
 fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Getting input parameter.
@@ -522,7 +523,8 @@ fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ReturnParam
     contract = "sponsored_tx_enabled_auction",
     name = "viewItemState",
     return_value = "ItemState",
-    parameter = "u16"
+    parameter = "u16",
+    error = "Error"
 )]
 fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ItemState> {
     // Getting input parameter.
