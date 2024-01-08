@@ -1,3 +1,4 @@
+//! TODO: Explain Blacklist.
 //! A multi token example implementation of the Concordium Token Standard CIS2
 //! and the Concordium Sponsored Transaction Standard CIS3.
 //!
@@ -75,8 +76,9 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
 const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
     [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
 
-/// Tag for the CIS3 Nonce event.
+/// Event tags.
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
+pub const UPDATE_BLACKLIST_EVENT_TAG: u8 = u8::MAX - 6;
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
@@ -86,6 +88,9 @@ pub enum Event {
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
+    /// The event is logged whenever an address is added or removed from the blacklist.
+    #[concordium(tag = 249)]
+    UpdateBlacklist(UpdateBlacklistEvent),
     /// Cis2 token events.
     #[concordium(forward = cis2_events)]
     Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
@@ -99,6 +104,15 @@ pub struct NonceEvent {
     pub account: AccountAddress,
     /// The nonce that was used in the `PermitMessage`.
     pub nonce:   u64,
+}
+
+/// The UpdateBlacklistEvent is logged when an address is added to or removed from the blacklist.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct UpdateBlacklistEvent {
+    /// The update to the address.
+    pub update:  BlacklistUpdate,
+    /// The address which is added/removed from the blacklist.
+    pub address: Address,
 }
 
 // Implementing a custom schemaType for the `Event` struct containing all
@@ -116,6 +130,16 @@ impl schema::SchemaType for Event {
                 schema::Fields::Named(vec![
                     (String::from("account"), AccountAddress::get_type()),
                     (String::from("nonce"), u64::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            UPDATE_BLACKLIST_EVENT_TAG,
+            (
+                "UpdateBlacklistEvent".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("update"), BlacklistUpdate::get_type()),
+                    (String::from("address"), Address::get_type()),
                 ]),
             ),
         );
@@ -242,7 +266,11 @@ struct State<S = StateApi> {
     nonces_registry: StateMap<AccountAddress, u64, S>,
     /// The amount of tokens airdropped when the mint function is invoked.
     mint_airdrop:    TokenAmountU64,
+    /// Set of addresses that are not allowed to receive new tokens, sent
+    /// their tokens, or burn their tokens.
+    blacklist:       StateSet<Address, S>,
 }
+
 /// The parameter type for the contract function `supportsPermit`.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct SupportsPermitQueryParams {
@@ -378,6 +406,7 @@ impl State {
             implementors: state_builder.new_map(),
             nonces_registry: state_builder.new_map(),
             mint_airdrop,
+            blacklist: state_builder.new_set(),
         }
     }
 
@@ -498,6 +527,14 @@ impl State {
             address_state.operators.remove(operator);
         });
     }
+
+    /// Update the state adding a new address to the blacklist.
+    /// Succeeds even if the `address` is already in the blacklist.
+    fn add_blacklist(&mut self, address: &Address) { self.blacklist.insert(*address); }
+
+    /// Update the state removing an address from the blacklist.
+    /// Succeeds even if the `address` is not in the list.
+    fn remove_blacklist(&mut self, address: &Address) { self.blacklist.remove(address); }
 
     /// Check if state contains any implementors for a given standard.
     fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
@@ -1278,5 +1315,71 @@ fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> Con
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
     host.state_mut().set_implementors(params.id, params.implementors);
+    Ok(())
+}
+
+/// The update to an address with respect to the blacklist.
+#[derive(Debug, Serialize, Clone, Copy, SchemaType, PartialEq, Eq)]
+pub enum BlacklistUpdate {
+    /// Remove from blacklist.
+    Remove,
+    /// Add to blacklist.
+    Add,
+}
+
+/// A single update of an address with respect to the blacklist.
+#[derive(Debug, Serialize, Clone, SchemaType, PartialEq, Eq)]
+pub struct UpdateBlacklist {
+    /// The update for this address.
+    pub update:  BlacklistUpdate,
+    /// The address which is either added to or removed from the blacklist.
+    pub address: Address,
+}
+
+/// The parameter type for the contract function `updateBlacklist`.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
+pub struct UpdateBlacklistParams(#[concordium(size_length = 2)] pub Vec<UpdateBlacklist>);
+
+/// Add addresses or remove addresses from the blacklist.
+/// Logs an `UpdateBlacklist` event.
+///
+/// It rejects if:
+/// - Sender is not the owner of the contract instance.
+/// - It fails to parse the parameter.
+/// - Fails to log event.
+#[receive(
+    contract = "cis2_multi",
+    name = "updateBlacklist",
+    parameter = "UpdateBlacklistParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_update_blacklist(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Authorize the sender.
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+
+    // Parse the parameter.
+    let UpdateBlacklistParams(params) = ctx.parameter_cursor().get()?;
+
+    for param in params {
+        // Add/remove address from the blacklist.
+        match param.update {
+            BlacklistUpdate::Add => host.state_mut().add_blacklist(&param.address),
+            BlacklistUpdate::Remove => host.state_mut().remove_blacklist(&param.address),
+        }
+
+        // Log the nonce event.
+        logger.log(&Event::UpdateBlacklist(UpdateBlacklistEvent {
+            address: param.address,
+            update:  param.update,
+        }))?;
+    }
+
     Ok(())
 }
