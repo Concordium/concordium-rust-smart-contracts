@@ -635,6 +635,53 @@ fn test_public_key_of_query() {
     assert!(public_keys_of.0[1].is_none(), "Non existing account should have no public keys");
 }
 
+/// Test burning tokens.
+#[test]
+fn test_burning_tokens() {
+    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+
+    // Create input parameters to burn one of Alice's tokens.
+    let burn_params = BurnParams {
+        owner:    ALICE_ADDR,
+        amount:   TokenAmountU64(1),
+        token_id: TOKEN_1,
+    };
+
+    // Burn one of Alice's tokens.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.burn".to_string()),
+                message:      OwnedParameter::from_serial(&burn_params)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to burn tokens");
+
+    // Check that the event is logged.
+    let events = update.events().flat_map(|(_addr, events)| events);
+
+    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
+        events.map(|e| e.parse().expect("Deserialize event")).collect();
+
+    assert_eq!(events, [Cis2Event::Burn(BurnEvent {
+        owner:    ALICE_ADDR,
+        amount:   TokenAmountU64(1),
+        token_id: TOKEN_1,
+    })]);
+
+    // Check balances in state.
+    let balance_of_alice_and_bob = get_balances(&chain, contract_address);
+
+    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(99), TokenAmountU64(0)]);
+}
+
 /// Test adding and removing from blacklist works.
 #[test]
 fn test_adding_to_blacklist() {

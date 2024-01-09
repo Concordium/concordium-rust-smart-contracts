@@ -226,6 +226,18 @@ pub struct MintParams {
     pub token_id:     ContractTokenId,
 }
 
+/// The parameter for the contract function `burn` which burns a number
+/// of tokens from the owner's address.
+#[derive(Serialize, SchemaType)]
+pub struct BurnParams {
+    /// Owner of the tokens.
+    pub owner:    Address,
+    /// The amount of tokens to burn.
+    pub amount:   ContractTokenAmount,
+    /// The token_id of the tokens to be burned.
+    pub token_id: ContractTokenId,
+}
+
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
@@ -439,6 +451,25 @@ impl State {
         } else {
             metadata_url.clone()
         }
+    }
+
+    /// Burns an amount of tokens from a given owner address.
+    fn burn(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        owner: &Address,
+    ) -> ContractResult<()> {
+        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
+
+        let mut owner_state =
+            self.state.entry(*owner).occupied_or(ContractError::InsufficientFunds)?;
+
+        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
+        ensure!(*owner_balance >= amount, ContractError::InsufficientFunds);
+        *owner_balance -= amount;
+
+        Ok(())
     }
 
     /// Check that the token ID currently exists in this contract.
@@ -668,6 +699,54 @@ fn contract_mint(
         token_id:     params.token_id,
         metadata_url: token_metadata,
     }))?;
+    Ok(())
+}
+
+/// Burns an amount of tokens from the
+/// `owner` address.
+///
+/// Logs a `Burn` event for each token.
+///
+/// It rejects if:
+/// - Fails to parse parameter.
+/// - The sender is not the token owner or an operator of the token owner.
+/// - The token owner owns an insufficient token amount to burn from.
+/// - Fails to log Burn event.
+#[receive(
+    contract = "cis2_multi",
+    name = "burn",
+    parameter = "BurnParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_burn(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: BurnParams = ctx.parameter_cursor().get()?;
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Authenticate the sender for the token burns.
+    ensure!(
+        params.owner == sender || host.state().is_operator(&sender, &params.owner),
+        ContractError::Unauthorized
+    );
+
+    // Burn the token in the state.
+    host.state_mut().burn(&params.token_id, params.amount, &params.owner)?;
+
+    // Event for burned tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: params.token_id,
+        amount:   params.amount,
+        owner:    params.owner,
+    }))?;
+
     Ok(())
 }
 
