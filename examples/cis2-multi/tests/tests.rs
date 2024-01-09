@@ -11,6 +11,10 @@ use concordium_std::{
 const ALICE: AccountAddress = AccountAddress([0; 32]);
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB_CANONICAL: AccountAddress = AccountAddress([
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
+]);
+const BOB_CANONICAL_ADDR: Address = Address::Account(BOB_CANONICAL);
 const BOB_ADDR: Address = Address::Account(BOB);
 const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
 
@@ -724,7 +728,7 @@ fn test_adding_to_blacklist() {
         .collect::<Vec<Event>>();
 
     assert_eq!(events, [Event::UpdateBlacklist(UpdateBlacklistEvent {
-        address: BOB_ADDR,
+        address: BOB_CANONICAL_ADDR,
         update:  BlacklistUpdate::Add,
     })]);
 
@@ -765,7 +769,7 @@ fn test_adding_to_blacklist() {
         .collect::<Vec<Event>>();
 
     assert_eq!(events, [Event::UpdateBlacklist(UpdateBlacklistEvent {
-        address: BOB_ADDR,
+        address: BOB_CANONICAL_ADDR,
         update:  BlacklistUpdate::Remove,
     })]);
 

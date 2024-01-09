@@ -388,6 +388,8 @@ pub enum CustomContractError {
     Expired, // -13
     /// Token owner address is blacklisted.
     Blacklisted, // -14
+    /// Account address has no canonical address.
+    NoCanonicalAddress, // -15
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -690,7 +692,7 @@ fn contract_mint(
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
-    let is_blacklisted = host.state().blacklist.contains(&params.owner);
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
@@ -755,7 +757,7 @@ fn contract_burn(
         ContractError::Unauthorized
     );
 
-    let is_blacklisted = host.state().blacklist.contains(&params.owner);
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
@@ -786,11 +788,14 @@ fn transfer(
     let to_address = transfer.to.address();
 
     // Check token receiver is not blacklisted.
-    ensure!(!host.state().blacklist.contains(&to_address), CustomContractError::Blacklisted.into());
+    ensure!(
+        !host.state().blacklist.contains(&get_canonical_address(to_address)?),
+        CustomContractError::Blacklisted.into()
+    );
 
     // Check token owner is not blacklisted.
     ensure!(
-        !host.state().blacklist.contains(&transfer.from),
+        !host.state().blacklist.contains(&get_canonical_address(transfer.from)?),
         CustomContractError::Blacklisted.into()
     );
 
@@ -1194,7 +1199,7 @@ fn contract_is_blacklisted(ctx: &ReceiveContext, host: &Host<State>) -> Contract
     let mut response = Vec::with_capacity(params.queries.len());
     for address in params.queries {
         // Query the state if address is blacklisted.
-        let is_blacklisted = host.state().blacklist.contains(&address);
+        let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(address)?);
         response.push(is_blacklisted);
     }
     Ok(response)
@@ -1516,18 +1521,34 @@ fn contract_update_blacklist(
     let UpdateBlacklistParams(params) = ctx.parameter_cursor().get()?;
 
     for param in params {
+        let canonical_address = get_canonical_address(param.address)?;
+
         // Add/remove address from the blacklist.
         match param.update {
-            BlacklistUpdate::Add => host.state_mut().add_blacklist(param.address),
-            BlacklistUpdate::Remove => host.state_mut().remove_blacklist(&param.address),
+            BlacklistUpdate::Add => host.state_mut().add_blacklist(canonical_address),
+            BlacklistUpdate::Remove => host.state_mut().remove_blacklist(&canonical_address),
         }
 
-        // Log the nonce event.
+        // Log the update blacklist event.
         logger.log(&Event::UpdateBlacklist(UpdateBlacklistEvent {
-            address: param.address,
+            address: canonical_address,
             update:  param.update,
         }))?;
     }
 
     Ok(())
+}
+
+/// Convert the address into its canonical account address (in case it is an
+/// account address). Account addresses on Concordium have account aliases. We
+/// call the alias 0 for every account the canonical account address.
+/// https://developer.concordium.software/en/mainnet/net/references/transactions.html#account-aliases
+fn get_canonical_address(address: Address) -> ContractResult<Address> {
+    let canonical_address = match address {
+        Address::Account(account) => {
+            Address::Account(account.get_alias(0).ok_or(CustomContractError::NoCanonicalAddress)?)
+        }
+        Address::Contract(contract) => Address::Contract(contract),
+    };
+    Ok(canonical_address)
 }
