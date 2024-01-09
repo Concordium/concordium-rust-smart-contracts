@@ -774,6 +774,151 @@ fn test_adding_to_blacklist() {
     assert_eq!(rv, [false, false]);
 }
 
+/// Test blacklisted address cannot receive tokens, send tokens, or burn tokens.
+#[test]
+fn test_token_balance_of_blacklisted_address_can_not_change() {
+    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+
+    // Send some tokens to Bob.
+    let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
+        from:     ALICE_ADDR,
+        to:       Receiver::Account(BOB),
+        token_id: TOKEN_0,
+        amount:   TokenAmountU64(1),
+        data:     AdditionalData::empty(),
+    }]);
+
+    let _update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+        })
+        .expect("Transfer tokens");
+
+    // Create input parameters to add Bob to the blacklist.
+    let update_blacklist = UpdateBlacklist {
+        update:  BlacklistUpdate::Add,
+        address: BOB_ADDR,
+    };
+    let update_blacklist_params = UpdateBlacklistParams(vec![update_blacklist]);
+
+    // Update blacklist with BOB's address.
+    let _update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_multi.updateBlacklist".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&update_blacklist_params)
+                    .expect("Update blacklist params"),
+            },
+        )
+        .expect("Should be able to update blacklist");
+
+    // Bob cannot receive tokens via `transfer`.
+    let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
+        from:     ALICE_ADDR,
+        to:       Receiver::Account(BOB),
+        token_id: TOKEN_0,
+        amount:   TokenAmountU64(1),
+        data:     AdditionalData::empty(),
+    }]);
+
+    let update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+        })
+        .expect_err("Transfer tokens");
+
+    // Check that the correct error is returned.
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    assert_eq!(rv, CustomContractError::Blacklisted.into());
+
+    // Bob cannot transfer tokens via `transfer`.
+    let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
+        from:     BOB_ADDR,
+        to:       Receiver::Account(ALICE),
+        token_id: TOKEN_0,
+        amount:   TokenAmountU64(1),
+        data:     AdditionalData::empty(),
+    }]);
+
+    let update = chain
+        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+        })
+        .expect_err("Transfer tokens");
+
+    // Check that the correct error is returned.
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    assert_eq!(rv, CustomContractError::Blacklisted.into());
+
+    // Bob cannot mint tokens to its address.
+    let mint_params = MintParams {
+        owner:        BOB_ADDR,
+        token_id:     TOKEN_0,
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/02".to_string(),
+            hash: None,
+        },
+    };
+
+    let update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+        })
+        .expect_err("Mint tokens");
+
+    // Check that the correct error is returned.
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    assert_eq!(rv, CustomContractError::Blacklisted.into());
+
+    // Bob cannot burn tokens from its address.
+    let burn_params = BurnParams {
+        owner:    BOB_ADDR,
+        amount:   TokenAmountU64(1),
+        token_id: TOKEN_1,
+    };
+
+    // Burn one of Alice's tokens.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.burn".to_string()),
+                message:      OwnedParameter::from_serial(&burn_params)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect_err("Burn tokens");
+
+    // Check that the correct error is returned.
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    assert_eq!(rv, CustomContractError::Blacklisted.into());
+}
+
 /// Check if Bob is an operator of Alice.
 fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQueryResponse {
     let operator_of_params = OperatorOfQueryParams {

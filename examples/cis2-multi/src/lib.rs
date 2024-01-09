@@ -1,4 +1,3 @@
-//! TODO: Explain Blacklist.
 //! A multi token example implementation of the Concordium Token Standard CIS2
 //! and the Concordium Sponsored Transaction Standard CIS3.
 //!
@@ -7,15 +6,10 @@
 //! types each identified by a token ID. A token type is then globally
 //! identified by the contract address together with the token ID.
 //!
-//! In this example the contract is initialized with no tokens, and tokens can
-//! be minted through a `mint` contract function, which can be called by anyone.
-//! The `mint` function airdrops the `MINT_AIRDROP` amount of tokens to a
-//! specified `owner` address in the input parameter. No functionality to burn
-//! token is defined in this example.
-//!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
+//! ## CIS3 standard (sponsored transactions):
 //! This contract implements the Concordium Token Standard CIS2. In addition, it
 //! implements the CIS3 standard which includes features for sponsored
 //! transactions.
@@ -30,22 +24,6 @@
 //! service provider (often paying some fees in fiat money). The third-party
 //! service provider submits the transaction on behalf of the user and pays the
 //! transaction fee to execute the transaction on-chain.
-//!
-//! As follows from the CIS2 specification, the contract has a `transfer`
-//! function for transferring an amount of a specific token type from one
-//! address to another address. An address can enable and disable one or more
-//! addresses as operators with the `updateOperator` function. An operator of
-//! an address is allowed to transfer any tokens owned by this address.
-//! As follows from the CIS3 specification, the contract has a `permit`
-//! function. It is the sponsored counterpart to the `transfer/updateOperator`
-//! function and can be executed by anyone on behalf of an account given a
-//! signed message.
-//!
-//! This contract also contains an example of a function to be called when
-//! receiving tokens. In which case the contract will forward the tokens to
-//! the contract owner.
-//! This function is not very useful and is only there to showcase a simple
-//! implementation of a token receive hook.
 //!
 //! Concordium supports natively multi-sig accounts. Each account address on
 //! Concordium is controlled by one or several credential(s) (real-world
@@ -63,7 +41,40 @@
 //! (that have exactly one credential and exactly one public key for that
 //! credential), the signaturesMaps/publicKeyMaps in this contract, will have
 //! only one value at key 0 in the inner and outer maps.
-
+//!
+//! ## `Transfer` and `updateOperator` functions:
+//! As follows from the CIS2 specification, the contract has a `transfer`
+//! function for transferring an amount of a specific token type from one
+//! address to another address. An address can enable and disable one or more
+//! addresses as operators with the `updateOperator` function. An operator of
+//! an address is allowed to transfer any tokens owned by this address.
+//! As follows from the CIS3 specification, the contract has a `permit`
+//! function. It is the sponsored counterpart to the `transfer/updateOperator`
+//! function and can be executed by anyone on behalf of an account given a
+//! signed message.
+//!
+//! ## `Mint` und `burn` functions:
+//! In this example, the contract is initialized with no tokens, and tokens can
+//! be minted through a `mint` contract function, which can be called by anyone
+//! (unprotected function). The `mint` function airdrops the `MINT_AIRDROP`
+//! amount of tokens to a specified `owner` address in the input parameter.
+//! ATTENTION: You most likley want to add your custom access control mechanism
+//! to the `mint` function.
+//!
+//! A token owner (or any of its operator addresses) can burn some of the token
+//! owner's tokens by invoking the `burn` function.
+//!
+//! ## `onReceivingCIS2` functions:
+//! This contract also contains an example of a function to be called when
+//! receiving tokens. In which case the contract will forward the tokens to
+//! the contract owner.
+//! This function is not very useful and is only there to showcase a simple
+//! implementation of a token receive hook.
+//!
+//! ## Blacklist:
+//! This contract includes a blacklist. The account with `BLACKLISTER` role can
+//! add/remove addresses to/from that list. Blacklisted addresses can not
+//! transfer their tokens, receive new tokens, or burn their tokens.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
@@ -375,6 +386,8 @@ pub enum CustomContractError {
     WrongEntryPoint, // -12
     /// Failed signature verification: Signature is expired.
     Expired, // -13
+    /// Token owner address is blacklisted.
+    Blacklisted, // -14
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -677,6 +690,11 @@ fn contract_mint(
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
+    let is_blacklisted = host.state().blacklist.contains(&params.owner);
+
+    // Check token owner is not blacklisted.
+    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
     let (state, builder) = host.state_and_builder();
     // Mint the token in the state.
     let token_metadata = state.mint(
@@ -737,6 +755,11 @@ fn contract_burn(
         ContractError::Unauthorized
     );
 
+    let is_blacklisted = host.state().blacklist.contains(&params.owner);
+
+    // Check token owner is not blacklisted.
+    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
     // Burn the token in the state.
     host.state_mut().burn(&params.token_id, params.amount, &params.owner)?;
 
@@ -760,9 +783,19 @@ fn transfer(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    let to_address = transfer.to.address();
+
+    // Check token receiver is not blacklisted.
+    ensure!(!host.state().blacklist.contains(&to_address), CustomContractError::Blacklisted.into());
+
+    // Check token owner is not blacklisted.
+    ensure!(
+        !host.state().blacklist.contains(&transfer.from),
+        CustomContractError::Blacklisted.into()
+    );
+
     let (state, builder) = host.state_and_builder();
 
-    let to_address = transfer.to.address();
     // Update the contract state
     state.transfer(&transfer.token_id, transfer.amount, &transfer.from, &to_address, builder)?;
 
