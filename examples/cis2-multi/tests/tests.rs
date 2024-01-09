@@ -635,6 +635,98 @@ fn test_public_key_of_query() {
     assert!(public_keys_of.0[1].is_none(), "Non existing account should have no public keys");
 }
 
+/// Test adding and removing from blacklist works.
+#[test]
+fn test_adding_to_blacklist() {
+    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+
+    // Check that Alice and Bob are not blacklisted.
+    let rv: Vec<bool> = is_blacklisted(&chain, contract_address);
+    assert_eq!(rv, [false, false]);
+
+    // Create input parameters to add Bob to the blacklist.
+    let update_blacklist = UpdateBlacklist {
+        update:  BlacklistUpdate::Add,
+        address: BOB_ADDR,
+    };
+    let update_blacklist_params = UpdateBlacklistParams(vec![update_blacklist]);
+
+    // Update blacklist.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_multi.updateBlacklist".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&update_blacklist_params)
+                    .expect("Update blacklist params"),
+            },
+        )
+        .expect("Should be able to update blacklist");
+
+    // Check that the correct events occurred.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
+
+    assert_eq!(events, [Event::UpdateBlacklist(UpdateBlacklistEvent {
+        address: BOB_ADDR,
+        update:  BlacklistUpdate::Add,
+    })]);
+
+    // Check that Alice is not blacklisted and Bob is blacklisted.
+    let rv: Vec<bool> = is_blacklisted(&chain, contract_address);
+    assert_eq!(rv, [false, true]);
+
+    // Create input parameters to remove Bob from the blacklist.
+    let update_blacklist = UpdateBlacklist {
+        update:  BlacklistUpdate::Remove,
+        address: BOB_ADDR,
+    };
+    let update_blacklist_params = UpdateBlacklistParams(vec![update_blacklist]);
+
+    // Update blacklist.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_multi.updateBlacklist".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&update_blacklist_params)
+                    .expect("Update blacklist params"),
+            },
+        )
+        .expect("Should be able to update blacklist");
+
+    // Check that the correct events occurred.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
+
+    assert_eq!(events, [Event::UpdateBlacklist(UpdateBlacklistEvent {
+        address: BOB_ADDR,
+        update:  BlacklistUpdate::Remove,
+    })]);
+
+    // Check that Alice and Bob are not blacklisted.
+    let rv: Vec<bool> = is_blacklisted(&chain, contract_address);
+    assert_eq!(rv, [false, false]);
+}
+
 /// Check if Bob is an operator of Alice.
 fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQueryResponse {
     let operator_of_params = OperatorOfQueryParams {
@@ -655,6 +747,27 @@ fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQu
         })
         .expect("Invoke operatorOf");
     let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
+    rv
+}
+
+/// Check if Alice and Bob are blacklisted.
+fn is_blacklisted(chain: &Chain, contract_address: ContractAddress) -> Vec<bool> {
+    let addresses_query_vector = VecOfAddresses {
+        queries: vec![ALICE_ADDR, BOB_ADDR],
+    };
+
+    // Invoke the isBlacklisted entrypoint.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.isBlacklisted".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&addresses_query_vector)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Invoke isBlacklisted");
+
+    let rv: Vec<bool> = invoke.parse_return_value().expect("Vec<bool> return value");
     rv
 }
 

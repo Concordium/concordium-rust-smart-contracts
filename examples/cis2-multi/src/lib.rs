@@ -88,7 +88,8 @@ pub enum Event {
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
-    /// The event is logged whenever an address is added or removed from the blacklist.
+    /// The event is logged whenever an address is added or removed from the
+    /// blacklist.
     #[concordium(tag = 249)]
     UpdateBlacklist(UpdateBlacklistEvent),
     /// Cis2 token events.
@@ -106,7 +107,8 @@ pub struct NonceEvent {
     pub nonce:   u64,
 }
 
-/// The UpdateBlacklistEvent is logged when an address is added to or removed from the blacklist.
+/// The UpdateBlacklistEvent is logged when an address is added to or removed
+/// from the blacklist.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct UpdateBlacklistEvent {
     /// The update to the address.
@@ -530,7 +532,7 @@ impl State {
 
     /// Update the state adding a new address to the blacklist.
     /// Succeeds even if the `address` is already in the blacklist.
-    fn add_blacklist(&mut self, address: &Address) { self.blacklist.insert(*address); }
+    fn add_blacklist(&mut self, address: Address) { self.blacklist.insert(address); }
 
     /// Update the state removing an address from the blacklist.
     /// Succeeds even if the `address` is not in the list.
@@ -1052,6 +1054,40 @@ fn contract_operator_of(
     Ok(result)
 }
 
+/// The parameter type for the contract functions `isBlacklisted`.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct VecOfAddresses {
+    /// List of queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<Address>,
+}
+
+/// Takes a list of queries. Each query contains an address which is checked if
+/// that address is blacklisted.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "isBlacklisted",
+    parameter = "VecOfAddresses",
+    return_value = "Vec<bool>",
+    error = "ContractError"
+)]
+fn contract_is_blacklisted(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<Vec<bool>> {
+    // Parse the parameter.
+    let params: VecOfAddresses = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for address in params.queries {
+        // Query the state if address is blacklisted.
+        let is_blacklisted = host.state().blacklist.contains(&address);
+        response.push(is_blacklisted);
+    }
+    Ok(response)
+}
+
 /// Response type for the function `publicKeyOf`.
 #[derive(Debug, Serialize, SchemaType)]
 #[concordium(transparent)]
@@ -1370,7 +1406,7 @@ fn contract_update_blacklist(
     for param in params {
         // Add/remove address from the blacklist.
         match param.update {
-            BlacklistUpdate::Add => host.state_mut().add_blacklist(&param.address),
+            BlacklistUpdate::Add => host.state_mut().add_blacklist(param.address),
             BlacklistUpdate::Remove => host.state_mut().remove_blacklist(&param.address),
         }
 
