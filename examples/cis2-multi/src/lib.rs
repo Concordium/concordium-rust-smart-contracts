@@ -75,6 +75,34 @@
 //! This contract includes a blacklist. The account with `BLACKLISTER` role can
 //! add/remove addresses to/from that list. Blacklisted addresses can not
 //! transfer their tokens, receive new tokens, or burn their tokens.
+//!
+//! ## Native upgradability:
+//! This contract can be upgraded. The contract
+//! has a function to upgrade the smart contract instance to a new module and
+//! call optionally a migration function after the upgrade. To use this example,
+//! deploy `contract-version1` and then upgrade the smart contract instance to
+//! `contract-version2` by invoking the `upgrade` function with the below JSON
+//! inputParameter:
+//!
+//! ```json
+//! {
+//!   "migrate": {
+//!     "Some": [
+//!       [
+//!         "migration",
+//!         ""
+//!       ]
+//!     ]
+//!   },
+//!   "module": "<ModuleReferenceContractVersion2>"
+//! }
+//! ```
+//!
+//! This initial contract (`contract-version1`) has no migration function.
+//! The next version of the contract (`contract-version2`), could have a
+//! migration function added to e.g. change the shape of the smart contract
+//! state from `contract-version1` to `contract-version2`.
+//! https://github.com/Concordium/concordium-rust-smart-contracts/blob/main/examples/smart-contract-upgrade/contract-version2/src/lib.rs
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
@@ -294,6 +322,8 @@ struct State<S = StateApi> {
     /// Set of addresses that are not allowed to receive new tokens, sent
     /// their tokens, or burn their tokens.
     blacklist:       StateSet<Address, S>,
+    // TODO: replace with role based access.
+    owner:           Address,
 }
 
 /// The parameter type for the contract function `supportsPermit`.
@@ -390,11 +420,31 @@ pub enum CustomContractError {
     Blacklisted, // -14
     /// Account address has no canonical address.
     NoCanonicalAddress, // -15
+    /// Upgrade failed because the new module does not exist.
+    FailedUpgradeMissingModule, // -16
+    /// Upgrade failed because the new module does not contain a contract with a
+    /// matching name.
+    FailedUpgradeMissingContract, // -17
+    /// Upgrade failed because the smart contract version of the module is not
+    /// supported.
+    FailedUpgradeUnsupportedModuleVersion, // -18
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
 
 pub type ContractResult<A> = Result<A, ContractError>;
+
+/// Mapping errors related to contract upgrades to CustomContractError.
+impl From<UpgradeError> for CustomContractError {
+    #[inline(always)]
+    fn from(ue: UpgradeError) -> Self {
+        match ue {
+            UpgradeError::MissingModule => Self::FailedUpgradeMissingModule,
+            UpgradeError::MissingContract => Self::FailedUpgradeMissingContract,
+            UpgradeError::UnsupportedModuleVersion => Self::FailedUpgradeUnsupportedModuleVersion,
+        }
+    }
+}
 
 /// Mapping account signature error to CustomContractError
 impl From<CheckAccountSignatureError> for CustomContractError {
@@ -436,6 +486,7 @@ impl State {
             nonces_registry: state_builder.new_map(),
             mint_airdrop,
             blacklist: state_builder.new_set(),
+            owner: Address::Account(AccountAddress([0; 32])),
         }
     }
 
@@ -601,6 +652,20 @@ impl State {
     ) {
         self.implementors.insert(std_id, implementors);
     }
+}
+
+/// Convert the address into its canonical account address (in case it is an
+/// account address). Account addresses on Concordium have account aliases. We
+/// call the alias 0 for every account the canonical account address.
+/// https://developer.concordium.software/en/mainnet/net/references/transactions.html#account-aliases
+fn get_canonical_address(address: Address) -> ContractResult<Address> {
+    let canonical_address = match address {
+        Address::Account(account) => {
+            Address::Account(account.get_alias(0).ok_or(CustomContractError::NoCanonicalAddress)?)
+        }
+        Address::Contract(contract) => Address::Contract(contract),
+    };
+    Ok(canonical_address)
 }
 
 // Contract functions
@@ -1539,16 +1604,59 @@ fn contract_update_blacklist(
     Ok(())
 }
 
-/// Convert the address into its canonical account address (in case it is an
-/// account address). Account addresses on Concordium have account aliases. We
-/// call the alias 0 for every account the canonical account address.
-/// https://developer.concordium.software/en/mainnet/net/references/transactions.html#account-aliases
-fn get_canonical_address(address: Address) -> ContractResult<Address> {
-    let canonical_address = match address {
-        Address::Account(account) => {
-            Address::Account(account.get_alias(0).ok_or(CustomContractError::NoCanonicalAddress)?)
-        }
-        Address::Contract(contract) => Address::Contract(contract),
-    };
-    Ok(canonical_address)
+/// The parameter type for the contract function `upgrade`.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
+#[derive(Serialize, SchemaType)]
+pub struct UpgradeParams {
+    /// The new module reference.
+    pub module:  ModuleReference,
+    /// Optional entrypoint to call in the new module after upgrade.
+    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
+/// Upgrade this smart contract instance to a new module and call optionally a
+/// migration function after the upgrade.
+///
+/// It rejects if:
+/// - Sender has not the role 'UPGRADER'.
+/// - It fails to parse the parameter.
+/// - If the ugrade fails.
+/// - If the migration invoke fails.
+///
+/// This function is marked as `low_level`. This is **necessary** since the
+/// high-level mutable functions store the state of the contract at the end of
+/// execution. This conflicts with migration since the shape of the state
+/// **might** be changed by the migration function. If the state is then written
+/// by this function it would overwrite the state stored by the migration
+/// function.
+#[receive(
+    contract = "cis2_multi",
+    name = "upgrade",
+    parameter = "UpgradeParams",
+    error = "CustomContractError",
+    low_level
+)]
+fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractResult<()> {
+    // Read the top-level contract state.
+    let state: State = host.state().read_root()?;
+
+    // Check that only the owner is authorized to upgrade the smart contract.
+    ensure_eq!(ctx.sender(), state.owner, ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
+    // Trigger the upgrade.
+    host.upgrade(params.module)?;
+    // Call the migration function if provided.
+    if let Some((func, parameters)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameters.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
+    Ok(())
 }

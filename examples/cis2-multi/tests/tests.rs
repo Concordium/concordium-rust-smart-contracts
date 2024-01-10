@@ -38,7 +38,8 @@ const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
 /// the appropriate events are logged.
 #[test]
 fn test_minting() {
-    let (chain, _keypairs, contract_address, update) = initialize_contract_with_alice_tokens();
+    let (chain, _keypairs, contract_address, update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Invoke the view entrypoint and check that the tokens are owned by Alice.
     let invoke = chain
@@ -83,7 +84,8 @@ fn test_minting() {
 /// Test regular transfer where sender is the owner.
 #[test]
 fn test_account_transfer() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Transfer one token from Alice to Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
@@ -144,7 +146,8 @@ fn test_account_transfer() {
 /// Then add Bob as an operator for Alice.
 #[test]
 fn test_add_operator() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
@@ -200,7 +203,8 @@ fn test_add_operator() {
 /// himself.
 #[test]
 fn test_unauthorized_sender() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Construct a transfer of `TOKEN_0` from Alice to Bob, which will be submitted
     // by Bob.
@@ -230,7 +234,8 @@ fn test_unauthorized_sender() {
 /// Test that an operator can make a transfer.
 #[test]
 fn test_operator_can_transfer() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
@@ -291,7 +296,8 @@ fn test_operator_can_transfer() {
 /// case. ALICE adds BOB as an operator.
 #[test]
 fn test_inside_signature_permit_update_operator() {
-    let (mut chain, keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Check operator in state
     let bob_is_operator_of_alice = operator_of(&chain, contract_address);
@@ -389,7 +395,8 @@ fn test_inside_signature_permit_update_operator() {
 /// TOKEN_1 is transferred from Alice to Bob.
 #[test]
 fn test_inside_signature_permit_transfer() {
-    let (mut chain, keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
@@ -493,7 +500,8 @@ fn test_inside_signature_permit_transfer() {
 /// transaction. We check that the nonce of `NON_EXISTING_ACCOUNT` is 0.
 #[test]
 fn test_nonce_of_query() {
-    let (mut chain, keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // To increase the nonce of `ALICE's` account, we invoke the
     // `update_permit` function with a valid signature from ALICE account.
@@ -605,7 +613,8 @@ fn test_nonce_of_query() {
 /// not exist on chain.
 #[test]
 fn test_public_key_of_query() {
-    let (chain, keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (chain, keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     let public_key_of_query_vector = VecOfAccountAddresses {
         queries: vec![ALICE, NON_EXISTING_ACCOUNT],
@@ -642,7 +651,8 @@ fn test_public_key_of_query() {
 /// Test burning tokens.
 #[test]
 fn test_burning_tokens() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Create input parameters to burn one of Alice's tokens.
     let burn_params = BurnParams {
@@ -689,7 +699,8 @@ fn test_burning_tokens() {
 /// Test adding and removing from blacklist works.
 #[test]
 fn test_adding_to_blacklist() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Check that Alice and Bob are not blacklisted.
     let rv: Vec<bool> = is_blacklisted(&chain, contract_address);
@@ -781,7 +792,8 @@ fn test_adding_to_blacklist() {
 /// Test blacklisted address cannot receive tokens, send tokens, or burn tokens.
 #[test]
 fn test_token_balance_of_blacklisted_address_can_not_change() {
-    let (mut chain, _keypairs, contract_address, _update) = initialize_contract_with_alice_tokens();
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
 
     // Send some tokens to Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
@@ -923,6 +935,58 @@ fn test_token_balance_of_blacklisted_address_can_not_change() {
     assert_eq!(rv, CustomContractError::Blacklisted.into());
 }
 
+/// Upgrade the contract to itself without invoking a migration function.
+#[test]
+fn test_upgrade_without_migration_function() {
+    let (mut chain, _keypairs, contract_address, _update, module_reference) =
+        initialize_contract_with_alice_tokens();
+
+    let input_parameter = UpgradeParams {
+        module:  module_reference,
+        migrate: None,
+    };
+
+    // Upgrade `contract_version1` to `contract_version2`.
+    let update = chain.contract_update(
+        Signer::with_one_key(),
+        ALICE,
+        ALICE_ADDR,
+        Energy::from(10000),
+        UpdateContractPayload {
+            address:      contract_address,
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.upgrade".into()),
+            message:      OwnedParameter::from_serial(&input_parameter)
+                .expect("`UpgradeParams` should be a valid inut parameter"),
+            amount:       Amount::from_ccd(0),
+        },
+    );
+
+    assert!(
+        !update.expect("Upgrade should succeed").state_changed,
+        "State should not be changed because no `migration` function was called"
+    );
+
+    // Invoke the view entrypoint and check that the state of the contract can be
+    // read.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::empty(),
+        })
+        .expect("Invoke view");
+
+    // Check that the tokens (as set up in the
+    // `initialize_contract_with_alice_tokens` function) are owned by Alice.
+    let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
+    assert_eq!(rv.tokens[..], [TOKEN_0, TOKEN_1]);
+    assert_eq!(rv.state, vec![(ALICE_ADDR, ViewAddressState {
+        balances:  vec![(TOKEN_0, 100.into()), (TOKEN_1, 100.into())],
+        operators: Vec::new(),
+    })]);
+}
+
 /// Check if Bob is an operator of Alice.
 fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQueryResponse {
     let operator_of_params = OperatorOfQueryParams {
@@ -1004,8 +1068,8 @@ fn get_balances(
 /// Alice's account is created with keys.
 /// Hence, Alice's account signature can be checked in the test cases.
 fn initialize_contract_with_alice_tokens(
-) -> (Chain, AccountKeys, ContractAddress, ContractInvokeSuccess) {
-    let (mut chain, keypairs, contract_address) = initialize_chain_and_contract();
+) -> (Chain, AccountKeys, ContractAddress, ContractInvokeSuccess, ModuleReference) {
+    let (mut chain, keypairs, contract_address, module_reference) = initialize_chain_and_contract();
 
     let mint_params = MintParams {
         owner:        ALICE_ADDR,
@@ -1045,7 +1109,7 @@ fn initialize_contract_with_alice_tokens(
         })
         .expect("Mint tokens");
 
-    (chain, keypairs, contract_address, update)
+    (chain, keypairs, contract_address, update, module_reference)
 }
 
 /// Setup chain and contract.
@@ -1053,7 +1117,7 @@ fn initialize_contract_with_alice_tokens(
 /// Also creates the two accounts, Alice and Bob.
 ///
 /// Alice is the owner of the contract.
-fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress) {
+fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, ModuleReference) {
     let mut chain = Chain::new();
 
     let rng = &mut rand::thread_rng();
@@ -1084,5 +1148,5 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress) {
         })
         .expect("Initialize contract");
 
-    (chain, keypairs, init.contract_address)
+    (chain, keypairs, init.contract_address, deployment.module_reference)
 }
