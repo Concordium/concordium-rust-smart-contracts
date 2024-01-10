@@ -183,7 +183,7 @@ fn test_add_operator() {
         }],
     };
 
-    // Invoke the operatorOf view entrypoint and check that Bob is an operator for
+    // Invoke the operatorOf entrypoint and check that Bob is an operator for
     // Alice.
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
@@ -192,7 +192,7 @@ fn test_add_operator() {
             address:      contract_address,
             message:      OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
         })
-        .expect("Invoke view");
+        .expect("Invoke opeatorOF");
 
     let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
     assert_eq!(rv, OperatorOfQueryResponse(vec![true]));

@@ -317,13 +317,15 @@ struct State<S = StateApi> {
     /// mapping keeps track of the next nonce that needs to be used by the
     /// account to generate a signature.
     nonces_registry: StateMap<AccountAddress, u64, S>,
-    /// The amount of tokens airdropped when the mint function is invoked.
-    mint_airdrop:    TokenAmountU64,
     /// Set of addresses that are not allowed to receive new tokens, sent
     /// their tokens, or burn their tokens.
     blacklist:       StateSet<Address, S>,
+    /// The amount of tokens airdropped when the mint function is invoked.
+    mint_airdrop:    ContractTokenAmount,
     // TODO: replace with role based access.
     owner:           Address,
+    /// Specifies if the contract is paused.
+    paused:          bool,
 }
 
 /// The parameter type for the contract function `supportsPermit`.
@@ -383,6 +385,14 @@ pub struct PermitParamPartial {
     signer:    AccountAddress,
 }
 
+/// The parameter type for the contract function `setPaused`.
+#[derive(Serialize, SchemaType)]
+#[repr(transparent)]
+struct SetPausedParams {
+    /// Specifies if contract is paused.
+    paused: bool,
+}
+
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 pub enum CustomContractError {
@@ -428,6 +438,8 @@ pub enum CustomContractError {
     /// Upgrade failed because the smart contract version of the module is not
     /// supported.
     FailedUpgradeUnsupportedModuleVersion, // -18
+    /// Contract is paused.
+    Paused, // -19
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -478,7 +490,7 @@ impl From<CustomContractError> for ContractError {
 
 impl State {
     /// Construct a state with no tokens
-    fn empty(state_builder: &mut StateBuilder, mint_airdrop: TokenAmountU64) -> Self {
+    fn empty(state_builder: &mut StateBuilder, mint_airdrop: ContractTokenAmount) -> Self {
         State {
             state: state_builder.new_map(),
             tokens: state_builder.new_map(),
@@ -487,6 +499,7 @@ impl State {
             mint_airdrop,
             blacklist: state_builder.new_set(),
             owner: Address::Account(AccountAddress([0; 32])),
+            paused: false,
         }
     }
 
@@ -499,7 +512,7 @@ impl State {
         token_id: &ContractTokenId,
         metadata_url: &MetadataUrl,
         owner: &Address,
-        mint_airdrop: TokenAmountU64,
+        mint_airdrop: ContractTokenAmount,
         state_builder: &mut StateBuilder,
     ) -> MetadataUrl {
         let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
@@ -674,11 +687,11 @@ fn get_canonical_address(address: Address) -> ContractResult<Address> {
 #[init(
     contract = "cis2_multi",
     event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
-    parameter = "TokenAmountU64"
+    parameter = "ContractTokenAmount"
 )]
 fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Parse the parameter.
-    let mint_airdrop: TokenAmountU64 = ctx.parameter_cursor().get()?;
+    let mint_airdrop: ContractTokenAmount = ctx.parameter_cursor().get()?;
 
     // Construct the initial contract state.
     Ok(State::empty(state_builder, mint_airdrop))
@@ -692,8 +705,12 @@ pub struct ViewAddressState {
 
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 pub struct ViewState {
-    pub state:  Vec<(Address, ViewAddressState)>,
-    pub tokens: Vec<ContractTokenId>,
+    pub state:           Vec<(Address, ViewAddressState)>,
+    pub tokens:          Vec<ContractTokenId>,
+    pub nonces_registry: Vec<(AccountAddress, u64)>,
+    pub blacklist:       Vec<Address>,
+    pub mint_airdrop:    ContractTokenAmount,
+    pub paused:          bool,
 }
 
 /// View function for testing. This reports on the entire state of the contract
@@ -702,30 +719,36 @@ pub struct ViewState {
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
-    let mut inner_state = Vec::new();
-    for (k, a_state) in state.state.iter() {
-        let mut balances = Vec::new();
-        let mut operators = Vec::new();
-        for (token_id, amount) in a_state.balances.iter() {
-            balances.push((*token_id, *amount));
-        }
-        for o in a_state.operators.iter() {
-            operators.push(*o);
-        }
+    let contract_state = state
+        .state
+        .iter()
+        .map(|(key, value)| {
+            let mut balances = Vec::new();
+            let mut operators = Vec::new();
+            for (token_id, amount) in value.balances.iter() {
+                balances.push((*token_id, *amount));
+            }
+            for operator in value.operators.iter() {
+                operators.push(*operator);
+            }
+            (*key, ViewAddressState {
+                balances,
+                operators,
+            })
+        })
+        .collect();
 
-        inner_state.push((*k, ViewAddressState {
-            balances,
-            operators,
-        }));
-    }
-    let mut tokens = Vec::new();
-    for v in state.tokens.iter() {
-        tokens.push(*v.0);
-    }
+    let tokens = state.tokens.iter().map(|a| *a.0).collect();
+    let nonces_registry = state.nonces_registry.iter().map(|(a, b)| (*a, *b)).collect();
+    let blacklist = state.blacklist.iter().map(|a| *a).collect();
 
     Ok(ViewState {
-        state: inner_state,
+        state: contract_state,
         tokens,
+        nonces_registry,
+        blacklist,
+        mint_airdrop: host.state().mint_airdrop,
+        paused: host.state().paused,
     })
 }
 
@@ -761,6 +784,9 @@ fn contract_mint(
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
 
     let (state, builder) = host.state_and_builder();
     // Mint the token in the state.
@@ -822,6 +848,9 @@ fn contract_burn(
         ContractError::Unauthorized
     );
 
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
+
     let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
 
     // Check token owner is not blacklisted.
@@ -863,6 +892,9 @@ fn transfer(
         !host.state().blacklist.contains(&get_canonical_address(transfer.from)?),
         CustomContractError::Blacklisted.into()
     );
+
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
 
     let (state, builder) = host.state_and_builder();
 
@@ -1089,6 +1121,7 @@ fn contract_permit(
 
         for update in updates {
             update_operator(
+                state.paused,
                 update.update,
                 concordium_std::Address::Account(param.signer),
                 update.operator,
@@ -1115,6 +1148,7 @@ fn contract_permit(
 /// Logs a `UpdateOperator` event. The function assumes that the sender is
 /// authorized to do the `updateOperator` action.
 fn update_operator(
+    paused: bool,
     update: OperatorUpdate,
     sender: Address,
     operator: Address,
@@ -1122,6 +1156,9 @@ fn update_operator(
     builder: &mut StateBuilder,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    // Check that contract is not paused.
+    ensure!(!paused, CustomContractError::Paused.into());
+
     // Update the operator in the state.
     match update {
         OperatorUpdate::Add => state.add_operator(&sender, &operator, builder),
@@ -1165,7 +1202,15 @@ fn contract_update_operator(
     let sender = ctx.sender();
     let (state, builder) = host.state_and_builder();
     for param in params {
-        update_operator(param.update, sender, param.operator, state, builder, logger)?;
+        update_operator(
+            state.paused,
+            param.update,
+            sender,
+            param.operator,
+            state,
+            builder,
+            logger,
+        )?;
     }
     Ok(())
 }
@@ -1658,5 +1703,42 @@ fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractRe
             Amount::zero(),
         )?;
     }
+    Ok(())
+}
+
+/// Pause/Unpause this smart contract instance by the PAUSER. The transfer,
+/// updateOperator, mint, and burn functions cannot be
+/// executed when the contract is paused.
+///
+/// It rejects if:
+/// - Sender is not the PAUSER of the contract instance.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "setPaused",
+    parameter = "SetPausedParams",
+    error = "CustomContractError",
+    mutable
+)]
+fn contract_set_paused<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    // Get the sender who invoked this contract function.
+    //  let sender = ctx.sender();
+
+    // TODO add pauser roll
+    // Check that only the PAUSER is authorized to pause the contract.
+    // ensure!(
+    //     host.state().has_role(&sender, Roles::PAUSER),
+    //     ContractError::Unauthorized
+    // );
+
+    // Parse the parameter.
+    let params: SetPausedParams = ctx.parameter_cursor().get()?;
+
+    // Update the paused variable.
+    host.state_mut().paused = params.paused;
+
     Ok(())
 }
