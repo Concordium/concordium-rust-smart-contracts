@@ -877,12 +877,11 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
 /// function of the state. Logs a `Mint` event.
 /// The function assumes that the mint is authorized.
 fn mint(
-    mint_params: MintParams,
+    params: MintParams,
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let is_blacklisted =
-        host.state().blacklist.contains(&get_canonical_address(mint_params.owner)?);
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
@@ -894,23 +893,23 @@ fn mint(
 
     // Mint the token in the state.
     let token_metadata = state.mint(
-        &mint_params.token_id,
-        &mint_params.metadata_url,
-        &mint_params.owner,
+        &params.token_id,
+        &params.metadata_url,
+        &params.owner,
         state.mint_airdrop,
         builder,
     );
 
     // Event for minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: mint_params.token_id,
+        token_id: params.token_id,
         amount:   state.mint_airdrop,
-        owner:    mint_params.owner,
+        owner:    params.owner,
     }))?;
 
     // Metadata URL for the token.
     logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     mint_params.token_id,
+        token_id:     params.token_id,
         metadata_url: token_metadata,
     }))?;
 
@@ -927,6 +926,8 @@ fn mint(
 ///
 /// It rejects if:
 /// - Fails to parse parameter.
+/// - The token receiver is blacklisted.
+/// - The contract is paused.
 /// - Fails to log Mint event.
 /// - Fails to log TokenMetadata event.
 #[receive(
@@ -950,6 +951,35 @@ fn contract_mint(
     Ok(())
 }
 
+/// Internal `burn/permit` helper function. Invokes the `burn`
+/// function of the state. Logs a `Burn` event.
+/// The function assumes that the burn is authorized.
+fn burn(
+    params: BurnParams,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
+
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+
+    // Check token owner is not blacklisted.
+    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
+    // Burn the token in the state.
+    host.state_mut().burn(&params.token_id, params.amount, &params.owner)?;
+
+    // Event for burned tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: params.token_id,
+        amount:   params.amount,
+        owner:    params.owner,
+    }))?;
+
+    Ok(())
+}
+
 /// Burns an amount of tokens from the
 /// `owner` address.
 ///
@@ -958,6 +988,8 @@ fn contract_mint(
 /// It rejects if:
 /// - Fails to parse parameter.
 /// - The sender is not the token owner or an operator of the token owner.
+/// - The owner is blacklisted.
+/// - The contract is paused.
 /// - The token owner owns an insufficient token amount to burn from.
 /// - Fails to log Burn event.
 #[receive(
@@ -985,23 +1017,7 @@ fn contract_burn(
         ContractError::Unauthorized
     );
 
-    // Check that contract is not paused.
-    ensure!(!host.state().paused, CustomContractError::Paused.into());
-
-    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
-
-    // Check token owner is not blacklisted.
-    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
-
-    // Burn the token in the state.
-    host.state_mut().burn(&params.token_id, params.amount, &params.owner)?;
-
-    // Event for burned tokens.
-    logger.log(&Cis2Event::Burn(BurnEvent {
-        token_id: params.token_id,
-        amount:   params.amount,
-        owner:    params.owner,
-    }))?;
+    burn(params, host, logger)?;
 
     Ok(())
 }
@@ -1067,6 +1083,8 @@ fn transfer(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
+/// - Either the from or to addresses are blacklisted.
+/// - The contract is paused.
 /// - Any of the transfers fail to be executed, which could be if:
 ///     - The `token_id` does not exist.
 ///     - The sender is not the owner of the token, or an operator for this
@@ -1236,7 +1254,6 @@ fn contract_permit(
     match message.entry_point.as_entrypoint_name() {
         TRANSFER_ENTRYPOINT => {
             // Transfer the tokens.
-
             let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
 
             for transfer_entry in transfers {
@@ -1271,13 +1288,25 @@ fn contract_permit(
             }
         }
         MINT_ENTRYPOINT => {
+            // Mint tokens.
             // ATTENTION: Can be called by anyone. You should add your
             // custom access control to here.
+            let params: MintParams = from_bytes(&message.payload)?;
 
-            // Mint tokens
-            let mint_params: MintParams = from_bytes(&message.payload)?;
+            mint(params, host, logger)?;
+        }
+        BURN_ENTRYPOINT => {
+            // Burn tokens.
+            let params: BurnParams = from_bytes(&message.payload)?;
 
-            mint(mint_params, host, logger)?;
+            // Authenticate the sender for the token burns.
+            ensure!(
+                params.owner.matches_account(&param.signer)
+                    || host.state().is_operator(&Address::from(param.signer), &params.owner),
+                ContractError::Unauthorized
+            );
+
+            burn(params, host, logger)?;
         }
         _ => {
             bail!(CustomContractError::WrongEntryPoint.into())
