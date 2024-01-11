@@ -16,7 +16,11 @@ const BOB_CANONICAL: AccountAddress = AccountAddress([
 ]);
 const BOB_CANONICAL_ADDR: Address = Address::Account(BOB_CANONICAL);
 const BOB_ADDR: Address = Address::Account(BOB);
-const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
+const UPGRADER: AccountAddress = AccountAddress([2; 32]);
+const UPGRADER_ADDR: Address = Address::Account(UPGRADER);
+const BLACKLISTER: AccountAddress = AccountAddress([3; 32]);
+const BLACKLISTER_ADDR: Address = Address::Account(BLACKLISTER);
+const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([99u8; 32]);
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU8(2);
@@ -717,8 +721,8 @@ fn test_adding_to_blacklist() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ALICE,
-            ALICE_ADDR,
+            BLACKLISTER,
+            BLACKLISTER_ADDR,
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -758,8 +762,8 @@ fn test_adding_to_blacklist() {
     let update = chain
         .contract_update(
             Signer::with_one_key(),
-            ALICE,
-            ALICE_ADDR,
+            BLACKLISTER,
+            BLACKLISTER_ADDR,
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -824,8 +828,8 @@ fn test_token_balance_of_blacklisted_address_can_not_change() {
     let _update = chain
         .contract_update(
             Signer::with_one_key(),
-            ALICE,
-            ALICE_ADDR,
+            BLACKLISTER,
+            BLACKLISTER_ADDR,
             Energy::from(10000),
             UpdateContractPayload {
                 amount:       Amount::zero(),
@@ -949,8 +953,8 @@ fn test_upgrade_without_migration_function() {
     // Upgrade `contract_version1` to `contract_version2`.
     let update = chain.contract_update(
         Signer::with_one_key(),
-        ALICE,
-        ALICE_ADDR,
+        UPGRADER,
+        UPGRADER_ADDR,
         Energy::from(10000),
         UpdateContractPayload {
             address:      contract_address,
@@ -1113,10 +1117,9 @@ fn initialize_contract_with_alice_tokens(
 }
 
 /// Setup chain and contract.
-///
-/// Also creates the two accounts, Alice and Bob.
-///
-/// Alice is the owner of the contract.
+/// The function creates the four accounts: ALICE, BOB, UPGRADER, and
+/// BLACKLISTER. The function grants ALICE the ADMIN role, the UPGRADER the
+/// UPGRADE role, and the BLACKLISTER the BLACKLISTE role.
 fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, ModuleReference) {
     let mut chain = Chain::new();
 
@@ -1133,6 +1136,8 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, Modu
     // Create some accounts on the chain.
     chain.create_account(Account::new_with_keys(ALICE, balance, (&keypairs).into()));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
+    chain.create_account(Account::new(UPGRADER, ACC_INITIAL_BALANCE));
+    chain.create_account(Account::new(BLACKLISTER, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
@@ -1147,6 +1152,38 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, Modu
             param:     OwnedParameter::from_serial(&TokenAmountU64(100)).expect("Init params"),
         })
         .expect("Initialize contract");
+
+    // Grant UPGRADER role
+    let grant_role_params = GrantRoleParams {
+        address: UPGRADER_ADDR,
+        role:    Roles::UPGRADER,
+    };
+
+    let _update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.grantRole".to_string()),
+            address:      init.contract_address,
+            message:      OwnedParameter::from_serial(&grant_role_params)
+                .expect("GrantRole params"),
+        })
+        .expect("UPGRADER should be granted role");
+
+    // Grant BLACKLISTER role
+    let grant_role_params = GrantRoleParams {
+        address: BLACKLISTER_ADDR,
+        role:    Roles::BLACKLISTER,
+    };
+
+    let _update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.grantRole".to_string()),
+            address:      init.contract_address,
+            message:      OwnedParameter::from_serial(&grant_role_params)
+                .expect("GrantRole params"),
+        })
+        .expect("BLACKLISTER should be granted role");
 
     (chain, keypairs, init.contract_address, deployment.module_reference)
 }

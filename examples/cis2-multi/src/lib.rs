@@ -118,6 +118,8 @@ const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
 /// Event tags.
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 pub const UPDATE_BLACKLIST_EVENT_TAG: u8 = u8::MAX - 6;
+pub const GRANT_ROLE_EVENT_TAG: u8 = u8::MAX - 7;
+pub const REVOKE_ROLE_EVENT_TAG: u8 = u8::MAX - 8;
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
@@ -131,6 +133,10 @@ pub enum Event {
     /// blacklist.
     #[concordium(tag = 249)]
     UpdateBlacklist(UpdateBlacklistEvent),
+    /// The event tracks when a new role is granted to an address.
+    GrantRole(GrantRoleEvent),
+    /// The event tracks when a role is removed from an address.
+    RevokeRole(RevokeRoleEvent),
     /// Cis2 token events.
     #[concordium(forward = cis2_events)]
     Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
@@ -154,6 +160,24 @@ pub struct UpdateBlacklistEvent {
     pub update:  BlacklistUpdate,
     /// The address which is added/removed from the blacklist.
     pub address: Address,
+}
+
+/// The GrantRoleEvent is logged when a new role is granted to an address.
+#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
+pub struct GrantRoleEvent {
+    /// The address that has been its role granted.
+    address: Address,
+    /// The role that was granted to the above address.
+    role:    Roles,
+}
+
+/// The RevokeRoleEvent is logged when a role is removed from an address.
+#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
+pub struct RevokeRoleEvent {
+    /// Address that has been its role revoked.
+    address: Address,
+    /// The role that was revoked from the above address.
+    role:    Roles,
 }
 
 // Implementing a custom schemaType for the `Event` struct containing all
@@ -277,6 +301,47 @@ pub struct BurnParams {
     pub token_id: ContractTokenId,
 }
 
+/// The parameter for the contract function `grantRole` which grants a role to
+/// an address.
+#[derive(Serialize, SchemaType)]
+pub struct GrantRoleParams {
+    /// The address that has been its role granted.
+    pub address: Address,
+    /// The role that has been granted to the above address.
+    pub role:    Roles,
+}
+
+/// The parameter for the contract function `removeRole` which revokes a role
+/// from an address.
+#[derive(Serialize, SchemaType)]
+pub struct RemoveRoleParams {
+    /// The address that has been its role revoked.
+    pub address: Address,
+    /// The role that has been revoked from the above address.
+    pub role:    Roles,
+}
+
+/// A struct containing a set of roles granted to an address.
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+struct AddressRoleState<S> {
+    /// Set of roles.
+    roles: StateSet<Roles, S>,
+}
+
+/// Enum of available roles in this contract.
+#[derive(Serialize, PartialEq, Eq, Reject, SchemaType, Clone, Copy, Debug)]
+pub enum Roles {
+    /// Admin role.
+    ADMIN,
+    /// Upgrader role.
+    UPGRADER,
+    /// Blacklister role.
+    BLACKLISTER,
+    /// Pauser role.
+    PAUSER,
+}
+
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
@@ -307,7 +372,7 @@ struct State<S = StateApi> {
     state:           StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs.
     tokens:          StateMap<ContractTokenId, MetadataUrl, S>,
-    /// Map with contract addresses providing implementations of additional
+    /// A map with contract addresses providing implementations of additional
     /// standards.
     implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// A registry to link an account to its next nonce. The nonce is used to
@@ -326,6 +391,8 @@ struct State<S = StateApi> {
     owner:           Address,
     /// Specifies if the contract is paused.
     paused:          bool,
+    /// A map containing all roles granted to addresses.
+    roles:           StateMap<Address, AddressRoleState<S>, S>,
 }
 
 /// The parameter type for the contract function `supportsPermit`.
@@ -440,6 +507,10 @@ pub enum CustomContractError {
     FailedUpgradeUnsupportedModuleVersion, // -18
     /// Contract is paused.
     Paused, // -19
+    /// Failed to remove role because it was not granted in the first place.
+    RoleWasNotGranted, // -20
+    /// Failed to grant role because it was granted already in the first place.
+    RoleWasAlreadyGranted, // -21
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -500,6 +571,7 @@ impl State {
             blacklist: state_builder.new_set(),
             owner: Address::Account(AccountAddress([0; 32])),
             paused: false,
+            roles: state_builder.new_map(),
         }
     }
 
@@ -665,6 +737,32 @@ impl State {
     ) {
         self.implementors.insert(std_id, implementors);
     }
+
+    /// Grant role to an address.
+    fn grant_role(&mut self, account: &Address, role: Roles, state_builder: &mut StateBuilder) {
+        self.roles.entry(*account).or_insert_with(|| AddressRoleState {
+            roles: state_builder.new_set(),
+        });
+
+        self.roles.entry(*account).and_modify(|entry| {
+            entry.roles.insert(role);
+        });
+    }
+
+    /// Remove role from an address.
+    fn remove_role(&mut self, account: &Address, role: Roles) {
+        self.roles.entry(*account).and_modify(|entry| {
+            entry.roles.remove(&role);
+        });
+    }
+
+    /// Check if an address has an role.
+    fn has_role(&self, account: &Address, role: Roles) -> bool {
+        return match self.roles.get(account) {
+            None => false,
+            Some(roles) => roles.roles.contains(&role),
+        };
+    }
 }
 
 /// Convert the address into its canonical account address (in case it is an
@@ -686,15 +784,32 @@ fn get_canonical_address(address: Address) -> ContractResult<Address> {
 /// Initialize contract instance with no token types.
 #[init(
     contract = "cis2_multi",
+    parameter = "ContractTokenAmount",
     event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
-    parameter = "ContractTokenAmount"
+    enable_logger
 )]
-fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
+fn contract_init(
+    ctx: &InitContext,
+    state_builder: &mut StateBuilder,
+    logger: &mut impl HasLogger,
+) -> InitResult<State> {
     // Parse the parameter.
     let mint_airdrop: ContractTokenAmount = ctx.parameter_cursor().get()?;
 
     // Construct the initial contract state.
-    Ok(State::empty(state_builder, mint_airdrop))
+    let mut state = State::empty(state_builder, mint_airdrop);
+
+    // Get the instantiater of this contract instance.
+    let invoker = Address::Account(ctx.init_origin());
+
+    // Grant ADMIN role.
+    state.grant_role(&invoker, Roles::ADMIN, state_builder);
+    logger.log(&Event::GrantRole(GrantRoleEvent {
+        address: invoker,
+        role:    Roles::ADMIN,
+    }))?;
+
+    Ok(state)
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
@@ -1608,7 +1723,7 @@ pub struct UpdateBlacklistParams(#[concordium(size_length = 2)] pub Vec<UpdateBl
 /// Logs an `UpdateBlacklist` event.
 ///
 /// It rejects if:
-/// - Sender is not the owner of the contract instance.
+/// - Sender is not the BLACKLISTER of the contract instance.
 /// - It fails to parse the parameter.
 /// - Fails to log event.
 #[receive(
@@ -1624,8 +1739,11 @@ fn contract_update_blacklist(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Authorize the sender.
-    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Check that only the BLACKLISTER is authorized to blacklist an address.
+    ensure!(host.state().has_role(&sender, Roles::BLACKLISTER), ContractError::Unauthorized);
 
     // Parse the parameter.
     let UpdateBlacklistParams(params) = ctx.parameter_cursor().get()?;
@@ -1666,7 +1784,7 @@ pub struct UpgradeParams {
 /// migration function after the upgrade.
 ///
 /// It rejects if:
-/// - Sender has not the role 'UPGRADER'.
+/// - Sender is not the UPGRADER of the contract instance.
 /// - It fails to parse the parameter.
 /// - If the ugrade fails.
 /// - If the migration invoke fails.
@@ -1688,8 +1806,11 @@ fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractRe
     // Read the top-level contract state.
     let state: State = host.state().read_root()?;
 
-    // Check that only the owner is authorized to upgrade the smart contract.
-    ensure_eq!(ctx.sender(), state.owner, ContractError::Unauthorized);
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Check that only the UPGRADER is authorized to upgrade the contract.
+    ensure!(state.has_role(&sender, Roles::UPGRADER), ContractError::Unauthorized);
     // Parse the parameter.
     let params: UpgradeParams = ctx.parameter_cursor().get()?;
     // Trigger the upgrade.
@@ -1720,19 +1841,12 @@ fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractRe
     error = "CustomContractError",
     mutable
 )]
-fn contract_set_paused<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_set_paused(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Get the sender who invoked this contract function.
-    //  let sender = ctx.sender();
+    let sender = ctx.sender();
 
-    // TODO add pauser roll
     // Check that only the PAUSER is authorized to pause the contract.
-    // ensure!(
-    //     host.state().has_role(&sender, Roles::PAUSER),
-    //     ContractError::Unauthorized
-    // );
+    ensure!(host.state().has_role(&sender, Roles::PAUSER), ContractError::Unauthorized);
 
     // Parse the parameter.
     let params: SetPausedParams = ctx.parameter_cursor().get()?;
@@ -1740,5 +1854,91 @@ fn contract_set_paused<S: HasStateApi>(
     // Update the paused variable.
     host.state_mut().paused = params.paused;
 
+    Ok(())
+}
+
+/// Add role to an address.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not the ADMIN of the contract instance.
+/// - The `address` is already holding the specified role to be granted.
+#[receive(
+    contract = "cis2_multi",
+    name = "grantRole",
+    parameter = "GrantRoleParams",
+    enable_logger,
+    mutable
+)]
+fn contract_grant_role(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: GrantRoleParams = ctx.parameter_cursor().get()?;
+
+    let (state, state_builder) = host.state_and_builder();
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    // Check that only the ADMIN is authorized to grant roles.
+    ensure!(state.has_role(&sender, Roles::ADMIN), ContractError::Unauthorized);
+
+    // Check that the `address` had previously not hold the specified role.
+    ensure!(
+        !state.has_role(&params.address, params.role),
+        CustomContractError::RoleWasAlreadyGranted.into()
+    );
+
+    // Grant role.
+    state.grant_role(&params.address, params.role, state_builder);
+    logger.log(&Event::GrantRole(GrantRoleEvent {
+        address: params.address,
+        role:    params.role,
+    }))?;
+    Ok(())
+}
+
+/// Remove role from an address.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not the ADMIN of the contract instance.
+/// - The `address` is not holding the specified role to be removed.
+#[receive(
+    contract = "cis2_multi",
+    name = "removeRole",
+    parameter = "RemoveRoleParams",
+    enable_logger,
+    mutable
+)]
+fn contract_remove_role(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: RemoveRoleParams = ctx.parameter_cursor().get()?;
+
+    let (state, _) = host.state_and_builder();
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    // Check that only the ADMIN is authorized to revoke roles.
+    ensure!(state.has_role(&sender, Roles::ADMIN), ContractError::Unauthorized);
+
+    // Check that the `address` had previously hold the specified role.
+    ensure!(
+        state.has_role(&params.address, params.role),
+        CustomContractError::RoleWasNotGranted.into()
+    );
+
+    // Remove role.
+    state.remove_role(&params.address, params.role);
+    logger.log(&Event::RevokeRole(RevokeRoleEvent {
+        address: params.address,
+        role:    params.role,
+    }))?;
     Ok(())
 }
