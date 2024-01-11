@@ -296,10 +296,119 @@ fn test_operator_can_transfer() {
     ]);
 }
 
+/// Test permit mint function. The signature is generated in the test
+/// case. ALICE mints tokens to her account.
+#[test]
+fn test_permit_mint() {
+    let (mut chain, keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
+
+    // Check balances in state.
+    let balance_of_alice_and_bob = get_balances(&chain, contract_address);
+
+    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(100), TokenAmountU64(0)]);
+
+    // Create input parameters for the `mint` transfer function.
+    let payload = MintParams {
+        owner:        ALICE_ADDR,
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/2A".to_string(),
+            hash: None,
+        },
+        token_id:     TOKEN_1,
+    };
+
+    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
+    // the `permit` function. The `PermitParam` type includes a `signature` and
+    // a `signer`. Because these two values (`signature` and `signer`) are not
+    // read in the `viewMessageHash` function, any value can be used and we choose
+    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
+    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
+        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
+    })]);
+
+    let mut permit_mint_param = PermitParam {
+        signature: AccountSignatures {
+            sigs: signature_map,
+        },
+        signer:    ALICE,
+        message:   PermitMessage {
+            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
+            entry_point:      OwnedEntrypointName::new_unchecked("mint".into()),
+            nonce:            0,
+            payload:          to_bytes(&payload),
+        },
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      contract_address,
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
+            message:      OwnedParameter::from_serial(&permit_mint_param)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query viewMessageHash");
+
+    let message_hash: HashSha2256 =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    permit_mint_param.signature = keypairs.sign_message(&to_bytes(&message_hash));
+
+    // Mint tokens with the permit function.
+    let update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
+                message:      OwnedParameter::from_serial(&permit_mint_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to mint tokens with permit");
+
+    // Check that the correct events occurred.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
+
+    assert_eq!(events, [
+        Event::Cis2Event(Cis2Event::Mint(MintEvent {
+            token_id: TOKEN_1,
+            amount:   TokenAmountU64(100),
+            owner:    ALICE_ADDR,
+        })),
+        Event::Cis2Event(Cis2Event::TokenMetadata(TokenMetadataEvent {
+            token_id:     TOKEN_1,
+            metadata_url: MetadataUrl {
+                url:  "https://some.example/token/2A".to_string(),
+                hash: None,
+            },
+        })),
+        Event::Nonce(NonceEvent {
+            account: ALICE,
+            nonce:   0,
+        })
+    ]);
+
+    // Check balances in state.
+    let balance_of_alice_and_bob = get_balances(&chain, contract_address);
+
+    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU64(200), TokenAmountU64(0)]);
+}
+
 /// Test permit update operator function. The signature is generated in the test
 /// case. ALICE adds BOB as an operator.
 #[test]
-fn test_inside_signature_permit_update_operator() {
+fn test_permit_update_operator() {
     let (mut chain, keypairs, contract_address, _update, _module_reference) =
         initialize_contract_with_alice_tokens();
 
@@ -398,7 +507,7 @@ fn test_inside_signature_permit_update_operator() {
 /// Test permit transfer function. The signature is generated in the test case.
 /// TOKEN_1 is transferred from Alice to Bob.
 #[test]
-fn test_inside_signature_permit_transfer() {
+fn test_permit_transfer() {
     let (mut chain, keypairs, contract_address, _update, _module_reference) =
         initialize_contract_with_alice_tokens();
 

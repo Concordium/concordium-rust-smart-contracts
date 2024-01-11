@@ -59,7 +59,7 @@
 //! (unprotected function). The `mint` function airdrops the `MINT_AIRDROP`
 //! amount of tokens to a specified `owner` address in the input parameter.
 //! ATTENTION: You most likley want to add your custom access control mechanism
-//! to the `mint` function.
+//! to the `mint` function and `permit` function.
 //!
 //! A token owner (or any of its operator addresses) can burn some of the token
 //! owner's tokens by invoking the `burn` function.
@@ -120,6 +120,12 @@ pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
 pub const UPDATE_BLACKLIST_EVENT_TAG: u8 = u8::MAX - 6;
 pub const GRANT_ROLE_EVENT_TAG: u8 = u8::MAX - 7;
 pub const REVOKE_ROLE_EVENT_TAG: u8 = u8::MAX - 8;
+
+const TRANSFER_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("transfer");
+const UPDATE_OPERATOR_ENTRYPOINT: EntrypointName<'_> =
+    EntrypointName::new_unchecked("updateOperator");
+const MINT_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("mint");
+const BURN_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("burn");
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
@@ -867,9 +873,53 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
     })
 }
 
+/// Internal `mint/permit` helper function. Invokes the `mint`
+/// function of the state. Logs a `Mint` event.
+/// The function assumes that the mint is authorized.
+fn mint(
+    mint_params: MintParams,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    let is_blacklisted =
+        host.state().blacklist.contains(&get_canonical_address(mint_params.owner)?);
+
+    // Check token owner is not blacklisted.
+    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
+
+    let (state, builder) = host.state_and_builder();
+
+    // Mint the token in the state.
+    let token_metadata = state.mint(
+        &mint_params.token_id,
+        &mint_params.metadata_url,
+        &mint_params.owner,
+        state.mint_airdrop,
+        builder,
+    );
+
+    // Event for minted token.
+    logger.log(&Cis2Event::Mint(MintEvent {
+        token_id: mint_params.token_id,
+        amount:   state.mint_airdrop,
+        owner:    mint_params.owner,
+    }))?;
+
+    // Metadata URL for the token.
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
+        token_id:     mint_params.token_id,
+        metadata_url: token_metadata,
+    }))?;
+
+    Ok(())
+}
+
 /// Mint/Airdrops the fixed amount of `MINT_AIRDROP` of new tokens to the
 /// `owner` address. ATTENTION: Can be called by anyone. You should add your
-/// custom access control to this function.
+/// custom access control to this function and the permit function.
 ///
 /// Logs a `Mint` and a `TokenMetadata` event for each token.
 /// The metadata_url in the input parameter of the token is ignored except for
@@ -895,36 +945,8 @@ fn contract_mint(
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
-    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+    mint(params, host, logger)?;
 
-    // Check token owner is not blacklisted.
-    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
-
-    // Check that contract is not paused.
-    ensure!(!host.state().paused, CustomContractError::Paused.into());
-
-    let (state, builder) = host.state_and_builder();
-    // Mint the token in the state.
-    let token_metadata = state.mint(
-        &params.token_id,
-        &params.metadata_url,
-        &params.owner,
-        state.mint_airdrop,
-        builder,
-    );
-
-    // Event for minted token.
-    logger.log(&Cis2Event::Mint(MintEvent {
-        token_id: params.token_id,
-        amount:   state.mint_airdrop,
-        owner:    params.owner,
-    }))?;
-
-    // Metadata URL for the token.
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id:     params.token_id,
-        metadata_url: token_metadata,
-    }))?;
     Ok(())
 }
 
@@ -1211,42 +1233,55 @@ fn contract_permit(
         host.check_account_signature(param.signer, &param.signature, &message_hash)?;
     ensure!(valid_signature, CustomContractError::WrongSignature.into());
 
-    if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
-        // Transfer the tokens.
+    match message.entry_point.as_entrypoint_name() {
+        TRANSFER_ENTRYPOINT => {
+            // Transfer the tokens.
 
-        let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
+            let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
 
-        for transfer_entry in transfers {
-            // Authenticate the signer for this transfer
-            ensure!(
-                transfer_entry.from.matches_account(&param.signer)
-                    || host.state().is_operator(&Address::from(param.signer), &transfer_entry.from),
-                ContractError::Unauthorized
-            );
+            for transfer_entry in transfers {
+                // Authenticate the signer for this transfer
+                ensure!(
+                    transfer_entry.from.matches_account(&param.signer)
+                        || host
+                            .state()
+                            .is_operator(&Address::from(param.signer), &transfer_entry.from),
+                    ContractError::Unauthorized
+                );
 
-            transfer(transfer_entry, host, logger)?
+                transfer(transfer_entry, host, logger)?
+            }
         }
-    } else if message.entry_point.as_entrypoint_name()
-        == EntrypointName::new_unchecked("updateOperator")
-    {
-        // Update the operator.
-        let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
+        UPDATE_OPERATOR_ENTRYPOINT => {
+            // Update the operator.
+            let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
 
-        let (state, builder) = host.state_and_builder();
+            let (state, builder) = host.state_and_builder();
 
-        for update in updates {
-            update_operator(
-                state.paused,
-                update.update,
-                concordium_std::Address::Account(param.signer),
-                update.operator,
-                state,
-                builder,
-                logger,
-            )?;
+            for update in updates {
+                update_operator(
+                    state.paused,
+                    update.update,
+                    concordium_std::Address::Account(param.signer),
+                    update.operator,
+                    state,
+                    builder,
+                    logger,
+                )?;
+            }
         }
-    } else {
-        bail!(CustomContractError::WrongEntryPoint.into())
+        MINT_ENTRYPOINT => {
+            // ATTENTION: Can be called by anyone. You should add your
+            // custom access control to here.
+
+            // Mint tokens
+            let mint_params: MintParams = from_bytes(&message.payload)?;
+
+            mint(mint_params, host, logger)?;
+        }
+        _ => {
+            bail!(CustomContractError::WrongEntryPoint.into())
+        }
     }
 
     // Log the nonce event.
