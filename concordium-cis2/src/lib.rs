@@ -1336,7 +1336,7 @@ impl<'a> StandardIdentifier<'a> {
 /// Consists of a string of ASCII characters up to a length of 255.
 ///
 /// See [StandardIdentifier] for the borrowed version.
-#[derive(Debug, Serialize, PartialEq, Eq, SchemaType)]
+#[derive(Debug, Serialize, PartialEq, Eq, SchemaType, Clone)]
 #[concordium(transparent)]
 pub struct StandardIdentifierOwned {
     #[concordium(size_length = 1)]

@@ -1,3 +1,6 @@
+//! TODO explain pausing, grant roles, update roles, permit function has added
+//! mint/burn TODO add more testcases (grant role and pausing tests)
+//!
 //! A multi token example implementation of the Concordium Token Standard CIS2
 //! and the Concordium Sponsored Transaction Standard CIS3.
 //!
@@ -140,8 +143,10 @@ pub enum Event {
     #[concordium(tag = 249)]
     UpdateBlacklist(UpdateBlacklistEvent),
     /// The event tracks when a new role is granted to an address.
+    #[concordium(tag = 248)]
     GrantRole(GrantRoleEvent),
     /// The event tracks when a role is removed from an address.
+    #[concordium(tag = 247)]
     RevokeRole(RevokeRoleEvent),
     /// Cis2 token events.
     #[concordium(forward = cis2_events)]
@@ -205,9 +210,29 @@ impl schema::SchemaType for Event {
             ),
         );
         event_map.insert(
+            GRANT_ROLE_EVENT_TAG,
+            (
+                "GrantRole".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("address"), Address::get_type()),
+                    (String::from("role"), Roles::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            REVOKE_ROLE_EVENT_TAG,
+            (
+                "RevokeRole".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("address"), Address::get_type()),
+                    (String::from("role"), Roles::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
             UPDATE_BLACKLIST_EVENT_TAG,
             (
-                "UpdateBlacklistEvent".to_string(),
+                "UpdateBlacklist".to_string(),
                 schema::Fields::Named(vec![
                     (String::from("update"), BlacklistUpdate::get_type()),
                     (String::from("address"), Address::get_type()),
@@ -393,8 +418,6 @@ struct State<S = StateApi> {
     blacklist:       StateSet<Address, S>,
     /// The amount of tokens airdropped when the mint function is invoked.
     mint_airdrop:    ContractTokenAmount,
-    // TODO: replace with role based access.
-    owner:           Address,
     /// Specifies if the contract is paused.
     paused:          bool,
     /// A map containing all roles granted to addresses.
@@ -575,7 +598,6 @@ impl State {
             nonces_registry: state_builder.new_map(),
             mint_airdrop,
             blacklist: state_builder.new_set(),
-            owner: Address::Account(AccountAddress([0; 32])),
             paused: false,
             roles: state_builder.new_map(),
         }
@@ -830,8 +852,10 @@ pub struct ViewState {
     pub tokens:          Vec<ContractTokenId>,
     pub nonces_registry: Vec<(AccountAddress, u64)>,
     pub blacklist:       Vec<Address>,
+    pub roles:           Vec<(Address, Vec<Roles>)>,
     pub mint_airdrop:    ContractTokenAmount,
     pub paused:          bool,
+    pub implementors:    Vec<(StandardIdentifierOwned, Vec<ContractAddress>)>,
 }
 
 /// View function for testing. This reports on the entire state of the contract
@@ -862,12 +886,38 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
     let tokens = state.tokens.iter().map(|a| *a.0).collect();
     let nonces_registry = state.nonces_registry.iter().map(|(a, b)| (*a, *b)).collect();
     let blacklist = state.blacklist.iter().map(|a| *a).collect();
+    let roles: Vec<(Address, Vec<Roles>)> = state
+        .roles
+        .iter()
+        .map(|(key, value)| {
+            let mut roles_vec = Vec::new();
+            for role in value.roles.iter() {
+                roles_vec.push(*role);
+            }
+            (*key, roles_vec)
+        })
+        .collect();
+
+    let implementors: Vec<(StandardIdentifierOwned, Vec<ContractAddress>)> = state
+        .implementors
+        .iter()
+        .map(|(key, value)| {
+            let mut implementors = Vec::new();
+            for test in value.iter() {
+                implementors.push(*test);
+            }
+
+            ((*key).clone(), implementors)
+        })
+        .collect();
 
     Ok(ViewState {
         state: contract_state,
         tokens,
         nonces_registry,
         blacklist,
+        roles,
+        implementors,
         mint_airdrop: host.state().mint_airdrop,
         paused: host.state().paused,
     })

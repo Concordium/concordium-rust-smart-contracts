@@ -318,61 +318,8 @@ fn test_permit_mint() {
         token_id:     TOKEN_1,
     };
 
-    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
-    // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Because these two values (`signature` and `signer`) are not
-    // read in the `viewMessageHash` function, any value can be used and we choose
-    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
-        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
-    })]);
-
-    let mut permit_mint_param = PermitParam {
-        signature: AccountSignatures {
-            sigs: signature_map,
-        },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
-            contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("mint".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
-        },
-    };
-
-    // Get the message hash to be signed.
-    let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_mint_param)
-                .expect("Should be a valid inut parameter"),
-        })
-        .expect("Should be able to query viewMessageHash");
-
-    let message_hash: HashSha2256 =
-        from_bytes(&invoke.return_value).expect("Should return a valid result");
-
-    permit_mint_param.signature = keypairs.sign_message(&to_bytes(&message_hash));
-
-    // Mint tokens with the permit function.
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
-            BOB,
-            BOB_ADDR,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_mint_param)
-                    .expect("Should be a valid inut parameter"),
-            },
-        )
-        .expect("Should be able to mint tokens with permit");
+    let update =
+        permit(&mut chain, contract_address, to_bytes(&payload), "mint".to_string(), keypairs);
 
     // Check that the correct events occurred.
     let events = update
@@ -424,61 +371,8 @@ fn test_permit_burn() {
         token_id: TOKEN_1,
     };
 
-    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
-    // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Because these two values (`signature` and `signer`) are not
-    // read in the `viewMessageHash` function, any value can be used and we choose
-    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
-        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
-    })]);
-
-    let mut permit_burn_param = PermitParam {
-        signature: AccountSignatures {
-            sigs: signature_map,
-        },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
-            contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("burn".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
-        },
-    };
-
-    // Get the message hash to be signed.
-    let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_burn_param)
-                .expect("Should be a valid inut parameter"),
-        })
-        .expect("Should be able to query viewMessageHash");
-
-    let message_hash: HashSha2256 =
-        from_bytes(&invoke.return_value).expect("Should return a valid result");
-
-    permit_burn_param.signature = keypairs.sign_message(&to_bytes(&message_hash));
-
-    // Burn tokens with the permit function.
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
-            BOB,
-            BOB_ADDR,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_burn_param)
-                    .expect("Should be a valid inut parameter"),
-            },
-        )
-        .expect("Should be able to burn tokens with permit");
+    let update =
+        permit(&mut chain, contract_address, to_bytes(&payload), "burn".to_string(), keypairs);
 
     // Check that the correct events occurred.
     let events = update
@@ -523,61 +417,13 @@ fn test_permit_update_operator() {
     };
     let payload = UpdateOperatorParams(vec![update_operator]);
 
-    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
-    // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Because these two values (`signature` and `signer`) are not
-    // read in the `viewMessageHash` function, any value can be used and we choose
-    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
-        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
-    })]);
-
-    let mut permit_update_operator_param = PermitParam {
-        signature: AccountSignatures {
-            sigs: signature_map,
-        },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
-            contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
-        },
-    };
-
-    // Get the message hash to be signed.
-    let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_update_operator_param)
-                .expect("Should be a valid inut parameter"),
-        })
-        .expect("Should be able to query viewMessageHash");
-
-    let message_hash: HashSha2256 =
-        from_bytes(&invoke.return_value).expect("Should return a valid result");
-
-    permit_update_operator_param.signature = keypairs.sign_message(&to_bytes(&message_hash));
-
-    // Update operator with the permit function.
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
-            BOB,
-            Address::Account(BOB),
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_update_operator_param)
-                    .expect("Should be a valid inut parameter"),
-            },
-        )
-        .expect("Should be able to update operator with permit");
+    let update = permit(
+        &mut chain,
+        contract_address,
+        to_bytes(&payload),
+        "updateOperator".to_string(),
+        keypairs,
+    );
 
     // Check that the correct events occurred.
     let events = update
@@ -625,61 +471,8 @@ fn test_permit_transfer() {
     };
     let payload = TransferParams::from(vec![transfer]);
 
-    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
-    // the `permit` function. The `PermitParam` type includes a `signature` and
-    // a `signer`. Because these two values (`signature` and `signer`) are not
-    // read in the `viewMessageHash` function, any value can be used and we choose
-    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
-        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
-    })]);
-
-    let mut permit_transfer_param = PermitParam {
-        signature: AccountSignatures {
-            sigs: signature_map,
-        },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
-            contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
-        },
-    };
-
-    // Get the message hash to be signed.
-    let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_transfer_param)
-                .expect("Should be a valid inut parameter"),
-        })
-        .expect("Should be able to query viewMessageHash");
-
-    let message_hash: HashSha2256 =
-        from_bytes(&invoke.return_value).expect("Should return a valid result");
-
-    permit_transfer_param.signature = keypairs.sign_message(&to_bytes(&message_hash));
-
-    // Transfer token with the permit function.
-    let update = chain
-        .contract_update(
-            Signer::with_one_key(),
-            BOB,
-            BOB_ADDR,
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_transfer_param)
-                    .expect("Should be a valid inut parameter"),
-            },
-        )
-        .expect("Should be able to transfer token with permit");
+    let update =
+        permit(&mut chain, contract_address, to_bytes(&payload), "transfer".to_string(), keypairs);
 
     // Check that the correct events occurred.
     let events = update
@@ -1197,6 +990,71 @@ fn test_upgrade_without_migration_function() {
         balances:  vec![(TOKEN_0, 100.into()), (TOKEN_1, 100.into())],
         operators: Vec::new(),
     })]);
+}
+
+/// Execute a permit function invoke
+fn permit(
+    chain: &mut Chain,
+    contract_address: ContractAddress,
+    payload: Vec<u8>,
+    entrypoint_name: String,
+    keypairs: AccountKeys,
+) -> ContractInvokeSuccess {
+    // The `viewMessageHash` function uses the same input parameter `PermitParam` as
+    // the `permit` function. The `PermitParam` type includes a `signature` and
+    // a `signer`. Because these two values (`signature` and `signer`) are not
+    // read in the `viewMessageHash` function, any value can be used and we choose
+    // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
+    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
+        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
+    })]);
+
+    let mut param = PermitParam {
+        signature: AccountSignatures {
+            sigs: signature_map,
+        },
+        signer:    ALICE,
+        message:   PermitMessage {
+            timestamp: Timestamp::from_timestamp_millis(10_000_000_000),
+            contract_address: ContractAddress::new(0, 0),
+            entry_point: OwnedEntrypointName::new_unchecked(entrypoint_name),
+            nonce: 0,
+            payload,
+        },
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      contract_address,
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.viewMessageHash".to_string()),
+            message:      OwnedParameter::from_serial(&param)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query viewMessageHash");
+
+    let message_hash: HashSha2256 =
+        from_bytes(&invoke.return_value).expect("Should return a valid result");
+
+    param.signature = keypairs.sign_message(&to_bytes(&message_hash));
+
+    // Execute permit function.
+    chain
+        .contract_update(
+            Signer::with_one_key(),
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("cis2_multi.permit".to_string()),
+                message:      OwnedParameter::from_serial(&param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to exit permit token with permit")
 }
 
 /// Check if Bob is an operator of Alice.
