@@ -20,6 +20,8 @@ const UPGRADER: AccountAddress = AccountAddress([2; 32]);
 const UPGRADER_ADDR: Address = Address::Account(UPGRADER);
 const BLACKLISTER: AccountAddress = AccountAddress([3; 32]);
 const BLACKLISTER_ADDR: Address = Address::Account(BLACKLISTER);
+const PAUSER: AccountAddress = AccountAddress([4; 32]);
+const PAUSER_ADDR: Address = Address::Account(PAUSER);
 const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([99u8; 32]);
 
 /// Token IDs.
@@ -992,6 +994,167 @@ fn test_upgrade_without_migration_function() {
     })]);
 }
 
+/// Test that the pause/unpause entrypoints correctly sets the pause value in
+/// the state.
+#[test]
+fn test_pause_functionality() {
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
+
+    // Pause the contract.
+    chain
+        .contract_update(SIGNER, PAUSER, PAUSER_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.setPaused".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&true).expect("Pause params"),
+        })
+        .expect("Pause");
+
+    // Check that the contract is now paused.
+    assert_eq!(invoke_view(&mut chain, contract_address).paused, true);
+
+    // Unpause the contract.
+    chain
+        .contract_update(SIGNER, PAUSER, PAUSER_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.setPaused".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&false).expect("Unpause params"),
+        })
+        .expect("Unpause");
+    // Check that the contract is now unpaused.
+    assert_eq!(invoke_view(&mut chain, contract_address).paused, false);
+}
+
+/// Test that only the PAUSER can pause/unpause the contract.
+#[test]
+fn test_pause_unpause_unauthorized() {
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
+
+    // Pause the contract as Bob, who is not the PAUSER.
+    let update = chain
+        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.setPaused".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&true).expect("Pause params"),
+        })
+        .expect_err("Pause");
+
+    // Check that the correct error is returned.
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    assert_eq!(rv, ContractError::Unauthorized);
+}
+
+/// Test that one can NOT call non-admin state-mutative functions (burn,
+/// mint, transfer, updateOperator) when the contract is paused.
+#[test]
+fn test_no_execution_of_state_mutative_functions_when_paused() {
+    let (mut chain, _keypairs, contract_address, _update, _module_reference) =
+        initialize_contract_with_alice_tokens();
+
+    // Pause the contract.
+    chain
+        .contract_update(SIGNER, PAUSER, PAUSER_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.setPaused".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&true).expect("Pause params"),
+        })
+        .expect("Pause");
+
+    // Try to transfer 1 token from Alice to Bob.
+    let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
+        from:     ALICE_ADDR,
+        to:       Receiver::Account(BOB),
+        token_id: TOKEN_0,
+        amount:   TokenAmountU64(1),
+        data:     AdditionalData::empty(),
+    }]);
+    let update_transfer = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.transfer".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+        })
+        .expect_err("Transfer tokens");
+    assert_contract_paused_error(&update_transfer);
+
+    // Try to add Bob as an operator for Alice.
+    let params = UpdateOperatorParams(vec![UpdateOperator {
+        update:   OperatorUpdate::Add,
+        operator: BOB_ADDR,
+    }]);
+    let update_operator = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.updateOperator".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
+        })
+        .expect_err("Update operator");
+    assert_contract_paused_error(&update_operator);
+
+    // Try to mint tokens.
+    let params = MintParams {
+        owner:        ALICE_ADDR,
+        metadata_url: MetadataUrl {
+            url:  "https://some.example/token/02".to_string(),
+            hash: None,
+        },
+        token_id:     TOKEN_0,
+    };
+
+    let update_operator = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&params).expect("Mint params"),
+        })
+        .expect_err("Update operator");
+    assert_contract_paused_error(&update_operator);
+
+    // Try to burn tokens.
+    let params = BurnParams {
+        owner:    ALICE_ADDR,
+        amount:   TokenAmountU64(1),
+        token_id: TOKEN_0,
+    };
+
+    let update_operator = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.burn".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::from_serial(&params).expect("Burn params"),
+        })
+        .expect_err("Update operator");
+    assert_contract_paused_error(&update_operator);
+}
+
+/// Check that the returned error is `ContractPaused`.
+fn assert_contract_paused_error(update: &ContractInvokeError) {
+    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    assert_eq!(rv, ContractError::Custom(CustomContractError::Paused));
+}
+
+/// Get the result of the view entrypoint.
+fn invoke_view(chain: &mut Chain, contract_address: ContractAddress) -> ViewState {
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".to_string()),
+            address:      contract_address,
+            message:      OwnedParameter::empty(),
+        })
+        .expect("Invoke view");
+    invoke.parse_return_value().expect("Return value")
+}
+
 /// Execute a permit function invoke
 fn permit(
     chain: &mut Chain,
@@ -1183,7 +1346,7 @@ fn initialize_contract_with_alice_tokens(
 }
 
 /// Setup chain and contract.
-/// The function creates the four accounts: ALICE, BOB, UPGRADER, and
+/// The function creates the five accounts: ALICE, BOB, UPGRADER, PAUSER, and
 /// BLACKLISTER. The function grants ALICE the ADMIN role, the UPGRADER the
 /// UPGRADE role, and the BLACKLISTER the BLACKLISTE role.
 fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, ModuleReference) {
@@ -1204,6 +1367,7 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, Modu
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(UPGRADER, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BLACKLISTER, ACC_INITIAL_BALANCE));
+    chain.create_account(Account::new(PAUSER, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
@@ -1234,6 +1398,22 @@ fn initialize_chain_and_contract() -> (Chain, AccountKeys, ContractAddress, Modu
                 .expect("GrantRole params"),
         })
         .expect("UPGRADER should be granted role");
+
+    // Grant PAUSER role
+    let grant_role_params = GrantRoleParams {
+        address: PAUSER_ADDR,
+        role:    Roles::PAUSER,
+    };
+
+    let _update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            receive_name: OwnedReceiveName::new_unchecked("cis2_multi.grantRole".to_string()),
+            address:      init.contract_address,
+            message:      OwnedParameter::from_serial(&grant_role_params)
+                .expect("GrantRole params"),
+        })
+        .expect("PAUSER should be granted role");
 
     // Grant BLACKLISTER role
     let grant_role_params = GrantRoleParams {

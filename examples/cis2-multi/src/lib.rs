@@ -1,6 +1,3 @@
-//! TODO explain pausing, grant roles, update roles, permit function has added
-//! mint/burn TODO add more testcases (grant role and pausing tests)
-//!
 //! A multi token example implementation of the Concordium Token Standard CIS2
 //! and the Concordium Sponsored Transaction Standard CIS3.
 //!
@@ -28,6 +25,11 @@
 //! service provider submits the transaction on behalf of the user and pays the
 //! transaction fee to execute the transaction on-chain.
 //!
+//! As follows from the CIS3 specification, the contract has a `permit`
+//! function. It is the sponsored counterpart to the
+//! `transfer/updateOperator/mint/burn` function and can be executed by anyone
+//! on behalf of an account given a signed message.
+//!
 //! Concordium supports natively multi-sig accounts. Each account address on
 //! Concordium is controlled by one or several credential(s) (real-world
 //! identities) and each credential has one or several public-private key
@@ -51,17 +53,13 @@
 //! address to another address. An address can enable and disable one or more
 //! addresses as operators with the `updateOperator` function. An operator of
 //! an address is allowed to transfer any tokens owned by this address.
-//! As follows from the CIS3 specification, the contract has a `permit`
-//! function. It is the sponsored counterpart to the `transfer/updateOperator`
-//! function and can be executed by anyone on behalf of an account given a
-//! signed message.
 //!
-//! ## `Mint` und `burn` functions:
+//! ## `Mint` and `burn` functions:
 //! In this example, the contract is initialized with no tokens, and tokens can
 //! be minted through a `mint` contract function, which can be called by anyone
 //! (unprotected function). The `mint` function airdrops the `MINT_AIRDROP`
 //! amount of tokens to a specified `owner` address in the input parameter.
-//! ATTENTION: You most likley want to add your custom access control mechanism
+//! ATTENTION: You most likely want to add your custom access control mechanism
 //! to the `mint` function and `permit` function.
 //!
 //! A token owner (or any of its operator addresses) can burn some of the token
@@ -74,10 +72,21 @@
 //! This function is not very useful and is only there to showcase a simple
 //! implementation of a token receive hook.
 //!
+//! ## Grant and Revoke roles:
+//! The contract has access control roles. The admin can grant or revoke all
+//! other roles. The available roles are ADMIN (can grant/revoke roles),
+//! UPGRADER (can upgrade the contract), BLACKLISTER (can blacklist addresses),
+//! and PAUSER (can pause the contract).
+//!
 //! ## Blacklist:
 //! This contract includes a blacklist. The account with `BLACKLISTER` role can
 //! add/remove addresses to/from that list. Blacklisted addresses can not
 //! transfer their tokens, receive new tokens, or burn their tokens.
+//!
+//! ## Pausing:
+//! This contract can be paused by an address with the PAUSER role.
+//! `Mint,burn,updateOperator,transfer` entrypoints cannot be called when the
+//! contract is paused.
 //!
 //! ## Native upgradability:
 //! This contract can be upgraded. The contract
@@ -145,7 +154,7 @@ pub enum Event {
     /// The event tracks when a new role is granted to an address.
     #[concordium(tag = 248)]
     GrantRole(GrantRoleEvent),
-    /// The event tracks when a role is removed from an address.
+    /// The event tracks when a role is revoked from an address.
     #[concordium(tag = 247)]
     RevokeRole(RevokeRoleEvent),
     /// Cis2 token events.
@@ -182,7 +191,7 @@ pub struct GrantRoleEvent {
     role:    Roles,
 }
 
-/// The RevokeRoleEvent is logged when a role is removed from an address.
+/// The RevokeRoleEvent is logged when a role is revoked from an address.
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct RevokeRoleEvent {
     /// Address that has been its role revoked.
@@ -332,6 +341,84 @@ pub struct BurnParams {
     pub token_id: ContractTokenId,
 }
 
+/// The parameter type for the contract function `supportsPermit`.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct SupportsPermitQueryParams {
+    /// The list of supportPermit queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<OwnedEntrypointName>,
+}
+
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
+/// Part of the parameter type for the contract function `permit`.
+/// Specifies the message that is signed.
+#[derive(SchemaType, Serialize)]
+pub struct PermitMessage {
+    /// The contract_address that the signature is intended for.
+    pub contract_address: ContractAddress,
+    /// A nonce to prevent replay attacks.
+    pub nonce:            u64,
+    /// A timestamp to make signatures expire.
+    pub timestamp:        Timestamp,
+    /// The entry_point that the signature is intended for.
+    pub entry_point:      OwnedEntrypointName,
+    /// The serialized payload that should be forwarded to either the `transfer`
+    /// or the `updateOperator` function.
+    #[concordium(size_length = 2)]
+    pub payload:          Vec<u8>,
+}
+
+/// The parameter type for the contract function `permit`.
+/// Takes a signature, the signer, and the message that was signed.
+#[derive(Serialize, SchemaType)]
+pub struct PermitParam {
+    /// Signature/s. The CIS3 standard supports multi-sig accounts.
+    pub signature: AccountSignatures,
+    /// Account that created the above signature.
+    pub signer:    AccountAddress,
+    /// Message that was signed.
+    pub message:   PermitMessage,
+}
+
+#[derive(Serialize)]
+pub struct PermitParamPartial {
+    /// Signature/s. The CIS3 standard supports multi-sig accounts.
+    signature: AccountSignatures,
+    /// Account that created the above signature.
+    signer:    AccountAddress,
+}
+
+/// The parameter type for the contract function `setPaused`.
+#[derive(Serialize, SchemaType)]
+#[repr(transparent)]
+struct SetPausedParams {
+    /// Specifies if contract is paused.
+    paused: bool,
+}
+
+/// The parameter type for the contract function `upgrade`.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
+#[derive(Serialize, SchemaType)]
+pub struct UpgradeParams {
+    /// The new module reference.
+    pub module:  ModuleReference,
+    /// Optional entrypoint to call in the new module after upgrade.
+    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
 /// The parameter for the contract function `grantRole` which grants a role to
 /// an address.
 #[derive(Serialize, SchemaType)]
@@ -342,10 +429,10 @@ pub struct GrantRoleParams {
     pub role:    Roles,
 }
 
-/// The parameter for the contract function `removeRole` which revokes a role
+/// The parameter for the contract function `revokeRole` which revokes a role
 /// from an address.
 #[derive(Serialize, SchemaType)]
-pub struct RemoveRoleParams {
+pub struct RevokeRoleParams {
     /// The address that has been its role revoked.
     pub address: Address,
     /// The role that has been revoked from the above address.
@@ -424,71 +511,6 @@ struct State<S = StateApi> {
     roles:           StateMap<Address, AddressRoleState<S>, S>,
 }
 
-/// The parameter type for the contract function `supportsPermit`.
-#[derive(Debug, Serialize, SchemaType)]
-pub struct SupportsPermitQueryParams {
-    /// The list of supportPermit queries.
-    #[concordium(size_length = 2)]
-    pub queries: Vec<OwnedEntrypointName>,
-}
-
-/// The parameter type for the contract function `setImplementors`.
-/// Takes a standard identifier and list of contract addresses providing
-/// implementations of this standard.
-#[derive(Debug, Serialize, SchemaType)]
-struct SetImplementorsParams {
-    /// The identifier for the standard.
-    id:           StandardIdentifierOwned,
-    /// The addresses of the implementors of the standard.
-    implementors: Vec<ContractAddress>,
-}
-
-/// Part of the parameter type for the contract function `permit`.
-/// Specifies the message that is signed.
-#[derive(SchemaType, Serialize)]
-pub struct PermitMessage {
-    /// The contract_address that the signature is intended for.
-    pub contract_address: ContractAddress,
-    /// A nonce to prevent replay attacks.
-    pub nonce:            u64,
-    /// A timestamp to make signatures expire.
-    pub timestamp:        Timestamp,
-    /// The entry_point that the signature is intended for.
-    pub entry_point:      OwnedEntrypointName,
-    /// The serialized payload that should be forwarded to either the `transfer`
-    /// or the `updateOperator` function.
-    #[concordium(size_length = 2)]
-    pub payload:          Vec<u8>,
-}
-
-/// The parameter type for the contract function `permit`.
-/// Takes a signature, the signer, and the message that was signed.
-#[derive(Serialize, SchemaType)]
-pub struct PermitParam {
-    /// Signature/s. The CIS3 standard supports multi-sig accounts.
-    pub signature: AccountSignatures,
-    /// Account that created the above signature.
-    pub signer:    AccountAddress,
-    /// Message that was signed.
-    pub message:   PermitMessage,
-}
-
-#[derive(Serialize)]
-pub struct PermitParamPartial {
-    /// Signature/s. The CIS3 standard supports multi-sig accounts.
-    signature: AccountSignatures,
-    /// Account that created the above signature.
-    signer:    AccountAddress,
-}
-
-/// The parameter type for the contract function `setPaused`.
-#[derive(Serialize, SchemaType)]
-#[repr(transparent)]
-struct SetPausedParams {
-    /// Specifies if contract is paused.
-    paused: bool,
-}
-
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 pub enum CustomContractError {
@@ -536,7 +558,7 @@ pub enum CustomContractError {
     FailedUpgradeUnsupportedModuleVersion, // -18
     /// Contract is paused.
     Paused, // -19
-    /// Failed to remove role because it was not granted in the first place.
+    /// Failed to revoke role because it was not granted in the first place.
     RoleWasNotGranted, // -20
     /// Failed to grant role because it was granted already in the first place.
     RoleWasAlreadyGranted, // -21
@@ -777,8 +799,8 @@ impl State {
         });
     }
 
-    /// Remove role from an address.
-    fn remove_role(&mut self, account: &Address, role: Roles) {
+    /// Revoke role from an address.
+    fn revoke_role(&mut self, account: &Address, role: Roles) {
         self.roles.entry(*account).and_modify(|entry| {
             entry.roles.remove(&role);
         });
@@ -1340,7 +1362,7 @@ fn contract_permit(
         MINT_ENTRYPOINT => {
             // Mint tokens.
             // ATTENTION: Can be called by anyone. You should add your
-            // custom access control to here.
+            // custom access control here.
             let params: MintParams = from_bytes(&message.payload)?;
 
             mint(params, host, logger)?;
@@ -1881,19 +1903,6 @@ fn contract_update_blacklist(
     Ok(())
 }
 
-/// The parameter type for the contract function `upgrade`.
-/// Takes the new module and optionally an entrypoint to call in the new module
-/// after triggering the upgrade. The upgrade is reverted if the entrypoint
-/// fails. This is useful for doing migration in the same transaction triggering
-/// the upgrade.
-#[derive(Serialize, SchemaType)]
-pub struct UpgradeParams {
-    /// The new module reference.
-    pub module:  ModuleReference,
-    /// Optional entrypoint to call in the new module after upgrade.
-    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
-}
-
 /// Upgrade this smart contract instance to a new module and call optionally a
 /// migration function after the upgrade.
 ///
@@ -2014,26 +2023,26 @@ fn contract_grant_role(
     Ok(())
 }
 
-/// Remove role from an address.
+/// Revoke role from an address.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Sender is not the ADMIN of the contract instance.
-/// - The `address` is not holding the specified role to be removed.
+/// - The `address` is not holding the specified role to be revoked.
 #[receive(
     contract = "cis2_multi",
-    name = "removeRole",
-    parameter = "RemoveRoleParams",
+    name = "revokeRole",
+    parameter = "RevokeRoleParams",
     enable_logger,
     mutable
 )]
-fn contract_remove_role(
+fn contract_revoke_role(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Parse the parameter.
-    let params: RemoveRoleParams = ctx.parameter_cursor().get()?;
+    let params: RevokeRoleParams = ctx.parameter_cursor().get()?;
 
     let (state, _) = host.state_and_builder();
 
@@ -2048,8 +2057,8 @@ fn contract_remove_role(
         CustomContractError::RoleWasNotGranted.into()
     );
 
-    // Remove role.
-    state.remove_role(&params.address, params.role);
+    // Revoke role.
+    state.revoke_role(&params.address, params.role);
     logger.log(&Event::RevokeRole(RevokeRoleEvent {
         address: params.address,
         role:    params.role,
