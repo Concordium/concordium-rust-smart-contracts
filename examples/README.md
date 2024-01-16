@@ -16,13 +16,15 @@ The list of contracts is as follows:
 - [account-signature-checks](./account-signature-checks) A simple contract that
   demonstrates how account signature checks can be performed in smart contracts.
 - [two-step-transfer](./two-step-transfer) A contract that acts like an account (can send, store and accept CCD),
- but requires n > 1 ordained accounts to agree to the sending of CCD before it is accepted.
+  but requires n > 1 ordained accounts to agree to the sending of CCD before it is accepted.
 - [auction](./auction) A contract implementing an simple auction.
 - [piggy-bank](./piggy-bank) The smart contract created as part of the Piggy Bank tutorial.
 - [memo](./memo/) An extremely minimal contract that can be used to
   mimic the memo feature. Normally a transfer between accounts cannot add any
   information other than the amount being transferred. Making transfers to this
   intermediate contract instead works around this limitation.
+- [cis2-dynamic-nft](./cis2-dynamic-nft) An example implementation of the CIS-2 Concordium Token Standard
+  containing dynamic NFTs.
 - [cis2-multi](./cis2-multi) An example implementation of the CIS-2 Concordium Token Standard and CIS-3 Concordium Sponsored Transaction Standard containing multiple token types.
 - [cis2-multi-royalties](./cis2-multi-royalties) An example implementation of the CIS-2 Concordium Token Standard which allows the token minter to be paid royalties
   containing multiple token types.
@@ -44,14 +46,13 @@ The list of contracts is as follows:
 - [sponsoredTransactions](./cis3-nft-sponsored-txs) A contract implementing the sponsored transaction mechanism (CIS3 standard).
 - [smartContractUpgrade](./smart-contract-upgrade) An example of how to upgrade a smart contract. The state is migrated during the upgrade.
 
-
 ## Running the tests
 
 To run the tests for an example contract in the folder `EXAMPLE` open a terminal an run the following commands:
+
 1. `cd EXAMPLE`
 2. `cargo concordium test --out concordium-out/module.wasm.v1`
 
 The smart contract upgrade example has specific instructions for running the tests. See the module documentation in `./smart-contract-upgrade/contract-version1/tests/tests.rs`.
 
 To learn more about testing contracts, please refer to [our integration testing documentation](https://developer.concordium.software/en/mainnet/smart-contracts/guides/integration-test-contract.html).
-
