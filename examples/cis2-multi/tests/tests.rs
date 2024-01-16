@@ -198,7 +198,7 @@ fn test_add_operator() {
             address:      contract_address,
             message:      OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
         })
-        .expect("Invoke opeatorOF");
+        .expect("Invoke opeatorOf");
 
     let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
     assert_eq!(rv, OperatorOfQueryResponse(vec![true]));

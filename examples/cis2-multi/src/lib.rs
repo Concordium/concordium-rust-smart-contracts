@@ -128,10 +128,10 @@ const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
     [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
 
 /// Event tags.
-pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
-pub const UPDATE_BLACKLIST_EVENT_TAG: u8 = u8::MAX - 6;
-pub const GRANT_ROLE_EVENT_TAG: u8 = u8::MAX - 7;
-pub const REVOKE_ROLE_EVENT_TAG: u8 = u8::MAX - 8;
+pub const UPDATE_BLACKLIST_EVENT_TAG: u8 = 0;
+pub const GRANT_ROLE_EVENT_TAG: u8 = 1;
+pub const REVOKE_ROLE_EVENT_TAG: u8 = 2;
+pub const NONCE_EVENT_TAG: u8 = 250;
 
 const TRANSFER_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("transfer");
 const UPDATE_OPERATOR_ENTRYPOINT: EntrypointName<'_> =
@@ -143,20 +143,21 @@ const BURN_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("burn"
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
 #[concordium(repr(u8))]
 pub enum Event {
+    /// The event is logged whenever an address is added or removed from the
+    /// blacklist.
+    #[concordium(tag = 0)]
+    UpdateBlacklist(UpdateBlacklistEvent),
+    /// The event tracks when a new role is granted to an address.
+    #[concordium(tag = 1)]
+    GrantRole(GrantRoleEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 2)]
+    RevokeRole(RevokeRoleEvent),
+    /// Cis3 event.
     /// The event tracks the nonce used by the signer of the `PermitMessage`
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
-    /// The event is logged whenever an address is added or removed from the
-    /// blacklist.
-    #[concordium(tag = 249)]
-    UpdateBlacklist(UpdateBlacklistEvent),
-    /// The event tracks when a new role is granted to an address.
-    #[concordium(tag = 248)]
-    GrantRole(GrantRoleEvent),
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 247)]
-    RevokeRole(RevokeRoleEvent),
     /// Cis2 token events.
     #[concordium(forward = cis2_events)]
     Cis2Event(Cis2Event<ContractTokenId, ContractTokenAmount>),
@@ -186,18 +187,18 @@ pub struct UpdateBlacklistEvent {
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct GrantRoleEvent {
     /// The address that has been its role granted.
-    address: Address,
+    pub address: Address,
     /// The role that was granted to the above address.
-    role:    Roles,
+    pub role:    Roles,
 }
 
 /// The RevokeRoleEvent is logged when a role is revoked from an address.
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct RevokeRoleEvent {
     /// Address that has been its role revoked.
-    address: Address,
+    pub address: Address,
     /// The role that was revoked from the above address.
-    role:    Roles,
+    pub role:    Roles,
 }
 
 // Implementing a custom schemaType for the `Event` struct containing all
@@ -393,17 +394,17 @@ pub struct PermitParam {
 #[derive(Serialize)]
 pub struct PermitParamPartial {
     /// Signature/s. The CIS3 standard supports multi-sig accounts.
-    signature: AccountSignatures,
+    pub signature: AccountSignatures,
     /// Account that created the above signature.
-    signer:    AccountAddress,
+    pub signer:    AccountAddress,
 }
 
 /// The parameter type for the contract function `setPaused`.
 #[derive(Serialize, SchemaType)]
 #[repr(transparent)]
-struct SetPausedParams {
+pub struct SetPausedParams {
     /// Specifies if contract is paused.
-    paused: bool,
+    pub paused: bool,
 }
 
 /// The parameter type for the contract function `upgrade`.
@@ -458,6 +459,8 @@ pub enum Roles {
     BLACKLISTER,
     /// Pauser role.
     PAUSER,
+    // /// Minter role. (comment in if you want a MINTER role)
+    // MINTER,
 }
 
 /// The state for each address.
@@ -1018,6 +1021,15 @@ fn contract_mint(
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
 
+    // // Get the sender who invoked this contract function. (comment in if you want
+    // // only the MINTER role to mint tokens)
+    // let sender = ctx.sender();
+
+    // // Check that only the MINTER is authorized to mint an address. (comment in
+    // // if you want only the MINTER role to mint tokens)
+    // ensure!(host.state().has_role(&sender, Roles::MINTER),
+    // ContractError::Unauthorized);
+
     mint(params, host, logger)?;
 
     Ok(())
@@ -1349,7 +1361,6 @@ fn contract_permit(
 
             for update in updates {
                 update_operator(
-                    state.paused,
                     update.update,
                     concordium_std::Address::Account(param.signer),
                     update.operator,
@@ -1364,6 +1375,13 @@ fn contract_permit(
             // ATTENTION: Can be called by anyone. You should add your
             // custom access control here.
             let params: MintParams = from_bytes(&message.payload)?;
+
+            // // Check that only the MINTER can authorize to mint. (comment in if you want
+            // // only the MINTER role having the authorization to mint)
+            // ensure!(
+            //     host.state().has_role(&Address::from(param.signer), Roles::MINTER),
+            //     ContractError::Unauthorized
+            // );
 
             mint(params, host, logger)?;
         }
@@ -1399,7 +1417,6 @@ fn contract_permit(
 /// Logs a `UpdateOperator` event. The function assumes that the sender is
 /// authorized to do the `updateOperator` action.
 fn update_operator(
-    paused: bool,
     update: OperatorUpdate,
     sender: Address,
     operator: Address,
@@ -1408,7 +1425,7 @@ fn update_operator(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
-    ensure!(!paused, CustomContractError::Paused.into());
+    ensure!(!state.paused, CustomContractError::Paused.into());
 
     // Update the operator in the state.
     match update {
@@ -1453,15 +1470,7 @@ fn contract_update_operator(
     let sender = ctx.sender();
     let (state, builder) = host.state_and_builder();
     for param in params {
-        update_operator(
-            state.paused,
-            param.update,
-            sender,
-            param.operator,
-            state,
-            builder,
-            logger,
-        )?;
+        update_operator(param.update, sender, param.operator, state, builder, logger)?;
     }
     Ok(())
 }
