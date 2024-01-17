@@ -1,8 +1,7 @@
-//! Tests for the auction smart contract.
+//! Tests for the smart contract oracle integration.
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519};
 mod types;
-// use smart_contract_oracle_integration::*;
 use types::*;
 
 /// The tests accounts.
@@ -23,7 +22,7 @@ fn test_multiple_scenarios() {
     let (mut chain, initialization_umbrella_feeds, contract_address) =
         initialize_chain_and_contract();
 
-    let key: String = String::from("CCD-USD");
+    let feed_name: String = String::from("CCD-USD");
 
     let price_data = PriceData {
         data:      7,
@@ -34,13 +33,11 @@ fn test_multiple_scenarios() {
 
     use ed25519_dalek::{Signer, SigningKey};
 
-    let secret_key: &[u8; 32] = "77b0d12d7f465f24dd60859154224e49c2585f38e7e550c6ebb04b76a15db317"
-        .as_bytes()[0..32]
-        .try_into()
-        .unwrap();
+    let signing_key = SigningKey::from_bytes(&[
+        106, 51, 214, 254, 87, 138, 112, 190, 28, 26, 194, 158, 91, 136, 124, 146, 252, 160, 196,
+        76, 167, 213, 200, 32, 166, 87, 63, 193, 18, 95, 172, 49,
+    ]);
 
-    // Construct message, verifying_key, and signature.
-    let signing_key = SigningKey::from_bytes(secret_key); // Hardcoded private key
     let verifying_key = signing_key.verifying_key();
 
     let mut param = UpdateParams {
@@ -48,7 +45,7 @@ fn test_multiple_scenarios() {
         message:                Message {
             contract_address: initialization_umbrella_feeds,
             timestamp:        Timestamp::from_timestamp_millis(1000000000000),
-            price_feed:       vec![(key, price_data)],
+            price_feed:       vec![(feed_name, price_data)],
         },
     };
 
@@ -69,6 +66,24 @@ fn test_multiple_scenarios() {
 
     param.signers_and_signatures =
         vec![(PublicKeyEd25519(verifying_key.to_bytes()), SignatureEd25519(signature.to_bytes()))];
+
+    // Updating price data in contract
+
+    let _update: ContractInvokeSuccess = chain
+        .contract_update(
+            SIGNER,
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      initialization_umbrella_feeds,
+                receive_name: OwnedReceiveName::new_unchecked("umbrella_feeds.update".to_string()),
+                message:      OwnedParameter::from_serial(&param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
+        .expect("Should be able to update operator with permit");
 
     let _update_1 = chain
         .contract_update(
@@ -100,9 +115,9 @@ fn test_multiple_scenarios() {
         })
         .expect("Invoke view");
 
-    let rv: Vec<(String, u64)> = invoke.parse_return_value().expect("View return value");
+    let rv: Vec<(String, u128)> = invoke.parse_return_value().expect("View return value");
 
-    println!("{:?}", rv);
+    assert_eq!(rv, vec![(String::from("CCD-USD"), 4)]);
 }
 
 /// Setup auction and chain.
@@ -155,7 +170,6 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
         .expect("Initialization of `registry` should always succeed");
 
     // Deploying 'staking bank' contract
-
     let deployment_staking_bank = chain
         .module_deploy_v1(
             Signer::with_one_key(),
@@ -202,7 +216,26 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
         })
         .expect("Initialization of `umbrella_feeds` should always succeed");
 
-    let _external_contract = chain.add_external_contract(ContractAddress::new(7542, 0)).unwrap();
+    let input_parameter = ImportContractsParam {
+        entries: vec![initialization_umbrella_feeds.contract_address],
+    };
+
+    // Invoking 'importContracts'.
+    let _update = chain
+        .contract_update(
+            Signer::with_one_key(),
+            ALICE,
+            Address::Account(ALICE),
+            Energy::from(10000),
+            UpdateContractPayload {
+                address:      initialization_registry.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked("registry.importContracts".into()),
+                message:      OwnedParameter::from_serial(&input_parameter)
+                    .expect("`input_parameter` should be a valid inut parameter"),
+                amount:       Amount::from_ccd(0),
+            },
+        )
+        .expect("Should be able to importContracts");
 
     (chain, initialization_umbrella_feeds.contract_address, init.contract_address)
 }

@@ -45,3 +45,12 @@ pub struct UpdateParams {
     /// Message that was signed.
     pub message:                Message,
 }
+
+/// The parameter type for the contract function `importContracts`.
+#[derive(Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct ImportContractsParam {
+    /// List of contract addresses.
+    #[concordium(size_length = 2)]
+    pub entries: Vec<ContractAddress>,
+}
