@@ -1,8 +1,9 @@
 //! Tests for the auction smart contract.
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519};
-
-use smart_contract_oracle_integration::*;
+mod types;
+// use smart_contract_oracle_integration::*;
+use types::*;
 
 /// The tests accounts.
 const ALICE: AccountAddress = AccountAddress([0; 32]);
@@ -33,10 +34,13 @@ fn test_multiple_scenarios() {
 
     use ed25519_dalek::{Signer, SigningKey};
 
-    let rng = &mut rand::thread_rng();
+    let secret_key: &[u8; 32] = "77b0d12d7f465f24dd60859154224e49c2585f38e7e550c6ebb04b76a15db317"
+        .as_bytes()[0..32]
+        .try_into()
+        .unwrap();
 
     // Construct message, verifying_key, and signature.
-    let signing_key = SigningKey::generate(rng);
+    let signing_key = SigningKey::from_bytes(secret_key); // Hardcoded private key
     let verifying_key = signing_key.verifying_key();
 
     let mut param = UpdateParams {
@@ -107,7 +111,10 @@ fn test_multiple_scenarios() {
 /// the unix epoch. The 'microCCD per euro' exchange rate is set to `1_000_000`,
 /// so 1 CCD = 1 euro.
 fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) {
-    let mut chain = Chain::builder().build().expect("Exchange rate is in valid range");
+    let mut chain = Chain::builder()
+        .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
+        .build()
+        .expect("Exchange rate is in valid range");
 
     // Create some accounts on the chain.
     chain.create_account(Account::new(ALICE, ACC_INITIAL_BALANCE));
@@ -147,6 +154,26 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
         })
         .expect("Initialization of `registry` should always succeed");
 
+    // Deploying 'staking bank' contract
+
+    let deployment_staking_bank = chain
+        .module_deploy_v1(
+            Signer::with_one_key(),
+            ALICE,
+            module_load_v1("./umbrella-contract-modules/staking_bank.wasm.v1")
+                .expect("`staking_bank.wasm.v1` module should be loaded"),
+        )
+        .expect("`staking_bank.wasm.v1` deployment should always succeed");
+
+    let initialization_staking_bank = chain
+        .contract_init(Signer::with_one_key(), ALICE, Energy::from(10000), InitContractPayload {
+            amount:    Amount::zero(),
+            mod_ref:   deployment_staking_bank.module_reference,
+            init_name: OwnedContractName::new_unchecked("init_staking_bank".to_string()),
+            param:     OwnedParameter::empty(),
+        })
+        .expect("Initialization of `staking_bank` should always succeed");
+
     // Deploy 'umbrella_feeds' contract
 
     let deployment = chain
@@ -160,8 +187,8 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
 
     let input_parameter_2 = InitParamsUmbrellaFeeds {
         registry:            initialization_registry.contract_address,
-        required_signatures: 2,
-        staking_bank:        initialization_registry.contract_address, // Dummy value
+        required_signatures: 1,
+        staking_bank:        initialization_staking_bank.contract_address,
         decimals:            4,
     };
 
@@ -174,6 +201,8 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
                 .expect("`InitContractsParam` should be a valid inut parameter"),
         })
         .expect("Initialization of `umbrella_feeds` should always succeed");
+
+    let _external_contract = chain.add_external_contract(ContractAddress::new(7542, 0)).unwrap();
 
     (chain, initialization_umbrella_feeds.contract_address, init.contract_address)
 }

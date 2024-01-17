@@ -29,52 +29,6 @@
 
 use concordium_std::*;
 
-#[derive(Debug, Serial, SchemaType)]
-pub struct InitParamsUmbrellaFeeds {
-    pub registry:            ContractAddress,
-    pub required_signatures: u16,
-    pub staking_bank:        ContractAddress,
-    pub decimals:            u8,
-}
-
-#[derive(Serialize, SchemaType, Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
-pub struct PriceData {
-    /// This is a placeholder, that can be used for some additional data.
-    pub data:      u8,
-    /// The heartbeat specifies the interval in seconds that the price data will
-    /// be refreshed in case the price stays flat. ATTENTION: u64 is used
-    /// here instead of u24 (different from the original solidity smart
-    /// contracts).
-    pub heartbeat: u64,
-    /// It is the time the validators run consensus to decide on the price data.
-    pub timestamp: Timestamp,
-    /// The relative price.
-    pub price:     u128,
-}
-
-/// Part of the parameter type for the contract function `update`.
-/// Specifies the message that is signed.
-#[derive(SchemaType, Serialize, Clone)]
-pub struct Message {
-    /// The contract_address that the signature is intended for.
-    pub contract_address: ContractAddress,
-    /// A timestamp to make signatures expire.
-    pub timestamp:        Timestamp,
-    /// The price feed.
-    pub price_feed:       Vec<(String, PriceData)>,
-}
-
-/// The parameter type for the contract function `update` and
-/// `view_message_hash`. Takes a vector of signers and signatures, and the
-/// message that was signed.
-#[derive(Serialize, SchemaType)]
-pub struct UpdateParams {
-    /// Signers and signatures.
-    pub signers_and_signatures: Vec<(PublicKeyEd25519, SignatureEd25519)>,
-    /// Message that was signed.
-    pub message:                Message,
-}
-
 const UMBRELLA_REGISTRY_CONTRACT: ContractAddress = ContractAddress {
     index:    7542,
     subindex: 0,
@@ -130,7 +84,7 @@ fn init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<Stat
     name = "prices",
     return_value = "Vec<(String, u64)>"
 )]
-fn prices<'b>(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vec<(String, u64)>> {
+fn prices(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vec<(String, u64)>> {
     let prices: Vec<(String, u64)> =
         host.state().last_price_update.iter().map(|(a, b)| ((*a).clone(), *b)).collect();
     Ok(prices)
@@ -151,7 +105,7 @@ fn update_price(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), Cust
 
     let umbrella_registry_contract = host.state.umbrella_registry_contract;
 
-    let parameter = &String::from("umbrella_feeds");
+    let parameter = String::from("UmbrellaFeeds");
 
     let umbrella_feeds_contract = host.invoke_contract_read_only(
         &umbrella_registry_contract,
@@ -160,27 +114,27 @@ fn update_price(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), Cust
         Amount::zero(),
     )?;
 
-    let umbrella_feeds_contract: ContractAddress =
-        if let Some(mut umbrella_feeds_contract) = umbrella_feeds_contract {
-            umbrella_feeds_contract.get()?
-        } else {
-            return Err(CustomContractError::InvokeContractError);
-        };
+    // let umbrella_feeds_contract: ContractAddress =
+    //     if let Some(mut umbrella_feeds_contract) = umbrella_feeds_contract {
+    //         umbrella_feeds_contract.get()?
+    //     } else {
+    //         return Err(CustomContractError::InvokeContractError);
+    //     };
 
-    let price = host.invoke_contract_read_only(
-        &umbrella_feeds_contract,
-        &parameter,
-        EntrypointName::new_unchecked("getPriceData"),
-        Amount::zero(),
-    )?;
+    // let price = host.invoke_contract_read_only(
+    //     &umbrella_feeds_contract,
+    //     &price_feed_name,
+    //     EntrypointName::new_unchecked("getPriceData"),
+    //     Amount::zero(),
+    // )?;
 
-    let price: u64 = if let Some(mut price) = price {
-        price.get()?
-    } else {
-        return Err(CustomContractError::InvokeContractError);
-    };
+    // let price: u64 = if let Some(mut price) = price {
+    //     price.get()?
+    // } else {
+    //     return Err(CustomContractError::InvokeContractError);
+    // };
 
-    host.state_mut().last_price_update.insert(price_feed_name, price);
+    // host.state_mut().last_price_update.insert(price_feed_name, price);
 
     Ok(())
 }
