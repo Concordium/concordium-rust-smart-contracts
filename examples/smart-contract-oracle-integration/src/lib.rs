@@ -43,9 +43,7 @@ pub struct Prices {
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
     ///
-    umbrella_registry_contract: ContractAddress,
-    ///
-    last_price_update:          StateMap<String, u128, S>,
+    last_price_update: StateMap<String, u128, S>,
 }
 
 /// Errors
@@ -71,8 +69,7 @@ impl<T> From<CallContractError<T>> for CustomContractError {
 #[init(contract = "smart_contract_oracle_integration")]
 fn init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State {
-        umbrella_registry_contract: UMBRELLA_REGISTRY_CONTRACT,
-        last_price_update:          state_builder.new_map(),
+        last_price_update: state_builder.new_map(),
     })
 }
 
@@ -99,15 +96,9 @@ fn prices(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vec<(Strin
     mutable
 )]
 fn update_price(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), CustomContractError> {
-    let price_feed_name: String = ctx.parameter_cursor().get()?;
-
-    let umbrella_registry_contract = host.state.umbrella_registry_contract;
-
-    let parameter = String::from("UmbrellaFeeds");
-
     let umbrella_feeds_contract = host.invoke_contract_read_only(
-        &umbrella_registry_contract,
-        &parameter,
+        &UMBRELLA_REGISTRY_CONTRACT,
+        &String::from("UmbrellaFeeds"),
         EntrypointName::new_unchecked("getAddress"),
         Amount::zero(),
     )?;
@@ -118,6 +109,8 @@ fn update_price(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), Cust
         } else {
             return Err(CustomContractError::InvokeContractError);
         };
+
+    let price_feed_name: String = ctx.parameter_cursor().get()?;
 
     let price = host.invoke_contract_read_only(
         &umbrella_feeds_contract,
@@ -139,7 +132,7 @@ fn update_price(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), Cust
                 .timestamp
                 .checked_add(Duration::from_seconds(price_data.heartbeat))
                 .ok_or(CustomContractError::Overflow)?,
-        CustomContractError::PriceNotUpToDate.into()
+        CustomContractError::PriceNotUpToDate
     );
 
     host.state_mut().last_price_update.insert(price_feed_name, price_data.price);
