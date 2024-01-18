@@ -3,26 +3,36 @@
 
 use concordium_std::*;
 
-#[cfg(test)]
-const UMBRELLA_REGISTRY_CONTRACT: ContractAddress = ContractAddress {
-    index:    7542,
-    subindex: 0,
-};
-
-#[cfg(not(test))]
+/// Registry contract address in the integration test cases.
+#[cfg(not(any(feature = "mainnet", feature = "testnet")))]
 const UMBRELLA_REGISTRY_CONTRACT: ContractAddress = ContractAddress {
     index:    1,
     subindex: 0,
 };
 
+/// Attention: The umbrella oracle is not deployed on mainnet at the time of
+/// writing. https://umbrella-network.readme.io/docs/concordium-integration-examples
+#[cfg(feature = "mainnet")]
+const UMBRELLA_REGISTRY_CONTRACT: ContractAddress = ContractAddress {
+    index:    0,
+    subindex: 0,
+};
+
+/// Registry contract address on Concordium testnet.
+#[cfg(feature = "testnet")]
+const UMBRELLA_REGISTRY_CONTRACT: ContractAddress = ContractAddress {
+    index:    7542,
+    subindex: 0,
+};
+
+/// The return_parameter of the contract function `getPriceData` from the
+/// Umbrella oracle protocol.
 #[derive(Serialize, SchemaType, Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub struct PriceData {
     /// This is a placeholder, that can be used for some additional data.
     pub data:      u8,
     /// The heartbeat specifies the interval in seconds that the price data will
-    /// be refreshed in case the price stays flat. ATTENTION: u64 is used
-    /// here instead of u24 (different from the original solidity smart
-    /// contracts).
+    /// be refreshed in case the price stays flat.
     pub heartbeat: u64,
     /// It is the time the validators run consensus to decide on the price data.
     pub timestamp: Timestamp,
@@ -30,19 +40,21 @@ pub struct PriceData {
     pub price:     u128,
 }
 
+/// The return_parameter of the contract function `prices`.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 pub struct Prices {
+    /// A vector including for each price feed name its corresponding price as
+    /// stored in the contract state.
     pub prices: Vec<(String, u128)>,
 }
 
 /// The state of the smart contract.
-/// This state can be viewed by querying the node with the command
-/// `concordium-client contract invoke` using the `view` function as entrypoint.
-// #[derive(Debug, Serialize, SchemaType, Clone)]
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
-    ///
+    /// Map storing for each price feed name (such as `ETH-USDC`) its
+    /// corresponding price. A price was last updated whenever the
+    /// `update_price` function was invoked with the given price feed name.
     last_price_update: StateMap<String, u128, S>,
 }
 
@@ -52,11 +64,12 @@ pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams, // -1
-    ///
+    /// Failed updating the price because the price fetched from the oracle is
+    /// not up to date.
     PriceNotUpToDate, // -2
     /// Failed to invoke a contract.
     InvokeContractError, // -3
-    /// Timestamp overflow
+    /// Failed because the timestamp overflowed.
     Overflow, // -4
 }
 
@@ -65,7 +78,7 @@ impl<T> From<CallContractError<T>> for CustomContractError {
     fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
 }
 
-/// Init function that creates a new auction
+/// Init function that creates a new contract.
 #[init(contract = "smart_contract_oracle_integration")]
 fn init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State {
@@ -73,7 +86,7 @@ fn init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<Stat
     })
 }
 
-/// View function that returns the content of the state
+/// View function that returns the content of the state.
 #[receive(
     contract = "smart_contract_oracle_integration",
     name = "prices",
@@ -85,9 +98,7 @@ fn prices(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vec<(Strin
     Ok(prices)
 }
 
-/// Receive function used to finalize the auction. It sends the highest bid (the
-/// current balance of this smart contract) to the owner of the smart contract
-/// instance.
+/// Receive function to update the prices in the contract state.
 #[receive(
     contract = "smart_contract_oracle_integration",
     name = "update_price",
