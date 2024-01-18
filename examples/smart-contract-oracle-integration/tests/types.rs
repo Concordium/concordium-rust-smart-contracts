@@ -1,30 +1,23 @@
 use concordium_std::*;
+use smart_contract_oracle_integration::PriceData;
 
+/// Parameter type for the contract function `init` from the `umbrella_feeds`
+/// contract (Umbrella oracle protocol).
 #[derive(Debug, Serial, SchemaType)]
 pub struct InitParamsUmbrellaFeeds {
+    /// Registry contract address.
     pub registry:            ContractAddress,
+    /// Number of signatures required to update the price data in the oracle.
     pub required_signatures: u16,
+    /// Staking bank contract address.
     pub staking_bank:        ContractAddress,
+    /// Decimal value for the price data.
     pub decimals:            u8,
 }
 
-#[derive(Serialize, SchemaType, Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
-pub struct PriceData {
-    /// This is a placeholder, that can be used for some additional data.
-    pub data:      u8,
-    /// The heartbeat specifies the interval in seconds that the price data will
-    /// be refreshed in case the price stays flat. ATTENTION: u64 is used
-    /// here instead of u24 (different from the original solidity smart
-    /// contracts).
-    pub heartbeat: u64,
-    /// It is the time the validators run consensus to decide on the price data.
-    pub timestamp: Timestamp,
-    /// The relative price.
-    pub price:     u128,
-}
-
-/// Part of the parameter type for the contract function `update`.
-/// Specifies the message that is signed.
+/// Part of the parameter type for the contract function `update` from the
+/// `umbrella_feeds` contract (Umbrella oracle protocol). Specifies the message
+/// that is signed.
 #[derive(SchemaType, Serialize, Clone)]
 pub struct Message {
     /// The contract_address that the signature is intended for.
@@ -35,8 +28,9 @@ pub struct Message {
     pub price_feed:       Vec<(String, PriceData)>,
 }
 
-/// The parameter type for the contract function `update` and
-/// `view_message_hash`. Takes a vector of signers and signatures, and the
+/// The parameter type for the contract functions `update` and
+/// `view_message_hash` from the `umbrella_feeds` contract (Umbrella oracle
+/// protocol). Takes a vector of signers and signatures, and the
 /// message that was signed.
 #[derive(Serialize, SchemaType)]
 pub struct UpdateParams {
@@ -46,7 +40,8 @@ pub struct UpdateParams {
     pub message:                Message,
 }
 
-/// The parameter type for the contract function `importContracts`.
+/// The parameter type for the contract function `importContracts` from the
+/// `registry` contract (Umbrella oracle protocol).
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 pub struct ImportContractsParam {

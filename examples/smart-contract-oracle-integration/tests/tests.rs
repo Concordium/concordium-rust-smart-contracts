@@ -2,6 +2,7 @@
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519};
 mod types;
+use smart_contract_oracle_integration::PriceData;
 use types::*;
 
 /// The tests accounts.
