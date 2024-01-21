@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased changes
+- Add `Clone` trait for `StandardIdentifierOwned`.
 - Add specific parameter type `OnReceivingCis2DataParams<T, A, D>` for a contract function which receives CIS2 tokens with a specific type D for the AdditionalData.
 - Add `Deserial` trait for `OnReceivingCis2DataParams<T, A, D>`.
 - Add `Serial` trait for `OnReceivingCis2DataParams<T, A, D>`.

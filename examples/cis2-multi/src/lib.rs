@@ -6,15 +6,10 @@
 //! types each identified by a token ID. A token type is then globally
 //! identified by the contract address together with the token ID.
 //!
-//! In this example the contract is initialized with no tokens, and tokens can
-//! be minted through a `mint` contract function, which can be called by anyone.
-//! The `mint` function airdrops the `MINT_AIRDROP` amount of tokens to a
-//! specified `owner` address in the input parameter. No functionality to burn
-//! token is defined in this example.
-//!
 //! Note: The word 'address' refers to either an account address or a
 //! contract address.
 //!
+//! ## CIS3 standard (sponsored transactions):
 //! This contract implements the Concordium Token Standard CIS2. In addition, it
 //! implements the CIS3 standard which includes features for sponsored
 //! transactions.
@@ -30,21 +25,10 @@
 //! service provider submits the transaction on behalf of the user and pays the
 //! transaction fee to execute the transaction on-chain.
 //!
-//! As follows from the CIS2 specification, the contract has a `transfer`
-//! function for transferring an amount of a specific token type from one
-//! address to another address. An address can enable and disable one or more
-//! addresses as operators with the `updateOperator` function. An operator of
-//! an address is allowed to transfer any tokens owned by this address.
 //! As follows from the CIS3 specification, the contract has a `permit`
-//! function. It is the sponsored counterpart to the `transfer/updateOperator`
-//! function and can be executed by anyone on behalf of an account given a
-//! signed message.
-//!
-//! This contract also contains an example of a function to be called when
-//! receiving tokens. In which case the contract will forward the tokens to
-//! the contract owner.
-//! This function is not very useful and is only there to showcase a simple
-//! implementation of a token receive hook.
+//! function. It is the sponsored counterpart to the
+//! `transfer/updateOperator/mint/burn` function and can be executed by anyone
+//! on behalf of an account given a signed message.
 //!
 //! Concordium supports natively multi-sig accounts. Each account address on
 //! Concordium is controlled by one or several credential(s) (real-world
@@ -62,7 +46,75 @@
 //! (that have exactly one credential and exactly one public key for that
 //! credential), the signaturesMaps/publicKeyMaps in this contract, will have
 //! only one value at key 0 in the inner and outer maps.
-
+//!
+//! ## `Transfer` and `updateOperator` functions:
+//! As follows from the CIS2 specification, the contract has a `transfer`
+//! function for transferring an amount of a specific token type from one
+//! address to another address. An address can enable and disable one or more
+//! addresses as operators with the `updateOperator` function. An operator of
+//! an address is allowed to transfer any tokens owned by this address.
+//!
+//! ## `Mint` and `burn` functions:
+//! In this example, the contract is initialized with no tokens, and tokens can
+//! be minted through a `mint` contract function, which can be called by anyone
+//! (unprotected function). The `mint` function airdrops the `MINT_AIRDROP`
+//! amount of tokens to a specified `owner` address in the input parameter.
+//! ATTENTION: You most likely want to add your custom access control mechanism
+//! to the `mint` function and `permit` function.
+//!
+//! A token owner (or any of its operator addresses) can burn some of the token
+//! owner's tokens by invoking the `burn` function.
+//!
+//! ## `onReceivingCIS2` functions:
+//! This contract also contains an example of a function to be called when
+//! receiving tokens. In which case the contract will forward the tokens to
+//! the contract owner.
+//! This function is not very useful and is only there to showcase a simple
+//! implementation of a token receive hook.
+//!
+//! ## Grant and Revoke roles:
+//! The contract has access control roles. The admin can grant or revoke all
+//! other roles. The available roles are ADMIN (can grant/revoke roles),
+//! UPGRADER (can upgrade the contract), BLACKLISTER (can blacklist addresses),
+//! and PAUSER (can pause the contract).
+//!
+//! ## Blacklist:
+//! This contract includes a blacklist. The account with `BLACKLISTER` role can
+//! add/remove addresses to/from that list. Blacklisted addresses can not
+//! transfer their tokens, receive new tokens, or burn their tokens.
+//!
+//! ## Pausing:
+//! This contract can be paused by an address with the PAUSER role.
+//! `Mint,burn,updateOperator,transfer` entrypoints cannot be called when the
+//! contract is paused.
+//!
+//! ## Native upgradability:
+//! This contract can be upgraded. The contract
+//! has a function to upgrade the smart contract instance to a new module and
+//! call optionally a migration function after the upgrade. To use this example,
+//! deploy `contract-version1` and then upgrade the smart contract instance to
+//! `contract-version2` by invoking the `upgrade` function with the below JSON
+//! inputParameter:
+//!
+//! ```json
+//! {
+//!   "migrate": {
+//!     "Some": [
+//!       [
+//!         "migration",
+//!         ""
+//!       ]
+//!     ]
+//!   },
+//!   "module": "<ModuleReferenceContractVersion2>"
+//! }
+//! ```
+//!
+//! This initial contract (`contract-version1`) has no migration function.
+//! The next version of the contract (`contract-version2`), could have a
+//! migration function added to e.g. change the shape of the smart contract
+//! state from `contract-version1` to `contract-version2`.
+//! https://github.com/Concordium/concordium-rust-smart-contracts/blob/main/examples/smart-contract-upgrade/contract-version2/src/lib.rs
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
@@ -75,13 +127,33 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
 const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
     [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
 
-/// Tag for the CIS3 Nonce event.
-pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
+/// Event tags.
+pub const UPDATE_BLACKLIST_EVENT_TAG: u8 = 0;
+pub const GRANT_ROLE_EVENT_TAG: u8 = 1;
+pub const REVOKE_ROLE_EVENT_TAG: u8 = 2;
+pub const NONCE_EVENT_TAG: u8 = 250;
+
+const TRANSFER_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("transfer");
+const UPDATE_OPERATOR_ENTRYPOINT: EntrypointName<'_> =
+    EntrypointName::new_unchecked("updateOperator");
+const MINT_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("mint");
+const BURN_ENTRYPOINT: EntrypointName<'_> = EntrypointName::new_unchecked("burn");
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
 #[concordium(repr(u8))]
 pub enum Event {
+    /// The event is logged whenever an address is added or removed from the
+    /// blacklist.
+    #[concordium(tag = 0)]
+    UpdateBlacklist(UpdateBlacklistEvent),
+    /// The event tracks when a new role is granted to an address.
+    #[concordium(tag = 1)]
+    GrantRole(GrantRoleEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 2)]
+    RevokeRole(RevokeRoleEvent),
+    /// Cis3 event.
     /// The event tracks the nonce used by the signer of the `PermitMessage`
     /// whenever the `permit` function is invoked.
     #[concordium(tag = 250)]
@@ -101,6 +173,34 @@ pub struct NonceEvent {
     pub nonce:   u64,
 }
 
+/// The UpdateBlacklistEvent is logged when an address is added to or removed
+/// from the blacklist.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct UpdateBlacklistEvent {
+    /// The update to the address.
+    pub update:  BlacklistUpdate,
+    /// The address which is added/removed from the blacklist.
+    pub address: Address,
+}
+
+/// The GrantRoleEvent is logged when a new role is granted to an address.
+#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
+pub struct GrantRoleEvent {
+    /// The address that has been its role granted.
+    pub address: Address,
+    /// The role that was granted to the above address.
+    pub role:    Roles,
+}
+
+/// The RevokeRoleEvent is logged when a role is revoked from an address.
+#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
+pub struct RevokeRoleEvent {
+    /// Address that has been its role revoked.
+    pub address: Address,
+    /// The role that was revoked from the above address.
+    pub role:    Roles,
+}
+
 // Implementing a custom schemaType for the `Event` struct containing all
 // CIS2/CIS3 events. This custom implementation flattens the fields to avoid one
 // level of nesting. Deriving the schemaType would result in e.g.: {"Nonce":
@@ -116,6 +216,36 @@ impl schema::SchemaType for Event {
                 schema::Fields::Named(vec![
                     (String::from("account"), AccountAddress::get_type()),
                     (String::from("nonce"), u64::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            GRANT_ROLE_EVENT_TAG,
+            (
+                "GrantRole".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("address"), Address::get_type()),
+                    (String::from("role"), Roles::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            REVOKE_ROLE_EVENT_TAG,
+            (
+                "RevokeRole".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("address"), Address::get_type()),
+                    (String::from("role"), Roles::get_type()),
+                ]),
+            ),
+        );
+        event_map.insert(
+            UPDATE_BLACKLIST_EVENT_TAG,
+            (
+                "UpdateBlacklist".to_string(),
+                schema::Fields::Named(vec![
+                    (String::from("update"), BlacklistUpdate::get_type()),
+                    (String::from("address"), Address::get_type()),
                 ]),
             ),
         );
@@ -200,49 +330,18 @@ pub struct MintParams {
     pub token_id:     ContractTokenId,
 }
 
-/// The state for each address.
-#[derive(Serial, DeserialWithState, Deletable)]
-#[concordium(state_parameter = "S")]
-struct AddressState<S = StateApi> {
-    /// The amount of tokens owned by this address.
-    balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
-    /// The addresses which are currently enabled as operators for this address.
-    operators: StateSet<Address, S>,
+/// The parameter for the contract function `burn` which burns a number
+/// of tokens from the owner's address.
+#[derive(Serialize, SchemaType)]
+pub struct BurnParams {
+    /// Owner of the tokens.
+    pub owner:    Address,
+    /// The amount of tokens to burn.
+    pub amount:   ContractTokenAmount,
+    /// The token_id of the tokens to be burned.
+    pub token_id: ContractTokenId,
 }
 
-impl AddressState {
-    fn empty(state_builder: &mut StateBuilder) -> Self {
-        AddressState {
-            balances:  state_builder.new_map(),
-            operators: state_builder.new_set(),
-        }
-    }
-}
-
-/// The contract state,
-///
-/// Note: The specification does not specify how to structure the contract state
-/// and this could be structured in a more space-efficient way.
-#[derive(Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-struct State<S = StateApi> {
-    /// The state of addresses.
-    state:           StateMap<Address, AddressState<S>, S>,
-    /// All of the token IDs.
-    tokens:          StateMap<ContractTokenId, MetadataUrl, S>,
-    /// Map with contract addresses providing implementations of additional
-    /// standards.
-    implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// A registry to link an account to its next nonce. The nonce is used to
-    /// prevent replay attacks of the signed message. The nonce is increased
-    /// sequentially every time a signed message (corresponding to the
-    /// account) is successfully executed in the `permit` function. This
-    /// mapping keeps track of the next nonce that needs to be used by the
-    /// account to generate a signature.
-    nonces_registry: StateMap<AccountAddress, u64, S>,
-    /// The amount of tokens airdropped when the mint function is invoked.
-    mint_airdrop:    TokenAmountU64,
-}
 /// The parameter type for the contract function `supportsPermit`.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct SupportsPermitQueryParams {
@@ -295,9 +394,124 @@ pub struct PermitParam {
 #[derive(Serialize)]
 pub struct PermitParamPartial {
     /// Signature/s. The CIS3 standard supports multi-sig accounts.
-    signature: AccountSignatures,
+    pub signature: AccountSignatures,
     /// Account that created the above signature.
-    signer:    AccountAddress,
+    pub signer:    AccountAddress,
+}
+
+/// The parameter type for the contract function `setPaused`.
+#[derive(Serialize, SchemaType)]
+#[repr(transparent)]
+pub struct SetPausedParams {
+    /// Specifies if contract is paused.
+    pub paused: bool,
+}
+
+/// The parameter type for the contract function `upgrade`.
+/// Takes the new module and optionally an entrypoint to call in the new module
+/// after triggering the upgrade. The upgrade is reverted if the entrypoint
+/// fails. This is useful for doing migration in the same transaction triggering
+/// the upgrade.
+#[derive(Serialize, SchemaType)]
+pub struct UpgradeParams {
+    /// The new module reference.
+    pub module:  ModuleReference,
+    /// Optional entrypoint to call in the new module after upgrade.
+    pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
+/// The parameter for the contract function `grantRole` which grants a role to
+/// an address.
+#[derive(Serialize, SchemaType)]
+pub struct GrantRoleParams {
+    /// The address that has been its role granted.
+    pub address: Address,
+    /// The role that has been granted to the above address.
+    pub role:    Roles,
+}
+
+/// The parameter for the contract function `revokeRole` which revokes a role
+/// from an address.
+#[derive(Serialize, SchemaType)]
+pub struct RevokeRoleParams {
+    /// The address that has been its role revoked.
+    pub address: Address,
+    /// The role that has been revoked from the above address.
+    pub role:    Roles,
+}
+
+/// A struct containing a set of roles granted to an address.
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+struct AddressRoleState<S> {
+    /// Set of roles.
+    roles: StateSet<Roles, S>,
+}
+
+/// Enum of available roles in this contract.
+#[derive(Serialize, PartialEq, Eq, Reject, SchemaType, Clone, Copy, Debug)]
+pub enum Roles {
+    /// Admin role.
+    ADMIN,
+    /// Upgrader role.
+    UPGRADER,
+    /// Blacklister role.
+    BLACKLISTER,
+    /// Pauser role.
+    PAUSER,
+    // /// Minter role. (comment in if you want a MINTER role)
+    // MINTER,
+}
+
+/// The state for each address.
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+struct AddressState<S = StateApi> {
+    /// The amount of tokens owned by this address.
+    balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
+    /// The addresses which are currently enabled as operators for this address.
+    operators: StateSet<Address, S>,
+}
+
+impl AddressState {
+    fn empty(state_builder: &mut StateBuilder) -> Self {
+        AddressState {
+            balances:  state_builder.new_map(),
+            operators: state_builder.new_set(),
+        }
+    }
+}
+
+/// The contract state,
+///
+/// Note: The specification does not specify how to structure the contract state
+/// and this could be structured in a more space-efficient way.
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct State<S = StateApi> {
+    /// The state of addresses.
+    state:           StateMap<Address, AddressState<S>, S>,
+    /// All of the token IDs.
+    tokens:          StateMap<ContractTokenId, MetadataUrl, S>,
+    /// A map with contract addresses providing implementations of additional
+    /// standards.
+    implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    /// A registry to link an account to its next nonce. The nonce is used to
+    /// prevent replay attacks of the signed message. The nonce is increased
+    /// sequentially every time a signed message (corresponding to the
+    /// account) is successfully executed in the `permit` function. This
+    /// mapping keeps track of the next nonce that needs to be used by the
+    /// account to generate a signature.
+    nonces_registry: StateMap<AccountAddress, u64, S>,
+    /// Set of addresses that are not allowed to receive new tokens, sent
+    /// their tokens, or burn their tokens.
+    blacklist:       StateSet<Address, S>,
+    /// The amount of tokens airdropped when the mint function is invoked.
+    mint_airdrop:    ContractTokenAmount,
+    /// Specifies if the contract is paused.
+    paused:          bool,
+    /// A map containing all roles granted to addresses.
+    roles:           StateMap<Address, AddressRoleState<S>, S>,
 }
 
 /// The different errors the contract can produce.
@@ -333,11 +547,41 @@ pub enum CustomContractError {
     WrongEntryPoint, // -12
     /// Failed signature verification: Signature is expired.
     Expired, // -13
+    /// Token owner address is blacklisted.
+    Blacklisted, // -14
+    /// Account address has no canonical address.
+    NoCanonicalAddress, // -15
+    /// Upgrade failed because the new module does not exist.
+    FailedUpgradeMissingModule, // -16
+    /// Upgrade failed because the new module does not contain a contract with a
+    /// matching name.
+    FailedUpgradeMissingContract, // -17
+    /// Upgrade failed because the smart contract version of the module is not
+    /// supported.
+    FailedUpgradeUnsupportedModuleVersion, // -18
+    /// Contract is paused.
+    Paused, // -19
+    /// Failed to revoke role because it was not granted in the first place.
+    RoleWasNotGranted, // -20
+    /// Failed to grant role because it was granted already in the first place.
+    RoleWasAlreadyGranted, // -21
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
 
 pub type ContractResult<A> = Result<A, ContractError>;
+
+/// Mapping errors related to contract upgrades to CustomContractError.
+impl From<UpgradeError> for CustomContractError {
+    #[inline(always)]
+    fn from(ue: UpgradeError) -> Self {
+        match ue {
+            UpgradeError::MissingModule => Self::FailedUpgradeMissingModule,
+            UpgradeError::MissingContract => Self::FailedUpgradeMissingContract,
+            UpgradeError::UnsupportedModuleVersion => Self::FailedUpgradeUnsupportedModuleVersion,
+        }
+    }
+}
 
 /// Mapping account signature error to CustomContractError
 impl From<CheckAccountSignatureError> for CustomContractError {
@@ -371,13 +615,16 @@ impl From<CustomContractError> for ContractError {
 
 impl State {
     /// Construct a state with no tokens
-    fn empty(state_builder: &mut StateBuilder, mint_airdrop: TokenAmountU64) -> Self {
+    fn empty(state_builder: &mut StateBuilder, mint_airdrop: ContractTokenAmount) -> Self {
         State {
             state: state_builder.new_map(),
             tokens: state_builder.new_map(),
             implementors: state_builder.new_map(),
             nonces_registry: state_builder.new_map(),
             mint_airdrop,
+            blacklist: state_builder.new_set(),
+            paused: false,
+            roles: state_builder.new_map(),
         }
     }
 
@@ -390,7 +637,7 @@ impl State {
         token_id: &ContractTokenId,
         metadata_url: &MetadataUrl,
         owner: &Address,
-        mint_airdrop: TokenAmountU64,
+        mint_airdrop: ContractTokenAmount,
         state_builder: &mut StateBuilder,
     ) -> MetadataUrl {
         let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
@@ -408,6 +655,25 @@ impl State {
         } else {
             metadata_url.clone()
         }
+    }
+
+    /// Burns an amount of tokens from a given owner address.
+    fn burn(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        owner: &Address,
+    ) -> ContractResult<()> {
+        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
+
+        let mut owner_state =
+            self.state.entry(*owner).occupied_or(ContractError::InsufficientFunds)?;
+
+        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
+        ensure!(*owner_balance >= amount, ContractError::InsufficientFunds);
+        *owner_balance -= amount;
+
+        Ok(())
     }
 
     /// Check that the token ID currently exists in this contract.
@@ -499,6 +765,14 @@ impl State {
         });
     }
 
+    /// Update the state adding a new address to the blacklist.
+    /// Succeeds even if the `address` is already in the blacklist.
+    fn add_blacklist(&mut self, address: Address) { self.blacklist.insert(address); }
+
+    /// Update the state removing an address from the blacklist.
+    /// Succeeds even if the `address` is not in the list.
+    fn remove_blacklist(&mut self, address: &Address) { self.blacklist.remove(address); }
+
     /// Check if state contains any implementors for a given standard.
     fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
         if let Some(addresses) = self.implementors.get(std_id) {
@@ -516,6 +790,46 @@ impl State {
     ) {
         self.implementors.insert(std_id, implementors);
     }
+
+    /// Grant role to an address.
+    fn grant_role(&mut self, account: &Address, role: Roles, state_builder: &mut StateBuilder) {
+        self.roles.entry(*account).or_insert_with(|| AddressRoleState {
+            roles: state_builder.new_set(),
+        });
+
+        self.roles.entry(*account).and_modify(|entry| {
+            entry.roles.insert(role);
+        });
+    }
+
+    /// Revoke role from an address.
+    fn revoke_role(&mut self, account: &Address, role: Roles) {
+        self.roles.entry(*account).and_modify(|entry| {
+            entry.roles.remove(&role);
+        });
+    }
+
+    /// Check if an address has an role.
+    fn has_role(&self, account: &Address, role: Roles) -> bool {
+        return match self.roles.get(account) {
+            None => false,
+            Some(roles) => roles.roles.contains(&role),
+        };
+    }
+}
+
+/// Convert the address into its canonical account address (in case it is an
+/// account address). Account addresses on Concordium have account aliases. We
+/// call the alias 0 for every account the canonical account address.
+/// https://developer.concordium.software/en/mainnet/net/references/transactions.html#account-aliases
+fn get_canonical_address(address: Address) -> ContractResult<Address> {
+    let canonical_address = match address {
+        Address::Account(account) => {
+            Address::Account(account.get_alias(0).ok_or(CustomContractError::NoCanonicalAddress)?)
+        }
+        Address::Contract(contract) => Address::Contract(contract),
+    };
+    Ok(canonical_address)
 }
 
 // Contract functions
@@ -523,15 +837,32 @@ impl State {
 /// Initialize contract instance with no token types.
 #[init(
     contract = "cis2_multi",
+    parameter = "ContractTokenAmount",
     event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
-    parameter = "TokenAmountU64"
+    enable_logger
 )]
-fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
+fn contract_init(
+    ctx: &InitContext,
+    state_builder: &mut StateBuilder,
+    logger: &mut impl HasLogger,
+) -> InitResult<State> {
     // Parse the parameter.
-    let mint_airdrop: TokenAmountU64 = ctx.parameter_cursor().get()?;
+    let mint_airdrop: ContractTokenAmount = ctx.parameter_cursor().get()?;
 
     // Construct the initial contract state.
-    Ok(State::empty(state_builder, mint_airdrop))
+    let mut state = State::empty(state_builder, mint_airdrop);
+
+    // Get the instantiater of this contract instance.
+    let invoker = Address::Account(ctx.init_origin());
+
+    // Grant ADMIN role.
+    state.grant_role(&invoker, Roles::ADMIN, state_builder);
+    logger.log(&Event::GrantRole(GrantRoleEvent {
+        address: invoker,
+        role:    Roles::ADMIN,
+    }))?;
+
+    Ok(state)
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
@@ -542,8 +873,14 @@ pub struct ViewAddressState {
 
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 pub struct ViewState {
-    pub state:  Vec<(Address, ViewAddressState)>,
-    pub tokens: Vec<ContractTokenId>,
+    pub state:           Vec<(Address, ViewAddressState)>,
+    pub tokens:          Vec<ContractTokenId>,
+    pub nonces_registry: Vec<(AccountAddress, u64)>,
+    pub blacklist:       Vec<Address>,
+    pub roles:           Vec<(Address, Vec<Roles>)>,
+    pub mint_airdrop:    ContractTokenAmount,
+    pub paused:          bool,
+    pub implementors:    Vec<(StandardIdentifierOwned, Vec<ContractAddress>)>,
 }
 
 /// View function for testing. This reports on the entire state of the contract
@@ -552,62 +889,83 @@ pub struct ViewState {
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
-    let mut inner_state = Vec::new();
-    for (k, a_state) in state.state.iter() {
-        let mut balances = Vec::new();
-        let mut operators = Vec::new();
-        for (token_id, amount) in a_state.balances.iter() {
-            balances.push((*token_id, *amount));
-        }
-        for o in a_state.operators.iter() {
-            operators.push(*o);
-        }
+    let contract_state = state
+        .state
+        .iter()
+        .map(|(key, value)| {
+            let mut balances = Vec::new();
+            let mut operators = Vec::new();
+            for (token_id, amount) in value.balances.iter() {
+                balances.push((*token_id, *amount));
+            }
+            for operator in value.operators.iter() {
+                operators.push(*operator);
+            }
+            (*key, ViewAddressState {
+                balances,
+                operators,
+            })
+        })
+        .collect();
 
-        inner_state.push((*k, ViewAddressState {
-            balances,
-            operators,
-        }));
-    }
-    let mut tokens = Vec::new();
-    for v in state.tokens.iter() {
-        tokens.push(*v.0);
-    }
+    let tokens = state.tokens.iter().map(|a| *a.0).collect();
+    let nonces_registry = state.nonces_registry.iter().map(|(a, b)| (*a, *b)).collect();
+    let blacklist = state.blacklist.iter().map(|a| *a).collect();
+    let roles: Vec<(Address, Vec<Roles>)> = state
+        .roles
+        .iter()
+        .map(|(key, value)| {
+            let mut roles_vec = Vec::new();
+            for role in value.roles.iter() {
+                roles_vec.push(*role);
+            }
+            (*key, roles_vec)
+        })
+        .collect();
+
+    let implementors: Vec<(StandardIdentifierOwned, Vec<ContractAddress>)> = state
+        .implementors
+        .iter()
+        .map(|(key, value)| {
+            let mut implementors = Vec::new();
+            for test in value.iter() {
+                implementors.push(*test);
+            }
+
+            ((*key).clone(), implementors)
+        })
+        .collect();
 
     Ok(ViewState {
-        state: inner_state,
+        state: contract_state,
         tokens,
+        nonces_registry,
+        blacklist,
+        roles,
+        implementors,
+        mint_airdrop: host.state().mint_airdrop,
+        paused: host.state().paused,
     })
 }
 
-/// Mint/Airdrops the fixed amount of `MINT_AIRDROP` of new tokens to the
-/// `owner` address. ATTENTION: Can be called by anyone. You should add your
-/// custom access control to this function.
-///
-/// Logs a `Mint` and a `TokenMetadata` event for each token.
-/// The metadata_url in the input parameter of the token is ignored except for
-/// the first time a token_id is minted.
-///
-/// It rejects if:
-/// - Fails to parse parameter.
-/// - Fails to log Mint event.
-/// - Fails to log TokenMetadata event.
-#[receive(
-    contract = "cis2_multi",
-    name = "mint",
-    parameter = "MintParams",
-    error = "ContractError",
-    enable_logger,
-    mutable
-)]
-fn contract_mint(
-    ctx: &ReceiveContext,
+/// Internal `mint/permit` helper function. Invokes the `mint`
+/// function of the state. Logs a `Mint` event.
+/// The function assumes that the mint is authorized.
+fn mint(
+    params: MintParams,
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Parse the parameter.
-    let params: MintParams = ctx.parameter_cursor().get()?;
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+
+    // Check token owner is not blacklisted.
+    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
 
     let (state, builder) = host.state_and_builder();
+
     // Mint the token in the state.
     let token_metadata = state.mint(
         &params.token_id,
@@ -629,6 +987,122 @@ fn contract_mint(
         token_id:     params.token_id,
         metadata_url: token_metadata,
     }))?;
+
+    Ok(())
+}
+
+/// Mint/Airdrops the fixed amount of `MINT_AIRDROP` of new tokens to the
+/// `owner` address. ATTENTION: Can be called by anyone. You should add your
+/// custom access control to this function and the permit function.
+///
+/// Logs a `Mint` and a `TokenMetadata` event for each token.
+/// The metadata_url in the input parameter of the token is ignored except for
+/// the first time a token_id is minted.
+///
+/// It rejects if:
+/// - Fails to parse parameter.
+/// - The token receiver is blacklisted.
+/// - The contract is paused.
+/// - Fails to log Mint event.
+/// - Fails to log TokenMetadata event.
+#[receive(
+    contract = "cis2_multi",
+    name = "mint",
+    parameter = "MintParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_mint(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: MintParams = ctx.parameter_cursor().get()?;
+
+    // // Get the sender who invoked this contract function. (comment in if you want
+    // // only the MINTER role to mint tokens)
+    // let sender = ctx.sender();
+
+    // // Check that only the MINTER is authorized to mint an address. (comment in
+    // // if you want only the MINTER role to mint tokens)
+    // ensure!(host.state().has_role(&sender, Roles::MINTER),
+    // ContractError::Unauthorized);
+
+    mint(params, host, logger)?;
+
+    Ok(())
+}
+
+/// Internal `burn/permit` helper function. Invokes the `burn`
+/// function of the state. Logs a `Burn` event.
+/// The function assumes that the burn is authorized.
+fn burn(
+    params: BurnParams,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
+
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+
+    // Check token owner is not blacklisted.
+    ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
+
+    // Burn the token in the state.
+    host.state_mut().burn(&params.token_id, params.amount, &params.owner)?;
+
+    // Event for burned tokens.
+    logger.log(&Cis2Event::Burn(BurnEvent {
+        token_id: params.token_id,
+        amount:   params.amount,
+        owner:    params.owner,
+    }))?;
+
+    Ok(())
+}
+
+/// Burns an amount of tokens from the
+/// `owner` address.
+///
+/// Logs a `Burn` event for each token.
+///
+/// It rejects if:
+/// - Fails to parse parameter.
+/// - The sender is not the token owner or an operator of the token owner.
+/// - The owner is blacklisted.
+/// - The contract is paused.
+/// - The token owner owns an insufficient token amount to burn from.
+/// - Fails to log Burn event.
+#[receive(
+    contract = "cis2_multi",
+    name = "burn",
+    parameter = "BurnParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_burn(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: BurnParams = ctx.parameter_cursor().get()?;
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Authenticate the sender for the token burns.
+    ensure!(
+        params.owner == sender || host.state().is_operator(&sender, &params.owner),
+        ContractError::Unauthorized
+    );
+
+    burn(params, host, logger)?;
+
     Ok(())
 }
 
@@ -642,9 +1116,25 @@ fn transfer(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    let to_address = transfer.to.address();
+
+    // Check token receiver is not blacklisted.
+    ensure!(
+        !host.state().blacklist.contains(&get_canonical_address(to_address)?),
+        CustomContractError::Blacklisted.into()
+    );
+
+    // Check token owner is not blacklisted.
+    ensure!(
+        !host.state().blacklist.contains(&get_canonical_address(transfer.from)?),
+        CustomContractError::Blacklisted.into()
+    );
+
+    // Check that contract is not paused.
+    ensure!(!host.state().paused, CustomContractError::Paused.into());
+
     let (state, builder) = host.state_and_builder();
 
-    let to_address = transfer.to.address();
     // Update the contract state
     state.transfer(&transfer.token_id, transfer.amount, &transfer.from, &to_address, builder)?;
 
@@ -677,6 +1167,8 @@ fn transfer(
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
+/// - Either the from or to addresses are blacklisted.
+/// - The contract is paused.
 /// - Any of the transfers fail to be executed, which could be if:
 ///     - The `token_id` does not exist.
 ///     - The sender is not the owner of the token, or an operator for this
@@ -843,41 +1335,72 @@ fn contract_permit(
         host.check_account_signature(param.signer, &param.signature, &message_hash)?;
     ensure!(valid_signature, CustomContractError::WrongSignature.into());
 
-    if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
-        // Transfer the tokens.
+    match message.entry_point.as_entrypoint_name() {
+        TRANSFER_ENTRYPOINT => {
+            // Transfer the tokens.
+            let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
 
-        let TransferParams(transfers): TransferParameter = from_bytes(&message.payload)?;
+            for transfer_entry in transfers {
+                // Authenticate the signer for this transfer
+                ensure!(
+                    transfer_entry.from.matches_account(&param.signer)
+                        || host
+                            .state()
+                            .is_operator(&Address::from(param.signer), &transfer_entry.from),
+                    ContractError::Unauthorized
+                );
 
-        for transfer_entry in transfers {
-            // Authenticate the signer for this transfer
+                transfer(transfer_entry, host, logger)?
+            }
+        }
+        UPDATE_OPERATOR_ENTRYPOINT => {
+            // Update the operator.
+            let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
+
+            let (state, builder) = host.state_and_builder();
+
+            for update in updates {
+                update_operator(
+                    update.update,
+                    concordium_std::Address::Account(param.signer),
+                    update.operator,
+                    state,
+                    builder,
+                    logger,
+                )?;
+            }
+        }
+        MINT_ENTRYPOINT => {
+            // Mint tokens.
+            // ATTENTION: Can be called by anyone. You should add your
+            // custom access control here.
+            let params: MintParams = from_bytes(&message.payload)?;
+
+            // // Check that only the MINTER can authorize to mint. (comment in if you want
+            // // only the MINTER role having the authorization to mint)
+            // ensure!(
+            //     host.state().has_role(&Address::from(param.signer), Roles::MINTER),
+            //     ContractError::Unauthorized
+            // );
+
+            mint(params, host, logger)?;
+        }
+        BURN_ENTRYPOINT => {
+            // Burn tokens.
+            let params: BurnParams = from_bytes(&message.payload)?;
+
+            // Authenticate the sender for the token burns.
             ensure!(
-                transfer_entry.from.matches_account(&param.signer)
-                    || host.state().is_operator(&Address::from(param.signer), &transfer_entry.from),
+                params.owner.matches_account(&param.signer)
+                    || host.state().is_operator(&Address::from(param.signer), &params.owner),
                 ContractError::Unauthorized
             );
 
-            transfer(transfer_entry, host, logger)?
+            burn(params, host, logger)?;
         }
-    } else if message.entry_point.as_entrypoint_name()
-        == EntrypointName::new_unchecked("updateOperator")
-    {
-        // Update the operator.
-        let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
-
-        let (state, builder) = host.state_and_builder();
-
-        for update in updates {
-            update_operator(
-                update.update,
-                concordium_std::Address::Account(param.signer),
-                update.operator,
-                state,
-                builder,
-                logger,
-            )?;
+        _ => {
+            bail!(CustomContractError::WrongEntryPoint.into())
         }
-    } else {
-        bail!(CustomContractError::WrongEntryPoint.into())
     }
 
     // Log the nonce event.
@@ -901,6 +1424,9 @@ fn update_operator(
     builder: &mut StateBuilder,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
+    // Check that contract is not paused.
+    ensure!(!state.paused, CustomContractError::Paused.into());
+
     // Update the operator in the state.
     match update {
         OperatorUpdate::Add => state.add_operator(&sender, &operator, builder),
@@ -1013,6 +1539,40 @@ fn contract_operator_of(
     }
     let result = OperatorOfQueryResponse::from(response);
     Ok(result)
+}
+
+/// The parameter type for the contract functions `isBlacklisted`.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct VecOfAddresses {
+    /// List of queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<Address>,
+}
+
+/// Takes a list of queries. Each query contains an address which is checked if
+/// that address is blacklisted.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "isBlacklisted",
+    parameter = "VecOfAddresses",
+    return_value = "Vec<bool>",
+    error = "ContractError"
+)]
+fn contract_is_blacklisted(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<Vec<bool>> {
+    // Parse the parameter.
+    let params: VecOfAddresses = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for address in params.queries {
+        // Query the state if address is blacklisted.
+        let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(address)?);
+        response.push(is_blacklisted);
+    }
+    Ok(response)
 }
 
 /// Response type for the function `publicKeyOf`.
@@ -1278,5 +1838,239 @@ fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> Con
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
     host.state_mut().set_implementors(params.id, params.implementors);
+    Ok(())
+}
+
+/// The update to an address with respect to the blacklist.
+#[derive(Debug, Serialize, Clone, Copy, SchemaType, PartialEq, Eq)]
+pub enum BlacklistUpdate {
+    /// Remove from blacklist.
+    Remove,
+    /// Add to blacklist.
+    Add,
+}
+
+/// A single update of an address with respect to the blacklist.
+#[derive(Debug, Serialize, Clone, SchemaType, PartialEq, Eq)]
+pub struct UpdateBlacklist {
+    /// The update for this address.
+    pub update:  BlacklistUpdate,
+    /// The address which is either added to or removed from the blacklist.
+    pub address: Address,
+}
+
+/// The parameter type for the contract function `updateBlacklist`.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
+pub struct UpdateBlacklistParams(#[concordium(size_length = 2)] pub Vec<UpdateBlacklist>);
+
+/// Add addresses or remove addresses from the blacklist.
+/// Logs an `UpdateBlacklist` event.
+///
+/// It rejects if:
+/// - Sender is not the BLACKLISTER of the contract instance.
+/// - It fails to parse the parameter.
+/// - Fails to log event.
+#[receive(
+    contract = "cis2_multi",
+    name = "updateBlacklist",
+    parameter = "UpdateBlacklistParams",
+    error = "ContractError",
+    enable_logger,
+    mutable
+)]
+fn contract_update_blacklist(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Check that only the BLACKLISTER is authorized to blacklist an address.
+    ensure!(host.state().has_role(&sender, Roles::BLACKLISTER), ContractError::Unauthorized);
+
+    // Parse the parameter.
+    let UpdateBlacklistParams(params) = ctx.parameter_cursor().get()?;
+
+    for param in params {
+        let canonical_address = get_canonical_address(param.address)?;
+
+        // Add/remove address from the blacklist.
+        match param.update {
+            BlacklistUpdate::Add => host.state_mut().add_blacklist(canonical_address),
+            BlacklistUpdate::Remove => host.state_mut().remove_blacklist(&canonical_address),
+        }
+
+        // Log the update blacklist event.
+        logger.log(&Event::UpdateBlacklist(UpdateBlacklistEvent {
+            address: canonical_address,
+            update:  param.update,
+        }))?;
+    }
+
+    Ok(())
+}
+
+/// Upgrade this smart contract instance to a new module and call optionally a
+/// migration function after the upgrade.
+///
+/// It rejects if:
+/// - Sender is not the UPGRADER of the contract instance.
+/// - It fails to parse the parameter.
+/// - If the ugrade fails.
+/// - If the migration invoke fails.
+///
+/// This function is marked as `low_level`. This is **necessary** since the
+/// high-level mutable functions store the state of the contract at the end of
+/// execution. This conflicts with migration since the shape of the state
+/// **might** be changed by the migration function. If the state is then written
+/// by this function it would overwrite the state stored by the migration
+/// function.
+#[receive(
+    contract = "cis2_multi",
+    name = "upgrade",
+    parameter = "UpgradeParams",
+    error = "CustomContractError",
+    low_level
+)]
+fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractResult<()> {
+    // Read the top-level contract state.
+    let state: State = host.state().read_root()?;
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Check that only the UPGRADER is authorized to upgrade the contract.
+    ensure!(state.has_role(&sender, Roles::UPGRADER), ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
+    // Trigger the upgrade.
+    host.upgrade(params.module)?;
+    // Call the migration function if provided.
+    if let Some((func, parameters)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameters.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
+    Ok(())
+}
+
+/// Pause/Unpause this smart contract instance by the PAUSER. The transfer,
+/// updateOperator, mint, and burn functions cannot be
+/// executed when the contract is paused.
+///
+/// It rejects if:
+/// - Sender is not the PAUSER of the contract instance.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "cis2_multi",
+    name = "setPaused",
+    parameter = "SetPausedParams",
+    error = "CustomContractError",
+    mutable
+)]
+fn contract_set_paused(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+
+    // Check that only the PAUSER is authorized to pause the contract.
+    ensure!(host.state().has_role(&sender, Roles::PAUSER), ContractError::Unauthorized);
+
+    // Parse the parameter.
+    let params: SetPausedParams = ctx.parameter_cursor().get()?;
+
+    // Update the paused variable.
+    host.state_mut().paused = params.paused;
+
+    Ok(())
+}
+
+/// Add role to an address.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not the ADMIN of the contract instance.
+/// - The `address` is already holding the specified role to be granted.
+#[receive(
+    contract = "cis2_multi",
+    name = "grantRole",
+    parameter = "GrantRoleParams",
+    enable_logger,
+    mutable
+)]
+fn contract_grant_role(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: GrantRoleParams = ctx.parameter_cursor().get()?;
+
+    let (state, state_builder) = host.state_and_builder();
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    // Check that only the ADMIN is authorized to grant roles.
+    ensure!(state.has_role(&sender, Roles::ADMIN), ContractError::Unauthorized);
+
+    // Check that the `address` had previously not hold the specified role.
+    ensure!(
+        !state.has_role(&params.address, params.role),
+        CustomContractError::RoleWasAlreadyGranted.into()
+    );
+
+    // Grant role.
+    state.grant_role(&params.address, params.role, state_builder);
+    logger.log(&Event::GrantRole(GrantRoleEvent {
+        address: params.address,
+        role:    params.role,
+    }))?;
+    Ok(())
+}
+
+/// Revoke role from an address.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not the ADMIN of the contract instance.
+/// - The `address` is not holding the specified role to be revoked.
+#[receive(
+    contract = "cis2_multi",
+    name = "revokeRole",
+    parameter = "RevokeRoleParams",
+    enable_logger,
+    mutable
+)]
+fn contract_revoke_role(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ContractResult<()> {
+    // Parse the parameter.
+    let params: RevokeRoleParams = ctx.parameter_cursor().get()?;
+
+    let (state, _) = host.state_and_builder();
+
+    // Get the sender who invoked this contract function.
+    let sender = ctx.sender();
+    // Check that only the ADMIN is authorized to revoke roles.
+    ensure!(state.has_role(&sender, Roles::ADMIN), ContractError::Unauthorized);
+
+    // Check that the `address` had previously hold the specified role.
+    ensure!(
+        state.has_role(&params.address, params.role),
+        CustomContractError::RoleWasNotGranted.into()
+    );
+
+    // Revoke role.
+    state.revoke_role(&params.address, params.role);
+    logger.log(&Event::RevokeRole(RevokeRoleEvent {
+        address: params.address,
+        role:    params.role,
+    }))?;
     Ok(())
 }
