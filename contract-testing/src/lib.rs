@@ -13,7 +13,7 @@
 //! edition = "2021"
 //!
 //! [dev-dependencies]
-//! concordium-smart-contract-testing = "3.0"
+//! concordium-smart-contract-testing = "4.0"
 //! ```
 //!
 //! ## Basic usage

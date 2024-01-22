@@ -17,7 +17,7 @@ wee_alloc = ["concordium-std/wee_alloc"]
 concordium-std = {version = "9.0", default-features = false}
 
 [dev-dependencies]
-concordium-smart-contract-testing = "4"
+concordium-smart-contract-testing = "4.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
