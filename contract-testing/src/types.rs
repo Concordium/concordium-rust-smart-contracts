@@ -1,26 +1,30 @@
-use concordium_rust_sdk::base::{
-    base::{AccountAddressEq, Energy},
-    common::types::{CredentialIndex, KeyIndex, Signature},
-    constants::ED25519_SIGNATURE_LENGTH,
-    contracts_common::{
-        self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, Deserial,
-        EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
-        OwnedPolicy, ParseResult, SlotTime, Timestamp,
-    },
-    hashes::BlockHash,
-    id::types::SchemeId,
-    smart_contracts::{
-        ContractEvent, ContractTraceElement, InstanceUpdatedEvent, OwnedParameter,
-        OwnedReceiveName, WasmVersion,
-    },
-    transactions::AccountAccessStructure,
-};
 use concordium_rust_sdk as sdk;
-use concordium_rust_sdk::smart_contracts::engine::{
-    v1::{self, trie, DebugTracker, EmittedDebugStatement, HostCall, HostFunctionV1, ReturnValue},
-    InterpreterEnergy,
+use concordium_rust_sdk::{
+    base::{
+        base::{AccountAddressEq, Energy},
+        common::types::{CredentialIndex, KeyIndex, Signature},
+        constants::ED25519_SIGNATURE_LENGTH,
+        contracts_common::{
+            self, AccountAddress, AccountBalance, Address, Amount, ContractAddress, Deserial,
+            EntrypointName, ExchangeRate, ModuleReference, OwnedContractName, OwnedEntrypointName,
+            OwnedPolicy, ParseResult, SlotTime, Timestamp,
+        },
+        hashes::BlockHash,
+        id::types::SchemeId,
+        smart_contracts::{
+            ContractEvent, ContractTraceElement, InstanceUpdatedEvent, OwnedParameter,
+            OwnedReceiveName, WasmVersion,
+        },
+        transactions::AccountAccessStructure,
+    },
+    smart_contracts::engine::{
+        v1::{
+            self, trie, DebugTracker, EmittedDebugStatement, HostCall, HostFunctionV1, ReturnValue,
+        },
+        wasm::artifact,
+        InterpreterEnergy,
+    },
 };
-use concordium_rust_sdk::smart_contracts::engine::wasm::artifact;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -1300,7 +1304,7 @@ impl ExternalAddress {
 /// Data needed to invoke an external smart contract instance.
 ///
 /// This is nearly identical to
-/// [`UpdateContractPayload`](concordium_base::transactions::UpdateContractPayload)
+/// [`UpdateContractPayload`](concordium_rust_sdk::base::transactions::UpdateContractPayload)
 /// except that it uses an [`ExternalContractAddress`] instead of an
 /// [`ContractAddress`].
 #[derive(Debug, Clone)]

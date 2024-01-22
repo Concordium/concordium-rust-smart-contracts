@@ -4,28 +4,31 @@ use crate::{
     types::*,
 };
 use anyhow::anyhow;
-use concordium_rust_sdk::base::{
-    base::{AccountThreshold, Energy, InsufficientEnergy},
-    constants::MAX_WASM_MODULE_SIZE,
-    contracts_common::{
-        self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        Deserial, Duration, ExchangeRate, ExchangeRates, ModuleReference, OwnedPolicy, ParseResult,
-        SlotTime, Timestamp,
+use concordium_rust_sdk::{
+    self as sdk, base,
+    base::{
+        base::{AccountThreshold, Energy, InsufficientEnergy},
+        constants::MAX_WASM_MODULE_SIZE,
+        contracts_common::{
+            self, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
+            Deserial, Duration, ExchangeRate, ExchangeRates, ModuleReference, OwnedPolicy,
+            ParseResult, SlotTime, Timestamp,
+        },
+        hashes::BlockHash,
+        smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
+        transactions::{
+            self, cost, AccountAccessStructure, InitContractPayload, UpdateContractPayload,
+        },
     },
-    hashes::BlockHash,
-    smart_contracts::{ContractEvent, ModuleSource, WasmModule, WasmVersion},
-    transactions::{
-        self, cost, AccountAccessStructure, InitContractPayload, UpdateContractPayload,
+    smart_contracts::engine::{
+        v0,
+        v1::{self, DebugTracker, InvalidReturnCodeError, InvokeResponse},
+        wasm,
+        wasm::validate::ValidationConfig,
+        DebugInfo, InterpreterEnergy,
     },
+    v2::Endpoint,
 };
-use concordium_rust_sdk::{self as sdk, base, v2::Endpoint};
-use concordium_rust_sdk::smart_contracts::engine::{
-    wasm,
-    v0,
-    v1::{self, DebugTracker, InvalidReturnCodeError, InvokeResponse},
-    DebugInfo, InterpreterEnergy,
-};
-use concordium_rust_sdk::smart_contracts::engine::wasm::validate::ValidationConfig;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use sdk::types::smart_contracts::InvokeContractResult;
@@ -579,24 +582,23 @@ impl Chain {
         sender_account.balance.total -= transaction_fee;
 
         // Construct the artifact.
-        let artifact =
-            match wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
-                ValidationConfig::V1,
-                &v1::ConcordiumAllowedImports {
-                    support_upgrade: true,
-                    enable_debug,
-                },
-                wasm_module.source.as_ref(),
-            ) {
-                Ok(artifact) => artifact,
-                Err(err) => {
-                    return Err(ModuleDeployError {
-                        kind: ModuleInvalidError(err).into(),
-                        energy_used,
-                        transaction_fee,
-                    })
-                }
-            };
+        let artifact = match wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
+            ValidationConfig::V1,
+            &v1::ConcordiumAllowedImports {
+                support_upgrade: true,
+                enable_debug,
+            },
+            wasm_module.source.as_ref(),
+        ) {
+            Ok(artifact) => artifact,
+            Err(err) => {
+                return Err(ModuleDeployError {
+                    kind: ModuleInvalidError(err).into(),
+                    energy_used,
+                    transaction_fee,
+                })
+            }
+        };
 
         let module_reference: ModuleReference = wasm_module.get_module_ref();
 

@@ -1,17 +1,22 @@
 use crate::Chain;
-use concordium_rust_sdk::base::{
-    base::{AccountAddressEq, Energy},
-    contracts_common::{
-        AccountAddress, Address, Amount, ContractAddress, ModuleReference, OwnedContractName,
-        OwnedEntrypointName,
+use concordium_rust_sdk::{
+    base::{
+        base::{AccountAddressEq, Energy},
+        contracts_common::{
+            AccountAddress, Address, Amount, ContractAddress, ModuleReference, OwnedContractName,
+            OwnedEntrypointName,
+        },
+        smart_contracts::OwnedParameter,
+        transactions::UpdateContractPayload,
     },
-    smart_contracts::OwnedParameter,
-    transactions::UpdateContractPayload,
+    smart_contracts::engine::{
+        v1::{
+            trie::MutableState, DebugTracker, InvokeResponse, ReceiveContext,
+            ReceiveInterruptedState,
+        },
+        wasm::artifact::CompiledFunction,
+    },
 };
-use concordium_rust_sdk::smart_contracts::engine::v1::{
-    trie::MutableState, DebugTracker, InvokeResponse, ReceiveContext, ReceiveInterruptedState,
-};
-use concordium_rust_sdk::smart_contracts::engine::wasm::artifact::CompiledFunction;
 use std::collections::BTreeMap;
 
 /// A type that supports invoking a contract entrypoint.

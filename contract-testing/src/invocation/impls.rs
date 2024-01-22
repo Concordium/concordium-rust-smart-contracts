@@ -8,25 +8,28 @@ use crate::{
     types::{Account, BalanceError, Contract, ContractModule, TransferError},
     AccountSignatures, DebugTraceElement, ExecutionError, InvokeExecutionError,
 };
-use concordium_rust_sdk::base::{
-    self,
-    base::{AccountAddressEq, Energy, InsufficientEnergy},
-    common,
-    contracts_common::{
-        to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
+use concordium_rust_sdk::{
+    base::{
+        self,
+        base::{AccountAddressEq, Energy, InsufficientEnergy},
+        common,
+        contracts_common::{
+            to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata,
+            ContractAddress, ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
+        },
+        smart_contracts::{
+            ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter,
+            WasmVersion,
+        },
+        transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
     },
-    smart_contracts::{
-        ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
+    smart_contracts::engine::{
+        v0,
+        v1::{self, trie, DebugTracker, InvokeResponse},
+        wasm::artifact::{self, CompiledFunction},
+        DebugInfo, InterpreterEnergy,
     },
-    transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
 };
-use concordium_rust_sdk::smart_contracts::engine::{
-    v0,
-    v1::{self, trie, DebugTracker, InvokeResponse},
-    DebugInfo, InterpreterEnergy,
-};
-use concordium_rust_sdk::smart_contracts::engine::wasm::artifact::{self, CompiledFunction};
 use std::collections::{btree_map, BTreeMap};
 
 // Exit early with an out of energy error.
@@ -522,9 +525,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             );
 
                             exit_ooe!(
-                                self.remaining_energy.tick_energy(
-                                    base::transactions::cost::SIMPLE_TRANSFER
-                                ),
+                                self.remaining_energy
+                                    .tick_energy(base::transactions::cost::SIMPLE_TRANSFER),
                                 DebugTracker::empty_trace()
                             );
 
