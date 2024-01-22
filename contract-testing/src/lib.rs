@@ -13,7 +13,7 @@
 //! edition = "2021"
 //!
 //! [dev-dependencies]
-//! concordium-smart-contract-testing = "3.0"
+//! concordium-smart-contract-testing = "4.0"
 //! ```
 //!
 //! ## Basic usage
@@ -93,20 +93,23 @@ pub use impls::{is_debug_enabled, module_load_v1, module_load_v1_raw};
 pub use types::*;
 
 // Re-export types.
-pub use concordium_base::{
-    base::Energy,
-    common::types::{CredentialIndex, KeyIndex},
-    contracts_common::{
-        from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address, Amount,
-        ContractAddress, ContractName, Duration, EntrypointName, ExchangeRate, ModuleReference,
-        OwnedContractName, OwnedEntrypointName, OwnedParameter, OwnedReceiveName, Parameter,
-        ReceiveName, SignatureThreshold, SlotTime, Timestamp,
+pub use concordium_rust_sdk::{
+    base::{
+        base::Energy,
+        common::types::{CredentialIndex, KeyIndex},
+        contracts_common::{
+            from_bytes, to_bytes, AccountAddress, AccountBalance, AccountThreshold, Address,
+            Amount, ContractAddress, ContractName, Duration, EntrypointName, ExchangeRate,
+            ModuleReference, OwnedContractName, OwnedEntrypointName, OwnedParameter,
+            OwnedReceiveName, Parameter, ReceiveName, SignatureThreshold, SlotTime, Timestamp,
+        },
+        ed25519,
+        hashes::BlockHash,
+        id::types::{AccountKeys, CredentialPublicKeys, VerifyKey},
+        smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
+        transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
     },
-    ed25519,
-    hashes::BlockHash,
-    id::types::{AccountKeys, CredentialPublicKeys, VerifyKey},
-    smart_contracts::{ContractEvent, ContractTraceElement, InstanceUpdatedEvent, WasmVersion},
-    transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
+    smart_contracts::engine::v1::InvokeFailure,
+    types::RejectReason,
+    v2::Endpoint,
 };
-pub use concordium_rust_sdk::{types::RejectReason, v2::Endpoint};
-pub use concordium_smart_contract_engine::v1::InvokeFailure;

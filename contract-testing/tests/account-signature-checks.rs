@@ -1,6 +1,6 @@
 //! This module contains tests for checking account signatures, and retrieving
 //! account's public keys.
-use concordium_base::{
+use concordium_rust_sdk::base::{
     contracts_common::{self, AccountBalance, AccountThreshold, SignatureThreshold},
     id::types::AccountKeys,
     transactions::AccountAccessStructure,

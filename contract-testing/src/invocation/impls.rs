@@ -8,24 +8,28 @@ use crate::{
     types::{Account, BalanceError, Contract, ContractModule, TransferError},
     AccountSignatures, DebugTraceElement, ExecutionError, InvokeExecutionError,
 };
-use concordium_base::{
-    base::{AccountAddressEq, Energy, InsufficientEnergy},
-    common,
-    contracts_common::{
-        to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata, ContractAddress,
-        ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
+use concordium_rust_sdk::{
+    base::{
+        self,
+        base::{AccountAddressEq, Energy, InsufficientEnergy},
+        common,
+        contracts_common::{
+            to_bytes, AccountAddress, AccountBalance, Address, Amount, ChainMetadata,
+            ContractAddress, ExchangeRates, ModuleReference, OwnedEntrypointName, OwnedReceiveName,
+        },
+        smart_contracts::{
+            ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter,
+            WasmVersion,
+        },
+        transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
     },
-    smart_contracts::{
-        ContractTraceElement, InstanceUpdatedEvent, OwnedContractName, OwnedParameter, WasmVersion,
+    smart_contracts::engine::{
+        v0,
+        v1::{self, trie, DebugTracker, InvokeResponse},
+        wasm::artifact::{self, CompiledFunction},
+        DebugInfo, InterpreterEnergy,
     },
-    transactions::{verify_data_signature, AccountAccessStructure, UpdateContractPayload},
 };
-use concordium_smart_contract_engine::{
-    v0,
-    v1::{self, trie, DebugTracker, InvokeResponse},
-    DebugInfo, InterpreterEnergy,
-};
-use concordium_wasm::artifact::{self, CompiledFunction};
 use std::collections::{btree_map, BTreeMap};
 
 // Exit early with an out of energy error.
@@ -521,9 +525,8 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                             );
 
                             exit_ooe!(
-                                self.remaining_energy.tick_energy(
-                                    concordium_base::transactions::cost::SIMPLE_TRANSFER
-                                ),
+                                self.remaining_energy
+                                    .tick_energy(base::transactions::cost::SIMPLE_TRANSFER),
                                 DebugTracker::empty_trace()
                             );
 
@@ -1509,8 +1512,8 @@ fn deserial_signature_and_data_from_contract(
 ) -> anyhow::Result<DeserializedSignatureAndData> {
     // Imported locally only since it is critical that we use the right Deserial
     // trait.
-    use concordium_base::contracts_common::Deserial;
-    let mut source = concordium_base::contracts_common::Cursor::new(payload);
+    use concordium_rust_sdk::base::contracts_common::Deserial;
+    let mut source = base::contracts_common::Cursor::new(payload);
     let data_len = u32::deserial(&mut source)?;
     let data = &payload[source.offset..][..data_len as usize];
     source.offset += data_len as usize;

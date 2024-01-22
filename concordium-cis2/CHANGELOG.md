@@ -1,10 +1,14 @@
 # Changelog
 
 ## Unreleased changes
+
+## concordium-cis2 6.0.0 (2024-01-22)
+
 - Add `Clone` trait for `StandardIdentifierOwned`.
 - Add specific parameter type `OnReceivingCis2DataParams<T, A, D>` for a contract function which receives CIS2 tokens with a specific type D for the AdditionalData.
 - Add `Deserial` trait for `OnReceivingCis2DataParams<T, A, D>`.
 - Add `Serial` trait for `OnReceivingCis2DataParams<T, A, D>`.
+- Update `concordium-std` version to `9`.
 
 ## concordium-cis2 5.1.0 (2023-10-18)
 
