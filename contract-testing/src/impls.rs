@@ -4,7 +4,7 @@ use crate::{
     types::*,
 };
 use anyhow::anyhow;
-use concordium_base::{
+use concordium_rust_sdk::base::{
     base::{AccountThreshold, Energy, InsufficientEnergy},
     constants::MAX_WASM_MODULE_SIZE,
     contracts_common::{
@@ -18,13 +18,14 @@ use concordium_base::{
         self, cost, AccountAccessStructure, InitContractPayload, UpdateContractPayload,
     },
 };
-use concordium_rust_sdk::{self as sdk, v2::Endpoint};
-use concordium_smart_contract_engine::{
+use concordium_rust_sdk::{self as sdk, base, v2::Endpoint};
+use concordium_rust_sdk::smart_contracts::engine::{
+    wasm,
     v0,
     v1::{self, DebugTracker, InvalidReturnCodeError, InvokeResponse},
     DebugInfo, InterpreterEnergy,
 };
-use concordium_wasm::validate::ValidationConfig;
+use concordium_rust_sdk::smart_contracts::engine::wasm::validate::ValidationConfig;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use sdk::types::smart_contracts::InvokeContractResult;
@@ -579,7 +580,7 @@ impl Chain {
 
         // Construct the artifact.
         let artifact =
-            match concordium_wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
+            match wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
                 ValidationConfig::V1,
                 &v1::ConcordiumAllowedImports {
                     support_upgrade: true,
@@ -1998,7 +1999,7 @@ pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, Modul
         kind: e.into(),
     })?;
     let module: WasmModule =
-        concordium_base::common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
+        base::common::from_bytes(&mut reader).map_err(|e| ModuleLoadError {
             path: module_path.to_path_buf(),
             kind: ModuleLoadErrorKind::ReadModule(e.into()),
         })?;
@@ -2171,7 +2172,7 @@ impl From<ExchangeRateError> for ChainBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use concordium_base::base::AccountAddressEq;
+    use concordium_rust_sdk::base::base::AccountAddressEq;
 
     use super::*;
 

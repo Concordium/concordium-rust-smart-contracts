@@ -1,6 +1,6 @@
 //! Various constants.
 
-use concordium_base::base::Energy;
+use concordium_rust_sdk::base::base::Energy;
 
 // Energy constants from Cost.hs in concordium-base.
 

@@ -93,7 +93,7 @@ pub use impls::{is_debug_enabled, module_load_v1, module_load_v1_raw};
 pub use types::*;
 
 // Re-export types.
-pub use concordium_base::{
+pub use concordium_rust_sdk::base::{
     base::Energy,
     common::types::{CredentialIndex, KeyIndex},
     contracts_common::{
@@ -109,4 +109,4 @@ pub use concordium_base::{
     transactions::{AccountAccessStructure, InitContractPayload, UpdateContractPayload},
 };
 pub use concordium_rust_sdk::{types::RejectReason, v2::Endpoint};
-pub use concordium_smart_contract_engine::v1::InvokeFailure;
+pub use concordium_rust_sdk::smart_contracts::engine::v1::InvokeFailure;

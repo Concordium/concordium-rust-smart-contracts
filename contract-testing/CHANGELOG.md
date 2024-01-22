@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## 4.0.0
+
 - Add support for debug output when running smart contracts. This adds a new
   `module_deploy_v1_debug` method to the `Chain` that allows debug symbols
   in the deployed module.

@@ -1,4 +1,4 @@
-use concordium_base::{
+use concordium_rust_sdk::base::{
     base::{AccountAddressEq, Energy},
     common::types::{CredentialIndex, KeyIndex, Signature},
     constants::ED25519_SIGNATURE_LENGTH,
@@ -16,11 +16,11 @@ use concordium_base::{
     transactions::AccountAccessStructure,
 };
 use concordium_rust_sdk as sdk;
-use concordium_smart_contract_engine::{
+use concordium_rust_sdk::smart_contracts::engine::{
     v1::{self, trie, DebugTracker, EmittedDebugStatement, HostCall, HostFunctionV1, ReturnValue},
     InterpreterEnergy,
 };
-use concordium_wasm::artifact;
+use concordium_rust_sdk::smart_contracts::engine::wasm::artifact;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,

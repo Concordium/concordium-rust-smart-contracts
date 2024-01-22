@@ -2,9 +2,12 @@
 
 ## Unreleased changes
 
+## concordium-std 6.0.0 (2024-01-22)
+
 - Add a `concordium_dbg!` macro and the associated `debug` feature to enable,
   together with `cargo concordium`, to emit debug information during contract
   execution.
+- Update `concordium-contracts-common` dependency to version `9`.
 
 ## concordium-std 8.1.0 (2023-10-18)
 
