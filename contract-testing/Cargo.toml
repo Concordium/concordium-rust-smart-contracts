@@ -25,4 +25,4 @@ num-bigint = "0.4"
 num-integer = "0.1"
 
 [dev-dependencies]
-rand = "0.7"
+rand = "0.8"

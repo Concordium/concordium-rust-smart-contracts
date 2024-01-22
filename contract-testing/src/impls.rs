@@ -1328,7 +1328,7 @@ impl Chain {
                             amount:    payload.amount,
                             method:    payload.receive_name,
                             parameter: payload.message,
-                            energy:    energy_reserved,
+                            energy:    Some(energy_reserved),
                         },
                     )
                     .await?
