@@ -469,3 +469,5 @@ pub fn debug_print(message: &str, filename: &str, line: u32, column: u32) {
         )
     };
 }
+
+pub mod auth;

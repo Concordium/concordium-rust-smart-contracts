@@ -116,6 +116,8 @@
 //! state from `contract-version1` to `contract-version2`.
 //! https://github.com/Concordium/concordium-rust-smart-contracts/blob/main/examples/smart-contract-upgrade/contract-version2/src/lib.rs
 #![cfg_attr(not(feature = "std"), no_std)]
+use core::ops::DerefMut;
+
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
@@ -330,6 +332,7 @@ pub struct MintParams {
     pub token_id:     ContractTokenId,
 }
 
+<<<<<<< Updated upstream
 /// The parameter for the contract function `burn` which burns a number
 /// of tokens from the owner's address.
 #[derive(Serialize, SchemaType)]
@@ -342,6 +345,28 @@ pub struct BurnParams {
     pub token_id: ContractTokenId,
 }
 
+=======
+/// The contract state,
+///
+/// Note: The specification does not specify how to structure the contract state
+/// and this could be structured in a more space-efficient way.
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+struct InnerState<S = StateApi> {
+    /// A registry to link an account to its next nonce. The nonce is used to
+    /// prevent replay attacks of the signed message. The nonce is increased
+    /// sequentially every time a signed message (corresponding to the
+    /// account) is successfully executed in the `permit` function. This
+    /// mapping keeps track of the next nonce that needs to be used by the
+    /// account to generate a signature.
+    nonces_registry: StateMap<AccountAddress, u64, S>,
+    /// The amount of tokens airdropped when the mint function is invoked.
+    mint_airdrop:    TokenAmountU64,
+}
+
+type State = CIS0<CIS2<ContractTokenId, ContractTokenAmount, InnerState<StateApi>>>;
+
+>>>>>>> Stashed changes
 /// The parameter type for the contract function `supportsPermit`.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct SupportsPermitQueryParams {
@@ -613,13 +638,18 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-impl State {
+impl InnerState {
     /// Construct a state with no tokens
+<<<<<<< Updated upstream
     fn empty(state_builder: &mut StateBuilder, mint_airdrop: ContractTokenAmount) -> Self {
         State {
             state: state_builder.new_map(),
             tokens: state_builder.new_map(),
             implementors: state_builder.new_map(),
+=======
+    fn empty(state_builder: &mut StateBuilder, mint_airdrop: TokenAmountU64) -> Self {
+        InnerState {
+>>>>>>> Stashed changes
             nonces_registry: state_builder.new_map(),
             mint_airdrop,
             blacklist: state_builder.new_set(),
@@ -627,6 +657,7 @@ impl State {
             roles: state_builder.new_map(),
         }
     }
+<<<<<<< Updated upstream
 
     /// Mints an amount of tokens with a given address as the owner.
     /// The metadataURL for the given token_id is added to the state only
@@ -830,6 +861,8 @@ fn get_canonical_address(address: Address) -> ContractResult<Address> {
         Address::Contract(contract) => Address::Contract(contract),
     };
     Ok(canonical_address)
+=======
+>>>>>>> Stashed changes
 }
 
 // Contract functions
@@ -850,6 +883,7 @@ fn contract_init(
     let mint_airdrop: ContractTokenAmount = ctx.parameter_cursor().get()?;
 
     // Construct the initial contract state.
+<<<<<<< Updated upstream
     let mut state = State::empty(state_builder, mint_airdrop);
 
     // Get the instantiater of this contract instance.
@@ -863,6 +897,13 @@ fn contract_init(
     }))?;
 
     Ok(state)
+=======
+    let inner = InnerState::empty(state_builder, mint_airdrop);
+
+    let cis2 = CIS2::empty(state_builder, inner);
+
+    Ok(CIS0::new(state_builder, cis2))
+>>>>>>> Stashed changes
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
@@ -883,12 +924,13 @@ pub struct ViewState {
     pub implementors:    Vec<(StandardIdentifierOwned, Vec<ContractAddress>)>,
 }
 
-/// View function for testing. This reports on the entire state of the contract
-/// for testing purposes.
-#[receive(contract = "cis2_multi", name = "view", return_value = "ViewState")]
-fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
-    let state = host.state();
+// /// View function for testing. This reports on the entire state of the
+// contract /// for testing purposes.
+// #[receive(contract = "cis2_multi", name = "view", return_value =
+// "ViewState")] fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) ->
+// ReceiveResult<ViewState> {     let state = host.state();
 
+<<<<<<< Updated upstream
     let contract_state = state
         .state
         .iter()
@@ -947,6 +989,34 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
         paused: host.state().paused,
     })
 }
+=======
+//     let mut inner_state = Vec::new();
+//     for (k, a_state) in state.state.iter() {
+//         let mut balances = Vec::new();
+//         let mut operators = Vec::new();
+//         for (token_id, amount) in a_state.balances.iter() {
+//             balances.push((*token_id, *amount));
+//         }
+//         for o in a_state.operators.iter() {
+//             operators.push(*o);
+//         }
+
+//         inner_state.push((*k, ViewAddressState {
+//             balances,
+//             operators,
+//         }));
+//     }
+//     let mut tokens = Vec::new();
+//     for v in state.tokens.iter() {
+//         tokens.push(*v.0);
+//     }
+
+//     Ok(ViewState {
+//         state: inner_state,
+//         tokens,
+//     })
+// }
+>>>>>>> Stashed changes
 
 /// Internal `mint/permit` helper function. Invokes the `mint`
 /// function of the state. Logs a `Mint` event.
@@ -965,15 +1035,14 @@ fn mint(
     ensure!(!host.state().paused, CustomContractError::Paused.into());
 
     let (state, builder) = host.state_and_builder();
+<<<<<<< Updated upstream
 
+=======
+    let mint_airdrop = state.mint_airdrop;
+>>>>>>> Stashed changes
     // Mint the token in the state.
-    let token_metadata = state.mint(
-        &params.token_id,
-        &params.metadata_url,
-        &params.owner,
-        state.mint_airdrop,
-        builder,
-    );
+    let token_metadata =
+        state.mint(&params.token_id, &params.metadata_url, &params.owner, mint_airdrop, builder);
 
     // Event for minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
@@ -1108,6 +1177,7 @@ fn contract_burn(
 
 type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
+<<<<<<< Updated upstream
 /// Internal `transfer/permit` helper function. Invokes the `transfer`
 /// function of the state. Logs a `Transfer` event and invokes a receive hook
 /// function. The function assumes that the transfer is authorized.
@@ -1160,6 +1230,8 @@ fn transfer(
     Ok(())
 }
 
+=======
+>>>>>>> Stashed changes
 /// Execute a list of token transfers, in the order of the list.
 ///
 /// Logs a `Transfer` event and invokes a receive hook function for every
@@ -1189,22 +1261,7 @@ fn contract_transfer(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Parse the parameter.
-    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-
-    for transfer_entry in transfers {
-        // Authenticate the sender for this transfer
-        ensure!(
-            transfer_entry.from == sender
-                || host.state().is_operator(&sender, &transfer_entry.from),
-            ContractError::Unauthorized
-        );
-
-        transfer(transfer_entry, host, logger)?;
-    }
-    Ok(())
+    CIS2::contract_transfer(&mut ctx.parameter_cursor(), logger, host, ctx.sender())
 }
 
 /// Helper function that can be invoked at the front-end to serialize the
@@ -1335,6 +1392,7 @@ fn contract_permit(
         host.check_account_signature(param.signer, &param.signature, &message_hash)?;
     ensure!(valid_signature, CustomContractError::WrongSignature.into());
 
+<<<<<<< Updated upstream
     match message.entry_point.as_entrypoint_name() {
         TRANSFER_ENTRYPOINT => {
             // Transfer the tokens.
@@ -1400,6 +1458,28 @@ fn contract_permit(
         }
         _ => {
             bail!(CustomContractError::WrongEntryPoint.into())
+=======
+    if message.entry_point.as_entrypoint_name() == EntrypointName::new_unchecked("transfer") {
+        // Transfer the tokens.
+        CIS2::contract_transfer(&mut Cursor::new(&message.payload[..]), logger, host, param.signer.into())?
+    } else if message.entry_point.as_entrypoint_name()
+        == EntrypointName::new_unchecked("updateOperator")
+    {
+        // Update the operator.
+        let UpdateOperatorParams(updates): UpdateOperatorParams = from_bytes(&message.payload)?;
+
+        let (state, builder) = host.state_and_builder();
+
+        for update in updates {
+            update_operator(
+                update.update,
+                concordium_std::Address::Account(param.signer),
+                update.operator,
+                state.deref_mut(),
+                builder,
+                logger,
+            )?;
+>>>>>>> Stashed changes
         }
     }
 
@@ -1420,7 +1500,7 @@ fn update_operator(
     update: OperatorUpdate,
     sender: Address,
     operator: Address,
-    state: &mut State,
+    state: &mut CIS2<ContractTokenId, ContractTokenAmount, InnerState>,
     builder: &mut StateBuilder,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
@@ -1685,19 +1765,7 @@ fn contract_token_metadata(
     ctx: &ReceiveContext,
     host: &Host<State>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
-    // Parse the parameter.
-    let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
-    // Build the response.
-    let mut response = Vec::with_capacity(params.queries.len());
-    for token_id in params.queries {
-        let metadata_url = match host.state().tokens.get(&token_id) {
-            Some(metadata_url) => metadata_url.clone(),
-            None => bail!(ContractError::InvalidTokenId),
-        };
-        response.push(metadata_url);
-    }
-    let result = TokenMetadataQueryResponse::from(response);
-    Ok(result)
+    host.state().token_metadata(&mut ctx.parameter_cursor())
 }
 
 /// Example of implementing a function for receiving transfers.
@@ -1766,24 +1834,11 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports(
-    ctx: &ReceiveContext,
-    host: &Host<State>,
-) -> ContractResult<SupportsQueryResponse> {
-    // Parse the parameter.
-    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
-
-    // Build the response.
-    let mut response = Vec::with_capacity(params.queries.len());
-    for std_id in params.queries {
-        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
-            response.push(SupportResult::Support);
-        } else {
-            response.push(host.state().have_implementors(&std_id));
-        }
-    }
-    let result = SupportsQueryResponse::from(response);
-    Ok(result)
+fn contract_supports<'a, 'b>(
+    ctx: &'a ReceiveContext,
+    host: &'b Host<State>,
+) -> ContractResult<impl Serial + 'b> {
+    Ok(host.state().supports(&SUPPORTS_STANDARDS, ctx.parameter_cursor()))
 }
 
 /// Get the entrypoints supported by the `permit` function given a
