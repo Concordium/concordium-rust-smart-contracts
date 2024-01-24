@@ -1416,7 +1416,8 @@ impl AsRef<[SupportResult]> for SupportsQueryResponse {
 use crate::{ContractAddress, DeserialWithState, HasStateApi, Serial, StateBuilder, StateMap};
 use core::{
     cell::UnsafeCell,
-    ops::{AddAssign, Deref, DerefMut, SubAssign},
+    ops::{AddAssign, SubAssign},
+    convert::{AsMut, AsRef}
 };
 
 pub struct CIS0<Inner, S: HasStateApi = StateApi> {
@@ -1424,14 +1425,13 @@ pub struct CIS0<Inner, S: HasStateApi = StateApi> {
     inner:        Inner,
 }
 
-impl<S: HasStateApi, Inner> Deref for CIS0<Inner, S> {
-    type Target = Inner;
+impl<S: HasStateApi, Inner> AsRef<Inner> for CIS0<Inner, S> {
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn as_ref(&self) -> &Inner { &self.inner }
 }
 
-impl<S: HasStateApi, Inner> DerefMut for CIS0<Inner, S> {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.inner }
+impl<S: HasStateApi, Inner> AsMut<Inner> for CIS0<Inner, S> {
+    fn as_mut(&mut self) -> &mut Inner { &mut self.inner }
 }
 
 impl<S: HasStateApi, Inner: DeserialWithState<S>> DeserialWithState<S> for CIS0<Inner, S> {
@@ -1724,7 +1724,7 @@ impl<ContractTokenId: IsTokenId, ContractTokenAmount: IsTokenAmount, Inner, S: H
     /// function of the state. Logs a `Transfer` event and invokes a receive
     /// hook function. The function assumes that the transfer is authorized.
     pub fn transfer<
-        SomeState: DerefMut<Target = Self>,
+        SomeState: AsMut<Self>,
         H: HasHost<SomeState, StateApiType = S>,
         R: From<ParseError> + From<LogError> + From<CallContractError<H::ReturnValueType>>,
     >(
@@ -1738,7 +1738,7 @@ impl<ContractTokenId: IsTokenId, ContractTokenAmount: IsTokenAmount, Inner, S: H
         let (state, builder) = host.state_and_builder();
         let to_address = transfer.to.address();
         // Update the contract state
-        state.transfer_helper(
+        state.as_mut().transfer_helper(
             &transfer.token_id,
             transfer.amount.clone(),
             &transfer.from,
@@ -1776,7 +1776,7 @@ impl<ContractTokenId: IsTokenId, ContractTokenAmount: IsTokenAmount, Inner, S: H
     }
 
     pub fn contract_transfer<
-        SomeState: DerefMut<Target = Self>,
+        SomeState: AsMut<Self>,
         H: HasHost<SomeState, StateApiType = S>,
         R: From<ParseError> + From<LogError> + From<CallContractError<H::ReturnValueType>>,
     >(
@@ -1794,7 +1794,7 @@ impl<ContractTokenId: IsTokenId, ContractTokenAmount: IsTokenAmount, Inner, S: H
             // Authenticate the sender for this transfer
             ensure!(
                 transfer_entry.from == sender
-                    || host.state().is_operator(&sender, &transfer_entry.from),
+                    || host.state_mut().as_mut().is_operator(&sender, &transfer_entry.from),
                 Cis2Error::Unauthorized
             );
 
@@ -1804,18 +1804,68 @@ impl<ContractTokenId: IsTokenId, ContractTokenAmount: IsTokenAmount, Inner, S: H
     }
 }
 
-impl<S: HasStateApi, ContractTokenId: Serialize, ContractTokenAmount: Serialize, Inner> Deref
+impl<S: HasStateApi, ContractTokenId: Serialize, ContractTokenAmount: Serialize, Inner> AsRef<Inner>
     for CIS2<ContractTokenId, ContractTokenAmount, Inner, S>
 {
-    type Target = Inner;
-
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn as_ref(&self) -> &Inner { &self.inner }
 }
 
-impl<S: HasStateApi, ContractTokenId: Serialize, ContractTokenAmount: Serialize, Inner> DerefMut
+impl<S: HasStateApi, ContractTokenId: Serialize, ContractTokenAmount: Serialize, Inner> AsMut<Inner>
     for CIS2<ContractTokenId, ContractTokenAmount, Inner, S>
 {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.inner }
+    fn as_mut(&mut self) -> &mut Inner { &mut self.inner }
+}
+
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+pub struct Blacklist<Inner, S = StateApi> {
+    /// Set of addresses that are not allowed to receive new tokens, sent
+    /// their tokens, or burn their tokens.
+    blacklist:       StateSet<Address, S>,
+    inner: Inner,
+}
+
+impl<Inner, S: HasStateApi> AsRef<Inner>
+    for Blacklist<Inner, S>
+{
+
+    fn as_ref(&self) -> &Inner { &self.inner }
+}
+
+impl<Inner, S: HasStateApi> AsMut<Inner>
+    for Blacklist<Inner, S>
+{
+    fn as_mut(&mut self) -> &mut Inner {
+        &mut self.inner
+    }
+}
+
+
+impl <Inner, S: HasStateApi> Blacklist<Inner, S> {
+    pub fn empty(
+        state_builder: &mut StateBuilder<S>,
+        inner: Inner
+    ) -> Self {
+        Self {
+            blacklist: state_builder.new_set(),
+            inner,
+        }
+    }
+
+    /// Update the state adding a new address to the blacklist.
+    /// Succeeds even if the `address` is already in the blacklist.
+    pub fn add_blacklist(&mut self, address: Address) { self.blacklist.insert(address); }
+
+    /// Update the state removing an address from the blacklist.
+    /// Succeeds even if the `address` is not in the list.
+    pub fn remove_blacklist(&mut self, address: &Address) { self.blacklist.remove(address); }
+
+    pub fn is_blacklisted(&self, address: impl Into<Address>) -> bool {
+        self.blacklist.contains(&address.into())
+    }
+    pub fn is_allowed(&self, address: impl Into<Address>) -> bool {
+        !self.blacklist.contains(&address.into())
+    }
 }
 
 #[cfg(test)]
