@@ -53,7 +53,7 @@ pub enum Event {
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct ItemCreatedEvent {
     /// The address that has been its role granted.
-    pub item_id: u64,
+    pub item_id:      u64,
     /// The role that was granted to the above address.
     pub metadata_url: Option<MetadataUrl>,
 }
@@ -61,13 +61,21 @@ pub struct ItemCreatedEvent {
 /// The ItemStatusChangedEvent is logged when a new role is granted to an
 /// address.
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
+pub struct AdditionalData {
+    /// The address that has been its role granted.
+    pub bytes: Vec<u8>,
+}
+
+/// The ItemStatusChangedEvent is logged when a new role is granted to an
+/// address.
+#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct ItemStatusChangedEvent {
     /// The address that has been its role granted.
-    pub item_id: u64,
+    pub item_id:         u64,
     // The role that was granted to the above address.
-    // pub new_status: Status,
-    // ///
-    // pub additional_data: AdditionalData,
+    pub new_status:      Status,
+    ///
+    pub additional_data: AdditionalData,
 }
 
 /// The GrantRoleEvent is logged when a new role is granted to an address.
@@ -76,7 +84,7 @@ pub struct GrantRoleEvent {
     /// The address that has been its role granted.
     pub address: Address,
     /// The role that was granted to the above address.
-    pub role: Roles,
+    pub role:    Roles,
 }
 
 /// The RevokeRoleEvent is logged when a role is revoked from an address.
@@ -85,7 +93,7 @@ pub struct RevokeRoleEvent {
     /// Address that has been its role revoked.
     pub address: Address,
     /// The role that was revoked from the above address.
-    pub role: Roles,
+    pub role:    Roles,
 }
 
 /// The parameter for the contract function `grantRole` which grants a role to
@@ -95,7 +103,7 @@ pub struct GrantRoleParams {
     /// The address that has been its role granted.
     pub address: Address,
     /// The role that has been granted to the above address.
-    pub role: Roles,
+    pub role:    Roles,
 }
 
 /// The parameter for the contract function `revokeRole` which revokes a role
@@ -105,7 +113,7 @@ pub struct RevokeRoleParams {
     /// The address that has been its role revoked.
     pub address: Address,
     /// The role that has been revoked from the above address.
-    pub role: Roles,
+    pub role:    Roles,
 }
 
 /// A struct containing a set of roles granted to an address.
@@ -192,11 +200,11 @@ impl schema::SchemaType for Event {
 }
 
 /// A struct containing a set of roles granted to an address.
-#[derive(Debug, Serialize, SchemaType, Clone, PartialEq)]
-struct ItemState {
+#[derive(Debug, Serialize, SchemaType, Clone, PartialEq, Eq)]
+pub struct ItemState {
     /// Set of roles.
-    status: Status,
-    metadata_url: Option<MetadataUrl>,
+    pub status:       Status,
+    pub metadata_url: Option<MetadataUrl>,
 }
 
 /// The state of the smart contract.
@@ -208,9 +216,9 @@ struct State<S = StateApi> {
     /// The minimum accepted raise to over bid the current bidder in Euro cent.
     next_item_id: u64,
     /// A map containing all roles granted to addresses.
-    roles: StateMap<Address, AddressRoleState<S>, S>,
+    roles:        StateMap<Address, AddressRoleState<S>, S>,
     /// A map containing all roles granted to addresses.
-    items: StateMap<u64, ItemState, S>,
+    items:        StateMap<u64, ItemState, S>,
 }
 
 /// The different errors the contract can produce.
@@ -271,21 +279,24 @@ impl State {
     }
 
     /// Check if an address has an role.
-    fn to_state_produced(&mut self, item_index: u64) -> () {
-        let mut item_state = self
-            .items
-            .entry(item_index)
-            .occupied_or(CustomContractError::ItemNotExists)
-            .map(|x| (*x).clone())
-            .unwrap();
-        item_state.status = Status::Produced;
-
-        ()
+    fn to_state_produced(&mut self, item_index: u64) {
+        self.items.entry(item_index).and_modify(|x| x.status = Status::Sold);
     }
 
-    // InTransit,
-    // InStore,
-    // Sold,
+    /// Check if an address has an role.
+    fn to_state_in_transit(&mut self, item_index: u64) {
+        self.items.entry(item_index).and_modify(|x| x.status = Status::InTransit);
+    }
+
+    /// Check if an address has an role.
+    fn to_state_in_store(&mut self, item_index: u64) {
+        self.items.entry(item_index).and_modify(|x| x.status = Status::InStore);
+    }
+
+    /// Check if an address has an role.
+    fn to_state_sold(&mut self, item_index: u64) {
+        self.items.entry(item_index).and_modify(|x| x.status = Status::Sold);
+    }
 }
 /// Init function that creates a new auction
 #[init(contract = "track_and_trace", event = "Event", enable_logger)]
@@ -300,18 +311,53 @@ fn init(
     // Creating `State`
     let mut state = State {
         next_item_id: 0u64,
-        roles: state_builder.new_map(),
-        items: state_builder.new_map(),
+        roles:        state_builder.new_map(),
+        items:        state_builder.new_map(),
     };
 
     // Grant ADMIN role.
     state.grant_role(&invoker, Roles::ADMIN, state_builder);
     logger.log(&Event::GrantRole(GrantRoleEvent {
         address: invoker,
-        role: Roles::ADMIN,
+        role:    Roles::ADMIN,
     }))?;
 
     Ok(state)
+}
+
+#[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
+pub struct ViewState {
+    pub next_item_id: u64,
+    pub items:        Vec<(u64, ItemState)>,
+    pub roles:        Vec<(Address, Vec<Roles>)>,
+}
+
+/// View function for testing. This reports on the entire state of the contract
+/// for testing purposes.
+#[receive(contract = "track_and_trace", name = "view", return_value = "ViewState")]
+fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
+    let state = host.state();
+
+    let roles: Vec<(Address, Vec<Roles>)> = state
+        .roles
+        .iter()
+        .map(|(key, value)| {
+            let mut roles_vec = Vec::new();
+            for role in value.roles.iter() {
+                roles_vec.push(*role);
+            }
+            (*key, roles_vec)
+        })
+        .collect();
+
+    let items: Vec<(u64, ItemState)> =
+        state.items.iter().map(|(key, value)| (*key, (*value).clone())).collect();
+
+    Ok(ViewState {
+        roles,
+        items,
+        next_item_id: host.state().next_item_id,
+    })
 }
 
 /// Receive function for accounts to place a bid in the auction
@@ -336,13 +382,10 @@ fn create_item(
     let next_item_id = host.state().next_item_id;
 
     host.state_mut().next_item_id += 1;
-    let previous_item = host.state_mut().items.insert(
-        next_item_id,
-        ItemState {
-            metadata_url: metadata_url.clone(),
-            status: Status::Produced,
-        },
-    );
+    let previous_item = host.state_mut().items.insert(next_item_id, ItemState {
+        metadata_url: metadata_url.clone(),
+        status:       Status::Produced,
+    });
 
     ensure_eq!(previous_item, None, CustomContractError::ItemAlreadyExists);
 
@@ -359,8 +402,8 @@ fn create_item(
 #[derive(Serialize, SchemaType)]
 pub struct ChangeItemStatusParams {
     /// The address that has been its role revoked.
-    pub item_id: u64,
-    pub new_status: Status,
+    pub item_id:         u64,
+    pub new_status:      Status,
     pub additional_data: AdditionalData,
 }
 
@@ -384,11 +427,17 @@ fn change_item_status(
     // Check that only the ADMIN is authorized to create new item.
     ensure!(host.state().has_role(&ctx.sender(), Roles::ADMIN), CustomContractError::Unauthorized);
 
-    // TODO should be updated based on what admin says or specific progress
-    host.state_mut().to_state_produced(param.item_id);
+    match param.new_status {
+        Status::Produced => host.state_mut().to_state_produced(param.item_id),
+        Status::InTransit => host.state_mut().to_state_in_transit(param.item_id),
+        Status::InStore => host.state_mut().to_state_in_store(param.item_id),
+        Status::Sold => host.state_mut().to_state_sold(param.item_id),
+    };
 
     logger.log(&Event::ItemStatusChanged(ItemStatusChangedEvent {
-        item_id: param.item_id,
+        item_id:         param.item_id,
+        new_status:      param.new_status,
+        additional_data: param.additional_data,
     }))?;
 
     Ok(())
@@ -426,14 +475,14 @@ fn contract_grant_role(
     // Check that the `address` had previously not hold the specified role.
     ensure!(
         !state.has_role(&params.address, params.role),
-        CustomContractError::RoleWasAlreadyGranted.into()
+        CustomContractError::RoleWasAlreadyGranted
     );
 
     // Grant role.
     state.grant_role(&params.address, params.role, state_builder);
     logger.log(&Event::GrantRole(GrantRoleEvent {
         address: params.address,
-        role: params.role,
+        role:    params.role,
     }))?;
     Ok(())
 }
@@ -468,16 +517,13 @@ fn contract_revoke_role(
     ensure!(state.has_role(&sender, Roles::ADMIN), CustomContractError::Unauthorized);
 
     // Check that the `address` had previously hold the specified role.
-    ensure!(
-        state.has_role(&params.address, params.role),
-        CustomContractError::RoleWasNotGranted.into()
-    );
+    ensure!(state.has_role(&params.address, params.role), CustomContractError::RoleWasNotGranted);
 
     // Revoke role.
     state.revoke_role(&params.address, params.role);
     logger.log(&Event::RevokeRole(RevokeRoleEvent {
         address: params.address,
-        role: params.role,
+        role:    params.role,
     }))?;
     Ok(())
 }
