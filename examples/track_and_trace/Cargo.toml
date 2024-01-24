@@ -1,0 +1,25 @@
+[package]
+name = "track_and_trace"
+version = "0.1.0"
+authors = ["Concordium <developers@concordium.com>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[features]
+default = ["std", "wee_alloc"]
+std = ["concordium-std/std", "concordium-cis2/std"]
+wee_alloc = ["concordium-std/wee_alloc"]
+
+[dependencies]
+concordium-std = {path = "../../concordium-std", default-features = false}
+concordium-cis2 = {path = "../../concordium-cis2", default-features = false}
+
+[dev-dependencies]
+concordium-smart-contract-testing = {path = "../../contract-testing"}
+
+[lib]
+crate-type=["cdylib", "rlib"]
+
+[profile.release]
+codegen-units = 1
+opt-level = "s"
