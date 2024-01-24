@@ -1,5 +1,5 @@
 [package]
-name = "track_and_trace"
+name = "track-and-trace"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"

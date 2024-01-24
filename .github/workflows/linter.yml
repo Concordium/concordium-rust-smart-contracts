@@ -34,6 +34,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/track-and-trace/Cargo.toml
           - examples/credential-registry/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
@@ -685,6 +686,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/track-and-trace/Cargo.toml
           - examples/credential-registry/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
@@ -815,6 +817,7 @@ jobs:
           - examples/cis2-nft
           - examples/cis3-nft-sponsored-txs
           - examples/cis2-wccd
+          - examples/track-and-trace/Cargo.toml
           - examples/credential-registry
           - examples/fib
           - examples/icecream
