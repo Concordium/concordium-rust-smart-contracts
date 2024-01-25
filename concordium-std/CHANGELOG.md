@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Fix a bug that caused a linking error when using `concordium_dbg!`.
+  - The error message states that `_debug_print` cannot be found.
+
 ## concordium-std 6.0.0 (2024-01-22)
 
 - Add a `concordium_dbg!` macro and the associated `debug` feature to enable,
