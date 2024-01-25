@@ -115,6 +115,10 @@ pub enum Status {
     Sold,
 }
 
+impl Status {
+    fn new() -> Self { Status::Produced }
+}
+
 // Implementing a custom schemaType for the `Event` struct containing all
 // events. This custom implementation flattens the fields to avoid one
 // level of nesting. Deriving the schemaType would result in e.g.: {"Nonce":
@@ -212,9 +216,9 @@ pub enum CustomContractError {
     ItemAlreadyExists, // -7
     /// Item with given item id does not exist in the state.
     ItemDoesNotExist, // -8
-    /// The item is not in the correct state to do an update based on the rules
-    /// of the state machine.
-    WrongState, // -9
+    /// The item is already in the final state and cannot be updated based on
+    /// the state machine rules.
+    FinalState, // -9
 }
 
 /// Mapping the logging errors to CustomContractError.
@@ -268,57 +272,6 @@ impl State {
             self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
 
         previous_state.status = new_state;
-
-        Ok(())
-    }
-
-    /// Change the item status to in-transit based on the state machine rule.
-    /// The function reverts if the item does not exist or the item is in
-    /// the wrong state.
-    fn change_item_status_to_in_transit(
-        &mut self,
-        item_index: ItemID,
-    ) -> Result<(), CustomContractError> {
-        let mut previous_state =
-            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
-
-        ensure_eq!(previous_state.status, Status::Produced, CustomContractError::WrongState);
-
-        previous_state.status = Status::InTransit;
-
-        Ok(())
-    }
-
-    /// Change the item status to in-store based on the state machine rule. The
-    /// function reverts if the item does not exist or the item is in the
-    /// wrong state.
-    fn change_item_status_to_in_store(
-        &mut self,
-        item_index: ItemID,
-    ) -> Result<(), CustomContractError> {
-        let mut previous_state =
-            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
-
-        ensure_eq!(previous_state.status, Status::InTransit, CustomContractError::WrongState);
-
-        previous_state.status = Status::InStore;
-
-        Ok(())
-    }
-
-    /// Change the item status to sold based on the state machine rule. The
-    /// function reverts if the item does not exist or the item is in the
-    /// wrong state.
-    fn change_item_status_to_sold(
-        &mut self,
-        item_index: ItemID,
-    ) -> Result<(), CustomContractError> {
-        let mut previous_state =
-            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
-
-        ensure_eq!(previous_state.status, Status::InStore, CustomContractError::WrongState);
-
-        previous_state.status = Status::Sold;
 
         Ok(())
     }
@@ -425,7 +378,7 @@ fn create_item(
     // Create the item in state.
     let previous_item = host.state_mut().items.insert(next_item_id, ItemState {
         metadata_url: metadata_url.clone(),
-        status:       Status::Produced,
+        status:       Status::new(),
     });
 
     ensure_eq!(previous_item, None, CustomContractError::ItemAlreadyExists);
@@ -447,10 +400,10 @@ pub struct AdditionalData {
     pub bytes: Vec<u8>,
 }
 
-/// The parameter type for the contract function `changeItemStatus` which
+/// The parameter type for the contract function `changeItemStatusByAdmin` which
 /// updates the status of an item.
 #[derive(Serialize, SchemaType)]
-pub struct ChangeItemStatusParams {
+pub struct ChangeItemStatusParamsByAdmin {
     /// The item's id.
     pub item_id:         ItemID,
     /// The item's new status.
@@ -460,16 +413,111 @@ pub struct ChangeItemStatusParams {
     pub additional_data: AdditionalData,
 }
 
-/// Receive function for the ADMIN or any of the other ROLES to change the
-/// status of an item. The other ROLES can update the item's status based on the
-/// rules of the state machine. In contrast, the ADMIN can set the item's status
+/// Receive function for the ADMIN to change the
+/// status of an item. The ADMIN can set the item's status
 /// to any value at any time.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
 /// - Sender is not an authorized role.
 /// - The item does not exist in the state.
-/// - The item is in the wrong state based on the state machine rule.
+/// - It fails to log the `ItemStatusChangedEvent`.
+#[receive(
+    contract = "track_and_trace",
+    name = "changeItemStatusByAdmin",
+    parameter = "ChangeItemStatusParamsByAdmin",
+    error = "CustomContractError",
+    mutable,
+    enable_logger
+)]
+fn change_item_status_by_admin(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> Result<(), CustomContractError> {
+    // Parse the parameter.
+    let param: ChangeItemStatusParamsByAdmin = ctx.parameter_cursor().get()?;
+
+    ensure!(host.state().has_role(&ctx.sender(), Roles::ADMIN), CustomContractError::Unauthorized);
+
+    // The admin can set the item's status to any value at any time.
+    host.state_mut().change_item_status(param.item_id, param.new_status)?;
+
+    // Log an ItemStatusChangedEvent.
+    logger.log(&Event::ItemStatusChanged(ItemStatusChangedEvent {
+        item_id:         param.item_id,
+        new_status:      param.new_status,
+        additional_data: param.additional_data,
+    }))?;
+
+    Ok(())
+}
+
+/// The parameter type for the contract function `changeItemStatus` which
+/// updates the status of an item.
+#[derive(Serialize, SchemaType)]
+pub struct ChangeItemStatusParams {
+    /// The item's id.
+    pub item_id:         ItemID,
+    /// Any additional data encoded as generic bytes. Usecase-specific data can
+    /// be included here such as temperature, longitude, latitude, ... .
+    pub additional_data: AdditionalData,
+}
+
+/// Function to update the item's status based on the rules of the state
+/// machine.
+fn update_state_machine(
+    host: &mut Host<State>,
+    sender: Address,
+    item_id: ItemID,
+) -> Result<Status, CustomContractError> {
+    let mut item =
+        host.state_mut().items.entry(item_id).occupied_or(CustomContractError::ItemDoesNotExist)?;
+
+    match item.status {
+        Status::Produced => {
+            item.status = Status::InTransit;
+            drop(item);
+
+            ensure!(
+                host.state().has_role(&sender, Roles::PRODUCER),
+                CustomContractError::Unauthorized
+            );
+            Ok(Status::InTransit)
+        }
+        Status::InTransit => {
+            item.status = Status::InStore;
+            drop(item);
+
+            ensure!(
+                host.state().has_role(&sender, Roles::TRANSPORTER),
+                CustomContractError::Unauthorized
+            );
+            Ok(Status::InStore)
+        }
+        Status::InStore => {
+            item.status = Status::Sold;
+            drop(item);
+
+            ensure!(
+                host.state().has_role(&sender, Roles::SELLER),
+                CustomContractError::Unauthorized
+            );
+            Ok(Status::Sold)
+        }
+        Status::Sold => bail!(CustomContractError::FinalState),
+    }
+}
+
+/// Receive function for the other ROLES (all roles except for the ADMIN role)
+/// to change the status of an item. The other ROLES can update the item's
+/// status based on the rules of the state machine.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not an authorized role to update the item to the next state.
+/// - The item does not exist in the state.
+/// - The item is already in the `Sold` state (final state).
 /// - It fails to log the `ItemStatusChangedEvent`.
 #[receive(
     contract = "track_and_trace",
@@ -487,46 +535,12 @@ fn change_item_status(
     // Parse the parameter.
     let param: ChangeItemStatusParams = ctx.parameter_cursor().get()?;
 
-    if host.state().has_role(&ctx.sender(), Roles::ADMIN) {
-        // The admin can set the item's status to any value at any time.
-        host.state_mut().change_item_status(param.item_id, param.new_status)?
-    } else {
-        // The other ROLES can set the item's status based on some rules.
-        match param.new_status {
-            Status::Produced => {
-                bail!(CustomContractError::Unauthorized)
-            }
-            Status::InTransit => {
-                ensure!(
-                    host.state().has_role(&ctx.sender(), Roles::PRODUCER),
-                    CustomContractError::Unauthorized
-                );
-
-                host.state_mut().change_item_status_to_in_transit(param.item_id)?;
-            }
-            Status::InStore => {
-                ensure!(
-                    host.state().has_role(&ctx.sender(), Roles::TRANSPORTER),
-                    CustomContractError::Unauthorized
-                );
-
-                host.state_mut().change_item_status_to_in_store(param.item_id)?;
-            }
-            Status::Sold => {
-                ensure!(
-                    host.state().has_role(&ctx.sender(), Roles::SELLER),
-                    CustomContractError::Unauthorized
-                );
-
-                host.state_mut().change_item_status_to_sold(param.item_id)?;
-            }
-        };
-    }
+    let new_status = update_state_machine(host, ctx.sender(), param.item_id)?;
 
     // Log an ItemStatusChangedEvent.
     logger.log(&Event::ItemStatusChanged(ItemStatusChangedEvent {
-        item_id:         param.item_id,
-        new_status:      param.new_status,
+        item_id: param.item_id,
+        new_status,
         additional_data: param.additional_data,
     }))?;
 
