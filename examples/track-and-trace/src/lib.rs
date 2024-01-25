@@ -1,32 +1,21 @@
-//! # Implementation of an auction smart contract
+//! # Implementation of a simple track-and-trace contract.
 //!
-//! Accounts can invoke the bid function to participate in the auction.
-//! An account has to send some CCD when invoking the bid function.
-//! This CCD amount has to exceed the current highest bid by a minimum raise
-//! to be accepted by the smart contract.
+//! ## Grant and Revoke roles:
+//! The contract has access control roles. The ADMIN can grant or revoke all
+//! other roles. The available roles are ADMIN (can grant/revoke roles, create a
+//! new item, and update the status of an item), PRODUCER (can update the status
+//! of an item from `Produced` to `InTransit`), TRANSPORTER (can update the
+//! status of an item from `InTransit` to `InStore`), and SELLER (can update the
+//! status of an item from `InStore` to `Sold`). Several addresses can have the
+//! same role and an address can have several roles.
 //!
-//! The minimum raise is set when initializing and is defined in Euro cent.
-//! The contract uses the current exchange rate used by the chain by the time of
-//! the bid, to convert the bid into EUR.
-//!
-//! The smart contract keeps track of the current highest bidder as well as
-//! the CCD amount of the highest bid. The CCD balance of the smart contract
-//! represents the highest bid. When a new highest bid is accepted by the smart
-//! contract, the smart contract refunds the old highest bidder.
-//!
-//! Bids have to be placed before the auction ends. The participant with the
-//! highest bid (the last bidder) wins the auction.
-//!
-//! After the auction ends, any account can finalize the auction. The owner of
-//! the smart contract instance receives the highest bid (the balance of this
-//! contract) when the auction is finalized. This can be done only once.
-//!
-//! Terminology: `Accounts` are derived from a public/private key pair.
-//! `Contract` instances are created by deploying a smart contract
-//! module and initializing it.
-
+//! ## State machine:
+//! The track-and-trace is modeled based on a state machine.
+//! The ADMIN can create a new item. Each new item is assigned the
+//! `next_item_id` (value is tracked in the contract's state). The different
+//! roles can update the item's status based on the rules of the state machine.
+//! In addition, the admin can set an item's status to any value at any time.
 #![cfg_attr(not(feature = "std"), no_std)]
-
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, *};
 
@@ -36,12 +25,15 @@ pub const ITEM_STATUS_CHANGED_EVENT_TAG: u8 = 1;
 pub const GRANT_ROLE_EVENT_TAG: u8 = 2;
 pub const REVOKE_ROLE_EVENT_TAG: u8 = 3;
 
-//Tagged events to be serialized for the event log.
+/// Custom type for the item id.
+type ItemID = u64;
+
+/// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq)]
 pub enum Event {
-    /// The event tracks when a role is revoked from an address.
+    /// The event tracks when an item is created.
     ItemCreated(ItemCreatedEvent),
-    /// The event tracks when a role is revoked from an address.
+    /// The event tracks when the item's status is updated.
     ItemStatusChanged(ItemStatusChangedEvent),
     /// The event tracks when a new role is granted to an address.
     GrantRole(GrantRoleEvent),
@@ -49,32 +41,24 @@ pub enum Event {
     RevokeRole(RevokeRoleEvent),
 }
 
-/// The ItemCreatedEvent is logged when a new role is granted to an address.
+/// The ItemCreatedEvent is logged when an item is created.
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct ItemCreatedEvent {
-    /// The address that has been its role granted.
-    pub item_id:      u64,
-    /// The role that was granted to the above address.
+    /// The item's id.
+    pub item_id:      ItemID,
+    /// The item's metadata_url.
     pub metadata_url: Option<MetadataUrl>,
 }
 
-/// The ItemStatusChangedEvent is logged when a new role is granted to an
-/// address.
-#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
-pub struct AdditionalData {
-    /// The address that has been its role granted.
-    pub bytes: Vec<u8>,
-}
-
-/// The ItemStatusChangedEvent is logged when a new role is granted to an
-/// address.
+/// The ItemStatusChangedEvent is logged when the status of an item is updated.
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct ItemStatusChangedEvent {
-    /// The address that has been its role granted.
-    pub item_id:         u64,
-    // The role that was granted to the above address.
+    /// The item's id.
+    pub item_id:         ItemID,
+    /// The item's new status.
     pub new_status:      Status,
-    ///
+    /// Any additional data encoded as generic bytes. Usecase-specific data can
+    /// be included here such as temperature, longitude, latitude, ... .
     pub additional_data: AdditionalData,
 }
 
@@ -96,26 +80,6 @@ pub struct RevokeRoleEvent {
     pub role:    Roles,
 }
 
-/// The parameter for the contract function `grantRole` which grants a role to
-/// an address.
-#[derive(Serialize, SchemaType)]
-pub struct GrantRoleParams {
-    /// The address that has been its role granted.
-    pub address: Address,
-    /// The role that has been granted to the above address.
-    pub role:    Roles,
-}
-
-/// The parameter for the contract function `revokeRole` which revokes a role
-/// from an address.
-#[derive(Serialize, SchemaType)]
-pub struct RevokeRoleParams {
-    /// The address that has been its role revoked.
-    pub address: Address,
-    /// The role that has been revoked from the above address.
-    pub role:    Roles,
-}
-
 /// A struct containing a set of roles granted to an address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
@@ -124,30 +88,35 @@ struct AddressRoleState<S> {
     roles: StateSet<Roles, S>,
 }
 
-/// Enum of available roles in this contract.
+/// Enum of available roles in this contract. Several addresses can have the
+/// same role and an address can have several roles.
 #[derive(Serialize, PartialEq, Eq, Reject, SchemaType, Clone, Copy, Debug)]
 pub enum Roles {
     /// Admin role.
     ADMIN,
-    /// Upgrader role.
+    /// Producer role.
     PRODUCER,
-    /// Blacklister role.
+    /// Transporter role.
     TRANSPORTER,
-    /// Pauser role.
+    /// Seller role.
     SELLER,
 }
 
-/// Enum of available roles in this contract.
+/// Enum of the statuses that an item can have.
 #[derive(Serialize, PartialEq, Eq, Reject, SchemaType, Clone, Copy, Debug)]
 pub enum Status {
+    /// Item is produced.
     Produced,
+    /// Item is in transit.
     InTransit,
+    /// Item is in store.
     InStore,
+    /// Item is sold.
     Sold,
 }
 
 // Implementing a custom schemaType for the `Event` struct containing all
-// CIS2/CIS3 events. This custom implementation flattens the fields to avoid one
+// events. This custom implementation flattens the fields to avoid one
 // level of nesting. Deriving the schemaType would result in e.g.: {"Nonce":
 // [{...fields}] }. In contrast, this custom schemaType implementation results
 // in e.g.: {"Nonce": {...fields} }
@@ -159,7 +128,7 @@ impl schema::SchemaType for Event {
             (
                 "ItemCreated".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("itemId"), u64::get_type()),
+                    (String::from("itemId"), ItemID::get_type()),
                     (String::from("metadataURL"), Option::<MetadataUrl>::get_type()),
                 ]),
             ),
@@ -169,7 +138,7 @@ impl schema::SchemaType for Event {
             (
                 "ItemStatusChanged".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("itemId"), u64::get_type()),
+                    (String::from("itemId"), ItemID::get_type()),
                     (String::from("newStatus"), Status::get_type()),
                     (String::from("additionalData"), AdditionalData::get_type()),
                 ]),
@@ -199,11 +168,12 @@ impl schema::SchemaType for Event {
     }
 }
 
-/// A struct containing a set of roles granted to an address.
+/// A struct containing a state of one item.
 #[derive(Debug, Serialize, SchemaType, Clone, PartialEq, Eq)]
 pub struct ItemState {
-    /// Set of roles.
+    /// The status of the item.
     pub status:       Status,
+    /// The metadata_url of the item.
     pub metadata_url: Option<MetadataUrl>,
 }
 
@@ -213,12 +183,13 @@ pub struct ItemState {
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
-    /// The minimum accepted raise to over bid the current bidder in Euro cent.
-    next_item_id: u64,
+    /// The next item id that will be assigned to an item when the admin creates
+    /// it. This value is sequentially increased by 1.
+    next_item_id: ItemID,
     /// A map containing all roles granted to addresses.
     roles:        StateMap<Address, AddressRoleState<S>, S>,
-    /// A map containing all roles granted to addresses.
-    items:        StateMap<u64, ItemState, S>,
+    /// A map containing all items with their states.
+    items:        StateMap<ItemID, ItemState, S>,
 }
 
 /// The different errors the contract can produce.
@@ -227,21 +198,22 @@ pub enum CustomContractError {
     /// Failed parsing the parameter.
     #[from(ParseError)]
     ParseParams, // -1
-    /// Failed logging: Log is full.
+    /// Failed logging because the log is full.
     LogFull, // -2
-    /// Failed logging: Log is malformed.
+    /// Failed logging because the log is malformed.
     LogMalformed, // -3
-    ///
+    /// Failed because the actor is not authorized to invoke the entry point.
     Unauthorized, // -4
-    ///
-    RoleWasAlreadyGranted, // -5
-    ///
-    RoleWasNotGranted, // -6
-    ///
+    /// Failed to revoke role because it was not granted in the first place.
+    RoleWasNotGranted, // -5
+    /// Failed to grant role because it was granted already in the first place.
+    RoleWasAlreadyGranted, // -6
+    /// Item with given item id already exists in the state.
     ItemAlreadyExists, // -7
-    ///
+    /// Item with given item id does not exist in the state.
     ItemDoesNotExist, // -8
-    ///
+    /// The item is not in the correct state to do an update based on the rules
+    /// of the state machine.
     WrongState, // -9
 }
 
@@ -255,6 +227,7 @@ impl From<LogError> for CustomContractError {
     }
 }
 
+/// Custom type for the contract result.
 pub type ContractResult<A> = Result<A, CustomContractError>;
 
 impl State {
@@ -276,7 +249,7 @@ impl State {
         });
     }
 
-    /// Check if an address has an role.
+    /// Check if an address has a role.
     fn has_role(&self, account: &Address, role: Roles) -> bool {
         return match self.roles.get(account) {
             None => false,
@@ -284,10 +257,11 @@ impl State {
         };
     }
 
-    /// Check if an address has an role.
+    /// Change the item status to the given new status. The function reverts if
+    /// the item does not exist.
     fn change_item_status(
         &mut self,
-        item_index: u64,
+        item_index: ItemID,
         new_state: Status,
     ) -> Result<(), CustomContractError> {
         let mut previous_state =
@@ -298,10 +272,12 @@ impl State {
         Ok(())
     }
 
-    /// Check if an address has an role.
+    /// Change the item status to in-transit based on the state machine rule.
+    /// The function reverts if the item does not exist or the item is in
+    /// the wrong state.
     fn change_item_status_to_in_transit(
         &mut self,
-        item_index: u64,
+        item_index: ItemID,
     ) -> Result<(), CustomContractError> {
         let mut previous_state =
             self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
@@ -313,10 +289,12 @@ impl State {
         Ok(())
     }
 
-    /// Check if an address has an role.
+    /// Change the item status to in-store based on the state machine rule. The
+    /// function reverts if the item does not exist or the item is in the
+    /// wrong state.
     fn change_item_status_to_in_store(
         &mut self,
-        item_index: u64,
+        item_index: ItemID,
     ) -> Result<(), CustomContractError> {
         let mut previous_state =
             self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
@@ -328,8 +306,13 @@ impl State {
         Ok(())
     }
 
-    /// Check if an address has an role.
-    fn change_item_status_to_sold(&mut self, item_index: u64) -> Result<(), CustomContractError> {
+    /// Change the item status to sold based on the state machine rule. The
+    /// function reverts if the item does not exist or the item is in the
+    /// wrong state.
+    fn change_item_status_to_sold(
+        &mut self,
+        item_index: ItemID,
+    ) -> Result<(), CustomContractError> {
         let mut previous_state =
             self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
 
@@ -340,7 +323,8 @@ impl State {
         Ok(())
     }
 }
-/// Init function that creates a new auction
+
+/// Init function that creates a new contract.
 #[init(contract = "track_and_trace", event = "Event", enable_logger)]
 fn init(
     ctx: &InitContext,
@@ -367,15 +351,20 @@ fn init(
     Ok(state)
 }
 
+/// Return_value of the `view` function contains the content of the state.
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 pub struct ViewState {
-    pub next_item_id: u64,
-    pub items:        Vec<(u64, ItemState)>,
+    /// The next item id that will be assigned to an item when the admin creates
+    /// it.
+    pub next_item_id: ItemID,
+    /// A vector containing all roles granted to addresses.
     pub roles:        Vec<(Address, Vec<Roles>)>,
+    /// A vector containing all items with their states.
+    pub items:        Vec<(ItemID, ItemState)>,
 }
 
-/// View function for testing. This reports on the entire state of the contract
-/// for testing purposes.
+/// View function for testing. This function reports on the entire state of the
+/// contract for testing purposes.
 #[receive(contract = "track_and_trace", name = "view", return_value = "ViewState")]
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
@@ -392,17 +381,23 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
         })
         .collect();
 
-    let items: Vec<(u64, ItemState)> =
+    let items: Vec<(ItemID, ItemState)> =
         state.items.iter().map(|(key, value)| (*key, (*value).clone())).collect();
 
     Ok(ViewState {
         roles,
         items,
-        next_item_id: host.state().next_item_id,
+        next_item_id: state.next_item_id,
     })
 }
 
-/// Receive function for accounts to place a bid in the auction
+/// Receive function for the ADMIN to create a new item.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - The sender is not the ADMIN of the contract instance.
+/// - The item already exists in the state which should technically not happen.
+/// - It fails to log the `ItemCreatedEvent`.
 #[receive(
     contract = "track_and_trace",
     name = "createItem",
@@ -416,14 +411,18 @@ fn create_item(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> Result<(), CustomContractError> {
+    // Parse the parameter.
     let metadata_url: Option<MetadataUrl> = ctx.parameter_cursor().get()?;
 
-    // Check that only the ADMIN is authorized to create new item.
+    // Check that only the ADMIN is authorized to create a new item.
     ensure!(host.state().has_role(&ctx.sender(), Roles::ADMIN), CustomContractError::Unauthorized);
 
+    // Get the next available item id.
     let next_item_id = host.state().next_item_id;
-
+    // Increase the item id tracker in the state.
     host.state_mut().next_item_id += 1;
+
+    // Create the item in state.
     let previous_item = host.state_mut().items.insert(next_item_id, ItemState {
         metadata_url: metadata_url.clone(),
         status:       Status::Produced,
@@ -431,6 +430,7 @@ fn create_item(
 
     ensure_eq!(previous_item, None, CustomContractError::ItemAlreadyExists);
 
+    // Log an ItemCreatedEvent.
     logger.log(&Event::ItemCreated(ItemCreatedEvent {
         item_id: next_item_id,
         metadata_url,
@@ -439,17 +439,38 @@ fn create_item(
     Ok(())
 }
 
-/// The parameter for the contract function `revokeRole` which revokes a role
-/// from an address.
+/// Partial parameter type for the contract function `changeItemStatus`.
+#[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
+pub struct AdditionalData {
+    /// Any additional data encoded as generic bytes. Usecase-specific data can
+    /// be included here such as temperature, longitude, latitude, ... .
+    pub bytes: Vec<u8>,
+}
+
+/// The parameter type for the contract function `changeItemStatus` which
+/// updates the status of an item.
 #[derive(Serialize, SchemaType)]
 pub struct ChangeItemStatusParams {
-    /// The address that has been its role revoked.
-    pub item_id:         u64,
+    /// The item's id.
+    pub item_id:         ItemID,
+    /// The item's new status.
     pub new_status:      Status,
+    /// Any additional data encoded as generic bytes. Usecase-specific data can
+    /// be included here such as temperature, longitude, latitude, ... .
     pub additional_data: AdditionalData,
 }
 
-/// Receive function for accounts to place a bid in the auction
+/// Receive function for the ADMIN or any of the other ROLES to change the
+/// status of an item. The other ROLES can update the item's status based on the
+/// rules of the state machine. In contrast, the ADMIN can set the item's status
+/// to any value at any time.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Sender is not an authorized role.
+/// - The item does not exist in the state.
+/// - The item is in the wrong state based on the state machine rule.
+/// - It fails to log the `ItemStatusChangedEvent`.
 #[receive(
     contract = "track_and_trace",
     name = "changeItemStatus",
@@ -463,11 +484,14 @@ fn change_item_status(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> Result<(), CustomContractError> {
+    // Parse the parameter.
     let param: ChangeItemStatusParams = ctx.parameter_cursor().get()?;
 
     if host.state().has_role(&ctx.sender(), Roles::ADMIN) {
+        // The admin can set the item's status to any value at any time.
         host.state_mut().change_item_status(param.item_id, param.new_status)?
     } else {
+        // The other ROLES can set the item's status based on some rules.
         match param.new_status {
             Status::Produced => {
                 bail!(CustomContractError::Unauthorized)
@@ -499,6 +523,7 @@ fn change_item_status(
         };
     }
 
+    // Log an ItemStatusChangedEvent.
     logger.log(&Event::ItemStatusChanged(ItemStatusChangedEvent {
         item_id:         param.item_id,
         new_status:      param.new_status,
@@ -508,11 +533,21 @@ fn change_item_status(
     Ok(())
 }
 
+/// The parameter for the contract function `grantRole` which grants a role to
+/// an address.
+#[derive(Serialize, SchemaType)]
+pub struct GrantRoleParams {
+    /// The address that has been its role granted.
+    pub address: Address,
+    /// The role that has been granted to the above address.
+    pub role:    Roles,
+}
+
 /// Add role to an address.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Sender is not the ADMIN of the contract instance.
+/// - The sender is not the ADMIN of the contract instance.
 /// - The `address` is already holding the specified role to be granted.
 #[receive(
     contract = "track_and_trace",
@@ -537,7 +572,7 @@ fn contract_grant_role(
     // Check that only the ADMIN is authorized to grant roles.
     ensure!(state.has_role(&sender, Roles::ADMIN), CustomContractError::Unauthorized);
 
-    // Check that the `address` had previously not hold the specified role.
+    // Check that the `address` had previously not held the specified role.
     ensure!(
         !state.has_role(&params.address, params.role),
         CustomContractError::RoleWasAlreadyGranted
@@ -545,6 +580,7 @@ fn contract_grant_role(
 
     // Grant role.
     state.grant_role(&params.address, params.role, state_builder);
+    // Log a GrantRoleEvent.
     logger.log(&Event::GrantRole(GrantRoleEvent {
         address: params.address,
         role:    params.role,
@@ -552,12 +588,22 @@ fn contract_grant_role(
     Ok(())
 }
 
+/// The parameter for the contract function `revokeRole` which revokes a role
+/// from an address.
+#[derive(Serialize, SchemaType)]
+pub struct RevokeRoleParams {
+    /// The address that has been its role revoked.
+    pub address: Address,
+    /// The role that has been revoked from the above address.
+    pub role:    Roles,
+}
+
 /// Revoke role from an address.
 ///
 /// It rejects if:
 /// - It fails to parse the parameter.
-/// - Sender is not the ADMIN of the contract instance.
-/// - The `address` is not holding the specified role to be revoked.
+/// - The sender is not the ADMIN of the contract instance.
+/// - The `address` does not hold the specified role to be revoked.
 #[receive(
     contract = "track_and_trace",
     name = "revokeRole",
@@ -581,11 +627,12 @@ fn contract_revoke_role(
     // Check that only the ADMIN is authorized to revoke roles.
     ensure!(state.has_role(&sender, Roles::ADMIN), CustomContractError::Unauthorized);
 
-    // Check that the `address` had previously hold the specified role.
+    // Check that the `address` had previously held the specified role.
     ensure!(state.has_role(&params.address, params.role), CustomContractError::RoleWasNotGranted);
 
     // Revoke role.
     state.revoke_role(&params.address, params.role);
+    // Log a RevokeRoleEvent.
     logger.log(&Event::RevokeRole(RevokeRoleEvent {
         address: params.address,
         role:    params.role,
