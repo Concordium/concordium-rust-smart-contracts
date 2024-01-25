@@ -477,4 +477,33 @@ mod host_dummy_functions {
     fn hash_keccak_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
+
+    #[no_mangle]
+    fn report_error(
+        _msg_start: *const u8,
+        _msg_length: u32,
+        _filename_start: *const u8,
+        _filename_length: u32,
+        _line: u32,
+        _column: u32,
+    ) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
+    #[no_mangle]
+    fn debug_print(
+        _msg_start: *const u8,
+        _msg_length: u32,
+        _filename_start: *const u8,
+        _filename_length: u32,
+        _line: u32,
+        _column: u32,
+    ) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
+
+    #[no_mangle]
+    fn get_random(_dest: *mut u8, _size: u32) {
+        unimplemented!("Dummy function! Not to be executed")
+    }
 }
