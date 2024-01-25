@@ -43,6 +43,18 @@ macro_rules! exit_ooe {
     };
 }
 
+impl InvocationData {
+    /// An internal helper function to construct a [`DebugTraceElement`] from a
+    /// set of debug events.
+    pub(crate) fn debug_trace(&self, debug_trace: DebugTracker) -> DebugTraceElement {
+        DebugTraceElement::Debug {
+            entrypoint: self.entrypoint.clone(),
+            address: self.address,
+            debug_trace,
+        }
+    }
+}
+
 /// Ok response from the `invoke_entrypoint_initial` method. This is the
 /// execution up to either success, failure, or the first interrupt.
 ///
@@ -722,13 +734,13 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     kind: v1::InvokeFailure::NonExistentAccount,
                                 },
                             };
-
                             exit_ooe!(
                                 self.remaining_energy.tick_energy(
                                     constants::CONTRACT_INSTANCE_QUERY_ACCOUNT_BALANCE_COST,
                                 ),
                                 trace
                             );
+                            trace_elements.push(invocation_data.debug_trace(trace));
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -757,6 +769,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 ),
                                 trace
                             );
+                            trace_elements.push(invocation_data.debug_trace(trace));
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -782,6 +795,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 trace
                             );
 
+                            trace_elements.push(invocation_data.debug_trace(trace));
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -853,6 +867,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     kind: v1::InvokeFailure::NonExistentAccount,
                                 },
                             };
+                            trace_elements.push(invocation_data.debug_trace(trace));
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,
@@ -889,6 +904,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     kind: v1::InvokeFailure::NonExistentAccount,
                                 },
                             };
+                            trace_elements.push(invocation_data.debug_trace(trace));
                             stack.push(Next::Resume {
                                 data: invocation_data,
                                 config,

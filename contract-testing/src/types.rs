@@ -553,6 +553,9 @@ impl ContractInvokeSuccess {
             DebugTraceElement::WithFailures {
                 ..
             } => None,
+            DebugTraceElement::Debug {
+                ..
+            } => None,
         })
     }
 
@@ -573,6 +576,9 @@ impl ContractInvokeSuccess {
                     ..
                 } => Some(trace_element.clone()),
                 DebugTraceElement::WithFailures {
+                    ..
+                } => None,
+                DebugTraceElement::Debug {
                     ..
                 } => None,
             })
@@ -911,6 +917,18 @@ fn debug_events_worker(
                             self.stack.push(Next::Remaining((true, trace_elements)));
                         }
                     }
+                    DebugTraceElement::Debug {
+                        entrypoint,
+                        address,
+                        debug_trace,
+                    } => {
+                        return Some(DebugItem {
+                            address: *address,
+                            entrypoint: entrypoint.as_entrypoint_name(),
+                            debug_trace,
+                            rolled_back: false,
+                        });
+                    }
                 }
             }
         }
@@ -937,6 +955,20 @@ pub enum DebugTraceElement {
         /// The energy used so far.
         energy_used:   Energy,
         debug_trace:   DebugTracker,
+    },
+    /// A record of debug events emitted before the interrupt.
+    /// Contract queries, such as querying account balance or exchange rates do
+    /// not produce any events visible in the
+    /// [`Regular`](DebugTraceElement::Regular) trace elements
+    /// or in the transaction outcomes, but the internal debug information is
+    /// still useful for debugging.
+    Debug {
+        /// The entrypoint that is being executed.
+        entrypoint:  OwnedEntrypointName,
+        /// The address that is affected.
+        address:     ContractAddress,
+        /// Events emitted until the interrupt.
+        debug_trace: DebugTracker,
     },
     /// One or multiple trace elements that fail. Useful for debugging.
     /// This variant also contains additional information, such as the error,

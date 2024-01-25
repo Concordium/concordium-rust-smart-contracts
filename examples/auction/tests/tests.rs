@@ -65,6 +65,7 @@ fn test_multiple_scenarios() {
                 message:      OwnedParameter::empty(),
             },
         )
+        .print_debug(DebugOutputKind::Full)
         .expect("Alice successfully bids 2 CCD");
     // Check that 1 CCD is transferred back to ALICE.
     assert_eq!(update_2.account_transfers().collect::<Vec<_>>()[..], [(
@@ -260,7 +261,9 @@ fn initialize_chain_and_auction() -> (Chain, ContractAddress) {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, CAROL, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1_debug(SIGNER, CAROL, module, is_debug_enabled())
+        .expect("Deploy valid module");
 
     // Create the InitParameter.
     let parameter = InitParameter {
