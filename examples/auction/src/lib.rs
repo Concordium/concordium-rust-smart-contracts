@@ -120,14 +120,18 @@ fn auction_bid(
     host: &mut Host<State>,
     amount: Amount,
 ) -> Result<(), BidError> {
+    concordium_dbg!("AUCTION BID! 1");
     let state = host.state();
+    concordium_dbg!("AUCTION BID! 2");
     // Ensure the auction has not been finalized yet
     ensure_eq!(state.auction_state, AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
+    concordium_dbg!("AUCTION BID! 3");
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
     ensure!(slot_time <= state.end, BidError::BidTooLate);
 
+    concordium_dbg!("AUCTION BID! 4");
     // Ensure that only accounts can place a bid
     let sender_address = match ctx.sender() {
         Address::Contract(_) => bail!(BidError::OnlyAccount),
@@ -139,19 +143,25 @@ fn auction_bid(
 
     // Balance of the contract before the call
     let previous_balance = balance - amount;
+    concordium_dbg!("AUCTION BID! 5");
 
     // Ensure that the new bid exceeds the highest bid so far
     ensure!(amount > previous_balance, BidError::BidBelowCurrentBid);
+    concordium_dbg!("AUCTION BID! 6");
 
     // Calculate the difference between the previous bid and the new bid in CCD.
     let amount_difference = amount - previous_balance;
     // Get the current exchange rate used by the chain
+    concordium_dbg!("AUCTION BID! 7");
     let exchange_rates = host.exchange_rates();
     // Convert the CCD difference to EUR
+    concordium_dbg!("AUCTION BID! 8");
     let euro_cent_difference = exchange_rates.convert_amount_to_euro_cent(amount_difference);
     // Ensure that the bid is at least the `minimum_raise` more than the previous
     // bid
+    concordium_dbg!("AUCTION BID! 9");
     ensure!(euro_cent_difference >= state.minimum_raise, BidError::BidBelowMinimumRaise);
+    concordium_dbg!("AUCTION BID! 10");
 
     if let Some(account_address) = host.state_mut().highest_bidder.replace(sender_address) {
         // Refunding old highest bidder;
@@ -164,6 +174,7 @@ fn auction_bid(
         // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
         host.invoke_transfer(&account_address, previous_balance).unwrap_abort();
     }
+    concordium_dbg!("AUCTION BID! 11");
     Ok(())
 }
 
