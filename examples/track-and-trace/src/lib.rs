@@ -233,10 +233,16 @@ pub enum CustomContractError {
     LogMalformed, // -3
     ///
     Unauthorized, // -4
-    RoleWasAlreadyGranted,
-    RoleWasNotGranted,
-    ItemAlreadyExists,
-    ItemNotExists,
+    ///
+    RoleWasAlreadyGranted, // -5
+    ///
+    RoleWasNotGranted, // -6
+    ///
+    ItemAlreadyExists, // -7
+    ///
+    ItemDoesNotExist, // -8
+    ///
+    WrongState, // -9
 }
 
 /// Mapping the logging errors to CustomContractError.
@@ -279,23 +285,59 @@ impl State {
     }
 
     /// Check if an address has an role.
-    fn to_state_produced(&mut self, item_index: u64) {
-        self.items.entry(item_index).and_modify(|x| x.status = Status::Sold);
+    fn change_item_status(
+        &mut self,
+        item_index: u64,
+        new_state: Status,
+    ) -> Result<(), CustomContractError> {
+        let mut previous_state =
+            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
+
+        previous_state.status = new_state;
+
+        Ok(())
     }
 
     /// Check if an address has an role.
-    fn to_state_in_transit(&mut self, item_index: u64) {
-        self.items.entry(item_index).and_modify(|x| x.status = Status::InTransit);
+    fn change_item_status_to_in_transit(
+        &mut self,
+        item_index: u64,
+    ) -> Result<(), CustomContractError> {
+        let mut previous_state =
+            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
+
+        ensure_eq!(previous_state.status, Status::Produced, CustomContractError::WrongState);
+
+        previous_state.status = Status::InTransit;
+
+        Ok(())
     }
 
     /// Check if an address has an role.
-    fn to_state_in_store(&mut self, item_index: u64) {
-        self.items.entry(item_index).and_modify(|x| x.status = Status::InStore);
+    fn change_item_status_to_in_store(
+        &mut self,
+        item_index: u64,
+    ) -> Result<(), CustomContractError> {
+        let mut previous_state =
+            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
+
+        ensure_eq!(previous_state.status, Status::InTransit, CustomContractError::WrongState);
+
+        previous_state.status = Status::InStore;
+
+        Ok(())
     }
 
     /// Check if an address has an role.
-    fn to_state_sold(&mut self, item_index: u64) {
-        self.items.entry(item_index).and_modify(|x| x.status = Status::Sold);
+    fn change_item_status_to_sold(&mut self, item_index: u64) -> Result<(), CustomContractError> {
+        let mut previous_state =
+            self.items.entry(item_index).occupied_or(CustomContractError::ItemDoesNotExist)?;
+
+        ensure_eq!(previous_state.status, Status::InStore, CustomContractError::WrongState);
+
+        previous_state.status = Status::Sold;
+
+        Ok(())
     }
 }
 /// Init function that creates a new auction
@@ -423,16 +465,39 @@ fn change_item_status(
 ) -> Result<(), CustomContractError> {
     let param: ChangeItemStatusParams = ctx.parameter_cursor().get()?;
 
-    // TODO other roles can also update
-    // Check that only the ADMIN is authorized to create new item.
-    ensure!(host.state().has_role(&ctx.sender(), Roles::ADMIN), CustomContractError::Unauthorized);
+    if host.state().has_role(&ctx.sender(), Roles::ADMIN) {
+        host.state_mut().change_item_status(param.item_id, param.new_status)?
+    } else {
+        match param.new_status {
+            Status::Produced => {
+                bail!(CustomContractError::Unauthorized)
+            }
+            Status::InTransit => {
+                ensure!(
+                    host.state().has_role(&ctx.sender(), Roles::PRODUCER),
+                    CustomContractError::Unauthorized
+                );
 
-    match param.new_status {
-        Status::Produced => host.state_mut().to_state_produced(param.item_id),
-        Status::InTransit => host.state_mut().to_state_in_transit(param.item_id),
-        Status::InStore => host.state_mut().to_state_in_store(param.item_id),
-        Status::Sold => host.state_mut().to_state_sold(param.item_id),
-    };
+                host.state_mut().change_item_status_to_in_transit(param.item_id)?;
+            }
+            Status::InStore => {
+                ensure!(
+                    host.state().has_role(&ctx.sender(), Roles::TRANSPORTER),
+                    CustomContractError::Unauthorized
+                );
+
+                host.state_mut().change_item_status_to_in_store(param.item_id)?;
+            }
+            Status::Sold => {
+                ensure!(
+                    host.state().has_role(&ctx.sender(), Roles::SELLER),
+                    CustomContractError::Unauthorized
+                );
+
+                host.state_mut().change_item_status_to_sold(param.item_id)?;
+            }
+        };
+    }
 
     logger.log(&Event::ItemStatusChanged(ItemStatusChangedEvent {
         item_id:         param.item_id,

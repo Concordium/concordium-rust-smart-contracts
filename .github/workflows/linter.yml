@@ -817,7 +817,7 @@ jobs:
           - examples/cis2-nft
           - examples/cis3-nft-sponsored-txs
           - examples/cis2-wccd
-          - examples/track-and-trace/Cargo.toml
+          - examples/track-and-trace
           - examples/credential-registry
           - examples/fib
           - examples/icecream
