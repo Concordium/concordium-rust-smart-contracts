@@ -1,4 +1,4 @@
-//! Tests for the sponsored-tx-enabled-auction smart contract.
+//! Tests for the track_and_trace smart contract.
 use concordium_smart_contract_testing::*;
 use concordium_std::MetadataUrl;
 use track_and_trace::*;
@@ -16,41 +16,54 @@ const SELLER_ADDR: Address = Address::Account(AccountAddress([3; 32]));
 const SIGNER: Signer = Signer::with_one_key();
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 
+// 1. Test that the ADMIN can create a new item.
+// 2. Test that the PRODUCER can update the item status to `InTransit`.
+// 3. Test that the SELLER can NOT update the item status to `InStore`.
+// 4. Test that the ADMIN can update the item status to `Sold`. The ADMIN can
+// update the item to any state, neglecting the rules of the state machine.
 #[test]
-fn test_add_item() {
+fn test_create_item_and_update_item_status() {
     let (mut chain, track_and_trace_contract_address) = initialize_chain_and_contract();
 
-    // Create the InitParameter.
-    let parameter = Some(MetadataUrl {
+    // Create the Parameter.
+    let metadata_url = Some(MetadataUrl {
         url:  "https://some.example/".to_string(),
         hash: None,
     });
 
-    // Add item.
-    let _update = chain
+    // Check the ADMIN can create a new item.
+    let update = chain
         .contract_update(SIGNER, ADMIN, ADMIN_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::from_ccd(0),
             address:      track_and_trace_contract_address,
             receive_name: OwnedReceiveName::new_unchecked("track_and_trace.createItem".to_string()),
-            message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
+            message:      OwnedParameter::from_serial(&metadata_url).expect("Serialize parameter"),
         })
-        .expect("Should be able to add Item");
+        .expect("Should be able to create item");
 
-    // Check operator in state
-    let test = view(&chain, track_and_trace_contract_address);
+    // Check that the events are logged.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
 
-    println!("{:?}", test);
+    assert_eq!(events, [Event::ItemCreated(ItemCreatedEvent {
+        item_id:      0u64,
+        metadata_url: metadata_url.clone(),
+    })]);
+
+    // Check contract state.
+    check_state(&chain, track_and_trace_contract_address, Status::Produced, metadata_url.clone());
 
     let parameter = ChangeItemStatusParams {
-        /// The address that has been its role revoked.
         item_id:         0u64,
         additional_data: AdditionalData {
             bytes: vec![],
         },
     };
 
-    // Add item.
-    let _update = chain
+    // Check the PRODUCER can update the item based on the state machine rules.
+    let update = chain
         .contract_update(
             SIGNER,
             PRODUCER,
@@ -65,15 +78,49 @@ fn test_add_item() {
                 message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
             },
         )
-        .expect("Should be able to add Item");
+        .expect("Should be able update the state of the item");
 
-    // Check operator in state
-    let test = view(&chain, track_and_trace_contract_address);
+    // Check that the events are logged.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
 
-    println!("{:?}", test);
+    assert_eq!(events, [Event::ItemStatusChanged(ItemStatusChangedEvent {
+        item_id:         parameter.item_id,
+        new_status:      Status::InTransit,
+        additional_data: parameter.additional_data,
+    })]);
+
+    // Check contract state.
+    check_state(&chain, track_and_trace_contract_address, Status::InTransit, metadata_url.clone());
+
+    let parameter = ChangeItemStatusParams {
+        item_id:         0u64,
+        additional_data: AdditionalData {
+            bytes: vec![],
+        },
+    };
+
+    // Check the SELLER can NOT update the item because of the rules of the state
+    // machine.
+    let update = chain
+        .contract_update(SIGNER, SELLER, SELLER_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::from_ccd(0),
+            address:      track_and_trace_contract_address,
+            receive_name: OwnedReceiveName::new_unchecked(
+                "track_and_trace.changeItemStatus".to_string(),
+            ),
+            message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
+        })
+        .expect_err("Should expect error");
+
+    // Check that the correct error is returned.
+    let error: CustomContractError =
+        update.parse_return_value().expect("CustomContractError return value");
+    assert_eq!(error, CustomContractError::Unauthorized);
 
     let parameter = ChangeItemStatusParamsByAdmin {
-        /// The address that has been its role revoked.
         item_id:         0u64,
         new_status:      Status::Sold,
         additional_data: AdditionalData {
@@ -81,8 +128,8 @@ fn test_add_item() {
         },
     };
 
-    // Add item.
-    let _update = chain
+    // Check the ADMIN can update the item to any state.
+    let update = chain
         .contract_update(SIGNER, ADMIN, ADMIN_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::from_ccd(0),
             address:      track_and_trace_contract_address,
@@ -91,15 +138,32 @@ fn test_add_item() {
             ),
             message:      OwnedParameter::from_serial(&parameter).expect("Serialize parameter"),
         })
-        .expect("Should be able to add Item");
+        .expect("Should be able to update the state of the item");
 
-    // Check operator in state
-    let test = view(&chain, track_and_trace_contract_address);
-    println!("{:?}", test);
+    // Check that the events are logged.
+    let events = update
+        .events()
+        .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
+        .collect::<Vec<Event>>();
+
+    assert_eq!(events, [Event::ItemStatusChanged(ItemStatusChangedEvent {
+        item_id:         parameter.item_id,
+        new_status:      parameter.new_status,
+        additional_data: parameter.additional_data,
+    })]);
+
+    // Check contract state.
+    check_state(&chain, track_and_trace_contract_address, parameter.new_status, metadata_url);
 }
 
-// Get the `TokenIdU8(1)` balances for ADMIN and the auction contract.
-fn view(chain: &Chain, track_and_trace_contract_address: ContractAddress) -> ViewState {
+// Invoke the `view` function and check that the contract state is as expected.
+// Exactly one item is expected to be in the state.
+fn check_state(
+    chain: &Chain,
+    track_and_trace_contract_address: ContractAddress,
+    status: Status,
+    metadata_url: Option<MetadataUrl>,
+) {
     let invoke = chain
         .contract_invoke(ADMIN, ADMIN_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -109,10 +173,25 @@ fn view(chain: &Chain, track_and_trace_contract_address: ContractAddress) -> Vie
         })
         .expect("Invoke view");
 
-    invoke.parse_return_value().expect("BalanceOf return value")
+    let return_value: ViewState = invoke.parse_return_value().expect("ViewState return value");
+
+    // Check that the status of the item is correct.
+    assert_eq!(return_value, ViewState {
+        next_item_id: 1,
+        roles:        vec![
+            (ADMIN_ADDR, vec![Roles::ADMIN]),
+            (PRODUCER_ADDR, vec![Roles::PRODUCER]),
+            (TRANSPORTER_ADDR, vec![Roles::TRANSPORTER]),
+            (SELLER_ADDR, vec![Roles::SELLER]),
+        ],
+        items:        vec![(0, ItemState {
+            status,
+            metadata_url
+        })],
+    });
 }
 
-/// Setup auction and chain.
+/// Setup chain and contract.
 fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
     let mut chain = Chain::builder().build().expect("Should be able to build chain");
 

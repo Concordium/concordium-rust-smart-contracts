@@ -1,20 +1,23 @@
 //! # Implementation of a simple track-and-trace contract.
 //!
 //! ## Grant and Revoke roles:
-//! The contract has access control roles. The ADMIN can grant or revoke all
-//! other roles. The available roles are ADMIN (can grant/revoke roles, create a
-//! new item, and update the status of an item), PRODUCER (can update the status
-//! of an item from `Produced` to `InTransit`), TRANSPORTER (can update the
-//! status of an item from `InTransit` to `InStore`), and SELLER (can update the
-//! status of an item from `InStore` to `Sold`). Several addresses can have the
-//! same role and an address can have several roles.
+//! The contract has access control roles. The available roles are ADMIN (can
+//! grant/revoke roles, create a new item, and update the status of an item),
+//! PRODUCER (can update the status of an item from `Produced` to `InTransit`),
+//! TRANSPORTER (can update the status of an item from `InTransit` to
+//! `InStore`), and SELLER (can update the status of an item from `InStore` to
+//! `Sold`). Several addresses can have the same role and an address can have
+//! several roles.
 //!
 //! ## State machine:
-//! The track-and-trace is modeled based on a state machine.
-//! The ADMIN can create a new item. Each new item is assigned the
-//! `next_item_id` (value is tracked in the contract's state). The different
-//! roles can update the item's status based on the rules of the state machine.
-//! In addition, the admin can set an item's status to any value at any time.
+//! The track-and-trace contract is modeled based on a state machine. The flow
+//! of the state machine is as follows: The ADMIN creates a new item with status
+//! `Produced`. Each new item is assigned the `next_item_id`. The `next_item_id`
+//! value is sequentially increased by 1 in the contract's state. The different
+//! roles can update the item's status based on the rules of the state machine
+//! as follows: Produced -> InTransit -> InStore -> Sold. The ADMIN role is an
+//! exception and can set an item's status to any value at any time ignoring the
+//! state machine rules.
 #![cfg_attr(not(feature = "std"), no_std)]
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, *};
@@ -392,7 +395,8 @@ fn create_item(
     Ok(())
 }
 
-/// Partial parameter type for the contract function `changeItemStatus`.
+/// Partial parameter type for the contract function
+/// `changeItemStatus/changeItemStatusByAdmin`.
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct AdditionalData {
     /// Any additional data encoded as generic bytes. Usecase-specific data can
@@ -438,6 +442,7 @@ fn change_item_status_by_admin(
     // Parse the parameter.
     let param: ChangeItemStatusParamsByAdmin = ctx.parameter_cursor().get()?;
 
+    // Check that only the ADMIN is authorized.
     ensure!(host.state().has_role(&ctx.sender(), Roles::ADMIN), CustomContractError::Unauthorized);
 
     // The admin can set the item's status to any value at any time.
@@ -471,14 +476,17 @@ fn update_state_machine(
     sender: Address,
     item_id: ItemID,
 ) -> Result<Status, CustomContractError> {
+    // Get the item from the state.
     let mut item =
         host.state_mut().items.entry(item_id).occupied_or(CustomContractError::ItemDoesNotExist)?;
 
+    // Model the state transition based on the rules of the state machine.
     match item.status {
         Status::Produced => {
             item.status = Status::InTransit;
             drop(item);
 
+            // Check that only the correct role is authorized.
             ensure!(
                 host.state().has_role(&sender, Roles::PRODUCER),
                 CustomContractError::Unauthorized
@@ -489,6 +497,7 @@ fn update_state_machine(
             item.status = Status::InStore;
             drop(item);
 
+            // Check that only the correct role is authorized.
             ensure!(
                 host.state().has_role(&sender, Roles::TRANSPORTER),
                 CustomContractError::Unauthorized
@@ -499,6 +508,7 @@ fn update_state_machine(
             item.status = Status::Sold;
             drop(item);
 
+            // Check that only the correct role is authorized.
             ensure!(
                 host.state().has_role(&sender, Roles::SELLER),
                 CustomContractError::Unauthorized
