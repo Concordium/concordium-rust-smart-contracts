@@ -378,6 +378,13 @@ pub use std::{
     string::String, vec::Vec,
 };
 
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+pub mod bump_alloc;
+
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+#[cfg_attr(feature = "bump_alloc", global_allocator)]
+static ALLOC: crate::bump_alloc::BumpAllocator = unsafe { crate::bump_alloc::BumpAllocator::new() };
+
 /// Re-export.
 pub mod collections {
     #[cfg(not(feature = "std"))]

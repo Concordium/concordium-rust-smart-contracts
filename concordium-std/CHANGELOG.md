@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Add the feature `bump_alloc`, which enables a small and simple global allocator. Can only be used in Wasm.
+
 ## concordium-std 9.0.1 (2024-01-26)
 
 - Fix a bug that caused a linking error when using `concordium_dbg!` on some
