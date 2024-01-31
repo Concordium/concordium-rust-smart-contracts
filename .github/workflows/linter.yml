@@ -50,6 +50,7 @@ jobs:
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
+          - examples/sponsored-tx-enabled-auction/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -701,6 +702,7 @@ jobs:
           - examples/smart-contract-upgrade/contract-version2/Cargo.toml
           - examples/offchain-transfers/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
+          - examples/sponsored-tx-enabled-auction/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -831,6 +833,7 @@ jobs:
           - examples/smart-contract-upgrade/contract-version2
           - examples/offchain-transfers
           - examples/account-signature-checks
+          - examples/sponsored-tx-enabled-auction
 
     steps:
       - name: Checkout sources
@@ -860,6 +863,11 @@ jobs:
       - name: Build contract-upgrade version 2 module if needed
         if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}
         run: cargo concordium build --out "examples/smart-contract-upgrade/contract-version2/concordium-out/module.wasm.v1" -- --manifest-path "examples/smart-contract-upgrade/contract-version2/Cargo.toml"
+
+        # The 'sponsored-tx-enabled-auction' example needs the wasm module `cis2-multi` for its tests.
+      - name: Build cis2-multi module if needed
+        if: ${{ matrix.crates == 'examples/sponsored-tx-enabled-auction' }}
+        run: cargo concordium build --out "examples/cis2-multi/concordium-out/module.wasm.v1" -- --manifest-path "examples/cis2-multi/Cargo.toml"
 
       - name: Run cargo concordium test
         run: cargo concordium test --out "${{ matrix.crates }}/concordium-out/module.wasm.v1" -- --manifest-path "${{ matrix.crates }}/Cargo.toml"
