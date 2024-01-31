@@ -856,9 +856,9 @@ macro_rules! fail {
             panic!()
         }
     };
-    ($($arg:tt),+) => {
+    ($($arg:tt)*) => {
         {
-            let msg = format!($($arg),+);
+            let msg = format!($($arg)*);
             #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
@@ -880,9 +880,9 @@ macro_rules! fail {
             panic!()
         }
     };
-    ($($arg:tt),+) => {
+    ($($arg:tt)*) => {
         {
-            let msg = &$crate::alloc::format!($($arg),+);
+            let msg = &$crate::alloc::format!($($arg)*);
             #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
@@ -906,9 +906,9 @@ macro_rules! claim {
             $crate::fail!()
         }
     };
-    ($cond:expr, $($arg:tt),+) => {
+    ($cond:expr, $($arg:tt)*) => {
         if !$cond {
-            $crate::fail!($($arg),+)
+            $crate::fail!($($arg)*)
         }
     };
 }
@@ -930,8 +930,8 @@ macro_rules! claim_eq {
             }
         }
     };
-    ($left:expr, $right:expr, $($arg:tt),+) => {
-        $crate::claim!($left == $right, $($arg),+)
+    ($left:expr, $right:expr, $($arg:tt)*) => {
+        $crate::claim!($left == $right, $($arg)*)
     };
 }
 
@@ -952,8 +952,8 @@ macro_rules! claim_ne {
             }
         }
     };
-    ($left:expr, $right:expr, $($arg:tt),+) => {
-        $crate::claim!($left != $right, $($arg),+)
+    ($left:expr, $right:expr, $($arg:tt)*) => {
+        $crate::claim!($left != $right, $($arg)*)
     };
 }
 
