@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Make the `concordium_dbg!` and related macros also usable with the full syntax
+  that `println!` supports.
+
 ## concordium-std 9.0.1 (2024-01-26)
 
 - Fix a bug that caused a linking error when using `concordium_dbg!` on some
