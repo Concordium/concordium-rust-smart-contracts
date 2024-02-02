@@ -436,9 +436,9 @@ macro_rules! concordium_dbg {
             $crate::debug_print("", file!(), line!(), column!());
         }
     };
-    ($($arg:tt),+) => {
+    ($($arg:tt)*) => {
         {
-            let msg = $crate::format!($($arg),+);
+            let msg = $crate::format!($($arg)*);
             $crate::debug_print(&msg, file!(), line!(), column!());
         }
     };
@@ -454,7 +454,7 @@ macro_rules! concordium_dbg {
 /// expression.
 macro_rules! concordium_dbg {
     () => {{}};
-    ($($arg:tt),+) => {{}};
+    ($($arg:tt)*) => {{}};
 }
 
 /// Emit a message in debug mode.

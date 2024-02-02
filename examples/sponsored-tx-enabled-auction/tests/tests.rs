@@ -75,7 +75,7 @@ fn test_add_item() {
     let rv: ReturnParamView = invoke.parse_return_value().expect("View return value");
 
     assert_eq!(rv, ReturnParamView {
-        item_states:   vec![(0, ItemState {
+        item_states:   vec![(1, ItemState {
             auction_state:  AuctionState::NotSoldYet,
             highest_bidder: None,
             name:           "MyItem".to_string(),
@@ -97,7 +97,7 @@ fn test_add_item() {
                 "sponsored_tx_enabled_auction.viewItemState".to_string(),
             ),
             address:      auction_contract_address,
-            message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+            message:      OwnedParameter::from_serial(&1u16).expect("Serialize parameter"),
         })
         .expect("Invoke viewItemState");
 
@@ -179,7 +179,7 @@ fn full_auction_flow_with_cis3_permit_function() {
 
     // Create input parameters for the `permit` transfer function.
     let additional_data = AdditionalDataIndex {
-        item_index: 0u16,
+        item_index: 1u16,
     };
 
     let transfer = concordium_cis2::Transfer {
@@ -276,7 +276,7 @@ fn full_auction_flow_with_cis3_permit_function() {
                 receive_name: OwnedReceiveName::new_unchecked(
                     "sponsored_tx_enabled_auction.finalize".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+                message:      OwnedParameter::from_serial(&1u16).expect("Serialize parameter"),
             },
         )
         .expect("Should be able to finalize");
@@ -350,7 +350,7 @@ fn full_auction_flow_with_several_bids() {
 
     // Create input parameters for the `permit` transfer function.
     let additional_data = AdditionalDataIndex {
-        item_index: 0u16,
+        item_index: 1u16,
     };
 
     let transfer = concordium_cis2::Transfer {
@@ -499,7 +499,7 @@ fn full_auction_flow_with_several_bids() {
                 receive_name: OwnedReceiveName::new_unchecked(
                     "sponsored_tx_enabled_auction.finalize".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+                message:      OwnedParameter::from_serial(&1u16).expect("Serialize parameter"),
             },
         )
         .expect("Should be able to finalize");
@@ -577,7 +577,7 @@ fn full_auction_flow_with_cis3_transfer_function() {
     assert_eq!(balance_of_alice_and_auction_contract.0, [TokenAmountU64(100), TokenAmountU64(0)]);
 
     let additional_data = AdditionalDataIndex {
-        item_index: 0u16,
+        item_index: 1u16,
     };
 
     // Transfer one token from ALICE to the auction contract.
@@ -626,7 +626,7 @@ fn full_auction_flow_with_cis3_transfer_function() {
                 receive_name: OwnedReceiveName::new_unchecked(
                     "sponsored_tx_enabled_auction.finalize".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+                message:      OwnedParameter::from_serial(&1u16).expect("Serialize parameter"),
             },
         )
         .expect("Should be able to finalize");
@@ -651,7 +651,7 @@ fn view_item_state(chain: &Chain, auction_contract_address: ContractAddress) -> 
                 "sponsored_tx_enabled_auction.viewItemState".to_string(),
             ),
             address:      auction_contract_address,
-            message:      OwnedParameter::from_serial(&0u16).expect("Serialize parameter"),
+            message:      OwnedParameter::from_serial(&1u16).expect("Serialize parameter"),
         })
         .expect("Invoke viewItemState");
 
