@@ -2,18 +2,20 @@
 //! designed for a small code footprint and to suit most smart contracts.
 //!
 //! A bump allocator has a `next` pointer which points to the next address in
-//! the heap to hand out. The `next` pointer is incremented by the size of the
+//! the heap to hand out. The `next` pointer is incremented by the size of
 //! each allocation. This is sufficient for the allocator to work, but it also
 //! leaks memory. However, for short-lived programs such as smart contracts,
-//! memory leaks as perfectly fine and even preferable since the need for
-//! cleanup and advanced allocation schemes is removed. The bump allocator here
-//! has two extra features:
+//! memory leaks are perfectly fine and even preferable since the need for
+//! cleanup and advanced allocation schemes is removed.
+//!
+//! The bump allocator here has two extra features:
 //!  - It keeps track of the number of active allocations in the `allocations`
 //!    field and resets the `next` pointer to `MIN_PTR_ADDR` if there are no
 //!    active allocations, thus allowing the reuse of memory.
-//!  - On deallocations it checks whether it is the very last block handed out
-//!    that is deallocated. If it is, then it moves the `next` pointer back to
-//!    the beginning of that block. Thus also allowing memory to be reused.
+//!  - On deallocations it checks whether it is the very last memory block
+//!    handed out that is deallocated. If it is, then it moves the `next`
+//!    pointer back to the beginning of that block. Thus also allowing memory to
+//!    be reused.
 use core::{
     alloc::{GlobalAlloc, Layout},
     cell::UnsafeCell,
@@ -22,7 +24,8 @@ use core::{
 
 /// The byte size of Wasm pages.
 const PAGE_SIZE: usize = 65536;
-/// FIXME: Handing out memory address 0 doesn't work, but starting with 1 does.
+/// The minimum pointer address used. Address `0` cannot be used, as that
+/// corresponds to a null pointer, which indicates errors.
 const MIN_PTR_ADDR: usize = 1;
 
 /// A number of WebAssembly memory pages.
@@ -37,33 +40,40 @@ impl PageCount {
 /// The number of pages returned from `memory_grow` to indicate out of memory.
 const ERROR_PAGE_COUNT: PageCount = PageCount(usize::MAX);
 
-/// This is an invalid implementation of Sync.
-/// The [BumpAllocator] cannot be safely used from multiple threads, but that is
-/// OK since it won't be in Wasm. This [Sync] implementation is required for
-/// defining it as the global allocator.
+/// This is an invalid implementation of [`Sync`].
+/// The [`BumpAllocator`] cannot be safely used from multiple threads, but that
+/// is OK since it won't be in Wasm. This [`Sync`] implementation is required
+/// for defining it as the global allocator.
 unsafe impl Sync for BumpAllocator {}
 
 pub struct BumpAllocator {
-    /// The next pointer to be handed out.
+    /// The pointer to the next memory to hand out.
     next:        UnsafeCell<usize>,
     /// The end of the heap. Cannot be known at compile time and thus the
     /// initial value is 0. It is updated on the first allocation.
     heap_end:    UnsafeCell<usize>,
-    /// The number of active allocations. Used for resetting `next` to 1 if
-    /// there are no more active allocations.
+    /// The number of active allocations. Used for resetting `next` to
+    /// `MIN_PTR_ADDR` if there are no more active allocations.
     allocations: UnsafeCell<usize>,
     /// Stores the last address given out, and allows for a small improvement
     /// over the always-increasing bump allocator. Namely that if an item
     /// `a` is allocated and deallocated without any allocations in between,
-    /// then the memory of `a` is reused.
+    /// then the memory of `a` is reused for the next allocation.
     last_alloc:  UnsafeCell<usize>,
 }
 
 impl BumpAllocator {
-    /// Create a new [BumpAllocator].
+    /// Create a new [`BumpAllocator`].
+    ///
+    /// This must be a `const` method for it to be used as a global allocator,
+    /// where it is called staticly. Since we cannot know the actual size of
+    /// the heap, `heap_end` is initialized to `0` and updated on the first
+    /// allocation.
     ///
     /// # Safety
-    /// - Can only be used in single-threaded environments.
+    /// - Can only be used in single-threaded environments. The [`Sync`]
+    ///   implementation is only invalid and is only there to support setting
+    ///   this as the global allocator.
     pub const unsafe fn new() -> Self {
         Self {
             next:        UnsafeCell::new(MIN_PTR_ADDR),
@@ -75,6 +85,9 @@ impl BumpAllocator {
     }
 
     /// Grow the memory by `delta` pages, each of size [PAGE_SIZE].
+    ///
+    /// If successful, it returns the previous number of memory pages.
+    /// Otherwise, it returns [`ERROR_PAGE_COUNT`] to indicate out of memory.
     fn grow_memory(&self, delta: PageCount) -> PageCount {
         // The first argument refers to the index of memory to return the size of.
         // Currently, Wasm only supports a single slot of memory, so `0` must always be
@@ -128,7 +141,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
 
         // Increment allocations counter.
         *self.allocations.get() += 1;
-        // Remember the last address handed out, so that we may move next backwards if
+        // Remember the last address handed out, so that we may move `next` backwards if
         // it is deallocated before a new allocation occurs.
         *self.last_alloc.get() = alloc_start;
         *next = alloc_end;
@@ -165,20 +178,17 @@ fn align_up(addr: usize, align: usize) -> usize { (addr + align - 1) & !(align -
 /// Calculates the quotient of `lhs / rhs`, while rounding up to the nearest
 /// integer.
 ///
+/// Since `rhs` is used as the denominator in the division it **cannot be 0**.
+/// If it is, this method panics.
+///
 /// ```
-/// let a = 8;
-/// let b = 3;
-/// assert_eq!(a.div_ceil(b), 3);
-/// assert_eq!(a.div_ceil(-b), -2);
-/// assert_eq!((-a).div_ceil(b), -2);
-/// assert_eq!((-a).div_ceil(-b), 3);
+/// assert_eq!(div_ceil(8, 3), 3); // Round 2.66.. up to 3.
+/// assert_eq!(div_ceil(10, 10), 1); // No rounding needed.
+/// assert_eq!(div_ceil(10, 20), 1); // Round 0.5 up to 1.
 /// ```
 const fn div_ceil(lhs: usize, rhs: usize) -> usize {
     let d = lhs / rhs;
     let r = lhs % rhs;
-    if r > 0 {
-        d + 1
-    } else {
-        d
-    }
+    let rounding = (r > 0) as usize;
+    d + rounding
 }
