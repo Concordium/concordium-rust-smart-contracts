@@ -342,6 +342,9 @@ pub struct BurnParams {
     pub token_id: ContractTokenId,
 }
 
+
+type State = Blacklist<CIS0<CIS2<ContractTokenId, ContractTokenAmount, InnerState<StateApi>>>>;
+
 /// The parameter type for the contract function `supportsPermit`.
 #[derive(Debug, Serialize, SchemaType)]
 pub struct SupportsPermitQueryParams {
@@ -488,24 +491,8 @@ impl AddressState {
 /// and this could be structured in a more space-efficient way.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
-struct State<S = StateApi> {
-    /// The state of addresses.
-    state:           StateMap<Address, AddressState<S>, S>,
-    /// All of the token IDs.
-    tokens:          StateMap<ContractTokenId, MetadataUrl, S>,
-    /// A map with contract addresses providing implementations of additional
-    /// standards.
-    implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// A registry to link an account to its next nonce. The nonce is used to
-    /// prevent replay attacks of the signed message. The nonce is increased
-    /// sequentially every time a signed message (corresponding to the
-    /// account) is successfully executed in the `permit` function. This
-    /// mapping keeps track of the next nonce that needs to be used by the
-    /// account to generate a signature.
+struct InnerState<S = StateApi> {
     nonces_registry: StateMap<AccountAddress, u64, S>,
-    /// Set of addresses that are not allowed to receive new tokens, sent
-    /// their tokens, or burn their tokens.
-    blacklist:       StateSet<Address, S>,
     /// The amount of tokens airdropped when the mint function is invoked.
     mint_airdrop:    ContractTokenAmount,
     /// Specifies if the contract is paused.
@@ -613,182 +600,15 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-impl State {
+impl InnerState {
     /// Construct a state with no tokens
-    fn empty(state_builder: &mut StateBuilder, mint_airdrop: ContractTokenAmount) -> Self {
-        State {
-            state: state_builder.new_map(),
-            tokens: state_builder.new_map(),
-            implementors: state_builder.new_map(),
+    fn empty(state_builder: &mut StateBuilder, mint_airdrop: TokenAmountU64) -> Self {
+        InnerState {
             nonces_registry: state_builder.new_map(),
             mint_airdrop,
-            blacklist: state_builder.new_set(),
             paused: false,
             roles: state_builder.new_map(),
         }
-    }
-
-    /// Mints an amount of tokens with a given address as the owner.
-    /// The metadataURL for the given token_id is added to the state only
-    /// if the token_id is being minted or created for the first time.
-    /// Otherwise, the metadataURL provided in the input parameter is ignored.
-    fn mint(
-        &mut self,
-        token_id: &ContractTokenId,
-        metadata_url: &MetadataUrl,
-        owner: &Address,
-        mint_airdrop: ContractTokenAmount,
-        state_builder: &mut StateBuilder,
-    ) -> MetadataUrl {
-        let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
-        if token_metadata.is_none() {
-            self.tokens.insert(*token_id, metadata_url.to_owned());
-        }
-
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
-        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
-        *owner_balance += mint_airdrop;
-
-        if let Some(token_metadata) = token_metadata {
-            token_metadata
-        } else {
-            metadata_url.clone()
-        }
-    }
-
-    /// Burns an amount of tokens from a given owner address.
-    fn burn(
-        &mut self,
-        token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
-        owner: &Address,
-    ) -> ContractResult<()> {
-        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
-
-        let mut owner_state =
-            self.state.entry(*owner).occupied_or(ContractError::InsufficientFunds)?;
-
-        let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
-        ensure!(*owner_balance >= amount, ContractError::InsufficientFunds);
-        *owner_balance -= amount;
-
-        Ok(())
-    }
-
-    /// Check that the token ID currently exists in this contract.
-    #[inline(always)]
-    fn contains_token(&self, token_id: &ContractTokenId) -> bool {
-        self.tokens.get(token_id).map(|x| x.to_owned()).is_some()
-    }
-
-    /// Get the current balance of a given token id for a given address.
-    /// Results in an error if the token id does not exist in the state.
-    fn balance(
-        &self,
-        token_id: &ContractTokenId,
-        address: &Address,
-    ) -> ContractResult<ContractTokenAmount> {
-        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
-        let balance = self.state.get(address).map_or(0.into(), |address_state| {
-            address_state.balances.get(token_id).map_or(0.into(), |x| *x)
-        });
-        Ok(balance)
-    }
-
-    /// Check if an address is an operator of a given owner address.
-    fn is_operator(&self, address: &Address, owner: &Address) -> bool {
-        self.state
-            .get(owner)
-            .map(|address_state| address_state.operators.contains(address))
-            .unwrap_or(false)
-    }
-
-    /// Update the state with a transfer.
-    /// Results in an error if the token id does not exist in the state or if
-    /// the from address have insufficient tokens to do the transfer.
-    fn transfer(
-        &mut self,
-        token_id: &ContractTokenId,
-        amount: ContractTokenAmount,
-        from: &Address,
-        to: &Address,
-        state_builder: &mut StateBuilder,
-    ) -> ContractResult<()> {
-        ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
-        // A zero transfer does not modify the state.
-        if amount == 0.into() {
-            return Ok(());
-        }
-
-        // Get the `from` state and balance, if not present it will fail since the
-        // balance is interpreted as 0 and the transfer amount must be more than
-        // 0 at this point.
-        {
-            let mut from_address_state =
-                self.state.entry(*from).occupied_or(ContractError::InsufficientFunds)?;
-            let mut from_balance = from_address_state
-                .balances
-                .entry(*token_id)
-                .occupied_or(ContractError::InsufficientFunds)?;
-            ensure!(*from_balance >= amount, ContractError::InsufficientFunds);
-            *from_balance -= amount;
-        }
-
-        let mut to_address_state =
-            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
-        let mut to_address_balance = to_address_state.balances.entry(*token_id).or_insert(0.into());
-        *to_address_balance += amount;
-
-        Ok(())
-    }
-
-    /// Update the state adding a new operator for a given address.
-    /// Succeeds even if the `operator` is already an operator for the
-    /// `address`.
-    fn add_operator(
-        &mut self,
-        owner: &Address,
-        operator: &Address,
-        state_builder: &mut StateBuilder,
-    ) {
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
-        owner_state.operators.insert(*operator);
-    }
-
-    /// Update the state removing an operator for a given address.
-    /// Succeeds even if the `operator` is not an operator for the `address`.
-    fn remove_operator(&mut self, owner: &Address, operator: &Address) {
-        self.state.entry(*owner).and_modify(|address_state| {
-            address_state.operators.remove(operator);
-        });
-    }
-
-    /// Update the state adding a new address to the blacklist.
-    /// Succeeds even if the `address` is already in the blacklist.
-    fn add_blacklist(&mut self, address: Address) { self.blacklist.insert(address); }
-
-    /// Update the state removing an address from the blacklist.
-    /// Succeeds even if the `address` is not in the list.
-    fn remove_blacklist(&mut self, address: &Address) { self.blacklist.remove(address); }
-
-    /// Check if state contains any implementors for a given standard.
-    fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
-        if let Some(addresses) = self.implementors.get(std_id) {
-            SupportResult::SupportBy(addresses.to_vec())
-        } else {
-            SupportResult::NoSupport
-        }
-    }
-
-    /// Set implementors for a given standard.
-    fn set_implementors(
-        &mut self,
-        std_id: StandardIdentifierOwned,
-        implementors: Vec<ContractAddress>,
-    ) {
-        self.implementors.insert(std_id, implementors);
     }
 
     /// Grant role to an address.
@@ -850,7 +670,7 @@ fn contract_init(
     let mint_airdrop: ContractTokenAmount = ctx.parameter_cursor().get()?;
 
     // Construct the initial contract state.
-    let mut state = State::empty(state_builder, mint_airdrop);
+    let mut state = InnerState::empty(state_builder, mint_airdrop);
 
     // Get the instantiater of this contract instance.
     let invoker = Address::Account(ctx.init_origin());
@@ -862,7 +682,9 @@ fn contract_init(
         role:    Roles::ADMIN,
     }))?;
 
-    Ok(state)
+    let cis2 = CIS2::empty(state_builder, state);
+    let cis0 =  CIS0::new(state_builder, cis2);
+    Ok(Blacklist::empty(state_builder, cis0))
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
@@ -883,70 +705,99 @@ pub struct ViewState {
     pub implementors:    Vec<(StandardIdentifierOwned, Vec<ContractAddress>)>,
 }
 
-/// View function for testing. This reports on the entire state of the contract
-/// for testing purposes.
-#[receive(contract = "cis2_multi", name = "view", return_value = "ViewState")]
-fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
-    let state = host.state();
+// /// View function for testing. This reports on the entire state of the
+// contract /// for testing purposes.
+// #[receive(contract = "cis2_multi", name = "view", return_value =
+// "ViewState")] fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) ->
+// ReceiveResult<ViewState> {     let state = host.state();
 
-    let contract_state = state
-        .state
-        .iter()
-        .map(|(key, value)| {
-            let mut balances = Vec::new();
-            let mut operators = Vec::new();
-            for (token_id, amount) in value.balances.iter() {
-                balances.push((*token_id, *amount));
-            }
-            for operator in value.operators.iter() {
-                operators.push(*operator);
-            }
-            (*key, ViewAddressState {
-                balances,
-                operators,
-            })
-        })
-        .collect();
+// <<<<<<< Updated upstream
+//     let contract_state = state
+//         .state
+//         .iter()
+//         .map(|(key, value)| {
+//             let mut balances = Vec::new();
+//             let mut operators = Vec::new();
+//             for (token_id, amount) in value.balances.iter() {
+//                 balances.push((*token_id, *amount));
+//             }
+//             for operator in value.operators.iter() {
+//                 operators.push(*operator);
+//             }
+//             (*key, ViewAddressState {
+//                 balances,
+//                 operators,
+//             })
+//         })
+//         .collect();
 
-    let tokens = state.tokens.iter().map(|a| *a.0).collect();
-    let nonces_registry = state.nonces_registry.iter().map(|(a, b)| (*a, *b)).collect();
-    let blacklist = state.blacklist.iter().map(|a| *a).collect();
-    let roles: Vec<(Address, Vec<Roles>)> = state
-        .roles
-        .iter()
-        .map(|(key, value)| {
-            let mut roles_vec = Vec::new();
-            for role in value.roles.iter() {
-                roles_vec.push(*role);
-            }
-            (*key, roles_vec)
-        })
-        .collect();
+//     let tokens = state.tokens.iter().map(|a| *a.0).collect();
+//     let nonces_registry = state.nonces_registry.iter().map(|(a, b)| (*a, *b)).collect();
+//     let blacklist = state.blacklist.iter().map(|a| *a).collect();
+//     let roles: Vec<(Address, Vec<Roles>)> = state
+//         .roles
+//         .iter()
+//         .map(|(key, value)| {
+//             let mut roles_vec = Vec::new();
+//             for role in value.roles.iter() {
+//                 roles_vec.push(*role);
+//             }
+//             (*key, roles_vec)
+//         })
+//         .collect();
 
-    let implementors: Vec<(StandardIdentifierOwned, Vec<ContractAddress>)> = state
-        .implementors
-        .iter()
-        .map(|(key, value)| {
-            let mut implementors = Vec::new();
-            for test in value.iter() {
-                implementors.push(*test);
-            }
+//     let implementors: Vec<(StandardIdentifierOwned, Vec<ContractAddress>)> = state
+//         .implementors
+//         .iter()
+//         .map(|(key, value)| {
+//             let mut implementors = Vec::new();
+//             for test in value.iter() {
+//                 implementors.push(*test);
+//             }
 
-            ((*key).clone(), implementors)
-        })
-        .collect();
+//             ((*key).clone(), implementors)
+//         })
+//         .collect();
 
-    Ok(ViewState {
-        state: contract_state,
-        tokens,
-        nonces_registry,
-        blacklist,
-        roles,
-        implementors,
-        mint_airdrop: host.state().mint_airdrop,
-        paused: host.state().paused,
-    })
-}
+//     Ok(ViewState {
+//         state: contract_state,
+//         tokens,
+//         nonces_registry,
+//         blacklist,
+//         roles,
+//         implementors,
+//         mint_airdrop: host.state().mint_airdrop,
+//         paused: host.state().paused,
+//     })
+// }
+// =======
+// //     let mut inner_state = Vec::new();
+// //     for (k, a_state) in state.state.iter() {
+// //         let mut balances = Vec::new();
+// //         let mut operators = Vec::new();
+// //         for (token_id, amount) in a_state.balances.iter() {
+// //             balances.push((*token_id, *amount));
+// //         }
+// //         for o in a_state.operators.iter() {
+// //             operators.push(*o);
+// //         }
+
+// //         inner_state.push((*k, ViewAddressState {
+// //             balances,
+// //             operators,
+// //         }));
+// //     }
+// //     let mut tokens = Vec::new();
+// //     for v in state.tokens.iter() {
+// //         tokens.push(*v.0);
+// //     }
+
+// //     Ok(ViewState {
+// //         state: inner_state,
+// //         tokens,
+// //     })
+// // }
+// >>>>>>> Stashed changes
 
 /// Internal `mint/permit` helper function. Invokes the `mint`
 /// function of the state. Logs a `Mint` event.
@@ -956,7 +807,7 @@ fn mint(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+    let is_blacklisted = host.state().is_allowed(get_canonical_address(params.owner)?);
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
@@ -965,15 +816,11 @@ fn mint(
     ensure!(!host.state().paused, CustomContractError::Paused.into());
 
     let (state, builder) = host.state_and_builder();
+    let mint_airdrop = state.mint_airdrop;
 
     // Mint the token in the state.
-    let token_metadata = state.mint(
-        &params.token_id,
-        &params.metadata_url,
-        &params.owner,
-        state.mint_airdrop,
-        builder,
-    );
+    let token_metadata =
+        state.mint(&params.token_id, &params.metadata_url, &params.owner, mint_airdrop, builder);
 
     // Event for minted token.
     logger.log(&Cis2Event::Mint(MintEvent {
@@ -1046,7 +893,7 @@ fn burn(
     // Check that contract is not paused.
     ensure!(!host.state().paused, CustomContractError::Paused.into());
 
-    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+    let is_blacklisted = host.state().is_allowed(get_canonical_address(params.owner)?);
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
@@ -1097,7 +944,7 @@ fn contract_burn(
 
     // Authenticate the sender for the token burns.
     ensure!(
-        params.owner == sender || host.state().is_operator(&sender, &params.owner),
+        params.owner == sender || host.state().as_ref().as_ref().is_operator(&sender, &params.owner),
         ContractError::Unauthorized
     );
 
@@ -1118,45 +965,24 @@ fn transfer(
 ) -> ContractResult<()> {
     let to_address = transfer.to.address();
 
+    let state = host.state();
+
     // Check token receiver is not blacklisted.
     ensure!(
-        !host.state().blacklist.contains(&get_canonical_address(to_address)?),
+        !state.is_allowed(get_canonical_address(to_address)?),
         CustomContractError::Blacklisted.into()
     );
 
     // Check token owner is not blacklisted.
     ensure!(
-        !host.state().blacklist.contains(&get_canonical_address(transfer.from)?),
+        !state.is_allowed(get_canonical_address(transfer.from)?),
         CustomContractError::Blacklisted.into()
     );
 
     // Check that contract is not paused.
     ensure!(!host.state().paused, CustomContractError::Paused.into());
 
-    let (state, builder) = host.state_and_builder();
-
-    // Update the contract state
-    state.transfer(&transfer.token_id, transfer.amount, &transfer.from, &to_address, builder)?;
-
-    // Log transfer event
-    logger.log(&Cis2Event::Transfer(TransferEvent {
-        token_id: transfer.token_id,
-        amount:   transfer.amount,
-        from:     transfer.from,
-        to:       to_address,
-    }))?;
-
-    // If the receiver is a contract: invoke the receive hook function.
-    if let Receiver::Contract(address, function) = transfer.to {
-        let parameter = OnReceivingCis2Params {
-            token_id: transfer.token_id,
-            amount:   transfer.amount,
-            from:     transfer.from,
-            data:     transfer.data,
-        };
-        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;
-    }
-
+    CIS2::transfer(transfer, logger, host)?;
     Ok(())
 }
 
@@ -1189,19 +1015,8 @@ fn contract_transfer(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    // Parse the parameter.
-    let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
-    // Get the sender who invoked this contract function.
-    let sender = ctx.sender();
-
+    let TransferParams(transfers) = ctx.parameter_cursor().get()?;
     for transfer_entry in transfers {
-        // Authenticate the sender for this transfer
-        ensure!(
-            transfer_entry.from == sender
-                || host.state().is_operator(&sender, &transfer_entry.from),
-            ContractError::Unauthorized
-        );
-
         transfer(transfer_entry, host, logger)?;
     }
     Ok(())
@@ -1420,7 +1235,7 @@ fn update_operator(
     update: OperatorUpdate,
     sender: Address,
     operator: Address,
-    state: &mut State,
+    state: &mut CIS2<ContractTokenId, ContractTokenAmount, InnerState>,
     builder: &mut StateBuilder,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
@@ -1569,7 +1384,7 @@ fn contract_is_blacklisted(ctx: &ReceiveContext, host: &Host<State>) -> Contract
     let mut response = Vec::with_capacity(params.queries.len());
     for address in params.queries {
         // Query the state if address is blacklisted.
-        let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(address)?);
+        let is_blacklisted = host.state().is_blacklisted(get_canonical_address(address)?);
         response.push(is_blacklisted);
     }
     Ok(response)
@@ -1685,19 +1500,7 @@ fn contract_token_metadata(
     ctx: &ReceiveContext,
     host: &Host<State>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
-    // Parse the parameter.
-    let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
-    // Build the response.
-    let mut response = Vec::with_capacity(params.queries.len());
-    for token_id in params.queries {
-        let metadata_url = match host.state().tokens.get(&token_id) {
-            Some(metadata_url) => metadata_url.clone(),
-            None => bail!(ContractError::InvalidTokenId),
-        };
-        response.push(metadata_url);
-    }
-    let result = TokenMetadataQueryResponse::from(response);
-    Ok(result)
+    host.state().token_metadata(&mut ctx.parameter_cursor())
 }
 
 /// Example of implementing a function for receiving transfers.
@@ -1766,24 +1569,11 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports(
-    ctx: &ReceiveContext,
-    host: &Host<State>,
-) -> ContractResult<SupportsQueryResponse> {
-    // Parse the parameter.
-    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
-
-    // Build the response.
-    let mut response = Vec::with_capacity(params.queries.len());
-    for std_id in params.queries {
-        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
-            response.push(SupportResult::Support);
-        } else {
-            response.push(host.state().have_implementors(&std_id));
-        }
-    }
-    let result = SupportsQueryResponse::from(response);
-    Ok(result)
+fn contract_supports<'a, 'b>(
+    ctx: &'a ReceiveContext,
+    host: &'b Host<State>,
+) -> ContractResult<impl Serial + 'b> {
+    Ok(host.state().supports(&SUPPORTS_STANDARDS, ctx.parameter_cursor()))
 }
 
 /// Get the entrypoints supported by the `permit` function given a

@@ -36,7 +36,7 @@
 mod cis2_client;
 pub use cis2_client::{Cis2Client, Cis2ClientError};
 
-use concordium_std::{collections::BTreeMap, *};
+use concordium_std::{collections::BTreeMap, schema::SchemaType, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;
 #[cfg(not(feature = "std"))]
@@ -1411,6 +1411,461 @@ impl From<Vec<SupportResult>> for SupportsQueryResponse {
 
 impl AsRef<[SupportResult]> for SupportsQueryResponse {
     fn as_ref(&self) -> &[SupportResult] { &self.results }
+}
+
+use crate::{ContractAddress, DeserialWithState, HasStateApi, Serial, StateBuilder, StateMap};
+use core::{
+    cell::UnsafeCell,
+    ops::{AddAssign, SubAssign},
+    convert::{AsMut, AsRef}
+};
+
+pub struct CIS0<Inner, S: HasStateApi = StateApi> {
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    inner:        Inner,
+}
+
+impl<S: HasStateApi, Inner> AsRef<Inner> for CIS0<Inner, S> {
+
+    fn as_ref(&self) -> &Inner { &self.inner }
+}
+
+impl<S: HasStateApi, Inner> AsMut<Inner> for CIS0<Inner, S> {
+    fn as_mut(&mut self) -> &mut Inner { &mut self.inner }
+}
+
+impl<S: HasStateApi, Inner: DeserialWithState<S>> DeserialWithState<S> for CIS0<Inner, S> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+        let implementors = StateMap::deserial_with_state(state, source)?;
+        let inner = Inner::deserial_with_state(state, source)?;
+        Ok(Self {
+            implementors,
+            inner,
+        })
+    }
+}
+
+impl<S: HasStateApi, Inner: Serial> Serial for CIS0<Inner, S> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.implementors.serial(out)?;
+        self.inner.serial(out)
+    }
+}
+
+impl<Inner, S: HasStateApi> CIS0<Inner, S> {
+    pub fn new(builder: &mut StateBuilder<S>, inner: Inner) -> Self {
+        let implementors = builder.new_map();
+        Self {
+            implementors,
+            inner,
+        }
+    }
+
+    pub fn set_implementors(
+        &mut self,
+        id: StandardIdentifierOwned,
+        implementors: Vec<ContractAddress>,
+    ) {
+        self.implementors.insert(id, implementors);
+    }
+
+    pub fn supports<'a, I: HasParameter + 'static>(
+        &'a self,
+        supported_standards: &'a [StandardIdentifier<'a>],
+        query: I,
+    ) -> impl Serial + SchemaType + 'a {
+        struct Response<'a, Inner, S: HasStateApi, I: HasParameter> {
+            inner:               &'a CIS0<Inner, S>,
+            supported_standards: &'a [StandardIdentifier<'a>],
+            query:               cell::UnsafeCell<I>,
+        }
+
+        impl<'a, Inner, S: HasStateApi, I: HasParameter + Sized> SchemaType for Response<'a, Inner, S, I> {
+            fn get_type() -> crate::schema::Type { SupportsQueryResponse::get_type() }
+        }
+
+        impl<'a, Inner, S: HasStateApi, I: HasParameter + Sized> Serial for Response<'a, Inner, S, I> {
+            fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+                let len =
+                    unsafe { &mut *self.query.get() }.read_u16().map_err(|_| W::Err::default())?;
+                len.serial(out)?;
+                for _ in 0..len {
+                    let std_id =
+                        StandardIdentifierOwned::deserial(unsafe { &mut *self.query.get() })
+                            .map_err(|_| W::Err::default())?;
+                    let response =
+                        if self.supported_standards.contains(&std_id.as_standard_identifier()) {
+                            SupportResult::Support
+                        } else if let Some(addresses) = self.inner.implementors.get(&std_id) {
+                            SupportResult::SupportBy(addresses.to_vec())
+                        } else {
+                            SupportResult::NoSupport
+                        };
+                    response.serial(out)?;
+                }
+                Ok(())
+            }
+        }
+
+        Response {
+            inner: self,
+            supported_standards,
+            query: UnsafeCell::new(query),
+        }
+    }
+}
+
+/// The state for each address.
+#[derive(Serial, DeserialWithState, Deletable)]
+#[concordium(state_parameter = "S")]
+pub struct AddressState<
+    ContractTokenId: Serialize,
+    ContractTokenAmount: Serialize,
+    S: HasStateApi = StateApi,
+> {
+    /// The amount of tokens owned by this address.
+    balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
+    /// The addresses which are currently enabled as operators for this address.
+    operators: StateSet<Address, S>,
+}
+
+impl<ContractTokenId: Serialize, ContractTokenAmount: Serialize, S: HasStateApi>
+    AddressState<ContractTokenId, ContractTokenAmount, S>
+{
+    pub fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+        AddressState {
+            balances:  state_builder.new_map(),
+            operators: state_builder.new_set(),
+        }
+    }
+}
+
+/// The contract state,
+///
+/// Note: The specification does not specify how to structure the contract state
+/// and this could be structured in a more space-efficient way.
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+pub struct CIS2<
+    ContractTokenId: Serialize,
+    ContractTokenAmount: Serialize,
+    Inner,
+    S: HasStateApi = StateApi,
+> {
+    /// The state of addresses.
+    state:  StateMap<Address, AddressState<ContractTokenId, ContractTokenAmount, S>, S>,
+    /// All of the token IDs.
+    tokens: StateMap<ContractTokenId, MetadataUrl, S>,
+    inner:  Inner,
+}
+
+impl<ContractTokenId: IsTokenId, ContractTokenAmount: IsTokenAmount, Inner, S: HasStateApi>
+    CIS2<ContractTokenId, ContractTokenAmount, Inner, S>
+{
+    pub fn empty(state_builder: &mut StateBuilder<S>, inner: Inner) -> Self {
+        Self {
+            state: state_builder.new_map(),
+            tokens: state_builder.new_map(),
+            inner,
+        }
+    }
+
+    pub fn mint(
+        &mut self,
+        token_id: &ContractTokenId,
+        metadata_url: &MetadataUrl,
+        owner: &Address,
+        mint_airdrop: ContractTokenAmount,
+        state_builder: &mut StateBuilder<S>,
+    ) -> MetadataUrl
+    where
+        ContractTokenAmount: AddAssign + Default,
+        ContractTokenId: Clone, {
+        let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
+        if token_metadata.is_none() {
+            self.tokens.insert(token_id.clone(), metadata_url.to_owned());
+        }
+
+        let mut owner_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_balance =
+            owner_state.balances.entry(token_id.clone()).or_insert(ContractTokenAmount::default());
+        *owner_balance += mint_airdrop;
+
+        if let Some(token_metadata) = token_metadata {
+            token_metadata
+        } else {
+            metadata_url.clone()
+        }
+    }
+
+    /// Check that the token ID currently exists in this contract.
+    #[inline(always)]
+    pub fn contains_token(&self, token_id: &ContractTokenId) -> bool {
+        self.tokens.get(token_id).map(|x| x.to_owned()).is_some()
+    }
+
+    /// Get the current balance of a given token id for a given address.
+    /// Results in an error if the token id does not exist in the state.
+    pub fn balance<R>(
+        &self,
+        token_id: &ContractTokenId,
+        address: &Address,
+    ) -> Result<ContractTokenAmount, Cis2Error<R>>
+    where
+        ContractTokenAmount: Default + Clone, {
+        ensure!(self.contains_token(token_id), Cis2Error::InvalidTokenId);
+        let balance =
+            self.state.get(address).map_or(ContractTokenAmount::default(), |address_state| {
+                address_state
+                    .balances
+                    .get(token_id)
+                    .map_or(ContractTokenAmount::default(), |x| x.clone())
+            });
+        Ok(balance)
+    }
+
+    /// Check if an address is an operator of a given owner address.
+    pub fn is_operator(&self, address: &Address, owner: &Address) -> bool {
+        self.state
+            .get(owner)
+            .map(|address_state| address_state.operators.contains(address))
+            .unwrap_or(false)
+    }
+
+    /// Update the state with a transfer.
+    /// Results in an error if the token id does not exist in the state or if
+    /// the from address have insufficient tokens to do the transfer.
+    fn transfer_helper<R>(
+        &mut self,
+        token_id: &ContractTokenId,
+        amount: ContractTokenAmount,
+        from: &Address,
+        to: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) -> Result<(), Cis2Error<R>>
+    where
+        ContractTokenAmount: Clone + Default + Eq + SubAssign + AddAssign + Ord,
+        ContractTokenId: Clone, {
+        ensure!(self.contains_token(token_id), Cis2Error::InvalidTokenId);
+        // A zero transfer does not modify the state.
+        if amount == ContractTokenAmount::default() {
+            return Ok(());
+        }
+
+        // Get the `from` state and balance, if not present it will fail since the
+        // balance is interpreted as 0 and the transfer amount must be more than
+        // 0 at this point.
+        {
+            let mut from_address_state =
+                self.state.entry(*from).occupied_or(Cis2Error::InsufficientFunds)?;
+            let mut from_balance = from_address_state
+                .balances
+                .entry(token_id.clone())
+                .occupied_or(Cis2Error::InsufficientFunds)?;
+            ensure!(*from_balance >= amount, Cis2Error::InsufficientFunds);
+            *from_balance -= amount.clone();
+        }
+
+        let mut to_address_state =
+            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
+        let mut to_address_balance = to_address_state
+            .balances
+            .entry(token_id.clone())
+            .or_insert(ContractTokenAmount::default());
+        *to_address_balance += amount;
+
+        Ok(())
+    }
+
+    /// Update the state adding a new operator for a given address.
+    /// Succeeds even if the `operator` is already an operator for the
+    /// `address`.
+    pub fn add_operator(
+        &mut self,
+        owner: &Address,
+        operator: &Address,
+        state_builder: &mut StateBuilder<S>,
+    ) {
+        let mut owner_state =
+            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        owner_state.operators.insert(*operator);
+    }
+
+    /// Update the state removing an operator for a given address.
+    /// Succeeds even if the `operator` is not an operator for the `address`.
+    pub fn remove_operator(&mut self, owner: &Address, operator: &Address) {
+        self.state.entry(*owner).and_modify(|address_state| {
+            address_state.operators.remove(operator);
+        });
+    }
+
+    // TODO: Make more optimal.
+    pub fn token_metadata<R: From<ParseError>>(
+        &self,
+        input: &mut impl HasParameter,
+    ) -> Result<TokenMetadataQueryResponse, Cis2Error<R>> {
+        let len: u16 = input.get()?;
+        // Build the response.
+        let mut response = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            let token_id: ContractTokenId = input.get()?;
+            let metadata_url = match self.tokens.get(&token_id) {
+                Some(metadata_url) => metadata_url.clone(),
+                None => bail!(Cis2Error::InvalidTokenId),
+            };
+            response.push(metadata_url);
+        }
+        let result = TokenMetadataQueryResponse::from(response);
+        Ok(result)
+    }
+
+    /// Internal `transfer/permit` helper function. Invokes the `transfer`
+    /// function of the state. Logs a `Transfer` event and invokes a receive
+    /// hook function. The function assumes that the transfer is authorized.
+    pub fn transfer<
+        SomeState: AsMut<Self>,
+        H: HasHost<SomeState, StateApiType = S>,
+        R: From<ParseError> + From<LogError> + From<CallContractError<H::ReturnValueType>>,
+    >(
+        transfer: Transfer<ContractTokenId, ContractTokenAmount>,
+        logger: &mut impl HasLogger,
+        host: &mut H, // TODO: Need to split Host into two traits, one with state and one without.
+    ) -> Result<(), Cis2Error<R>>
+    where
+        ContractTokenAmount: Clone + Default + Eq + SubAssign + AddAssign + Ord,
+        ContractTokenId: Clone, {
+        let (state, builder) = host.state_and_builder();
+        let to_address = transfer.to.address();
+        // Update the contract state
+        state.as_mut().transfer_helper(
+            &transfer.token_id,
+            transfer.amount.clone(),
+            &transfer.from,
+            &to_address,
+            builder,
+        )?;
+
+        // Log transfer event
+        logger.log(&Cis2Event::Transfer(TransferEvent {
+            token_id: transfer.token_id.clone(), /* this cloning is silly, need events with
+                                                  * references. */
+            amount:   transfer.amount.clone(), /* this cloning is silly, need events with
+                                                * references. */
+            from:     transfer.from,
+            to:       to_address,
+        }))?;
+
+        // If the receiver is a contract: invoke the receive hook function.
+        if let Receiver::Contract(address, function) = transfer.to {
+            let parameter = OnReceivingCis2Params {
+                token_id: transfer.token_id,
+                amount:   transfer.amount,
+                from:     transfer.from,
+                data:     transfer.data,
+            };
+            host.invoke_contract(
+                &address,
+                &parameter,
+                function.as_entrypoint_name(),
+                Amount::zero(),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn contract_transfer<
+        SomeState: AsMut<Self>,
+        H: HasHost<SomeState, StateApiType = S>,
+        R: From<ParseError> + From<LogError> + From<CallContractError<H::ReturnValueType>>,
+    >(
+        input: &mut impl Read,
+        logger: &mut impl HasLogger,
+        host: &mut H,
+        sender: Address,
+    ) -> Result<(), Cis2Error<R>>
+    where
+        ContractTokenAmount: Clone + Default + Eq + SubAssign + AddAssign + Ord,
+        ContractTokenId: Clone, {
+        let params_len: u16 = input.get()?;
+        for _ in 0..params_len {
+            let transfer_entry: Transfer<ContractTokenId, ContractTokenAmount> = input.get()?;
+            // Authenticate the sender for this transfer
+            ensure!(
+                transfer_entry.from == sender
+                    || host.state_mut().as_mut().is_operator(&sender, &transfer_entry.from),
+                Cis2Error::Unauthorized
+            );
+
+            Self::transfer(transfer_entry, logger, host)?;
+        }
+        Ok(())
+    }
+}
+
+impl<S: HasStateApi, ContractTokenId: Serialize, ContractTokenAmount: Serialize, Inner> AsRef<Inner>
+    for CIS2<ContractTokenId, ContractTokenAmount, Inner, S>
+{
+    fn as_ref(&self) -> &Inner { &self.inner }
+}
+
+impl<S: HasStateApi, ContractTokenId: Serialize, ContractTokenAmount: Serialize, Inner> AsMut<Inner>
+    for CIS2<ContractTokenId, ContractTokenAmount, Inner, S>
+{
+    fn as_mut(&mut self) -> &mut Inner { &mut self.inner }
+}
+
+#[derive(Serial, DeserialWithState)]
+#[concordium(state_parameter = "S")]
+pub struct Blacklist<Inner, S = StateApi> {
+    /// Set of addresses that are not allowed to receive new tokens, sent
+    /// their tokens, or burn their tokens.
+    blacklist:       StateSet<Address, S>,
+    inner: Inner,
+}
+
+impl<Inner, S: HasStateApi> AsRef<Inner>
+    for Blacklist<Inner, S>
+{
+
+    fn as_ref(&self) -> &Inner { &self.inner }
+}
+
+impl<Inner, S: HasStateApi> AsMut<Inner>
+    for Blacklist<Inner, S>
+{
+    fn as_mut(&mut self) -> &mut Inner {
+        &mut self.inner
+    }
+}
+
+
+impl <Inner, S: HasStateApi> Blacklist<Inner, S> {
+    pub fn empty(
+        state_builder: &mut StateBuilder<S>,
+        inner: Inner
+    ) -> Self {
+        Self {
+            blacklist: state_builder.new_set(),
+            inner,
+        }
+    }
+
+    /// Update the state adding a new address to the blacklist.
+    /// Succeeds even if the `address` is already in the blacklist.
+    pub fn add_blacklist(&mut self, address: Address) { self.blacklist.insert(address); }
+
+    /// Update the state removing an address from the blacklist.
+    /// Succeeds even if the `address` is not in the list.
+    pub fn remove_blacklist(&mut self, address: &Address) { self.blacklist.remove(address); }
+
+    pub fn is_blacklisted(&self, address: impl Into<Address>) -> bool {
+        self.blacklist.contains(&address.into())
+    }
+    pub fn is_allowed(&self, address: impl Into<Address>) -> bool {
+        !self.blacklist.contains(&address.into())
+    }
 }
 
 #[cfg(test)]
