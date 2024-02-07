@@ -1,0 +1,26 @@
+[package]
+name = "concordium-std-derive-test"
+authors = ["Concordium <developers@concordium.com>"]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.65"
+license = "MPL-2.0"
+description = "Procedural macros to ease writing for smart contracts on the Concordium blockchain."
+#homepage = "https://github.com/Concordium/concordium-base"
+#repository = "https://github.com/Concordium/concordium-base"
+#readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+proc-macro = true
+
+[features]
+wasm-test = []
+build-schema = []
+concordium-quickcheck = []
+
+[dependencies]
+concordium-contracts-common = { version = "9.0.0", features = [ "derive-serde" ] } 
+syn = { version = "2.0", features = [ "full", "extra-traits" ] }
+quote = "1.0"
+proc-macro2 = "1.0"
