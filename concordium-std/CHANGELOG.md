@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+## concordium-std 9.0.2 (2024-02-07)
+
 - Make the `concordium_dbg!` and related macros also usable with the full syntax
   that `println!` supports.
 - Remove the feature `wee_alloc` and replace it with `bump_alloc`, which enables a small and simple global allocator that can only be used in Wasm.
