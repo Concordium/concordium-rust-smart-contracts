@@ -9,7 +9,7 @@ description = "{{description}}"
 [features]
 default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
+bump_alloc = ["concordium-std/bump_alloc"]
 
 [dependencies]
 concordium-std = {version = "9.0", default-features = false}

@@ -38,7 +38,7 @@
 //! [`build-schema`](#build-schema-build-for-generating-a-module-schema),
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
 //! [`crypto-primitives`][crypto-feature], and
-//! [`wee_alloc`](#use-a-custom-allocator)
+//! [`bump_alloc`](#use-a-custom-allocator)
 //! [`debug`](#emit-debug-information)
 //!
 //! [crypto-feature]:
@@ -121,24 +121,21 @@
 //!
 //! In the past `concordium-std` hard-coded the use of [wee_alloc](https://docs.rs/wee_alloc/)
 //! however since version `5.2.0` this is no longer the case.
-//! Instead no allocator is set by default, however there is a `wee_alloc`
+//! Instead no allocator is set by default, however there is a `bump_alloc`
 //! feature (disabled by default) that can be enabled which sets the allocator
-//! to `wee_alloc`. This can be used both with and without the `std` feature.
+//! to [`bump_alloc`]. This can be used both with and without the `std` feature.
 //!
-//! The main reason for using `wee_alloc` instead of the default allocator, even
-//! in `std` builds, is that `wee_alloc` has a smaller code footprint, i.e, the
-//! resulting smart contracts are going to be smaller by about 6-10kB, which
-//! means they are cheaper to deploy and run. The downside is that this
-//! allocator is designed to be used in contexts where there are a few
-//! large allocations up-front, and the memory is afterward used by the program
-//! without many further allocations. Frequent small allocations will have bad
-//! performance, and should be avoided. **Do note that this allocator is
-//! at present unmaintained.** There are other allocators available, for example [dlmalloc](https://docs.rs/dlmalloc/).
+//! The main reason for using `bump_alloc` instead of the default allocator,
+//! even in `std` builds, is that `bump_alloc` has a smaller code footprint,
+//! i.e, the resulting smart contracts are going to be smaller by about 6-10kB,
+//! which means they are cheaper to deploy and run. `bump_alloc` is designed to
+//! be simple and fast, but it does not use the memory very efficiently. For
+//! short-lived programs, such as smart contracts, this is usually a perfectly
+//! acceptable tradeoff.
+//! For an allocator with different tradeoffs, see [dlmalloc](https://docs.rs/dlmalloc/).
 //!
-//! We only provide `wee_alloc` via a feature for backwards compatibility.
-//! Configuration of other allocators should follow their respective
-//! documentation, however note that there can only be one allocator set.
-//! See Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute) documentation for more context and details.
+//! See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
+//! documentation for more context and details on using custom allocators.
 //!
 //! Emit debug information
 //!
@@ -405,11 +402,6 @@ pub use concordium_contracts_common::*;
 pub use impls::*;
 pub use traits::*;
 pub use types::*;
-
-// Use `wee_alloc` as the global allocator to reduce code size.
-#[cfg(feature = "wee_alloc")]
-#[cfg_attr(feature = "wee_alloc", global_allocator)]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[deprecated(
     since = "8.1.0",

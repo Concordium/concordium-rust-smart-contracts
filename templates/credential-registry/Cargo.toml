@@ -9,9 +9,9 @@ authors = [ "{{authors}}" ]
 description = "{{description}}"
 
 [features]
-default = ["std", "crypto-primitives", "wee_alloc"]
+default = ["std", "crypto-primitives", "bump_alloc"]
 std = ["concordium-std/std", "concordium-cis2/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
+bump_alloc = ["concordium-std/bump_alloc"]
 crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]

@@ -9,7 +9,7 @@ license = "MPL-2.0"
 [features]
 default = ["std", "bump_alloc"]
 std = ["concordium-std/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
+bump_alloc = ["concordium-std/bump_alloc"]
 bump_alloc = ["concordium-std/bump_alloc"]
 
 [dependencies]

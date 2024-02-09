@@ -631,7 +631,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features wee_alloc
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
 
   check-crypto-examples:
     name: Check crypto examples

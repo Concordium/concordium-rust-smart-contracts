@@ -4,7 +4,7 @@
 
 - Make the `concordium_dbg!` and related macros also usable with the full syntax
   that `println!` supports.
-- Add the feature `bump_alloc`, which enables a small and simple global allocator. Can only be used in Wasm.
+- Remove the feature `wee_alloc` and replace it with `bump_alloc`, which enables a small and simple global allocator that can only be used in Wasm.
 
 ## concordium-std 9.0.1 (2024-01-26)
 
