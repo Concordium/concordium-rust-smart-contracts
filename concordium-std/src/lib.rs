@@ -123,7 +123,8 @@
 //! however since version `5.2.0` this is no longer the case.
 //! Instead no allocator is set by default, however there is a `bump_alloc`
 //! feature (disabled by default) that can be enabled which sets the allocator
-//! to [`bump_alloc`]. This can be used both with and without the `std` feature.
+//! to `bump_alloc`, which ships with `concordium-std`. This can be used both
+//! with and without the `std` feature.
 //!
 //! The main reason for using `bump_alloc` instead of the default allocator,
 //! even in `std` builds, is that `bump_alloc` has a smaller code footprint,

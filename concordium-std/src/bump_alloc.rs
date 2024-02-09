@@ -30,7 +30,7 @@ const PAGE_SIZE: usize = 65536;
 struct PageCount(usize);
 
 impl PageCount {
-    /// The size in bytes. I.e. `PageCount * PAGE_SIZE`.
+    /// The size in bytes, i.e. `PageCount * PAGE_SIZE`.
     fn size_in_bytes(&self) -> usize { self.0 * PAGE_SIZE }
 }
 
@@ -174,7 +174,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
         // Check if we need to request more memory.
         if alloc_end > *heap_end {
             let space_needed = alloc_end - *heap_end;
-            let pages_to_request = PageCount(div_ceil(space_needed, PAGE_SIZE));
+            let pages_to_request = pages_to_request(space_needed);
             let previous_page_count = self.grow_memory(pages_to_request);
             // Check if we are out of memory.
             if previous_page_count == ERROR_PAGE_COUNT {
@@ -222,20 +222,21 @@ unsafe impl GlobalAlloc for BumpAllocator {
 /// For details, see: https://os.phil-opp.com/allocator-designs/#address-alignment
 fn align_up(addr: usize, align: usize) -> usize { (addr + align - 1) & !(align - 1) }
 
-/// Calculates the quotient of `lhs / rhs`, while rounding up to the nearest
-/// integer.
-///
-/// Since `rhs` is used as the denominator in the division it **cannot be 0**.
-/// If it is, this method panics.
+/// Calculates the number of memory pages needed to allocate an additional
+/// `space_needed` bytes.
 ///
 /// ```
-/// assert_eq!(div_ceil(8, 3), 3); // Round 2.66.. up to 3.
-/// assert_eq!(div_ceil(10, 10), 1); // No rounding needed.
-/// assert_eq!(div_ceil(10, 20), 1); // Round 0.5 up to 1.
+/// assert_eq!(pages_to_request(0), PageCount(0));
+/// assert_eq!(pages_to_request(1), PageCount(1));
+/// assert_eq!(pages_to_request(PAGE_SIZE - 1), PageCount(1));
+/// assert_eq!(pages_to_request(PAGE_SIZE), PageCount(1));
+/// assert_eq!(pages_to_request(PAGE_SIZE + 1), PageCount(2));
+/// assert_eq!(pages_to_request(10 * PAGE_SIZE + 1), PageCount(11));
+/// assert_eq!(pages_to_request(200 * PAGE_SIZE - 1), PageCount(200));
 /// ```
-const fn div_ceil(lhs: usize, rhs: usize) -> usize {
-    let d = lhs / rhs;
-    let r = lhs % rhs;
+const fn pages_to_request(space_needed: usize) -> PageCount {
+    let d = space_needed / PAGE_SIZE;
+    let r = space_needed % PAGE_SIZE;
     let rounding = (r > 0) as usize;
-    d + rounding
+    PageCount(d + rounding)
 }
