@@ -51,6 +51,7 @@ jobs:
           - examples/offchain-transfers/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/sponsored-tx-enabled-auction/Cargo.toml
+          - examples/bump-alloc-tests/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -606,6 +607,7 @@ jobs:
           - examples/cis2-multi-royalties/Cargo.toml
           - examples/nametoken/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
+          - examples/bump-alloc-tests/Cargo.toml
 
         features:
           -
@@ -703,6 +705,7 @@ jobs:
           - examples/offchain-transfers/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/sponsored-tx-enabled-auction/Cargo.toml
+          - examples/bump-alloc-tests/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -834,6 +837,7 @@ jobs:
           - examples/offchain-transfers
           - examples/account-signature-checks
           - examples/sponsored-tx-enabled-auction
+          - examples/bump-alloc-tests/Cargo.toml
 
     steps:
       - name: Checkout sources
