@@ -9,8 +9,9 @@ use crate::{
     AccountSignatures, CallContractResult, CheckAccountSignatureResult, EntryRaw, ExchangeRates,
     HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw, PublicKeyEcdsaSecp256k1,
     PublicKeyEd25519, QueryAccountBalanceResult, QueryAccountPublicKeysResult,
-    QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
-    SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
+    QueryContractBalanceResult, QueryContractModuleReferenceResult, QueryContractNameResult,
+    ReadOnlyCallContractResult, SignatureEcdsaSecp256k1, SignatureEd25519, StateBuilder,
+    TransferResult, UpgradeResult, VacantEntryRaw,
 };
 use concordium_contracts_common::*;
 
@@ -527,6 +528,15 @@ pub trait HasHost<State>: Sized {
         signatures: &AccountSignatures,
         data: &[u8],
     ) -> CheckAccountSignatureResult;
+
+    /// Get the module reference of a contract instance.
+    fn contract_module_reference(
+        &self,
+        address: ContractAddress,
+    ) -> QueryContractModuleReferenceResult;
+
+    /// Get the name of the initializer of a contract instance.
+    fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult;
 
     /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;

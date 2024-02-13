@@ -21,9 +21,13 @@ extern "C" {
     /// - `tag`, which instruction to invoke
     ///   - 0 for transfer to account
     ///   - 1 for call to a contract
-    ///   - 2 for query an account balance.
-    ///   - 3 for query a contract balance.
-    ///   - 4 for query the exchange rates.
+    ///   - 2 for query an account balance (protocol 5 onwards).
+    ///   - 3 for query a contract balance (protocol 5 onwards).
+    ///   - 4 for query the exchange rates (protocol 5 onwards).
+    ///   - 5 for checking an account signature (protocol 6 onwards).
+    ///   - 6 for getting the public keys of an account (protocol 6 onwards).
+    ///   - 7 for getting the module reference of a contract instance (protocol 7 onwards).
+    ///   - 8 for getting the contract name of a contract instance (protocol 7 onwards).
     /// - `start`, pointer to the start of the invoke payload
     /// - `length`, length of the payload
     /// - if the last 5 bytes are 0 then the call succeeded. In this case the

@@ -1,7 +1,9 @@
 use crate::{
     cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
 };
-use concordium_contracts_common::{AccountBalance, Amount, ParseError};
+use concordium_contracts_common::{
+    AccountBalance, Amount, ModuleReference, OwnedContractName, ParseError,
+};
 use core::{fmt, str::FromStr};
 
 #[derive(Debug)]
@@ -652,6 +654,16 @@ pub enum CheckAccountSignatureError {
     MalformedData,
 }
 
+/// Error for querying the module reference of a smart contract instance.
+/// No instance found for the provided contract address.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct QueryContractModuleReferenceError;
+
+/// Error for querying the contract name of a smart contract instance.
+/// No instance found for the provided contract address.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct QueryContractNameError;
+
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`CallContractError`], and the result to `(bool, Option<A>)`.
 /// If the result is `Ok` then the boolean indicates whether the state was
@@ -690,6 +702,15 @@ pub type QueryAccountPublicKeysResult =
 /// A wrapper around [`Result`] that fixes the error variant to
 /// [`CheckAccountSignatureError`] and result to [`bool`].
 pub type CheckAccountSignatureResult = Result<bool, CheckAccountSignatureError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryContractModuleReferenceError`] and result to [`ModuleReference`].
+pub type QueryContractModuleReferenceResult =
+    Result<ModuleReference, QueryContractModuleReferenceError>;
+
+/// A wrapper around [`Result`] that fixes the error variant to
+/// [`QueryContractNameError`] and result to [`OwnedContractName`].
+pub type QueryContractNameResult = Result<OwnedContractName, QueryContractNameError>;
 
 /// A type representing the attributes, lazily acquired from the host.
 #[derive(Clone, Copy, Default)]
