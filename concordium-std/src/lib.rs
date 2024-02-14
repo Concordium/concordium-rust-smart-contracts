@@ -339,7 +339,7 @@ pub extern crate alloc;
 pub use std::process::abort as trap;
 #[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
 #[inline(always)]
-pub fn trap() -> ! { unsafe { core::arch::wasm32::unreachable() } }
+pub fn trap() -> ! { core::arch::wasm32::unreachable() }
 #[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
 #[inline(always)]
 pub fn trap() -> ! { core::intrinsics::abort() }
@@ -348,9 +348,7 @@ pub fn trap() -> ! { core::intrinsics::abort() }
 #[panic_handler]
 fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
     #[cfg(target_arch = "wasm32")]
-    unsafe {
-        core::arch::wasm32::unreachable()
-    }
+    core::arch::wasm32::unreachable();
     #[cfg(not(target_arch = "wasm32"))]
     loop {}
 }

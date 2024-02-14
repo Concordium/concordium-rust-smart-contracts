@@ -1,14 +1,13 @@
 //! A contract with entrypoints that exercise and test the bump allocator from
 //! `concordium_std`. It does not have any value as a real contract.
 //!
-//! Some of the tests use the function [`std::hint::black_box`] to ensure that
+//! Some of the tests use the function [`black_box`] to ensure that
 //! the Rust compiler doesn't optimize some of the important calls away, thereby
 //! altering the test. Some of the tests fail if the black boxes are removed,
 //! other's simply do not work as intended, which is only visible by logs from
 //! the allocator.
 #![cfg_attr(not(feature = "std"), no_std)]
-use concordium_std::{collections::BTreeMap, *};
-use std::hint::black_box;
+use concordium_std::{collections::BTreeMap, hint::black_box, *};
 
 type State = ();
 
@@ -53,7 +52,7 @@ fn max_parameter_len(ctx: &ReceiveContext, _host: &Host<State>) -> ReceiveResult
 }
 
 /// Test that allocating one megabyte works correctly.
-/// Uses [`std::hint::black_box`] to ensure that the allocation actually occurs,
+/// Uses [`black_box`] to ensure that the allocation actually occurs,
 /// instead of being optimized away by the compiler.
 #[receive(contract = "bump_alloc_tests", name = "allocate_one_mib")]
 fn allocate_one_mib(_ctx: &ReceiveContext, _host: &Host<State>) -> ReceiveResult<()> {
