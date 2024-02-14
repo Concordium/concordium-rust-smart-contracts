@@ -225,6 +225,8 @@ fn align_up(addr: usize, align: usize) -> usize { (addr + align - 1) & !(align -
 /// Calculates the number of memory pages needed to allocate an additional
 /// `space_needed` bytes.
 ///
+/// This function simply performs an integer division and rounds up the result.
+///
 /// ```
 /// assert_eq!(pages_to_request(0), PageCount(0));
 /// assert_eq!(pages_to_request(1), PageCount(1));
@@ -235,8 +237,5 @@ fn align_up(addr: usize, align: usize) -> usize { (addr + align - 1) & !(align -
 /// assert_eq!(pages_to_request(200 * PAGE_SIZE - 1), PageCount(200));
 /// ```
 const fn pages_to_request(space_needed: usize) -> PageCount {
-    let d = space_needed / PAGE_SIZE;
-    let r = space_needed % PAGE_SIZE;
-    let rounding = (r > 0) as usize;
-    PageCount(d + rounding)
+    PageCount((space_needed >> 16) + ((space_needed & 0xffff != 0) as usize))
 }
