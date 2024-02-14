@@ -837,7 +837,7 @@ jobs:
           - examples/offchain-transfers
           - examples/account-signature-checks
           - examples/sponsored-tx-enabled-auction
-          - examples/bump-alloc-tests/Cargo.toml
+          - examples/bump-alloc-tests
 
     steps:
       - name: Checkout sources
