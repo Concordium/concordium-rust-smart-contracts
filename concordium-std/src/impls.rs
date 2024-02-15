@@ -2298,6 +2298,11 @@ where
         StateMap::open(state_api, prefix)
     }
 
+    pub fn new_btree_map<const M: usize, K, V>(&mut self) -> StateBTreeMap<M, K, V, S> {
+        let (state_api, prefix) = self.new_state_container();
+        StateBTreeMap::new(state_api, prefix)
+    }
+
     /// Create a new empty [`StateSet`].
     pub fn new_set<T>(&mut self) -> StateSet<T, S> {
         let (state_api, prefix) = self.new_state_container();
@@ -3111,6 +3116,194 @@ impl Deserial for MetadataUrl {
             url:  String::from_utf8(bytes).map_err(|_| ParseError::default())?,
             hash: Deserial::deserial(source)?,
         })
+    }
+}
+
+impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
+    pub(crate) fn new(state_api: S, prefix: StateItemPrefix) -> Self {
+        Self {
+            _marker_key: Default::default(),
+            _marker_value: Default::default(),
+            root: None,
+            len: 0,
+            state_api,
+            prefix,
+        }
+    }
+}
+
+impl<const M: usize, K: Ord, V, S> StateBTreeMap<M, K, V, S> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let Some(root_node) = &mut self.root else {
+            let node = StateBTreeNode {
+                keys:     vec![key],
+                values:   vec![value],
+                children: Vec::new(),
+            };
+            self.root = Some(node);
+            self.len = 1;
+            return None;
+        };
+
+        if !root_node.is_full() {
+            let out = root_node.insert_non_full(key, value);
+            if out.is_none() {
+                self.len += 1;
+            }
+            return out;
+        }
+
+        let mut new_root = StateBTreeNode {
+            keys:     Vec::new(),
+            values:   Vec::new(),
+            children: vec![self.root.take().unwrap_abort()], /* Safe to unwrap, since we checked
+                                                              * above that this is Some. */
+        };
+        new_root.split_child(0);
+        let out = new_root.insert_non_full(key, value);
+        self.root = Some(new_root);
+        if out.is_none() {
+            self.len += 1;
+        }
+        out
+    }
+
+    pub fn higher(&self, key: &K) -> Option<&K> {
+        if let Some(root_node) = &self.root {
+            root_node.higher(key)
+        } else {
+            None
+        }
+    }
+
+    pub fn lower(&self, key: &K) -> Option<&K> {
+        if let Some(root_node) = &self.root {
+            root_node.lower(key)
+        } else {
+            None
+        }
+    }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        if let Some(root_node) = &self.root {
+            root_node.get(key)
+        } else {
+            None
+        }
+    }
+
+    pub fn len(&self) -> usize { self.len }
+
+    pub fn is_empty(&self) -> bool { self.root.is_none() }
+}
+
+impl<const M: usize, K: Ord, V> StateBTreeNode<M, K, V> {
+    fn is_full(&self) -> bool { self.keys.len() == M }
+
+    fn is_leaf(&self) -> bool { self.children.is_empty() }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        match self.keys.binary_search(key) {
+            Ok(matched_key_index) => Some(&self.values[matched_key_index]),
+            Err(above_key_index) => {
+                if self.is_leaf() {
+                    None
+                } else {
+                    self.children[above_key_index].get(key)
+                }
+            }
+        }
+    }
+
+    fn insert_non_full(&mut self, key: K, value: V) -> Option<V> {
+        let mut i = match self.keys.binary_search(&key) {
+            Ok(index) => {
+                let value = mem::replace(&mut self.values[index], value);
+                return Some(value);
+            }
+            Err(index) => index,
+        };
+        if self.is_leaf() {
+            self.keys.insert(i, key);
+            self.values.insert(i, value);
+            None
+        } else {
+            if self.children[i].is_full() {
+                self.split_child(i);
+                if self.keys[i] < key {
+                    i += 1;
+                }
+            }
+            self.children[i].insert_non_full(key, value)
+        }
+    }
+
+    fn split_child(&mut self, child_index: usize) {
+        let left = &mut self.children[child_index];
+        let split_index = (M + 1) / 2;
+        let right = StateBTreeNode {
+            keys:     left.keys.split_off(split_index),
+            values:   left.values.split_off(split_index),
+            children: if left.is_leaf() {
+                Vec::new()
+            } else {
+                left.children.split_off(split_index)
+            },
+        };
+
+        let key = left.keys.pop().unwrap_abort();
+        let value = left.values.pop().unwrap_abort();
+        self.children.insert(child_index + 1, right);
+        self.keys.insert(child_index, key);
+        self.values.insert(child_index, value);
+    }
+
+    fn higher(&self, key: &K) -> Option<&K> {
+        let higher_key_index = match self.keys.binary_search(key) {
+            Ok(index) => index + 1,
+            Err(index) => index,
+        };
+
+        if self.is_leaf() {
+            if higher_key_index < self.keys.len() {
+                Some(&self.keys[higher_key_index])
+            } else {
+                None
+            }
+        } else {
+            self.children[higher_key_index].higher(key).or_else(|| {
+                if higher_key_index < self.keys.len() {
+                    Some(&self.keys[higher_key_index])
+                } else {
+                    None
+                }
+            })
+        }
+    }
+
+    fn lower(&self, key: &K) -> Option<&K> {
+        let lower_key_index = match self.keys.binary_search(key) {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+
+        if self.is_leaf() {
+            if key <= &self.keys[0] {
+                None
+            } else {
+                // lower_key_index cannot be 0 in this case, since the binary seach will only
+                // return 0 in the true branch above.
+                Some(&self.keys[lower_key_index - 1])
+            }
+        } else {
+            self.children[lower_key_index].lower(key).or_else(|| {
+                if lower_key_index > 0 {
+                    Some(&self.keys[lower_key_index - 1])
+                } else {
+                    None
+                }
+            })
+        }
     }
 }
 

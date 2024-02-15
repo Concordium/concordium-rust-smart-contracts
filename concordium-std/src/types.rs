@@ -1258,3 +1258,20 @@ pub struct MetadataUrl {
     /// A optional hash of the content.
     pub hash: Option<[u8; 32]>,
 }
+
+#[derive(Debug)]
+pub struct StateBTreeMap<const M: usize, K, V, S> {
+    pub(crate) _marker_key:   PhantomData<K>,
+    pub(crate) _marker_value: PhantomData<V>,
+    pub(crate) root:          Option<StateBTreeNode<M, K, V>>,
+    pub(crate) len:           usize,
+    pub(crate) state_api:     S,
+    pub(crate) prefix:        StateItemPrefix,
+}
+
+#[derive(Debug)]
+pub(crate) struct StateBTreeNode<const M: usize, K, V> {
+    pub(crate) keys:     Vec<K>,                       // never empty, sorted
+    pub(crate) values:   Vec<V>,                       // never empty
+    pub(crate) children: Vec<StateBTreeNode<M, K, V>>, // Empty means leaf.
+}
