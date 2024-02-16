@@ -114,9 +114,8 @@ fn stack_and_static(ctx: &ReceiveContext, _host: &Host<State>) -> ReceiveResult<
     let original_text_len = text.len();
     // Allocate a long lived box on the heap.
     let long_lived: Box<Vec<u32>> = black_box(Box::new((0..n).collect()));
-    // Run the appender function. Wrapped in a [`black_box`] to ensure that the
-    // compiler won't try to optimize the internals away.
-    black_box(appender(&mut text, n, &on_even, ON_ODD));
+    // Run the appender function.
+    appender(&mut text, n, &on_even, ON_ODD);
     // Use some of the local variables defined before the recursive call.
     // Abort if `n` should have been altered.
     if original_n != n {
