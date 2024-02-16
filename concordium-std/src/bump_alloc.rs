@@ -102,6 +102,7 @@ impl BumpAllocator {
             heap_start:  UnsafeCell::new(0),
             // Initialized to the dummy value `0`, which is checked during first initialization.
             heap_end:    UnsafeCell::new(0),
+            // Keeps track of the number of active allocations.
             allocations: UnsafeCell::new(0),
             // Initialized to the dummy value `0`.
             // Must be set to the same initial address as `next`.
@@ -113,7 +114,7 @@ impl BumpAllocator {
     ///
     /// If successful, it returns the previous number of memory pages.
     /// Otherwise, it returns [`ERROR_PAGE_COUNT`] to indicate out of memory.
-    fn grow_memory(&self, delta: PageCount) -> PageCount {
+    fn memory_grow(&self, delta: PageCount) -> PageCount {
         // The first argument refers to the index of memory to return the size of.
         // Currently, Wasm only supports a single slot of memory, so `0` must always be
         // used. Source: https://doc.rust-lang.org/beta/core/arch/wasm32/fn.memory_grow.html
@@ -129,7 +130,7 @@ impl BumpAllocator {
     ///  - The heap.
     ///
     /// To get the start location of the heap, use `__heap_base`.
-    fn size(&self) -> PageCount {
+    fn memory_size(&self) -> PageCount {
         // The argument refers to the index of memory to return the size of.
         // Currently, Wasm only supports a single slot of memory, so `0` must always be
         // used. Source: https://doc.rust-lang.org/beta/core/arch/wasm32/fn.memory_size.html
@@ -154,7 +155,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
             let heap_base = unsafe { &__heap_base as *const _ as usize };
             // Get the actual size of the memory, which is also the end of the heap, as the
             // heap is the last section in the memory.
-            let actual_size = self.size().size_in_bytes();
+            let actual_size = self.memory_size().size_in_bytes();
             // Replace all the dummy values.
             *next = heap_base;
             *self.heap_start.get() = heap_base;
@@ -175,7 +176,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
         if alloc_end > *heap_end {
             let space_needed = alloc_end - *heap_end;
             let pages_to_request = pages_to_request(space_needed);
-            let previous_page_count = self.grow_memory(pages_to_request);
+            let previous_page_count = self.memory_grow(pages_to_request);
             // Check if we are out of memory.
             if previous_page_count == ERROR_PAGE_COUNT {
                 return ptr::null_mut();
@@ -225,7 +226,8 @@ fn align_up(addr: usize, align: usize) -> usize { (addr + align - 1) & !(align -
 /// Calculates the number of memory pages needed to allocate an additional
 /// `space_needed` bytes.
 ///
-/// This function simply performs an integer division and rounds up the result.
+/// This function simply performs an integer division with `PAGE_SIZE` and
+/// rounds up the result.
 ///
 /// ```
 /// assert_eq!(pages_to_request(0), PageCount(0));

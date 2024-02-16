@@ -113,6 +113,30 @@ fn test_dealloc_last_optimization() {
         .expect("Update should succeed");
 }
 
+/// Tests that stack and static data isn't overwritten in the allocator.
+#[test]
+fn test_stack_and_static() {
+    let (chain, contract_address) = initialize_chain_and_contract();
+
+    chain
+        .contract_invoke(
+            ACC_0,
+            Address::Account(ACC_0),
+            Energy::from(100_000_000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                address:      contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "bump_alloc_tests.stack_and_static".to_string(),
+                ),
+                message:      OwnedParameter::from_serial(&("ORIGINAL", 123456, "EVEN"))
+                    .expect("Parameter size is below limit."),
+            },
+        )
+        .print_emitted_events()
+        .expect("Update should succeed");
+}
+
 /// A helper method for initializing the chain and contract.
 fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
     // Create the test chain.

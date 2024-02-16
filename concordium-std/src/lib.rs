@@ -131,11 +131,10 @@
 //! i.e, the resulting smart contracts are going to be smaller by about 6-10kB,
 //! which means they are cheaper to deploy and run. `bump_alloc` is designed to
 //! be simple and fast, but it does not use the memory very efficiently. For
-//! short-lived programs, such as smart contracts, this is usually a perfectly
-//! acceptable tradeoff.
-//! For an allocator with different tradeoffs, see [dlmalloc](https://docs.rs/dlmalloc/).
-//!
-//! See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
+//! short-lived programs, such as smart contracts, this is usually the right
+//! tradeoff. Especially for contracts such as those dealing with tokens.
+//! For very complex contracts it may be beneficial to run benchmarks to see
+//! whether `bump_alloc` is the best option. See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
 //! documentation for more context and details on using custom allocators.
 //!
 //! Emit debug information

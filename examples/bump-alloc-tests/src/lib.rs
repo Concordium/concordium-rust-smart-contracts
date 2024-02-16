@@ -78,7 +78,7 @@ fn allocate_one_mib(_ctx: &ReceiveContext, _host: &Host<State>) -> ReceiveResult
 #[receive(contract = "bump_alloc_tests", name = "dealloc_last_optimization")]
 fn dealloc_last_optimization(ctx: &ReceiveContext, _host: &Host<State>) -> ReceiveResult<()> {
     let n: u64 = ctx.parameter_cursor().get()?;
-    let mut long_lasting = black_box(Box::new(0u64));
+    let mut long_lived = black_box(Box::new(0u64));
     for i in 0..n {
         let addr_a = {
             let a = black_box(vec![i]);
@@ -89,11 +89,76 @@ fn dealloc_last_optimization(ctx: &ReceiveContext, _host: &Host<State>) -> Recei
             b.as_ptr() as usize
         };
         if addr_a != addr_b {
-            *long_lasting += 1;
+            *long_lived += 1;
         }
     }
-    if *long_lasting != 0 {
+    if *long_lived != 0 {
         return Err(Reject::default());
     }
     Ok(())
+}
+
+/// Tests that the allocator does not overwrite the static and stack regions of
+/// the memory.
+///
+/// The general idea is to create static and local variables, perform some
+/// recursive calls and subsequently check the integrity of all the data.
+/// The details are in written in the internal comments and in the documentation
+/// for the recursive helper function `appender`.
+#[receive(contract = "bump_alloc_tests", name = "stack_and_static")]
+fn stack_and_static(ctx: &ReceiveContext, _host: &Host<State>) -> ReceiveResult<()> {
+    // Create a static variable and some local variables.
+    static ON_ODD: &str = "ODD";
+    let (mut text, n, on_even): (String, u32, String) = ctx.parameter_cursor().get()?;
+    let original_n = n;
+    let original_text_len = text.len();
+    // Allocate a long lived box on the heap.
+    let long_lived: Box<Vec<u32>> = black_box(Box::new((0..n).collect()));
+    // Run the appender function. Wrapped in a [`black_box`] to ensure that the
+    // compiler won't try to optimize the internals away.
+    black_box(appender(&mut text, n, &on_even, ON_ODD));
+    // Use some of the local variables defined before the recursive call.
+    // Abort if `n` should have been altered.
+    if original_n != n {
+        return Err(Reject::default());
+    }
+    // Abort if the text length hasn't increased when `n` is positive.
+    if n != 0 && original_text_len == text.len() {
+        return Err(Reject::default());
+    }
+    let n_usize = n as usize;
+    // Use the box to ensure that it is long lived.
+    if long_lived[n_usize - 100] != n - 100 {
+        return Err(Reject::default());
+    }
+    // Calculate the expected length of the `text` and check it.
+    let expected_len = original_text_len
+        + (ON_ODD.len() * (n_usize / 2)) // Append `ON_ODD` half the times.
+        + (on_even.len() * (n_usize / 2)) // Append `on_even` half the times.
+        + (ON_ODD.len() * (n_usize % 2)); // Append an extra `ON_ODD` if `n` is odd.
+    if expected_len != text.len() {
+        return Err(Reject::default());
+    }
+    Ok(())
+}
+
+/// Recursively alternates between appending `on_even` and `on_odd` to the
+/// `text` `n` times.
+///
+/// For example with ("ORIGINAL", 3, "EVEN", "ODD"), the final `text` becomes:
+///
+///         |  |   |
+/// ORIGINALODDEVENODD
+///         |  |   |
+fn appender(text: &mut String, n: u32, on_even: &str, on_odd: &str) {
+    if n == 0 {
+        return;
+    }
+    let is_even = n % 2 == 0;
+    if is_even {
+        text.push_str(on_even);
+    } else {
+        text.push_str(on_odd);
+    }
+    appender(text, n - 1, on_even, on_odd);
 }
