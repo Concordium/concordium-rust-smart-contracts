@@ -1577,6 +1577,23 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
              functionality."
         )
     }
+
+    fn contract_module_reference(
+        &self,
+        _address: ContractAddress,
+    ) -> QueryContractModuleReferenceResult {
+        unimplemented!(
+            "The test infrastructure will be deprecated and so does not implement new \
+             functionality."
+        )
+    }
+
+    fn contract_name(&self, _address: ContractAddress) -> QueryContractNameResult {
+        unimplemented!(
+            "The test infrastructure will be deprecated and so does not implement new \
+             functionality."
+        )
+    }
 }
 
 impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {

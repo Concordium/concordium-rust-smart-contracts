@@ -2236,7 +2236,7 @@ fn query_contract_module_reference_worker(
 fn query_contract_name_worker(address: &ContractAddress) -> QueryContractNameResult {
     let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
     let response = unsafe {
-        prims::invoke(INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG, data.as_ptr() as *const u8, 16)
+        prims::invoke(INVOKE_QUERY_CONTRACT_NAME_TAG, data.as_ptr() as *const u8, 16)
     };
     parse_query_contract_name_response_code(response)
 }

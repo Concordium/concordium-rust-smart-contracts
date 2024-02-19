@@ -265,7 +265,8 @@ fn test_module_ref_and_name() {
 }
 
 #[test]
-fn test_upgrade_modeul_ref() {
+/// Test the interaction between upgrading a contract and querying the contract module reference.
+fn test_upgrade_module_ref() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(100);
     chain.create_account(Account::new(helpers::ACC_0, initial_balance));
