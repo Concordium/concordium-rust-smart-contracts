@@ -23,6 +23,7 @@ jobs:
     strategy:
       matrix:
         crates:
+          - concordium-std-derive/Cargo.toml
           - concordium-std/Cargo.toml
           - concordium-cis2/Cargo.toml
           - examples/voting/Cargo.toml

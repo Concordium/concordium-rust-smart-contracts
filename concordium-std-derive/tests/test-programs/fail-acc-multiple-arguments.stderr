@@ -1,0 +1,5 @@
+error: unexpected token
+ --> tests/test-programs/fail-acc-multiple-arguments.rs:6:98
+  |
+6 | const ACC: AccountAddress = account_address!("3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G", "3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3t...
+  |                                                                                                  ^

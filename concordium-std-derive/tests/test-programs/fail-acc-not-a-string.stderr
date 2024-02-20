@@ -1,0 +1,5 @@
+error: expected string literal
+ --> tests/test-programs/fail-acc-not-a-string.rs:6:46
+  |
+6 | const ACC: AccountAddress = account_address!(0);
+  |                                              ^

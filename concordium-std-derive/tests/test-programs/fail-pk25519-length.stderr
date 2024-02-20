@@ -1,0 +1,5 @@
+error: Invalid Ed25519 public key: Parsing failed
+ --> tests/test-programs/fail-pk25519-length.rs:6:56
+  |
+6 | const PK_25519: PublicKeyEd25519 = public_key_ed25519!("012a7e286063ae5dfcebce40636c0546d367d8c65cd4cb69aae1af77a4d6141201");
+  |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
