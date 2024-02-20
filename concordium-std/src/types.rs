@@ -1267,7 +1267,6 @@ pub struct StateBTreeMap<const M: usize, K, V, S> {
     pub(crate) len:           u32,
     pub(crate) prefix:        StateItemPrefix,
     pub(crate) next_node_id:  state_btree_internals::NodeId,
-    pub(crate) next_value_id: state_btree_internals::ValueId,
     pub(crate) state_api:     S,
 }
 
@@ -1278,16 +1277,9 @@ pub(crate) mod state_btree_internals {
         pub(crate) id: u32,
     }
 
-    #[derive(Debug, Copy, Clone)]
-    #[repr(transparent)]
-    pub(crate) struct ValueId {
-        pub(crate) id: u32,
-    }
-
     #[derive(Debug)]
     pub(crate) struct StateBTreeNode<const M: usize, K> {
-        pub(crate) keys:     Vec<K>,       // never empty, sorted.
-        pub(crate) values:   Vec<ValueId>, // never empty, order corresponds to the keys.
+        pub(crate) keys:     Vec<K>, // never empty, sorted.
         /// Either empty or keys.len() + 1.
         pub(crate) children: Vec<NodeId>,
     }
