@@ -32,7 +32,7 @@ pub fn account_address(item: TokenStream) -> TokenStream {
     }
 }
 
-/// Procedural macro for instantiating `PublicKeyEcdsaSecp256k1` public keys.
+/// Procedural macro for instantiating `PublicKeyEd25519` public keys.
 /// Input must be a (case-insensitive) hex-encoding and have a length of 64
 /// characters representing 32 bytes.
 #[proc_macro]
