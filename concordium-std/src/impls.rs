@@ -7,7 +7,7 @@ use crate::{
     marker::PhantomData,
     mem, num,
     num::NonZeroU32,
-    prims,
+    prims, state_btree_internals,
     traits::*,
     types::*,
     vec::Vec,
@@ -3119,6 +3119,82 @@ impl Deserial for MetadataUrl {
     }
 }
 
+impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.prefix.serial(out)?;
+        self.root.serial(out)?;
+        self.len.serial(out)?;
+        self.next_node_id.serial(out)?;
+        self.next_value_id.serial(out)
+    }
+}
+
+impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for StateBTreeMap<M, K, V, S> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+        let prefix = source.get()?;
+        let root = source.get()?;
+        let len = source.get()?;
+        let next_node_id = source.get()?;
+        let next_value_id = source.get()?;
+
+        Ok(StateBTreeMap {
+            _marker_key: Default::default(),
+            _marker_value: Default::default(),
+            root,
+            len,
+            prefix,
+            next_node_id,
+            next_value_id,
+            state_api: state.clone(),
+        })
+    }
+}
+
+impl<const M: usize, K: Serial> Serial for state_btree_internals::StateBTreeNode<M, K> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.keys.serial(out)?;
+        self.values.serial(out)?;
+        self.children.serial(out)
+    }
+}
+
+impl<const M: usize, K: Deserial> Deserial for state_btree_internals::StateBTreeNode<M, K> {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let keys = source.get()?;
+        let values = source.get()?;
+        let children = source.get()?;
+        Ok(Self {
+            keys,
+            values,
+            children,
+        })
+    }
+}
+
+impl Serial for state_btree_internals::NodeId {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.id.serial(out) }
+}
+
+impl Deserial for state_btree_internals::NodeId {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(Self {
+            id: source.get()?,
+        })
+    }
+}
+
+impl Serial for state_btree_internals::ValueId {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.id.serial(out) }
+}
+
+impl Deserial for state_btree_internals::ValueId {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        Ok(Self {
+            id: source.get()?,
+        })
+    }
+}
+
 impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
     pub(crate) fn new(state_api: S, prefix: StateItemPrefix) -> Self {
         Self {
@@ -3126,184 +3202,309 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
             _marker_value: Default::default(),
             root: None,
             len: 0,
+            next_node_id: state_btree_internals::NodeId {
+                id: 0,
+            },
+            next_value_id: state_btree_internals::ValueId {
+                id: 0,
+            },
             state_api,
             prefix,
         }
     }
 }
 
-impl<const M: usize, K: Ord, V, S> StateBTreeMap<M, K, V, S> {
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        let Some(root_node) = &mut self.root else {
-            let node = StateBTreeNode {
-                keys:     vec![key],
-                values:   vec![value],
-                children: Vec::new(),
+impl<const M: usize, K: Ord + Deserial + Clone, V: Serialize, S: HasStateApi>
+    StateBTreeMap<M, K, V, S>
+{
+    pub fn higher(&self, key: &K) -> Option<K> {
+        let Some(root_node_id) = self.root else {
+            return None;
+        };
+
+        let mut node = self.get_node(root_node_id);
+        let mut higher_so_far: Option<K> = None;
+        loop {
+            let higher_key_index = match node.keys.binary_search(key) {
+                Ok(index) => index + 1,
+                Err(index) => index,
             };
-            self.root = Some(node);
+
+            if node.is_leaf() {
+                return if higher_key_index < node.keys.len() {
+                    Some(node.keys[higher_key_index].clone())
+                } else {
+                    higher_so_far
+                };
+            } else {
+                if higher_key_index < node.keys.len() {
+                    higher_so_far = Some(node.keys[higher_key_index].clone())
+                }
+
+                let child_node_id = node.children[higher_key_index];
+                node = self.get_node(child_node_id);
+            }
+        }
+    }
+
+    pub fn lower(&self, key: &K) -> Option<K> {
+        let Some(root_node_id) = self.root else {
+            return None;
+        };
+
+        let mut node = self.get_node(root_node_id);
+        let mut lower_so_far: Option<K> = None;
+        loop {
+            let lower_key_index = match node.keys.binary_search(key) {
+                Ok(index) => index,
+                Err(index) => index,
+            };
+
+            if node.is_leaf() {
+                return if key <= &node.keys[0] {
+                    lower_so_far
+                } else {
+                    // lower_key_index cannot be 0 in this case, since the binary search will only
+                    // return 0 in the true branch above.
+                    Some(node.keys[lower_key_index - 1].clone())
+                };
+            } else {
+                if lower_key_index > 0 {
+                    lower_so_far = Some(node.keys[lower_key_index - 1].clone());
+                }
+                let child_node_id = node.children[lower_key_index];
+                node = self.get_node(child_node_id)
+            }
+        }
+    }
+}
+
+impl<const M: usize, K: Ord + Deserial, V, S: HasStateApi> StateBTreeMap<M, K, V, S> {
+    fn get_node<'a, 'b>(
+        &'a self,
+        node_id: state_btree_internals::NodeId,
+    ) -> StateRef<'b, state_btree_internals::StateBTreeNode<M, K>> {
+        let key = self.node_key(node_id);
+        let mut entry = self.state_api.lookup_entry(&key).unwrap_abort();
+        StateRef::new(entry.get().unwrap_abort())
+    }
+
+    fn node_key(&self, node_id: state_btree_internals::NodeId) -> Vec<u8> {
+        let mut key = self.prefix.to_vec();
+        key.push(0u8); // Node key discriminant
+        node_id.serial(&mut key).unwrap_abort();
+        key
+    }
+
+    fn value_key(&self, value_id: state_btree_internals::ValueId) -> Vec<u8> {
+        let mut key = self.prefix.to_vec();
+        key.push(1u8); // Node key discriminant
+        value_id.serial(&mut key).unwrap_abort();
+        key
+    }
+}
+
+impl<const M: usize, K: Ord + Serialize, V: Serialize, S: HasStateApi> StateBTreeMap<M, K, V, S> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let Some(root_id) = self.root else {
+            let node_id = {
+                let value_id = self.create_value(value);
+                let (node_id, _node) = self.create_node(vec![key], vec![value_id], Vec::new());
+                node_id
+            };
+            self.root = Some(node_id);
             self.len = 1;
             return None;
         };
 
-        if !root_node.is_full() {
-            let out = root_node.insert_non_full(key, value);
-            if out.is_none() {
-                self.len += 1;
+        {
+            let root_node = self.get_node_mut(root_id);
+            if !root_node.is_full() {
+                let out = self.insert_non_full(root_node, key, value);
+                if out.is_none() {
+                    self.len += 1;
+                }
+                return out;
             }
-            return out;
         }
 
-        let mut new_root = StateBTreeNode {
-            keys:     Vec::new(),
-            values:   Vec::new(),
-            children: vec![self.root.take().unwrap_abort()], /* Safe to unwrap, since we checked
-                                                              * above that this is Some. */
-        };
-        new_root.split_child(0);
-        let out = new_root.insert_non_full(key, value);
-        self.root = Some(new_root);
+        let (new_root_id, mut new_root) = self.create_node(Vec::new(), Vec::new(), vec![root_id]);
+        self.split_child(&mut new_root, 0);
+        let out = self.insert_non_full(new_root, key, value);
+        self.root = Some(new_root_id);
         if out.is_none() {
             self.len += 1;
         }
         out
     }
 
-    pub fn higher(&self, key: &K) -> Option<&K> {
-        if let Some(root_node) = &self.root {
-            root_node.higher(key)
-        } else {
-            None
+    pub fn get<'a>(&'a self, key: &K) -> Option<StateRef<'a, V>> {
+        let Some(root_node) = self.root else {
+            return None;
+        };
+
+        let mut node = self.get_node(root_node);
+        loop {
+            match node.keys.binary_search(key) {
+                Ok(matched_key_index) => {
+                    let value_id = node.values[matched_key_index];
+                    let value = self.get_value(value_id);
+                    return Some(StateRef::new(value));
+                }
+                Err(above_key_index) => {
+                    if node.is_leaf() {
+                        return None;
+                    } else {
+                        node = self.get_node(node.children[above_key_index]);
+                    }
+                }
+            }
         }
     }
 
-    pub fn lower(&self, key: &K) -> Option<&K> {
-        if let Some(root_node) = &self.root {
-            root_node.lower(key)
-        } else {
-            None
-        }
-    }
-
-    pub fn get(&self, key: &K) -> Option<&V> {
-        if let Some(root_node) = &self.root {
-            root_node.get(key)
-        } else {
-            None
-        }
-    }
-
-    pub fn len(&self) -> usize { self.len }
+    pub fn len(&self) -> u32 { self.len }
 
     pub fn is_empty(&self) -> bool { self.root.is_none() }
-}
 
-impl<const M: usize, K: Ord, V> StateBTreeNode<M, K, V> {
-    fn is_full(&self) -> bool { self.keys.len() == M }
-
-    fn is_leaf(&self) -> bool { self.children.is_empty() }
-
-    fn get(&self, key: &K) -> Option<&V> {
-        match self.keys.binary_search(key) {
-            Ok(matched_key_index) => Some(&self.values[matched_key_index]),
-            Err(above_key_index) => {
-                if self.is_leaf() {
-                    None
-                } else {
-                    self.children[above_key_index].get(key)
-                }
-            }
-        }
-    }
-
-    fn insert_non_full(&mut self, key: K, value: V) -> Option<V> {
-        let mut i = match self.keys.binary_search(&key) {
-            Ok(index) => {
-                let value = mem::replace(&mut self.values[index], value);
-                return Some(value);
-            }
-            Err(index) => index,
+    fn create_value(&mut self, value: V) -> state_btree_internals::ValueId {
+        let value_id = self.next_value_id;
+        self.next_value_id = state_btree_internals::ValueId {
+            id: value_id.id + 1,
         };
-        if self.is_leaf() {
-            self.keys.insert(i, key);
-            self.values.insert(i, value);
-            None
-        } else {
-            if self.children[i].is_full() {
-                self.split_child(i);
-                if self.keys[i] < key {
-                    i += 1;
-                }
+        let key = self.value_key(value_id);
+        let mut entry = self.state_api.create_entry(&key).unwrap_abort();
+        value.serial(&mut entry).unwrap_abort();
+        value_id
+    }
+
+    fn get_value(&self, value_id: state_btree_internals::ValueId) -> V {
+        let key = self.value_key(value_id);
+        let mut entry = self.state_api.lookup_entry(&key).unwrap_abort();
+        entry.get().unwrap_abort()
+    }
+
+    fn set_value(&mut self, value_id: state_btree_internals::ValueId, value: V) -> Option<V> {
+        let key = self.value_key(value_id);
+        match self.state_api.entry(key) {
+            EntryRaw::Vacant(_) => None,
+            EntryRaw::Occupied(mut raw_entry) => {
+                let entry = raw_entry.get_mut();
+                let old_value = entry.get().unwrap_abort();
+                value.serial(entry).unwrap_abort();
+                Some(old_value)
             }
-            self.children[i].insert_non_full(key, value)
         }
     }
 
-    fn split_child(&mut self, child_index: usize) {
-        let left = &mut self.children[child_index];
+    fn create_node<'a, 'b>(
+        &'a mut self,
+        keys: Vec<K>,
+        values: Vec<state_btree_internals::ValueId>,
+        children: Vec<state_btree_internals::NodeId>,
+    ) -> (
+        state_btree_internals::NodeId,
+        StateRefMut<'b, state_btree_internals::StateBTreeNode<M, K>, S>,
+    ) {
+        let node_id = self.next_node_id;
+        self.next_node_id = state_btree_internals::NodeId {
+            id: node_id.id + 1,
+        };
+        let node = state_btree_internals::StateBTreeNode {
+            keys,
+            values,
+            children,
+        };
+        let entry = self.state_api.create_entry(&self.node_key(node_id)).unwrap_abort();
+        let mut ref_mut: StateRefMut<'_, state_btree_internals::StateBTreeNode<M, K>, S> =
+            StateRefMut::new(entry, self.state_api.clone());
+        ref_mut.set(node);
+        (node_id, ref_mut)
+    }
+
+    fn get_node_mut<'a, 'b>(
+        &'a mut self,
+        node_id: state_btree_internals::NodeId,
+    ) -> StateRefMut<'b, state_btree_internals::StateBTreeNode<M, K>, S> {
+        let key = self.node_key(node_id);
+        let entry = self.state_api.entry(key);
+        match entry {
+            EntryRaw::Vacant(_) => crate::trap(),
+            EntryRaw::Occupied(entry) => StateRefMut::new(entry.get(), self.state_api.clone()),
+        }
+    }
+
+    fn insert_non_full(
+        &mut self,
+        initial_node: StateRefMut<state_btree_internals::StateBTreeNode<M, K>, S>,
+        key: K,
+        value: V,
+    ) -> Option<V> {
+        let mut node = initial_node;
+        loop {
+            let mut i = match node.keys.binary_search(&key) {
+                Ok(index) => {
+                    let value_id = node.values[index];
+                    let value = self.set_value(value_id, value);
+                    return value;
+                }
+                Err(index) => index,
+            };
+            if node.is_leaf() {
+                node.keys.insert(i, key);
+                let value_id = self.create_value(value);
+                node.values.insert(i, value_id);
+                return None;
+            } else {
+                let child = self.get_node(node.children[i]);
+                if child.is_full() {
+                    self.split_child(&mut node, i);
+                    if node.keys[i] < key {
+                        i += 1;
+                    }
+                }
+                node = self.get_node_mut(node.children[i]);
+            }
+        }
+    }
+
+    fn split_child<'a, 'b>(
+        &'a mut self,
+        node: &'b mut StateRefMut<state_btree_internals::StateBTreeNode<M, K>, S>,
+        child_index: usize,
+    ) {
+        let mut left = self.get_node_mut(node.children[child_index]);
         let split_index = (M + 1) / 2;
-        let right = StateBTreeNode {
-            keys:     left.keys.split_off(split_index),
-            values:   left.values.split_off(split_index),
-            children: if left.is_leaf() {
+        let (right_id, _right) = self.create_node(
+            left.keys.split_off(split_index),
+            left.values.split_off(split_index),
+            if left.is_leaf() {
                 Vec::new()
             } else {
                 left.children.split_off(split_index)
             },
-        };
-
+        );
         let key = left.keys.pop().unwrap_abort();
         let value = left.values.pop().unwrap_abort();
-        self.children.insert(child_index + 1, right);
-        self.keys.insert(child_index, key);
-        self.values.insert(child_index, value);
+        node.children.insert(child_index + 1, right_id);
+        node.keys.insert(child_index, key);
+        node.values.insert(child_index, value);
     }
+}
 
-    fn higher(&self, key: &K) -> Option<&K> {
-        let higher_key_index = match self.keys.binary_search(key) {
-            Ok(index) => index + 1,
-            Err(index) => index,
-        };
+impl<const M: usize, K> state_btree_internals::StateBTreeNode<M, K> {
+    fn is_full(&self) -> bool { self.keys.len() == M }
 
-        if self.is_leaf() {
-            if higher_key_index < self.keys.len() {
-                Some(&self.keys[higher_key_index])
-            } else {
-                None
-            }
-        } else {
-            self.children[higher_key_index].higher(key).or_else(|| {
-                if higher_key_index < self.keys.len() {
-                    Some(&self.keys[higher_key_index])
-                } else {
-                    None
-                }
-            })
-        }
-    }
+    fn is_leaf(&self) -> bool { self.children.is_empty() }
+}
 
-    fn lower(&self, key: &K) -> Option<&K> {
-        let lower_key_index = match self.keys.binary_search(key) {
-            Ok(index) => index,
-            Err(index) => index,
-        };
+impl<const M: usize, K, V, S> Deletable for StateBTreeMap<M, K, V, S>
+where
+    S: HasStateApi,
+{
+    fn delete(self) {
+        todo!("clear the map");
 
-        if self.is_leaf() {
-            if key <= &self.keys[0] {
-                None
-            } else {
-                // lower_key_index cannot be 0 in this case, since the binary seach will only
-                // return 0 in the true branch above.
-                Some(&self.keys[lower_key_index - 1])
-            }
-        } else {
-            self.children[lower_key_index].lower(key).or_else(|| {
-                if lower_key_index > 0 {
-                    Some(&self.keys[lower_key_index - 1])
-                } else {
-                    None
-                }
-            })
-        }
+        //self.clear();
     }
 }
 

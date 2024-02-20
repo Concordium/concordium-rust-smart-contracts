@@ -1263,15 +1263,32 @@ pub struct MetadataUrl {
 pub struct StateBTreeMap<const M: usize, K, V, S> {
     pub(crate) _marker_key:   PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
-    pub(crate) root:          Option<StateBTreeNode<M, K, V>>,
-    pub(crate) len:           usize,
-    pub(crate) state_api:     S,
+    pub(crate) root:          Option<state_btree_internals::NodeId>,
+    pub(crate) len:           u32,
     pub(crate) prefix:        StateItemPrefix,
+    pub(crate) next_node_id:  state_btree_internals::NodeId,
+    pub(crate) next_value_id: state_btree_internals::ValueId,
+    pub(crate) state_api:     S,
 }
 
-#[derive(Debug)]
-pub(crate) struct StateBTreeNode<const M: usize, K, V> {
-    pub(crate) keys:     Vec<K>,                       // never empty, sorted
-    pub(crate) values:   Vec<V>,                       // never empty
-    pub(crate) children: Vec<StateBTreeNode<M, K, V>>, // Empty means leaf.
+pub(crate) mod state_btree_internals {
+    #[derive(Debug, Copy, Clone)]
+    #[repr(transparent)]
+    pub(crate) struct NodeId {
+        pub(crate) id: u32,
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    #[repr(transparent)]
+    pub(crate) struct ValueId {
+        pub(crate) id: u32,
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct StateBTreeNode<const M: usize, K> {
+        pub(crate) keys:     Vec<K>,       // never empty, sorted.
+        pub(crate) values:   Vec<ValueId>, // never empty, order corresponds to the keys.
+        /// Either empty or keys.len() + 1.
+        pub(crate) children: Vec<NodeId>,
+    }
 }
