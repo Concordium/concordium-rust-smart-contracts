@@ -27,7 +27,7 @@ pub fn account_address(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
@@ -52,7 +52,7 @@ pub fn public_key_ed25519(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
@@ -77,7 +77,7 @@ pub fn public_key_ecdsa(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
@@ -102,7 +102,7 @@ pub fn signature_ed25519(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
@@ -127,7 +127,7 @@ pub fn signature_ecdsa(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
@@ -157,7 +157,7 @@ pub fn contract_address(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
@@ -182,7 +182,7 @@ pub fn module_reference(item: TokenStream) -> TokenStream {
         Ok(o) => o,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("LexError: {}", e));
-            return err.to_compile_error().into();
+            err.to_compile_error().into()
         }
     }
 }
