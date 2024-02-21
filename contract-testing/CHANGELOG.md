@@ -2,6 +2,9 @@
 
 ## Unreleased changes
 
+- Add support for querying the module reference and contract name of an instance.
+  This functionality is only available on-chain from protocol version 7.
+
 ## 4.1.0
 
 - Fix a bug in debug output. The events emitted before some contract queries

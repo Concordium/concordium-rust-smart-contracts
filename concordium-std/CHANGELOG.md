@@ -2,6 +2,11 @@
 
 ## Unreleased changes
 
+- Add support for querying the module reference and contract name of an instance,
+  via the `HasHost::contract_module_reference` and `HasHost::contract_name` functions.
+  These are only available from protocol version 7, and as such are guarded by the
+  `p7` feature flag.
+
 ## concordium-std 9.0.2 (2024-02-07)
 
 - Make the `concordium_dbg!` and related macros also usable with the full syntax

@@ -1820,8 +1820,10 @@ const INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG: u32 = 5;
 /// Tag of the query account's public keys [prims::invoke].
 const INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG: u32 = 6;
 /// Tag of the query contract module reference operation. See [prims::invoke].
+#[cfg(feature = "p7")]
 const INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG: u32 = 7;
 /// Tag of the query contract name operation. See [prims::invoke].
+#[cfg(feature = "p7")]
 const INVOKE_QUERY_CONTRACT_NAME_TAG: u32 = 8;
 
 /// Check whether the response code from calling `invoke` is encoding a failure
@@ -2066,6 +2068,7 @@ fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
 /// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x03' encodes missing contract.
+#[cfg(feature = "p7")]
 fn parse_query_contract_module_reference_response_code(
     code: u64,
 ) -> Result<ExternCallResponse, QueryContractModuleReferenceError> {
@@ -2089,6 +2092,7 @@ fn parse_query_contract_module_reference_response_code(
 /// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x03' encodes missing contract.
+#[cfg(feature = "p7")]
 fn parse_query_contract_name_response_code(
     code: u64,
 ) -> Result<OwnedContractName, QueryContractNameError> {
@@ -2220,6 +2224,7 @@ fn check_account_signature_worker(
 
 /// Helper factoring out the common behaviour of contract_module_reference for
 /// the two extern hosts below.
+#[cfg(feature = "p7")]
 fn query_contract_module_reference_worker(
     address: &ContractAddress,
 ) -> QueryContractModuleReferenceResult {
@@ -2233,11 +2238,11 @@ fn query_contract_module_reference_worker(
 
 /// Helper factoring out the common behaviour of contract_name for
 /// the two extern hosts below.
+#[cfg(feature = "p7")]
 fn query_contract_name_worker(address: &ContractAddress) -> QueryContractNameResult {
     let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
-    let response = unsafe {
-        prims::invoke(INVOKE_QUERY_CONTRACT_NAME_TAG, data.as_ptr() as *const u8, 16)
-    };
+    let response =
+        unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_NAME_TAG, data.as_ptr() as *const u8, 16) };
     parse_query_contract_name_response_code(response)
 }
 
@@ -2501,6 +2506,7 @@ where
         check_account_signature_worker(address, signatures, data)
     }
 
+    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_module_reference(
         &self,
@@ -2509,6 +2515,7 @@ where
         query_contract_module_reference_worker(&address)
     }
 
+    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult {
         query_contract_name_worker(&address)
@@ -2592,6 +2599,7 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         check_account_signature_worker(address, signatures, data)
     }
 
+    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_module_reference(
         &self,
@@ -2600,6 +2608,7 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         query_contract_module_reference_worker(&address)
     }
 
+    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult {
         query_contract_name_worker(&address)

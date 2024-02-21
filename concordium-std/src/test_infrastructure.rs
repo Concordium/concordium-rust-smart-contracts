@@ -1578,6 +1578,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         )
     }
 
+    #[cfg(feature = "p7")]
     fn contract_module_reference(
         &self,
         _address: ContractAddress,
@@ -1588,6 +1589,7 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         )
     }
 
+    #[cfg(feature = "p7")]
     fn contract_name(&self, _address: ContractAddress) -> QueryContractNameResult {
         unimplemented!(
             "The test infrastructure will be deprecated and so does not implement new \
