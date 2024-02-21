@@ -35,6 +35,7 @@ jobs:
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
           - examples/credential-registry/Cargo.toml
+          - examples/factory/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
@@ -458,6 +459,7 @@ jobs:
           -
           - build-schema
           - concordium-quickcheck
+          - p7
 
     steps:
       - name: Checkout sources
@@ -533,6 +535,7 @@ jobs:
           - wasm-test
           - wasm-test,build-schema
           - wasm-test,concordium-quickcheck
+          - wasm-test,p7
 
     steps:
       - name: Checkout sources
@@ -687,6 +690,7 @@ jobs:
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
           - examples/credential-registry/Cargo.toml
+          - examples/factory/Cargo.toml
           - examples/fib/Cargo.toml
           - examples/icecream/Cargo.toml
           - examples/memo/Cargo.toml
@@ -818,6 +822,7 @@ jobs:
           - examples/cis3-nft-sponsored-txs
           - examples/cis2-wccd
           - examples/credential-registry
+          - examples/factory
           - examples/fib
           - examples/icecream
           - examples/memo
