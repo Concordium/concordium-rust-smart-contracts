@@ -13,7 +13,7 @@ name: Clippy & fmt
 env:
   RUST_FMT: nightly-2023-04-01
   RUST_VERSION: "1.66"
-  RUST_VERSION_TESTING_LIBRARY: "1.67"
+  RUST_VERSION_TESTING_LIBRARY: "1.72"
   CARGO_CONCORDIUM_VERSION: "3.2.0"
 
 jobs:
@@ -51,6 +51,7 @@ jobs:
           - examples/offchain-transfers/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/sponsored-tx-enabled-auction/Cargo.toml
+          - examples/bump-alloc-tests/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -347,8 +348,8 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"9.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/{version = \"6.0\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"10.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/{version = \"6.1\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/concordium-smart-contract-testing = \"4.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
@@ -395,8 +396,8 @@ jobs:
         run: |
           mv $PROJECT_NAME ${{ runner.temp }}/
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"9.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"9.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/version = \"6.0\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"6.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"10.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"10.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/version = \"6.1\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"6.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/concordium-smart-contract-testing = \"4.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
@@ -606,6 +607,7 @@ jobs:
           - examples/cis2-multi-royalties/Cargo.toml
           - examples/nametoken/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
+          - examples/bump-alloc-tests/Cargo.toml
 
         features:
           -
@@ -629,7 +631,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features wee_alloc
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
 
   check-crypto-examples:
     name: Check crypto examples
@@ -703,6 +705,7 @@ jobs:
           - examples/offchain-transfers/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/sponsored-tx-enabled-auction/Cargo.toml
+          - examples/bump-alloc-tests/Cargo.toml
 
     steps:
       - name: Checkout sources
@@ -834,6 +837,7 @@ jobs:
           - examples/offchain-transfers
           - examples/account-signature-checks
           - examples/sponsored-tx-enabled-auction
+          - examples/bump-alloc-tests
 
     steps:
       - name: Checkout sources

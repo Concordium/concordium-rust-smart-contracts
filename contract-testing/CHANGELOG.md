@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Bump minimum supported Rust version (MSRV) to `1.72`.
+
 ## 4.1.0
 
 - Fix a bug in debug output. The events emitted before some contract queries

@@ -6,9 +6,9 @@ edition = "2021"
 license = "MPL-2.0"
 
 [features]
-default = ["std", "wee_alloc"]
+default = ["std", "bump_alloc"]
 std = ["concordium-std/std", "concordium-cis2/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
+bump_alloc = ["concordium-std/bump_alloc"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", default-features = false}
