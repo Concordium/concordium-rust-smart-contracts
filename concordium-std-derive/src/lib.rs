@@ -1,3 +1,5 @@
+#![feature(proc_macro_quote)]
+
 extern crate proc_macro;
 
 use concordium_contracts_common::{
@@ -5,33 +7,47 @@ use concordium_contracts_common::{
     SignatureEcdsaSecp256k1, SignatureEd25519,
 };
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{Group, Punct, Spacing, Span};
 use std::str::FromStr;
 use syn::{parse_macro_input, LitStr};
+use quote::ToTokens;
+use quote::quote;
+
+// Tokenizes a slice of bytes
+fn tokenize_slice(slice: &[u8]) -> proc_macro2::TokenStream {
+    let mut t = proc_macro2::TokenStream::new();
+    for byte in slice {
+        byte.to_tokens(&mut t);
+        Punct::new(',', Spacing::Alone).to_tokens(&mut t);
+    }
+    Group::new(proc_macro2::Delimiter::Bracket, t).to_token_stream()
+}
 
 fn account_address_helper(str: String, span: Span) -> TokenStream {
-    let addr_bytes = match AccountAddress::from_str(&str) {
-        Ok(addr) => addr.0,
+    let address = match AccountAddress::from_str(&str) {
+        Ok(addr) => tokenize_slice(&addr.0),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid account address: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!("AccountAddress({:?})", addr_bytes).parse() {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(AccountAddress(#address)).into()
 }
 
 /// Procedural macro for instantiating account addresses.
 /// Input must be a valid base58-encoding.
 #[proc_macro]
 pub fn account_address(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
+    let input = match syn::parse::<LitStr>(item) {
+        Ok(string_literal) => string_literal,
+        Err(e) => {
+            // TODO: What if there is another kind of error here?
+            let err = syn::Error::new(e.span(), format!("{}: expected a string literal", e));
+            return err.to_compile_error().into();
+        }
+    };
+
     account_address_helper(input.value(), input.span())
 }
 
@@ -44,32 +60,28 @@ pub fn account_address_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
         }
     };
 
-    account_address_helper(val, input.span())
+    // TODO: Which is better?
+    //account_address_helper(val, input.span())
+    account_address(val.into_token_stream().into())
 }
 
 fn public_key_ed25519_helper(str: String, span: Span) -> TokenStream {
-    let pk_bytes = match PublicKeyEd25519::from_str(&str) {
-        Ok(pk) => pk.0,
+    let public_key = match PublicKeyEd25519::from_str(&str) {
+        Ok(pk) => tokenize_slice(&pk.0),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid Ed25519 public key: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!("PublicKeyEd25519({:?})", pk_bytes).parse() {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(PublicKeyEd25519(#public_key)).into()
 }
 
 /// Procedural macro for instantiating `PublicKeyEd25519` public keys.
@@ -91,7 +103,7 @@ pub fn public_key_ed25519_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
@@ -102,21 +114,15 @@ pub fn public_key_ed25519_env(item: TokenStream) -> TokenStream {
 }
 
 fn public_key_ecdsa_helper(str: String, span: Span) -> TokenStream {
-    let pk_bytes = match PublicKeyEcdsaSecp256k1::from_str(&str) {
-        Ok(pk) => pk.0,
+    let public_key = match PublicKeyEcdsaSecp256k1::from_str(&str) {
+        Ok(pk) => tokenize_slice(&pk.0),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid ECDSA public key: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!("PublicKeyEcdsaSecp256k1({:?})", pk_bytes).parse() {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(PublicKeyEcdsaSecp256k1(#public_key)).into()
 }
 
 /// Procedural macro for instantiating `PublicKeyEcdsaSecp256k1` public keys.
@@ -138,7 +144,7 @@ pub fn public_key_ecdsa_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
@@ -149,21 +155,15 @@ pub fn public_key_ecdsa_env(item: TokenStream) -> TokenStream {
 }
 
 fn signature_ed25519_helper(str: String, span: Span) -> TokenStream {
-    let sig_bytes = match SignatureEd25519::from_str(&str) {
-        Ok(sig) => sig.0,
+    let signature = match SignatureEd25519::from_str(&str) {
+        Ok(sig) => tokenize_slice(&sig.0),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid Ed25519 signature: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!("SignatureEd25519({:?})", sig_bytes).parse() {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(SignatureEd25519(#signature)).into()
 }
 
 /// Procedural macro for instantiating `SignatureEd25519` signatures.
@@ -185,7 +185,7 @@ pub fn signature_ed25519_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
@@ -196,21 +196,15 @@ pub fn signature_ed25519_env(item: TokenStream) -> TokenStream {
 }
 
 fn signature_ecdsa_helper(str: String, span: Span) -> TokenStream {
-    let sig_bytes = match SignatureEcdsaSecp256k1::from_str(&str) {
-        Ok(sig) => sig.0,
+    let signature = match SignatureEcdsaSecp256k1::from_str(&str) {
+        Ok(sig) => tokenize_slice(&sig.0),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid ECDSA signature: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!("SignatureEcdsaSecp256k1({:?})", sig_bytes).parse() {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(SignatureEcdsaSecp256k1(#signature)).into()
 }
 
 /// Procedural macro for instantiating `SignatureEcdsaSecp256k1` signatures.
@@ -232,7 +226,7 @@ pub fn signature_ecdsa_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
@@ -243,26 +237,15 @@ pub fn signature_ecdsa_env(item: TokenStream) -> TokenStream {
 }
 
 fn contract_address_helper(str: String, span: Span) -> TokenStream {
-    let contract = match ContractAddress::from_str(&str) {
-        Ok(con) => con,
+    let (index, subindex) = match ContractAddress::from_str(&str) {
+        Ok(con) => (con.index, con.subindex),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid contract address: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!(
-        "ContractAddress {{ index: {:?}, subindex: {:?} }}",
-        contract.index, contract.subindex
-    )
-    .parse()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(ContractAddress(#index, #subindex)).into()
 }
 
 /// Procedural macro for instantiating contract addresses.
@@ -284,7 +267,7 @@ pub fn contract_address_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
@@ -296,20 +279,14 @@ pub fn contract_address_env(item: TokenStream) -> TokenStream {
 
 fn module_reference_helper(str: String, span: Span) -> TokenStream {
     let module_ref = match ModuleReference::from_str(&str) {
-        Ok(mod_ref) => mod_ref.bytes,
+        Ok(mod_ref) => tokenize_slice(&mod_ref.bytes),
         Err(e) => {
             let err = syn::Error::new(span, format!("Invalid module reference: {}", e));
             return err.to_compile_error().into();
         }
     };
 
-    match format!("ModuleReference::new({:?})", module_ref).parse() {
-        Ok(o) => o,
-        Err(e) => {
-            let err = syn::Error::new(span, format!("LexError: {}", e));
-            err.to_compile_error().into()
-        }
-    }
+    quote!(ModuleReference(#module_ref)).into()
 }
 
 /// Procedural macro for instantiating module references.
@@ -331,12 +308,12 @@ pub fn module_reference_env(item: TokenStream) -> TokenStream {
     let key = input.value();
 
     let val = match std::env::var(key) {
-        Ok(o) => o,
+        Ok(value) => value,
         Err(e) => {
             let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
             return err.to_compile_error().into();
         }
     };
 
-    signature_ecdsa_helper(val, input.span())
+    module_reference_helper(val, input.span())
 }

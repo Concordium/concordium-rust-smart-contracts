@@ -16,6 +16,7 @@ proc-macro = true
 concordium-contracts-common = { git = "https://github.com/Concordium/concordium-base.git", branch = "const-hashbytes-new", features = [ "derive-serde" ] }
 syn = "2.0"
 proc-macro2 = "1.0"
+quote = "1.0"
 
 [dev-dependencies]
 trybuild = "1.0"
