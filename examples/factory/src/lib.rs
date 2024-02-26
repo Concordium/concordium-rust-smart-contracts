@@ -39,6 +39,15 @@
 //! should use. This could be hard-coded in the contract, or set as a parameter
 //! when the factory is initialized.
 //!
+//! In this example the factory acts as a registry of all the products it has
+//! "produced", assigning each a fresh index and recording the contract address
+//! for each. The products are initialized with their index, and also keep a
+//! record of the address of the factory contract that produced them. In a
+//! practical application, the factory might supply additional paramaters when
+//! initializing the products.
+//!
+//! # Security considerations
+//!
 //! Since the construction and initialization of the product occur in two
 //! separate transactions, it is possible that a third party might try to hijack
 //! the process by inserting their own transaction to initialize the product
@@ -47,12 +56,100 @@
 //! `initialize` method that the invoker of the `produce` transaction is the
 //! same account as created the product contract instance (i.e. the "owner").
 //!
-//! In this example the factory acts as a registry of all the products it has
-//! "produced", assigning each a fresh index and recording the contract address
-//! for each. The products are initialized with their index, and also keep a
-//! record of the address of the factory contract that produced them. In a
-//! practical application, the factory might supply additional paramaters when
-//! initializing the products.
+//! Note that typically it is wrong to use the `invoker` of a transaction for
+//! authorization, rather than the immediate caller. For instance, a user might
+//! invoke some untrusted smart contract, and expect it is not authorized to
+//! transfer tokens she holds on another contract. If the token-holding contract
+//! used the invoker for authorization, then the untrusted contract could
+//! transfer the tokens. In the case of the factory pattern, however, the
+//! authorization is for a one-time use (initializing the product contract)
+//! and should occur immediately after the product is created. An adversary
+//! would have to convince a user to sign a malicious transaction in between the
+//! construction and (intended) initialization transactions in order to hijack
+//! the product contract. This is hopefully unlikely. Moreover, the effect of
+//! such a hijacking should typically be that the product cannot be used as the
+//! user intended, but the user would still be able to create another product
+//! and have the factory produce that correctly.
+//!
+//! This security model relies on the fact that none of the initialization of
+//! the product occurs in the constructor of the product (the `init` method),
+//! but instead is handled by the `initialize` endpoint that is called by the
+//! factory. In particular, if any funds or authorization are granted to the
+//! product before `initialize` is called, then the consequences and risk of
+//! hijacking are more sever. Thus, to adhere to the factory pattern, the
+//! product contract must:
+//!
+//! 1. Always be constructed in an uninitialized state, with no balance,
+//! authority or any other state.
+//!
+//! 2. Only permit the `initialize` update operation while it is in the
+//! uninitialized state.
+//!
+//! 3. On a successful call of `initialize`, transition from the uninitialized
+//! state to an initialized state.
+//!
+//! 4. Never transition back to the uninitialized state.
+//!
+//! It is important to always consider the risks presented by malicious third
+//! parties and to evaluate if any given solution is appropriate to the
+//! application at hand.
+//!
+//! # Alternatives to the factory pattern
+//!
+//! As mentioned above, the factory pattern is not idiomatic on Concordium, as
+//! producing a new contract instance from a factory requires a two-transaction
+//! process. The following alternatives may be more suitable for an application.
+//!
+//! ## Construct the product directly
+//! If the factory does not maintain an on-going relationship with the product,
+//! then it is generally possible to simply initialize the product entirely in
+//! the constructor, removing the separate `initialize` operation entirely. In
+//! the example presented here, the factory initializes each product with a
+//! unique index, and maintains a map of the products by this index. The
+//! `produce` and `initialize` operations are used to establish this
+//! relationship.
+//!
+//! In particular, if the factory contract does not need to update its state
+//! after initializing the product, then it serves no purpose. It would be
+//! sufficient to construct the product directly in the same way as the factory
+//! would have.
+//!
+//! ## Register the instance with a contract registry
+//! In the present example, the factory contract serves as a registry of its
+//! products. The factory pattern enables this, as the factory is responsible
+//! for initializing each product instance. However, the factory pattern is not
+//! in itself necessary for a contract registry. Instead, instances could be
+//! constructed directly (as in the previous alternative) and subsequently
+//! registered with a registry contract, which maintains an index of the
+//! instances registered with it. The registration process could also provide
+//! additional initialization information for the contract being registered
+//! (such as the index it is assigned by the registry).
+//!
+//! In the factory pattern, the factory authenticates the uninitialized product
+//! instances (checking that they are instances of a particular determined smart
+//! contract). A registry could perform similar checks. Alternatively, updating
+//! the registry could require authorization by a trusted party that eliminates
+//! the need for such checks. This may be useful if the registry is expected to
+//! handle instances of multiple different smart contracts.
+//!
+//! ## A monolithic contract
+//! Instead of having separate contract instances for the factory and each
+//! product, all of these could be combined in a single monolithic contract. In
+//! this model, each product is assigned a virtual address, and the contract
+//! maintains a mapping from virtual addresses to the state of each product.
+//!
+//! For instance, a CIS2 contract can manage multiple NFTs that each have
+//! distinct token IDs. Rather than each NFT being in its own contract (that may
+//! be created by a factory contract), they are simply handled as part of the
+//! state of the overall CIS2 contract. Here, the token ID acts as a virtual
+//! address.
+//!
+//! The main disadvantage of this approach is that the isolation between the
+//! states of each product must be enforced by the contract itself. If the state
+//! became corrupted (due to a bug in the contract) then it could affect any or
+//! all of the encapsulated products. With the factory pattern, the runtime
+//! system of the chain enforces isolation. As always, the balance of risks
+//! should be considered when choosing the approach for any application.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -90,7 +187,7 @@ pub mod factory {
         #[from(ParseError)]
         ParseParams,
         /// [`produce`] was called with a non-existent product contract.
-        /// Or [`view_product`] was called with an indext for a non-existent
+        /// Or [`view_product`] was called with an index for a non-existent
         /// product.
         NonExistentProduct,
         /// The product was not of the correct module and contract name.
@@ -136,7 +233,14 @@ pub mod factory {
     ///
     /// If successful, the product is assigned a fresh index (as part of the
     /// initialization), and is recorded in the factory's index.
-    #[receive(contract = "factory", name = "produce", parameter = "ContractAddress", mutable)]
+    #[receive(
+        contract = "factory",
+        name = "produce",
+        parameter = "ContractAddress",
+        mutable,
+        return_value = "()",
+        error = "FactoryError"
+    )]
     pub fn produce(
         ctx: &ReceiveContext,
         host: &mut Host<FactoryState>,
@@ -148,18 +252,14 @@ pub mod factory {
         let product_module_ref = host
             .contract_module_reference(product_address)
             .or(Err(FactoryError::NonExistentProduct))?;
-        if self_module_ref != product_module_ref {
-            Err(FactoryError::InvalidProduct)?;
-        }
+        ensure_eq!(self_module_ref, product_module_ref, FactoryError::InvalidProduct);
         // Check the product contract name is correct.
         // As this module contains both the factory and product contracts, it is not
         // enough to check just the module reference, because we want to ensure
         // that the would-be product is not an instance of the factory contract.
         let product_name =
             host.contract_name(product_address).or(Err(FactoryError::NonExistentProduct))?;
-        if product_name != PRODUCT_INIT_NAME {
-            Err(FactoryError::InvalidProduct)?;
-        }
+        ensure_eq!(product_name, PRODUCT_INIT_NAME, FactoryError::InvalidProduct);
         // Invoke the initialize entrypoint on the product passing in the index for this
         // product.
         let next_product = host.state().next_product;
@@ -179,7 +279,12 @@ pub mod factory {
 
     /// Get the number of product instances that have been successfully
     /// initialized by this factory.
-    #[receive(contract = "factory", name = "view_product_count")]
+    #[receive(
+        contract = "factory",
+        name = "view_product_count",
+        return_value = "u64",
+        error = "FactoryError"
+    )]
     pub fn view_product_count(
         _ctx: &ReceiveContext,
         host: &Host<FactoryState>,
@@ -189,7 +294,13 @@ pub mod factory {
 
     /// Get the contract address of the product instance for a particular index.
     /// Indexes are assigned sequentially starting from 0.
-    #[receive(contract = "factory", name = "view_product", parameter = "u64")]
+    #[receive(
+        contract = "factory",
+        name = "view_product",
+        parameter = "u64",
+        return_value = "ContractAddress",
+        error = "FactoryError"
+    )]
     pub fn view_product(
         ctx: &ReceiveContext,
         host: &Host<FactoryState>,
@@ -236,8 +347,8 @@ pub mod product {
         NotAuthorized,
         /// The product was already initialized.
         AlreadyInitialized,
-        /// [`initialize`] was not called by a factory contract.
-        NotInitializedByFactory,
+        /// [`initialize`] was not called by a contract.
+        NoFactoryContract,
     }
 
     /// Construct the product contract in the uninitialized state.
@@ -257,33 +368,36 @@ pub mod product {
     ///   is returned.
     ///
     /// * The method must be called by another smart contract (the factory). If
-    ///   the caller is not a contract,
-    ///   [`ProductError::NotInitializedByFactory`] is returned.
+    ///   the caller is not a contract, [`ProductError::NoFactoryContract`] is
+    ///   returned.
     ///
     /// Note that beyond checking that the caller is a smart contract, this
     /// method does not check further properties of the caller (e.g. that it is
     /// any particular factory smart contract).
-    #[receive(contract = "product", name = "initialize", parameter = "u64", mutable)]
+    #[receive(
+        contract = "product",
+        name = "initialize",
+        parameter = "u64",
+        mutable,
+        return_value = "()",
+        error = "ProductError"
+    )]
     pub fn initialize(
         ctx: &ReceiveContext,
         host: &mut Host<ProductState>,
     ) -> Result<(), ProductError> {
         let state = host.state_mut();
         // Check that the contract has not already been initialized.
-        if let ProductState::Initialized(_) = *state {
-            Err(ProductError::AlreadyInitialized)?;
-        }
+        ensure_eq!(*state, ProductState::Uninitialized, ProductError::AlreadyInitialized);
         // Check that the invoker is the owner of the contract.
-        if ctx.invoker() != ctx.owner() {
-            Err(ProductError::NotAuthorized)?;
-        }
+        ensure_eq!(ctx.invoker(), ctx.owner(), ProductError::NotAuthorized);
         // The index is supplied as a parameter by the factory.
         let index: u64 = ctx.parameter_cursor().get()?;
         // This endpoint should only be called by another smart contract, namely the
         // factory, which we record in the state.
         let factory = match ctx.sender() {
             Address::Contract(ca) => ca,
-            _ => Err(ProductError::NotInitializedByFactory)?,
+            _ => Err(ProductError::NoFactoryContract)?,
         };
         // Initialize the state.
         let product = Product {
@@ -294,7 +408,12 @@ pub mod product {
         Ok(())
     }
 
-    #[receive(contract = "product", name = "view")]
+    #[receive(
+        contract = "product",
+        name = "view",
+        return_value = "ProductState",
+        error = "ProductError"
+    )]
     pub fn view(
         _ctx: &ReceiveContext,
         host: &Host<ProductState>,

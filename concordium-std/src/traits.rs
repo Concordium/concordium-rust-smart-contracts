@@ -531,13 +531,16 @@ pub trait HasHost<State>: Sized {
     ) -> CheckAccountSignatureResult;
 
     /// Get the module reference of a contract instance.
+    ///
+    /// Note: after a successful [`upgrade`], this will return the new module
+    /// reference.
     #[cfg(feature = "p7")]
     fn contract_module_reference(
         &self,
         address: ContractAddress,
     ) -> QueryContractModuleReferenceResult;
 
-    /// Get the name of the initializer of a contract instance.
+    /// Get the contract name of a contract instance.
     #[cfg(feature = "p7")]
     fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult;
 

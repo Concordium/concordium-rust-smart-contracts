@@ -34,6 +34,20 @@ pub(crate) fn contract_instance_query_account_keys_return_cost(num_keys: u32) ->
     }
 }
 
+/// The cost of querying the contract module reference from a smart contract
+/// instance.
+pub(crate) const CONTRACT_INSTANCE_QUERY_CONTRACT_MODULE_REFERENCE_COST: Energy = Energy {
+    energy: 200,
+};
+
+/// The cost of querying the contract module name from a smart contract
+/// instance. While the length of a smart contract name is variable, it is at
+/// most 100 characters, so there  is no real benefit to varying the cost based
+/// on the length.
+pub(crate) const CONTRACT_INSTANCE_QUERY_CONTRACT_NAME_COST: Energy = Energy {
+    energy: 200,
+};
+
 /// Cost **in energy** of verification of an ed25519 signature.
 /// This should match the cost of
 /// [`verify_ed22519_cost`](concordium_smart_contract_engine::constants::verify_ed25519_cost)

@@ -757,7 +757,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 },
                                 Some(bal) => v1::InvokeResponse::Success {
                                     // Balance of contract querying. Won't change. Notice the
-                                    // `data.address`.
+                                    // `invocation_data.address`.
                                     new_balance: self
                                         .contract_balance_unchecked(invocation_data.address),
                                     data:        Some(to_bytes(&bal)),
@@ -920,8 +920,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     kind: v1::InvokeFailure::NonExistentContract,
                                 },
                                 Some(mod_ref) => v1::InvokeResponse::Success {
-                                    // Balance of contract querying. Won't change. Notice the
-                                    // `data.address`.
+                                    // The balance of the calling contract is unchanged.
                                     new_balance: self
                                         .contract_balance_unchecked(invocation_data.address),
                                     data:        Some(to_bytes(&mod_ref)),
@@ -930,7 +929,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 
                             exit_ooe!(
                                 self.remaining_energy.tick_energy(
-                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
+                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_MODULE_REFERENCE_COST,
                                 ),
                                 trace
                             );
@@ -949,8 +948,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     kind: v1::InvokeFailure::NonExistentContract,
                                 },
                                 Some(cname) => v1::InvokeResponse::Success {
-                                    // Balance of contract querying. Won't change. Notice the
-                                    // `data.address`.
+                                    // The balance of the calling contract is unchanged.
                                     new_balance: self
                                         .contract_balance_unchecked(invocation_data.address),
                                     data:        Some(cname.get_chain_name().into()),
@@ -959,7 +957,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 
                             exit_ooe!(
                                 self.remaining_energy.tick_energy(
-                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_BALANCE_COST,
+                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_NAME_COST,
                                 ),
                                 trace
                             );
@@ -1252,12 +1250,10 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
     fn contract_module_reference(&self, address: ContractAddress) -> Option<ModuleReference> {
         // The module reference can change in the event of a contract upgrade, so we
         // need to look it up in the changeset first.
-        self.changeset
-            .current()
-            .contracts
-            .get(&address)
-            .and_then(|c| c.module)
-            .or_else(|| self.chain.contracts.get(&address).map(|c| c.module_reference))
+        self.changeset.current().contracts.get(&address).map_or_else(
+            || self.chain.contracts.get(&address).map(|c| c.module_reference),
+            |c| c.module,
+        )
     }
 
     /// Looks up the contract name from persistence. (Since the contract name

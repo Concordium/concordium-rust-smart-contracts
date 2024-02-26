@@ -1,40 +1,25 @@
 //! This module contains tests for smart contract module reference and name
 //! queries. These tests match equivalent tests for the scheduler in the node.
-use std::io::Write;
 
 use concordium_smart_contract_testing::*;
 mod helpers;
 
-#[macro_export]
-/// Macro for a pattern that matches a [ContractInvokeError] where the contract
-/// rejects with the supplied error code.
-macro_rules! ContractInvokeErrorCode {
-    ($x:expr) => {
-        ContractInvokeError {
-            kind: ContractInvokeErrorKind::ExecutionError {
-                failure_kind: InvokeFailure::ContractReject {
-                    code: $x,
-                    ..
-                },
-            },
-            ..
-        }
-    };
-}
-
 #[test]
 /// This test deploys three different smart contracts, from two different
-/// modules. One of these contracts <0,0> has a function for checking if the
-/// module reference matches an expected value. Another <2,0> has a function for
-/// checking if the contract name matches an expected value. Both functions are
-/// invoked for each instance, and for non-existant contract addresses, ensuring
-/// the values are as expected.
+/// modules.  One of these contracts <0,0> has a function that queries and logs
+/// the module reference of a  specified contract address. Another <2,0> queries
+/// and logs the contract name of a specified  contract. Both functions are
+/// invoked for each instance, and for non-existant contract  addresses,
+/// ensuring the values are as expected.
 ///
 /// The entrypoints are designed to succeed in the case of a match, fail with
 /// code -1 if there is a mismatch, and fail with code -2 if the contract
 /// address does not exist. If the protocol version does not support the
 /// contract inspection functionality, then the call should fail with
 /// a runtime exception.
+///
+/// In addition to checking the results, this test also checks that the energy
+/// used matches the expected value.
 fn test_module_ref_and_name() {
     let mut chain = Chain::new();
     let initial_balance = Amount::from_ccd(100);
@@ -97,171 +82,151 @@ fn test_module_ref_and_name() {
         )
         .expect("Initializing valid contract should work");
 
-    // Use contract 0 to check the module addresses of the contracts.
-    let check_module_ref =
-        |chain: &mut Chain, address: ContractAddress, mod_ref: ModuleReference| {
-            let input_param = (address, mod_ref);
-            chain.contract_update(
-                Signer::with_one_key(),
-                helpers::ACC_0,
-                Address::Account(helpers::ACC_0),
-                Energy::from(100000),
-                UpdateContractPayload {
-                    address:      res_init_0.contract_address,
-                    receive_name: OwnedReceiveName::new_unchecked(
-                        "contract.check_module_reference".into(),
-                    ),
-                    message:      OwnedParameter::from_serial(&input_param)
-                        .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
-                },
-            )
-        };
-    let res = check_module_ref(
-        &mut chain,
-        res_init_0.contract_address,
-        res_deploy_contract_inspection.module_reference,
+    // Use contract 0 to get the module references of the contracts.
+    let get_module_ref = |chain: &mut Chain,
+                          address: ContractAddress|
+     -> Result<(ModuleReference, Energy), ContractInvokeError> {
+        let success = chain.contract_update(
+            Signer::with_one_key(),
+            helpers::ACC_0,
+            Address::Account(helpers::ACC_0),
+            Energy::from(100000),
+            UpdateContractPayload {
+                address:      res_init_0.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "contract.get_module_reference".into(),
+                ),
+                message:      OwnedParameter::from_serial(&address)
+                    .expect("Parameter has valid size"),
+                amount:       Amount::zero(),
+            },
+        )?;
+        let ev = success
+            .events()
+            .next()
+            .expect("get_module_reference should produce an event on success");
+        if let (_, [e]) = ev {
+            Ok((e.parse().expect("event should parse"), success.energy_used))
+        } else {
+            panic!("get_module_reference should have a single event")
+        }
+    };
+    let res = get_module_ref(&mut chain, res_init_0.contract_address)
+        .expect("Contract 0 should be valid");
+    assert_eq!(
+        res.0, res_deploy_contract_inspection.module_reference,
+        "Contract 0 should match contract inspection contract"
     );
-    assert!(
-        matches!(res, Ok(..)),
-        "Contract 0 should match contract inspection contract, but result was: {:?}",
-        res
+    assert_eq!(res.1, 776.into(), "Expected energy to get module reference '{}'", res.0);
+    let res = get_module_ref(&mut chain, res_init_1.contract_address)
+        .expect("Contract 1 should be valid");
+    assert_eq!(
+        res.0, res_deploy_account_balance.module_reference,
+        "Contract 1 should match contract inspection contract"
     );
-    let res = check_module_ref(
-        &mut chain,
-        res_init_1.contract_address,
-        res_deploy_contract_inspection.module_reference,
+    assert_eq!(res.1, 776.into(), "Expected energy to get module reference '{}'", res.0);
+    let res = get_module_ref(&mut chain, res_init_2.contract_address)
+        .expect("Contract 2 should be valid");
+    assert_eq!(
+        res.0, res_deploy_contract_inspection.module_reference,
+        "Contract 2 should match contract inspection contract"
     );
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-1))),
-        "Contract 1 should not match contract inspection contract, but result was: {:?}",
-        res
-    );
-    let res = check_module_ref(
-        &mut chain,
-        res_init_2.contract_address,
-        res_deploy_contract_inspection.module_reference,
-    );
-    assert!(
-        matches!(res, Ok(..)),
-        "Contract 0 should match contract inspection contract, but result was: {:?}",
-        res
-    );
-    let res = check_module_ref(
-        &mut chain,
-        ContractAddress {
-            index:    3,
-            subindex: 0,
-        },
-        res_deploy_contract_inspection.module_reference,
-    );
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-2))),
-        "Contract <3,0> should not exist, but result was: {:?}",
-        res
-    );
-    let res = check_module_ref(
-        &mut chain,
-        ContractAddress {
-            index:    0,
-            subindex: 1,
-        },
-        res_deploy_contract_inspection.module_reference,
-    );
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-2))),
-        "Contract <0,1> should not exist, but result was: {:?}",
-        res
-    );
-    let res = check_module_ref(
-        &mut chain,
-        res_init_1.contract_address,
-        res_deploy_account_balance.module_reference,
-    );
-    assert!(
-        matches!(res, Ok(..)),
-        "Contract 1 should match account balance contract, but result was: {:?}",
-        res
-    );
+    assert_eq!(res.1, 776.into(), "Expected energy to get module reference '{}'", res.0);
+    let err = get_module_ref(&mut chain, ContractAddress {
+        index:    3,
+        subindex: 0,
+    })
+    .expect_err("Contract <3,0> should be invalid");
+    assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <3,0>");
+    assert_eq!(err.energy_used, 744.into(), "Expected energy for failed get module ref.");
+    let err = get_module_ref(&mut chain, ContractAddress {
+        index:    1,
+        subindex: 1,
+    })
+    .expect_err("Contract <0,1> should be invalid");
+    assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <0,1>");
+    assert_eq!(err.energy_used, 744.into(), "Expected energy for failed get module ref.");
 
     // Use contract 2 to check the contract name of the contracts.
-    let check_name = |chain: &mut Chain, address: ContractAddress, name: &str| {
-        let mut input_param = Vec::with_capacity(16 + name.len());
-        concordium_rust_sdk::base::contracts_common::Serial::serial(&address, &mut input_param)
-            .unwrap();
-        println!("{:?}", &input_param);
-        input_param.write_all(name.as_bytes()).unwrap();
-        let op = OwnedParameter::try_from(input_param);
-        println!("{:?}", &op);
-        chain.contract_update(
+    let get_name = |chain: &mut Chain,
+                    address: ContractAddress|
+     -> Result<(OwnedContractName, Energy), ContractInvokeError> {
+        let success = chain.contract_update(
             Signer::with_one_key(),
             helpers::ACC_0,
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
                 address:      res_init_2.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("contract2.check_name".into()),
-                message:      op.expect("Parameter has valid size"),
+                receive_name: OwnedReceiveName::new_unchecked("contract2.get_contract_name".into()),
+                message:      OwnedParameter::from_serial(&address)
+                    .expect("Parameter has valid size"),
                 amount:       Amount::zero(),
             },
-        )
+        )?;
+        let ev =
+            success.events().next().expect("get_contract_name should produce an event on success");
+        if let (_, [e]) = ev {
+            let name_str = std::str::from_utf8(e.as_ref()).expect("event should be utf8");
+            let name = ContractName::new(name_str).expect("event should be a valid contract name");
+            Ok((name.to_owned(), success.energy_used))
+        } else {
+            panic!("get_contract_name should have a single event")
+        }
     };
-    let res = check_name(&mut chain, res_init_0.contract_address, "init_contract");
-    assert!(
-        matches!(res, Ok(..)),
-        "Contract 0 should match 'init_contract', but result was: {:?}",
-        res
+    let res =
+        get_name(&mut chain, res_init_0.contract_address).expect("Contract 0 should be valid");
+    assert_eq!(
+        res.0.as_contract_name(),
+        ContractName::new_unchecked("init_contract"),
+        "Contract 0 name"
     );
-    let res = check_name(&mut chain, res_init_1.contract_address, "init_contract");
-    assert!(
-        matches!(res, Ok(..)),
-        "Contract 1 should match 'init_contract', but result was: {:?}",
-        res
+    assert_eq!(
+        res.1,
+        755.into(),
+        "Expected energy for get_contract_name on {}",
+        res.0.as_contract_name()
     );
-    let res = check_name(&mut chain, res_init_2.contract_address, "init_contract");
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-1))),
-        "Contract 2 should not match 'init_contract', but result was: {:?}",
-        res
+    let res =
+        get_name(&mut chain, res_init_1.contract_address).expect("Contract 1 should be valid");
+    assert_eq!(
+        res.0.as_contract_name(),
+        ContractName::new_unchecked("init_contract"),
+        "Contract 1 name"
     );
-    let res = check_name(&mut chain, res_init_2.contract_address, "init_contract2");
-    assert!(
-        matches!(res, Ok(..)),
-        "Contract 2 should match 'init_contract2', but result was: {:?}",
-        res
+    assert_eq!(
+        res.1,
+        755.into(),
+        "Expected energy for get_contract_name on {}",
+        res.0.as_contract_name()
     );
-    let res = check_name(
-        &mut chain,
-        ContractAddress {
-            index:    3,
-            subindex: 0,
-        },
-        "init_contract",
+    let res =
+        get_name(&mut chain, res_init_2.contract_address).expect("Contract 0 should be valid");
+    assert_eq!(
+        res.0.as_contract_name(),
+        ContractName::new_unchecked("init_contract2"),
+        "Contract 2 name"
     );
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-2))),
-        "Contract <3,0> should not exist, but result was: {:?}",
-        res
+    assert_eq!(
+        res.1,
+        756.into(),
+        "Expected energy for get_contract_name on {}",
+        res.0.as_contract_name()
     );
-    let res = check_name(&mut chain, res_init_0.contract_address, "init_contract2");
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-1))),
-        "Contract 0 should not match 'init_contract2', but result was: {:?}",
-        res
-    );
-    let res = check_name(
-        &mut chain,
-        ContractAddress {
-            index:    0,
-            subindex: 1,
-        },
-        "init_contract2",
-    );
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-2))),
-        "Contract <0,1> should not exist, but result was: {:?}",
-        res
-    );
+    let err = get_name(&mut chain, ContractAddress {
+        index:    3,
+        subindex: 0,
+    })
+    .expect_err("Contract <3,0> should be invalid");
+    assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <3,0>");
+    assert_eq!(err.energy_used, 742.into(), "Expected energy for failed get_contract_name");
+    let err = get_name(&mut chain, ContractAddress {
+        index:    1,
+        subindex: 1,
+    })
+    .expect_err("Contract <0,1> should be invalid");
+    assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <0,1>");
+    assert_eq!(err.energy_used, 742.into(), "Expected energy for failed get_contract_name");
 }
 
 #[test]
@@ -286,7 +251,7 @@ fn test_upgrade_module_ref() {
         .module_deploy_v1(Signer::with_one_key(), helpers::ACC_0, mod_1)
         .expect("Deploying valid module should work");
 
-    // Initialise three contracts.
+    // Initialise the contract.
     let res_init_0 = chain
         .contract_init(
             Signer::with_one_key(),
@@ -304,8 +269,6 @@ fn test_upgrade_module_ref() {
     let check_module_ref =
         |chain: &mut Chain, address: ContractAddress, mod_ref: ModuleReference| {
             let input_param = (address, mod_ref);
-            let op = OwnedParameter::from_serial(&input_param);
-            println!("{:?}", &op);
             chain.contract_update(
                 Signer::with_one_key(),
                 helpers::ACC_0,
@@ -324,13 +287,15 @@ fn test_upgrade_module_ref() {
         };
     let res =
         check_module_ref(&mut chain, res_init_0.contract_address, res_deploy_0.module_reference);
-    assert!(matches!(res, Ok(..)), "Contract 0 should match contract 0, but result was: {:?}", res);
-    let res =
-        check_module_ref(&mut chain, res_init_0.contract_address, res_deploy_1.module_reference);
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-1))),
-        "Contract 0 should not match contract 1, but result was: {:?}",
-        res
+    assert!(matches!(res, Ok(..)), "Contract 0 should match module 0, but result was: {:?}", res);
+    let err =
+        check_module_ref(&mut chain, res_init_0.contract_address, res_deploy_1.module_reference)
+            .expect_err("Contract 0 should not match module 1");
+    assert_eq!(
+        err.reject_code(),
+        Some(-1),
+        "Should reject with code -1, but result was: {:?}",
+        err
     );
     // Upgrade the contract. This also checks that the module reference changes
     // after the upgrade.
@@ -352,12 +317,14 @@ fn test_upgrade_module_ref() {
     // Check the module reference after the update.
     let res =
         check_module_ref(&mut chain, res_init_0.contract_address, res_deploy_1.module_reference);
-    assert!(matches!(res, Ok(..)), "Contract 0 should match contract 1, but result was: {:?}", res);
-    let res =
-        check_module_ref(&mut chain, res_init_0.contract_address, res_deploy_0.module_reference);
-    assert!(
-        matches!(res, Err(ContractInvokeErrorCode!(-1))),
-        "Contract 0 should not match contract 0, but result was: {:?}",
-        res
+    assert!(matches!(res, Ok(..)), "Contract 0 should match module 1, but result was: {:?}", res);
+    let err =
+        check_module_ref(&mut chain, res_init_0.contract_address, res_deploy_0.module_reference)
+            .expect_err("Contract 0 should not match module 1");
+    assert_eq!(
+        err.reject_code(),
+        Some(-1),
+        "Should reject with code -1, but result was: {:?}",
+        err
     );
 }

@@ -1,7 +1,10 @@
 //! Tests for the factory smart contract.
 use concordium_smart_contract_testing::*;
-use concordium_std::{Cursor, Deserial};
-use factory_smart_contract::product::{Product, ProductState};
+use concordium_std::{Cursor, Deserial, Reject};
+use factory_smart_contract::{
+    factory::FactoryError,
+    product::{Product, ProductState},
+};
 
 /// The test accounts.
 const ALICE: AccountAddress = AccountAddress([0; 32]);
@@ -63,9 +66,14 @@ fn test_not_authorized() {
     // ALICE creates the product instance, but BOB invokes produce on the factory.
     // This should fail.
     let product = create_product(&mut chain, module_ref, ALICE);
-    call_produce(&mut chain, factory, product, BOB).expect_err(
+    let err = call_produce(&mut chain, factory, product, BOB).expect_err(
         "Should fail when product is called from a different account than the creator of the \
          product.",
+    );
+    assert_eq!(
+        err.reject_code(),
+        Some(Reject::from(FactoryError::InitializeFailed).error_code.get()),
+        "Reject code should be InitializeFailed"
     );
 }
 
@@ -76,8 +84,13 @@ fn test_double_produce() {
     let factory = create_factory(&mut chain, module_ref);
     let product = create_product(&mut chain, module_ref, ALICE);
     call_produce(&mut chain, factory, product, ALICE).expect("Produce successful");
-    call_produce(&mut chain, factory, product, ALICE)
+    let err = call_produce(&mut chain, factory, product, ALICE)
         .expect_err("Should fail when product has already been initialized.");
+    assert_eq!(
+        err.reject_code(),
+        Some(Reject::from(FactoryError::InitializeFailed).error_code.get()),
+        "Reject code should be InitializeFailed"
+    );
 }
 
 /// Test that a product cannot be produced twice (by different factories).
@@ -88,8 +101,13 @@ fn test_double_produce_second_factory() {
     let product = create_product(&mut chain, module_ref, ALICE);
     call_produce(&mut chain, factory, product, ALICE).expect("Produce successful");
     let factory2 = create_factory(&mut chain, module_ref);
-    call_produce(&mut chain, factory2, product, ALICE)
+    let err = call_produce(&mut chain, factory2, product, ALICE)
         .expect_err("Should fail when product has already been initialized.");
+    assert_eq!(
+        err.reject_code(),
+        Some(Reject::from(FactoryError::InitializeFailed).error_code.get()),
+        "Reject code should be InitializeFailed"
+    );
 }
 
 /// Test that `produce` fails when called with an instance of a contract other
@@ -99,8 +117,13 @@ fn test_wrong_product() {
     let (mut chain, module_ref) = initialize_chain();
     let factory = create_factory(&mut chain, module_ref);
     let factory2 = create_factory(&mut chain, module_ref);
-    call_produce(&mut chain, factory, factory2, ALICE)
+    let err = call_produce(&mut chain, factory, factory2, ALICE)
         .expect_err("Should fail with incorrect product contract");
+    assert_eq!(
+        err.reject_code(),
+        Some(Reject::from(FactoryError::InvalidProduct).error_code.get()),
+        "Reject code should be InvalidProduct"
+    );
 }
 
 /// Helper function to set up the chain with initial accounts, the module
