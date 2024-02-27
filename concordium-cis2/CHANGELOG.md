@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+## concordium-cis2 6.1.0 (2024-02-22)
+
+- Support version 10 of concordium-std.
+
 ## concordium-cis2 6.0.0 (2024-01-22)
 
 - Add `Clone` trait for `StandardIdentifierOwned`.

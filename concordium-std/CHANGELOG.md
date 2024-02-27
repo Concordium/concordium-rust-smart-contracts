@@ -7,6 +7,10 @@
   These are only available from protocol version 7, and as such are guarded by the
   `p7` feature flag.
 
+## concordium-std 10.0.0 (2024-02-22)
+
+- Remove the feature `wee_alloc` and replace it with `bump_alloc`, which enables a small and simple global allocator that can only be used in Wasm.
+
 ## concordium-std 9.0.2 (2024-02-07)
 
 - Make the `concordium_dbg!` and related macros also usable with the full syntax
