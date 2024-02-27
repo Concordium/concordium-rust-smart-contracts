@@ -532,8 +532,8 @@ pub trait HasHost<State>: Sized {
 
     /// Get the module reference of a contract instance.
     ///
-    /// Note: after a successful [`upgrade`], this will return the new module
-    /// reference.
+    /// Note: after a successful [`Self::upgrade`], this will return the new
+    /// module reference.
     #[cfg(feature = "p7")]
     fn contract_module_reference(
         &self,
