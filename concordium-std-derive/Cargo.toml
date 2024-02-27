@@ -12,8 +12,7 @@ description = "Procedural macros to generate concordium type constants from stri
 proc-macro = true
 
 [dependencies]
-# Replace with new version, obviously...
-concordium-contracts-common = { git = "https://github.com/Concordium/concordium-base.git", branch = "const-hashbytes-new", features = [ "derive-serde" ] }
+concordium-contracts-common = { path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common", features = [ "derive-serde" ] }
 syn = "2.0"
 proc-macro2 = "1.0"
 quote = "1.0"

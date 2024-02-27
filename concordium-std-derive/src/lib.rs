@@ -1,5 +1,3 @@
-#![feature(proc_macro_quote)]
-
 extern crate proc_macro;
 
 use concordium_contracts_common::{
@@ -8,12 +6,13 @@ use concordium_contracts_common::{
 };
 use proc_macro::TokenStream;
 use proc_macro2::{Group, Punct, Spacing, Span};
+use quote::{quote, ToTokens};
 use std::str::FromStr;
-use syn::{parse_macro_input, LitStr};
-use quote::ToTokens;
-use quote::quote;
+use syn::LitStr;
 
-// Tokenizes a slice of bytes
+// Helper functions:
+
+// Tokenizes a slice of bytes.
 fn tokenize_slice(slice: &[u8]) -> proc_macro2::TokenStream {
     let mut t = proc_macro2::TokenStream::new();
     for byte in slice {
@@ -23,32 +22,122 @@ fn tokenize_slice(slice: &[u8]) -> proc_macro2::TokenStream {
     Group::new(proc_macro2::Delimiter::Bracket, t).to_token_stream()
 }
 
-fn account_address_helper(str: String, span: Span) -> TokenStream {
-    let address = match AccountAddress::from_str(&str) {
-        Ok(addr) => tokenize_slice(&addr.0),
+// Parses the input tokens of a proc macro and returns the given error
+// message on parse error.
+fn parse_input(item: TokenStream, msg: &str) -> syn::Result<LitStr> {
+    match syn::parse::<LitStr>(item) {
+        Ok(string_literal) => Ok(string_literal),
+        Err(_) => Err(syn::Error::new(Span::call_site(), msg)),
+    }
+}
+
+// Parses the given tokens and transforms them using the provided worker
+// function. If parsing fails, then an error with the given message is produced.
+fn get_token_res(
+    item: TokenStream,
+    msg: &str,
+    worker_fun: fn(String, Span) -> syn::Result<TokenStream>,
+) -> syn::Result<TokenStream> {
+    let input = parse_input(item, msg)?;
+    worker_fun(input.value(), input.span())
+}
+
+// Parses the given tokens, looks up an environment variable with the parsed
+// input as key and transforms the corresponding value using the provided worker
+// function. If parsing fails, then an error with the given message is produced.
+fn get_token_res_env(
+    item: TokenStream,
+    msg: &str,
+    worker_fun: fn(String, Span) -> syn::Result<TokenStream>,
+) -> syn::Result<TokenStream> {
+    let input = parse_input(item, msg)?;
+    let environment_var_value = match std::env::var(input.value()) {
+        Ok(value) => value,
         Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid account address: {}", e));
-            return err.to_compile_error().into();
+            return Err(syn::Error::new(
+                input.span(),
+                format!("Environment variable error: {:?}", e),
+            ))
         }
     };
+    worker_fun(environment_var_value, input.span())
+}
 
-    quote!(AccountAddress(#address)).into()
+fn unwrap_or_report(res: syn::Result<TokenStream>) -> TokenStream {
+    res.unwrap_or_else(|e| e.into_compile_error().into())
+}
+
+// Worker functions
+
+fn acc_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let address = match AccountAddress::from_str(&str) {
+        Ok(addr) => tokenize_slice(&addr.0),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid account address: {}", e))),
+    };
+
+    Ok(quote!(AccountAddress(#address)).into())
+}
+
+fn pubkey_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let public_key = match PublicKeyEd25519::from_str(&str) {
+        Ok(pk) => tokenize_slice(&pk.0),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid Ed25519 public key: {}", e))),
+    };
+
+    Ok(quote!(PublicKeyEd25519(#public_key)).into())
+}
+
+fn pubkey_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let public_key = match PublicKeyEcdsaSecp256k1::from_str(&str) {
+        Ok(pk) => tokenize_slice(&pk.0),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid ECDSA public key: {}", e))),
+    };
+
+    Ok(quote!(PublicKeyEcdsaSecp256k1(#public_key)).into())
+}
+
+fn signature_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let signature = match SignatureEd25519::from_str(&str) {
+        Ok(sig) => tokenize_slice(&sig.0),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid Ed25519 signature: {}", e))),
+    };
+
+    Ok(quote!(SignatureEd25519(#signature)).into())
+}
+
+fn signature_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let signature = match SignatureEcdsaSecp256k1::from_str(&str) {
+        Ok(sig) => tokenize_slice(&sig.0),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid ECDSA signature: {}", e))),
+    };
+
+    Ok(quote!(SignatureEcdsaSecp256k1(#signature)).into())
+}
+
+fn contract_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let (index, subindex) = match ContractAddress::from_str(&str) {
+        Ok(con) => (con.index, con.subindex),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid contract address: {}", e))),
+    };
+
+    Ok(quote!(ContractAddress { index: #index, subindex: #subindex }).into())
+}
+
+fn module_ref_worker(str: String, span: Span) -> syn::Result<TokenStream> {
+    let module_ref = match ModuleReference::from_str(&str) {
+        Ok(mod_ref) => tokenize_slice(&mod_ref.bytes),
+        Err(e) => return Err(syn::Error::new(span, format!("Invalid module reference: {}", e))),
+    };
+
+    Ok(quote!(ModuleReference::new(#module_ref)).into())
 }
 
 /// Procedural macro for instantiating account addresses.
 /// Input must be a valid base58-encoding.
 #[proc_macro]
 pub fn account_address(item: TokenStream) -> TokenStream {
-    let input = match syn::parse::<LitStr>(item) {
-        Ok(string_literal) => string_literal,
-        Err(e) => {
-            // TODO: What if there is another kind of error here?
-            let err = syn::Error::new(e.span(), format!("{}: expected a string literal", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    account_address_helper(input.value(), input.span())
+    let msg = "Expected a string literal of a hex-encoded account address";
+    unwrap_or_report(get_token_res(item, msg, acc_address_worker))
 }
 
 /// Procedural macro for instantiating account addresses from an environment
@@ -56,32 +145,8 @@ pub fn account_address(item: TokenStream) -> TokenStream {
 /// set to a valid base58-encoding of an account address.
 #[proc_macro]
 pub fn account_address_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    // TODO: Which is better?
-    //account_address_helper(val, input.span())
-    account_address(val.into_token_stream().into())
-}
-
-fn public_key_ed25519_helper(str: String, span: Span) -> TokenStream {
-    let public_key = match PublicKeyEd25519::from_str(&str) {
-        Ok(pk) => tokenize_slice(&pk.0),
-        Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid Ed25519 public key: {}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    quote!(PublicKeyEd25519(#public_key)).into()
+    let msg = "Expected a string literal of a hex-encoded account address";
+    unwrap_or_report(get_token_res_env(item, msg, acc_address_worker))
 }
 
 /// Procedural macro for instantiating `PublicKeyEd25519` public keys.
@@ -89,8 +154,8 @@ fn public_key_ed25519_helper(str: String, span: Span) -> TokenStream {
 /// characters representing 32 bytes.
 #[proc_macro]
 pub fn public_key_ed25519(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    public_key_ed25519_helper(input.value(), input.span())
+    let msg = "Expected a string literal of a hex-encoded ED25519 public key";
+    unwrap_or_report(get_token_res(item, msg, pubkey_ed25519_worker))
 }
 
 /// Procedural macro for instantiating `PublicKeyEd25519` public keys from
@@ -99,30 +164,8 @@ pub fn public_key_ed25519(item: TokenStream) -> TokenStream {
 /// 64 characters representing 32 bytes.
 #[proc_macro]
 pub fn public_key_ed25519_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    public_key_ed25519_helper(val, input.span())
-}
-
-fn public_key_ecdsa_helper(str: String, span: Span) -> TokenStream {
-    let public_key = match PublicKeyEcdsaSecp256k1::from_str(&str) {
-        Ok(pk) => tokenize_slice(&pk.0),
-        Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid ECDSA public key: {}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    quote!(PublicKeyEcdsaSecp256k1(#public_key)).into()
+    let msg = "Expected a string literal of a hex-encoded ED25519 public key";
+    unwrap_or_report(get_token_res_env(item, msg, pubkey_ed25519_worker))
 }
 
 /// Procedural macro for instantiating `PublicKeyEcdsaSecp256k1` public keys.
@@ -130,8 +173,8 @@ fn public_key_ecdsa_helper(str: String, span: Span) -> TokenStream {
 /// characters representing 33 bytes.
 #[proc_macro]
 pub fn public_key_ecdsa(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    public_key_ecdsa_helper(input.value(), input.span())
+    let msg = "Expected a string literal of a hex-encoded ECDSA public key";
+    unwrap_or_report(get_token_res(item, msg, pubkey_ecdsa_worker))
 }
 
 /// Procedural macro for instantiating `PublicKeyEcdsaSecp256k1` public keys
@@ -140,30 +183,8 @@ pub fn public_key_ecdsa(item: TokenStream) -> TokenStream {
 /// length of 66 characters representing 33 bytes.
 #[proc_macro]
 pub fn public_key_ecdsa_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    public_key_ecdsa_helper(val, input.span())
-}
-
-fn signature_ed25519_helper(str: String, span: Span) -> TokenStream {
-    let signature = match SignatureEd25519::from_str(&str) {
-        Ok(sig) => tokenize_slice(&sig.0),
-        Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid Ed25519 signature: {}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    quote!(SignatureEd25519(#signature)).into()
+    let msg = "Expected a string literal of a hex-encoded ECDSA public key";
+    unwrap_or_report(get_token_res_env(item, msg, pubkey_ecdsa_worker))
 }
 
 /// Procedural macro for instantiating `SignatureEd25519` signatures.
@@ -171,8 +192,8 @@ fn signature_ed25519_helper(str: String, span: Span) -> TokenStream {
 /// characters representing 64 bytes.
 #[proc_macro]
 pub fn signature_ed25519(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    signature_ed25519_helper(input.value(), input.span())
+    let msg = "Expected a string literal of a hex-encoded ED25519 signature";
+    unwrap_or_report(get_token_res(item, msg, signature_ed25519_worker))
 }
 
 /// Procedural macro for instantiating `SignatureEd25519` signatures from
@@ -181,30 +202,8 @@ pub fn signature_ed25519(item: TokenStream) -> TokenStream {
 /// 128 characters representing 64 bytes.
 #[proc_macro]
 pub fn signature_ed25519_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    signature_ed25519_helper(val, input.span())
-}
-
-fn signature_ecdsa_helper(str: String, span: Span) -> TokenStream {
-    let signature = match SignatureEcdsaSecp256k1::from_str(&str) {
-        Ok(sig) => tokenize_slice(&sig.0),
-        Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid ECDSA signature: {}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    quote!(SignatureEcdsaSecp256k1(#signature)).into()
+    let msg = "Expected a string literal of a hex-encoded ED25519 signature";
+    unwrap_or_report(get_token_res_env(item, msg, signature_ed25519_worker))
 }
 
 /// Procedural macro for instantiating `SignatureEcdsaSecp256k1` signatures.
@@ -212,8 +211,8 @@ fn signature_ecdsa_helper(str: String, span: Span) -> TokenStream {
 /// characters representing 64 bytes.
 #[proc_macro]
 pub fn signature_ecdsa(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    signature_ecdsa_helper(input.value(), input.span())
+    let msg = "Expected a string literal of a hex-encoded ECDSA signature";
+    unwrap_or_report(get_token_res(item, msg, signature_ecdsa_worker))
 }
 
 /// Procedural macro for instantiating `SignatureEcdsaSecp256k1` signatures from
@@ -222,30 +221,8 @@ pub fn signature_ecdsa(item: TokenStream) -> TokenStream {
 /// 128 characters representing 64 bytes.
 #[proc_macro]
 pub fn signature_ecdsa_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    signature_ecdsa_helper(val, input.span())
-}
-
-fn contract_address_helper(str: String, span: Span) -> TokenStream {
-    let (index, subindex) = match ContractAddress::from_str(&str) {
-        Ok(con) => (con.index, con.subindex),
-        Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid contract address: {}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    quote!(ContractAddress(#index, #subindex)).into()
+    let msg = "Expected a string literal a hex-encoded ECDSA signature";
+    unwrap_or_report(get_token_res_env(item, msg, signature_ecdsa_worker))
 }
 
 /// Procedural macro for instantiating contract addresses.
@@ -253,8 +230,8 @@ fn contract_address_helper(str: String, span: Span) -> TokenStream {
 /// are integers.
 #[proc_macro]
 pub fn contract_address(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    contract_address_helper(input.value(), input.span())
+    let msg = "Expected string literal of a contract address in the form of \"<index,subindex>\"";
+    unwrap_or_report(get_token_res(item, msg, contract_address_worker))
 }
 
 /// Procedural macro for instantiating contract addresses from an environment
@@ -263,30 +240,8 @@ pub fn contract_address(item: TokenStream) -> TokenStream {
 /// subindex are integers
 #[proc_macro]
 pub fn contract_address_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    contract_address_helper(val, input.span())
-}
-
-fn module_reference_helper(str: String, span: Span) -> TokenStream {
-    let module_ref = match ModuleReference::from_str(&str) {
-        Ok(mod_ref) => tokenize_slice(&mod_ref.bytes),
-        Err(e) => {
-            let err = syn::Error::new(span, format!("Invalid module reference: {}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    quote!(ModuleReference(#module_ref)).into()
+    let msg = "Expected string literal of a contract address in the form of \"<index,subindex>\"";
+    unwrap_or_report(get_token_res_env(item, msg, contract_address_worker))
 }
 
 /// Procedural macro for instantiating module references.
@@ -294,26 +249,16 @@ fn module_reference_helper(str: String, span: Span) -> TokenStream {
 /// characters representing 32 bytes.
 #[proc_macro]
 pub fn module_reference(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    module_reference_helper(input.value(), input.span())
+    let msg = "Expected string literal of a hex-encoded module reference";
+    unwrap_or_report(get_token_res(item, msg, module_ref_worker))
 }
 
 /// Procedural macro for instantiating module references from an environment
-/// variable. Input must be the key of an environment variable whose value is set
-/// to a hex-encoded module reference which must have a length of 64 characters
-/// representing 32 bytes.
+/// variable. Input must be the key of an environment variable whose value is
+/// set to a hex-encoded module reference which must have a length of 64
+/// characters representing 32 bytes.
 #[proc_macro]
 pub fn module_reference_env(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as LitStr);
-    let key = input.value();
-
-    let val = match std::env::var(key) {
-        Ok(value) => value,
-        Err(e) => {
-            let err = syn::Error::new(input.span(), format!("Environment variable error: {:?}", e));
-            return err.to_compile_error().into();
-        }
-    };
-
-    module_reference_helper(val, input.span())
+    let msg = "Expected string literal of a hex-encoded module reference";
+    unwrap_or_report(get_token_res_env(item, msg, module_ref_worker))
 }

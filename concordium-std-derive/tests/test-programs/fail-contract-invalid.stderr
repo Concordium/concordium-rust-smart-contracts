@@ -1,0 +1,5 @@
+error: Invalid contract address: Failed to parse the subindex integer: invalid digit found in string
+ --> tests/test-programs/fail-contract-invalid.rs:6:53
+  |
+6 | const CONTRACT: ContractAddress = contract_address!("<0, 0>");
+  |                                                     ^^^^^^^^
