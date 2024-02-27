@@ -117,35 +117,35 @@ fn test_module_ref_and_name() {
         res.0, res_deploy_contract_inspection.module_reference,
         "Contract 0 should match contract inspection contract"
     );
-    assert_eq!(res.1, 776.into(), "Expected energy to get module reference '{}'", res.0);
+    assert_eq!(res.1, 775.into(), "Expected energy to get module reference '{}'", res.0);
     let res = get_module_ref(&mut chain, res_init_1.contract_address)
         .expect("Contract 1 should be valid");
     assert_eq!(
         res.0, res_deploy_account_balance.module_reference,
         "Contract 1 should match contract inspection contract"
     );
-    assert_eq!(res.1, 776.into(), "Expected energy to get module reference '{}'", res.0);
+    assert_eq!(res.1, 775.into(), "Expected energy to get module reference '{}'", res.0);
     let res = get_module_ref(&mut chain, res_init_2.contract_address)
         .expect("Contract 2 should be valid");
     assert_eq!(
         res.0, res_deploy_contract_inspection.module_reference,
         "Contract 2 should match contract inspection contract"
     );
-    assert_eq!(res.1, 776.into(), "Expected energy to get module reference '{}'", res.0);
+    assert_eq!(res.1, 775.into(), "Expected energy to get module reference '{}'", res.0);
     let err = get_module_ref(&mut chain, ContractAddress {
         index:    3,
         subindex: 0,
     })
     .expect_err("Contract <3,0> should be invalid");
     assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <3,0>");
-    assert_eq!(err.energy_used, 744.into(), "Expected energy for failed get module ref.");
+    assert_eq!(err.energy_used, 743.into(), "Expected energy for failed get module ref.");
     let err = get_module_ref(&mut chain, ContractAddress {
         index:    1,
         subindex: 1,
     })
     .expect_err("Contract <0,1> should be invalid");
     assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <0,1>");
-    assert_eq!(err.energy_used, 744.into(), "Expected energy for failed get module ref.");
+    assert_eq!(err.energy_used, 743.into(), "Expected energy for failed get module ref.");
 
     // Use contract 2 to check the contract name of the contracts.
     let get_name = |chain: &mut Chain,
@@ -183,7 +183,7 @@ fn test_module_ref_and_name() {
     );
     assert_eq!(
         res.1,
-        755.into(),
+        754.into(),
         "Expected energy for get_contract_name on {}",
         res.0.as_contract_name()
     );
@@ -196,7 +196,7 @@ fn test_module_ref_and_name() {
     );
     assert_eq!(
         res.1,
-        755.into(),
+        754.into(),
         "Expected energy for get_contract_name on {}",
         res.0.as_contract_name()
     );
@@ -209,7 +209,7 @@ fn test_module_ref_and_name() {
     );
     assert_eq!(
         res.1,
-        756.into(),
+        755.into(),
         "Expected energy for get_contract_name on {}",
         res.0.as_contract_name()
     );
@@ -219,14 +219,14 @@ fn test_module_ref_and_name() {
     })
     .expect_err("Contract <3,0> should be invalid");
     assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <3,0>");
-    assert_eq!(err.energy_used, 742.into(), "Expected energy for failed get_contract_name");
+    assert_eq!(err.energy_used, 741.into(), "Expected energy for failed get_contract_name");
     let err = get_name(&mut chain, ContractAddress {
         index:    1,
         subindex: 1,
     })
     .expect_err("Contract <0,1> should be invalid");
     assert_eq!(err.reject_code(), Some(-1), "Rejection code for get_module_ref on <0,1>");
-    assert_eq!(err.energy_used, 742.into(), "Expected energy for failed get_contract_name");
+    assert_eq!(err.energy_used, 741.into(), "Expected energy for failed get_contract_name");
 }
 
 #[test]
