@@ -3,10 +3,10 @@ use auction_smart_contract::*;
 use concordium_smart_contract_testing::*;
 
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
-const BOB: AccountAddress = AccountAddress([1; 32]);
-const CAROL: AccountAddress = AccountAddress([2; 32]);
-const DAVE: AccountAddress = AccountAddress([3; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
+const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
+const CAROL: AccountAddress = account_address!("22222222222222222222222222222222");
+const DAVE: AccountAddress = account_address!("33333333333333333333333333333333");
 
 const SIGNER: Signer = Signer::with_one_key();
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);

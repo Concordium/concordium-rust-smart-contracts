@@ -4,8 +4,8 @@ use concordium_std::{attributes, OwnedPolicy};
 use transfer_policy_check::*;
 
 /// Constants.
-const ALICE: AccountAddress = AccountAddress([0u8; 32]);
-const BOB: AccountAddress = AccountAddress([1u8; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
+const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
 const BOB_ADDR: Address = Address::Account(BOB);
 
 const SIGNER: Signer = Signer::with_one_key();

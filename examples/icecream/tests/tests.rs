@@ -3,9 +3,9 @@ use concordium_smart_contract_testing::*;
 use icecream::*;
 
 /// The icecream buyer.
-const ACC_0: AccountAddress = AccountAddress([0; 32]);
+const ACC_0: AccountAddress = account_address!("00000000000000000000000000000000");
 /// The icecream vendor.
-const ACC_1: AccountAddress = AccountAddress([1; 32]);
+const ACC_1: AccountAddress = account_address!("11111111111111111111111111111111");
 const SIGNER: Signer = Signer::with_one_key();
 const ICECREAM_PRICE: Amount = Amount::from_ccd(1000);
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);

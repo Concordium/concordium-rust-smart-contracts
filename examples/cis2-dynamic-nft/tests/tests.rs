@@ -6,9 +6,9 @@ use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::*;
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
 const BOB_ADDR: Address = Address::Account(BOB);
 
 /// Token IDs.

@@ -1,7 +1,7 @@
 //! Tests for the proxy example.
 use concordium_smart_contract_testing::*;
 
-const ALICE: AccountAddress = AccountAddress([0u8; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const SIGNER: Signer = Signer::with_one_key();
 

@@ -4,11 +4,11 @@ use concordium_smart_contract_testing::*;
 use nametoken::*;
 
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
 const BOB_ADDR: Address = Address::Account(BOB);
-const CHARLIE: AccountAddress = AccountAddress([2; 32]);
+const CHARLIE: AccountAddress = account_address!("22222222222222222222222222222222");
 
 /// Token IDs.
 const NAME_0: &str = "MyEvenCoolerName";

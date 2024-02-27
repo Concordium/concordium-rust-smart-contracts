@@ -1,6 +1,6 @@
 use concordium_smart_contract_testing::*;
 
-const ACC_0: AccountAddress = AccountAddress([0u8; 32]);
+const ACC_0: AccountAddress = account_address!("00000000000000000000000000000000");
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 const SIGNER: Signer = Signer::with_one_key();
 

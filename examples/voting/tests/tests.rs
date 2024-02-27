@@ -3,9 +3,9 @@ use voting_contract::*;
 
 // Constants.
 const SIGNER: Signer = Signer::with_one_key();
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
 const BOB_ADDR: Address = Address::Account(BOB);
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 

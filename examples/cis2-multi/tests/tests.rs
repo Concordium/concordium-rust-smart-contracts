@@ -8,21 +8,19 @@ use concordium_std::{
 };
 
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
-const BOB_CANONICAL: AccountAddress = AccountAddress([
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
-]);
+const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
+const BOB_CANONICAL: AccountAddress = account_address!("11111111111111111111111111111000");
 const BOB_CANONICAL_ADDR: Address = Address::Account(BOB_CANONICAL);
 const BOB_ADDR: Address = Address::Account(BOB);
-const UPGRADER: AccountAddress = AccountAddress([2; 32]);
+const UPGRADER: AccountAddress = account_address!("22222222222222222222222222222222");
 const UPGRADER_ADDR: Address = Address::Account(UPGRADER);
-const BLACKLISTER: AccountAddress = AccountAddress([3; 32]);
+const BLACKLISTER: AccountAddress = account_address!("33333333333333333333333333333333");
 const BLACKLISTER_ADDR: Address = Address::Account(BLACKLISTER);
-const PAUSER: AccountAddress = AccountAddress([4; 32]);
+const PAUSER: AccountAddress = account_address!("44444444444444444444444444444444");
 const PAUSER_ADDR: Address = Address::Account(PAUSER);
-const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([99u8; 32]);
+const NON_EXISTING_ACCOUNT: AccountAddress = account_address!("63636363636363636363636363636363");
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU8(2);
@@ -35,10 +33,7 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 const SIGNER: Signer = Signer::with_one_key();
 
 /// Dummy signature used as placeholder.
-const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
+const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
 
 /// Test minting succeeds and the tokens are owned by the given address and
 /// the appropriate events are logged.

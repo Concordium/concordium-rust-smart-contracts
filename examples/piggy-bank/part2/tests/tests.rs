@@ -3,8 +3,8 @@
 use concordium_smart_contract_testing::*;
 use piggy_bank_part2::*;
 
-const ACC_ADDR_OWNER: AccountAddress = AccountAddress([0u8; 32]);
-const ACC_ADDR_OTHER: AccountAddress = AccountAddress([1u8; 32]);
+const ACC_ADDR_OWNER: AccountAddress = account_address!("00000000000000000000000000000000");
+const ACC_ADDR_OTHER: AccountAddress = account_address!("11111111111111111111111111111111"));
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 
 /// A helper method for setting up:

@@ -4,7 +4,7 @@ use concordium_std::HashSha2256;
 use e_sealing::*;
 
 /// Constants:
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress = account_address!("0000000000000000000000");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const SIGNER: Signer = Signer::with_one_key();
 
