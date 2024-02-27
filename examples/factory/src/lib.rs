@@ -19,7 +19,7 @@
 //!
 //! To work around this, the new smart contract instance is first created in a
 //! separate transaction. The address of this new smart contract is then passed
-//! to the `produce` endpoint on the factory. As part of `produce`, the factory
+//! to the `produce` endpoint of the factory. As part of `produce`, the factory
 //! calls an `initialize` method on the product.
 //!
 //! In the typical factory pattern, the factory controls which contract is

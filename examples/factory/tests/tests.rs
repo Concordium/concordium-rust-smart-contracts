@@ -111,7 +111,9 @@ fn test_double_produce_second_factory() {
 }
 
 /// Test that `produce` fails when called with an instance of a contract other
-/// than the product.
+/// than the product, namely an instance of the factory contract.
+/// Note, this only tests the functionality that distinguishes on the contract
+/// name, not on the contract module reference.
 #[test]
 fn test_wrong_product() {
     let (mut chain, module_ref) = initialize_chain();
