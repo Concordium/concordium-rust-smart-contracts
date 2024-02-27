@@ -919,8 +919,10 @@ where
 
     /// Inserts the value with the given key. If a value already exists at the
     /// given key it is replaced and the old value is returned.
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        let key_bytes = self.key_with_map_prefix(&key);
+    /// This only borrows the key, needed internally to avoid the need to clone
+    /// it first.
+    pub(crate) fn insert_borrowed(&mut self, key: &K, value: V) -> Option<V> {
+        let key_bytes = self.key_with_map_prefix(key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_api.entry(key_bytes) {
             EntryRaw::Vacant(vac) => {
@@ -936,6 +938,10 @@ where
             }
         }
     }
+
+    /// Inserts the value with the given key. If a value already exists at the
+    /// given key it is replaced and the old value is returned.
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> { self.insert_borrowed(&key, value) }
 
     /// Get an entry for the given key.
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S> {
@@ -1155,24 +1161,20 @@ impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
 
 /// When dropped, the value, `V`, is written to the entry in the contract state.
 impl<'a, V: Serial, S: HasStateApi> Drop for StateRefMut<'a, V, S> {
-    fn drop(&mut self) {
-        if let Some(value) = self.lazy_value.get_mut() {
-            let entry = self.entry.get_mut();
-            entry.move_to_start();
-            value.serial(entry).unwrap_abort()
-        }
-    }
+    fn drop(&mut self) { self.store_mutations() }
 }
 
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
-    V: Serial + DeserialWithState<S>,
+    V: Serial,
     S: HasStateApi,
 {
     /// Get a shared reference to the value. Note that [StateRefMut](Self) also
     /// implements [Deref](crate::ops::Deref) so this conversion can happen
     /// implicitly.
-    pub fn get(&self) -> &V {
+    pub fn get(&self) -> &V
+    where
+        V: DeserialWithState<S>, {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1184,7 +1186,9 @@ where
     /// Get a unique reference to the value. Note that [StateRefMut](Self) also
     /// implements [DerefMut](crate::ops::DerefMut) so this conversion can
     /// happen implicitly.
-    pub fn get_mut(&mut self) -> &mut V {
+    pub fn get_mut(&mut self) -> &mut V
+    where
+        V: DeserialWithState<S>, {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1194,7 +1198,9 @@ where
     }
 
     /// Load the value referenced by the entry from the chain data.
-    fn load_value(&self) -> V {
+    fn load_value(&self) -> V
+    where
+        V: DeserialWithState<S>, {
         let entry = unsafe { &mut *self.entry.get() };
         entry.move_to_start();
         V::deserial_with_state(&self.state_api, entry).unwrap_abort()
@@ -1211,6 +1217,7 @@ where
     /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
+        V: DeserialWithState<S>,
         F: FnOnce(&mut V), {
         let lv = self.lazy_value.get_mut();
         let entry = self.entry.get_mut();
@@ -1227,6 +1234,21 @@ where
         entry.move_to_start();
         value.serial(entry).unwrap_abort()
     }
+
+    /// Write to the state entry if the value is loaded.
+    pub(crate) fn store_mutations(&mut self) {
+        if let Some(value) = self.lazy_value.get_mut() {
+            let entry = self.entry.get_mut();
+            entry.move_to_start();
+            value.serial(entry).unwrap_abort();
+        }
+    }
+
+    /// Get the inner value if loaded, while consuming the [`StateRefMut`].
+    /// Mutations will not be written to the smart contract key-store when this
+    /// is dropped. Neither will they be written as part of this, so make sure
+    /// to run `store_mutations` first.
+    pub(crate) fn into_inner_value(mut self) -> Option<V> { self.lazy_value.get_mut().take() }
 }
 
 impl<K, V, S> Serial for StateMap<K, V, S> {
@@ -2298,9 +2320,16 @@ where
         StateMap::open(state_api, prefix)
     }
 
-    pub fn new_btree_map<const M: usize, K, V>(&mut self) -> StateBTreeMap<M, K, V, S> {
+    pub fn new_btree_set<const M: usize, K>(&mut self) -> StateBTreeSet<M, K, S> {
         let (state_api, prefix) = self.new_state_container();
-        StateBTreeMap::new(state_api, prefix)
+        StateBTreeSet::new(state_api, prefix)
+    }
+
+    pub fn new_btree_map<const M: usize, K, V>(&mut self) -> StateBTreeMap<M, K, V, S> {
+        StateBTreeMap {
+            map:         self.new_map(),
+            ordered_set: self.new_btree_set(),
+        }
     }
 
     /// Create a new empty [`StateSet`].
@@ -3119,7 +3148,53 @@ impl Deserial for MetadataUrl {
     }
 }
 
+// impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
+//     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+//         self.prefix.serial(out)?;
+//         self.root.serial(out)?;
+//         self.len.serial(out)?;
+//         self.next_node_id.serial(out)
+//     }
+// }
+
+// impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for
+// StateBTreeMap<M, K, V, S> {     fn deserial_with_state<R: Read>(state: &S,
+// source: &mut R) -> ParseResult<Self> {         let prefix = source.get()?;
+//         let root = source.get()?;
+//         let len = source.get()?;
+//         let next_node_id = source.get()?;
+
+//         Ok(Self {
+//             _marker_key: Default::default(),
+//             _marker_value: Default::default(),
+//             prefix,
+//             state_api: state.clone(),
+//             root,
+//             len,
+//             next_node_id,
+//         })
+//     }
+// }
+
 impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.map.serial(out)?;
+        self.ordered_set.serial(out)
+    }
+}
+
+impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for StateBTreeMap<M, K, V, S> {
+    fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
+        let map = DeserialWithState::deserial_with_state(state, source)?;
+        let ordered_set = DeserialWithState::deserial_with_state(state, source)?;
+        Ok(Self {
+            map,
+            ordered_set,
+        })
+    }
+}
+
+impl<const M: usize, K, S> Serial for StateBTreeSet<M, K, S> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.prefix.serial(out)?;
         self.root.serial(out)?;
@@ -3128,16 +3203,15 @@ impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
     }
 }
 
-impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for StateBTreeMap<M, K, V, S> {
+impl<const M: usize, K, S: HasStateApi> DeserialWithState<S> for StateBTreeSet<M, K, S> {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         let prefix = source.get()?;
         let root = source.get()?;
         let len = source.get()?;
         let next_node_id = source.get()?;
 
-        Ok(StateBTreeMap {
+        Ok(Self {
             _marker_key: Default::default(),
-            _marker_value: Default::default(),
             prefix,
             state_api: state.clone(),
             root,
@@ -3178,12 +3252,92 @@ impl Deserial for state_btree_internals::NodeId {
 }
 
 impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
+    /// Insert a key-value pair into the map.
+    pub fn insert(&mut self, key: K, value: V) -> Option<V>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord + fmt::Debug,
+        V: Serial + DeserialWithState<S>, {
+        let old_value_option = self.map.insert_borrowed(&key, value);
+        if old_value_option.is_none() {
+            if !self.ordered_set.insert(key) {
+                // Inconsistency between the map and ordered_set.
+                crate::trap();
+            }
+        }
+        return old_value_option;
+    }
+
+    pub fn remove_and_get(&mut self, key: &K) -> Option<V>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord + fmt::Debug,
+        V: Serial + DeserialWithState<S> + Deletable, {
+        let v = self.map.remove_and_get(key);
+        if v.is_some() && !self.ordered_set.remove(key) {
+            // Inconsistency between the map and ordered_set.
+            crate::trap();
+        }
+        v
+    }
+
+    /// Get a reference to the value corresponding to the key.
+    pub fn get(&self, key: &K) -> Option<StateRef<V>>
+    where
+        K: Serialize,
+        S: HasStateApi,
+        V: Serial + DeserialWithState<S>, {
+        if self.ordered_set.is_empty() {
+            None
+        } else {
+            self.map.get(key)
+        }
+    }
+
+    /// Get a mutable reference to the value corresponding to the key.
+    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, S>>
+    where
+        K: Serialize,
+        S: HasStateApi,
+        V: Serial + DeserialWithState<S>, {
+        if self.ordered_set.is_empty() {
+            None
+        } else {
+            self.map.get_mut(key)
+        }
+    }
+
+    /// Returns the smallest key in the map, which is strictly larger than the
+    /// provided key. `None` meaning no such key is present in the map.
+    pub fn higher(&self, key: &K) -> Option<K>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord, {
+        self.ordered_set.higher(key)
+    }
+
+    /// Returns the largest key in the map, which is strictly smaller than the
+    /// provided key. `None` meaning no such key is present in the map.
+    pub fn lower(&self, key: &K) -> Option<K>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord, {
+        self.ordered_set.lower(key)
+    }
+
+    /// Return the number of elements in the map.
+    pub fn len(&self) -> u32 { self.ordered_set.len() }
+
+    /// Returns `true` is the map contains no elements.
+    pub fn is_empty(&self) -> bool { self.ordered_set.is_empty() }
+}
+
+impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
     /// Construct a new [`StateBTreeMap`] given a unique prefix to use in the
     /// key-value store.
     pub(crate) fn new(state_api: S, prefix: StateItemPrefix) -> Self {
         Self {
             _marker_key: Default::default(),
-            _marker_value: Default::default(),
             prefix,
             state_api,
             root: None,
@@ -3194,75 +3348,80 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
         }
     }
 
-    /// Insert a key-value pair into the map.
-    pub fn insert(&mut self, key: K, value: V) -> Option<V>
+    /// Insert a key into the set.
+    /// Returns true if the key is new in the collection.
+    pub fn insert(&mut self, key: K) -> bool
     where
         S: HasStateApi,
-        K: Serialize + Ord,
-        V: Serial + DeserialWithState<S>, {
+        K: Serialize + Ord + fmt::Debug, {
         let Some(root_id) = self.root else {
             let node_id = {
-                self.create_value(&key, value);
                 let (node_id, _node) = self.create_node(vec![key], Vec::new());
                 node_id
             };
             self.root = Some(node_id);
             self.len = 1;
-            return None;
+            return false;
         };
 
         {
             let root_node = self.get_node_mut(root_id);
             if !root_node.is_full() {
-                let out = self.insert_non_full(root_node, key, value);
-                if out.is_none() {
+                let new = self.insert_non_full(root_node, key);
+                if new {
                     self.len += 1;
                 }
-                return out;
+                return new;
+            } else if root_node.keys.binary_search(&key).is_ok() {
+                // TODO: The error result of the binary search can probably be reused below.
+                return false;
             }
         }
 
         let (new_root_id, mut new_root) = self.create_node(Vec::new(), vec![root_id]);
+
         self.split_child(&mut new_root, 0);
-        let out = self.insert_non_full(new_root, key, value);
+        // new_root should now contain one key and two children, so we need to know
+        // which one to insert into.
+        let child_index = usize::from(new_root.keys[0] < key);
+        let child = self.get_node_mut(new_root.children[child_index]);
+        let new = self.insert_non_full(child, key);
         self.root = Some(new_root_id);
-        if out.is_none() {
+        if new {
             self.len += 1;
         }
-        out
+        new
     }
 
-    pub fn get(&self, key: &K) -> Option<StateRef<V>>
+    /// Returns `true` if the set contains an element equal to the value.
+    pub fn contains(&self, key: &K) -> bool
     where
-        K: Serial,
         S: HasStateApi,
-        V: DeserialWithState<S>, {
-        if self.root.is_none() {
-            None
-        } else {
-            let mut entry = self.get_value_entry(key)?;
-            let value = V::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
-            Some(StateRef::new(value))
+        K: Serialize + Ord, {
+        let Some(root_node_id) = self.root else {
+            return false;
+        };
+        let mut node = self.get_node(root_node_id);
+        loop {
+            let Err(child_index) = node.keys.binary_search(key) else {
+                return true;
+            };
+            if node.is_leaf() {
+                return false;
+            }
+            let child_node_id = node.children[child_index];
+            node = self.get_node(child_node_id);
         }
     }
 
-    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, S>>
-    where
-        K: Serialize,
-        S: HasStateApi,
-        V: Serial + DeserialWithState<S>, {
-        if self.root.is_none() {
-            None
-        } else {
-            let entry = self.get_value_entry(key)?;
-            Some(StateRefMut::new(entry, self.state_api.clone()))
-        }
-    }
-
+    /// Return the number of elements in the map.
     pub fn len(&self) -> u32 { self.len }
 
+    /// Returns `true` is the map contains no elements.
     pub fn is_empty(&self) -> bool { self.root.is_none() }
 
+    /// Returns the smallest key in the map, which is strictly larger than the
+    /// provided key. `None` meaning no such key is present in the map.
     pub fn higher(&self, key: &K) -> Option<K>
     where
         S: HasStateApi,
@@ -3296,7 +3455,8 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
         }
     }
 
-    ///
+    /// Returns the largest key in the map, which is strictly smaller than the
+    /// provided key. `None` meaning no such key is present in the map.
     pub fn lower(&self, key: &K) -> Option<K>
     where
         S: HasStateApi,
@@ -3331,38 +3491,219 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
         }
     }
 
-    /// Internal function to write a value to a key in the map.
-    fn create_value(&mut self, key: &K, value: V)
+    pub fn remove(&mut self, key: &K) -> bool
     where
-        S: HasStateApi,
-        K: Serial,
-        V: Serial, {
-        let prefixed_key = self.value_key(key);
-        let mut entry = self.state_api.create_entry(&prefixed_key).unwrap_abort();
-        value.serial(&mut entry).unwrap_abort();
-    }
-
-    /// Internal function to lookup an entry holding a value.
-    fn get_value_entry(&self, key: &K) -> Option<S::EntryType>
-    where
-        K: Serial,
+        K: Ord + Serialize + fmt::Debug,
         S: HasStateApi, {
-        let prefixed_key = self.value_key(key);
-        self.state_api.lookup_entry(&prefixed_key)
+        let Some(root_node_id) = self.root else {
+            return false;
+        };
+
+        let mut overwrite_key_to_delete = None;
+        let mut node = self.get_node_mut(root_node_id);
+        let deleted_something = loop {
+            let key_to_delete = overwrite_key_to_delete.as_ref().unwrap_or(key);
+            let index = match node.keys.binary_search(key_to_delete) {
+                Ok(index) => {
+                    if node.is_leaf() {
+                        // Found the key in this node and the node is a leaf, meaning we simply
+                        // remove it.
+                        // This will not violate the minimum keys invariant, since a node ensures a
+                        // child can spare a key before iteration and the root node is not part of
+                        // the invariant.
+                        node.keys.remove(index);
+                        break true;
+                    }
+                    // Found the key in this node, but the node is not a leaf.
+                    let left_child = self.get_node_mut(node.children[index]);
+                    if !left_child.is_at_min() {
+                        // If the child with smaller keys can spare a key, we take the highest
+                        // key from it, changing the loop to be deleting its highest key from
+                        // this child.
+                        node.keys[index] = self.get_highest_key(&mut node, index);
+                        let new_key_to_delete = {
+                            // To avoid having to clone the key, we store changes to the node
+                            // and unwrap it from the StateRefMut, disabling further mutations
+                            // from being written to the key-value store, such that we can use
+                            // the same in-memory key.
+                            node.store_mutations();
+                            let mut inner_node = node.into_inner_value().unwrap_abort();
+                            inner_node.keys.swap_remove(index)
+                        };
+                        overwrite_key_to_delete = Some(new_key_to_delete);
+                        node = left_child;
+                        continue;
+                    }
+
+                    let right_child = self.get_node_mut(node.children[index + 1]);
+                    if !right_child.is_at_min() {
+                        // If the child with larger keys can spare a key, we take the lowest
+                        // key from it, changing the loop to be deleting its highest key from
+                        // this child.
+                        node.keys[index] = self.get_lowest_key(&mut node, index + 1);
+                        let new_key_to_delete = {
+                            // To avoid having to clone the key, we store changes to the node
+                            // and unwrap it from the StateRefMut, disabling further mutations
+                            // from being written to the key-value store, such that we can use
+                            // the same in-memory key.
+                            node.store_mutations();
+                            let mut inner_node = node.into_inner_value().unwrap_abort();
+                            inner_node.keys.swap_remove(index)
+                        };
+                        overwrite_key_to_delete = Some(new_key_to_delete);
+                        node = right_child;
+                        continue;
+                    }
+                    // No child on either side of the key can spare a key, so we merge them into
+                    // one child, moving the key into the child and try to remove from this.
+                    self.merge(&mut node, index);
+                    node = self.get_node_mut(node.children[index]);
+                    // FIXME: For some reason this is needed to cause loading the node for the next
+                    // iteration.
+                    let _ = node.get();
+                    continue;
+                }
+                Err(index) => index,
+            };
+            // Node did not contain the key.
+            if node.is_leaf() {
+                break false;
+            }
+
+            // Node did not contain the key and is not a leaf.
+            let mut child = self.get_node_mut(node.children[index]);
+            let has_smaller_sibling = 0 < index;
+            let has_larger_sibling = index < node.children.len() - 1;
+            // Check and proactively prepare if the child which could contain the key to
+            // spare loosing a key.
+            if child.is_at_min() {
+                // The child is at minimum keys, so first attempt to take a key from either
+                // sibling, otherwise merge with one of them.
+                'increase_child: {
+                    if has_smaller_sibling {
+                        let mut smaller_sibling = self.get_node_mut(node.children[index - 1]);
+                        if !smaller_sibling.is_at_min() {
+                            // The smaller sibling can spare a key, so we replace the largest key
+                            // from the sibling, put it in the parent
+                            // and take a key from the parent.
+                            let largest_key_sibling = smaller_sibling.keys.pop().unwrap_abort();
+                            let swapped_node_key =
+                                mem::replace(&mut node.keys[index - 1], largest_key_sibling);
+                            child.keys.insert(0, swapped_node_key);
+                            if !child.is_leaf() {
+                                child
+                                    .children
+                                    .insert(0, smaller_sibling.children.pop().unwrap_abort());
+                            }
+                            break 'increase_child;
+                        }
+                    }
+                    if has_larger_sibling {
+                        let mut larger_sibling = self.get_node_mut(node.children[index + 1]);
+                        if !larger_sibling.is_at_min() {
+                            // The larger sibling can spare a key, so we replace the smallest key
+                            // from the sibling, put it in the parent
+                            // and take a key from the parent.
+                            let first_key_sibling = larger_sibling.keys.remove(0);
+                            let swapped_node_key =
+                                mem::replace(&mut node.keys[index], first_key_sibling);
+                            child.keys.push(swapped_node_key);
+
+                            if !child.is_leaf() {
+                                child.children.push(larger_sibling.children.remove(0));
+                            }
+                            break 'increase_child;
+                        }
+                    }
+
+                    if has_larger_sibling {
+                        self.merge(&mut node, index);
+                    } else {
+                        self.merge(&mut node, index - 1);
+                    }
+                }
+            }
+            // Merging two children moves a key from the node down as well, so if this
+            // happened above and index was pointing to the last child before, update
+            // it.
+            let node_lost_key = index > node.len();
+            let next_index = index - usize::from(!has_larger_sibling && node_lost_key);
+            drop(child); // FIXME: Dropped in order to store changes before reading the child again from
+                         // state. This should reuse the already loaded stateref instead.
+            node = self.get_node_mut(node.children[next_index]);
+            // FIXME: For some reason this is needed to cause loading the node for the next
+            // iteration.
+            let _ = node.get();
+        };
+
+        // If something was deleted, we update the length and make sure to remove the
+        // root node if needed.
+        if deleted_something {
+            self.len -= 1;
+            if self.len == 0 {
+                // Remote the root node if tree is empty.
+                self.delete_node(root_node_id);
+                self.root = None;
+            } else {
+                // If the root is empty but the tree is not, point the only child of the root as
+                // the root.
+                let root = self.get_node(root_node_id);
+                if root.keys.is_empty() {
+                    self.root = Some(root.children[0]);
+                    self.delete_node(root_node_id);
+                }
+            }
+        }
+        deleted_something
     }
 
-    /// Internal function to write value to a key. The key must already be
-    /// present in the map. Returns the old value.
-    fn overwrite_value(&mut self, key: &K, value: V) -> V
+    /// Internal function for getting the highest key in a subtree.
+    fn get_highest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
-        S: HasStateApi,
-        K: Serial,
-        V: Serial + DeserialWithState<S>, {
-        let mut entry = self.get_value_entry(key).unwrap_abort();
-        let old_value =
-            DeserialWithState::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
-        value.serial(&mut entry).unwrap_abort();
-        old_value
+        K: Ord + Serialize,
+        S: HasStateApi, {
+        let mut node = self.get_node(node.children[child_index]);
+        while !node.is_leaf() {
+            let child_node_id = node.children.last().unwrap_abort();
+            node = self.get_node(*child_node_id);
+        }
+        // This does not mutate the node in the end, just the representation in memory
+        // which is freed after the call.
+        node.keys.pop().unwrap_abort()
+    }
+
+    /// Internal function for getting the lowest key in a subtree.
+    fn get_lowest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
+    where
+        K: Ord + Serialize,
+        S: HasStateApi, {
+        let mut node = self.get_node(node.children[child_index]);
+        while !node.is_leaf() {
+            let child_node_id = node.children.first().unwrap_abort();
+            node = self.get_node(*child_node_id);
+        }
+        // This does not mutate the node in the end, just the representation in memory
+        // which is freed after the call.
+        node.keys.swap_remove(0)
+    }
+
+    /// Moving key at `index` from the node to the lower child and then merges
+    /// this child with its higher sibling.
+    ///
+    /// Assumes:
+    /// - `node` have a child at `index` and `index + 1`.
+    /// - Both children are at minimum number of keys.
+    fn merge(&mut self, node: &mut state_btree_internals::Node<M, K>, index: usize)
+    where
+        K: Ord + Serialize,
+        S: HasStateApi, {
+        let mut left = self.get_node_mut(node.children[index]);
+        let mut right = self.get_node(node.children[index + 1]);
+        left.keys.push(node.keys.remove(index));
+        left.keys.append(&mut right.keys);
+        left.children.append(&mut right.children);
+        let removed_node_id = node.children.remove(index + 1);
+        self.delete_node(removed_node_id);
     }
 
     /// Internal function for constructing a node. It will incrementing the next
@@ -3387,31 +3728,38 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
         (node_id, ref_mut)
     }
 
+    /// Internal function for deleting a node, removing the entry in the smart
+    /// contract key-value store. Traps if no node was present.
+    fn delete_node(&mut self, node_id: state_btree_internals::NodeId)
+    where
+        S: HasStateApi, {
+        let key = self.node_key(node_id);
+        if !self.state_api.delete_prefix(&key).unwrap_abort() {
+            crate::trap();
+        }
+    }
+
     /// Internal function for inserting into a subtree. The given node must not
     /// be full.
     fn insert_non_full(
         &mut self,
         initial_node: StateRefMut<state_btree_internals::Node<M, K>, S>,
         key: K,
-        value: V,
-    ) -> Option<V>
+    ) -> bool
     where
-        K: Serialize + Ord,
-        S: HasStateApi,
-        V: Serial + DeserialWithState<S>, {
+        K: Serialize + Ord + fmt::Debug,
+        S: HasStateApi, {
         let mut node = initial_node;
         loop {
             let Err(mut insert_index) = node.keys.binary_search(&key) else {
-                // The key is already in this node, so we just have to overwrite the value.
-                let value = self.overwrite_value(&key, value);
-                return Some(value);
+                // We find the key in this node, so we do nothing.
+                return false;
             };
             // The key is not this node.
             if node.is_leaf() {
                 // Since the node is not full and this is a leaf, we can just insert here.
-                self.create_value(&key, value);
                 node.keys.insert(insert_index, key);
-                return None;
+                return true;
             }
 
             // The node is not a leaf, so we want to insert in the relevant child node.
@@ -3420,9 +3768,7 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
                 self.split_child(&mut node, insert_index);
                 // Since the child is now split into two, we have to update the insert_index to
                 // the relevant one of them.
-                if node.keys[insert_index] < key {
-                    insert_index += 1;
-                }
+                insert_index += usize::from(node.keys[insert_index] < key);
             }
             node = self.get_node_mut(node.children[insert_index]);
         }
@@ -3433,13 +3779,13 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
     /// and child after the provided child_index.
     fn split_child<'a, 'b>(
         &'a mut self,
-        node: &'b mut StateRefMut<state_btree_internals::Node<M, K>, S>,
+        node: &'b mut state_btree_internals::Node<M, K>,
         child_index: usize,
     ) where
         K: Serialize + Ord,
         S: HasStateApi, {
         let mut left = self.get_node_mut(node.children[child_index]);
-        let split_index = (M + 1) / 2;
+        let split_index = state_btree_internals::Node::<M, K>::MINIMUM_KEY_LEN + 1;
         let (right_id, _right) = self.create_node(
             left.keys.split_off(split_index),
             if left.is_leaf() {
@@ -3492,41 +3838,84 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
         for i in 0..STATE_ITEM_PREFIX_SIZE {
             prefixed[i].write(self.prefix[i]);
         }
-        prefixed[STATE_ITEM_PREFIX_SIZE].write(0u8); // Node key discriminant
         let id_bytes = node_id.id.to_le_bytes();
         for i in 0..id_bytes.len() {
-            prefixed[STATE_ITEM_PREFIX_SIZE + 1 + i].write(id_bytes[i]);
+            prefixed[STATE_ITEM_PREFIX_SIZE + i].write(id_bytes[i]);
         }
         // Transmuting away the maybeuninit is safe since we have initialized all of
         // them.
         unsafe { mem::transmute(prefixed) }
     }
 
-    /// Construct the key for the node in the key-value store from the node ID.
-    fn value_key(&self, key: &K) -> Vec<u8>
+    pub(crate) fn debug(&self) -> String
     where
-        K: Serial, {
-        let mut prefixed = self.prefix.to_vec();
-        prefixed.push(1u8); // Node key discriminant
-        key.serial(&mut prefixed).unwrap_abort();
-        prefixed
+        S: HasStateApi,
+        K: Deserial + fmt::Debug, {
+        let Some(root_id) = self.root else {
+            return "Empty".to_owned();
+        };
+
+        let mut out = String::new();
+        let mut stack = vec![root_id];
+        while let Some(node_id) = stack.pop() {
+            let node = self.get_node(node_id);
+            out.push_str(format!("{} [\n", node_id.id).as_str());
+            out.push_str(node.debug().as_str());
+            out.push_str("]\n");
+
+            stack.extend(&node.children)
+        }
+        out
     }
 }
 
 /// Byte size of the key used to store a BTree internal node in the smart
 /// contract key-value store.
-// 1 from byte discriminant and 4 for node ID.
-const BTREE_NODE_KEY_SIZE: usize = STATE_ITEM_PREFIX_SIZE + 1 + 4;
+const BTREE_NODE_KEY_SIZE: usize =
+    STATE_ITEM_PREFIX_SIZE + state_btree_internals::NodeId::SERIALIZED_BYTE_SIZE;
 
 impl<const M: usize, K> state_btree_internals::Node<M, K> {
+    /// The max length of the child list.
+    const MAXIMUM_CHILD_LEN: usize = 2 * M;
+    /// The max length of the key list.
+    const MAXIMUM_KEY_LEN: usize = Self::MAXIMUM_CHILD_LEN - 1;
+    /// The min length of the child list, when the node is not a leaf node.
+    const MINIMUM_CHILD_LEN: usize = M;
+    /// The min length of the key list, except when the node is root.
+    const MINIMUM_KEY_LEN: usize = Self::MINIMUM_CHILD_LEN - 1;
+
+    /// The number of keys stored in this node.
+    fn len(&self) -> usize { self.keys.len() }
+
     /// Check if the node holds the maximum number of keys.
-    fn is_full(&self) -> bool { self.keys.len() == M }
+    fn is_full(&self) -> bool { self.len() == Self::MAXIMUM_KEY_LEN }
 
     /// Check if the node is representing a leaf in the tree.
     fn is_leaf(&self) -> bool { self.children.is_empty() }
+
+    /// Check if the node holds the minimum number of keys.
+    fn is_at_min(&self) -> bool { self.len() == Self::MINIMUM_KEY_LEN }
+
+    fn debug(&self) -> String
+    where
+        K: fmt::Debug, {
+        let mut out = String::new();
+        if self.is_leaf() {
+            out.push_str(format!("Leaf with {:?}\n", self.keys).as_str());
+        } else {
+            for i in 0..self.len() {
+                out.push_str(format!("Child Id: {}\n", self.children[i].id).as_str());
+                out.push_str(format!("Key: {:?}\n", self.keys[i]).as_str());
+            }
+            out.push_str(format!("Child Id: {}\n", self.children[self.len()].id).as_str());
+        }
+        out
+    }
 }
 
 impl state_btree_internals::NodeId {
+    const SERIALIZED_BYTE_SIZE: usize = 4;
+
     /// Return a copy of the NodeId, then increments itself.
     pub(crate) fn copy_then_increment(&mut self) -> Self {
         let current = self.clone();

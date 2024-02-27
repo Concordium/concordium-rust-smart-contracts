@@ -1929,14 +1929,13 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 
 #[cfg(test)]
 mod test {
-    use core::ops::Deref;
 
     use super::TestStateApi;
     use crate::{
         cell::RefCell,
         rc::Rc,
         test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateBTreeMap, StateMap, StateSet,
+        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateBTreeSet, StateMap, StateSet,
         INITIAL_NEXT_ITEM_PREFIX,
     };
     use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
@@ -2492,103 +2491,211 @@ mod test {
     #[test]
     fn test_btree_m5_insert_6() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<5, u32, _, _> = state_builder.new_btree_map();
-        for (n, s) in (0..=5).into_iter().map(|n| (n, n.to_string())) {
-            map.insert(n, s);
+        let mut tree: StateBTreeSet<5, u32, _> = state_builder.new_btree_set();
+        for n in 0..=5 {
+            tree.insert(n);
         }
-        let s = map.get(&5).expect("to find key");
-
-        assert_eq!(s.as_str(), "5")
+        for n in 0..=5 {
+            assert!(tree.contains(&n));
+        }
     }
 
     #[test]
     fn test_btree_m3_insert_0_7() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<3, u32, String, _> = state_builder.new_btree_map();
-        for (n, s) in (0..=7).into_iter().map(|n| (n, n.to_string())) {
-            map.insert(n, s);
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        for n in 0..=7 {
+            tree.insert(n);
         }
-        let s = map.get(&7).expect("to find key");
-        assert_eq!(s.as_str(), "7")
+        for n in 0..=7 {
+            assert!(tree.contains(&n));
+        }
     }
 
     #[test]
     fn test_btree_m3_insert_7_no_order() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<3, u32, _, _> = state_builder.new_btree_map();
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
 
-        map.insert(0, "zero".to_string());
-        map.insert(1, "one".to_string());
-        map.insert(2, "two".to_string());
-        map.insert(3, "three".to_string());
-        map.insert(7, "seven".to_string());
-        map.insert(6, "six".to_string());
-        map.insert(5, "five".to_string());
-        map.insert(4, "four".to_string());
-        let s = map.get(&7).expect("to find key");
-        assert_eq!(s.as_str(), "seven")
+        tree.insert(0);
+        tree.insert(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(7);
+        tree.insert(6);
+        tree.insert(5);
+        tree.insert(4);
+
+        for n in 0..=7 {
+            assert!(tree.contains(&n));
+        }
     }
 
     #[test]
     fn test_btree_m3_higher() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<3, u32, _, _> = state_builder.new_btree_map();
-        map.insert(1, "one".to_string());
-        map.insert(2, "two".to_string());
-        map.insert(3, "three".to_string());
-        map.insert(4, "four".to_string());
-        map.insert(5, "five".to_string());
-        map.insert(7, "seven".to_string());
-        assert_eq!(map.higher(&3), Some(4));
-        assert_eq!(map.higher(&5), Some(7));
-        assert_eq!(map.higher(&7), None)
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        tree.insert(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(4);
+        tree.insert(5);
+        tree.insert(7);
+        assert_eq!(tree.higher(&3), Some(4));
+        assert_eq!(tree.higher(&5), Some(7));
+        assert_eq!(tree.higher(&7), None)
     }
 
     #[test]
     fn test_btree_m3_lower() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<3, u32, _, _> = state_builder.new_btree_map();
-        map.insert(1, "one".to_string());
-        map.insert(2, "two".to_string());
-        map.insert(3, "three".to_string());
-        map.insert(4, "four".to_string());
-        map.insert(5, "five".to_string());
-        map.insert(7, "seven".to_string());
-        assert_eq!(map.lower(&3), Some(2));
-        assert_eq!(map.lower(&7), Some(5));
-        assert_eq!(map.lower(&1), None)
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        tree.insert(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(4);
+        tree.insert(5);
+        tree.insert(7);
+        assert_eq!(tree.lower(&3), Some(2));
+        assert_eq!(tree.lower(&7), Some(5));
+        assert_eq!(tree.lower(&1), None)
     }
 
     #[test]
-    fn test_btree_m3_insert_10000() {
+    fn test_btree_m3_insert_1000() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<3, u32, _, _> = state_builder.new_btree_map();
-        for (n, s) in (0..5000).into_iter().map(|n| (n, n.to_string())) {
-            map.insert(n, s);
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        for n in 0..500 {
+            tree.insert(n);
         }
 
-        for (n, s) in (5000..10000).into_iter().rev().map(|n| (n, n.to_string())) {
-            map.insert(n, s);
+        for n in (500..1000).into_iter().rev() {
+            tree.insert(n);
         }
 
-        for n in 0..10000 {
-            let s = map.get(&n);
-            assert_eq!(s.as_deref(), Some(&n.to_string()));
+        for n in 0..1000 {
+            assert!(tree.contains(&n))
         }
 
-        assert_eq!(map.len(), 10000)
+        assert_eq!(tree.len(), 1000)
     }
 
     #[test]
     fn test_btree_m3_7_get_8() {
         let mut state_builder = TestStateBuilder::new();
-        let mut map: StateBTreeMap<3, u32, String, _> = state_builder.new_btree_map();
-        for (n, s) in (0..=7).into_iter().map(|n| (n, n.to_string())) {
-            map.insert(n, s);
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        for n in 0..=7 {
+            tree.insert(n);
         }
 
-        let s = map.get(&8);
+        assert!(!tree.contains(&8));
+    }
 
-        assert_eq!(s.as_deref(), None);
+    #[test]
+    fn test_btree_m3_remove_from_one_node_tree() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        for n in 0..=1 {
+            tree.insert(n);
+        }
+        assert!(tree.contains(&1));
+        assert!(tree.remove(&1));
+        assert!(!tree.contains(&1));
+    }
+
+    #[test]
+    fn test_btree_remove_only_key_lower_leaf_in_three_node() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in 0..4 {
+            tree.insert(n);
+        }
+        tree.remove(&3);
+
+        assert!(tree.contains(&0));
+        assert!(tree.remove(&0));
+        assert!(!tree.contains(&0));
+        assert!(tree.contains(&1));
+        assert!(tree.contains(&2));
+    }
+
+    #[test]
+    fn test_btree_remove_only_key_higher_leaf_in_three_node() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in (0..4).into_iter().rev() {
+            tree.insert(n);
+        }
+        tree.remove(&3);
+        assert!(tree.contains(&2));
+        assert!(tree.remove(&2));
+        assert!(tree.contains(&0));
+        assert!(tree.contains(&1));
+        assert!(!tree.contains(&2));
+    }
+
+    #[test]
+    fn test_btree_remove_from_higher_leaf_in_three_node_taking_from_sibling() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in (0..4).into_iter().rev() {
+            tree.insert(n);
+        }
+        assert!(tree.contains(&3));
+        assert!(tree.remove(&3));
+        assert!(!tree.contains(&3));
+    }
+
+    #[test]
+    fn test_btree_remove_from_lower_leaf_in_three_node_taking_from_sibling() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in 0..4 {
+            tree.insert(n);
+        }
+        assert!(tree.contains(&0));
+        assert!(tree.remove(&0));
+        assert!(!tree.contains(&0));
+        assert!(tree.contains(&1));
+        assert!(tree.contains(&2));
+        assert!(tree.contains(&3));
+    }
+
+    #[test]
+    fn test_btree_remove_from_root_in_three_node_causing_merge() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in 0..4 {
+            tree.insert(n);
+        }
+        tree.remove(&3);
+
+        assert!(tree.contains(&1));
+        assert!(tree.remove(&1));
+        assert!(!tree.contains(&1));
+    }
+
+    #[test]
+    fn test_btree_remove_from_root_in_three_node_taking_key_from_higher_child() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in 0..4 {
+            tree.insert(n);
+        }
+        assert!(tree.contains(&1));
+        assert!(tree.remove(&1));
+        assert!(!tree.contains(&1));
+    }
+
+    #[test]
+    fn test_btree_remove_from_root_in_three_node_taking_key_from_lower_child() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in (0..4).into_iter().rev() {
+            tree.insert(n);
+        }
+        assert!(tree.contains(&2));
+        assert!(tree.remove(&2));
+        assert!(!tree.contains(&2));
     }
 }

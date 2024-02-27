@@ -1273,21 +1273,31 @@ pub struct MetadataUrl {
 /// TODO Document the meaning of generics and restrictions on M.
 /// TODO Document the complexity of the basic operations.
 pub struct StateBTreeMap<const M: usize, K, V, S> {
+    pub(crate) map:         StateMap<K, V, S>,
+    pub(crate) ordered_set: StateBTreeSet<M, K, S>,
+}
+
+/// An ordered set based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
+/// each node is stored separately in the low-level key-value store.
+///
+/// TODO Document how to construct it.
+/// TODO Document size of the serialized key matters.
+/// TODO Document the meaning of generics and restrictions on M.
+/// TODO Document the complexity of the basic operations.
+pub struct StateBTreeSet<const M: usize, K, S> {
     /// Type marker for the key.
-    pub(crate) _marker_key:   PhantomData<K>,
-    /// Type marker for the value.
-    pub(crate) _marker_value: PhantomData<V>,
+    pub(crate) _marker_key:  PhantomData<K>,
     /// The unique prefix to use for this map in the key-value store.
-    pub(crate) prefix:        StateItemPrefix,
+    pub(crate) prefix:       StateItemPrefix,
     /// The API for interacting with the low-level state.
-    pub(crate) state_api:     S,
+    pub(crate) state_api:    S,
     /// The ID of the root node of the tree, where None represents the tree is
     /// empty.
-    pub(crate) root:          Option<state_btree_internals::NodeId>,
+    pub(crate) root:         Option<state_btree_internals::NodeId>,
     /// Tracking the number of items in the tree.
-    pub(crate) len:           u32,
+    pub(crate) len:          u32,
     /// Tracking the next available ID for a new node.
-    pub(crate) next_node_id:  state_btree_internals::NodeId,
+    pub(crate) next_node_id: state_btree_internals::NodeId,
 }
 
 /// Module with types used internally in [`StateBTreeMap`].
@@ -1305,7 +1315,8 @@ pub(crate) mod state_btree_internals {
     #[derive(Debug)]
     pub(crate) struct Node<const M: usize, K> {
         /// List of sorted keys tracked by this node.
-        /// This list should never be empty and contain at most `M` elements.
+        /// This list should never be empty and contain between `M - 1` and `2M
+        /// - 1` elements.
         pub(crate) keys:     Vec<K>,
         /// List of nodes which are children of this node in the tree.
         ///
