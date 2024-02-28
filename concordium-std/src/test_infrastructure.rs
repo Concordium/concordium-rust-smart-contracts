@@ -2592,15 +2592,17 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_remove_from_one_node_tree() {
+    fn test_btree_remove_from_one_node_tree() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
-        for n in 0..=1 {
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        for n in 0..3 {
             tree.insert(n);
         }
         assert!(tree.contains(&1));
         assert!(tree.remove(&1));
+        assert!(tree.contains(&0));
         assert!(!tree.contains(&1));
+        assert!(tree.contains(&2));
     }
 
     #[test]

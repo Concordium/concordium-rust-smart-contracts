@@ -3515,7 +3515,7 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
                         break true;
                     }
                     // Found the key in this node, but the node is not a leaf.
-                    let left_child = self.get_node_mut(node.children[index]);
+                    let mut left_child = self.get_node_mut(node.children[index]);
                     if !left_child.is_at_min() {
                         // If the child with smaller keys can spare a key, we take the highest
                         // key from it, changing the loop to be deleting its highest key from
@@ -3556,8 +3556,8 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
                     }
                     // No child on either side of the key can spare a key, so we merge them into
                     // one child, moving the key into the child and try to remove from this.
-                    self.merge(&mut node, index);
-                    node = self.get_node_mut(node.children[index]);
+                    self.merge(&mut node, index, &mut left_child, right_child);
+                    node = left_child;
                     // FIXME: For some reason this is needed to cause loading the node for the next
                     // iteration.
                     let _ = node.get();
@@ -3574,13 +3574,15 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
             let mut child = self.get_node_mut(node.children[index]);
             let has_smaller_sibling = 0 < index;
             let has_larger_sibling = index < node.children.len() - 1;
-            // Check and proactively prepare if the child which could contain the key to
-            // spare loosing a key.
-            if child.is_at_min() {
+            // Check and proactively prepare the child to be able to delete a key.
+            node = if !child.is_at_min() {
+                child
+            } else {
                 // The child is at minimum keys, so first attempt to take a key from either
                 // sibling, otherwise merge with one of them.
                 'increase_child: {
-                    if has_smaller_sibling {
+                    // Labeled block, to be able to return early.
+                    let smaller_sibling = if has_smaller_sibling {
                         let mut smaller_sibling = self.get_node_mut(node.children[index - 1]);
                         if !smaller_sibling.is_at_min() {
                             // The smaller sibling can spare a key, so we replace the largest key
@@ -3595,10 +3597,14 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
                                     .children
                                     .insert(0, smaller_sibling.children.pop().unwrap_abort());
                             }
-                            break 'increase_child;
+                            //drop(child);
+                            break 'increase_child child;
                         }
-                    }
-                    if has_larger_sibling {
+                        Some(smaller_sibling)
+                    } else {
+                        None
+                    };
+                    let larger_sibling = if has_larger_sibling {
                         let mut larger_sibling = self.get_node_mut(node.children[index + 1]);
                         if !larger_sibling.is_at_min() {
                             // The larger sibling can spare a key, so we replace the smallest key
@@ -3612,28 +3618,26 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
                             if !child.is_leaf() {
                                 child.children.push(larger_sibling.children.remove(0));
                             }
-                            break 'increase_child;
+                            //drop(child);
+                            break 'increase_child child;
                         }
-                    }
-
-                    if has_larger_sibling {
-                        self.merge(&mut node, index);
+                        Some(larger_sibling)
                     } else {
-                        self.merge(&mut node, index - 1);
+                        None
+                    };
+
+                    if let Some(sibling) = larger_sibling {
+                        self.merge(&mut node, index, &mut child, sibling);
+                        child
+                    } else if let Some(mut sibling) = smaller_sibling {
+                        self.merge(&mut node, index - 1, &mut sibling, child);
+                        sibling
+                    } else {
+                        // Unreachable code.
+                        crate::trap();
                     }
                 }
-            }
-            // Merging two children moves a key from the node down as well, so if this
-            // happened above and index was pointing to the last child before, update
-            // it.
-            let node_lost_key = index > node.len();
-            let next_index = index - usize::from(!has_larger_sibling && node_lost_key);
-            drop(child); // FIXME: Dropped in order to store changes before reading the child again from
-                         // state. This should reuse the already loaded stateref instead.
-            node = self.get_node_mut(node.children[next_index]);
-            // FIXME: For some reason this is needed to cause loading the node for the next
-            // iteration.
-            let _ = node.get();
+            };
         };
 
         // If something was deleted, we update the length and make sure to remove the
@@ -3693,16 +3697,21 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
     /// Assumes:
     /// - `node` have a child at `index` and `index + 1`.
     /// - Both children are at minimum number of keys.
-    fn merge(&mut self, node: &mut state_btree_internals::Node<M, K>, index: usize)
-    where
+    fn merge(
+        &mut self,
+        node: &mut state_btree_internals::Node<M, K>, // parent node.
+        child_index: usize,                           /* index of the smaller child in the
+                                                       * parent node. */
+        child: &mut state_btree_internals::Node<M, K>, // smaller child.
+        larger_child: StateRefMut<state_btree_internals::Node<M, K>, S>, // smaller child.
+    ) where
         K: Ord + Serialize,
         S: HasStateApi, {
-        let mut left = self.get_node_mut(node.children[index]);
-        let mut right = self.get_node(node.children[index + 1]);
-        left.keys.push(node.keys.remove(index));
-        left.keys.append(&mut right.keys);
-        left.children.append(&mut right.children);
-        let removed_node_id = node.children.remove(index + 1);
+        let mut larger_child = larger_child.into_inner_value().unwrap_abort();
+        child.keys.push(node.keys.remove(child_index));
+        child.keys.append(&mut larger_child.keys);
+        child.children.append(&mut larger_child.children);
+        let removed_node_id = node.children.remove(child_index + 1);
         self.delete_node(removed_node_id);
     }
 
