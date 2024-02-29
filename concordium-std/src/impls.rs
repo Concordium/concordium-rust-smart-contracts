@@ -5,7 +5,8 @@ use crate::{
     convert::{self, TryInto},
     fmt,
     marker::PhantomData,
-    mem, num,
+    mem::{self, MaybeUninit},
+    num,
     num::NonZeroU32,
     prims, state_btree_internals,
     traits::*,
@@ -14,7 +15,6 @@ use crate::{
     String,
 };
 pub(crate) use concordium_contracts_common::*;
-use mem::MaybeUninit;
 
 /// Mapped to i32::MIN + 1.
 impl convert::From<()> for Reject {
@@ -1201,14 +1201,14 @@ where
     fn load_value(&self) -> V
     where
         V: DeserialWithState<S>, {
-        let entry = unsafe { &mut *self.entry.get() };
+        let entry = unsafe { &mut *self.entry.get() }.as_mut().unwrap_abort();
         entry.move_to_start();
         V::deserial_with_state(&self.state_api, entry).unwrap_abort()
     }
 
     /// Set the value. Overwrites the existing one.
     pub fn set(&mut self, new_val: V) {
-        let entry = self.entry.get_mut();
+        let entry = self.entry.get_mut().as_mut().unwrap_abort();
         entry.move_to_start();
         new_val.serial(entry).unwrap_abort();
         let _ = self.lazy_value.get_mut().insert(new_val);
@@ -1220,7 +1220,7 @@ where
         V: DeserialWithState<S>,
         F: FnOnce(&mut V), {
         let lv = self.lazy_value.get_mut();
-        let entry = self.entry.get_mut();
+        let entry = self.entry.get_mut().as_mut().unwrap_abort();
         let value = if let Some(v) = lv {
             v
         } else {
@@ -1238,17 +1238,22 @@ where
     /// Write to the state entry if the value is loaded.
     pub(crate) fn store_mutations(&mut self) {
         if let Some(value) = self.lazy_value.get_mut() {
-            let entry = self.entry.get_mut();
+            let entry = self.entry.get_mut().as_mut().unwrap_abort();
             entry.move_to_start();
             value.serial(entry).unwrap_abort();
         }
     }
 
-    /// Get the inner value if loaded, while consuming the [`StateRefMut`].
-    /// Mutations will not be written to the smart contract key-store when this
-    /// is dropped. Neither will they be written as part of this, so make sure
-    /// to run `store_mutations` first.
-    pub(crate) fn into_inner_value(mut self) -> Option<V> { self.lazy_value.get_mut().take() }
+    /// Get the inner entry and value if loaded, while consuming the
+    /// [`StateRefMut`]. Mutations will not be written to the smart contract
+    /// key-store when this is dropped.
+    /// Neither will they be written as part of this, so make sure to run
+    /// `store_mutations` first.
+    pub(crate) fn into_raw_parts(mut self) -> (Option<V>, S::EntryType) {
+        let value = self.lazy_value.get_mut().take();
+        let entry = self.entry.get_mut().take().unwrap_abort();
+        (value, entry)
+    }
 }
 
 impl<K, V, S> Serial for StateMap<K, V, S> {
@@ -3148,34 +3153,6 @@ impl Deserial for MetadataUrl {
     }
 }
 
-// impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
-//     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
-//         self.prefix.serial(out)?;
-//         self.root.serial(out)?;
-//         self.len.serial(out)?;
-//         self.next_node_id.serial(out)
-//     }
-// }
-
-// impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for
-// StateBTreeMap<M, K, V, S> {     fn deserial_with_state<R: Read>(state: &S,
-// source: &mut R) -> ParseResult<Self> {         let prefix = source.get()?;
-//         let root = source.get()?;
-//         let len = source.get()?;
-//         let next_node_id = source.get()?;
-
-//         Ok(Self {
-//             _marker_key: Default::default(),
-//             _marker_value: Default::default(),
-//             prefix,
-//             state_api: state.clone(),
-//             root,
-//             len,
-//             next_node_id,
-//         })
-//     }
-// }
-
 impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.map.serial(out)?;
@@ -3281,6 +3258,16 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
         v
     }
 
+    pub fn remove(&mut self, key: &K)
+    where
+        S: HasStateApi,
+        K: Serialize + Ord + fmt::Debug,
+        V: Serial + DeserialWithState<S> + Deletable, {
+        if self.ordered_set.remove(key) {
+            self.map.remove(key);
+        }
+    }
+
     /// Get a reference to the value corresponding to the key.
     pub fn get(&self, key: &K) -> Option<StateRef<V>>
     where
@@ -3361,32 +3348,33 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
             };
             self.root = Some(node_id);
             self.len = 1;
-            return false;
+            return true;
         };
 
-        {
-            let root_node = self.get_node_mut(root_id);
-            if !root_node.is_full() {
-                let new = self.insert_non_full(root_node, key);
-                if new {
-                    self.len += 1;
-                }
-                return new;
-            } else if root_node.keys.binary_search(&key).is_ok() {
-                // TODO: The error result of the binary search can probably be reused below.
-                return false;
+        let root_node = self.get_node_mut(root_id);
+        if !root_node.is_full() {
+            let new = self.insert_non_full(root_node, key);
+            if new {
+                self.len += 1;
             }
+            return new;
+        } else if root_node.keys.binary_search(&key).is_ok() {
+            return false;
         }
-
+        // The root node is full, so we construct a new root node.
         let (new_root_id, mut new_root) = self.create_node(Vec::new(), vec![root_id]);
-
-        self.split_child(&mut new_root, 0);
+        self.root = Some(new_root_id);
+        // The old root node is now a child node.
+        let mut child = root_node;
+        let new_larger_child = self.split_child(&mut new_root, 0, &mut child);
         // new_root should now contain one key and two children, so we need to know
         // which one to insert into.
-        let child_index = usize::from(new_root.keys[0] < key);
-        let child = self.get_node_mut(new_root.children[child_index]);
+        let child = if new_root.keys[0] < key {
+            new_larger_child
+        } else {
+            child
+        };
         let new = self.insert_non_full(child, key);
-        self.root = Some(new_root_id);
         if new {
             self.len += 1;
         }
@@ -3499,162 +3487,167 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
             return false;
         };
 
-        let mut overwrite_key_to_delete = None;
-        let mut node = self.get_node_mut(root_node_id);
-        let deleted_something = loop {
-            let key_to_delete = overwrite_key_to_delete.as_ref().unwrap_or(key);
-            let index = match node.keys.binary_search(key_to_delete) {
-                Ok(index) => {
-                    if node.is_leaf() {
-                        // Found the key in this node and the node is a leaf, meaning we simply
-                        // remove it.
-                        // This will not violate the minimum keys invariant, since a node ensures a
-                        // child can spare a key before iteration and the root node is not part of
-                        // the invariant.
-                        node.keys.remove(index);
-                        break true;
-                    }
-                    // Found the key in this node, but the node is not a leaf.
-                    let mut left_child = self.get_node_mut(node.children[index]);
-                    if !left_child.is_at_min() {
-                        // If the child with smaller keys can spare a key, we take the highest
-                        // key from it, changing the loop to be deleting its highest key from
-                        // this child.
-                        node.keys[index] = self.get_highest_key(&mut node, index);
-                        let new_key_to_delete = {
-                            // To avoid having to clone the key, we store changes to the node
-                            // and unwrap it from the StateRefMut, disabling further mutations
-                            // from being written to the key-value store, such that we can use
-                            // the same in-memory key.
-                            node.store_mutations();
-                            let mut inner_node = node.into_inner_value().unwrap_abort();
-                            inner_node.keys.swap_remove(index)
-                        };
-                        overwrite_key_to_delete = Some(new_key_to_delete);
+        let deleted_something = {
+            let mut overwrite_key_to_delete = None;
+            let mut node = self.get_node_mut(root_node_id);
+            loop {
+                let key_to_delete = overwrite_key_to_delete.as_ref().unwrap_or(key);
+                let index = match node.keys.binary_search(key_to_delete) {
+                    Ok(index) => {
+                        if node.is_leaf() {
+                            // Found the key in this node and the node is a leaf, meaning we simply
+                            // remove it.
+                            // This will not violate the minimum keys invariant, since a node
+                            // ensures a child can spare a key before
+                            // iteration and the root node is not part of
+                            // the invariant.
+                            node.keys.remove(index);
+                            break true;
+                        }
+                        // Found the key in this node, but the node is not a leaf.
+                        let mut left_child = self.get_node_mut(node.children[index]);
+                        if !left_child.is_at_min() {
+                            // If the child with smaller keys can spare a key, we take the highest
+                            // key from it, changing the loop to be deleting its highest key from
+                            // this child.
+                            node.keys[index] = self.get_highest_key(&mut node, index);
+                            let new_key_to_delete = {
+                                // To avoid having to clone the key, we store changes to the node
+                                // and unwrap it from the StateRefMut, disabling further mutations
+                                // from being written to the key-value store, such that we can take
+                                // the in-memory key.
+                                node.store_mutations();
+                                let mut inner_node = node.into_raw_parts().0.unwrap_abort();
+                                inner_node.keys.swap_remove(index)
+                            };
+                            overwrite_key_to_delete = Some(new_key_to_delete);
+                            node = left_child;
+                            continue;
+                        }
+
+                        let right_child = self.get_node_mut(node.children[index + 1]);
+                        if !right_child.is_at_min() {
+                            // If the child with larger keys can spare a key, we take the lowest
+                            // key from it, changing the loop to be deleting its highest key from
+                            // this child.
+                            node.keys[index] = self.get_lowest_key(&mut node, index + 1);
+                            let new_key_to_delete = {
+                                // To avoid having to clone the key, we store changes to the node
+                                // and unwrap it from the StateRefMut, disabling further mutations
+                                // from being written to the key-value store, such that we can use
+                                // the same in-memory key.
+                                node.store_mutations();
+                                let mut inner_node = node.into_raw_parts().0.unwrap_abort();
+                                inner_node.keys.swap_remove(index)
+                            };
+                            overwrite_key_to_delete = Some(new_key_to_delete);
+                            node = right_child;
+                            continue;
+                        }
+                        // No child on either side of the key can spare a key, so we merge them into
+                        // one child, moving the key into the child and try to remove from this.
+                        self.merge(&mut node, index, &mut left_child, right_child);
                         node = left_child;
+                        // FIXME: For some reason this is needed to cause loading the node for the
+                        // next iteration.
+                        let _ = node.get();
                         continue;
                     }
+                    Err(index) => index,
+                };
+                // Node did not contain the key.
+                if node.is_leaf() {
+                    break false;
+                }
 
-                    let right_child = self.get_node_mut(node.children[index + 1]);
-                    if !right_child.is_at_min() {
-                        // If the child with larger keys can spare a key, we take the lowest
-                        // key from it, changing the loop to be deleting its highest key from
-                        // this child.
-                        node.keys[index] = self.get_lowest_key(&mut node, index + 1);
-                        let new_key_to_delete = {
-                            // To avoid having to clone the key, we store changes to the node
-                            // and unwrap it from the StateRefMut, disabling further mutations
-                            // from being written to the key-value store, such that we can use
-                            // the same in-memory key.
-                            node.store_mutations();
-                            let mut inner_node = node.into_inner_value().unwrap_abort();
-                            inner_node.keys.swap_remove(index)
+                // Node did not contain the key and is not a leaf.
+                let mut child = self.get_node_mut(node.children[index]);
+                let has_smaller_sibling = 0 < index;
+                let has_larger_sibling = index < node.children.len() - 1;
+                // Check and proactively prepare the child to be able to delete a key.
+                node = if !child.is_at_min() {
+                    child
+                } else {
+                    // The child is at minimum keys, so first attempt to take a key from either
+                    // sibling, otherwise merge with one of them.
+                    'increase_child: {
+                        // Labeled block, to be able to return early.
+                        let smaller_sibling = if has_smaller_sibling {
+                            let mut smaller_sibling = self.get_node_mut(node.children[index - 1]);
+                            if !smaller_sibling.is_at_min() {
+                                // The smaller sibling can spare a key, so we replace the largest
+                                // key from the sibling, put it in
+                                // the parent and take a key from
+                                // the parent.
+                                let largest_key_sibling = smaller_sibling.keys.pop().unwrap_abort();
+                                let swapped_node_key =
+                                    mem::replace(&mut node.keys[index - 1], largest_key_sibling);
+                                child.keys.insert(0, swapped_node_key);
+                                if !child.is_leaf() {
+                                    child
+                                        .children
+                                        .insert(0, smaller_sibling.children.pop().unwrap_abort());
+                                }
+                                //drop(child);
+                                break 'increase_child child;
+                            }
+                            Some(smaller_sibling)
+                        } else {
+                            None
                         };
-                        overwrite_key_to_delete = Some(new_key_to_delete);
-                        node = right_child;
-                        continue;
+                        let larger_sibling = if has_larger_sibling {
+                            let mut larger_sibling = self.get_node_mut(node.children[index + 1]);
+                            if !larger_sibling.is_at_min() {
+                                // The larger sibling can spare a key, so we replace the smallest
+                                // key from the sibling, put it in
+                                // the parent and take a key from
+                                // the parent.
+                                let first_key_sibling = larger_sibling.keys.remove(0);
+                                let swapped_node_key =
+                                    mem::replace(&mut node.keys[index], first_key_sibling);
+                                child.keys.push(swapped_node_key);
+
+                                if !child.is_leaf() {
+                                    child.children.push(larger_sibling.children.remove(0));
+                                }
+                                //drop(child);
+                                break 'increase_child child;
+                            }
+                            Some(larger_sibling)
+                        } else {
+                            None
+                        };
+
+                        if let Some(sibling) = larger_sibling {
+                            self.merge(&mut node, index, &mut child, sibling);
+                            child
+                        } else if let Some(mut sibling) = smaller_sibling {
+                            self.merge(&mut node, index - 1, &mut sibling, child);
+                            sibling
+                        } else {
+                            // Unreachable code.
+                            crate::trap();
+                        }
                     }
-                    // No child on either side of the key can spare a key, so we merge them into
-                    // one child, moving the key into the child and try to remove from this.
-                    self.merge(&mut node, index, &mut left_child, right_child);
-                    node = left_child;
-                    // FIXME: For some reason this is needed to cause loading the node for the next
-                    // iteration.
-                    let _ = node.get();
-                    continue;
-                }
-                Err(index) => index,
-            };
-            // Node did not contain the key.
-            if node.is_leaf() {
-                break false;
+                };
             }
-
-            // Node did not contain the key and is not a leaf.
-            let mut child = self.get_node_mut(node.children[index]);
-            let has_smaller_sibling = 0 < index;
-            let has_larger_sibling = index < node.children.len() - 1;
-            // Check and proactively prepare the child to be able to delete a key.
-            node = if !child.is_at_min() {
-                child
-            } else {
-                // The child is at minimum keys, so first attempt to take a key from either
-                // sibling, otherwise merge with one of them.
-                'increase_child: {
-                    // Labeled block, to be able to return early.
-                    let smaller_sibling = if has_smaller_sibling {
-                        let mut smaller_sibling = self.get_node_mut(node.children[index - 1]);
-                        if !smaller_sibling.is_at_min() {
-                            // The smaller sibling can spare a key, so we replace the largest key
-                            // from the sibling, put it in the parent
-                            // and take a key from the parent.
-                            let largest_key_sibling = smaller_sibling.keys.pop().unwrap_abort();
-                            let swapped_node_key =
-                                mem::replace(&mut node.keys[index - 1], largest_key_sibling);
-                            child.keys.insert(0, swapped_node_key);
-                            if !child.is_leaf() {
-                                child
-                                    .children
-                                    .insert(0, smaller_sibling.children.pop().unwrap_abort());
-                            }
-                            //drop(child);
-                            break 'increase_child child;
-                        }
-                        Some(smaller_sibling)
-                    } else {
-                        None
-                    };
-                    let larger_sibling = if has_larger_sibling {
-                        let mut larger_sibling = self.get_node_mut(node.children[index + 1]);
-                        if !larger_sibling.is_at_min() {
-                            // The larger sibling can spare a key, so we replace the smallest key
-                            // from the sibling, put it in the parent
-                            // and take a key from the parent.
-                            let first_key_sibling = larger_sibling.keys.remove(0);
-                            let swapped_node_key =
-                                mem::replace(&mut node.keys[index], first_key_sibling);
-                            child.keys.push(swapped_node_key);
-
-                            if !child.is_leaf() {
-                                child.children.push(larger_sibling.children.remove(0));
-                            }
-                            //drop(child);
-                            break 'increase_child child;
-                        }
-                        Some(larger_sibling)
-                    } else {
-                        None
-                    };
-
-                    if let Some(sibling) = larger_sibling {
-                        self.merge(&mut node, index, &mut child, sibling);
-                        child
-                    } else if let Some(mut sibling) = smaller_sibling {
-                        self.merge(&mut node, index - 1, &mut sibling, child);
-                        sibling
-                    } else {
-                        // Unreachable code.
-                        crate::trap();
-                    }
-                }
-            };
         };
 
         // If something was deleted, we update the length and make sure to remove the
         // root node if needed.
         if deleted_something {
             self.len -= 1;
+            let root = self.get_node_mut(root_node_id);
             if self.len == 0 {
                 // Remote the root node if tree is empty.
-                self.delete_node(root_node_id);
                 self.root = None;
+                self.delete_node(root);
             } else {
                 // If the root is empty but the tree is not, point the only child of the root as
                 // the root.
-                let root = self.get_node(root_node_id);
                 if root.keys.is_empty() {
                     self.root = Some(root.children[0]);
-                    self.delete_node(root_node_id);
+                    self.delete_node(root);
                 }
             }
         }
@@ -3692,7 +3685,7 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
     }
 
     /// Moving key at `index` from the node to the lower child and then merges
-    /// this child with its higher sibling.
+    /// this child with the content of its higher sibling, deleting the sibling.
     ///
     /// Assumes:
     /// - `node` have a child at `index` and `index + 1`.
@@ -3703,16 +3696,15 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
         child_index: usize,                           /* index of the smaller child in the
                                                        * parent node. */
         child: &mut state_btree_internals::Node<M, K>, // smaller child.
-        larger_child: StateRefMut<state_btree_internals::Node<M, K>, S>, // smaller child.
+        mut larger_child: StateRefMut<state_btree_internals::Node<M, K>, S>, // smaller child.
     ) where
         K: Ord + Serialize,
         S: HasStateApi, {
-        let mut larger_child = larger_child.into_inner_value().unwrap_abort();
         child.keys.push(node.keys.remove(child_index));
         child.keys.append(&mut larger_child.keys);
         child.children.append(&mut larger_child.children);
-        let removed_node_id = node.children.remove(child_index + 1);
-        self.delete_node(removed_node_id);
+        node.children.remove(child_index + 1);
+        self.delete_node(larger_child);
     }
 
     /// Internal function for constructing a node. It will incrementing the next
@@ -3739,13 +3731,11 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
 
     /// Internal function for deleting a node, removing the entry in the smart
     /// contract key-value store. Traps if no node was present.
-    fn delete_node(&mut self, node_id: state_btree_internals::NodeId)
+    fn delete_node(&mut self, node: StateRefMut<state_btree_internals::Node<M, K>, S>)
     where
+        K: Serial,
         S: HasStateApi, {
-        let key = self.node_key(node_id);
-        if !self.state_api.delete_prefix(&key).unwrap_abort() {
-            crate::trap();
-        }
+        self.state_api.delete_entry(node.into_raw_parts().1).unwrap_abort()
     }
 
     /// Internal function for inserting into a subtree. The given node must not
@@ -3760,7 +3750,7 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
         S: HasStateApi, {
         let mut node = initial_node;
         loop {
-            let Err(mut insert_index) = node.keys.binary_search(&key) else {
+            let Err(insert_index) = node.keys.binary_search(&key) else {
                 // We find the key in this node, so we do nothing.
                 return false;
             };
@@ -3772,40 +3762,49 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
             }
 
             // The node is not a leaf, so we want to insert in the relevant child node.
-            let child = self.get_node(node.children[insert_index]);
-            if child.is_full() {
-                self.split_child(&mut node, insert_index);
-                // Since the child is now split into two, we have to update the insert_index to
+            let mut child = self.get_node_mut(node.children[insert_index]);
+            node = if child.is_full() {
+                let larger_child = self.split_child(&mut node, insert_index, &mut child);
+                // Since the child is now split into two, we have to update the insert into
                 // the relevant one of them.
-                insert_index += usize::from(node.keys[insert_index] < key);
-            }
-            node = self.get_node_mut(node.children[insert_index]);
+                if node.keys[insert_index] < key {
+                    larger_child
+                } else {
+                    child
+                }
+            } else {
+                child
+            };
         }
     }
 
     /// Internal function for splitting the child node at a given index for a
     /// given node. This will also mutate the given node adding a new key
     /// and child after the provided child_index.
+    ///
+    /// Returns the newly created node.
     fn split_child<'a, 'b>(
         &'a mut self,
-        node: &'b mut state_btree_internals::Node<M, K>,
+        node: &mut state_btree_internals::Node<M, K>,
         child_index: usize,
-    ) where
+        child: &mut state_btree_internals::Node<M, K>,
+    ) -> StateRefMut<'b, state_btree_internals::Node<M, K>, S>
+    where
         K: Serialize + Ord,
         S: HasStateApi, {
-        let mut left = self.get_node_mut(node.children[child_index]);
         let split_index = state_btree_internals::Node::<M, K>::MINIMUM_KEY_LEN + 1;
-        let (right_id, _right) = self.create_node(
-            left.keys.split_off(split_index),
-            if left.is_leaf() {
+        let (new_larger_sibling_id, new_larger_sibling) = self.create_node(
+            child.keys.split_off(split_index),
+            if child.is_leaf() {
                 Vec::new()
             } else {
-                left.children.split_off(split_index)
+                child.children.split_off(split_index)
             },
         );
-        let key = left.keys.pop().unwrap_abort();
-        node.children.insert(child_index + 1, right_id);
+        let key = child.keys.pop().unwrap_abort();
+        node.children.insert(child_index + 1, new_larger_sibling_id);
         node.keys.insert(child_index, key);
+        new_larger_sibling
     }
 
     /// Internal function for looking up a node in the tree.

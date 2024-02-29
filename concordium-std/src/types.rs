@@ -384,7 +384,7 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 /// that the value is properly stored in the contract state maintained by the
 /// node.
 pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
-    pub(crate) entry:            UnsafeCell<S::EntryType>,
+    pub(crate) entry:            UnsafeCell<Option<S::EntryType>>,
     pub(crate) state_api:        S,
     pub(crate) lazy_value:       UnsafeCell<Option<V>>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
@@ -394,7 +394,7 @@ impl<'a, V: Serial, S: HasStateApi> StateRefMut<'a, V, S> {
     #[inline(always)]
     pub(crate) fn new(entry: S::EntryType, state_api: S) -> Self {
         Self {
-            entry: UnsafeCell::new(entry),
+            entry: UnsafeCell::new(Some(entry)),
             state_api,
             lazy_value: UnsafeCell::new(None),
             _marker_lifetime: PhantomData,

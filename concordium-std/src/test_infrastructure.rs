@@ -2489,7 +2489,7 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m5_insert_6() {
+    fn test_btree_insert_6() {
         let mut state_builder = TestStateBuilder::new();
         let mut tree: StateBTreeSet<5, u32, _> = state_builder.new_btree_set();
         for n in 0..=5 {
@@ -2501,9 +2501,9 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_insert_0_7() {
+    fn test_btree_insert_0_7() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
         for n in 0..=7 {
             tree.insert(n);
         }
@@ -2513,9 +2513,9 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_insert_7_no_order() {
+    fn test_btree_insert_7_no_order() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
 
         tree.insert(0);
         tree.insert(1);
@@ -2532,9 +2532,9 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_higher() {
+    fn test_btree_higher() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
         tree.insert(1);
         tree.insert(2);
         tree.insert(3);
@@ -2547,9 +2547,9 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_lower() {
+    fn test_btree_lower() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
         tree.insert(1);
         tree.insert(2);
         tree.insert(3);
@@ -2562,9 +2562,9 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_insert_1000() {
+    fn test_btree_insert_1000() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
         for n in 0..500 {
             tree.insert(n);
         }
@@ -2581,9 +2581,9 @@ mod test {
     }
 
     #[test]
-    fn test_btree_m3_7_get_8() {
+    fn test_btree_7_get_8() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<3, u32, _> = state_builder.new_btree_set();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
         for n in 0..=7 {
             tree.insert(n);
         }
