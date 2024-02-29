@@ -611,6 +611,7 @@ jobs:
           - examples/nametoken/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/bump-alloc-tests/Cargo.toml
+          - examples/factory/Cargo.toml
 
         features:
           -

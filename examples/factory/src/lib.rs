@@ -4,7 +4,12 @@
 //! > **Important Note:** The factory pattern is not generally idiomatic on
 //! > Concordium. In many cases, a more appropriate solution is to incorporate
 //! > the factory and products into a single smart contract instance, rather
-//! > than having a separate instance for each product.
+//! > than having a separate instance for each product. In other cases, a
+//! > registry contract, which maintains an index of other contract instances,
+//! > might be appropriate. However, a registry contract does not need to be
+//! > responsible for instantiating the other contracts, as is the case in the
+//! > factory pattern. (See the discussion below on "Alternatives to the factory
+//! > pattern".)
 //!
 //! # Description
 //!
@@ -174,7 +179,7 @@ pub mod factory {
         ///
         /// Note, for all practical purposes, using a `u64` to count the
         /// products cannot overflow. In particular, the blockchain does
-        /// not (currently) allow for more than 2^64 smart contracts.
+        /// not allow for more than 2^64 smart contracts.
         next_product: u64,
         /// Index of the product smart contract instances.
         products:     StateMap<u64, ContractAddress, S>,
@@ -347,8 +352,9 @@ pub mod product {
         NotAuthorized,
         /// The product was already initialized.
         AlreadyInitialized,
-        /// [`initialize`] was not called by a contract.
-        NoFactoryContract,
+        /// [`initialize`] was called directly by an account instead of a
+        /// factory contract.
+        SenderIsAccountAddress,
     }
 
     /// Construct the product contract in the uninitialized state.
@@ -368,8 +374,8 @@ pub mod product {
     ///   is returned.
     ///
     /// * The method must be called by another smart contract (the factory). If
-    ///   the caller is not a contract, [`ProductError::NoFactoryContract`] is
-    ///   returned.
+    ///   the caller is not a contract, [`ProductError::SenderIsAccountAddress`]
+    ///   is returned.
     ///
     /// Note that beyond checking that the caller is a smart contract, this
     /// method does not check further properties of the caller (e.g. that it is
@@ -397,7 +403,7 @@ pub mod product {
         // factory, which we record in the state.
         let factory = match ctx.sender() {
             Address::Contract(ca) => ca,
-            _ => Err(ProductError::NoFactoryContract)?,
+            _ => Err(ProductError::SenderIsAccountAddress)?,
         };
         // Initialize the state.
         let product = Product {

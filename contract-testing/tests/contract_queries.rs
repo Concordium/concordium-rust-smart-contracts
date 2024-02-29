@@ -8,8 +8,8 @@ mod helpers;
 /// This test deploys three different smart contracts, from two different
 /// modules.  One of these contracts <0,0> has a function that queries and logs
 /// the module reference of a  specified contract address. Another <2,0> queries
-/// and logs the contract name of a specified  contract. Both functions are
-/// invoked for each instance, and for non-existant contract  addresses,
+/// and logs the contract name of a specified contract. Both functions are
+/// invoked for each instance, and for non-existant contract addresses,
 /// ensuring the values are as expected.
 ///
 /// The entrypoints are designed to succeed in the case of a match, fail with
