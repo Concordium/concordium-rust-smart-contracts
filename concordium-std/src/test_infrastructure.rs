@@ -2700,4 +2700,16 @@ mod test {
         assert!(tree.remove(&2));
         assert!(!tree.contains(&2));
     }
+
+    #[test]
+    fn test_btree_iter() {
+        let mut state_builder = TestStateBuilder::new();
+        let mut tree: StateBTreeSet<2, u32, _> = state_builder.new_btree_set();
+        let keys: Vec<u32> = (0..15).into_iter().collect();
+        for &k in &keys {
+            tree.insert(k);
+        }
+        let iter_keys: Vec<u32> = tree.iter().map(|k| k.clone()).collect();
+        assert_eq!(keys, iter_keys);
+    }
 }

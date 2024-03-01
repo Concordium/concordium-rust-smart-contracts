@@ -1327,4 +1327,46 @@ pub(crate) mod state_btree_internals {
         /// keys that are strictly smaller than `keys[i]`.
         pub(crate) children: Vec<NodeId>,
     }
+
+    /// Wrapper implement the exact same deserial as K, but wraps it in an
+    /// option in memory. This is used, to allow taking a key from a mutable
+    /// reference to a node, without cloning the key, during iteration of the
+    /// set.
+    #[repr(transparent)]
+    pub(crate) struct KeyWrapper<K> {
+        pub(crate) key: Option<K>,
+    }
+}
+
+/// An iterator over the entries of a [`StateBTreeSet`].
+///
+/// Ordered by `K`.
+///
+/// This `struct` is created by the [`iter`][StateBTreeSet::iter] method on
+/// [`StateBTreeSet`]. See its documentation for more.
+pub struct StateBTreeSetIter<'a, 'b, const M: usize, K, S> {
+    /// The number of elements left to iterate.
+    pub(crate) length:            usize,
+    /// Reference to a node in the tree to load and iterate before the current
+    /// node.
+    pub(crate) next_node:         Option<state_btree_internals::NodeId>,
+    /// Tracking the nodes depth first, which are currently being iterated.
+    pub(crate) depth_first_stack:
+        Vec<(state_btree_internals::Node<M, state_btree_internals::KeyWrapper<K>>, usize)>,
+    /// Reference to the set, needed for looking up the nodes.
+    pub(crate) tree:              &'a StateBTreeSet<M, K, S>,
+    pub(crate) _marker_lifetime:  PhantomData<&'b K>,
+}
+
+/// An iterator over the entries of a [`StateBTreeMap`].
+///
+/// Ordered by `K`.
+///
+/// This `struct` is created by the [`iter`][StateBTreeMap::iter] method on
+/// [`StateBTreeMap`]. See its documentation for more.
+pub struct StateBTreeMapIter<'a, 'b, const M: usize, K, V, S> {
+    /// Iterator over the keys in the map.
+    pub(crate) key_iter: StateBTreeSetIter<'a, 'b, M, K, S>,
+    /// Reference to the map holding the values.
+    pub(crate) map:      &'a StateMap<K, V, S>,
 }
