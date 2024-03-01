@@ -1,0 +1,90 @@
+# The purpose of this workflow is to make sure that our templates also work with
+# the latest version of cargo-generate. It is run daily at 12 and creates an
+# issue on failure.
+
+on:
+  # Trigger the workflow on push or pull request,
+  # but only for the main branch
+  schedule:
+    - cron: '0 12 * * *' # run every day at 12
+
+  workflow_dispatch: # allows manual trigger
+
+name: Check cargo-generate in all templates with the latest version.
+
+jobs:
+  # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
+  # can be executed without errors on the generated smart contracts.
+  cargo-generate-templates:
+    name: Smart contract template generation
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.generate.outputs.version }}
+    strategy:
+      matrix:
+        crates:
+          - templates/default
+          - templates/cis2-nft
+    env:
+      PROJECT_NAME: my-project
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Run cargo-generate
+        # Use latest version to make sure our templates build with that.
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - id: generate
+        run: |
+          cargo install cargo-generate --features=vendored-openssl --locked
+          export VERSION=$(cargo generate --version)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          cargo generate --name ${{ env.PROJECT_NAME }} -d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ ${{ matrix.crates }}
+
+  # The credential registry template is used to generate code for all
+  # combinations of parameters.
+  cargo-generate-credential-registry-template:
+    name: Credential registry template tests
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.generate.outputs.version }}
+    strategy:
+      matrix:
+        restorable: ["true", "false"]
+        revocable_by_others: ["true", "false"]
+    env:
+      PROJECT_NAME: my-project
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - id: generate
+        run: |
+          cargo install cargo-generate --features=vendored-openssl --locked
+          export VERSION=$(cargo generate --version)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          cargo generate --name ${{ env.PROJECT_NAME }} -d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }} templates/credential-registry
+
+  create-issue:
+    runs-on: ubuntu-latest
+    needs: [cargo-generate-templates, cargo-generate-credential-registry-template]
+    if: |
+      always() &&
+      contains(needs.*.result, 'failure')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.cargo-generate-templates.outputs.version }}
+        with:
+          filename: ./templates/issue-template.md
+          update_existing: true
+          search_existing: open # only search open issues

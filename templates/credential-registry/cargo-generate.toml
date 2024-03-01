@@ -1,5 +1,5 @@
 [template]
-cargo_generate_version = ">= 0.17.0, < 0.19.0"
+cargo_generate_version = ">= 0.17.0, < 0.20.0"
 
 [hooks]
 pre = ["pre-script.rhai"] # a script for setting default values for the variables when `template_type = default`
