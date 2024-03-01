@@ -12,6 +12,8 @@ use crate::{
     QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
     SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
 };
+#[cfg(feature = "p7")]
+use crate::{QueryContractModuleReferenceResult, QueryContractNameResult};
 use concordium_contracts_common::*;
 
 /// Objects which can access parameters to contracts.
@@ -527,6 +529,20 @@ pub trait HasHost<State>: Sized {
         signatures: &AccountSignatures,
         data: &[u8],
     ) -> CheckAccountSignatureResult;
+
+    /// Get the module reference of a contract instance.
+    ///
+    /// Note: after a successful [`Self::upgrade`], this will return the new
+    /// module reference.
+    #[cfg(feature = "p7")]
+    fn contract_module_reference(
+        &self,
+        address: ContractAddress,
+    ) -> QueryContractModuleReferenceResult;
+
+    /// Get the contract name of a contract instance.
+    #[cfg(feature = "p7")]
+    fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult;
 
     /// Get an immutable reference to the contract state.
     fn state(&self) -> &State;

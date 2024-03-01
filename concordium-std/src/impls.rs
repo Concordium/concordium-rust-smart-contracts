@@ -1,3 +1,5 @@
+#[cfg(feature = "p7")]
+use crate::vec;
 use crate::{
     cell::UnsafeCell,
     convert::{self, TryInto},
@@ -1819,6 +1821,12 @@ const INVOKE_QUERY_EXCHANGE_RATES_TAG: u32 = 4;
 const INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG: u32 = 5;
 /// Tag of the query account's public keys [prims::invoke].
 const INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG: u32 = 6;
+/// Tag of the query contract module reference operation. See [prims::invoke].
+#[cfg(feature = "p7")]
+const INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG: u32 = 7;
+/// Tag of the query contract name operation. See [prims::invoke].
+#[cfg(feature = "p7")]
+const INVOKE_QUERY_CONTRACT_NAME_TAG: u32 = 8;
 
 /// Check whether the response code from calling `invoke` is encoding a failure
 /// and map out the byte used for the error code.
@@ -1839,7 +1847,7 @@ fn get_invoke_failure_code(code: u64) -> Option<u8> {
 /// - Success if the last 5 bytes are all zero:
 ///   - the first 3 bytes encodes the return value index, except the first bit,
 ///     which is used to indicate whether the contract state was modified.
-/// - In case of failure the 4th byte is used, and encodes the enviroment
+/// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure, where:
 ///   - 0x01 encodes amount too large.
 ///   - 0x02 encodes missing account.
@@ -1861,7 +1869,7 @@ fn parse_transfer_response_code(code: u64) -> TransferResult {
 /// - Success if the last 5 bytes are all zero:
 ///   - the first 3 bytes encodes the return value index, except the first bit,
 ///     which is used to indicate whether the contract state was modified.
-/// - In case of failure the 4th byte is used, and encodes the enviroment
+/// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure, where:
 ///   - 0x07 encodes missing module.
 ///   - 0x08 encodes missing contract.
@@ -1889,7 +1897,8 @@ fn parse_upgrade_response_code(code: u64) -> UpgradeResult {
 /// - In case of failure:
 ///   - if the 4th byte is 0 then the remaining 4 bytes encode the rejection
 ///     reason from the contract
-///   - otherwise only the 4th byte is used, and encodes the enviroment failure.
+///   - otherwise only the 4th byte is used, and encodes the environment
+///     failure.
 ///     - 0x01 encodes amount too large.
 ///     - 0x02 encodes missing account.
 ///     - 0x03 encodes missing contract.
@@ -1945,7 +1954,7 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
 ///
 /// - Success if the last 5 bytes are all zero:
 ///   - the first 3 bytes encodes the return value index.
-/// - In case of failure the 4th byte is used, and encodes the enviroment
+/// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x02' encodes missing account.
 fn parse_query_account_balance_response_code(
@@ -1968,7 +1977,7 @@ fn parse_query_account_balance_response_code(
 ///
 /// - Success if the last 5 bytes are all zero:
 ///   - the first 3 bytes encodes the return value index.
-/// - In case of failure the 4th byte is used, and encodes the enviroment
+/// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x03' encodes missing contract.
 fn parse_query_contract_balance_response_code(
@@ -1991,7 +2000,7 @@ fn parse_query_contract_balance_response_code(
 ///
 /// - Success if the last 5 bytes are all zero:
 ///   - the first 3 bytes encodes the return value index.
-/// - In case of failure the 4th byte is used, and encodes the enviroment
+/// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x02' encodes missing account.
 fn parse_query_account_public_keys_response_code(
@@ -2013,7 +2022,7 @@ fn parse_query_account_public_keys_response_code(
 /// Decode the response from checking account signatures.
 ///
 /// - Success if the last 5 bytes are all zero:
-/// - In case of failure the 4th byte is used, and encodes the enviroment
+/// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x02' encodes missing account.
 ///    - '0x0a' encodes malformed data, i.e., the call was made with incorrect
@@ -2051,6 +2060,63 @@ fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
         // Map out the 3 bytes encoding the return value index.
         let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
         ExternCallResponse::new(return_value_index)
+    }
+}
+
+/// Decode the contract module reference response code.
+///
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the environment
+///   failure where:
+///    - '0x03' encodes missing contract.
+#[cfg(feature = "p7")]
+fn parse_query_contract_module_reference_response_code(
+    code: u64,
+) -> Result<ExternCallResponse, QueryContractModuleReferenceError> {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x03 {
+            Err(QueryContractModuleReferenceError)
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = NonZeroU32::new((code >> 40) as u32).unwrap_abort();
+        Ok(ExternCallResponse::new(return_value_index))
+    }
+}
+
+/// Decode the contract name response code.
+///
+/// - Success if the last 5 bytes are all zero:
+///   - the first 3 bytes encodes the return value index.
+/// - In case of failure the 4th byte is used, and encodes the environment
+///   failure where:
+///    - '0x03' encodes missing contract.
+#[cfg(feature = "p7")]
+fn parse_query_contract_name_response_code(
+    code: u64,
+) -> Result<OwnedContractName, QueryContractNameError> {
+    if let Some(error_code) = get_invoke_failure_code(code) {
+        if error_code == 0x03 {
+            Err(QueryContractNameError)
+        } else {
+            unsafe { crate::hint::unreachable_unchecked() }
+        }
+    } else {
+        // Map out the 3 bytes encoding the return value index.
+        let return_value_index = (code >> 40) as u32;
+        let name = unsafe {
+            let name_size = prims::get_parameter_size(return_value_index);
+            if name_size < 0 {
+                crate::hint::unreachable_unchecked()
+            }
+            let mut buf = vec![0; name_size as usize];
+            prims::get_parameter_section(return_value_index, buf.as_mut_ptr(), name_size as u32, 0);
+            String::from_utf8_unchecked(buf)
+        };
+        Ok(OwnedContractName::new_unchecked(name))
     }
 }
 
@@ -2156,6 +2222,30 @@ fn check_account_signature_worker(
     // Be explicit that the buffer must survive up to here.
     drop(buffer);
     parse_check_account_signature_response_code(response)
+}
+
+/// Helper factoring out the common behaviour of contract_module_reference for
+/// the two extern hosts below.
+#[cfg(feature = "p7")]
+fn query_contract_module_reference_worker(
+    address: &ContractAddress,
+) -> QueryContractModuleReferenceResult {
+    let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
+    let response = unsafe {
+        prims::invoke(INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG, data.as_ptr() as *const u8, 16)
+    };
+    let mut return_value = parse_query_contract_module_reference_response_code(response)?;
+    Ok(ModuleReference::deserial(&mut return_value).unwrap_abort())
+}
+
+/// Helper factoring out the common behaviour of contract_name for
+/// the two extern hosts below.
+#[cfg(feature = "p7")]
+fn query_contract_name_worker(address: &ContractAddress) -> QueryContractNameResult {
+    let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
+    let response =
+        unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_NAME_TAG, data.as_ptr() as *const u8, 16) };
+    parse_query_contract_name_response_code(response)
 }
 
 impl<S> StateBuilder<S>
@@ -2418,6 +2508,21 @@ where
         check_account_signature_worker(address, signatures, data)
     }
 
+    #[cfg(feature = "p7")]
+    #[inline(always)]
+    fn contract_module_reference(
+        &self,
+        address: ContractAddress,
+    ) -> QueryContractModuleReferenceResult {
+        query_contract_module_reference_worker(&address)
+    }
+
+    #[cfg(feature = "p7")]
+    #[inline(always)]
+    fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult {
+        query_contract_name_worker(&address)
+    }
+
     fn state(&self) -> &S { &self.state }
 
     fn state_mut(&mut self) -> &mut S { &mut self.state }
@@ -2494,6 +2599,21 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         data: &[u8],
     ) -> CheckAccountSignatureResult {
         check_account_signature_worker(address, signatures, data)
+    }
+
+    #[cfg(feature = "p7")]
+    #[inline(always)]
+    fn contract_module_reference(
+        &self,
+        address: ContractAddress,
+    ) -> QueryContractModuleReferenceResult {
+        query_contract_module_reference_worker(&address)
+    }
+
+    #[cfg(feature = "p7")]
+    #[inline(always)]
+    fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult {
+        query_contract_name_worker(&address)
     }
 
     #[inline(always)]
