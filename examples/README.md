@@ -33,6 +33,7 @@ The list of contracts is as follows:
 - [cis2-wccd](./cis2-wccd) An upgradable example implementation of the CIS-2 Concordium Token Standard
   containing a single fungible token which is a wrapped CCD.
 - [counter-notify](./counter-notify) A contract that works as a counter and can invoke another contract with the current counter value.
+- [factory](./factory) An example of implementing a factory pattern with smart contracts.
 - [fib](./fib) A contract that calculates and stores the nth Fibonacci number by recursively calling itself.
 - [icecream](./icecream) A contract for buying ice cream only when it is sunny. A weather service oracle smart contract is used.
 - [proxy](./proxy) A proxy contract that can be put in front of another contract. It works with V0 as well as V1 smart contracts.

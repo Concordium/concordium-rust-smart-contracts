@@ -29,6 +29,7 @@ use concordium_rust_sdk::{
         wasm::artifact::{self, CompiledFunction},
         DebugInfo, InterpreterEnergy,
     },
+    types::smart_contracts::ContractName,
 };
 use std::collections::{btree_map, BTreeMap};
 
@@ -234,7 +235,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                     energy,
                 },
                 instance_state,
-                v1::ReceiveParams::new_p6(),
+                v1::ReceiveParams::new_p7(),
             )
         })?;
         // Set up some data needed for recursively processing the receive until the end,
@@ -756,7 +757,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                 },
                                 Some(bal) => v1::InvokeResponse::Success {
                                     // Balance of contract querying. Won't change. Notice the
-                                    // `data.address`.
+                                    // `invocation_data.address`.
                                     new_balance: self
                                         .contract_balance_unchecked(invocation_data.address),
                                     data:        Some(to_bytes(&bal)),
@@ -904,6 +905,62 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     kind: v1::InvokeFailure::NonExistentAccount,
                                 },
                             };
+                            trace_elements.push(invocation_data.debug_trace(trace));
+                            stack.push(Next::Resume {
+                                data: invocation_data,
+                                config,
+                                response: Some(response),
+                            });
+                        }
+                        v1::Interrupt::QueryContractModuleReference {
+                            address,
+                        } => {
+                            let response = match self.contract_module_reference(address) {
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentContract,
+                                },
+                                Some(mod_ref) => v1::InvokeResponse::Success {
+                                    // The balance of the calling contract is unchanged.
+                                    new_balance: self
+                                        .contract_balance_unchecked(invocation_data.address),
+                                    data:        Some(to_bytes(&mod_ref)),
+                                },
+                            };
+
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_MODULE_REFERENCE_COST,
+                                ),
+                                trace
+                            );
+                            trace_elements.push(invocation_data.debug_trace(trace));
+                            stack.push(Next::Resume {
+                                data: invocation_data,
+                                config,
+                                response: Some(response),
+                            });
+                        }
+                        v1::Interrupt::QueryContractName {
+                            address,
+                        } => {
+                            let response = match self.contract_name(address) {
+                                None => v1::InvokeResponse::Failure {
+                                    kind: v1::InvokeFailure::NonExistentContract,
+                                },
+                                Some(cname) => v1::InvokeResponse::Success {
+                                    // The balance of the calling contract is unchanged.
+                                    new_balance: self
+                                        .contract_balance_unchecked(invocation_data.address),
+                                    data:        Some(cname.get_chain_name().into()),
+                                },
+                            };
+
+                            exit_ooe!(
+                                self.remaining_energy.tick_energy(
+                                    constants::CONTRACT_INSTANCE_QUERY_CONTRACT_NAME_COST,
+                                ),
+                                trace
+                            );
                             trace_elements.push(invocation_data.debug_trace(trace));
                             stack.push(Next::Resume {
                                 data: invocation_data,
@@ -1186,6 +1243,27 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
             Some(changes) => Some(changes.current_balance()),
             None => self.chain.contracts.get(&address).map(|c| c.self_balance),
         }
+    }
+
+    /// Looks up the contract module reference from the topmost checkpoint on
+    /// the changeset. Or, alternatively, from persistence.
+    fn contract_module_reference(&self, address: ContractAddress) -> Option<ModuleReference> {
+        // The module reference can change in the event of a contract upgrade, so we
+        // need to look it up in the changeset first.
+        self.changeset.current().contracts.get(&address).map_or_else(
+            || self.chain.contracts.get(&address).map(|c| c.module_reference),
+            |c| c.module,
+        )
+    }
+
+    /// Looks up the contract name from persistence. (Since the contract name
+    /// cannot change, and new contracts cannot be deployed within contract
+    /// invocations, this is sufficient to resolve the name of a contract.)
+    fn contract_name(&self, address: ContractAddress) -> Option<ContractName> {
+        // The contract name does not change as a result of upgrades (and contracts
+        // cannot deploy new contracts), so we always resolve the contract name in the
+        // immutable chain context.
+        self.chain.contracts.get(&address).map(|c| c.contract_name.as_contract_name())
     }
 
     /// Returns the contract module from the topmost checkpoint on
