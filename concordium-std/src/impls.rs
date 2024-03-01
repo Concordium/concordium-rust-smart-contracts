@@ -3306,9 +3306,17 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
         }
     }
 
+    /// Returns `true` if the map contains a value for the specified key.
+    pub fn contains_key(&self, key: &K) -> bool
+    where
+        K: Serialize + Ord,
+        S: HasStateApi, {
+        self.ordered_set.contains(key)
+    }
+
     /// Returns the smallest key in the map, which is strictly larger than the
     /// provided key. `None` meaning no such key is present in the map.
-    pub fn higher(&self, key: &K) -> Option<K>
+    pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
         S: HasStateApi,
         K: Serialize + Ord, {
@@ -3317,11 +3325,29 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
 
     /// Returns the largest key in the map, which is strictly smaller than the
     /// provided key. `None` meaning no such key is present in the map.
-    pub fn lower(&self, key: &K) -> Option<K>
+    pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
         S: HasStateApi,
         K: Serialize + Ord, {
         self.ordered_set.lower(key)
+    }
+
+    /// Returns a reference to the first key in the map, if any. This key is
+    /// always the minimum of all keys in the map.
+    pub fn first_key(&self) -> Option<StateRef<K>>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord, {
+        self.ordered_set.first()
+    }
+
+    /// Returns a reference to the last key in the map, if any. This key is
+    /// always the maximum of all keys in the map.
+    pub fn last_key(&self) -> Option<StateRef<K>>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord, {
+        self.ordered_set.last()
     }
 
     /// Return the number of elements in the map.
@@ -3373,7 +3399,7 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
 }
 
 impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
-    /// Construct a new [`StateBTreeMap`] given a unique prefix to use in the
+    /// Construct a new [`StateBTreeSet`] given a unique prefix to use in the
     /// key-value store.
     pub(crate) fn new(state_api: S, prefix: StateItemPrefix) -> Self {
         Self {
@@ -3455,10 +3481,10 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         }
     }
 
-    /// Return the number of elements in the map.
+    /// Return the number of elements in the set.
     pub fn len(&self) -> u32 { self.len }
 
-    /// Returns `true` is the map contains no elements.
+    /// Returns `true` is the set contains no elements.
     pub fn is_empty(&self) -> bool { self.root.is_none() }
 
     /// Get an iterator over the elements in the `StateBTreeSet`. The iterator
@@ -3475,7 +3501,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         }
     }
 
-    /// Clears the map, removing all elements.
+    /// Clears the set, removing all elements.
     pub fn clear(&mut self)
     where
         S: HasStateApi, {
@@ -3490,9 +3516,9 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
 
-    /// Returns the smallest key in the map, which is strictly larger than the
-    /// provided key. `None` meaning no such key is present in the map.
-    pub fn higher(&self, key: &K) -> Option<K>
+    /// Returns the smallest key in the set, which is strictly larger than the
+    /// provided key. `None` meaning no such key is present in the set.
+    pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
         S: HasStateApi,
         K: Serialize + Ord, {
@@ -3501,7 +3527,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         };
 
         let mut node = self.get_node(root_node_id);
-        let mut higher_so_far: Option<K> = None;
+        let mut higher_so_far = None;
         loop {
             let higher_key_index = match node.keys.binary_search(key) {
                 Ok(index) => index + 1,
@@ -3510,13 +3536,13 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
 
             if node.is_leaf() {
                 return if higher_key_index < node.keys.len() {
-                    Some(node.keys.swap_remove(higher_key_index))
+                    Some(StateRef::new(node.keys.swap_remove(higher_key_index)))
                 } else {
                     higher_so_far
                 };
             } else {
                 if higher_key_index < node.keys.len() {
-                    higher_so_far = Some(node.keys.swap_remove(higher_key_index))
+                    higher_so_far = Some(StateRef::new(node.keys.swap_remove(higher_key_index)))
                 }
 
                 let child_node_id = node.children[higher_key_index];
@@ -3525,9 +3551,9 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         }
     }
 
-    /// Returns the largest key in the map, which is strictly smaller than the
-    /// provided key. `None` meaning no such key is present in the map.
-    pub fn lower(&self, key: &K) -> Option<K>
+    /// Returns the largest key in the set, which is strictly smaller than the
+    /// provided key. `None` meaning no such key is present in the set.
+    pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
         S: HasStateApi,
         K: Serialize + Ord, {
@@ -3536,7 +3562,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         };
 
         let mut node = self.get_node(root_node_id);
-        let mut lower_so_far: Option<K> = None;
+        let mut lower_so_far = None;
         loop {
             let lower_key_index = match node.keys.binary_search(key) {
                 Ok(index) => index,
@@ -3549,11 +3575,11 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                 } else {
                     // lower_key_index cannot be 0 in this case, since the binary search will only
                     // return 0 in the true branch above.
-                    Some(node.keys.swap_remove(lower_key_index - 1))
+                    Some(StateRef::new(node.keys.swap_remove(lower_key_index - 1)))
                 };
             } else {
                 if lower_key_index > 0 {
-                    lower_so_far = Some(node.keys.swap_remove(lower_key_index - 1));
+                    lower_so_far = Some(StateRef::new(node.keys.swap_remove(lower_key_index - 1)));
                 }
                 let child_node_id = node.children[lower_key_index];
                 node = self.get_node(child_node_id)
@@ -3561,6 +3587,42 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         }
     }
 
+    /// Returns a reference to the first key in the set, if any. This key is
+    /// always the minimum of all keys in the set.
+    pub fn first(&self) -> Option<StateRef<K>>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord, {
+        let Some(root_node_id) = self.root else {
+            return None;
+        };
+        let mut root = self.get_node(root_node_id);
+        if root.is_leaf() {
+            Some(StateRef::new(root.keys.swap_remove(0)))
+        } else {
+            Some(StateRef::new(self.get_lowest_key(&root, 0)))
+        }
+    }
+
+    /// Returns a reference to the last key in the set, if any. This key is
+    /// always the maximum of all keys in the set.
+    pub fn last(&self) -> Option<StateRef<K>>
+    where
+        S: HasStateApi,
+        K: Serialize + Ord, {
+        let Some(root_node_id) = self.root else {
+            return None;
+        };
+        let mut root = self.get_node(root_node_id);
+        if root.is_leaf() {
+            Some(StateRef::new(root.keys.pop().unwrap_abort()))
+        } else {
+            Some(StateRef::new(self.get_highest_key(&root, root.children.len() - 1)))
+        }
+    }
+
+    /// Remove a key from the set.
+    /// Returns whether such an element was present.
     pub fn remove(&mut self, key: &K) -> bool
     where
         K: Ord + Serialize,
@@ -3630,9 +3692,6 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                         // one child, moving the key into the child and try to remove from this.
                         self.merge(&mut node, index, &mut left_child, right_child);
                         node = left_child;
-                        // FIXME: For some reason this is needed to cause loading the node for the
-                        // next iteration.
-                        let _ = node.get();
                         continue;
                     }
                     Err(index) => index,
@@ -3737,6 +3796,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for getting the highest key in a subtree.
+    // FIXME: In the context where this function is called, the child node is
+    // already loaded and should be reused, probably resulting in `K: Clone`.
     fn get_highest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
         K: Ord + Serialize,
@@ -3752,6 +3813,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for getting the lowest key in a subtree.
+    // FIXME: In the context where this function is called, the child node is
+    // already loaded and should be reused, probably resulting in `K: Clone`.
     fn get_lowest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
         K: Ord + Serialize,

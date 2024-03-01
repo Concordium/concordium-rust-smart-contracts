@@ -1269,32 +1269,20 @@ pub struct MetadataUrl {
 /// each node is stored separately in the low-level key-value store.
 ///
 /// It can be seen as an extension adding the tracking the ordering of the keys
-/// on top of [`StateMap`] providing functions such as [`Self::higher`] and
-/// [`Self::lower`].
+/// on top of [`StateMap`] providing functions such as [`higher`](Self::higher)
+/// and [`lower`](Self::lower).
 /// This adds some overhead when inserting and deleting entries from the map
-/// compared to [`StateMap`] and [`StateMap`] is prefered if ordering is not
-/// needed.
+/// compared to [`StateMap`].
 ///
-/// The byte size of the serialized keys (`K`) influences costs of operations,
-/// and it is more cost-efficent when keys are kept as few bytes as possible.
+/// | Operation                                       | Performance   |
+/// |-------------------------------------------------|---------------|
+/// | [`get`](Self::get) / [`get_mut`](Self::get_mut) | O(k)          |
+/// | [`insert`](Self::insert)                        | O(k + log(n)) |
+/// | [`remove`](Self::remove)                        | O(k + log(n)) |
+/// | [`higher`](Self::higher)/[`lower`](Self::lower) | O(k + log(n)) |
 ///
-/// New maps can be constructed using the
-/// [`new_btree_map`][StateBuilder::new_btree_map] method on the
-/// [`StateBuilder`].
-///
-/// ```
-/// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
-/// /// In an init method:
-/// let mut map1 = state_builder.new_btree_map();
-/// # map1.insert(0u8, 1u8); // Specifies type of map.
-///
-/// # let mut host = TestHost::new((), state_builder);
-/// /// In a receive method:
-/// let mut map2 = host.state_builder().new_btree_map();
-/// # map2.insert(0u16, 1u16);
-/// ```
+/// Where `k` is the byte size of the serialized keys and `n` is the number of
+/// entries in the map.
 ///
 /// ## Type parameters
 ///
@@ -1314,9 +1302,27 @@ pub struct MetadataUrl {
 ///   used to tweak the height of the tree vs size of each node in the tree. The
 ///   default is set based on benchmarks.
 ///
-/// TODO Document the complexity of the basic operations.
+/// ## Usage
 ///
-/// ## **Caution**
+/// New maps can be constructed using the
+/// [`new_btree_map`][StateBuilder::new_btree_map] method on the
+/// [`StateBuilder`].
+///
+/// ```
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
+/// # let mut state_builder = TestStateBuilder::new();
+/// /// In an init method:
+/// let mut map1 = state_builder.new_btree_map();
+/// # map1.insert(0u8, 1u8); // Specifies type of map.
+///
+/// # let mut host = TestHost::new((), state_builder);
+/// /// In a receive method:
+/// let mut map2 = host.state_builder().new_btree_map();
+/// # map2.insert(0u16, 1u16);
+/// ```
+///
+/// ### **Caution**
 ///
 /// `StateBTreeMap`s must be explicitly deleted when they are no longer needed,
 /// otherwise they will remain in the contract's state, albeit unreachable.
@@ -1351,7 +1357,7 @@ pub struct MetadataUrl {
 /// #    inner: StateBTreeMap<u64, u64, S>
 /// # }
 /// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
-///     let old_map = mem::replace(&mut state.inner, state_builder.new_map());
+///     let old_map = mem::replace(&mut state.inner, state_builder.new_btree_map());
 ///     old_map.delete()
 /// }
 /// ```
@@ -1363,10 +1369,78 @@ pub struct StateBTreeMap<K, V, S, const M: usize = 8> {
 /// An ordered set based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
 /// each node is stored separately in the low-level key-value store.
 ///
-/// TODO Document how to construct it.
-/// TODO Document size of the serialized key matters.
-/// TODO Document the meaning of generics and restrictions on M.
-/// TODO Document the complexity of the basic operations.
+/// | Operation                                       | Performance   |
+/// |-------------------------------------------------|---------------|
+/// | [`contains`](Self::contains)                    | O(k + log(n)) |
+/// | [`insert`](Self::insert)                        | O(k + log(n)) |
+/// | [`remove`](Self::remove)                        | O(k + log(n)) |
+/// | [`higher`](Self::higher)/[`lower`](Self::lower) | O(k + log(n)) |
+///
+/// Where `k` is the byte size of the serialized keys and `n` is the number of
+/// entries in the map.
+///
+/// ## Type parameters
+///
+/// The map `StateBTreeSet<K, S, M>` is parametrized by the types:
+/// - `K`: Keys used in the set. Most operations on the set require this to
+///   implement [`Serialize`](crate::Serialize). Keys cannot contain references
+///   to the low-level state, such as types containing [`StateBox`],
+///   [`StateMap`] and [`StateSet`].
+/// - `S`: The low-level state implementation used, this allows for mocking the
+///   state API in unit tests, see
+///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
+/// - `M`: A `const usize` determining the _minimum degree_ of the B-tree.
+///   _Must_ be a value of `2` or above for the tree to be work. This can be
+///   used to tweak the height of the tree vs size of each node in the tree. The
+///   default is set based on benchmarks.
+///
+/// ## Usage
+///
+/// New sets can be constructed using the
+/// [`new_btree_set`][StateBuilder::new_btree_set] method on the
+/// [`StateBuilder`].
+///
+/// ```
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
+/// # let mut state_builder = TestStateBuilder::new();
+/// /// In an init method:
+/// let mut map1 = state_builder.new_btree_set();
+/// # map1.insert(0u8); // Specifies type of map.
+///
+/// # let mut host = TestHost::new((), state_builder);
+/// /// In a receive method:
+/// let mut map2 = host.state_builder().new_btree_set();
+/// # map2.insert(0u16);
+/// ```
+///
+/// ### **Caution**
+///
+/// `StateBTreeSet`s must be explicitly deleted when they are no longer needed,
+/// otherwise they will remain in the contract's state, albeit unreachable.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// struct MyState<S: HasStateApi = StateApi> {
+///     inner: StateBTreeSet<u64, S>,
+/// }
+/// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
+///     // The following is incorrect. The old value of `inner` is not properly deleted.
+///     // from the state.
+///     state.inner = state_builder.new_btree_set(); // ⚠️
+/// }
+/// ```
+/// Instead, the set should be [cleared](StateBTreeSet::clear):
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi = StateApi> {
+/// #    inner: StateBTreeSet<u64, S>
+/// # }
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
+///     state.inner.clear();
+/// }
+/// ```
 pub struct StateBTreeSet<K, S, const M: usize = 8> {
     /// Type marker for the key.
     pub(crate) _marker_key:  PhantomData<K>,

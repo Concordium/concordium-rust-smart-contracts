@@ -2541,9 +2541,9 @@ mod test {
         tree.insert(4);
         tree.insert(5);
         tree.insert(7);
-        assert_eq!(tree.higher(&3), Some(4));
-        assert_eq!(tree.higher(&5), Some(7));
-        assert_eq!(tree.higher(&7), None)
+        assert_eq!(tree.higher(&3).as_deref(), Some(&4));
+        assert_eq!(tree.higher(&5).as_deref(), Some(&7));
+        assert_eq!(tree.higher(&7).as_deref(), None)
     }
 
     #[test]
@@ -2556,9 +2556,9 @@ mod test {
         tree.insert(4);
         tree.insert(5);
         tree.insert(7);
-        assert_eq!(tree.lower(&3), Some(2));
-        assert_eq!(tree.lower(&7), Some(5));
-        assert_eq!(tree.lower(&1), None)
+        assert_eq!(tree.lower(&3).as_deref(), Some(&2));
+        assert_eq!(tree.lower(&7).as_deref(), Some(&5));
+        assert_eq!(tree.lower(&1).as_deref(), None)
     }
 
     #[test]
