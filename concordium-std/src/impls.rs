@@ -1,3 +1,5 @@
+#[cfg(feature = "p7")]
+use crate::vec;
 use crate::{
     cell::UnsafeCell,
     convert::{self, TryInto},
