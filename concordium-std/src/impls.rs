@@ -2325,12 +2325,14 @@ where
         StateMap::open(state_api, prefix)
     }
 
-    pub fn new_btree_set<const M: usize, K>(&mut self) -> StateBTreeSet<M, K, S> {
+    /// Create a new empty [`StateBTreeSet`].
+    pub fn new_btree_set<K, const M: usize>(&mut self) -> StateBTreeSet<K, S, M> {
         let (state_api, prefix) = self.new_state_container();
         StateBTreeSet::new(state_api, prefix)
     }
 
-    pub fn new_btree_map<const M: usize, K, V>(&mut self) -> StateBTreeMap<M, K, V, S> {
+    /// Create a new empty [`StateBTreeMap`].
+    pub fn new_btree_map<const M: usize, K, V>(&mut self) -> StateBTreeMap<K, V, S, M> {
         StateBTreeMap {
             map:         self.new_map(),
             ordered_set: self.new_btree_set(),
@@ -3153,14 +3155,14 @@ impl Deserial for MetadataUrl {
     }
 }
 
-impl<const M: usize, K, V, S> Serial for StateBTreeMap<M, K, V, S> {
+impl<const M: usize, K, V, S> Serial for StateBTreeMap<K, V, S, M> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.map.serial(out)?;
         self.ordered_set.serial(out)
     }
 }
 
-impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for StateBTreeMap<M, K, V, S> {
+impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for StateBTreeMap<K, V, S, M> {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         let map = DeserialWithState::deserial_with_state(state, source)?;
         let ordered_set = DeserialWithState::deserial_with_state(state, source)?;
@@ -3171,7 +3173,7 @@ impl<const M: usize, K, V, S: HasStateApi> DeserialWithState<S> for StateBTreeMa
     }
 }
 
-impl<const M: usize, K, S> Serial for StateBTreeSet<M, K, S> {
+impl<const M: usize, K, S> Serial for StateBTreeSet<K, S, M> {
     fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
         self.prefix.serial(out)?;
         self.root.serial(out)?;
@@ -3180,7 +3182,7 @@ impl<const M: usize, K, S> Serial for StateBTreeSet<M, K, S> {
     }
 }
 
-impl<const M: usize, K, S: HasStateApi> DeserialWithState<S> for StateBTreeSet<M, K, S> {
+impl<const M: usize, K, S: HasStateApi> DeserialWithState<S> for StateBTreeSet<K, S, M> {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
         let prefix = source.get()?;
         let root = source.get()?;
@@ -3228,7 +3230,7 @@ impl Deserial for state_btree_internals::NodeId {
     }
 }
 
-impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
+impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
     /// Insert a key-value pair into the map.
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
     where
@@ -3330,7 +3332,7 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
 
     /// Create an iterator over the entries of [`StateBTreeMap`].
     /// Ordered by `K`.
-    pub fn iter(&self) -> StateBTreeMapIter<M, K, V, S>
+    pub fn iter(&self) -> StateBTreeMapIter<K, V, S, M>
     where
         S: HasStateApi, {
         StateBTreeMapIter {
@@ -3370,7 +3372,7 @@ impl<const M: usize, K, V, S> StateBTreeMap<M, K, V, S> {
     }
 }
 
-impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
+impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     /// Construct a new [`StateBTreeMap`] given a unique prefix to use in the
     /// key-value store.
     pub(crate) fn new(state_api: S, prefix: StateItemPrefix) -> Self {
@@ -3461,7 +3463,7 @@ impl<const M: usize, K, S> StateBTreeSet<M, K, S> {
 
     /// Get an iterator over the elements in the `StateBTreeSet`. The iterator
     /// returns elements in increasing order.
-    pub fn iter(&self) -> StateBTreeSetIter<M, K, S>
+    pub fn iter(&self) -> StateBTreeSetIter<K, S, M>
     where
         S: HasStateApi, {
         StateBTreeSetIter {
@@ -3984,7 +3986,7 @@ impl<K: Deserial> Deserial for state_btree_internals::KeyWrapper<K> {
     }
 }
 
-impl<'a, 'b, const M: usize, K, S> Iterator for StateBTreeSetIter<'a, 'b, M, K, S>
+impl<'a, 'b, const M: usize, K, S> Iterator for StateBTreeSetIter<'a, 'b, K, S, M>
 where
     'a: 'b,
     K: Deserial,
@@ -4022,7 +4024,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) { (self.length, Some(self.length)) }
 }
 
-impl<'a, 'b, const M: usize, K, V, S> Iterator for StateBTreeMapIter<'a, 'b, M, K, V, S>
+impl<'a, 'b, const M: usize, K, V, S> Iterator for StateBTreeMapIter<'a, 'b, K, V, S, M>
 where
     'a: 'b,
     K: Serialize,
@@ -4041,7 +4043,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) { self.key_iter.size_hint() }
 }
 
-impl<const M: usize, K, V, S> Deletable for StateBTreeMap<M, K, V, S>
+impl<const M: usize, K, V, S> Deletable for StateBTreeMap<K, V, S, M>
 where
     S: HasStateApi,
     K: Serialize,

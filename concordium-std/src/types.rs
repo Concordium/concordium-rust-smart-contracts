@@ -384,6 +384,11 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 /// that the value is properly stored in the contract state maintained by the
 /// node.
 pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
+    /// This is set as an `UnsafeCell`, to be able to get a mutable reference to
+    /// the entry without `StateRefMut` being mutable.
+    /// The `Option` allows for having an internal method destroying the
+    /// `StateRefMut` into its raw parst without `Drop` causing a write to the
+    /// contract state.
     pub(crate) entry:            UnsafeCell<Option<S::EntryType>>,
     pub(crate) state_api:        S,
     pub(crate) lazy_value:       UnsafeCell<Option<V>>,
@@ -1263,18 +1268,96 @@ pub struct MetadataUrl {
 /// An ordered map based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
 /// each node is stored separately in the low-level key-value store.
 ///
-/// It can be seen as an extension adding the tracking of ordering on top of
-/// [`StateMap`] providing functions such as [`Self::higher`] and
+/// It can be seen as an extension adding the tracking the ordering of the keys
+/// on top of [`StateMap`] providing functions such as [`Self::higher`] and
 /// [`Self::lower`].
-/// This adds overhead when mutating the map.
+/// This adds some overhead when inserting and deleting entries from the map
+/// compared to [`StateMap`] and [`StateMap`] is prefered if ordering is not
+/// needed.
 ///
-/// TODO Document how to construct it.
-/// TODO Document size of the serialized key matters.
-/// TODO Document the meaning of generics and restrictions on M.
+/// The byte size of the serialized keys (`K`) influences costs of operations,
+/// and it is more cost-efficent when keys are kept as few bytes as possible.
+///
+/// New maps can be constructed using the
+/// [`new_btree_map`][StateBuilder::new_btree_map] method on the
+/// [`StateBuilder`].
+///
+/// ```
+/// # use concordium_std::*;
+/// # use concordium_std::test_infrastructure::*;
+/// # let mut state_builder = TestStateBuilder::new();
+/// /// In an init method:
+/// let mut map1 = state_builder.new_btree_map();
+/// # map1.insert(0u8, 1u8); // Specifies type of map.
+///
+/// # let mut host = TestHost::new((), state_builder);
+/// /// In a receive method:
+/// let mut map2 = host.state_builder().new_btree_map();
+/// # map2.insert(0u16, 1u16);
+/// ```
+///
+/// ## Type parameters
+///
+/// The map `StateBTreeMap<K, V, S, M>` is parametrized by the types:
+/// - `K`: Keys used in the map. Most operations on the map require this to
+///   implement [`Serialize`](crate::Serialize). Keys cannot contain references
+///   to the low-level state, such as types containing [`StateBox`],
+///   [`StateMap`] and [`StateSet`].
+/// - `V`: Values stored in the map. Most operations on the map require this to
+///   implement [`Serial`](crate::Serial) and
+///   [`DeserialWithState<S>`](crate::DeserialWithState).
+/// - `S`: The low-level state implementation used, this allows for mocking the
+///   state API in unit tests, see
+///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
+/// - `M`: A `const usize` determining the _minimum degree_ of the B-tree.
+///   _Must_ be a value of `2` or above for the tree to be work. This can be
+///   used to tweak the height of the tree vs size of each node in the tree. The
+///   default is set based on benchmarks.
+///
 /// TODO Document the complexity of the basic operations.
-pub struct StateBTreeMap<const M: usize, K, V, S> {
+///
+/// ## **Caution**
+///
+/// `StateBTreeMap`s must be explicitly deleted when they are no longer needed,
+/// otherwise they will remain in the contract's state, albeit unreachable.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// struct MyState<S: HasStateApi = StateApi> {
+///     inner: StateBTreeMap<u64, u64, S>,
+/// }
+/// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
+///     // The following is incorrect. The old value of `inner` is not properly deleted.
+///     // from the state.
+///     state.inner = state_builder.new_btree_map(); // ⚠️
+/// }
+/// ```
+/// Instead, either the map should be [cleared](StateBTreeMap::clear) or
+/// explicitly deleted.
+///
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi = StateApi> {
+/// #    inner: StateBTreeMap<u64, u64, S>
+/// # }
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
+///     state.inner.clear_flat();
+/// }
+/// ```
+/// Or alternatively
+/// ```no_run
+/// # use concordium_std::*;
+/// # struct MyState<S: HasStateApi = StateApi> {
+/// #    inner: StateBTreeMap<u64, u64, S>
+/// # }
+/// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
+///     let old_map = mem::replace(&mut state.inner, state_builder.new_map());
+///     old_map.delete()
+/// }
+/// ```
+pub struct StateBTreeMap<K, V, S, const M: usize = 8> {
     pub(crate) map:         StateMap<K, V, S>,
-    pub(crate) ordered_set: StateBTreeSet<M, K, S>,
+    pub(crate) ordered_set: StateBTreeSet<K, S, M>,
 }
 
 /// An ordered set based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
@@ -1284,7 +1367,7 @@ pub struct StateBTreeMap<const M: usize, K, V, S> {
 /// TODO Document size of the serialized key matters.
 /// TODO Document the meaning of generics and restrictions on M.
 /// TODO Document the complexity of the basic operations.
-pub struct StateBTreeSet<const M: usize, K, S> {
+pub struct StateBTreeSet<K, S, const M: usize = 8> {
     /// Type marker for the key.
     pub(crate) _marker_key:  PhantomData<K>,
     /// The unique prefix to use for this map in the key-value store.
@@ -1344,7 +1427,7 @@ pub(crate) mod state_btree_internals {
 ///
 /// This `struct` is created by the [`iter`][StateBTreeSet::iter] method on
 /// [`StateBTreeSet`]. See its documentation for more.
-pub struct StateBTreeSetIter<'a, 'b, const M: usize, K, S> {
+pub struct StateBTreeSetIter<'a, 'b, K, S, const M: usize> {
     /// The number of elements left to iterate.
     pub(crate) length:            usize,
     /// Reference to a node in the tree to load and iterate before the current
@@ -1354,7 +1437,7 @@ pub struct StateBTreeSetIter<'a, 'b, const M: usize, K, S> {
     pub(crate) depth_first_stack:
         Vec<(state_btree_internals::Node<M, state_btree_internals::KeyWrapper<K>>, usize)>,
     /// Reference to the set, needed for looking up the nodes.
-    pub(crate) tree:              &'a StateBTreeSet<M, K, S>,
+    pub(crate) tree:              &'a StateBTreeSet<K, S, M>,
     pub(crate) _marker_lifetime:  PhantomData<&'b K>,
 }
 
@@ -1364,9 +1447,9 @@ pub struct StateBTreeSetIter<'a, 'b, const M: usize, K, S> {
 ///
 /// This `struct` is created by the [`iter`][StateBTreeMap::iter] method on
 /// [`StateBTreeMap`]. See its documentation for more.
-pub struct StateBTreeMapIter<'a, 'b, const M: usize, K, V, S> {
+pub struct StateBTreeMapIter<'a, 'b, K, V, S, const M: usize> {
     /// Iterator over the keys in the map.
-    pub(crate) key_iter: StateBTreeSetIter<'a, 'b, M, K, S>,
+    pub(crate) key_iter: StateBTreeSetIter<'a, 'b, K, S, M>,
     /// Reference to the map holding the values.
     pub(crate) map:      &'a StateMap<K, V, S>,
 }
