@@ -2326,16 +2326,32 @@ where
     }
 
     /// Create a new empty [`StateBTreeSet`].
-    pub fn new_btree_set<K, const M: usize>(&mut self) -> StateBTreeSet<K, S, M> {
+    pub fn new_btree_set<K>(&mut self) -> StateBTreeSet<K, S> {
         let (state_api, prefix) = self.new_state_container();
         StateBTreeSet::new(state_api, prefix)
     }
 
     /// Create a new empty [`StateBTreeMap`].
-    pub fn new_btree_map<const M: usize, K, V>(&mut self) -> StateBTreeMap<K, V, S, M> {
+    pub fn new_btree_map<K, V>(&mut self) -> StateBTreeMap<K, V, S> {
         StateBTreeMap {
             map:         self.new_map(),
             ordered_set: self.new_btree_set(),
+        }
+    }
+
+    /// Create a new empty [`StateBTreeSet`], setting the minimum degree `M` of
+    /// the B-Tree explicitly.
+    pub fn new_btree_set_degree<const M: usize, K>(&mut self) -> StateBTreeSet<K, S, M> {
+        let (state_api, prefix) = self.new_state_container();
+        StateBTreeSet::new(state_api, prefix)
+    }
+
+    /// Create a new empty [`StateBTreeMap`], setting the minimum degree `M` of
+    /// the B-Tree explicitly.
+    pub fn new_btree_map_degree<const M: usize, K, V>(&mut self) -> StateBTreeMap<K, V, S, M> {
+        StateBTreeMap {
+            map:         self.new_map(),
+            ordered_set: self.new_btree_set_degree(),
         }
     }
 
@@ -3238,13 +3254,11 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
         K: Serialize + Ord,
         V: Serial + DeserialWithState<S>, {
         let old_value_option = self.map.insert_borrowed(&key, value);
-        if old_value_option.is_none() {
-            if !self.ordered_set.insert(key) {
-                // Inconsistency between the map and ordered_set.
-                crate::trap();
-            }
+        if old_value_option.is_none() && !self.ordered_set.insert(key) {
+            // Inconsistency between the map and ordered_set.
+            crate::trap();
         }
-        return old_value_option;
+        old_value_option
     }
 
     /// Remove a key from the map, returning the value at the key if the key was
@@ -3422,7 +3436,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         K: Serialize + Ord, {
         let Some(root_id) = self.root else {
             let node_id = {
-                let (node_id, _node) = self.create_node(vec![key], Vec::new());
+                let (node_id, _node) = self.create_node(crate::vec![key], Vec::new());
                 node_id
             };
             self.root = Some(node_id);
@@ -3441,7 +3455,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
             return false;
         }
         // The root node is full, so we construct a new root node.
-        let (new_root_id, mut new_root) = self.create_node(Vec::new(), vec![root_id]);
+        let (new_root_id, mut new_root) = self.create_node(Vec::new(), crate::vec![root_id]);
         self.root = Some(new_root_id);
         // The old root node is now a child node.
         let mut child = root_node;
@@ -3496,7 +3510,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
             length:            self.len.try_into().unwrap_abort(),
             next_node:         self.root,
             depth_first_stack: Vec::new(),
-            tree:              &self,
+            tree:              self,
             _marker_lifetime:  Default::default(),
         }
     }
@@ -3642,9 +3656,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                             // Found the key in this node and the node is a leaf, meaning we simply
                             // remove it.
                             // This will not violate the minimum keys invariant, since a node
-                            // ensures a child can spare a key before
-                            // iteration and the root node is not part of
-                            // the invariant.
+                            // ensures a child can spare a key before iteration and the root node is
+                            // not part of the invariant.
                             node.keys.remove(index);
                             break true;
                         }
@@ -3654,7 +3667,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                             // If the child with smaller keys can spare a key, we take the highest
                             // key from it, changing the loop to be deleting its highest key from
                             // this child.
-                            node.keys[index] = self.get_highest_key(&mut node, index);
+                            node.keys[index] = self.get_highest_key(&node, index);
                             let new_key_to_delete = {
                                 // To avoid having to clone the key, we store changes to the node
                                 // and unwrap it from the StateRefMut, disabling further mutations
@@ -3674,7 +3687,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                             // If the child with larger keys can spare a key, we take the lowest
                             // key from it, changing the loop to be deleting its highest key from
                             // this child.
-                            node.keys[index] = self.get_lowest_key(&mut node, index + 1);
+                            node.keys[index] = self.get_lowest_key(&node, index + 1);
                             let new_key_to_delete = {
                                 // To avoid having to clone the key, we store changes to the node
                                 // and unwrap it from the StateRefMut, disabling further mutations
@@ -3688,8 +3701,9 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                             node = right_child;
                             continue;
                         }
-                        // No child on either side of the key can spare a key, so we merge them into
-                        // one child, moving the key into the child and try to remove from this.
+                        // No child on either side of the key can spare a key at this point, so we
+                        // merge them into one child, moving the key into the merged child and try
+                        // to remove from this.
                         self.merge(&mut node, index, &mut left_child, right_child);
                         node = left_child;
                         continue;
@@ -3729,7 +3743,6 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                                         .children
                                         .insert(0, smaller_sibling.children.pop().unwrap_abort());
                                 }
-                                //drop(child);
                                 break 'increase_child child;
                             }
                             Some(smaller_sibling)
@@ -3751,7 +3764,6 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                                 if !child.is_leaf() {
                                     child.children.push(larger_sibling.children.remove(0));
                                 }
-                                //drop(child);
                                 break 'increase_child child;
                             }
                             Some(larger_sibling)
@@ -3766,7 +3778,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                             self.merge(&mut node, index - 1, &mut sibling, child);
                             sibling
                         } else {
-                            // Unreachable code.
+                            // Unreachable code, since M must be 2 or larger (the minimum degree), a
+                            // child node must have at least one sibling.
                             crate::trap();
                         }
                     }
@@ -3830,32 +3843,32 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Moving key at `index` from the node to the lower child and then merges
-    /// this child with the content of its higher sibling, deleting the sibling.
+    /// this child with the content of its larger sibling, deleting the sibling.
     ///
     /// Assumes:
-    /// - `node` have a child at `index` and `index + 1`.
-    /// - Both children are at minimum number of keys.
+    /// - `parent_node` have a child at `index` and `index + 1`.
+    /// - Both children are at minimum number of keys (`M - 1`).
     fn merge(
         &mut self,
-        node: &mut state_btree_internals::Node<M, K>, // parent node.
-        child_index: usize,                           /* index of the smaller child in the
-                                                       * parent node. */
-        child: &mut state_btree_internals::Node<M, K>, // smaller child.
-        mut larger_child: StateRefMut<state_btree_internals::Node<M, K>, S>, // smaller child.
+        parent_node: &mut state_btree_internals::Node<M, K>,
+        index: usize,
+        child: &mut state_btree_internals::Node<M, K>,
+        mut larger_child: StateRefMut<state_btree_internals::Node<M, K>, S>,
     ) where
         K: Ord + Serialize,
         S: HasStateApi, {
-        child.keys.push(node.keys.remove(child_index));
+        let parent_key = parent_node.keys.remove(index);
+        parent_node.children.remove(index + 1);
+        child.keys.push(parent_key);
         child.keys.append(&mut larger_child.keys);
         child.children.append(&mut larger_child.children);
-        node.children.remove(child_index + 1);
         self.delete_node(larger_child);
     }
 
     /// Internal function for constructing a node. It will incrementing the next
     /// node ID and create an entry in the smart contract key-value store.
-    fn create_node<'a, 'b>(
-        &'a mut self,
+    fn create_node<'b>(
+        &mut self,
         keys: Vec<K>,
         children: Vec<state_btree_internals::NodeId>,
     ) -> (state_btree_internals::NodeId, StateRefMut<'b, state_btree_internals::Node<M, K>, S>)
@@ -3928,8 +3941,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     /// and child after the provided child_index.
     ///
     /// Returns the newly created node.
-    fn split_child<'a, 'b>(
-        &'a mut self,
+    fn split_child<'b>(
+        &mut self,
         node: &mut state_btree_internals::Node<M, K>,
         child_index: usize,
         child: &mut state_btree_internals::Node<M, K>,
@@ -3954,8 +3967,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
 
     /// Internal function for looking up a node in the tree.
     /// This assumes the node is present and traps if this is not the case.
-    fn get_node<'a, 'b, Key>(
-        &'a self,
+    fn get_node<Key>(
+        &self,
         node_id: state_btree_internals::NodeId,
     ) -> state_btree_internals::Node<M, Key>
     where
@@ -3968,8 +3981,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
 
     /// Internal function for looking up a node, providing mutable access.
     /// This assumes the node is present and traps if this is not the case.
-    fn get_node_mut<'a, 'b>(
-        &'a mut self,
+    fn get_node_mut<'b>(
+        &mut self,
         node_id: state_btree_internals::NodeId,
     ) -> StateRefMut<'b, state_btree_internals::Node<M, K>, S>
     where
@@ -4015,7 +4028,7 @@ impl state_btree_internals::NodeId {
 
     /// Return a copy of the NodeId, then increments itself.
     pub(crate) fn copy_then_increment(&mut self) -> Self {
-        let current = self.clone();
+        let current = *self;
         self.id += 1;
         current
     }

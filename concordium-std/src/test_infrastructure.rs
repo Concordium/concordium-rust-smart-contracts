@@ -2491,7 +2491,7 @@ mod test {
     #[test]
     fn test_btree_insert_6() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 5> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<5, _>();
         for n in 0..=5 {
             tree.insert(n);
         }
@@ -2503,7 +2503,7 @@ mod test {
     #[test]
     fn test_btree_insert_0_7() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..=7 {
             tree.insert(n);
         }
@@ -2515,7 +2515,7 @@ mod test {
     #[test]
     fn test_btree_insert_7_no_order() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
 
         tree.insert(0);
         tree.insert(1);
@@ -2534,7 +2534,7 @@ mod test {
     #[test]
     fn test_btree_higher() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         tree.insert(1);
         tree.insert(2);
         tree.insert(3);
@@ -2549,7 +2549,7 @@ mod test {
     #[test]
     fn test_btree_lower() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         tree.insert(1);
         tree.insert(2);
         tree.insert(3);
@@ -2564,7 +2564,7 @@ mod test {
     #[test]
     fn test_btree_insert_1000() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..500 {
             tree.insert(n);
         }
@@ -2583,7 +2583,7 @@ mod test {
     #[test]
     fn test_btree_7_get_8() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..=7 {
             tree.insert(n);
         }
@@ -2594,7 +2594,7 @@ mod test {
     #[test]
     fn test_btree_remove_from_one_node_tree() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..3 {
             tree.insert(n);
         }
@@ -2608,7 +2608,7 @@ mod test {
     #[test]
     fn test_btree_remove_only_key_lower_leaf_in_three_node() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..4 {
             tree.insert(n);
         }
@@ -2624,7 +2624,7 @@ mod test {
     #[test]
     fn test_btree_remove_only_key_higher_leaf_in_three_node() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in (0..4).into_iter().rev() {
             tree.insert(n);
         }
@@ -2639,7 +2639,7 @@ mod test {
     #[test]
     fn test_btree_remove_from_higher_leaf_in_three_node_taking_from_sibling() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in (0..4).into_iter().rev() {
             tree.insert(n);
         }
@@ -2651,7 +2651,7 @@ mod test {
     #[test]
     fn test_btree_remove_from_lower_leaf_in_three_node_taking_from_sibling() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..4 {
             tree.insert(n);
         }
@@ -2666,7 +2666,7 @@ mod test {
     #[test]
     fn test_btree_remove_from_root_in_three_node_causing_merge() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..4 {
             tree.insert(n);
         }
@@ -2680,7 +2680,7 @@ mod test {
     #[test]
     fn test_btree_remove_from_root_in_three_node_taking_key_from_higher_child() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in 0..4 {
             tree.insert(n);
         }
@@ -2692,7 +2692,7 @@ mod test {
     #[test]
     fn test_btree_remove_from_root_in_three_node_taking_key_from_lower_child() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         for n in (0..4).into_iter().rev() {
             tree.insert(n);
         }
@@ -2704,7 +2704,7 @@ mod test {
     #[test]
     fn test_btree_iter() {
         let mut state_builder = TestStateBuilder::new();
-        let mut tree: StateBTreeSet<u32, _, 2> = state_builder.new_btree_set();
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
         let keys: Vec<u32> = (0..15).into_iter().collect();
         for &k in &keys {
             tree.insert(k);

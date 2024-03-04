@@ -1459,6 +1459,8 @@ pub struct StateBTreeSet<K, S, const M: usize = 8> {
 
 /// Module with types used internally in [`StateBTreeMap`].
 pub(crate) mod state_btree_internals {
+    use super::*;
+
     /// Identifier for a node in the tree. Used to construct the key, where this
     /// node is store in the smart contract key-value store.
     #[derive(Debug, Copy, Clone)]
