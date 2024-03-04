@@ -6,6 +6,7 @@
   via the `HasHost::contract_module_reference` and `HasHost::contract_name` functions.
   These are only available from protocol version 7, and as such are guarded by the
   `p7` feature flag.
+- Add two ordered collections: `StateBTreeMap` and `StateBTreeSet`. These are based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), but where each node are store in the low-level smart contract key-value store.
 
 ## concordium-std 10.0.0 (2024-02-22)
 

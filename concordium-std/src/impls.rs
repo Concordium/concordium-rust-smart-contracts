@@ -1201,6 +1201,8 @@ where
     fn load_value(&self) -> V
     where
         V: DeserialWithState<S>, {
+        // Safe to unwrap below, since the entry can only be `None`, using methods which
+        // are consuming self.
         let entry = unsafe { &mut *self.entry.get() }.as_mut().unwrap_abort();
         entry.move_to_start();
         V::deserial_with_state(&self.state_api, entry).unwrap_abort()
@@ -1208,6 +1210,8 @@ where
 
     /// Set the value. Overwrites the existing one.
     pub fn set(&mut self, new_val: V) {
+        // Safe to unwrap below, since the entry can only be `None`, using methods which
+        // are consuming self.
         let entry = self.entry.get_mut().as_mut().unwrap_abort();
         entry.move_to_start();
         new_val.serial(entry).unwrap_abort();
@@ -1220,6 +1224,8 @@ where
         V: DeserialWithState<S>,
         F: FnOnce(&mut V), {
         let lv = self.lazy_value.get_mut();
+        // Safe to unwrap below, since the entry can only be `None`, using methods which
+        // are consuming self.
         let entry = self.entry.get_mut().as_mut().unwrap_abort();
         let value = if let Some(v) = lv {
             v
@@ -1238,6 +1244,8 @@ where
     /// Write to the state entry if the value is loaded.
     pub(crate) fn store_mutations(&mut self) {
         if let Some(value) = self.lazy_value.get_mut() {
+            // Safe to unwrap below, since the entry can only be `None`, using methods which
+            // are consuming self.
             let entry = self.entry.get_mut().as_mut().unwrap_abort();
             entry.move_to_start();
             value.serial(entry).unwrap_abort();
