@@ -7,6 +7,7 @@
 //! libraries.
 //!
 //! # Versions
+//!
 //! The concordium blockchain at present supports two variants of smart
 //! contracts. The original V0 contracts that use message-passing for
 //! communication and have limited state, and V1 contracts which use synchronous
@@ -24,6 +25,7 @@
 //! `test_infrastructure`](#deprecating-the-test_infrastructure) section.
 //!
 //! # Panic handler
+//!
 //! When compiled without the `std` feature this crate sets the panic handler
 //! so that it terminates the process immediately, without any unwinding or
 //! prints.
@@ -45,6 +47,7 @@
 //! #crypto-primitives-for-testing-crypto-with-actual-implementations
 //!
 //! ## `std`: Build with the Rust standard library
+//!
 //! By default this library will be linked with the
 //! [std](https://doc.rust-lang.org/std/) crate, the rust standard library,
 //! however to minimize code size this library supports toggling compilation
@@ -61,6 +64,7 @@
 //! In your project's `Cargo.toml` file.
 //!
 //! ## `build-schema`: Build for generating a module schema
+//!
 //! **WARNING** Building with this feature enabled is meant for tooling, and the
 //! result is not intended to be deployed on chain.
 //!
@@ -77,6 +81,7 @@
 //! schema and for most cases this feature should not be set manually.
 //!
 //! ## `wasm-test`: Build for testing in Wasm
+//!
 //! **WARNING** Building with this feature enabled is meant for tooling, and the
 //! result is not intended to be deployed on chain.
 //!
@@ -99,6 +104,7 @@
 //! testing and for most cases this feature should not be set manually.
 //!
 //! ## `crypto-primitives`: For testing crypto with actual implementations
+//!
 //! This features is only relevant when using the **deprecated**
 //! [test_infrastructure].
 //!
@@ -137,7 +143,7 @@
 //! whether `bump_alloc` is the best option. See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
 //! documentation for more context and details on using custom allocators.
 //!
-//! Emit debug information
+//! # Emit debug information
 //!
 //! During testing and debugging it is often useful to emit debug information to
 //! narrow down the source of the problem. `concordium-std` supports this using
@@ -154,6 +160,7 @@
 //! ignore its arguments when the `debug` feature is not enabled.
 //!
 //! # Essential types
+//!
 //! This crate has a number of essential types that are used when writing smart
 //! contracts. The structure of these are, at present, a bit odd without the
 //! historic context, which is explained below.
@@ -187,6 +194,7 @@
 //! simplify the names with aliases.
 //!
 //! # Signalling errors
+//!
 //! On the Wasm level contracts can signal errors by returning a negative i32
 //! value as a result of either initialization or invocation of the receive
 //! method. If the error is a logic error and the contract executes successfully
@@ -242,7 +250,61 @@
 //! Other error codes may be added in the future and custom error codes should
 //! not use the range `i32::MIN` to `i32::MIN + 100`.
 //!
+//! # Collections
+//!
+//! Several collections are available for use in a smart contract and choosing
+//! the right one can result in significant cost savings.
+//!
+//! First off, Rust's own standard library provides [several efficient data structures](https://doc.rust-lang.org/std/collections/)
+//! which can be used in a smart contract.
+//!
+//! However, these can become costly for collections holding a large number of
+//! elements, which needs to be persisted in the smart contract state across
+//! contract updates.
+//! The reason being these data structures are designed to be kept in-memory and
+//! persisting them means reading and writing the entire collection to a single
+//! entry in the smart contract key-value store on every contract update.
+//! This is wasteful when only part of the collection is relevant on each
+//! update.
+//!
+//! In the above mentioned scenarios, it is instead recommended to use one of
+//! the smart contract tailored collections, as these partisions the collection
+//! into multiple key-value stores, resulting in cheaper read and writes to the
+//! state.
+//!
+//! The collections can be grouped as:
+//! - Maps: [`StateMap`], [`StateBTreeMap`]
+//! - Sets: [`StateSet`], [`StateBTreeSet`]
+//!
+//! ## When should you use which collection?
+//!
+//! This section presents a rough guideline for when to reach for each of the
+//! collections.
+//!
+//! ### Use `StateMap` when:
+//!
+//! - You want to track which keys you have seen.
+//! - Arbitrary values are associated with each of the keys.
+//!
+//! ### Use `StateBTreeMap` when:
+//!
+//! - You want to track which keys you have seen.
+//! - Arbitrary values are associated with each of the keys.
+//! - The keys have some _ordering_ which is relevant.
+//!
+//! ### Use `StateSet` when:
+//!
+//! - You want to track which keys you have seen.
+//! - There is no meaningful value to associate with your keys.
+//!
+//! ### Use `StateBTreeSet` when:
+//!
+//! - You want to track which keys you have seen.
+//! - There is no meaningful value to associate with your keys.
+//! - The keys have some _ordering_ which is relevant.
+//!
 //! # Deprecating the `test_infrastructure`
+//!
 //! Version 8.1 deprecates the [test_infrastructure] in favor of the library
 //! [concordium_smart_contract_testing]. A number of traits are also
 //! deprecated at the same time since they only exist to support the
@@ -295,7 +357,7 @@
 //!        ctx: &impl HasReceiveContext,
 //!        host: &impl HasHost<State, StateApiType = S>,
 //!    ) -> ReceiveResult<MyReturnValue> { todo!() }
-//!    
+//!
 //!    /// After
 //!    #[receive(contract = "my_contract", name = "my_receive")]
 //!    fn receive_after(           // `<S: HasStateApi>` removed
@@ -325,6 +387,7 @@
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
+
 #![cfg_attr(not(feature = "std"), no_std, feature(core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
