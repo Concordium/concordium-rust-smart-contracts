@@ -3653,75 +3653,114 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
             return false;
         };
 
+        /// The goal of the loop below.
+        enum Mode<'b, const M: usize, K: Serial, S: HasStateApi> {
+            /// The goal is to remove the key provided by the user.
+            RemoveKey,
+            /// The key was removed from a node, which now need some key to be
+            /// moved up.
+            MoveUp {
+                /// Whether the key is taken from the smaller child, meaning the
+                /// largest key should be moved up.
+                from_left_child: bool,
+                /// The node which deleted a key and now is waiting for a new
+                /// one.
+                receiving_node:  StateRefMut<'b, state_btree_internals::Node<M, K>, S>,
+                /// The index to store the key to.
+                key_index:       usize,
+            },
+        }
+
         let deleted_something = {
-            let mut overwrite_key_to_delete = None;
             let mut node = self.get_node_mut(root_node_id);
+            let mut mode = Mode::RemoveKey;
             loop {
-                let key_to_delete = overwrite_key_to_delete.as_ref().unwrap_or(key);
-                let index = match node.keys.binary_search(key_to_delete) {
-                    Ok(index) => {
-                        if node.is_leaf() {
-                            // Found the key in this node and the node is a leaf, meaning we simply
-                            // remove it.
-                            // This will not violate the minimum keys invariant, since a node
-                            // ensures a child can spare a key before iteration and the root node is
-                            // not part of the invariant.
-                            node.keys.remove(index);
-                            break true;
-                        }
-                        // Found the key in this node, but the node is not a leaf.
-                        let mut left_child = self.get_node_mut(node.children[index]);
-                        if !left_child.is_at_min() {
-                            // If the child with smaller keys can spare a key, we take the highest
-                            // key from it, changing the loop to be deleting its highest key from
-                            // this child.
-                            node.keys[index] = self.get_highest_key(&node, index);
-                            let new_key_to_delete = {
-                                // To avoid having to clone the key, we store changes to the node
-                                // and unwrap it from the StateRefMut, disabling further mutations
-                                // from being written to the key-value store, such that we can take
-                                // the in-memory key.
-                                node.store_mutations();
-                                let mut inner_node = node.into_raw_parts().0.unwrap_abort();
-                                inner_node.keys.swap_remove(index)
-                            };
-                            overwrite_key_to_delete = Some(new_key_to_delete);
+                let index = if let Mode::MoveUp {
+                    from_left_child,
+                    ref mut receiving_node,
+                    key_index,
+                } = mode
+                {
+                    if node.is_leaf() {
+                        // The node is a leaf, meaning we simply remove it.
+                        // This will not violate the minimum keys invariant, since a node
+                        // ensures a child can spare a key before iteration.
+                        receiving_node.keys[key_index] = if from_left_child {
+                            node.keys.remove(0)
+                        } else {
+                            node.keys.pop().unwrap_abort()
+                        };
+                        break true;
+                    }
+                    // Node is not a leaf, so we move further down this subtree.
+                    if from_left_child {
+                        // If we are taking a key from the left child, it must be the largest key.
+                        // So we traverse down the largest child.
+                        node.children.len() - 1
+                    } else {
+                        // If we are taking a key from the right child, it must be the smallest key.
+                        // So we traverse down the smallest child.
+                        0
+                    }
+                } else {
+                    match node.keys.binary_search(key) {
+                        Ok(index) => {
+                            if node.is_leaf() {
+                                // Found the key in this node and the node is a leaf, meaning we
+                                // simply remove it.
+                                // This will not violate the minimum keys invariant, since a node
+                                // ensures a child can spare a key before iteration and the root
+                                // node is not part of the
+                                // invariant.
+                                node.keys.remove(index);
+                                break true;
+                            }
+                            // Found the key in this node, but the node is not a leaf.
+                            let mut left_child = self.get_node_mut(node.children[index]);
+                            if !left_child.is_at_min() {
+                                // If the child with smaller keys can spare a key, we take the
+                                // highest key from it, changing the
+                                // loop to be deleting its highest key from
+                                // this child.
+                                mode = Mode::MoveUp {
+                                    from_left_child: true,
+                                    receiving_node:  node,
+                                    key_index:       index,
+                                };
+                                node = left_child;
+                                continue;
+                            }
+
+                            let right_child = self.get_node_mut(node.children[index + 1]);
+                            if !right_child.is_at_min() {
+                                // If the child with larger keys can spare a key, we take the lowest
+                                // key from it, changing the loop to be deleting its highest key
+                                // from this child.
+                                mode = Mode::MoveUp {
+                                    from_left_child: false,
+                                    receiving_node:  node,
+                                    key_index:       index,
+                                };
+                                node = right_child;
+                                continue;
+                            }
+                            // No child on either side of the key can spare a key at this point, so
+                            // we merge them into one child, moving the
+                            // key into the merged child and try
+                            // to remove from this.
+                            self.merge(&mut node, index, &mut left_child, right_child);
                             node = left_child;
                             continue;
                         }
-
-                        let right_child = self.get_node_mut(node.children[index + 1]);
-                        if !right_child.is_at_min() {
-                            // If the child with larger keys can spare a key, we take the lowest
-                            // key from it, changing the loop to be deleting its highest key from
-                            // this child.
-                            node.keys[index] = self.get_lowest_key(&node, index + 1);
-                            let new_key_to_delete = {
-                                // To avoid having to clone the key, we store changes to the node
-                                // and unwrap it from the StateRefMut, disabling further mutations
-                                // from being written to the key-value store, such that we can use
-                                // the same in-memory key.
-                                node.store_mutations();
-                                let mut inner_node = node.into_raw_parts().0.unwrap_abort();
-                                inner_node.keys.swap_remove(index)
-                            };
-                            overwrite_key_to_delete = Some(new_key_to_delete);
-                            node = right_child;
-                            continue;
+                        Err(index) => {
+                            // Node did not contain the key.
+                            if node.is_leaf() {
+                                break false;
+                            }
+                            index
                         }
-                        // No child on either side of the key can spare a key at this point, so we
-                        // merge them into one child, moving the key into the merged child and try
-                        // to remove from this.
-                        self.merge(&mut node, index, &mut left_child, right_child);
-                        node = left_child;
-                        continue;
                     }
-                    Err(index) => index,
                 };
-                // Node did not contain the key.
-                if node.is_leaf() {
-                    break false;
-                }
 
                 // Node did not contain the key and is not a leaf.
                 let mut child = self.get_node_mut(node.children[index]);
@@ -3805,8 +3844,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                 self.root = None;
                 self.delete_node(root);
             } else {
-                // If the root is empty but the tree is not, point the only child of the root as
-                // the root.
+                // If the root is empty but the tree is not, point to the only child of the root
+                // as the root.
                 if root.keys.is_empty() {
                     self.root = Some(root.children[0]);
                     self.delete_node(root);
@@ -3817,8 +3856,6 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for getting the highest key in a subtree.
-    // FIXME: In the context where this function is called, the child node is
-    // already loaded and should be reused, probably resulting in `K: Clone`.
     fn get_highest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
         K: Ord + Serialize,
@@ -3834,8 +3871,6 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for getting the lowest key in a subtree.
-    // FIXME: In the context where this function is called, the child node is
-    // already loaded and should be reused, probably resulting in `K: Clone`.
     fn get_lowest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
         K: Ord + Serialize,
