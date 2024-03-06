@@ -387,7 +387,7 @@ pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
     /// This is set as an `UnsafeCell`, to be able to get a mutable reference to
     /// the entry without `StateRefMut` being mutable.
     /// The `Option` allows for having an internal method destroying the
-    /// `StateRefMut` into its raw parst without `Drop` causing a write to the
+    /// `StateRefMut` into its raw parts without `Drop` causing a write to the
     /// contract state.
     pub(crate) entry:            UnsafeCell<Option<S::EntryType>>,
     pub(crate) state_api:        S,
@@ -1298,8 +1298,8 @@ pub struct MetadataUrl {
 ///   state API in unit tests, see
 ///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
 /// - `M`: A `const usize` determining the _minimum degree_ of the B-tree.
-///   _Must_ be a value of `2` or above for the tree to be work. This can be
-///   used to tweak the height of the tree vs size of each node in the tree. The
+///   _Must_ be a value of `2` or above for the tree to work. This can be used
+///   to tweak the height of the tree vs size of each node in the tree. The
 ///   default is set based on benchmarks.
 ///
 /// ## Usage
@@ -1390,8 +1390,8 @@ pub struct StateBTreeMap<K, V, S, const M: usize = 8> {
 ///   state API in unit tests, see
 ///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
 /// - `M`: A `const usize` determining the _minimum degree_ of the B-tree.
-///   _Must_ be a value of `2` or above for the tree to be work. This can be
-///   used to tweak the height of the tree vs size of each node in the tree. The
+///   _Must_ be a value of `2` or above for the tree to work. This can be used
+///   to tweak the height of the tree vs size of each node in the tree. The
 ///   default is set based on benchmarks.
 ///
 /// ## Usage
@@ -1469,7 +1469,7 @@ pub(crate) mod state_btree_internals {
         pub(crate) id: u32,
     }
 
-    /// Type representing the a node in the [`StateBTreeMap`].
+    /// Type representing a node in the [`StateBTreeMap`].
     /// Each node is stored separately in the smart contract key-value store.
     #[derive(Debug)]
     pub(crate) struct Node<const M: usize, K> {
