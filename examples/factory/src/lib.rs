@@ -265,9 +265,13 @@ pub mod factory {
         let product_name =
             host.contract_name(product_address).or(Err(FactoryError::NonExistentProduct))?;
         ensure_eq!(product_name, PRODUCT_INIT_NAME, FactoryError::InvalidProduct);
+        // Update the state
+        let state = host.state_mut();
+        let next_product = state.next_product;
+        state.next_product = next_product + 1;
+        state.products.insert(next_product, product_address);
         // Invoke the initialize entrypoint on the product passing in the index for this
         // product.
-        let next_product = host.state().next_product;
         host.invoke_contract(
             &product_address,
             &next_product,
@@ -275,10 +279,6 @@ pub mod factory {
             Amount::zero(),
         )
         .or(Err(FactoryError::InitializeFailed))?;
-        // Update the state
-        let state = host.state_mut();
-        state.next_product = next_product + 1;
-        state.products.insert(next_product, product_address);
         Ok(())
     }
 
