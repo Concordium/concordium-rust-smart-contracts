@@ -1268,11 +1268,10 @@ pub struct MetadataUrl {
 /// An ordered map based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
 /// each node is stored separately in the low-level key-value store.
 ///
-/// It can be seen as an extension adding the tracking the ordering of the keys
-/// on top of [`StateMap`] providing functions such as [`higher`](Self::higher)
-/// and [`lower`](Self::lower).
-/// This adds some overhead when inserting and deleting entries from the map
-/// compared to [`StateMap`].
+/// It can be seen as an extension adding tracking of the keys ordering on top
+/// of [`StateMap`] to provide functions such as [`higher`](Self::higher) and
+/// [`lower`](Self::lower). This results in some overhead when inserting and
+/// deleting entries from the map compared to using [`StateMap`].
 ///
 /// | Operation                                       | Performance   |
 /// |-------------------------------------------------|---------------|
@@ -1480,10 +1479,11 @@ pub(crate) mod state_btree_internals {
         /// List of nodes which are children of this node in the tree.
         ///
         /// This list is empty when this node is representing a leaf.
-        /// When not empty it will contain exactly `keys.len() + 1` elements.
+        /// When not a leaf, it will contain exactly `keys.len() + 1` elements.
         ///
-        /// The elements are ordered such that the node `children[i]` contains
-        /// keys that are strictly smaller than `keys[i]`.
+        /// The elements are ordered such that for a key `keys[i]`:
+        /// - `children[i]` is a subtree containing strictly smaller keys.
+        /// - `children[i + 1]` is a subtree containing strictly larger keys.
         pub(crate) children: Vec<NodeId>,
     }
 
@@ -1514,6 +1514,7 @@ pub struct StateBTreeSetIter<'a, 'b, K, S, const M: usize> {
         Vec<(state_btree_internals::Node<M, state_btree_internals::KeyWrapper<K>>, usize)>,
     /// Reference to the set, needed for looking up the nodes.
     pub(crate) tree:              &'a StateBTreeSet<K, S, M>,
+    /// Marker for tracking the lifetime of the key.
     pub(crate) _marker_lifetime:  PhantomData<&'b K>,
 }
 

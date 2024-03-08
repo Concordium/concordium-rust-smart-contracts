@@ -3483,7 +3483,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         new
     }
 
-    /// Returns `true` if the set contains an element equal to the value.
+    /// Returns `true` if the set contains an element equal to the key.
     pub fn contains(&self, key: &K) -> bool
     where
         S: HasStateApi,
@@ -3559,12 +3559,16 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
 
             if node.is_leaf() {
                 return if higher_key_index < node.keys.len() {
+                    // This does not mutate the node in the end, just the representation in memory
+                    // which is freed after the call.
                     Some(StateRef::new(node.keys.swap_remove(higher_key_index)))
                 } else {
                     higher_so_far
                 };
             } else {
                 if higher_key_index < node.keys.len() {
+                    // This does not mutate the node in the end, just the representation in memory
+                    // which is freed after the call.
                     higher_so_far = Some(StateRef::new(node.keys.swap_remove(higher_key_index)))
                 }
 
@@ -3602,6 +3606,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                 };
             } else {
                 if lower_key_index > 0 {
+                    // This does not mutate the node in the end, just the representation in memory
+                    // which is freed after the call.
                     lower_so_far = Some(StateRef::new(node.keys.swap_remove(lower_key_index - 1)));
                 }
                 let child_node_id = node.children[lower_key_index];
@@ -3754,7 +3760,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     ///
     /// Assumes:
     /// - The provided node is not the root.
-    /// - The node contain more than minimum number of keys.
+    /// - The provided `node` contain more than minimum number of keys.
     fn remove_smallest_key<'a>(
         &mut self,
         mut node: StateRefMut<'a, state_btree_internals::Node<M, K>, S>,
@@ -3774,9 +3780,10 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for key rotation, preparing a node for deleting a key.
+    /// Returns the now prepared child at `index`.
     /// Assumes:
     /// - The provided `node` is not a leaf and has a child at `index`.
-    /// -
+    /// - The minimum degree `M` is at least 2 or more.
     fn prepare_child_for_key_removal<'b, 'c>(
         &mut self,
         mut node: StateRefMut<'b, state_btree_internals::Node<M, K>, S>,
@@ -3847,6 +3854,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for getting the highest key in a subtree.
+    /// Assumes the provided `node` is not a leaf and has a child at
+    /// `child_index`.
     fn get_highest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
         K: Ord + Serialize,
@@ -3862,6 +3871,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     }
 
     /// Internal function for getting the lowest key in a subtree.
+    /// Assumes the provided `node` is not a leaf and has a child at
+    /// `child_index`.
     fn get_lowest_key(&self, node: &state_btree_internals::Node<M, K>, child_index: usize) -> K
     where
         K: Ord + Serialize,
@@ -3931,8 +3942,8 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         self.state_api.delete_entry(node.into_raw_parts().1).unwrap_abort()
     }
 
-    /// Internal function for inserting into a subtree. The given node must not
-    /// be full.
+    /// Internal function for inserting into a subtree.
+    /// Assumes the given node is not full.
     fn insert_non_full(
         &mut self,
         initial_node: StateRefMut<state_btree_internals::Node<M, K>, S>,
@@ -3949,24 +3960,25 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
             };
             // The key is not in this node.
             if node.is_leaf() {
-                // Since the node is not full and this is a leaf, we can just insert here.
+                // Since we can assume the node is not full and this is a leaf, we can just
+                // insert here.
                 node.keys.insert(insert_index, key);
                 return true;
             }
 
             // The node is not a leaf, so we want to insert in the relevant child node.
             let mut child = self.get_node_mut(node.children[insert_index]);
-            node = if child.is_full() {
+            node = if !child.is_full() {
+                child
+            } else {
                 let larger_child = self.split_child(&mut node, insert_index, &mut child);
-                // Since the child is now split into two, we have to update the insert into
-                // the relevant one of them.
+                // Since the child is now split into two, we have to check which one to insert
+                // into.
                 if node.keys[insert_index] < key {
                     larger_child
                 } else {
                     child
                 }
-            } else {
-                child
             };
         }
     }
@@ -3974,8 +3986,11 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     /// Internal function for splitting the child node at a given index for a
     /// given node. This will also mutate the given node adding a new key
     /// and child after the provided child_index.
-    ///
     /// Returns the newly created node.
+    ///
+    /// Assumes:
+    /// - Node is not a leaf and has `child` as child at `child_index`.
+    /// - `child` is at maximum keys (`2 * M - 1`).
     fn split_child<'b>(
         &mut self,
         node: &mut state_btree_internals::Node<M, K>,
@@ -4178,5 +4193,22 @@ mod tests {
     fn statemap_multiple_state_ref_mut_not_allowed() {
         let t = trybuild::TestCases::new();
         t.compile_fail("tests/state/map-multiple-state-ref-mut.rs");
+    }
+}
+
+#[concordium_cfg_test]
+mod wasm_test {
+    use concordium_contracts_common::concordium_test;
+
+    use crate::{claim_eq, StateApi, StateBuilder};
+
+    #[concordium_test]
+    fn test() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut map = state_builder.new_map();
+
+        map.insert(0, "0".to_string());
+
+        claim_eq!(map.get(&0).as_deref(), Some(&"1".to_string()));
     }
 }
