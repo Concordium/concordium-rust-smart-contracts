@@ -394,10 +394,12 @@ pub mod collections {
 pub mod constants;
 mod impls;
 pub mod prims;
+mod state_btree;
 mod traits;
 mod types;
 pub use concordium_contracts_common::*;
 pub use impls::*;
+pub use state_btree::*;
 pub use traits::*;
 pub use types::*;
 
