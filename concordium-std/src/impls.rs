@@ -765,6 +765,7 @@ where
     StateApi: HasStateApi,
 {
     /// Ensures a value is in the entry by inserting the default value if empty.
+    #[allow(clippy::unwrap_or_default)]
     pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateApi> {
         self.or_insert_with(Default::default)
     }
@@ -2196,7 +2197,7 @@ fn query_exchange_rates_worker() -> ExchangeRates {
 fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPublicKeysResult {
     let data: &[u8] = address.as_ref();
     let response = unsafe {
-        prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr() as *const u8, 32)
+        prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr(), 32)
     };
     let mut return_value = parse_query_account_public_keys_response_code(response)?;
     Ok(crate::AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
@@ -2215,7 +2216,7 @@ fn check_account_signature_worker(
     let response = unsafe {
         prims::invoke(
             INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG,
-            buffer.as_ptr() as *const u8,
+            buffer.as_ptr(),
             buffer.len() as u32,
         )
     };
