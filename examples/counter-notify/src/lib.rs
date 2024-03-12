@@ -16,7 +16,7 @@ type State = u64;
 #[derive(Serial, Deserial, PartialEq)]
 pub enum ReentryOccurance {
     NoReentryAttack,
-    ReentryAttack
+    ReentryAttack,
 }
 
 #[init(contract = "counter-notify")]
@@ -38,7 +38,10 @@ fn just_increment(_ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResul
     parameter = "(ContractAddress, OwnedEntrypointName)",
     return_value = "ReentryOccurance"
 )]
-fn increment_and_notify(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<ReentryOccurance> {
+fn increment_and_notify(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+) -> ReceiveResult<ReentryOccurance> {
     let (contract, entrypoint): (ContractAddress, OwnedEntrypointName) =
         ctx.parameter_cursor().get()?;
 
