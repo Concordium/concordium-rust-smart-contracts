@@ -5,11 +5,13 @@ use concordium_smart_contract_testing::*;
 use concordium_std_derive::*;
 
 /// The tests accounts.
-const ALICE: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
+const ALICE: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const BOB_ADDR: Address = Address::Account(BOB);
-const CHARLIE: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
+const CHARLIE: AccountAddress =
+    account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 
 /// Initial balance of the accounts.
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);

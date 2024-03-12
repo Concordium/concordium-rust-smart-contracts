@@ -2,8 +2,10 @@
 use concordium_smart_contract_testing::*;
 use concordium_std_derive::*;
 
-const ACC_0: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
-const ACC_1: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
+const ACC_0: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const ACC_1: AccountAddress =
+    account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 const SIGNER: Signer = Signer::with_one_key();
 

@@ -1,7 +1,8 @@
 use concordium_smart_contract_testing::*;
 use concordium_std_derive::*;
 
-const ACC_0: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
+const ACC_0: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const SIGNER: Signer = Signer::with_one_key();
 
 /// Compute the n-th fibonacci number.

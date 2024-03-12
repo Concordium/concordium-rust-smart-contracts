@@ -4,9 +4,11 @@ use concordium_std_derive::*;
 use icecream::*;
 
 /// The icecream buyer.
-const ACC_0: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
+const ACC_0: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 /// The icecream vendor.
-const ACC_1: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const ACC_1: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const SIGNER: Signer = Signer::with_one_key();
 const ICECREAM_PRICE: Amount = Amount::from_ccd(1000);
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);

@@ -5,7 +5,8 @@ use concordium_std_derive::*;
 use signature_verifier::*;
 use std::str::FromStr;
 
-const ALICE: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const ALICE: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const SIGNER: Signer = Signer::with_one_key();
 

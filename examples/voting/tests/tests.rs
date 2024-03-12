@@ -4,7 +4,8 @@ use voting_contract::*;
 
 // Constants.
 const SIGNER: Signer = Signer::with_one_key();
-const ALICE: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const ALICE: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const BOB_ADDR: Address = Address::Account(BOB);

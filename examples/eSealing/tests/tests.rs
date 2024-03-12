@@ -5,7 +5,8 @@ use concordium_std_derive::*;
 use e_sealing::*;
 
 /// Constants:
-const ALICE: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
+const ALICE: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const SIGNER: Signer = Signer::with_one_key();
 

@@ -5,7 +5,8 @@ use concordium_std_derive::*;
 use transfer_policy_check::*;
 
 /// Constants.
-const ALICE: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const ALICE: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const BOB: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const BOB_ADDR: Address = Address::Account(BOB);
 

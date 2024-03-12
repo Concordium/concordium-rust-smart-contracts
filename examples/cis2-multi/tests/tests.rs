@@ -9,19 +9,24 @@ use concordium_std::{
 use concordium_std_derive::*;
 
 /// The tests accounts.
-const ALICE: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
+const ALICE: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const BOB_CANONICAL: AccountAddress = BOB.get_alias_unchecked(0);
 const BOB_CANONICAL_ADDR: Address = Address::Account(BOB_CANONICAL);
 const BOB_ADDR: Address = Address::Account(BOB);
-const UPGRADER: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
+const UPGRADER: AccountAddress =
+    account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const UPGRADER_ADDR: Address = Address::Account(UPGRADER);
-const BLACKLISTER: AccountAddress = account_address!("2y57FyMyqAfY7X1SuSWJ5VMt1Z3ZgxbKt9w5mGoTwqA7YcpbXr");
+const BLACKLISTER: AccountAddress =
+    account_address!("2y57FyMyqAfY7X1SuSWJ5VMt1Z3ZgxbKt9w5mGoTwqA7YcpbXr");
 const BLACKLISTER_ADDR: Address = Address::Account(BLACKLISTER);
-const PAUSER: AccountAddress = account_address!("2yWkbp92JL9LYVmxgP1QfTDsJs9sMLAWJBYMy8md3SQz5ErzEd");
+const PAUSER: AccountAddress =
+    account_address!("2yWkbp92JL9LYVmxgP1QfTDsJs9sMLAWJBYMy8md3SQz5ErzEd");
 const PAUSER_ADDR: Address = Address::Account(PAUSER);
-const NON_EXISTING_ACCOUNT: AccountAddress = account_address!("3hWv6hv4nrgPTUgjHehCHx6ifXUoCfWZepKuPykXEBmsgjzni4");
+const NON_EXISTING_ACCOUNT: AccountAddress =
+    account_address!("3hWv6hv4nrgPTUgjHehCHx6ifXUoCfWZepKuPykXEBmsgjzni4");
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU8(2);

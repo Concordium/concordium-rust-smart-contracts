@@ -7,7 +7,8 @@ use credential_registry::*;
 
 /// Constants for tests
 const SIGNER: Signer = Signer::with_one_key();
-pub const ISSUER_ACCOUNT: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
+pub const ISSUER_ACCOUNT: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 pub const ISSUER_ADDRESS: Address = Address::Account(ISSUER_ACCOUNT);
 pub const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
 pub const CREDENTIAL_METADATA_URL: &str =
@@ -16,7 +17,8 @@ pub const CREDENTIAL_TYPE: &str = "UniversityDegreeCredential";
 pub const CREDENTIAL_SCHEMA_URL: &str =
     "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
 // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
-pub const PUBLIC_KEY: PublicKeyEd25519 = public_key_ed25519!("AC0560EC8BD092587C2A3E7C566C23F2200B0730C13DB1DC68A991040801EC70");
+pub const PUBLIC_KEY: PublicKeyEd25519 =
+    public_key_ed25519!("AC0560EC8BD092587C2A3E7C566C23F2200B0730C13DB1DC68A991040801EC70");
 pub const SIGNATURE: SignatureEd25519 = signature_ed25519!("FE8A3A83D12DBF3462E41AEA9BF5F4E20099686FC988F3A7FB746ECEACDF29B45A163F2B9D81E24B31219B4CA0857F929650C7C95062B32B2E2ED3DEB9D80C04");
 
 /// Test initialization of the contract.
