@@ -1,8 +1,8 @@
 [package]
 name = "concordium-smart-contract-testing"
-version = "4.1.0"
+version = "4.2.0"
 edition = "2021"
-rust-version = "1.67"
+rust-version = "1.72"
 license = "MPL-2.0"
 readme = "README.md"
 description = "A companion crate to `concordium-std` that supports off-chain end-to-end testing of smart contracts."

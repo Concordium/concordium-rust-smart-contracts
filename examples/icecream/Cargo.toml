@@ -15,9 +15,9 @@ concordium-smart-contract-testing = { path = "../../contract-testing" }
 concordium-std-derive = { path = "../../concordium-std-derive" }
 
 [features]
-default = ["std", "wee_alloc"]
+default = ["std", "bump_alloc"]
 std = ["concordium-std/std"]
-wee_alloc = ["concordium-std/wee_alloc"]
+bump_alloc = ["concordium-std/bump_alloc"]
 
 [lib]
 crate-type=["cdylib", "rlib"]

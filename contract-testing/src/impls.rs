@@ -2052,6 +2052,21 @@ impl ContractInvokeError {
         }
     }
 
+    /// If the contract execution rejected the transaction, this returns the
+    /// code the contract used to signal the rejection.
+    pub fn reject_code(&self) -> Option<i32> {
+        match &self.kind {
+            ContractInvokeErrorKind::ExecutionError {
+                failure_kind:
+                    v1::InvokeFailure::ContractReject {
+                        code,
+                        ..
+                    },
+            } => Some(*code),
+            _ => None,
+        }
+    }
+
     /// Try to extract and parse the value returned into a type that implements
     /// [`Deserial`].
     ///

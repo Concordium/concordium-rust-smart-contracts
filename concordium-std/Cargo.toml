@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "9.0.1"
+version = "10.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2021"
 rust-version = "1.66"
@@ -12,8 +12,6 @@ readme = "./README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-# Reduce code size, at the cost of performance in allocation heavy-code.
-wee_alloc= { version = "0.4.5", optional = true}
 sha2 = { version = "0.10", optional = true }
 sha3 = { version = "0.10", optional = true }
 secp256k1 = { version = "0.22", optional = true, features = ["lowmemory"] }
@@ -35,6 +33,9 @@ build-schema = ["concordium-contracts-common/build-schema"]
 crypto-primitives = ["sha2", "sha3", "secp256k1", "ed25519-zebra"]
 concordium-quickcheck = ["getrandom", "quickcheck", "concordium-contracts-common/concordium-quickcheck", "std"]
 debug = []
+bump_alloc = []
+# p7 enables support for functionality introduced in protocol version 7.
+p7 = []
 
 [lib]
 crate-type = ["rlib"]
