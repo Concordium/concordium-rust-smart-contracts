@@ -1,5 +1,7 @@
 # Changelog
 
+- Bump MSRV to 1.72
+
 ## Unreleased changes
 
 - Add support for querying the module reference and contract name of an instance,

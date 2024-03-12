@@ -1,5 +1,7 @@
 # Changelog
 
+- Added MSRV (1.72)
+
 ## Unreleased changes
 
 ### Added
