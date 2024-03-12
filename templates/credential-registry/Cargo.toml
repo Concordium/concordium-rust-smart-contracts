@@ -21,6 +21,7 @@ quickcheck = {version = "1"}
 
 [dev-dependencies]
 concordium-smart-contract-testing = "4.0"
+concordium-std-derive = "6.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
